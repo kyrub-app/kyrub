@@ -137,3 +137,9 @@
         && cashLedgerRoleAllowed(storeId);
       allow list, create, update, delete: if false;
     }
+
+    // Audit metadata written only by the authenticated server.
+    // A client must never forge its own inspection evidence.
+    match /stores/{storeId}/cashDeviceInspections/{inspectionId} {
+      allow get, list, create, update, delete: if false;
+    }

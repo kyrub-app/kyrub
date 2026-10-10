@@ -24,6 +24,7 @@ import {
   subscribeToCashMovements,
   subscribeToCashSessions,
   syncPendingCashRecords,
+  submitCashDeviceInspection,
   type CanonicalCashMovement,
   type CanonicalCashSession,
   type CashDirection,
@@ -229,6 +230,21 @@ export const CashWorkspace = ({
     }
   };
 
+  const handleDeviceInspection = async (): Promise<void> => {
+    if (!context || !auth.currentUser || !deviceAudit) return;
+    setBusy(true);
+    try {
+      const token = await auth.currentUser.getIdToken();
+      await submitCashDeviceInspection(context, token, crypto.randomUUID());
+      await refreshPending();
+      notify('Declaração deste aparelho registrada para conferência gerencial; a migração permanece bloqueada.', 'info');
+    } catch (error) {
+      notify(error instanceof Error ? error.message : 'Não foi possível registrar a declaração.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   const handleOpen = async (): Promise<void> => {
     if (!context) return;
     const value = Number.parseFloat(openingAmount.replace(',', '.'));
@@ -389,14 +405,25 @@ export const CashWorkspace = ({
       <div className="rounded-2xl border border-slate-700 bg-slate-900 p-4 text-xs text-slate-300" data-kyrub-cash-local-audit="read-only">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <strong className="font-bold text-white">Verificação das pendências deste aparelho</strong>
-          <button
-            type="button"
-            onClick={() => { void refreshPending().catch(() => notify('Não foi possível consultar as pendências locais deste aparelho.', 'error')); }}
-            disabled={busy}
-            className="rounded-lg border border-slate-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
-          >
-            Conferir novamente
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => { void refreshPending().catch(() => notify('Não foi possível consultar as pendências locais deste aparelho.', 'error')); }}
+              disabled={busy}
+              className="rounded-lg border border-slate-600 px-3 py-1.5 text-[10px] font-bold text-white disabled:opacity-50"
+            >
+              Conferir novamente
+            </button>
+            <button
+              type="button"
+              onClick={handleDeviceInspection}
+              disabled={busy || !deviceAudit}
+              className="rounded-lg border border-cyan-500/40 px-3 py-1.5 text-[10px] font-bold text-cyan-200 disabled:opacity-50"
+              data-kyrub-cash-inspection="self-report"
+            >
+              Registrar declaração deste aparelho
+            </button>
+          </div>
         </div>
         {deviceAudit ? (
           <p className="mt-2 leading-relaxed">
@@ -411,7 +438,7 @@ export const CashWorkspace = ({
           </p>
         )}
         <p className="mt-2 text-[11px] text-amber-200/80">
-          Somente este navegador foi verificado. Outros aparelhos, registros remotos e a liberação da migração exigem conferência separada. Nenhum registro foi alterado.
+          Somente este navegador foi inspecionado. O envio registra uma declaração do operador, não uma verificação independente. Outros aparelhos e a liberação da migração exigem conferência gerencial.
         </p>
       </div>
 

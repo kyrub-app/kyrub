@@ -104,6 +104,123 @@ const requireManagedCashMode = async (
   ) throw new Error('CASH_REGISTER_CUTOVER_NOT_ENABLED');
 };
 
+
+/**
+ * Employee-provided evidence about ONE browser only. Counts are never trusted
+ * as a certificate that the store has no pending Dexie operations elsewhere.
+ * No endpoint in this service turns on a Cash cutover.
+ */
+export const validateCashDeviceInspectionCounts = (value: unknown) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('CASH_REGISTER_INSPECTION_INVALID');
+  }
+  const input = value as Record<string, unknown>;
+  const keys = [
+    'currentActorPending', 'otherActorsPending', 'unattributedPending',
+    'localOpenSessions', 'pendingOpeningOperations',
+    'pendingMovementOperations', 'pendingClosingOperations',
+  ] as const;
+  const result = {} as Record<(typeof keys)[number], number>;
+  for (const key of keys) {
+    const count = input[key];
+    if (typeof count !== 'number' || !Number.isSafeInteger(count) ||
+      count < 0 || count > 100_000) throw new Error('CASH_REGISTER_INSPECTION_INVALID');
+    result[key] = count;
+  }
+  if (
+    result.currentActorPending + result.otherActorsPending + result.unattributedPending !==
+    result.pendingOpeningOperations + result.pendingMovementOperations + result.pendingClosingOperations
+  ) throw new Error('CASH_REGISTER_INSPECTION_INVALID');
+  return result;
+};
+
+export const recordCashDeviceInspection = async (input: {
+  legacyStoreId: string;
+  authenticatedUserId: string;
+  operationId: unknown;
+  deviceId: unknown;
+  counts: unknown;
+}): Promise<{
+  inspectionId: string;
+  selfReported: true;
+  verified: false;
+  activationAllowed: false;
+  otherDevicesVerified: false;
+  replay: boolean;
+}> => {
+  const actor = await authorizeRegisterActor(input);
+  const deviceId = clean(input.deviceId);
+  const operationId = clean(input.operationId);
+  if (!validOperationId(operationId) ||
+    !/^device-[a-zA-Z0-9_-]{8,90}$/.test(deviceId)) {
+    throw new Error('CASH_REGISTER_INSPECTION_INVALID');
+  }
+  const counts = validateCashDeviceInspectionCounts(input.counts);
+  const inspectionId = 'cash-device-' + createHash('sha256')
+    .update(JSON.stringify([actor.canonicalStoreId, actor.actorId, deviceId]))
+    .digest('hex').slice(0,32);
+  const reference = adminDb.doc(
+    `stores/${actor.canonicalStoreId}/cashDeviceInspections/${inspectionId}`
+  );
+  const auditRef = adminDb.doc(
+    `stores/${actor.canonicalStoreId}/auditLogs/audit-cash-device-${operationId}`
+  );
+  return adminDb.runTransaction(async transaction => {
+    await requireTransactionActor(transaction, actor);
+    const [previousSnapshot, coordinationSnapshot, auditSnapshot] = await Promise.all([
+      transaction.get(reference),
+      transaction.get(adminDb.doc(coordinationPath(actor.canonicalStoreId))),
+      transaction.get(auditRef),
+    ]);
+    const previous = previousSnapshot.data() as Record<string, unknown> | undefined;
+    if (previous?.operationId === operationId) {
+      const existingCounts = previous?.counts as Record<string, unknown> | undefined;
+      if (!existingCounts ||
+        Object.entries(counts).some(([key, value]) => existingCounts[key] !== value)) {
+        throw new Error('CASH_REGISTER_INSPECTION_CONFLICT');
+      }
+      return {
+        inspectionId, selfReported: true as const, verified: false as const,
+        activationAllowed: false as const, otherDevicesVerified: false as const, replay: true,
+      };
+    }
+    if (auditSnapshot.exists) throw new Error('CASH_REGISTER_INSPECTION_CONFLICT');
+    const mode = clean(coordinationSnapshot.data()?.mode) || 'legacy';
+    transaction.set(reference, {
+      id: inspectionId,
+      storeId: actor.canonicalStoreId,
+      legacyStoreId: actor.legacyStoreId,
+      actorUserId: actor.actorId,
+      actorRole: actor.role,
+      operationId,
+      modeAtReport: mode,
+      counts,
+      selfReported: true,
+      verified: false,
+      activationAllowed: false,
+      otherDevicesVerified: false,
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    transaction.create(auditRef, {
+      id: auditRef.id,
+      storeId: actor.canonicalStoreId,
+      actorUserId: actor.actorId,
+      actorRole: actor.role,
+      action: 'cash.device.inspection.self_reported',
+      entityType: 'cashDeviceInspection',
+      entityId: inspectionId,
+      reason: '',
+      before: null,
+      after: { counts, modeAtReport: mode, verified: false, activationAllowed: false },
+      createdAt: FieldValue.serverTimestamp(),
+    });
+    return {
+      inspectionId, selfReported: true as const, verified: false as const,
+      activationAllowed: false as const, otherDevicesVerified: false as const, replay: false,
+    };
+  });
+};
+
 export const normalizedCashRegisterName = (value: unknown): string => {
   const name = clean(value);
   if (name.length < 2 || name.length > 60 || /[\r\n]/.test(name)) {
