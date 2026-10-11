@@ -69,7 +69,10 @@ test('shared authority is single-flight; a concurrent GET cannot run the same sc
  const f=makePort([payment('a')]);
  const lease=await f.port.acquire('tenant-a');
  assert.equal(lease.kind,'acquired');
- await assert.rejects(executeSharedFinanceRecovery('tenant-a',f.port),/STORE_FINANCE_RECOVERY_IN_PROGRESS/);
+ await assert.rejects(
+   executeSharedFinanceRecovery('tenant-a',f.port,async()=>{}),
+   /STORE_FINANCE_RECOVERY_IN_PROGRESS/
+ );
  assert.equal(f.getScanned(),0);
 });
 
@@ -113,6 +116,23 @@ test('recovery failure is not swallowed or mislabeled as existing capture',async
  f.port.createCapture=async()=>{throw new Error('Firestore unavailable');};
  await assert.rejects(executeSharedFinanceRecovery('tenant-a',f.port),/Firestore unavailable/);
  assert.notEqual(f.getStatus(),'complete');
+});
+
+
+test('concurrent finance reads wait for another worker to complete recovery',async()=>{
+ const f=makePort([payment('a')]);
+ // First GET already owns the transaction lease.
+ const first = await f.port.acquire('tenant-a');
+ assert.equal(first.kind,'acquired');
+ let waits = 0;
+ const observed = await executeSharedFinanceRecovery('tenant-a',f.port,async()=>{
+   waits++;
+   // Simulate another serverless worker completing its bounded run.
+   await f.port.checkpoint('tenant-a',first.kind==='acquired' ? first.token : '', 'a', 'complete');
+ });
+ assert.equal(observed,0);
+ assert.equal(waits,1);
+ assert.equal(f.getScanned(),0);
 });
 
 test('both read endpoints delegate to ONE authenticated backend service',()=>{

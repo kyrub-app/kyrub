@@ -142,9 +142,18 @@ const firestoreRecoveryPort: FinanceRecoveryPort = {
  */
 export const executeSharedFinanceRecovery = async (
   storeId: string,
-  port: FinanceRecoveryPort
+  port: FinanceRecoveryPort,
+  retryBusy: () => Promise<void> = () =>
+    new Promise<void>(resolve => setTimeout(resolve, 500))
 ): Promise<number> => {
-  const lease = await port.acquire(storeId);
+  // Financeiro Interno mounts independent read-only widgets. On an initial
+  // legacy recovery two GETs may arrive at once. Wait briefly for the first
+  // lease holder instead of failing an otherwise valid management view.
+  let lease = await port.acquire(storeId);
+  for (let attempt = 0; lease.kind === 'busy' && attempt < 12; attempt++) {
+    await retryBusy();
+    lease = await port.acquire(storeId);
+  }
   if (lease.kind === 'complete') return 0;
   if (lease.kind === 'busy') throw new Error('STORE_FINANCE_RECOVERY_IN_PROGRESS');
   let cursor = lease.cursor;
