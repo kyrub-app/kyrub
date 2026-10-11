@@ -36,6 +36,8 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
   const [loadedQuery, setLoadedQuery] = useState('');
   const historyGate = useRef(createFinanceLatestRequest());
   const queryKey = JSON.stringify([storeId, effectivePeriod, kind, paymentMethod]);
+  const reconciliationScopeRef = useRef(queryKey);
+  reconciliationScopeRef.current = queryKey;
   const queryReady = loadedQuery === queryKey;
 
   const load = useCallback(async (append = false) => {
@@ -45,6 +47,8 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
       setLoadingMore(true);
     } else {
       setLoading(true);
+      setLoadingMore(false);
+      setReconcilingPaymentId('');
       setItems([]);
       setCursor('');
       setHasMore(false);
@@ -89,6 +93,44 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
     // A page cursor change must not restart the first page.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storeId, effectivePeriod, kind, paymentMethod]);
+
+  useEffect(() => {
+    if (!queryReady) return;
+    const requestedScope = queryKey;
+    const candidates = items.filter(item =>
+      item.kind === 'payment_capture' &&
+      isMercadoPago(item.provider) &&
+      !reconciliationRequestedRef.current.has(item.paymentId)
+    );
+    for (const item of candidates) {
+      reconciliationRequestedRef.current.add(item.paymentId);
+      void fetchProviderReconciliation({ storeId, paymentId: item.paymentId, refresh: false })
+        .then(reconciliation => {
+          if (reconciliationScopeRef.current !== requestedScope) return;
+          setReconciliations(current => ({ ...current, [item.paymentId]: reconciliation }));
+        })
+        .catch(() => undefined);
+    }
+  }, [items, storeId, queryKey, queryReady]);
+
+  const reconcile = useCallback(async (paymentId: string) => {
+    const requestedScope = queryKey;
+    setReconcilingPaymentId(paymentId);
+    setReconciliationErrors(current => ({ ...current, [paymentId]: '' }));
+    try {
+      const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true });
+      if (reconciliationScopeRef.current !== requestedScope) return;
+      setReconciliations(current => ({ ...current, [paymentId]: reconciliation }));
+    } catch (caught) {
+      if (reconciliationScopeRef.current !== requestedScope) return;
+      setReconciliationErrors(current => ({
+        ...current,
+        [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.',
+      }));
+    } finally {
+      if (reconciliationScopeRef.current === requestedScope) setReconcilingPaymentId('');
+    }
+  }, [storeId, queryKey]);
 
   const activeFilterCount = useMemo(() => Number(Boolean(effectivePeriod)) + Number(kind !== 'all') + Number(paymentMethod !== 'all'), [effectivePeriod, kind, paymentMethod]);
   const reconcile = useCallback(async (paymentId: string) => { setReconcilingPaymentId(paymentId); setReconciliationErrors(current => ({ ...current, [paymentId]: '' })); try { const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true }); setReconciliations(current => ({ ...current, [paymentId]: reconciliation })); } catch (caught) { setReconciliationErrors(current => ({ ...current, [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.' })); } finally { setReconcilingPaymentId(''); } }, [storeId]);
