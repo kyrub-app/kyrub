@@ -10,7 +10,6 @@ import {
 import {
   buildPaymentCaptureEconomicEntryId,
   buildRecoveredPaymentCaptureEconomicEntry,
-  deriveStoreEconomicLedgerSummary,
   storeEconomicLedgerEntryPath,
 } from '../../shared/storeEconomicLedger.js';
 import {
@@ -30,7 +29,7 @@ import {
   type StoreFinancePayableRecurrence,
   type StoreFinancePayableStatus,
 } from '../../shared/storeFinancePayables.js';
-import { listStoreEconomicLedgerEntries } from './storeEconomicLedgerService.js';
+import { listStoreEconomicLedgerEntries, readCompleteStoreFinanceLedgerSummary } from './storeEconomicLedgerService.js';
 import { listStoreCashFinanceProjection } from './storeCashFinanceProjection.js';
 
 const clean = (value: unknown): string =>
@@ -46,6 +45,12 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   }
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
     return { status: 403, message: 'Você não pode consultar o financeiro desta loja.', code };
+  }
+  if (code === 'STORE_FINANCE_SUMMARY_SCAN_INCOMPLETE') {
+    return { status: 503, message: 'O livro financeiro ultrapassou o limite de conferência; nenhum total parcial foi exibido.', code };
+  }
+  if (code === 'STORE_FINANCE_SUMMARY_OVERFLOW' || code === 'STORE_FINANCE_SUMMARY_FEE_INVALID') {
+    return { status: 503, message: 'Os totais financeiros não passaram na verificação de integridade.', code };
   }
   if (code === 'STORE_FINANCE_STORE_REQUIRED') {
     return { status: 400, message: 'Loja não identificada.', code };
@@ -400,17 +405,22 @@ export const createStoreFinanceRouter = (): Router => {
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
       const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
-      const [entries, receivables, payables, cash] = await Promise.all([
+      const [entries, receivables, payables, cash, completeTotals] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),
         listStorePayables(storeId),
         listStoreCashFinanceProjection({ financeStoreId: storeId, ownerId }),
+        readCompleteStoreFinanceLedgerSummary(storeId),
       ]);
-      const summary = deriveStoreEconomicLedgerSummary(entries);
+      const { summary } = completeTotals;
 
       response.status(200).json({
         storeId,
         summary,
+        summaryComplete: completeTotals.complete,
+        summaryScope: completeTotals.scope,
+        providerFeesMinor: completeTotals.providerFeesMinor,
+        providerFeeEvidenceCount: completeTotals.providerFeeEvidenceCount,
         entries,
         recoveredCount,
         receivableSummary: receivables.summary,
