@@ -159,7 +159,7 @@ export const executeSharedFinanceRecovery = async (
       lastId = snapshot.id;
       try {
         const payment = normalizeCanonicalPayment({
-          ...(snapshot.data as CanonicalPayment), id: snapshot.id, storeId,
+          ...(snapshot.data as unknown as CanonicalPayment), id: snapshot.id, storeId,
         });
         if (validPaidFinanceCapture(payment)) candidates.push(payment);
       } catch (error) {
