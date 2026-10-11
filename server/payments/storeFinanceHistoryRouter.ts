@@ -3,16 +3,9 @@ import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { type PaymentMethod } from '../../src/utils/canonicalPayment.js';
 import {
-  normalizeCanonicalPayment,
-  type CanonicalPayment,
-  type PaymentMethod,
-} from '../../src/utils/canonicalPayment.js';
-import {
-  buildPaymentCaptureEconomicEntryId,
-  buildRecoveredPaymentCaptureEconomicEntry,
   STORE_ECONOMIC_LEDGER_SCHEMA_VERSION,
-  storeEconomicLedgerEntryPath,
   type StoreEconomicLedgerEntry,
   type StoreEconomicLedgerKind,
   type StoreEconomicLedgerSourceAuthority,
@@ -22,6 +15,7 @@ import {
   type EconomicObligation,
   type EconomicObligationStatus,
 } from '../../shared/economicObligations.js';
+import { recoverCanonicalPaidCaptures } from './storeFinanceRecoveryService.js';
 import {
   normalizeStoreFinancePayable,
   type StoreFinancePayable,
@@ -33,7 +27,6 @@ const HISTORY_MAX_LIMIT = 50;
 const HISTORY_SCAN_BATCH = 100;
 const HISTORY_MAX_SCANNED_PER_REQUEST = 1000;
 const PERIOD_SCAN_BATCH = 250;
-const RECOVERY_BATCH = 200;
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -43,6 +36,13 @@ const bearerToken = (authorization: string): string =>
 
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
+  if (code === 'STORE_FINANCE_RECOVERY_IN_PROGRESS' ||
+    code === 'STORE_FINANCE_RECOVERY_CONTINUATION_REQUIRED') {
+    return { status: 503, message: 'A conferência dos pagamentos históricos está em andamento. Atualize a consulta para continuar.', code };
+  }
+  if (code.startsWith('STORE_FINANCE_RECOVERY_')) {
+    return { status: 503, message: 'Não foi possível concluir a conferência histórica com segurança. Os totais parciais não serão exibidos.', code };
+  }
   if (code === 'AUTH_REQUIRED') {
     return { status: 401, message: 'Faça login novamente.', code };
   }
@@ -219,48 +219,6 @@ const historyLimit = (value: unknown): number => {
   return Math.max(1, Math.min(HISTORY_MAX_LIMIT, Math.trunc(parsed)));
 };
 
-const canRecoverPaidCapture = (payment: CanonicalPayment): boolean =>
-  payment.status === 'paid'
-  && Boolean(payment.paidAt)
-  && Number.isFinite(Date.parse(payment.paidAt))
-  && Boolean(payment.provider)
-  && Boolean(payment.providerPaymentId);
-
-const recoverAllMissingCanonicalPaidCaptures = async (storeId: string): Promise<number> => {
-  let lastDocumentId = '';
-  let recoveredCount = 0;
-  while (true) {
-    let query = adminDb.collection(`stores/${storeId}/payments`).where('status', '==', 'paid').orderBy(FieldPath.documentId()).limit(RECOVERY_BATCH);
-    if (lastDocumentId) query = query.startAfter(lastDocumentId);
-    const snapshot = await query.get();
-    if (snapshot.empty) break;
-    const candidates = snapshot.docs.flatMap(document => {
-      try {
-        const payment = normalizeCanonicalPayment({ ...(document.data() as CanonicalPayment), id: document.id, storeId });
-        return canRecoverPaidCapture(payment) ? [payment] : [];
-      } catch (error) {
-        console.warn('[Store finance history] Invalid historical payment skipped.', { storeId, paymentId: document.id, error: error instanceof Error ? error.message : 'unknown' });
-        return [];
-      }
-    });
-    if (candidates.length > 0) {
-      const refs = candidates.map(payment => adminDb.doc(storeEconomicLedgerEntryPath(storeId, buildPaymentCaptureEconomicEntryId(payment.id))));
-      const existing = await adminDb.getAll(...refs);
-      const batch = adminDb.batch();
-      let writes = 0;
-      candidates.forEach((payment, index) => {
-        if (existing[index]?.exists) return;
-        batch.set(refs[index], buildRecoveredPaymentCaptureEconomicEntry({ payment, paymentIntentId: payment.paymentIntentId ?? '' }));
-        writes += 1;
-      });
-      if (writes > 0) { await batch.commit(); recoveredCount += writes; }
-    }
-    lastDocumentId = snapshot.docs[snapshot.docs.length - 1]?.id ?? '';
-    if (snapshot.size < RECOVERY_BATCH || !lastDocumentId) break;
-  }
-  return recoveredCount;
-};
-
 type HistoryItem = { id: string; kind: StoreEconomicLedgerKind; currency: 'BRL'; amountMinor: number; paymentId: string; orderId: string; buyerId: string; paymentMethod: PaymentMethod; provider: string; providerPaymentId: string; sourceAuthority: StoreEconomicLedgerSourceAuthority; occurredAt: string; providerFeeMinor: number | null };
 const toHistoryItem = (entry: StoreEconomicLedgerEntry): HistoryItem => ({ id: entry.id, kind: entry.kind, currency: 'BRL', amountMinor: entry.amountMinor, paymentId: entry.paymentId, orderId: entry.orderId, buyerId: entry.buyerId, paymentMethod: entry.paymentMethod, provider: entry.provider, providerPaymentId: entry.providerPaymentId, sourceAuthority: entry.sourceAuthority, occurredAt: entry.occurredAt, providerFeeMinor: providerFeeMinor(entry) });
 
@@ -394,7 +352,7 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       await requireOwner(request.get('authorization') ?? '', storeId);
       const mode = clean(request.query.mode) || 'history';
       if (mode !== 'history' && mode !== 'period') throw new Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
-      const recoveredCount = await recoverAllMissingCanonicalPaidCaptures(storeId);
+      const recoveredCount = await recoverCanonicalPaidCaptures(storeId);
       if (mode === 'period') {
         const period = parsePeriod(request.query.period, true);
         if (!period) throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');

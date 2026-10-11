@@ -4,15 +4,6 @@ import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
-  normalizeCanonicalPayment,
-  type CanonicalPayment,
-} from '../../src/utils/canonicalPayment.js';
-import {
-  buildPaymentCaptureEconomicEntryId,
-  buildRecoveredPaymentCaptureEconomicEntry,
-  storeEconomicLedgerEntryPath,
-} from '../../shared/storeEconomicLedger.js';
-import {
   ECONOMIC_OBLIGATION_SCHEMA_VERSION,
   type EconomicObligation,
   type EconomicObligationStatus,
@@ -31,6 +22,7 @@ import {
 } from '../../shared/storeFinancePayables.js';
 import { listStoreEconomicLedgerEntries, readCompleteStoreFinanceLedgerSummary } from './storeEconomicLedgerService.js';
 import { listStoreCashFinanceProjection } from './storeCashFinanceProjection.js';
+import { recoverCanonicalPaidCaptures } from './storeFinanceRecoveryService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -40,6 +32,13 @@ const bearerToken = (authorization: string): string =>
 
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
+  if (code === 'STORE_FINANCE_RECOVERY_IN_PROGRESS' ||
+    code === 'STORE_FINANCE_RECOVERY_CONTINUATION_REQUIRED') {
+    return { status: 503, message: 'A conferência dos pagamentos históricos está em andamento. Atualize a consulta para continuar.', code };
+  }
+  if (code.startsWith('STORE_FINANCE_RECOVERY_')) {
+    return { status: 503, message: 'Não foi possível concluir a conferência histórica com segurança. Os totais parciais não serão exibidos.', code };
+  }
   if (code === 'AUTH_REQUIRED') {
     return { status: 401, message: 'Faça login novamente.', code };
   }
@@ -81,71 +80,6 @@ const requireOwner = async (authorization: string, storeId: string): Promise<str
     authenticatedUserId: identity.uid,
   });
   return identity.uid;
-};
-
-const canRecoverPaidCapture = (payment: CanonicalPayment): boolean =>
-  payment.status === 'paid'
-  && Boolean(payment.paidAt)
-  && Number.isFinite(Date.parse(payment.paidAt))
-  && Boolean(payment.provider)
-  && Boolean(payment.providerPaymentId);
-
-/**
- * Historical compatibility only. Payments confirmed before the economic ledger
- * was wired can be recovered from their canonical paid snapshot. The entry id is
- * deterministic, so reopening Financeiro cannot duplicate revenue.
- */
-const recoverMissingCanonicalPaidCaptures = async (storeId: string): Promise<number> => {
-  const paymentSnapshot = await adminDb
-    .collection(`stores/${storeId}/payments`)
-    .where('status', '==', 'paid')
-    .limit(100)
-    .get();
-
-  const candidates = paymentSnapshot.docs.flatMap(document => {
-    try {
-      const payment = normalizeCanonicalPayment({
-        ...(document.data() as CanonicalPayment),
-        id: document.id,
-        storeId,
-      });
-      return canRecoverPaidCapture(payment) ? [payment] : [];
-    } catch (error) {
-      console.warn('[Store finance] Invalid historical payment skipped.', {
-        storeId,
-        paymentId: document.id,
-        error: error instanceof Error ? error.message : 'unknown',
-      });
-      return [];
-    }
-  });
-
-  if (candidates.length === 0) return 0;
-
-  const refs = candidates.map(payment =>
-    adminDb.doc(
-      storeEconomicLedgerEntryPath(
-        storeId,
-        buildPaymentCaptureEconomicEntryId(payment.id)
-      )
-    )
-  );
-  const existing = await adminDb.getAll(...refs);
-  const batch = adminDb.batch();
-  let recoveredCount = 0;
-
-  candidates.forEach((payment, index) => {
-    if (existing[index]?.exists) return;
-    const entry = buildRecoveredPaymentCaptureEconomicEntry({
-      payment,
-      paymentIntentId: payment.paymentIntentId ?? '',
-    });
-    batch.set(refs[index], entry);
-    recoveredCount += 1;
-  });
-
-  if (recoveredCount > 0) await batch.commit();
-  return recoveredCount;
 };
 
 type StoreReceivableView = Pick<
@@ -404,7 +338,7 @@ export const createStoreFinanceRouter = (): Router => {
       if (!storeId) throw new Error('STORE_FINANCE_STORE_REQUIRED');
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
-      const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
+      const recoveredCount = await recoverCanonicalPaidCaptures(storeId);
       const [entries, receivables, payables, cash, completeTotals] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),
