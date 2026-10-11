@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
 import StoreCashFinanceWorkspace, {
@@ -81,6 +81,10 @@ type StoreReceivableSummary = {
 type StoreFinancePayload = {
   storeId?: string;
   summary?: StoreFinanceSummary;
+  summaryComplete?: boolean;
+  summaryScope?: 'all-time-economic-ledger';
+  providerFeesMinor?: number;
+  providerFeeEvidenceCount?: number;
   entries?: StoreFinanceEntry[];
   recoveredCount?: number;
   receivableSummary?: StoreReceivableSummary;
@@ -188,14 +192,11 @@ export function StoreFinanceRuntime({
   const payables = payload?.payables ?? [];
   const payableSummary = payload?.payableSummary;
   const cash = payload?.cash;
-  const knownProviderFeesMinor = useMemo(
-    () => entries.reduce((total, entry) => total + (providerFeeMinor(entry) ?? 0), 0),
-    [entries]
-  );
-  const hasKnownProviderFees = useMemo(
-    () => entries.some(entry => providerFeeMinor(entry) !== null),
-    [entries]
-  );
+  const complete = payload?.summaryComplete === true
+    && payload?.summaryScope === 'all-time-economic-ledger'
+    && Boolean(summary);
+  const knownProviderFeesMinor = complete ? payload?.providerFeesMinor : null;
+  const hasKnownProviderFees = complete && (payload?.providerFeeEvidenceCount ?? 0) > 0;
 
   if (loading) {
     return <section className="rounded-3xl border border-emerald-500/20 bg-slate-900 p-5 text-[10px] text-slate-400">Carregando movimentações financeiras reais…</section>;
@@ -237,13 +238,17 @@ export function StoreFinanceRuntime({
 
       <details className="rounded-2xl border border-slate-800 bg-slate-900 p-4" data-kyrub-finance-recent-window="collapsed">
         <summary className="cursor-pointer text-[10px] font-bold text-slate-200">
-          Indicadores da amostra recente (até 100 lançamentos, não representam os totais globais)
+          Indicadores completos do livro econômico (todos os períodos, sem limite de 100)
         </summary>
+        <p className="mt-2 text-[9px] text-slate-400">
+          O histórico fiscal abaixo continua limitado a 100 registros, mas estes indicadores
+          vêm da varredura paginada do livro econômico inteiro. A consulta mensal é separada.
+        </p>
         <div className="mt-3 grid min-w-0 max-w-full gap-3 sm:grid-cols-2 xl:grid-cols-4">
-        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Recebido bruto</span><strong className="mt-2 block text-lg">{money(summary?.capturedMinor ?? 0)}</strong></article>
-        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{money(summary?.refundedMinor ?? 0)}</strong></article>
-        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
-        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Recebido bruto</span><strong className="mt-2 block text-lg">{complete ? money(summary?.capturedMinor ?? 0) : 'Indisponível'}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Estornos</span><strong className="mt-2 block text-lg">{complete ? money(summary?.refundedMinor ?? 0) : 'Indisponível'}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Taxas conhecidas do provedor</span><strong className="mt-2 block text-lg">{hasKnownProviderFees && knownProviderFeesMinor !== null && knownProviderFeesMinor !== undefined ? money(knownProviderFeesMinor) : 'Não informado'}</strong></article>
+        <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{complete ? money(summary?.economicNetMinor ?? 0) : 'Indisponível'}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
       </div>
       </details>
 

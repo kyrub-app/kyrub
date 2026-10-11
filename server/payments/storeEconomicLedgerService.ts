@@ -1,4 +1,4 @@
-import { FieldPath, type Transaction } from 'firebase-admin/firestore';
+import { FieldPath, type QueryDocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import {
@@ -21,8 +21,10 @@ import {
   buildPaymentRefundEconomicEntry,
   buildPaymentRefundEconomicEntryId,
   buildRecoveredPaymentCaptureEconomicEntry,
+  deriveStoreEconomicLedgerSummary,
   storeEconomicLedgerEntryPath,
   type StoreEconomicLedgerEntry,
+  type StoreEconomicLedgerSummary,
 } from '../../shared/storeEconomicLedger.js';
 
 export interface StoreEconomicLedgerPaymentPlan {
@@ -211,6 +213,95 @@ export const applyStoreEconomicLedgerPaymentPlan = (
 ): void => {
   if (!plan) return;
   for (const write of plan.writes) transaction.set(write.ref, write.entry);
+};
+
+
+/**
+ * Full all-time economic ledger summary; NEVER derive headline values from the
+ * 100 newest entries returned for backward-compatible fiscal detail.
+ * Paginate on an immutable document-ID cursor. If the safety budget is reached,
+ * fail closed rather than display a partial number as an authoritative total.
+ */
+export const STORE_FINANCE_SUMMARY_BATCH = 250;
+export const STORE_FINANCE_SUMMARY_MAX_ENTRIES = 20000;
+
+export type StoreFinanceCompleteLedgerSummary = {
+  summary: StoreEconomicLedgerSummary;
+  providerFeesMinor: number;
+  providerFeeEvidenceCount: number;
+  scannedCount: number;
+  complete: true;
+  scope: 'all-time-economic-ledger';
+};
+
+export const accumulateStoreFinanceLedgerBatch = (
+  previous: StoreFinanceCompleteLedgerSummary,
+  entries: readonly StoreEconomicLedgerEntry[]
+): StoreFinanceCompleteLedgerSummary => {
+  if (previous.scannedCount + entries.length > STORE_FINANCE_SUMMARY_MAX_ENTRIES)
+    throw new Error('STORE_FINANCE_SUMMARY_SCAN_INCOMPLETE');
+  const current = deriveStoreEconomicLedgerSummary(entries);
+  const keys = [
+    'capturedMinor', 'refundedMinor', 'grossAfterRefundsMinor',
+    'chargedBackMinor', 'chargebackReversedMinor', 'economicNetMinor',
+    'entryCount',
+  ] as const;
+  const combined: StoreEconomicLedgerSummary = { ...previous.summary };
+  for (const key of keys) {
+    const next = previous.summary[key] + current[key];
+    if (!Number.isSafeInteger(next)) throw new Error('STORE_FINANCE_SUMMARY_OVERFLOW');
+    combined[key] = next;
+  }
+  let providerFeesMinor = previous.providerFeesMinor;
+  let providerFeeEvidenceCount = previous.providerFeeEvidenceCount;
+  for (const entry of entries) {
+    const fees = (entry.economicAllocation?.observedCosts ?? [])
+      .filter(cost => cost.kind === 'provider_processing' && cost.borneBy === 'store');
+    if (!fees.length) continue;
+    providerFeeEvidenceCount += 1;
+    for (const fee of fees) {
+      if (!Number.isSafeInteger(fee.amountMinor) || fee.amountMinor < 0) {
+        throw new Error('STORE_FINANCE_SUMMARY_FEE_INVALID');
+      }
+      providerFeesMinor += fee.amountMinor;
+      if (!Number.isSafeInteger(providerFeesMinor)) throw new Error('STORE_FINANCE_SUMMARY_OVERFLOW');
+    }
+  }
+  return {
+    ...previous, summary: combined, providerFeesMinor, providerFeeEvidenceCount,
+    scannedCount: combined.entryCount,
+  };
+};
+
+export const readCompleteStoreFinanceLedgerSummary = async (
+  storeId: string
+): Promise<StoreFinanceCompleteLedgerSummary> => {
+  const canonicalId = clean(storeId);
+  if (!canonicalId) throw new Error('STORE_ECONOMIC_LEDGER_STORE_REQUIRED');
+  let totals: StoreFinanceCompleteLedgerSummary = {
+    summary: deriveStoreEconomicLedgerSummary([]),
+    providerFeesMinor: 0,
+    providerFeeEvidenceCount: 0,
+    scannedCount: 0,
+    scope: 'all-time-economic-ledger',
+    complete: true,
+  };
+  let cursor: QueryDocumentSnapshot | undefined;
+  while (true) {
+    let query = adminDb.collection(`stores/${canonicalId}/economicLedger`)
+      .orderBy(FieldPath.documentId())
+      .limit(STORE_FINANCE_SUMMARY_BATCH);
+    if (cursor) query = query.startAfter(cursor);
+    const snapshot = await query.get();
+    if (snapshot.empty) break;
+    const entries = snapshot.docs.map(document =>
+      parseEntry(document.data(), canonicalId, decodeURIComponent(document.id))
+    );
+    totals = accumulateStoreFinanceLedgerBatch(totals, entries);
+    cursor = snapshot.docs[snapshot.docs.length - 1];
+    if (snapshot.size < STORE_FINANCE_SUMMARY_BATCH) break;
+  }
+  return totals;
 };
 
 export const listStoreEconomicLedgerEntries = async (input: {
