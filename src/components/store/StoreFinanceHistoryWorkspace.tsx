@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
+import { createFinanceRequestGuard } from '../../utils/financeLatestRequestGuard';
 
 type LedgerKind = 'payment_capture' | 'payment_refund' | 'payment_chargeback' | 'payment_chargeback_reversal';
 type PaymentMethod = 'pix' | 'card' | 'cash' | 'other';
@@ -31,12 +32,100 @@ async function fetchProviderReconciliation(input: { storeId: string; paymentId: 
 export default function StoreFinanceHistoryWorkspace({ storeId, period }: { storeId: string; period: string }) {
   const [allPeriods, setAllPeriods] = useState(false);
   const effectivePeriod = allPeriods ? '' : period;
+  const historyGuard = useRef(createFinanceRequestGuard());
+  const evidenceGuard = useRef(createFinanceRequestGuard());
   const [kind, setKind] = useState<LedgerKind | 'all'>('all'); const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | 'all'>('all'); const [items, setItems] = useState<HistoryItem[]>([]); const [cursor, setCursor] = useState(''); const [hasMore, setHasMore] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [error, setError] = useState(''); const [recoveredCount, setRecoveredCount] = useState(0); const [reconciliations, setReconciliations] = useState<Record<string, ProviderReconciliation | null>>({}); const [reconciliationErrors, setReconciliationErrors] = useState<Record<string, string>>({}); const [reconcilingPaymentId, setReconcilingPaymentId] = useState(''); const reconciliationRequestedRef = useRef(new Set<string>());
-  const load = useCallback(async (append = false) => { append ? setLoadingMore(true) : setLoading(true); setError(''); try { const payload = await fetchHistory({ storeId, period: effectivePeriod, kind, paymentMethod, ...(append && cursor ? { cursor } : {}) }); const nextItems = payload.items ?? []; setItems(current => append ? [...current, ...nextItems] : nextItems); setCursor(payload.nextCursor ?? ''); setHasMore(Boolean(payload.hasMore && payload.nextCursor)); setRecoveredCount(current => current + (payload.recoveredCount ?? 0)); } catch (caught) { setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o histórico financeiro.'); if (!append) { setItems([]); setCursor(''); setHasMore(false); } } finally { append ? setLoadingMore(false) : setLoading(false); } }, [storeId, effectivePeriod, kind, paymentMethod, cursor]);
-  useEffect(() => { setCursor(''); setHasMore(false); setRecoveredCount(0); void load(false); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [storeId, effectivePeriod, kind, paymentMethod]);
-  useEffect(() => { const candidates = items.filter(item => item.kind === 'payment_capture' && isMercadoPago(item.provider) && !reconciliationRequestedRef.current.has(item.paymentId)); for (const item of candidates) { reconciliationRequestedRef.current.add(item.paymentId); void fetchProviderReconciliation({ storeId, paymentId: item.paymentId, refresh: false }).then(reconciliation => setReconciliations(current => ({ ...current, [item.paymentId]: reconciliation }))).catch(() => undefined); } }, [items, storeId]);
+  const filterScope = JSON.stringify([storeId, effectivePeriod, kind, paymentMethod]);
+  const [loadedScope, setLoadedScope] = useState('');
+  const load = useCallback(async (append = false) => {
+    const generation = historyGuard.current.begin();
+    if (append) setLoadingMore(true);
+    else setLoading(true);
+    setError('');
+    try {
+      const payload = await fetchHistory({
+        storeId, period: effectivePeriod, kind, paymentMethod,
+        ...(append && cursor ? { cursor } : {}),
+      });
+      if (!historyGuard.current.isCurrent(generation)) return;
+      if (payload.storeId && payload.storeId !== storeId) {
+        throw new Error('O histórico respondeu para outra loja.');
+      }
+      const nextItems = payload.items ?? [];
+      setItems(current => append ? [...current, ...nextItems] : nextItems);
+      setLoadedScope(filterScope);
+      setCursor(payload.nextCursor ?? '');
+      setHasMore(Boolean(payload.hasMore && payload.nextCursor));
+      setRecoveredCount(current => current + (payload.recoveredCount ?? 0));
+    } catch (caught) {
+      if (!historyGuard.current.isCurrent(generation)) return;
+      setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o histórico financeiro.');
+      if (!append) {
+        setItems([]); setLoadedScope(''); setCursor(''); setHasMore(false);
+      }
+    } finally {
+      if (historyGuard.current.isCurrent(generation)) {
+        if (append) setLoadingMore(false);
+        else setLoading(false);
+      }
+    }
+  }, [storeId, effectivePeriod, kind, paymentMethod, cursor, filterScope]);
+
+  useEffect(() => {
+    setItems([]);
+    setLoadedScope('');
+    setCursor('');
+    setHasMore(false);
+    setRecoveredCount(0);
+    reconciliationRequestedRef.current.clear();
+    setReconciliations({});
+    setReconciliationErrors({});
+    setReconcilingPaymentId('');
+    const generation = evidenceGuard.current.begin();
+    void load(false);
+    return () => {
+      historyGuard.current.invalidate();
+      if (evidenceGuard.current.isCurrent(generation)) evidenceGuard.current.invalidate();
+    };
+    // The cursor is not a filter; loading more must not reset the first page.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storeId, effectivePeriod, kind, paymentMethod]);
+
+  useEffect(() => {
+    if (loadedScope !== filterScope || loading) return;
+    const evidenceGeneration = evidenceGuard.current.snapshot();
+    const candidates = items.filter(item =>
+      item.kind === 'payment_capture' && isMercadoPago(item.provider) &&
+      !reconciliationRequestedRef.current.has(item.paymentId)
+    );
+    for (const item of candidates) {
+      reconciliationRequestedRef.current.add(item.paymentId);
+      void fetchProviderReconciliation({ storeId, paymentId: item.paymentId, refresh: false })
+        .then(reconciliation => {
+          if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+          setReconciliations(current => ({ ...current, [item.paymentId]: reconciliation }));
+        }).catch(() => undefined);
+    }
+  }, [items, storeId, loadedScope, filterScope, loading]);
   const activeFilterCount = useMemo(() => Number(Boolean(effectivePeriod)) + Number(kind !== 'all') + Number(paymentMethod !== 'all'), [effectivePeriod, kind, paymentMethod]);
-  const reconcile = useCallback(async (paymentId: string) => { setReconcilingPaymentId(paymentId); setReconciliationErrors(current => ({ ...current, [paymentId]: '' })); try { const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true }); setReconciliations(current => ({ ...current, [paymentId]: reconciliation })); } catch (caught) { setReconciliationErrors(current => ({ ...current, [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.' })); } finally { setReconcilingPaymentId(''); } }, [storeId]);
+  const reconcile = useCallback(async (paymentId: string) => {
+    const evidenceGeneration = evidenceGuard.current.snapshot();
+    setReconcilingPaymentId(paymentId);
+    setReconciliationErrors(current => ({ ...current, [paymentId]: '' }));
+    try {
+      const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true });
+      if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+      setReconciliations(current => ({ ...current, [paymentId]: reconciliation }));
+    } catch (caught) {
+      if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+      setReconciliationErrors(current => ({
+        ...current,
+        [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.',
+      }));
+    } finally {
+      if (evidenceGuard.current.isCurrent(evidenceGeneration)) setReconcilingPaymentId('');
+    }
+  }, [storeId]);
 
   return <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5 text-white" data-kyrub-finance-history="cursor-paginated">
     <div className="flex min-w-0 flex-col gap-3 lg:flex-row lg:items-start lg:justify-between"><div className="min-w-0"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Histórico financeiro</span><h4 className="mt-1 text-xs font-black uppercase">Movimentações paginadas</h4><p className="mt-2 max-w-3xl text-[9px] leading-relaxed text-slate-400">O histórico agora é lido por cursor, sem depender de uma janela global de 100 lançamentos. Os filtros são aplicados sobre o ledger econômico canônico da loja.</p></div><span className="shrink-0 rounded-full border border-slate-700 bg-slate-950 px-3 py-2 text-[8px] font-black uppercase text-slate-400">{activeFilterCount ? `${activeFilterCount} filtro(s)` : 'Todos os períodos'}</span></div>
