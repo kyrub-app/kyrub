@@ -15,9 +15,13 @@ const payment = (id: string): PaidFinanceSnapshot => ({
   id,
   data: {
     schemaVersion: 1, id, storeId: 'tenant-a', buyerId: 'buyer-a',
-    orderId: 'order-a', amount: 10, currency: 'BRL',
+    orderId: 'order-a', amount: 10, currency: 'BRL', context: 'marketplace',
+    idempotencyKey: 'test-idempotency-'+id,
     provider: 'mercado-pago', providerPaymentId: 'provider-'+id,
-    status: 'paid', method: 'pix', paidAt: '2026-10-01T11:00:00.000Z',
+    status: 'paid', method: 'pix',
+    createdAt: '2026-10-01T10:00:00.000Z',
+    updatedAt: '2026-10-01T11:00:00.000Z',
+    paidAt: '2026-10-01T11:00:00.000Z', refundedAt: '',
   },
 });
 const makePort = (input: PaidFinanceSnapshot[]) => {
@@ -44,10 +48,10 @@ const makePort = (input: PaidFinanceSnapshot[]) => {
       created.add(record.id);
       return true;
     },
-    checkpoint: async (_storeId, checkToken, next, complete) => {
+    checkpoint: async (_storeId, checkToken, next, outcome) => {
       assert.equal(checkToken,String(token));
       cursor = next;
-      status = complete ? 'complete' : 'running';
+      status = outcome;
       inspections.push(next);
     },
   };
@@ -97,7 +101,11 @@ test('bounded run refuses incomplete financial reporting',async()=>{
  await assert.rejects(executeSharedFinanceRecovery('tenant-a',f.port),/STORE_FINANCE_RECOVERY_CONTINUATION_REQUIRED/);
  assert.equal(f.created.size,500);
  assert.equal(f.inspections.length,5);
- assert.equal(f.getStatus(),'running');
+ assert.equal(f.getStatus(),'pending');
+ // Next authorized GET resumes from the committed cursor, not from zero.
+ assert.equal(await executeSharedFinanceRecovery('tenant-a',f.port),1);
+ assert.equal(f.created.size,501);
+ assert.equal(f.getStatus(),'complete');
 });
 
 test('recovery failure is not swallowed or mislabeled as existing capture',async()=>{

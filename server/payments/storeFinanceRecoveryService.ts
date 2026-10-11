@@ -35,7 +35,7 @@ export type FinanceRecoveryPort = {
   acquire(storeId: string): Promise<FinanceRecoveryLease>;
   list(storeId: string, afterId: string, pageSize: number): Promise<PaidFinanceSnapshot[]>;
   createCapture(storeId: string, payment: CanonicalPayment): Promise<boolean>;
-  checkpoint(storeId: string, token: string, cursor: string, completed: boolean): Promise<void>;
+  checkpoint(storeId: string, token: string, cursor: string, outcome: 'running' | 'pending' | 'complete'): Promise<void>;
 };
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -115,7 +115,7 @@ const firestoreRecoveryPort: FinanceRecoveryPort = {
       throw error;
     }
   },
-  checkpoint: async (storeId, token, cursor, completed) => {
+  checkpoint: async (storeId, token, cursor, outcome) => {
     const ref = coordinator(storeId);
     await adminDb.runTransaction(async transaction => {
       const snap = await transaction.get(ref);
@@ -126,9 +126,9 @@ const firestoreRecoveryPort: FinanceRecoveryPort = {
       }
       const now = Date.now();
       transaction.update(ref, {
-        cursor, status: completed ? 'complete' : 'running',
-        leaseUntilMs: completed ? 0 : now + FINANCE_RECOVERY_LEASE_MS,
-        completedAtMs: completed ? now : 0,
+        cursor, status: outcome,
+        leaseUntilMs: outcome === 'running' ? now + FINANCE_RECOVERY_LEASE_MS : 0,
+        completedAtMs: outcome === 'complete' ? now : 0,
         updatedAt: FieldValue.serverTimestamp(),
       });
     });
@@ -178,11 +178,16 @@ export const executeSharedFinanceRecovery = async (
     }
     cursor = lastId;
     const completed = snapshots.length < FINANCE_RECOVERY_BATCH_SIZE;
-    await port.checkpoint(storeId, lease.token, cursor, completed);
+    const budgetExhausted = page === FINANCE_RECOVERY_MAX_BATCHES_PER_CALL - 1;
+    await port.checkpoint(
+      storeId, lease.token, cursor,
+      completed ? 'complete' : budgetExhausted ? 'pending' : 'running'
+    );
     if (completed) return recoveredCount;
   }
-  // Work is deliberately bounded. Keep progress; a new authorized request can
-  // resume after lease expiry without replaying financial writes.
+  // Work is deliberately bounded. Release ownership as "pending" while
+  // preserving the committed cursor, so next authorized read can resume
+  // immediately rather than being blocked by an expired-lease timer.
   throw new Error('STORE_FINANCE_RECOVERY_CONTINUATION_REQUIRED');
 };
 
