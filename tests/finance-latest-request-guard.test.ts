@@ -53,7 +53,26 @@ test('ledger pagination and reconciliation evidence are gated independently', ()
   assert.match(source, /if \(!evidenceGuard\.current\.isCurrent\(evidenceGeneration\)\) return/);
   assert.match(source, /if \(append\) setLoadingMore\(false\)/);
   assert.match(source, /reconciliationRequestedRef\.current\.clear\(\)/);
+  assert.match(source, /evidenceByPaymentVersion\.current\.clear\(\)/);
+  assert.match(source, /evidenceByPaymentVersion\.current\.set\(paymentId, paymentVersion\)/);
+  assert.match(source, /if \(!currentPayment\(\)\) return/);
   assert.match(source, /\.\.\.\(append && cursor \? \{ cursor \} : \{\}\)/);
+});
+
+test('explicit reconciliation always outranks an earlier automatic read of the same payment', () => {
+  const guard = createFinanceRequestGuard();
+  const version = new Map<string, number>();
+  const generation = guard.begin();
+  const capturedAutoVersion = version.get('payment-a') ?? 0;
+  const manualVersion = capturedAutoVersion + 1;
+  version.set('payment-a', manualVersion);
+  // The late auto GET must be discarded although its filter is unchanged.
+  const canApplyAuto = guard.isCurrent(generation)
+    && (version.get('payment-a') ?? 0) === capturedAutoVersion;
+  const canApplyManual = guard.isCurrent(generation)
+    && version.get('payment-a') === manualVersion;
+  assert.equal(canApplyAuto, false);
+  assert.equal(canApplyManual, true);
 });
 
 test('per-store isolation and backend finance contracts stay unchanged', () => {
