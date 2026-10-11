@@ -5,6 +5,7 @@ import StoreFinanceHistoryWorkspace from './store/StoreFinanceHistoryWorkspace';
 import StoreFinancePeriodRuntime from './store/StoreFinancePeriodRuntime';
 import StoreMercadoPagoPeriodSummaryWorkspace from './store/StoreMercadoPagoPeriodSummaryWorkspace';
 import StoreResultsMarginsWorkspace from './store/StoreResultsMarginsWorkspace';
+import { financeMonthFromDate, financeMonthLabel, previousFinanceMonth, validFinanceMonth } from '../utils/storeFinanceCompetence';
 
 // One route, four views: do not mount independent financial ledgers at once.
 // Switching tabs only changes presentation; source collections and APIs remain unchanged.
@@ -19,6 +20,9 @@ export type StoreFinanceTab = (typeof STORE_FINANCE_TABS)[number]['id'];
 
 function FinanceTabsForStore({ storeId }: { storeId: string }) {
   const [activeTab, setActiveTab] = useState<StoreFinanceTab>('overview');
+  const [period, setPeriod] = useState(() => financeMonthFromDate(new Date()));
+  const currentMonth = financeMonthFromDate(new Date());
+  const monthlyScope = activeTab === 'overview' || activeTab === 'payments';
 
   const handleTabKeys = (event: KeyboardEvent<HTMLButtonElement>, index: number) => {
     const last = STORE_FINANCE_TABS.length - 1;
@@ -68,6 +72,41 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
             );
           })}
         </div>
+        {monthlyScope ? (
+          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3"
+            data-kyrub-finance-shared-competence={period}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label htmlFor="kyrub-finance-competence" className="text-[10px] font-bold text-slate-300">
+                Competência mensal compartilhada
+              </label>
+              <div className="flex flex-wrap items-center gap-2">
+                <button type="button" onClick={() => setPeriod(previousFinanceMonth(currentMonth))}
+                  className="min-h-9 rounded-lg border border-slate-700 px-2 text-[9px] text-slate-300">
+                  Mês anterior
+                </button>
+                <button type="button" onClick={() => setPeriod(currentMonth)}
+                  className="min-h-9 rounded-lg border border-slate-700 px-2 text-[9px] text-slate-300">
+                  Mês atual
+                </button>
+                <input id="kyrub-finance-competence" type="month" value={period}
+                  onChange={event => { if (validFinanceMonth(event.target.value)) setPeriod(event.target.value); }}
+                  className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] text-white" />
+              </div>
+            </div>
+            <p className="mt-2 text-[9px] text-slate-400">
+              Mês selecionado: <strong className="capitalize text-white">{financeMonthLabel(period)}</strong>.
+              A Visão geral e a conciliação Mercado Pago usam esta competência.
+              O Histórico pode alternar explicitamente para todos os períodos.
+              Os totais acumulados do livro econômico continuam históricos, não mensais.
+            </p>
+          </div>
+        ) : (
+          <p className="mt-3 text-[9px] text-slate-400" data-kyrub-finance-independent-scope="true">
+            {activeTab === 'margins'
+              ? 'Resultados & Margens: panorama próprio, sem filtro mensal compartilhado. Consulte a data de cada pedido.'
+              : 'Caixa operacional: sessões e declarações de dispositivos, sem integração aos totais mensais.'}
+          </p>
+        )}
       </header>
 
       <div
@@ -78,12 +117,12 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
         className="min-w-0 max-w-full space-y-4"
       >
         {activeTab === 'overview' && (
-          <StoreFinancePeriodRuntime storeId={storeId} />
+          <StoreFinancePeriodRuntime storeId={storeId} period={period} />
         )}
         {activeTab === 'payments' && (
           <>
-            <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} />
-            <StoreFinanceHistoryWorkspace storeId={storeId} />
+            <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} period={period} />
+            <StoreFinanceHistoryWorkspace storeId={storeId} period={period} />
             <StoreFinanceRuntime storeId={storeId} surface="payments" />
           </>
         )}

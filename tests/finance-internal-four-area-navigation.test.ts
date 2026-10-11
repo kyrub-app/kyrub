@@ -41,7 +41,7 @@ test('Cash ledger and device declarations share one tab, never payment totals', 
 
 test('full ledger totals remain distinct from the 100-item auxiliary fiscal window', () => {
   assert.match(finance, /data-kyrub-finance-recent-window="collapsed"/);
-  assert.match(finance, /Indicadores completos do livro econômico/);
+  assert.match(finance, /Indicadores históricos completos do livro econômico/);
   assert.match(finance, /summaryScope === 'all-time-economic-ledger'/);
   assert.match(finance, /data-kyrub-finance-fiscal-recent="collapsed"/);
   assert.match(finance, /HistoricalFiscalSaleWorkspace/);

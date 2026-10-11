@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { auth } from '../../utils/firebase';
 
 type StorePayableCategory =
@@ -35,7 +35,6 @@ type PeriodReport = {
 
 type PeriodPayload = { storeId?: string; recoveredCount?: number; report?: PeriodReport; error?: string };
 const money = (minor: number): string => new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(minor / 100);
-const previousMonth = (period: string): string => { const [year, month] = period.split('-').map(Number); return new Date(Date.UTC(year, month - 2, 1)).toISOString().slice(0, 7); };
 const monthLabel = (period: string): string => { const [year, month] = period.split('-').map(Number); return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1))); };
 const payableCategoryLabel = (category: StorePayableCategory): string => ({ supplier: 'Fornecedor', inventory: 'Estoque / insumos', rent: 'Aluguel', utilities: 'Água, luz e básicos', tax: 'Impostos e taxas', service: 'Serviços', payroll: 'Folha / remuneração', other: 'Outros' }[category]);
 
@@ -53,9 +52,7 @@ async function fetchPeriod(storeId: string, period: string): Promise<PeriodPaylo
   return payload;
 }
 
-export default function StoreFinancePeriodRuntime({ storeId }: { storeId: string }) {
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
-  const [period, setPeriod] = useState(currentMonth);
+export default function StoreFinancePeriodRuntime({ storeId, period }: { storeId: string; period: string }) {
   const [report, setReport] = useState<PeriodReport | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -70,7 +67,7 @@ export default function StoreFinancePeriodRuntime({ storeId }: { storeId: string
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-indigo-500/20 bg-slate-900 p-5 text-white" data-kyrub-finance-period-view="complete-paged-scan">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-indigo-300">Visão por período</span><h4 className="mt-1 text-xs font-black uppercase">Fluxo financeiro e resultado observado</h4><p className="mt-2 max-w-3xl text-[9px] leading-relaxed text-slate-400">A competência é apurada no servidor percorrendo todos os lotes do período. Ela não depende mais dos primeiros 100 lançamentos do Financeiro. Nenhum valor ausente é estimado.</p></div><div className="flex shrink-0 flex-wrap items-center gap-2"><button type="button" onClick={() => setPeriod(previousMonth(currentMonth))} className="min-h-9 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400">Mês anterior</button><button type="button" onClick={() => setPeriod(currentMonth)} className="min-h-9 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 text-[8px] font-black uppercase text-indigo-100">Mês atual</button><input type="month" value={period} onChange={event => setPeriod(event.target.value || currentMonth)} className="min-h-9 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-indigo-400" /></div></div>
+      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-indigo-300">Visão por período</span><h4 className="mt-1 text-xs font-black uppercase">Fluxo financeiro e resultado observado</h4><p className="mt-2 max-w-3xl text-[9px] leading-relaxed text-slate-400">A competência é apurada no servidor percorrendo todos os lotes do período. Ela não depende mais dos primeiros 100 lançamentos do Financeiro. Nenhum valor ausente é estimado.</p></div><div className="shrink-0 rounded-xl border border-indigo-500/25 px-3 py-2 text-[9px] text-indigo-100">Competência sincronizada</div></div>
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[9px] text-slate-400">Competência selecionada: <strong className="capitalize text-white">{monthLabel(period)}</strong></div>
       {recoveredCount > 0 && <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-[9px] text-cyan-100">{recoveredCount} pagamento(s) histórico(s) pago(s) foram reconciliados antes da apuração, usando IDs determinísticos para não duplicar receita.</p>}
       {loading ? <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Apurando todos os lotes da competência…</p> : error ? <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-[9px] text-rose-200">{error}<button type="button" onClick={() => void load()} className="ml-3 rounded-lg border border-rose-400/30 px-3 py-1.5 text-[8px] font-black uppercase">Tentar novamente</button></div> : report ? <>

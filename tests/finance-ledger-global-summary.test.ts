@@ -60,6 +60,7 @@ test('store-finance GET uses a full paged summary, and fiscal list remains a sam
  assert.match(service,/\.orderBy\(FieldPath.documentId\(\)\)/);
  assert.match(service,/snapshot\.docs\.map\(document =>/);
  assert.match(client,/summaryScope === 'all-time-economic-ledger'/);
- assert.match(client,/sem limite de 100/);
+ assert.match(client,/Indicadores históricos completos do livro econômico/);
+ assert.match(client,/independentes da competência mensal/);
  assert.match(client,/data-kyrub-finance-fiscal-recent="collapsed"/);
 });

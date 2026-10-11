@@ -238,7 +238,7 @@ export function StoreFinanceRuntime({
 
       <details className="rounded-2xl border border-slate-800 bg-slate-900 p-4" data-kyrub-finance-recent-window="collapsed">
         <summary className="cursor-pointer text-[10px] font-bold text-slate-200">
-          Indicadores completos do livro econômico (todos os períodos, sem limite de 100)
+          Indicadores históricos completos do livro econômico (todos os períodos; independentes da competência mensal)
         </summary>
         <p className="mt-2 text-[9px] text-slate-400">
           O histórico fiscal abaixo continua limitado a 100 registros, mas estes indicadores

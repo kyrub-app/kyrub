@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { auth } from '../../utils/firebase';
 
 type ProviderPeriodSummary = {
@@ -64,9 +64,7 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   return payload.summary;
 }
 
-export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { storeId: string }) {
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
-  const [period, setPeriod] = useState(currentMonth);
+export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period }: { storeId: string; period: string }) {
   const [summary, setSummary] = useState<ProviderPeriodSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -102,12 +100,9 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
             Mostra somente evidências já registradas pelo provedor: taxas, líquido recebido e liberação. Campos sem evidência permanecem incompletos em vez de receber estimativas.
           </p>
         </div>
-        <input
-          type="month"
-          value={period}
-          onChange={event => setPeriod(event.target.value || currentMonth)}
-          className="min-h-9 shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-sky-400"
-        />
+        <span className="shrink-0 rounded-xl border border-sky-500/25 px-3 py-2 text-[9px] text-sky-100">
+          Competência sincronizada
+        </span>
       </div>
 
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[9px] text-slate-400">
