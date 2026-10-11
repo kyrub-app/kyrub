@@ -114,6 +114,8 @@ describe('Mercado Pago authoritative receivables reconciliation', () => {
     assert.match(period, /ledgerProviderFeesMinor/);
     assert.match(period, /authoritativeProviderFeesMinor/);
     assert.match(period, /providerFeeEvidenceAvailable/);
-    assert.match(period, /balanced: complete && grossDivergenceCount === 0/);
+    assert.match(period, /balanced: complete && grossDivergenceCount === 0 && feeDivergenceCount === 0/);
+    assert.match(period, /providerFeeValuesDisagree/);
+    assert.match(period, /ledgerScanComplete: true/);
   });
 });
