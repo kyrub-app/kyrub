@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { createFinanceLatestRequest } from '../../utils/financeLatestRequest';
 import { auth } from '../../utils/firebase';
 
 type ProviderPeriodSummary = {
@@ -36,7 +37,7 @@ const monthLabel = (period: string): string => {
   }).format(date);
 };
 
-async function fetchProviderPeriod(storeId: string, period: string): Promise<ProviderPeriodSummary> {
+async function fetchProviderPeriod(storeId: string, period: string, signal: AbortSignal): Promise<ProviderPeriodSummary> {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
@@ -49,6 +50,7 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   });
   const response = await fetch(`/api/health?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
+    signal,
   });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('application/json')) {
@@ -58,7 +60,7 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   if (!response.ok) {
     throw new Error(payload.error || 'Não foi possível consolidar a conciliação do Mercado Pago.');
   }
-  if (!payload.summary?.complete) {
+  if (!payload.summary?.complete || payload.summary.period !== period) {
     throw new Error('A conciliação mensal do Mercado Pago não foi concluída.');
   }
   return payload.summary;
@@ -68,21 +70,37 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
   const [summary, setSummary] = useState<ProviderPeriodSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [loadedScope, setLoadedScope] = useState('');
+  const requestGate = useRef(createFinanceLatestRequest());
+  const scope = `${storeId}:${period}`;
+  const scopeReady = loadedScope === scope;
 
   const load = useCallback(async () => {
+    const ticket = requestGate.current.begin();
     setLoading(true);
     setError('');
+    setSummary(null);
+    setLoadedScope('');
     try {
-      setSummary(await fetchProviderPeriod(storeId, period));
+      const result = await fetchProviderPeriod(storeId, period, ticket.signal);
+      if (!requestGate.current.isCurrent(ticket)) return;
+      setSummary(result);
     } catch (caught) {
+      if (!requestGate.current.isCurrent(ticket)) return;
       setSummary(null);
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a conciliação do Mercado Pago.');
     } finally {
-      setLoading(false);
+      if (requestGate.current.isCurrent(ticket)) {
+        setLoadedScope(scope);
+        setLoading(false);
+      }
     }
-  }, [storeId, period]);
+  }, [storeId, period, scope]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => requestGate.current.invalidate();
+  }, [load]);
 
   const knownProviderFeesMinor = summary
     ? summary.ledgerProviderFeesMinor + summary.reconciliationFallbackFeesMinor
@@ -109,7 +127,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
         Competência: <strong className="capitalize text-white">{monthLabel(period)}</strong>
       </div>
 
-      {loading ? (
+      {(loading || !scopeReady) ? (
         <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Consolidando evidências do Mercado Pago…</p>
       ) : error ? (
         <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-[9px] text-rose-200">
@@ -124,7 +142,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
+            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas MP evidenciadas</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
             <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido explícito</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount} pagamento(s)</span></article>
           </div>
 
@@ -142,7 +160,8 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
               <h5 className="text-[10px] font-black uppercase text-slate-200">Como interpretar</h5>
               <p className="mt-3">“Líquido explícito” é a soma apenas dos pagamentos em que o próprio Mercado Pago informou <code className="text-sky-200">net_received_amount</code>. Se a cobertura não for total, esse valor não representa o líquido completo do mês.</p>
-              <p className="mt-2">As taxas conhecidas combinam a evidência já registrada no ledger com a conciliação do provedor somente quando o ledger ainda não tinha aquela taxa, evitando dupla contagem.</p>
+              <p className="mt-2">As taxas MP evidenciadas combinam a taxa presente no livro econômico com a conciliação apenas quando o livro ainda não tinha essa evidência. Já “taxas PSP conhecidas” na Visão geral abrangem todos os provedores do mês. Portanto, os totais não são necessariamente iguais.</p>
+              <p className="mt-2">O líquido explícito do Mercado Pago é evidência de pagamentos específicos, não o saldo bancário recebido nem o líquido observado de todas as vendas. Sem cobertura completa, não representa o total do mês.</p>
             </article>
           </div>
 
