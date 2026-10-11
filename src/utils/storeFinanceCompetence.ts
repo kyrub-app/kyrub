@@ -1,5 +1,5 @@
 /**
- * Shared finance competence is a UTC calendar-month key, not an assertion
+ * Shared finance competence is a browser-local calendar-month key, not an assertion
  * that all financial surfaces have identical denominators.
  */
 export const financeMonthFromDate = (date: Date): string => {
@@ -9,7 +9,7 @@ export const financeMonthFromDate = (date: Date): string => {
 };
 
 export const validFinanceMonth = (value: string): boolean =>
-  /^(20\\d{2}|21\\d{2})-(0[1-9]|1[0-2])$/.test(value);
+  /^(20\d{2}|21\d{2})-(0[1-9]|1[0-2])$/.test(value);
 
 export const previousFinanceMonth = (period: string): string => {
   if (!validFinanceMonth(period)) throw new Error('FINANCE_PERIOD_INVALID');
