@@ -34,6 +34,9 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
   const effectivePeriod = allPeriods ? '' : period;
   const historyGuard = useRef(createFinanceRequestGuard());
   const evidenceGuard = useRef(createFinanceRequestGuard());
+  // A user-triggered reconciliation must win over a slower automatic read
+  // of the same payment, even within the same selected competence.
+  const evidenceByPaymentVersion = useRef(new Map<string, number>());
   const [kind, setKind] = useState<LedgerKind | 'all'>('all'); const [paymentMethod, setPaymentMethod] = useState<PaymentMethod | 'all'>('all'); const [items, setItems] = useState<HistoryItem[]>([]); const [cursor, setCursor] = useState(''); const [hasMore, setHasMore] = useState(false); const [loading, setLoading] = useState(true); const [loadingMore, setLoadingMore] = useState(false); const [error, setError] = useState(''); const [recoveredCount, setRecoveredCount] = useState(0); const [reconciliations, setReconciliations] = useState<Record<string, ProviderReconciliation | null>>({}); const [reconciliationErrors, setReconciliationErrors] = useState<Record<string, string>>({}); const [reconcilingPaymentId, setReconcilingPaymentId] = useState(''); const reconciliationRequestedRef = useRef(new Set<string>());
   const filterScope = JSON.stringify([storeId, effectivePeriod, kind, paymentMethod]);
   const [loadedScope, setLoadedScope] = useState('');
@@ -78,6 +81,7 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
     setHasMore(false);
     setRecoveredCount(0);
     reconciliationRequestedRef.current.clear();
+    evidenceByPaymentVersion.current.clear();
     setReconciliations({});
     setReconciliationErrors({});
     setReconcilingPaymentId('');
@@ -100,9 +104,11 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
     );
     for (const item of candidates) {
       reconciliationRequestedRef.current.add(item.paymentId);
+      const paymentVersion = evidenceByPaymentVersion.current.get(item.paymentId) ?? 0;
       void fetchProviderReconciliation({ storeId, paymentId: item.paymentId, refresh: false })
         .then(reconciliation => {
           if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+          if ((evidenceByPaymentVersion.current.get(item.paymentId) ?? 0) !== paymentVersion) return;
           setReconciliations(current => ({ ...current, [item.paymentId]: reconciliation }));
         }).catch(() => undefined);
     }
@@ -110,20 +116,24 @@ export default function StoreFinanceHistoryWorkspace({ storeId, period }: { stor
   const activeFilterCount = useMemo(() => Number(Boolean(effectivePeriod)) + Number(kind !== 'all') + Number(paymentMethod !== 'all'), [effectivePeriod, kind, paymentMethod]);
   const reconcile = useCallback(async (paymentId: string) => {
     const evidenceGeneration = evidenceGuard.current.snapshot();
+    const paymentVersion = (evidenceByPaymentVersion.current.get(paymentId) ?? 0) + 1;
+    evidenceByPaymentVersion.current.set(paymentId, paymentVersion);
+    const currentPayment = () => evidenceGuard.current.isCurrent(evidenceGeneration)
+      && evidenceByPaymentVersion.current.get(paymentId) === paymentVersion;
     setReconcilingPaymentId(paymentId);
     setReconciliationErrors(current => ({ ...current, [paymentId]: '' }));
     try {
       const reconciliation = await fetchProviderReconciliation({ storeId, paymentId, refresh: true });
-      if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+      if (!currentPayment()) return;
       setReconciliations(current => ({ ...current, [paymentId]: reconciliation }));
     } catch (caught) {
-      if (!evidenceGuard.current.isCurrent(evidenceGeneration)) return;
+      if (!currentPayment()) return;
       setReconciliationErrors(current => ({
         ...current,
         [paymentId]: caught instanceof Error ? caught.message : 'Não foi possível reconciliar o Mercado Pago.',
       }));
     } finally {
-      if (evidenceGuard.current.isCurrent(evidenceGeneration)) setReconcilingPaymentId('');
+      if (currentPayment()) setReconcilingPaymentId('');
     }
   }, [storeId]);
 
