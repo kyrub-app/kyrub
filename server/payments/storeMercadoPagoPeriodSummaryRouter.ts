@@ -3,6 +3,10 @@ import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { providerFeeValuesDisagree } from '../../shared/financeProviderEvidenceCoverage.js';
+import {
+  classifyMercadoPagoPaymentReviewIssues,
+  type MercadoPagoPaymentReviewIssue,
+} from '../../shared/financeProviderPaymentReview.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
   STORE_ECONOMIC_LEDGER_SCHEMA_VERSION,
@@ -11,10 +15,13 @@ import {
 import {
   normalizeStoreProviderPaymentReconciliation,
   storeProviderPaymentReconciliationPath,
+  type StoreProviderPaymentReconciliation,
 } from '../../shared/storeProviderPaymentReconciliation.js';
 
 const SCAN_BATCH = 250;
 const RECONCILIATION_GET_BATCH = 200;
+// Bound identifying data in the monthly summary; counts always cover the entire scan.
+const REVIEW_ITEM_LIMIT = 25;
 
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
@@ -137,6 +144,18 @@ const listMercadoPagoCaptures = async (
   return Array.from(byPaymentId.values());
 };
 
+type MercadoPagoReviewItem = {
+  paymentId: string;
+  orderId: string;
+  providerPaymentId: string;
+  canonicalGrossMinor: number;
+  providerGrossMinor: number | null;
+  ledgerProviderFeeMinor: number | null;
+  providerFeeMinor: number | null;
+  netReceivedMinor: number | null;
+  issues: MercadoPagoPaymentReviewIssue[];
+};
+
 const summarizePeriod = async (
   storeId: string,
   period: { period: string; startIso: string; endExclusiveIso: string }
@@ -157,6 +176,34 @@ const summarizePeriod = async (
   let releaseEvidenceCount = 0;
   let grossDivergenceCount = 0;
   let feeDivergenceCount = 0;
+  const reviewItems: MercadoPagoReviewItem[] = [];
+  let reviewIssueCount = 0;
+  const recordReview = (
+    capture: MercadoPagoCapture,
+    reconciliation: StoreProviderPaymentReconciliation | null,
+    overrideIssues?: MercadoPagoPaymentReviewIssue[]
+  ): void => {
+    const issues = overrideIssues ?? classifyMercadoPagoPaymentReviewIssues({
+      canonicalGrossMinor: capture.canonicalGrossMinor,
+      ledgerProviderFeeMinor: capture.ledgerProviderFeeMinor,
+      provider: reconciliation,
+    });
+    if (issues.length === 0) return;
+    reviewIssueCount += 1;
+    if (reviewItems.length >= REVIEW_ITEM_LIMIT) return;
+    reviewItems.push({
+      paymentId: capture.paymentId,
+      orderId: capture.orderId,
+      providerPaymentId: capture.providerPaymentId,
+      canonicalGrossMinor: capture.canonicalGrossMinor,
+      providerGrossMinor: reconciliation?.grossMinor ?? null,
+      ledgerProviderFeeMinor: capture.ledgerProviderFeeMinor,
+      providerFeeMinor: reconciliation?.providerFeeEvidenceAvailable
+        ? reconciliation.providerFeeMinor : null,
+      netReceivedMinor: reconciliation?.netReceivedMinor ?? null,
+      issues,
+    });
+  };
 
   for (let offset = 0; offset < captures.length; offset += RECONCILIATION_GET_BATCH) {
     const slice = captures.slice(offset, offset + RECONCILIATION_GET_BATCH);
@@ -175,7 +222,10 @@ const summarizePeriod = async (
       }
 
       const snapshot = snapshots[index];
-      if (!snapshot?.exists) return;
+      if (!snapshot?.exists) {
+        recordReview(capture, null);
+        return;
+      }
       try {
         const reconciliation = normalizeStoreProviderPaymentReconciliation(snapshot.data());
         if (
@@ -183,8 +233,12 @@ const summarizePeriod = async (
           || reconciliation.paymentId !== capture.paymentId
           || reconciliation.orderId !== capture.orderId
           || reconciliation.providerPaymentId !== capture.providerPaymentId
-        ) return;
+        ) {
+          recordReview(capture, null, ['invalid_reconciliation']);
+          return;
+        }
 
+        recordReview(capture, reconciliation);
         reconciledPaymentCount += 1;
         if (reconciliation.grossMinor !== capture.canonicalGrossMinor) {
           grossDivergenceCount += 1;
@@ -221,6 +275,7 @@ const summarizePeriod = async (
           releaseEvidenceCount += 1;
         }
       } catch (error) {
+        recordReview(capture, null, ['invalid_reconciliation']);
         console.warn('[Store Mercado Pago period] Invalid reconciliation skipped.', {
           storeId,
           paymentId: capture.paymentId,
@@ -261,6 +316,9 @@ const summarizePeriod = async (
     missingReleaseEvidenceCount: Math.max(0, paymentCount - releaseEvidenceCount),
     grossDivergenceCount,
     feeDivergenceCount,
+    reviewIssueCount,
+    reviewItems,
+    reviewItemsOmittedCount: Math.max(0, reviewIssueCount - reviewItems.length),
     hasDivergences: grossDivergenceCount > 0 || feeDivergenceCount > 0,
     // True only after the entire monthly ledger cursor scan and related
     // reconciliation reads succeed; independent of missing provider evidence.

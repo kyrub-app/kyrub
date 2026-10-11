@@ -2,6 +2,24 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
 import { createFinanceRequestGuard } from '../../utils/financeLatestRequestGuard';
 
+type MercadoPagoReviewIssue =
+  | 'missing_reconciliation' | 'invalid_reconciliation'
+  | 'gross_divergence' | 'fee_divergence'
+  | 'missing_provider_fee' | 'missing_net_amount'
+  | 'missing_refund_information' | 'missing_release_information';
+
+type MercadoPagoReviewItem = {
+  paymentId: string;
+  orderId: string;
+  providerPaymentId: string;
+  canonicalGrossMinor: number;
+  providerGrossMinor: number | null;
+  ledgerProviderFeeMinor: number | null;
+  providerFeeMinor: number | null;
+  netReceivedMinor: number | null;
+  issues: MercadoPagoReviewIssue[];
+};
+
 type ProviderPeriodSummary = {
   period: string;
   provider: 'mercado-pago';
@@ -23,6 +41,9 @@ type ProviderPeriodSummary = {
   hasDivergences: boolean;
   grossDivergenceCount: number;
   feeDivergenceCount: number;
+  reviewIssueCount?: number;
+  reviewItems?: MercadoPagoReviewItem[];
+  reviewItemsOmittedCount?: number;
 };
 
 type ProviderPeriodPayload = {
@@ -33,6 +54,20 @@ type ProviderPeriodPayload = {
 
 const money = (minor: number): string =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(minor / 100);
+
+const knownMoney = (minor: number | null): string =>
+  minor === null ? 'Sem evidência' : money(minor);
+
+const reviewIssueLabel: Record<MercadoPagoReviewIssue, string> = {
+  missing_reconciliation: 'Sem conciliação do provedor',
+  invalid_reconciliation: 'Conciliação incompatível ou inválida',
+  gross_divergence: 'Valor bruto divergente',
+  fee_divergence: 'Taxa divergente',
+  missing_provider_fee: 'Taxa sem evidência oficial',
+  missing_net_amount: 'Líquido não informado',
+  missing_refund_information: 'Situação de estorno não informada',
+  missing_release_information: 'Liberação não informada',
+};
 
 const monthLabel = (period: string): string => {
   const [year, month] = period.split('-').map(Number);
@@ -182,6 +217,47 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
               e {summary.feeDivergenceCount} pagamento(s) com taxa diferente entre o livro econômico e a conciliação do Mercado Pago.
               Nenhum valor foi corrigido automaticamente. Consulte a venda no Histórico financeiro para conferir a origem.
             </p>
+          )}
+          {(summary.reviewIssueCount ?? 0) > 0 && (
+            <details className="mt-4 min-w-0 overflow-hidden rounded-2xl border border-amber-500/20 bg-slate-950 p-4"
+              data-kyrub-mp-payment-review="true">
+              <summary className="cursor-pointer text-[10px] font-black text-amber-100">
+                Ver pagamentos para conferência ({summary.reviewIssueCount})
+              </summary>
+              <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
+                Itens localizados na competência selecionada. Os valores do livro e do Mercado Pago
+                permanecem identificados por fonte. Nenhum valor é modificado nesta consulta.
+                Para atualizar evidências, localize o pedido no Histórico financeiro e use a conciliação existente.
+              </p>
+              <div className="mt-3 space-y-3">
+                {(summary.reviewItems ?? []).map(item => (
+                  <article key={item.paymentId} className="min-w-0 rounded-xl border border-slate-800 p-3 text-[9px] text-slate-300">
+                    <strong className="block break-all text-white">Pedido {item.orderId}</strong>
+                    <p className="mt-1 break-all text-slate-500">Pagamento {item.paymentId} · MP {item.providerPaymentId}</p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {item.issues.map(issue => (
+                        <span key={issue} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8px] text-amber-100">
+                          {reviewIssueLabel[issue] ?? issue}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
+                      <p>Bruto no livro: <b className="text-white">{money(item.canonicalGrossMinor)}</b></p>
+                      <p>Bruto MP: <b className="text-white">{knownMoney(item.providerGrossMinor)}</b></p>
+                      <p>Taxa no livro: <b className="text-white">{knownMoney(item.ledgerProviderFeeMinor)}</b></p>
+                      <p>Taxa MP: <b className="text-white">{knownMoney(item.providerFeeMinor)}</b></p>
+                      <p className="sm:col-span-2">Líquido explícito MP: <b className="text-white">{knownMoney(item.netReceivedMinor)}</b></p>
+                    </div>
+                  </article>
+                ))}
+              </div>
+              {(summary.reviewItemsOmittedCount ?? 0) > 0 && (
+                <p className="mt-3 text-[9px] text-amber-100">
+                  Outros {summary.reviewItemsOmittedCount} pagamento(s) com pendências não foram listados aqui.
+                  O total acima considera o período inteiro; consulte o Histórico financeiro para os demais.
+                </p>
+              )}
+            </details>
           )}
           {!evidenceComplete && (
             <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100"
