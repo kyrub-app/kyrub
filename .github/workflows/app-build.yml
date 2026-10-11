@@ -49,6 +49,9 @@ jobs:
       - name: Validate Cash cutover write fence
         run: node --test --import tsx tests/cash-cutover-write-fence.test.ts >> build.log 2>&1
 
+      - name: Validate MP evidence coverage separate from completed ledger scan
+        run: node --test --import tsx tests/finance-mp-evidence-vs-scan.test.ts tests/mercado-pago-receivables-reconciliation.test.ts >> build.log 2>&1
+
       - name: Validate Financeiro latest-response and reconciliation request fences
         run: node --test --import tsx tests/finance-latest-request-guard.test.ts >> build.log 2>&1
 

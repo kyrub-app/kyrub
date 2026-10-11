@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { providerFeeValuesDisagree } from '../../shared/financeProviderEvidenceCoverage.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
   STORE_ECONOMIC_LEDGER_SCHEMA_VERSION,
@@ -155,6 +156,7 @@ const summarizePeriod = async (
   let providerRefundedEvidenceCount = 0;
   let releaseEvidenceCount = 0;
   let grossDivergenceCount = 0;
+  let feeDivergenceCount = 0;
 
   for (let offset = 0; offset < captures.length; offset += RECONCILIATION_GET_BATCH) {
     const slice = captures.slice(offset, offset + RECONCILIATION_GET_BATCH);
@@ -197,6 +199,14 @@ const summarizePeriod = async (
           if (capture.ledgerProviderFeeMinor === null) {
             reconciliationFallbackFeeCount += 1;
             reconciliationFallbackFeesMinor += reconciliation.providerFeeMinor;
+          } else if (providerFeeValuesDisagree(
+            capture.ledgerProviderFeeMinor,
+            reconciliation.providerFeeMinor,
+            reconciliation.providerFeeEvidenceAvailable
+          )) {
+            // Both sources explicitly know a fee but disagree. Never silently
+            // overwrite either one or count the same payment fee twice.
+            feeDivergenceCount += 1;
           }
         }
         if (reconciliation.netReceivedMinor !== null) {
@@ -250,9 +260,13 @@ const summarizePeriod = async (
     releaseDateEvidenceCount: releaseEvidenceCount,
     missingReleaseEvidenceCount: Math.max(0, paymentCount - releaseEvidenceCount),
     grossDivergenceCount,
-    hasDivergences: grossDivergenceCount > 0,
+    feeDivergenceCount,
+    hasDivergences: grossDivergenceCount > 0 || feeDivergenceCount > 0,
+    // True only after the entire monthly ledger cursor scan and related
+    // reconciliation reads succeed; independent of missing provider evidence.
+    ledgerScanComplete: true,
     complete,
-    balanced: complete && grossDivergenceCount === 0,
+    balanced: complete && grossDivergenceCount === 0 && feeDivergenceCount === 0,
   };
 };
 

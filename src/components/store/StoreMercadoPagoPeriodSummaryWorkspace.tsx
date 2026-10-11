@@ -15,7 +15,14 @@ type ProviderPeriodSummary = {
   explicitNetReceivedMinor: number;
   explicitNetReceivedCount: number;
   releaseDateEvidenceCount: number;
+  ledgerScanComplete: boolean;
+  // True only when all required provider evidence is present, not when the
+  // ledger scan itself finishes. A false value is a useful partial report.
   complete: boolean;
+  balanced: boolean;
+  hasDivergences: boolean;
+  grossDivergenceCount: number;
+  feeDivergenceCount: number;
 };
 
 type ProviderPeriodPayload = {
@@ -59,8 +66,8 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   if (!response.ok) {
     throw new Error(payload.error || 'Não foi possível consolidar a conciliação do Mercado Pago.');
   }
-  if (!payload.summary?.complete) {
-    throw new Error('A conciliação mensal do Mercado Pago não foi concluída.');
+  if (!payload.summary?.ledgerScanComplete) {
+    throw new Error('A leitura dos registros mensais não foi concluída com segurança.');
   }
   return payload.summary;
 }
@@ -99,6 +106,8 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
     : 0;
   const feeCoverageComplete = Boolean(summary && summary.paymentCount > 0 && summary.feeCoverageCount === summary.paymentCount);
   const reconciliationComplete = Boolean(summary && summary.paymentCount > 0 && summary.reconciledPaymentCount === summary.paymentCount);
+  const evidenceComplete = summary?.complete === true;
+  const hasDivergences = Boolean(summary?.hasDivergences);
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-sky-500/20 bg-slate-900 p-5 text-white" data-kyrub-mercado-pago-period-summary="provider-evidence">
@@ -130,11 +139,21 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
         <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Nenhuma venda Mercado Pago confirmada foi encontrada nesta competência.</p>
       ) : summary ? (
         <>
+          <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950 p-3 text-[9px] text-slate-300"
+            data-kyrub-mp-evidence-state={evidenceComplete ? 'complete' : 'partial'}>
+            <strong className={evidenceComplete ? 'text-emerald-200' : 'text-amber-200'}>
+              {evidenceComplete ? 'Evidência completa para os pagamentos do período' : 'Evidências parciais — leitura mensal concluída'}
+            </strong>
+            <p className="mt-1 text-slate-400">
+              A cobertura mostra quais pagamentos possuem dados oficiais do provedor.
+              Valores não informados não são estimados e os valores conhecidos não representam necessariamente o total do período.
+            </p>
+          </div>
           <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
+            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas (fontes combinadas)</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
             <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido explícito</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount} pagamento(s)</span></article>
           </div>
 
@@ -156,6 +175,21 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
             </article>
           </div>
 
+          {hasDivergences && (
+            <p className="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3 text-[9px] leading-relaxed text-rose-200"
+              data-kyrub-mp-divergence="provider-vs-ledger">
+              <strong>Divergências documentadas:</strong> {summary.grossDivergenceCount} pagamento(s) com valor bruto diferente
+              e {summary.feeDivergenceCount} pagamento(s) com taxa diferente entre o livro econômico e a conciliação do Mercado Pago.
+              Nenhum valor foi corrigido automaticamente. Consulte a venda no Histórico financeiro para conferir a origem.
+            </p>
+          )}
+          {!evidenceComplete && (
+            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100"
+              data-kyrub-mp-missing-evidence="true">
+              Há evidências de conciliação ainda ausentes: taxas, líquido, estornos ou informação de liberação.
+              O relatório foi lido integralmente, mas a conciliação do período ainda não é completa.
+            </p>
+          )}
           {!feeCoverageComplete && (
             <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">
               Ainda existem pagamentos Mercado Pago sem taxa evidenciada. O Kyrub não preencherá essa diferença por estimativa. Abra a venda correspondente no Histórico financeiro e use “Conciliar Mercado Pago” para ampliar a cobertura quando possível.
