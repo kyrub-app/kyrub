@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
+import { createFinanceRequestGuard } from '../../utils/financeLatestRequestGuard';
 
 type ProviderPeriodSummary = {
   period: string;
@@ -68,21 +69,30 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
   const [summary, setSummary] = useState<ProviderPeriodSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const requestGuard = useRef(createFinanceRequestGuard());
 
   const load = useCallback(async () => {
+    const generation = requestGuard.current.begin();
     setLoading(true);
     setError('');
     try {
-      setSummary(await fetchProviderPeriod(storeId, period));
+      const next = await fetchProviderPeriod(storeId, period);
+      if (!requestGuard.current.isCurrent(generation)) return;
+      if (next.period !== period) throw new Error('A conciliação retornou uma competência diferente da selecionada.');
+      setSummary(next);
     } catch (caught) {
+      if (!requestGuard.current.isCurrent(generation)) return;
       setSummary(null);
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a conciliação do Mercado Pago.');
     } finally {
-      setLoading(false);
+      if (requestGuard.current.isCurrent(generation)) setLoading(false);
     }
   }, [storeId, period]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => requestGuard.current.invalidate();
+  }, [load]);
 
   const knownProviderFeesMinor = summary
     ? summary.ledgerProviderFeesMinor + summary.reconciliationFallbackFeesMinor

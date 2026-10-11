@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
+import { createFinanceRequestGuard } from '../../utils/financeLatestRequestGuard';
 
 type StorePayableCategory =
   | 'supplier'
@@ -57,13 +58,34 @@ export default function StoreFinancePeriodRuntime({ storeId, period }: { storeId
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [recoveredCount, setRecoveredCount] = useState(0);
+  const requestGuard = useRef(createFinanceRequestGuard());
   const load = useCallback(async () => {
-    setLoading(true); setError('');
-    try { const payload = await fetchPeriod(storeId, period); setReport(payload.report ?? null); setRecoveredCount(payload.recoveredCount ?? 0); }
-    catch (caught) { setReport(null); setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a visão por período.'); }
-    finally { setLoading(false); }
+    const generation = requestGuard.current.begin();
+    setLoading(true);
+    setError('');
+    try {
+      const payload = await fetchPeriod(storeId, period);
+      if (!requestGuard.current.isCurrent(generation)) return;
+      // Reject a response for an unexpected store/month even if transport
+      // succeeds, keeping finance scope and tenant identity authoritative.
+      if (payload.storeId && payload.storeId !== storeId ||
+          payload.report?.period !== period) {
+        throw new Error('A resposta financeira não corresponde à competência selecionada.');
+      }
+      setReport(payload.report ?? null);
+      setRecoveredCount(payload.recoveredCount ?? 0);
+    } catch (caught) {
+      if (!requestGuard.current.isCurrent(generation)) return;
+      setReport(null);
+      setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a visão por período.');
+    } finally {
+      if (requestGuard.current.isCurrent(generation)) setLoading(false);
+    }
   }, [storeId, period]);
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    void load();
+    return () => requestGuard.current.invalidate();
+  }, [load]);
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-indigo-500/20 bg-slate-900 p-5 text-white" data-kyrub-finance-period-view="complete-paged-scan">
