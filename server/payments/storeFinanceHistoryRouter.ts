@@ -234,6 +234,7 @@ const findPaymentCapture = async (storeId: string, paymentId: string): Promise<H
     throw new Error('STORE_FINANCE_HISTORY_PAYMENT_INVALID');
   }
   const entryId = buildPaymentCaptureEconomicEntryId(paymentId);
+  if (entryId.length > 240) throw new Error('STORE_FINANCE_HISTORY_PAYMENT_INVALID');
   const snapshot = await adminDb.doc(storeEconomicLedgerEntryPath(storeId, entryId)).get();
   if (!snapshot.exists) return [];
   const entry = parseLedgerEntry(storeId, snapshot.id, snapshot.data());
