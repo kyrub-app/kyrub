@@ -107,7 +107,9 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   return payload.summary;
 }
 
-export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period }: { storeId: string; period: string }) {
+export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period, onReviewPayment }: {
+  storeId: string; period: string; onReviewPayment?: (paymentId: string) => void;
+}) {
   const [summary, setSummary] = useState<ProviderPeriodSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -232,7 +234,16 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
               <div className="mt-3 space-y-3">
                 {(summary.reviewItems ?? []).map(item => (
                   <article key={item.paymentId} className="min-w-0 rounded-xl border border-slate-800 p-3 text-[9px] text-slate-300">
-                    <strong className="block break-all text-white">Pedido {item.orderId}</strong>
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <strong className="block break-all text-white">Pedido {item.orderId}</strong>
+                      {onReviewPayment && (
+                        <button type="button" onClick={() => onReviewPayment(item.paymentId)}
+                          className="min-h-9 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 text-[9px] font-bold text-sky-100"
+                          data-kyrub-mp-review-open-history={item.paymentId}>
+                          Conferir no Histórico
+                        </button>
+                      )}
+                    </div>
                     <p className="mt-1 break-all text-slate-500">Pagamento {item.paymentId} · MP {item.providerPaymentId}</p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
                       {item.issues.map(issue => (
