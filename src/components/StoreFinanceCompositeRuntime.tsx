@@ -21,6 +21,12 @@ export type StoreFinanceTab = (typeof STORE_FINANCE_TABS)[number]['id'];
 function FinanceTabsForStore({ storeId }: { storeId: string }) {
   const [activeTab, setActiveTab] = useState<StoreFinanceTab>('overview');
   const [period, setPeriod] = useState(() => financeMonthFromDate(new Date()));
+  const [reviewPaymentId, setReviewPaymentId] = useState('');
+  const changePeriod = (nextPeriod: string) => {
+    // A focused payment never follows a different month or tenant.
+    setReviewPaymentId('');
+    setPeriod(nextPeriod);
+  };
   const currentMonth = financeMonthFromDate(new Date());
   const monthlyScope = activeTab === 'overview' || activeTab === 'payments';
 
@@ -80,16 +86,16 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
                 Competência mensal compartilhada
               </label>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => setPeriod(previousFinanceMonth(currentMonth))}
+                <button type="button" onClick={() => changePeriod(previousFinanceMonth(currentMonth))}
                   className="min-h-9 rounded-lg border border-slate-700 px-2 text-[9px] text-slate-300">
                   Mês anterior
                 </button>
-                <button type="button" onClick={() => setPeriod(currentMonth)}
+                <button type="button" onClick={() => changePeriod(currentMonth)}
                   className="min-h-9 rounded-lg border border-slate-700 px-2 text-[9px] text-slate-300">
                   Mês atual
                 </button>
                 <input id="kyrub-finance-competence" type="month" value={period}
-                  onChange={event => { if (validFinanceMonth(event.target.value)) setPeriod(event.target.value); }}
+                  onChange={event => { if (validFinanceMonth(event.target.value)) changePeriod(event.target.value); }}
                   className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] text-white" />
               </div>
             </div>
@@ -121,8 +127,10 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
         )}
         {activeTab === 'payments' && (
           <>
-            <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} period={period} />
-            <StoreFinanceHistoryWorkspace storeId={storeId} period={period} />
+            <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} period={period}
+              onReviewPayment={setReviewPaymentId} />
+            <StoreFinanceHistoryWorkspace storeId={storeId} period={period}
+              focusedPaymentId={reviewPaymentId} onClearFocusedPayment={() => setReviewPaymentId('')} />
             <StoreFinanceRuntime storeId={storeId} surface="payments" />
           </>
         )}
