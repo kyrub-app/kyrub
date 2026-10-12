@@ -45,7 +45,7 @@ test('ledger pagination and reconciliation evidence are gated independently', ()
   const source = read('src/components/store/StoreFinanceHistoryWorkspace.tsx');
   assert.match(source, /const historyGuard = useRef\(createFinanceRequestGuard\(\)\)/);
   assert.match(source, /const evidenceGuard = useRef\(createFinanceRequestGuard\(\)\)/);
-  assert.match(source, /const filterScope = JSON\.stringify\(\[storeId, effectivePeriod, kind, paymentMethod\]\)/);
+  assert.match(source, /const filterScope = JSON\.stringify\(\[storeId, effectivePeriod, kind, paymentMethod, focusedPaymentId\]\)/);
   assert.match(source, /if \(!historyGuard\.current\.isCurrent\(generation\)\) return/);
   assert.match(source, /historyGuard\.current\.invalidate\(\)/);
   assert.match(source, /evidenceGuard\.current\.invalidate\(\)/);
@@ -56,7 +56,7 @@ test('ledger pagination and reconciliation evidence are gated independently', ()
   assert.match(source, /evidenceByPaymentVersion\.current\.clear\(\)/);
   assert.match(source, /evidenceByPaymentVersion\.current\.set\(paymentId, paymentVersion\)/);
   assert.match(source, /if \(!currentPayment\(\)\) return/);
-  assert.match(source, /\.\.\.\(append && cursor \? \{ cursor \} : \{\}\)/);
+  assert.match(source, /\.\.\.\(!focusedPaymentId && append && cursor \? \{ cursor \} : \{\}\)/);
 });
 
 test('explicit reconciliation always outranks an earlier automatic read of the same payment', () => {
