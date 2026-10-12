@@ -17,6 +17,10 @@ import {
 } from '../../shared/economicObligations.js';
 import { recoverCanonicalPaidCaptures } from './storeFinanceRecoveryService.js';
 import {
+  buildPaymentCaptureEconomicEntryId,
+  storeEconomicLedgerEntryPath,
+} from '../../shared/storeEconomicLedger.js';
+import {
   normalizeStoreFinancePayable,
   type StoreFinancePayable,
   type StoreFinancePayableCategory,
@@ -55,7 +59,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code === 'STORE_FINANCE_HISTORY_PERIOD_INVALID') {
     return { status: 400, message: 'Competência financeira inválida.', code };
   }
-  if (code === 'STORE_FINANCE_HISTORY_FILTER_INVALID' || code === 'STORE_FINANCE_HISTORY_CURSOR_INVALID') {
+  if (code === 'STORE_FINANCE_HISTORY_FILTER_INVALID' || code === 'STORE_FINANCE_HISTORY_CURSOR_INVALID'
+    || code === 'STORE_FINANCE_HISTORY_PAYMENT_INVALID') {
     return { status: 400, message: 'Revise os filtros do histórico financeiro.', code };
   }
   console.error('[Store finance history]', error);
@@ -222,6 +227,20 @@ const historyLimit = (value: unknown): number => {
 type HistoryItem = { id: string; kind: StoreEconomicLedgerKind; currency: 'BRL'; amountMinor: number; paymentId: string; orderId: string; buyerId: string; paymentMethod: PaymentMethod; provider: string; providerPaymentId: string; sourceAuthority: StoreEconomicLedgerSourceAuthority; occurredAt: string; providerFeeMinor: number | null };
 const toHistoryItem = (entry: StoreEconomicLedgerEntry): HistoryItem => ({ id: entry.id, kind: entry.kind, currency: 'BRL', amountMinor: entry.amountMinor, paymentId: entry.paymentId, orderId: entry.orderId, buyerId: entry.buyerId, paymentMethod: entry.paymentMethod, provider: entry.provider, providerPaymentId: entry.providerPaymentId, sourceAuthority: entry.sourceAuthority, occurredAt: entry.occurredAt, providerFeeMinor: providerFeeMinor(entry) });
 
+// Exact immutable entry read avoids walking cursor pages to locate a review item.
+// Only the owner's canonical store ledger is accessed, and no recovery/write runs here.
+const findPaymentCapture = async (storeId: string, paymentId: string): Promise<HistoryItem[]> => {
+  if (!paymentId || paymentId.length > 240 || paymentId.includes('/') || paymentId === '.' || paymentId === '..') {
+    throw new Error('STORE_FINANCE_HISTORY_PAYMENT_INVALID');
+  }
+  const entryId = buildPaymentCaptureEconomicEntryId(paymentId);
+  const snapshot = await adminDb.doc(storeEconomicLedgerEntryPath(storeId, entryId)).get();
+  if (!snapshot.exists) return [];
+  const entry = parseLedgerEntry(storeId, snapshot.id, snapshot.data());
+  if (!entry || entry.kind !== 'payment_capture' || entry.paymentId !== paymentId) return [];
+  return [toHistoryItem(entry)];
+};
+
 const listHistoryPage = async (input: { storeId: string; period: PeriodRange | null; kind: StoreEconomicLedgerKind | ''; paymentMethod: PaymentMethod | ''; cursor: HistoryCursor | null; limit: number }) => {
   const matches: Array<{ item: HistoryItem; cursor: HistoryCursor }> = [];
   let scanCursor = input.cursor;
@@ -351,7 +370,14 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       if (!storeId) throw new Error('STORE_FINANCE_HISTORY_STORE_REQUIRED');
       await requireOwner(request.get('authorization') ?? '', storeId);
       const mode = clean(request.query.mode) || 'history';
-      if (mode !== 'history' && mode !== 'period') throw new Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
+      if (mode !== 'history' && mode !== 'period' && mode !== 'payment') throw new Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
+      if (mode === 'payment') {
+        const paymentId = clean(request.query.paymentId);
+        const items = await findPaymentCapture(storeId, paymentId);
+        response.status(200).json({ storeId, items, recoveredCount: 0,
+          mode: 'payment', nextCursor: '', hasMore: false, scannedCount: items.length });
+        return;
+      }
       const recoveredCount = await recoverCanonicalPaidCaptures(storeId);
       if (mode === 'period') {
         const period = parsePeriod(request.query.period, true);
