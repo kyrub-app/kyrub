@@ -46,7 +46,8 @@ test('full ledger totals remain distinct from the 100-item auxiliary fiscal wind
   assert.match(finance, /data-kyrub-finance-fiscal-recent="collapsed"/);
   assert.match(finance, /HistoricalFiscalSaleWorkspace/);
   assert.match(finance, /<details\s/);
-  assert.equal((finance.match(/<\/details>/g) || []).length, 2);
+  // The two established diagnostics remain, plus expandable receivables and payables.
+  assert.equal((finance.match(/<\/details>/g) || []).length, 4);
   // No financial data or payment paths were replaced during UI consolidation.
   assert.match(finance, /fetch\(`\/api\/store-finance\?storeId=/);
   assert.match(finance, /<StorePayablesWorkspace/);

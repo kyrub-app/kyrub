@@ -273,9 +273,11 @@ export default function StorePayablesWorkspace({
           Contas a pagar
         </span>
         <h4 className="mt-1 text-xs font-black uppercase">Despesas e compromissos da loja</h4>
-        <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
-          Estes registros pertencem ao financeiro canônico da loja e só são criados pelo proprietário. Recorrência e natureza do custo são independentes: uma despesa mensal pode ser fixa ou variável. O Kyrub não cria parcelas futuras escondidas automaticamente.
-        </p>
+        <details className="mt-2 text-[9px] text-slate-400">
+          <summary className="min-h-8 cursor-pointer py-1">Sobre os registros de despesas</summary>
+          Somente o proprietário cria contas manuais. Recorrência e natureza do custo são independentes;
+          o Kyrub não gera parcelas futuras automaticamente.
+        </details>
       </div>
 
       <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-4">
@@ -298,8 +300,10 @@ export default function StorePayablesWorkspace({
         </article>
       </div>
 
-      <form
-        className="mt-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4"
+      <details className="mt-4 rounded-xl border border-amber-500/20 p-3" data-kyrub-payables-create-form="collapsed">
+        <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-amber-100">+ Registrar nova conta</summary>
+        <form
+        className="mt-2 min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4"
         onSubmit={event => {
           event.preventDefault();
           void createPayable();
@@ -463,7 +467,8 @@ export default function StorePayablesWorkspace({
         >
           {saving ? 'Registrando…' : 'Registrar conta'}
         </button>
-      </form>
+        </form>
+      </details>
 
       {feedback && (
         <p className={`mt-3 rounded-xl border p-3 text-[9px] ${feedbackError

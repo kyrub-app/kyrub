@@ -69,16 +69,6 @@ const reviewIssueLabel: Record<MercadoPagoReviewIssue, string> = {
   missing_release_information: 'Liberação não informada',
 };
 
-const monthLabel = (period: string): string => {
-  const [year, month] = period.split('-').map(Number);
-  const date = new Date(Date.UTC(year, month - 1, 1));
-  return new Intl.DateTimeFormat('pt-BR', {
-    month: 'long',
-    year: 'numeric',
-    timeZone: 'UTC',
-  }).format(date);
-};
-
 async function fetchProviderPeriod(storeId: string, period: string): Promise<ProviderPeriodSummary> {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
@@ -147,95 +137,88 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
   const hasDivergences = Boolean(summary?.hasDivergences);
 
   return (
-    <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-sky-500/20 bg-slate-900 p-5 text-white" data-kyrub-mercado-pago-period-summary="provider-evidence">
-      <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-        <div className="min-w-0">
-          <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-sky-300">Mercado Pago</span>
-          <h4 className="mt-1 text-xs font-black uppercase">Conciliação real por período</h4>
-          <p className="mt-2 max-w-3xl text-[9px] leading-relaxed text-slate-400">
-            Mostra somente evidências já registradas pelo provedor: taxas, líquido recebido e liberação. Campos sem evidência permanecem incompletos em vez de receber estimativas.
-          </p>
+    <section className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-sky-500/20 bg-slate-900 p-3 text-white sm:p-5" data-kyrub-mercado-pago-period-summary="provider-evidence">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <span className="font-mono text-[9px] font-black uppercase tracking-widest text-sky-300">Mercado Pago</span>
+          <h4 className="mt-1 text-sm font-bold">Conciliação mensal</h4>
         </div>
-        <span className="shrink-0 rounded-xl border border-sky-500/25 px-3 py-2 text-[9px] text-sky-100">
-          Competência sincronizada
-        </span>
-      </div>
-
-      <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[9px] text-slate-400">
-        Competência: <strong className="capitalize text-white">{monthLabel(period)}</strong>
+        <span className="rounded-lg border border-sky-500/20 px-2 py-1 text-[9px] text-sky-100">Competência do painel</span>
       </div>
 
       {loading ? (
-        <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Consolidando evidências do Mercado Pago…</p>
+        <p className="mt-3 rounded-xl bg-slate-950 p-4 text-[10px] text-slate-400">Carregando evidências do Mercado Pago…</p>
       ) : error ? (
-        <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-[9px] text-rose-200">
+        <div className="mt-3 rounded-xl border border-rose-500/20 bg-slate-950 p-3 text-[10px] text-rose-200">
           {error}
-          <button type="button" onClick={() => void load()} className="ml-3 rounded-lg border border-rose-400/30 px-3 py-1.5 text-[8px] font-black uppercase">Tentar novamente</button>
+          <button type="button" onClick={() => void load()} className="ml-3 min-h-9 rounded-lg border border-rose-400/30 px-3">Tentar novamente</button>
         </div>
       ) : summary?.paymentCount === 0 ? (
-        <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Nenhuma venda Mercado Pago confirmada foi encontrada nesta competência.</p>
+        <p className="mt-3 rounded-xl bg-slate-950 p-3 text-[10px] text-slate-400">Nenhuma venda Mercado Pago confirmada nesta competência.</p>
       ) : summary ? (
         <>
-          <div className="mt-4 rounded-2xl border border-slate-700 bg-slate-950 p-3 text-[9px] text-slate-300"
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 p-3 text-[10px]"
             data-kyrub-mp-evidence-state={evidenceComplete ? 'complete' : 'partial'}>
             <strong className={evidenceComplete ? 'text-emerald-200' : 'text-amber-200'}>
-              {evidenceComplete ? 'Evidência completa para os pagamentos do período' : 'Evidências parciais — leitura mensal concluída'}
+              {evidenceComplete ? 'Evidências completas' : 'Conciliação com evidências pendentes'}
             </strong>
-            <p className="mt-1 text-slate-400">
-              A cobertura mostra quais pagamentos possuem dados oficiais do provedor.
-              Valores não informados não são estimados e os valores conhecidos não representam necessariamente o total do período.
-            </p>
-          </div>
-          <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
-            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas (fontes combinadas)</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
-            <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido explícito</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount} pagamento(s)</span></article>
+            <span className="text-slate-400">{summary.reviewIssueCount ?? 0} pagamento(s) para conferir</span>
           </div>
 
-          <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
-            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px]">
-              <h5 className="text-[10px] font-black uppercase text-slate-200">Cobertura da evidência</h5>
-              <div className="mt-3 space-y-2">
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa recuperada pela conciliação MP</span><b>{summary.reconciliationFallbackFeeCount}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com líquido explícito do provedor</span><b>{summary.explicitNetReceivedCount}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com data de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
-              </div>
+          <div className="mt-3 grid min-w-0 grid-cols-2 gap-2 sm:grid-cols-4" data-kyrub-mp-compact-indicators="true">
+            <article className="min-w-0 rounded-xl bg-slate-950 p-3">
+              <span className="block text-[9px] text-slate-400">Pagamentos MP</span>
+              <strong className="mt-1 block text-base">{summary.paymentCount}</strong>
             </article>
-
-            <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
-              <h5 className="text-[10px] font-black uppercase text-slate-200">Como interpretar</h5>
-              <p className="mt-3">“Líquido explícito” é a soma apenas dos pagamentos em que o próprio Mercado Pago informou <code className="text-sky-200">net_received_amount</code>. Se a cobertura não for total, esse valor não representa o líquido completo do mês.</p>
-              <p className="mt-2">As taxas conhecidas combinam a evidência já registrada no ledger com a conciliação do provedor somente quando o ledger ainda não tinha aquela taxa, evitando dupla contagem.</p>
+            <article className="min-w-0 rounded-xl bg-slate-950 p-3">
+              <span className="block text-[9px] text-slate-400">Conciliados</span>
+              <strong className={reconciliationComplete ? 'mt-1 block text-base text-emerald-200' : 'mt-1 block text-base text-amber-200'}>
+                {summary.reconciledPaymentCount}/{summary.paymentCount}
+              </strong>
+            </article>
+            <article className="min-w-0 rounded-xl bg-slate-950 p-3">
+              <span className="block text-[9px] text-slate-400">Taxas conhecidas</span>
+              <strong className="mt-1 block text-sm text-sky-100">
+                {summary.feeCoverageCount === 0 ? 'Sem evidência' : money(knownProviderFeesMinor)}
+              </strong>
+              <span className="mt-1 block text-[8px] text-slate-500">Cobertura {summary.feeCoverageCount}/{summary.paymentCount}</span>
+            </article>
+            <article className="min-w-0 rounded-xl bg-slate-950 p-3">
+              <span className="block text-[9px] text-slate-400">Líquido informado MP</span>
+              <strong className="mt-1 block text-sm text-emerald-200">
+                {summary.explicitNetReceivedCount === 0 ? 'Sem evidência' : money(summary.explicitNetReceivedMinor)}
+              </strong>
+              <span className="mt-1 block text-[8px] text-slate-500">Cobertura {summary.explicitNetReceivedCount}/{summary.paymentCount}</span>
             </article>
           </div>
+          {(summary.feeCoverageCount > 0 && !feeCoverageComplete
+            || summary.explicitNetReceivedCount > 0 && summary.explicitNetReceivedCount < summary.paymentCount) && (
+            <p className="mt-2 text-[9px] text-amber-100">Totais parciais: existem pagamentos sem evidência. Os valores conhecidos não representam o mês inteiro.</p>
+          )}
 
           {hasDivergences && (
-            <p className="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3 text-[9px] leading-relaxed text-rose-200"
+            <p className="mt-3 rounded-xl border border-rose-500/25 bg-rose-500/10 p-3 text-[10px] text-rose-200"
               data-kyrub-mp-divergence="provider-vs-ledger">
-              <strong>Divergências documentadas:</strong> {summary.grossDivergenceCount} pagamento(s) com valor bruto diferente
-              e {summary.feeDivergenceCount} pagamento(s) com taxa diferente entre o livro econômico e a conciliação do Mercado Pago.
-              Nenhum valor foi corrigido automaticamente. Consulte a venda no Histórico financeiro para conferir a origem.
+              Divergências: {summary.grossDivergenceCount} valor(es) brutos e {summary.feeDivergenceCount} taxa(s).
+              Nenhum valor foi corrigido automaticamente.
             </p>
           )}
           {(summary.reviewIssueCount ?? 0) > 0 && (
-            <details className="mt-4 min-w-0 overflow-hidden rounded-2xl border border-amber-500/20 bg-slate-950 p-4"
-              data-kyrub-mp-payment-review="true">
-              <summary className="cursor-pointer text-[10px] font-black text-amber-100">
+            <details className="mt-3 rounded-xl border border-amber-500/25 bg-slate-950 p-3" data-kyrub-mp-payment-review="true">
+              <summary className="min-h-9 cursor-pointer text-[11px] font-bold text-amber-100">
                 Ver pagamentos para conferência ({summary.reviewIssueCount})
               </summary>
-              <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
-                Itens localizados na competência selecionada. Os valores do livro e do Mercado Pago
-                permanecem identificados por fonte. Nenhum valor é modificado nesta consulta.
-                Para atualizar evidências, localize o pedido no Histórico financeiro e use a conciliação existente.
-              </p>
-              <div className="mt-3 space-y-3">
+              <p className="mt-2 text-[9px] text-slate-400">Nenhum valor é modificado nesta consulta. A conferência abre o Histórico financeiro da mesma loja.</p>
+              <div className="mt-3 space-y-2">
                 {(summary.reviewItems ?? []).map(item => (
-                  <article key={item.paymentId} className="min-w-0 rounded-xl border border-slate-800 p-3 text-[9px] text-slate-300">
+                  <article key={item.paymentId} className="min-w-0 rounded-xl border border-slate-800 bg-slate-900 p-3 text-[10px]">
                     <div className="flex flex-wrap items-start justify-between gap-2">
-                      <strong className="block break-all text-white">Pedido {item.orderId}</strong>
+                      <div className="min-w-0">
+                        <strong className="block text-white" title={item.orderId}>
+                          Pedido …{item.orderId.slice(-8)}
+                        </strong>
+                        <span className="text-[9px] text-slate-400">Bruto no livro: {money(item.canonicalGrossMinor)}</span>
+                      </div>
                       {onReviewPayment && (
                         <button type="button" onClick={() => onReviewPayment(item.paymentId)}
                           className="min-h-9 rounded-lg border border-sky-400/30 bg-sky-500/10 px-3 text-[9px] font-bold text-sky-100"
@@ -244,44 +227,57 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId, period
                         </button>
                       )}
                     </div>
-                    <p className="mt-1 break-all text-slate-500">Pagamento {item.paymentId} · MP {item.providerPaymentId}</p>
-                    <div className="mt-2 flex flex-wrap gap-1.5">
+                    <div className="mt-2 flex flex-wrap gap-1">
                       {item.issues.map(issue => (
-                        <span key={issue} className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-2 py-1 text-[8px] text-amber-100">
+                        <span key={issue} className="rounded-md border border-amber-500/20 px-2 py-1 text-[9px] text-amber-100">
                           {reviewIssueLabel[issue] ?? issue}
                         </span>
                       ))}
                     </div>
-                    <div className="mt-3 grid min-w-0 gap-2 sm:grid-cols-2">
-                      <p>Bruto no livro: <b className="text-white">{money(item.canonicalGrossMinor)}</b></p>
-                      <p>Bruto MP: <b className="text-white">{knownMoney(item.providerGrossMinor)}</b></p>
-                      <p>Taxa no livro: <b className="text-white">{knownMoney(item.ledgerProviderFeeMinor)}</b></p>
-                      <p>Taxa MP: <b className="text-white">{knownMoney(item.providerFeeMinor)}</b></p>
-                      <p className="sm:col-span-2">Líquido explícito MP: <b className="text-white">{knownMoney(item.netReceivedMinor)}</b></p>
-                    </div>
+                    <details className="mt-2 text-[9px] text-slate-400" data-kyrub-mp-item-evidence="collapsed">
+                      <summary className="min-h-8 cursor-pointer py-1">Ver valores por fonte e identificadores</summary>
+                      <div className="mt-1 space-y-1 rounded-lg bg-slate-950 p-2">
+                        <p>Bruto no livro: {money(item.canonicalGrossMinor)}</p>
+                        <p>Bruto MP: {knownMoney(item.providerGrossMinor)}</p>
+                        <p>Taxa no livro: {knownMoney(item.ledgerProviderFeeMinor)}</p>
+                        <p>Taxa MP: {knownMoney(item.providerFeeMinor)}</p>
+                        <p>Líquido explícito MP: {knownMoney(item.netReceivedMinor)}</p>
+                        <p className="break-all">Pedido: {item.orderId}</p>
+                        <p className="break-all">Pagamento: {item.paymentId}</p>
+                        <p className="break-all">ID Mercado Pago: {item.providerPaymentId}</p>
+                      </div>
+                    </details>
                   </article>
                 ))}
               </div>
               {(summary.reviewItemsOmittedCount ?? 0) > 0 && (
                 <p className="mt-3 text-[9px] text-amber-100">
-                  Outros {summary.reviewItemsOmittedCount} pagamento(s) com pendências não foram listados aqui.
-                  O total acima considera o período inteiro; consulte o Histórico financeiro para os demais.
+                  Outros {summary.reviewItemsOmittedCount} pagamento(s) com pendências não aparecem nesta lista. Consulte o Histórico financeiro completo.
                 </p>
               )}
             </details>
           )}
-          {!evidenceComplete && (
-            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100"
-              data-kyrub-mp-missing-evidence="true">
-              Há evidências de conciliação ainda ausentes: taxas, líquido, estornos ou informação de liberação.
-              O relatório foi lido integralmente, mas a conciliação do período ainda não é completa.
-            </p>
-          )}
-          {!feeCoverageComplete && (
-            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">
-              Ainda existem pagamentos Mercado Pago sem taxa evidenciada. O Kyrub não preencherá essa diferença por estimativa. Abra a venda correspondente no Histórico financeiro e use “Conciliar Mercado Pago” para ampliar a cobertura quando possível.
-            </p>
-          )}
+
+          <details className="mt-3 rounded-xl border border-slate-800 bg-slate-950 p-3 text-[10px] text-slate-400"
+            data-kyrub-mp-evidence-technical="collapsed">
+            <summary className="min-h-9 cursor-pointer font-medium text-slate-200">Cobertura da evidência e explicações</summary>
+            <div className="mt-3 space-y-2">
+              <div className="flex justify-between gap-3"><span>Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
+              <div className="flex justify-between gap-3"><span>Taxa recuperada na conciliação</span><b>{summary.reconciliationFallbackFeeCount}</b></div>
+              <div className="flex justify-between gap-3"><span>Líquido explícito do provedor</span><b>{summary.explicitNetReceivedCount}</b></div>
+              <div className="flex justify-between gap-3"><span>Liberação informada pelo provedor</span><b>{summary.releaseDateEvidenceCount}</b></div>
+              {!evidenceComplete && (
+                <p className="rounded-lg border border-amber-500/20 p-2 text-amber-100"
+                  data-kyrub-mp-missing-evidence="true">
+                  Há evidências de conciliação ainda ausentes: taxas, líquido, estornos ou liberação.
+                  O relatório mensal foi lido por completo, mas a conciliação continua parcial.
+                </p>
+              )}
+              <p>Os valores das taxas combinam dados já registrados no livro e a evidência do MP apenas quando o livro ainda não a contém, sem contar a mesma taxa duas vezes.</p>
+              <p>O líquido explícito utiliza somente valores informados pelo Mercado Pago. Isso não comprova transferência para a conta bancária.</p>
+              <p>Pagamento confirmado não significa que as taxas, o líquido ou a liberação já foram conciliados.</p>
+            </div>
+          </details>
         </>
       ) : null}
     </section>

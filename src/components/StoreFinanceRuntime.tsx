@@ -220,21 +220,15 @@ export function StoreFinanceRuntime({
 
   return (
     <section className="max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-store-finance-runtime="canonical-ledger">
-      <div className="max-w-full overflow-hidden rounded-3xl border border-emerald-500/25 bg-slate-900 p-5">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">Pagamentos e Contas</span>
-            <h3 className="mt-1 text-base font-black">Repasses e compromissos da loja</h3>
-            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">O histórico paginado acima é a lista principal de pagamentos. Esta área preserva recebíveis, contas a pagar e acesso fiscal dos registros recentes.</p>
-          </div>
-          <button type="button" onClick={() => void load(true)} className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[9px] font-black uppercase text-slate-300">Atualizar</button>
-        </div>
-        {(payload?.recoveredCount ?? 0) > 0 && (
-          <p className="mt-4 rounded-2xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-[10px] text-cyan-100">
-            {payload?.recoveredCount} pagamento(s) antigo(s) confirmado(s) foram reconciliados com o Financeiro.
-          </p>
-        )}
+      <div className="flex flex-wrap items-center justify-between gap-2 px-1">
+        <span className="text-[10px] text-slate-400">Repasses, despesas e documentos complementares</span>
+        <button type="button" onClick={() => void load(true)} className="min-h-9 rounded-lg border border-slate-700 px-3 text-[9px] text-slate-300">Atualizar dados</button>
       </div>
+      {(payload?.recoveredCount ?? 0) > 0 && (
+        <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-[10px] text-cyan-100">
+          {payload?.recoveredCount} pagamento(s) antigo(s) confirmado(s) foram reconciliados com o Financeiro.
+        </p>
+      )}
 
       <details className="rounded-2xl border border-slate-800 bg-slate-900 p-4" data-kyrub-finance-recent-window="collapsed">
         <summary className="cursor-pointer text-[10px] font-bold text-slate-200">
@@ -252,8 +246,11 @@ export function StoreFinanceRuntime({
       </div>
       </details>
 
-      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5" data-kyrub-store-receivables="canonical">
-        <div className="min-w-0">
+      <details open={receivables.length > 0} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-900 p-3 sm:p-4" data-kyrub-store-receivables="canonical">
+        <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-cyan-100">
+          Repasses a receber — {receivables.length === 0 ? 'nenhum repasse registrado' : String(receivables.length) + ' registro(s) · Em aberto ' + money(receivableSummary?.openMinor ?? 0)}
+        </summary>
+        <div className="mt-2 min-w-0">
           <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Repasses a receber</span>
           <h4 className="mt-1 text-xs font-black uppercase">Obrigações econômicas da loja</h4>
           <p className="mt-2 text-[9px] leading-relaxed text-slate-400">
@@ -293,14 +290,25 @@ export function StoreFinanceRuntime({
             ))}
           </div>
         )}
-      </div>
+      </details>
 
-      <StorePayablesWorkspace
-        storeId={storeId}
-        payables={payables}
-        summary={payableSummary}
-        onReload={() => load(true)}
-      />
+      <details open={payables.length > 0} className="min-w-0 max-w-full rounded-2xl border border-amber-500/20 bg-slate-900 p-3 sm:p-4"
+        data-kyrub-finance-payables-accordion="collapsed-when-empty">
+        <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-amber-100">
+          Contas a pagar — {payables.length === 0
+            ? 'nenhuma conta cadastrada'
+            : String(payableSummary?.openCount ?? 0) + ' em aberto · ' + money(payableSummary?.openMinor ?? 0)}
+          {(payableSummary?.overdueMinor ?? 0) > 0 && <span className="ml-2 text-rose-200">Vencidas: {money(payableSummary?.overdueMinor ?? 0)}</span>}
+        </summary>
+        <div className="mt-2">
+          <StorePayablesWorkspace
+            storeId={storeId}
+            payables={payables}
+            summary={payableSummary}
+            onReload={() => load(true)}
+          />
+        </div>
+      </details>
 
       <details className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5"
         data-kyrub-finance-fiscal-recent="collapsed">
