@@ -246,7 +246,7 @@ export function StoreFinanceRuntime({
       </div>
       </details>
 
-      <details defaultOpen={receivables.length > 0} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-900 p-3 sm:p-4" data-kyrub-store-receivables="canonical">
+      <details open={receivables.length > 0} className="min-w-0 max-w-full overflow-hidden rounded-2xl border border-cyan-500/20 bg-slate-900 p-3 sm:p-4" data-kyrub-store-receivables="canonical">
         <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-cyan-100">
           Repasses a receber — {receivables.length === 0 ? 'nenhum repasse registrado' : String(receivables.length) + ' registro(s) · Em aberto ' + money(receivableSummary?.openMinor ?? 0)}
         </summary>
@@ -292,7 +292,7 @@ export function StoreFinanceRuntime({
         )}
       </details>
 
-      <details defaultOpen={payables.length > 0} className="min-w-0 max-w-full rounded-2xl border border-amber-500/20 bg-slate-900 p-3 sm:p-4"
+      <details open={payables.length > 0} className="min-w-0 max-w-full rounded-2xl border border-amber-500/20 bg-slate-900 p-3 sm:p-4"
         data-kyrub-finance-payables-accordion="collapsed-when-empty">
         <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-amber-100">
           Contas a pagar — {payables.length === 0
