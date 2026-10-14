@@ -14,15 +14,15 @@ test('financial payments remain a single canonical route with four top-level tab
   assert.match(composite, /data-kyrub-finance-four-areas="canonical"/);
   assert.match(composite, /data-kyrub-finance-shared-competence=\{period\}/);
   assert.match(composite, /data-kyrub-finance-history-accordion="collapsed-unless-focused"/);
-  assert.match(composite, /defaultOpen=\{Boolean\(reviewPaymentId\)\}/);
+  assert.match(composite, /open=\{Boolean\(reviewPaymentId\)\}/);
   assert.match(composite, /key=\{reviewPaymentId \|\| 'monthly'\}/);
   assert.match(composite, /onReviewPayment=\{setReviewPaymentId\}/);
   assert.match(composite, /onClearFocusedPayment=\{\(\) => setReviewPaymentId\(''\)\}/);
   assert.match(runtime, /data-kyrub-store-finance-runtime="canonical-ledger"/);
   assert.match(runtime, /data-kyrub-finance-payables-accordion="collapsed-when-empty"/);
   assert.match(runtime, /data-kyrub-store-receivables="canonical"/);
-  assert.match(runtime, /defaultOpen=\{receivables\.length > 0\}/);
-  assert.match(runtime, /defaultOpen=\{payables\.length > 0\}/);
+  assert.match(runtime, /open=\{receivables\.length > 0\}/);
+  assert.match(runtime, /open=\{payables\.length > 0\}/);
   assert.match(runtime, /<StorePayablesWorkspace/);
   assert.match(runtime, /data-kyrub-finance-fiscal-recent="collapsed"/);
 });
