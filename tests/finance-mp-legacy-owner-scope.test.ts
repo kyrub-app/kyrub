@@ -45,8 +45,9 @@ test('reconciliation remains owner gated and verifies provider collector before 
   assert.match(router, /await requireOwner\(clean\(request\.headers\.authorization\), storeId\)/);
   assert.match(router, /binding\.canonicalStoreId !== storeId/);
   assert.match(router, /binding\.paymentId !== payment\.id/);
-  assert.match(router, /collectorId && collectorId !== secret\.externalAccountId/);
-  assert.match(router, /\(!binding && !collectorId\)/);
+  assert.match(router, /!clean\(providerPayment\.collector_id\)/);
+  assert.match(router, /clean\(providerPayment\.collector_id\) !== secret\.externalAccountId/);
+  assert.match(router, /assertLegacyPlatformMercadoPagoPaymentScope\(/);
   assert.match(router, /const reconciliation = buildReconciliation\(\{ storeId, payment, providerPayment \}\)/);
   assert.match(router, /return saveReconciliation\(reconciliation\)/);
 });

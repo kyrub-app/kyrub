@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
 import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
 import { legacyMercadoPagoStoreIdFromPrimaryOwner } from '../../shared/mercadoPagoLegacyOwnerStoreScope.js';
+import { assertLegacyPlatformMercadoPagoPaymentScope } from '../../shared/mercadoPagoLegacyPlatformPaymentScope.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
@@ -11,6 +12,7 @@ import {
   mercadoPagoStoreRequest,
 } from '../integrations/mercadoPagoStoreOauthService.js';
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
+import { getMercadoPagoPayment, getMercadoPagoPlatformAccountId } from './mercadoPagoPixProvider.js';
 import {
   normalizeCanonicalPayment,
   type CanonicalPayment,
@@ -33,6 +35,8 @@ type MercadoPagoFeeDetail = {
 
 type MercadoPagoPaymentDetails = {
   id?: unknown;
+  external_reference?: unknown;
+  metadata?: Record<string, unknown>;
   status?: unknown;
   status_detail?: unknown;
   currency_id?: unknown;
@@ -299,7 +303,7 @@ const reconcileMercadoPagoPayment = async (
   }
 
   const binding = await loadMercadoPagoPaymentProviderBinding(payment.providerPaymentId);
-  let legacyStoreId = '';
+  let providerPayment: MercadoPagoPaymentDetails;
   if (binding) {
     if (
       binding.canonicalStoreId !== storeId
@@ -308,22 +312,56 @@ const reconcileMercadoPagoPayment = async (
     ) {
       throw new Error('STORE_PROVIDER_RECONCILIATION_BINDING_MISMATCH');
     }
-    legacyStoreId = binding.legacyStoreId;
+    // Bound merchant payments must remain on their recorded OAuth account.
+    // A missing/invalid merchant connection never falls back to the platform.
+    const secret = await getValidMercadoPagoStoreAccessToken(binding.legacyStoreId);
+    providerPayment = await mercadoPagoStoreRequest<MercadoPagoPaymentDetails>(
+      binding.legacyStoreId,
+      `/v1/payments/${encodeURIComponent(payment.providerPaymentId)}`
+    );
+    if (!clean(providerPayment.collector_id)
+        || clean(providerPayment.collector_id) !== secret.externalAccountId) {
+      throw new Error('STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH');
+    }
   } else {
-    legacyStoreId = await legacyStoreIdForCanonicalStore(storeId);
-  }
-
-  const secret = await getValidMercadoPagoStoreAccessToken(legacyStoreId);
-  const providerPayment = await mercadoPagoStoreRequest<MercadoPagoPaymentDetails>(
-    legacyStoreId,
-    `/v1/payments/${encodeURIComponent(payment.providerPaymentId)}`
-  );
-  const collectorId = clean(providerPayment.collector_id);
-  if (
-    (collectorId && collectorId !== secret.externalAccountId)
-    || (!binding && !collectorId)
-  ) {
-    throw new Error('STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH');
+    const legacyStoreId = await legacyStoreIdForCanonicalStore(storeId);
+    try {
+      // Preserve store-account reconciliation when a historical payment has
+      // no binding but its own OAuth connection is available.
+      const secret = await getValidMercadoPagoStoreAccessToken(legacyStoreId);
+      providerPayment = await mercadoPagoStoreRequest<MercadoPagoPaymentDetails>(
+        legacyStoreId,
+        `/v1/payments/${encodeURIComponent(payment.providerPaymentId)}`
+      );
+      if (!clean(providerPayment.collector_id)
+          || clean(providerPayment.collector_id) !== secret.externalAccountId) {
+        throw new Error('STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH');
+      }
+    } catch (error) {
+      // Before store OAuth existed, Kyrub created Pix using the central MP
+      // credential (mercadoPagoPixProvider). Only absent OAuth enables this
+      // legacy read path; ownership is independently established by provider
+      // metadata, immutable payment IDs, intent and collector account.
+      if (!(error instanceof Error && error.message === 'MERCADO_PAGO_STORE_NOT_CONNECTED')) {
+        throw error;
+      }
+      const [legacyPayment, platformAccountId] = await Promise.all([
+        getMercadoPagoPayment(payment.providerPaymentId),
+        getMercadoPagoPlatformAccountId(),
+      ]);
+      providerPayment = legacyPayment as MercadoPagoPaymentDetails;
+      assertLegacyPlatformMercadoPagoPaymentScope({
+        storeId,
+        paymentId: payment.id,
+        providerPaymentId: payment.providerPaymentId,
+        canonicalPaymentIntentId: payment.paymentIntentId,
+        providerId: providerPayment.id,
+        externalReference: providerPayment.external_reference,
+        metadata: providerPayment.metadata,
+        collectorId: providerPayment.collector_id,
+        platformAccountId,
+      });
+    }
   }
 
   const reconciliation = buildReconciliation({ storeId, payment, providerPayment });
@@ -473,7 +511,13 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     };
   }
   if (code === 'MERCADO_PAGO_STORE_NOT_CONNECTED') {
-    return { status: 409, message: 'Conecte a conta Mercado Pago da loja antes de reconciliar.', code };
+    return { status: 409, message: 'Este pagamento exige a conexão Mercado Pago da conta recebedora registrada. Conecte-a em Recebimentos.', code };
+  }
+  if (code === 'STORE_PROVIDER_RECONCILIATION_LEGACY_SCOPE_UNVERIFIED') {
+    return { status: 409, message: 'O Mercado Pago retornou um pagamento sem comprovação suficiente de loja, intenção e conta recebedora. A conciliação foi bloqueada sem alterar valores.', code };
+  }
+  if (code === 'MERCADO_PAGO_NOT_CONFIGURED' || code === 'MERCADO_PAGO_PLATFORM_ACCOUNT_INVALID') {
+    return { status: 409, message: 'A credencial que processou o Pix histórico não está disponível para consulta segura. Nenhum valor foi alterado.', code };
   }
   if (
     code === 'STORE_PROVIDER_RECONCILIATION_PROVIDER_UNSUPPORTED'
@@ -495,6 +539,9 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
       message: 'Os dados do provedor divergem do pagamento canônico. Revise a conciliação antes de prosseguir.',
       code,
     };
+  }
+  if (code.startsWith('MERCADO_PAGO_API_ERROR:')) {
+    return { status: 502, message: 'Não foi possível localizar este Pix com a credencial histórica do Mercado Pago. Nenhum valor foi alterado.', code: 'STORE_PROVIDER_RECONCILIATION_LEGACY_PROVIDER_UNAVAILABLE' };
   }
   if (code.startsWith('MERCADO_PAGO_STORE_API_ERROR:')) {
     return { status: 502, message: 'O Mercado Pago não respondeu com dados conciliáveis agora.', code };
