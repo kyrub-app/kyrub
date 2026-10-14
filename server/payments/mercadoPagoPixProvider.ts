@@ -194,6 +194,14 @@ export const testMercadoPagoConnection = async (): Promise<void> => {
   await mercadoPagoRequest<Record<string, unknown>>('/users/me');
 };
 
+/** Account owning the platform credential, checked against the payment collector. */
+export const getMercadoPagoPlatformAccountId = async (): Promise<string> => {
+  const profile = await mercadoPagoRequest<{ id?: unknown }>('/users/me');
+  const id = clean(profile.id);
+  if (!id) throw new Error('MERCADO_PAGO_PLATFORM_ACCOUNT_INVALID');
+  return id;
+};
+
 const normalizePixCheckout = (payment: MercadoPagoPayment): MercadoPagoPixCheckout => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
