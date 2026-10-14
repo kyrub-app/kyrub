@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
+import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
+import { legacyMercadoPagoStoreIdFromPrimaryOwner } from '../../shared/mercadoPagoLegacyOwnerStoreScope.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
@@ -116,13 +118,27 @@ const loadCanonicalPayment = async (
 
 const legacyStoreIdForCanonicalStore = async (canonicalStoreId: string): Promise<string> => {
   const snapshot = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!snapshot.exists) throw new Error('STORE_PROVIDER_RECONCILIATION_STORE_NOT_FOUND');
-  const data = snapshot.data() as Record<string, unknown>;
-  const legacyStoreId = clean(data.legacyTenantId) || clean(data.ownerId);
-  if (!legacyStoreId || clean(data.ownerId) !== legacyStoreId) {
-    throw new Error('STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID');
+  if (snapshot.exists) {
+    // Existing authoritative migration mapping is preserved and must match
+    // its recorded owner; never override a conflicting legacy tenant.
+    const data = snapshot.data() as Record<string, unknown>;
+    const legacyStoreId = clean(data.legacyTenantId) || clean(data.ownerId);
+    if (!legacyStoreId || clean(data.ownerId) !== legacyStoreId) {
+      throw new Error('STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID');
+    }
+    return legacyStoreId;
   }
-  return legacyStoreId;
+
+  // The owner route already verified users/{uid}/stores/{uid}. Older MP
+  // payments might not have a top-level stores/{uid} migration document.
+  // Validate this same persisted primary store before using its owner uid as
+  // the legacy connection key. The MP collector/account check still applies.
+  const primary = await adminDb.doc(getPrimaryUserStoreDocumentPath(canonicalStoreId)).get();
+  if (!primary.exists) throw new Error('STORE_PROVIDER_RECONCILIATION_STORE_NOT_FOUND');
+  return legacyMercadoPagoStoreIdFromPrimaryOwner(
+    canonicalStoreId,
+    primary.data() as Record<string, unknown>
+  );
 };
 
 const feeEvidence = (payment: MercadoPagoPaymentDetails): {
@@ -442,11 +458,19 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
     return { status: 403, message: 'Você não pode reconciliar pagamentos desta loja.', code };
   }
-  if (
-    code === 'STORE_PROVIDER_RECONCILIATION_PAYMENT_NOT_FOUND'
-    || code === 'STORE_PROVIDER_RECONCILIATION_STORE_NOT_FOUND'
-  ) {
-    return { status: 404, message: 'Pagamento ou loja não encontrado.', code };
+  if (code === 'STORE_PROVIDER_RECONCILIATION_PAYMENT_NOT_FOUND') {
+    return {
+      status: 404,
+      message: 'Documento original do pagamento não encontrado nesta loja. O lançamento no Histórico financeiro não foi alterado.',
+      code,
+    };
+  }
+  if (code === 'STORE_PROVIDER_RECONCILIATION_STORE_NOT_FOUND') {
+    return {
+      status: 404,
+      message: 'Cadastro da loja necessário à conciliação não encontrado. Nenhum valor foi alterado.',
+      code,
+    };
   }
   if (code === 'MERCADO_PAGO_STORE_NOT_CONNECTED') {
     return { status: 409, message: 'Conecte a conta Mercado Pago da loja antes de reconciliar.', code };
