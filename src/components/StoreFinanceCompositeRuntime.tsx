@@ -128,7 +128,7 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
           <>
             <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} period={period}
               onReviewPayment={setReviewPaymentId} />
-            <details key={reviewPaymentId || 'monthly'} defaultOpen={Boolean(reviewPaymentId)}
+            <details key={reviewPaymentId || 'monthly'} open={Boolean(reviewPaymentId)}
               className="min-w-0 rounded-2xl border border-cyan-500/20 bg-slate-900 p-3 sm:p-4"
               data-kyrub-finance-history-accordion="collapsed-unless-focused">
               <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-cyan-100">
