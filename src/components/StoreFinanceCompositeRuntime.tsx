@@ -52,9 +52,7 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
     <section className="min-w-0 max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-finance-four-areas="canonical">
       <header className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
         <h2 className="text-sm font-black text-white">Financeiro Interno</h2>
-        <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-          Informações financeiras da loja organizadas por assunto, sem repetir lançamentos em diversos painéis.
-        </p>
+        <p className="mt-1 text-[10px] text-slate-400">Selecione a área que deseja consultar.</p>
         <div className="mt-4 flex max-w-full gap-2 overflow-x-auto pb-1" role="tablist" aria-label="Áreas do Financeiro Interno">
           {STORE_FINANCE_TABS.map((tab, index) => {
             const active = activeTab === tab.id;
@@ -79,14 +77,14 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
           })}
         </div>
         {monthlyScope ? (
-          <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3"
+          <div className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3"
             data-kyrub-finance-shared-competence={period}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <label htmlFor="kyrub-finance-competence" className="text-[10px] font-bold text-slate-300">
-                Competência mensal compartilhada
+                Competência mensal
               </label>
               <div className="flex flex-wrap items-center gap-2">
-                <button type="button" onClick={() => changePeriod(previousFinanceMonth(currentMonth))}
+                <button type="button" onClick={() => changePeriod(previousFinanceMonth(period))}
                   className="min-h-9 rounded-lg border border-slate-700 px-2 text-[9px] text-slate-300">
                   Mês anterior
                 </button>
@@ -99,12 +97,13 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
                   className="min-h-9 rounded-lg border border-slate-700 bg-slate-900 px-2 text-[10px] text-white" />
               </div>
             </div>
-            <p className="mt-2 text-[9px] text-slate-400">
-              Mês selecionado: <strong className="capitalize text-white">{financeMonthLabel(period)}</strong>.
-              A Visão geral e a conciliação Mercado Pago usam esta competência.
-              O Histórico pode alternar explicitamente para todos os períodos.
-              Os totais acumulados do livro econômico continuam históricos, não mensais.
-            </p>
+            <p className="mt-2 text-[10px] text-slate-300">Selecionado: <strong className="capitalize text-white">{financeMonthLabel(period)}</strong></p>
+            <details className="mt-1 text-[9px] text-slate-400" data-kyrub-finance-scope-help="collapsed">
+              <summary className="min-h-7 cursor-pointer py-1">Como funciona o período?</summary>
+              A Visão geral, o Mercado Pago e o Histórico mensal utilizam esta competência.
+              O Histórico também permite consultar todos os períodos. Indicadores históricos completos
+              do livro econômico continuam independentes do mês selecionado.
+            </details>
           </div>
         ) : (
           <p className="mt-3 text-[9px] text-slate-400" data-kyrub-finance-independent-scope="true">
@@ -129,8 +128,17 @@ function FinanceTabsForStore({ storeId }: { storeId: string }) {
           <>
             <StoreMercadoPagoPeriodSummaryWorkspace storeId={storeId} period={period}
               onReviewPayment={setReviewPaymentId} />
-            <StoreFinanceHistoryWorkspace storeId={storeId} period={period}
-              focusedPaymentId={reviewPaymentId} onClearFocusedPayment={() => setReviewPaymentId('')} />
+            <details key={reviewPaymentId || 'monthly'} defaultOpen={Boolean(reviewPaymentId)}
+              className="min-w-0 rounded-2xl border border-cyan-500/20 bg-slate-900 p-3 sm:p-4"
+              data-kyrub-finance-history-accordion="collapsed-unless-focused">
+              <summary className="min-h-10 cursor-pointer py-2 text-[11px] font-bold text-cyan-100">
+                Histórico financeiro — consultar lançamentos e conciliar pagamentos
+              </summary>
+              <div className="mt-2">
+                <StoreFinanceHistoryWorkspace storeId={storeId} period={period}
+                  focusedPaymentId={reviewPaymentId} onClearFocusedPayment={() => setReviewPaymentId('')} />
+              </div>
+            </details>
             <StoreFinanceRuntime storeId={storeId} surface="payments" />
           </>
         )}
