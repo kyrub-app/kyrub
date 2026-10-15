@@ -34,7 +34,7 @@ test('receivables integration is mounted separately from store identity settings
   const bridge = await source('src/components/store/MercadoPagoReceivablesBridge.tsx');
   const main = await source('src/main.tsx');
   assert.match(bridge, /Recebimentos/);
-  assert.match(bridge, /Conectar Mercado Pago/);
+  assert.match(bridge, /Conectar minha conta Mercado Pago/);
   assert.match(bridge, /mercado-livre-integration-card/);
   assert.match(main, /MercadoPagoReceivablesBridge/);
 });
