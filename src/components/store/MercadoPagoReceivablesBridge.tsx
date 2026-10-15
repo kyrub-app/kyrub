@@ -95,7 +95,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
 
       {status && !status.platformConfigured && (
         <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100">
-          A conexão com o Mercado Pago está temporariamente indisponível. Tente novamente mais tarde.
+          A integração Mercado Pago ainda não foi configurada pela administração do Kyrub neste ambiente. Para conectar a própria conta, primeiro precisamos ativar o aplicativo OAuth da plataforma. Não informe tokens nem repita pagamentos.
         </div>
       )}
 
