@@ -296,6 +296,18 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
     return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
   }
+  if (message === 'MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH') {
+    return { status: 409, body: { error: 'A conta recebedora retornada pelo Mercado Pago não corresponde à conta autorizada pelo lojista. O QR Code foi bloqueado para revisão.' } };
+  }
+  if (message === 'COMMERCIAL_RECIPIENT_STORE_PAYMENT_NOT_CONNECTED'
+      || message === 'MERCADO_PAGO_STORE_NOT_CONNECTED') {
+    return { status: 409, body: { error: 'Esta loja precisa conectar sua conta Mercado Pago em Recebimentos antes de cobrar Pix. Nenhum pagamento foi criado.' } };
+  }
+  if (message === 'COMMERCIAL_RECIPIENT_STORE_NOT_FOUND'
+      || message === 'COMMERCIAL_RECIPIENT_STORE_SCOPE_INVALID'
+      || message === 'STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID') {
+    return { status: 409, body: { error: 'O cadastro financeiro desta loja precisa ser validado antes de receber Pix. Nenhum pagamento foi criado.' } };
+  }
   if (message === 'CHECKOUT_PRODUCT_NOT_AVAILABLE') {
     return {
       status: 409,

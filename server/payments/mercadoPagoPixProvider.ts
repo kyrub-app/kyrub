@@ -80,21 +80,13 @@ const normalizePayerEmail = (value: unknown): string => {
 export const isMercadoPagoPixConfigured = (): boolean =>
   Boolean(clean(process.env.MERCADO_PAGO_ACCESS_TOKEN));
 export const isMercadoPagoWebhookConfigured = (): boolean =>
-  Boolean(
-    clean(process.env.MERCADO_PAGO_WEBHOOK_SECRET) &&
-    clean(process.env.MERCADO_PAGO_ACCESS_TOKEN)
-  );
+  Boolean(clean(process.env.MERCADO_PAGO_WEBHOOK_SECRET));
 
 export const isMercadoPagoPixRuntimeConfigured = async (): Promise<boolean> =>
   Boolean(await resolveMercadoPagoAccessToken());
 
-export const isMercadoPagoWebhookRuntimeConfigured = async (): Promise<boolean> => {
-  const [accessToken, webhookSecret] = await Promise.all([
-    resolveMercadoPagoAccessToken(),
-    resolveMercadoPagoWebhookSecret(),
-  ]);
-  return Boolean(accessToken && webhookSecret);
-};
+export const isMercadoPagoWebhookRuntimeConfigured = async (): Promise<boolean> =>
+  Boolean(await resolveMercadoPagoWebhookSecret());
 
 const mercadoPagoRequest = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   const token = await resolveMercadoPagoAccessToken();

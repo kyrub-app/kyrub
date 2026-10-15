@@ -1,4 +1,4 @@
-import type { ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import type { ExistingOrderCanonicalPaymentIntent, MarketplaceCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type { PaymentProviderEventType, VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 import {
@@ -10,6 +10,7 @@ import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
 
 interface MercadoPagoPayment {
   id?: string | number;
+  collector_id?: string | number;
   status?: string;
   status_detail?: string;
   transaction_amount?: number;
@@ -46,9 +47,10 @@ const checkout = (payment: MercadoPagoPayment) => {
 };
 
 export const createStoreScopedMercadoPagoLocalPix = async (input: {
-  intent: ExistingOrderCanonicalPaymentIntent;
+  intent: ExistingOrderCanonicalPaymentIntent | MarketplaceCanonicalPaymentIntent;
   paymentId: string;
   payerEmail: string;
+  verifyCollectorForMarketplace?: boolean;
 }) => {
   const recipientAuthority = await resolveCommercialRecipientAuthority({
     context: 'store_sale',
@@ -73,6 +75,12 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
     }),
   });
   const normalized = checkout(payment);
+  // Storefront cutover must not expose a QR whose actual beneficiary differs
+  // from the OAuth account authorized by the merchant. Local legacy callers
+  // keep their existing behavior until their separate migration gate.
+  if (input.verifyCollectorForMarketplace && clean(payment.collector_id) !== recipientAuthority.externalAccountId) {
+    throw new Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH');
+  }
   await saveMercadoPagoPaymentProviderBinding({
     provider: 'mercado-pago',
     providerPaymentId: normalized.providerPaymentId,
@@ -83,6 +91,17 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
   });
   return normalized;
 };
+
+/** The marketplace's already-validated draft owns payer identity, never request.body. */
+export const createStoreScopedMercadoPagoMarketplacePix = async (input: {
+  intent: MarketplaceCanonicalPaymentIntent;
+  paymentId: string;
+}) => createStoreScopedMercadoPagoLocalPix({
+  intent: input.intent,
+  paymentId: input.paymentId,
+  payerEmail: input.intent.orderDraft.buyerEmail,
+  verifyCollectorForMarketplace: true,
+});
 
 export const getStoreScopedMercadoPagoPixCheckout = async (providerPaymentId: string) => {
   const binding = await loadMercadoPagoPaymentProviderBinding(providerPaymentId);
