@@ -1,7 +1,5 @@
 import { useEffect, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { onAuthStateChanged, type User } from 'firebase/auth';
-import { auth } from '../../utils/firebase';
+import type { User } from 'firebase/auth';
 
 interface OAuthStatus {
   configured: boolean;
@@ -25,7 +23,7 @@ const request = async <T,>(user: User, init?: RequestInit): Promise<T> => {
   return payload;
 };
 
-function Card({ user }: { user: User }) {
+export default function AdminMercadoPagoOAuthCard({ user }: { user: User }) {
   const [status, setStatus] = useState<OAuthStatus | null>(null);
   const [clientId, setClientId] = useState('');
   const [clientSecret, setClientSecret] = useState('');
@@ -81,31 +79,4 @@ function Card({ user }: { user: User }) {
       {message && <p className="mt-3 rounded-xl border border-slate-800 bg-slate-950/50 p-3 text-[10px] text-slate-300" role="status">{message}</p>}
     </article>
   );
-}
-
-export function AdminMercadoPagoOAuthBridge() {
-  const [user, setUser] = useState<User | null>(() => auth.currentUser);
-  const [host, setHost] = useState<HTMLElement | null>(null);
-  useEffect(() => onAuthStateChanged(auth, setUser), []);
-  useEffect(() => {
-    let cancelled = false;
-    let timer = 0;
-    let created: HTMLDivElement | null = null;
-    const sync = (): void => {
-      if (cancelled) return;
-      if (created && !created.isConnected) { created = null; setHost(null); }
-      const title = document.getElementById('admin-integrations-title');
-      const root = title?.closest('section[aria-labelledby="admin-integrations-title"]');
-      if (!created && root) {
-        created = document.createElement('div');
-        created.id = 'admin-mercado-pago-oauth-host';
-        root.appendChild(created);
-        setHost(created);
-      }
-      timer = window.setTimeout(sync, 160);
-    };
-    sync();
-    return () => { cancelled = true; window.clearTimeout(timer); created?.remove(); };
-  }, []);
-  return host && user ? createPortal(<Card user={user} />, host) : null;
 }
