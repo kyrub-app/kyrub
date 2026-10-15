@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { resolveCommercialRecipientAuthority } from '../payments/commercialRecipientAuthorityService.js';
 import {
   beginMercadoPagoStoreAuthorization,
   completeMercadoPagoStoreAuthorization,
@@ -35,7 +36,16 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   const code = errorCode(error);
   if (code === 'AUTH_REQUIRED') return { status: 401, message: 'Faça login novamente.', code };
   if (code === 'MERCADO_PAGO_STORE_FORBIDDEN') return { status: 403, message: 'Você não pode administrar os recebimentos desta loja.', code };
-  if (code === 'MERCADO_PAGO_STORE_NOT_CONNECTED') return { status: 409, message: 'Conecte a conta Mercado Pago desta loja.', code };
+  if (code === 'MERCADO_PAGO_STORE_NOT_CONNECTED'
+      || code === 'COMMERCIAL_RECIPIENT_STORE_PAYMENT_NOT_CONNECTED') {
+    return { status: 409, message: 'A conta Mercado Pago da loja precisa estar conectada e autorizada para o checkout.', code };
+  }
+  if (code === 'MERCADO_PAGO_STORE_CHECKOUT_SCOPE_MISMATCH'
+      || code === 'COMMERCIAL_RECIPIENT_STORE_NOT_FOUND'
+      || code === 'COMMERCIAL_RECIPIENT_STORE_SCOPE_INVALID'
+      || code === 'STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID') {
+    return { status: 409, message: 'A identidade da loja ou da conta recebedora não coincide com a autorização Mercado Pago. Nenhuma cobrança foi criada.', code };
+  }
   if (code === 'MERCADO_PAGO_OAUTH_PLATFORM_NOT_CONFIGURED') return { status: 503, message: 'O OAuth do Mercado Pago ainda precisa ser configurado pela plataforma.', code };
   if (/STATE|CODE|PKCE|IDENTITY_MISMATCH|PROFILE_INVALID/.test(code)) return { status: 400, message: 'A autorização do Mercado Pago não pôde ser validada.', code };
   if (code.startsWith('MERCADO_PAGO_')) return { status: 503, message: 'A conexão Mercado Pago está temporariamente indisponível.', code };
@@ -90,10 +100,30 @@ export const createMercadoPagoStoreRouter = (): Router => {
     try {
       const storeId = clean(request.params.storeId);
       await requireOwner(request.get('authorization') ?? '', storeId);
+      // Preflight for Model B: verify live Mercado Pago account AND the same
+      // merchant checkout authority used to create storefront Pix.
+      // No payment, Pix, refund, transfer or economic ledger is touched.
+      const externalAccountId = await validateMercadoPagoStoreConnection(storeId);
+      const authority = await resolveCommercialRecipientAuthority({
+        context: 'store_sale',
+        canonicalStoreId: storeId,
+      });
+      if (
+        authority.recipientKind !== 'merchant_store'
+        || authority.credentialAuthority !== 'store_oauth_vault'
+        || authority.canonicalStoreId !== storeId
+        || authority.ownerUserId !== storeId
+        || authority.credentialScopeId !== storeId
+        || authority.externalAccountId !== externalAccountId
+        || authority.platformFeeMode !== 'separate'
+      ) {
+        throw new Error('MERCADO_PAGO_STORE_CHECKOUT_SCOPE_MISMATCH');
+      }
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(200).json({
         ok: true,
-        externalAccountId: await validateMercadoPagoStoreConnection(storeId),
+        checkoutReady: true,
+        externalAccountId,
       });
     } catch (error) {
       const mapped = mapError(error);
