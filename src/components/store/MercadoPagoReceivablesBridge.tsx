@@ -14,26 +14,49 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
   const [status, setStatus] = useState<MercadoPagoStoreConnectionStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [verifiedCheckoutAccountId, setVerifiedCheckoutAccountId] = useState('');
 
   const refresh = async (): Promise<void> => {
     try {
-      setStatus(await loadMercadoPagoStoreConnectionStatus(user));
+      const next = await loadMercadoPagoStoreConnectionStatus(user);
+      setStatus(next);
+      if (!next.connected) setVerifiedCheckoutAccountId('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível consultar o Mercado Pago.');
     }
   };
 
-  useEffect(() => { void refresh(); }, [user.uid]);
+  useEffect(() => { setVerifiedCheckoutAccountId(''); void refresh(); }, [user.uid]);
 
   const execute = async (operation: () => Promise<unknown>, success: string): Promise<void> => {
     try {
       setBusy(true);
       setMessage('');
+      setVerifiedCheckoutAccountId('');
       await operation();
       setMessage(success);
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível concluir a operação.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyCheckout = async (): Promise<void> => {
+    try {
+      setBusy(true);
+      setMessage('');
+      setVerifiedCheckoutAccountId('');
+      const result = await validateMercadoPagoStoreConnection(user);
+      if (!result.ok || !result.checkoutReady || !result.externalAccountId) {
+        throw new Error('Não foi possível comprovar a conta recebedora do checkout.');
+      }
+      await refresh();
+      setVerifiedCheckoutAccountId(result.externalAccountId);
+      setMessage('Conta Mercado Pago e recebimento do checkout validados. Nenhum Pix foi criado.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível validar o recebimento desta loja.');
     } finally {
       setBusy(false);
     }
@@ -60,6 +83,16 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         </div>
       )}
 
+      {status?.connected && verifiedCheckoutAccountId
+        && status.externalAccountId === verifiedCheckoutAccountId && (
+        <p className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[10px] text-emerald-100"
+          data-kyrub-mp-checkout-preflight="verified">
+          <strong>Recebimento da loja verificado.</strong> Conta recebedora MP final …{verifiedCheckoutAccountId.slice(-4)}.
+          A conexão e a identidade do checkout foram confirmadas sem criar cobrança.
+          O pagamento e o webhook ainda precisam de um teste controlado.
+        </p>
+      )}
+
       {status && !status.platformConfigured && (
         <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100">
           A conexão com o Mercado Pago está temporariamente indisponível. Tente novamente mais tarde.
@@ -80,8 +113,8 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           </button>
         ) : (
           <>
-            <button type="button" disabled={busy} onClick={() => void execute(() => validateMercadoPagoStoreConnection(user), 'Conexão Mercado Pago validada.')} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
-              Verificar conexão
+            <button type="button" disabled={busy} onClick={() => void verifyCheckout()} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
+              Verificar conexão e recebimento
             </button>
             <button type="button" disabled={busy} onClick={() => void execute(() => disconnectMercadoPagoStoreConnection(user), 'Mercado Pago desconectado desta loja.')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40">
               Desconectar
