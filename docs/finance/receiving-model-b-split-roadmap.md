@@ -27,7 +27,7 @@ O Mercado Pago documenta Split 1:1 de **um vendedor + marketplace**, em que a pl
 ## Pré-merge da PR #949: gates obrigatórios
 1. CI, TypeScript, grafo Serverless e preview READY no SHA exato.
 2. Verificar pela área **Recebimentos → Mercado Pago → Verificar conexão** se a conta autorizada está conectada e qual coletor/conta foi vinculado (sem expor token).
-3. Exercitar checkout de vitrine em homologação com método de teste autorizado: pedido aceito → criação Pix via OAuth → binding imutável → pagamento/assinatura do webhook → estoque/KDS → conciliação. O coletor na resposta MP precisa corresponder à conta OAuth do lojista.
+3. Exercitar checkout de vitrine em homologação com método de teste autorizado: pedido aceito → criação Pix via OAuth → binding imutável → pagamento/assinatura do webhook → estoque/KDS → conciliação. O coletor na resposta MP precisa corresponder à conta OAuth do lojista. Na emissão da vitrine, o QR e o binding são bloqueados se a resposta do MP não comprovar `collector_id` igual à conta conectada; essa validação não altera o fluxo legado de vendas locais.
 4. Verificar idempotência, reconsulta de Pix já emitido, recusas sem OAuth, assinatura de webhook e cenário legado sem reemissão.
 5. Só então integrar na branch fixa de homologação. `main` exige promoção separada aprovada.
 
