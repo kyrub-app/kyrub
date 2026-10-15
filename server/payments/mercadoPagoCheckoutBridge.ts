@@ -9,11 +9,14 @@ import {
   type CanonicalPayment,
 } from '../../src/utils/canonicalPayment.js';
 import {
-  createMercadoPagoPixPayment,
   getMercadoPagoPixCheckout,
-  isMercadoPagoPixRuntimeConfigured,
   type MercadoPagoPixCheckout,
 } from './mercadoPagoPixProvider.js';
+import {
+  createStoreScopedMercadoPagoMarketplacePix,
+  getStoreScopedMercadoPagoPixCheckout,
+} from './mercadoPagoStoreScopedProvider.js';
+import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
 import { freezeOrderCommercialSnapshot } from './orderCommercialSnapshotService.js';
 import { syncMarketplaceOrderInventoryReservationExpiry } from '../inventory/marketplaceOrderInventoryReservationService.js';
 import { enqueueMarketplacePaymentExpiry } from './marketplacePaymentExpiryQueueService.js';
@@ -134,16 +137,22 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
     paymentId: payment.id,
   });
 
-  if (!(await isMercadoPagoPixRuntimeConfigured())) {
-    return emptyBridge(intent.expiresAt, { orderStatus: approval.status });
-  }
-
   if (intent.providerIntentId || payment.providerPaymentId) {
     if (
       intent.provider !== 'mercado-pago' || payment.provider !== 'mercado-pago' ||
       !intent.providerIntentId || intent.providerIntentId !== payment.providerPaymentId
     ) throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
-    const existingPix = await getMercadoPagoPixCheckout(intent.providerIntentId);
+    // Preserve the original creditor for an already-issued Pix. Never
+    // recreate an unbound historical payment under a different merchant.
+    const binding = await loadMercadoPagoPaymentProviderBinding(intent.providerIntentId);
+    if (binding && (
+      binding.canonicalStoreId !== intent.storeId
+      || binding.paymentId !== payment.id
+      || binding.paymentIntentId !== intent.id
+    )) throw new Error('CHECKOUT_PROVIDER_PAYMENT_CONFLICT');
+    const existingPix = binding
+      ? await getStoreScopedMercadoPagoPixCheckout(intent.providerIntentId)
+      : await getMercadoPagoPixCheckout(intent.providerIntentId);
     const effectiveExpiresAt = existingPix.expiresAt || intent.expiresAt;
     await syncMarketplaceOrderInventoryReservationExpiry(intent.storeId, intent.target.orderId, effectiveExpiresAt);
     await schedulePaymentExpiry({ storeId: intent.storeId, orderId: intent.target.orderId, paymentIntentId: intent.id, expiresAt: effectiveExpiresAt });
@@ -153,7 +162,12 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   const refreshedAt = new Date().toISOString();
   const refreshedExpiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString();
   const refreshedIntent: MarketplaceCanonicalPaymentIntent = { ...intent, expiresAt: refreshedExpiresAt, updatedAt: refreshedAt };
-  const pix: MercadoPagoPixCheckout = await createMercadoPagoPixPayment({ intent: refreshedIntent, paymentId: payment.id });
+  // New merchant storefront Pix uses only the store's connected OAuth account.
+  // The platform token is reserved for existing unbound Pix and platform billing.
+  const pix: MercadoPagoPixCheckout = await createStoreScopedMercadoPagoMarketplacePix({
+    intent: refreshedIntent,
+    paymentId: payment.id,
+  });
   const effectiveExpiresAt = pix.expiresAt || refreshedExpiresAt;
 
   await adminDb.runTransaction(async transaction => {
