@@ -38,7 +38,11 @@ test('storefront approved marketplace Pix emits through store-owned OAuth only',
   assert.match(provider, /resolveCommercialRecipientAuthority\(\{/);
   assert.match(provider, /context: 'store_sale'/);
   assert.match(provider, /mercadoPagoStoreRequest<MercadoPagoPayment>\(credentialScopeId, '\/v1\/payments'/);
+  assert.match(provider, /if \(input\.verifyCollectorForMarketplace && clean\(payment\.collector_id\) !== recipientAuthority\.externalAccountId\)/);
+  assert.match(provider, /throw new Error\('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH'\)/);
+  assert.match(provider, /verifyCollectorForMarketplace: true/);
   assert.match(provider, /saveMercadoPagoPaymentProviderBinding/);
+  assert.ok(provider.indexOf("throw new Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH')") < provider.indexOf('await saveMercadoPagoPaymentProviderBinding('));
   assert.match(provider, /payerEmail: input\.intent\.orderDraft\.buyerEmail/);
   assert.match(provider, /kyrub_store_id: input\.intent\.storeId/);
   assert.match(provider, /kyrub_payment_id: input\.paymentId/);
