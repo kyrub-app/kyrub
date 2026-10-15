@@ -29,10 +29,10 @@ test('Mercado Pago storefront now charges only through merchant OAuth, keeping l
   assert.match(bridgeSource, /adminDb\.runTransaction/);
 });
 
-test('Mercado Pago webhook gate resolves both runtime credentials through Vault-aware resolver', () => {
+test('Mercado Pago webhook requires signed secret but not platform account access token', () => {
   assert.match(providerSource, /isMercadoPagoWebhookRuntimeConfigured/);
+  assert.match(providerSource, /Boolean\(await resolveMercadoPagoWebhookSecret\(\)\)/);
   assert.match(providerSource, /resolveMercadoPagoAccessToken\(\)/);
-  assert.match(providerSource, /resolveMercadoPagoWebhookSecret\(\)/);
   assert.match(webhookSource, /await isMercadoPagoWebhookRuntimeConfigured\(\)/);
   assert.doesNotMatch(webhookSource, /isMercadoPagoWebhookConfigured/);
 });
