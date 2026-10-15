@@ -22,11 +22,26 @@ test('saving OAuth application preserves existing Mercado Pago platform credenti
 
 test('ADM exposes masked OAuth metadata through the existing operations function', async () => {
   const endpoint = await source('api/admin/operations/health.ts');
-  const bridge = await source('src/components/admin/AdminMercadoPagoOAuthBridge.tsx');
+  const card = await source('src/components/admin/AdminMercadoPagoOAuthCard.tsx');
   assert.match(endpoint, /mercado-pago-oauth-application/);
   assert.match(endpoint, /clientIdLast4/);
   assert.match(endpoint, /clientSecretLast4/);
-  assert.match(bridge, /Salvar aplicação OAuth/);
-  assert.match(bridge, /transport=mercado-pago-oauth-application/);
-  assert.match(bridge, /https:\/\/kyrub\.com\/api\/store-connections\/mercado-pago\/callback/);
+  assert.match(card, /Salvar aplicação OAuth/);
+  assert.match(card, /transport=mercado-pago-oauth-application/);
+  assert.match(card, /https:\/\/kyrub\.com\/api\/store-connections\/mercado-pago\/callback/);
+});
+
+
+test('admin mounts OAuth seller application in its native integration workspace, not a missing portal target', async () => {
+  const app = await source('src/main.tsx');
+  const workspace = await source('src/components/admin/AdminIntegrationsWorkspace.tsx');
+  const card = await source('src/components/admin/AdminMercadoPagoOAuthCard.tsx');
+  assert.match(workspace, /import AdminMercadoPagoOAuthCard from '.\/AdminMercadoPagoOAuthCard'/);
+  assert.match(workspace, /<AdminMercadoPagoProviderCard /);
+  assert.match(workspace, /<AdminMercadoPagoOAuthCard user=\{authenticatedUser\} \/>/);
+  assert.doesNotMatch(app, /AdminMercadoPagoOAuthBridge/);
+  assert.doesNotMatch(card, /createPortal|admin-integrations-title|setTimeout|document\.getElementById/);
+  assert.match(card, /status\?\.configured \? 'Configurada' : 'Não configurada'/);
+  assert.match(card, /clientIdLast4/);
+  assert.match(card, /clientSecretLast4/);
 });
