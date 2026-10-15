@@ -1,42 +1,45 @@
-# Mercado Pago — Modelo B, escolha Payments vs Orders e habilitação Marketplace
+# Mercado Pago — decisão revisada: Marketplace como operação, OAuth e split futuro
 
-**Decisão revisada em 15/10/2026. Status: plano técnico, sem autorização de criação de aplicativo ou ativação de split.** PR #949 permanece Draft e fora da homologação fixa.
+**Decisão em 15/10/2026.** Modelo B confirmado; PR #949 permanece Draft, sem merge. Nenhuma aplicação, credencial, cobrança, comissão ou split foi criada/habilitada nesta revisão.
 
-## Evidência de produto e documentação
+## Correção da interpretação anterior
 
-O cadastro interativo no Mercado Pago Developers para **Checkout Transparente** apresentou o seletor de API `Orders` (padrão) ou `Payments`, com aviso de descontinuação futura para Payments. **Não mostrou opção "modelo Marketplace"** até a última tela; não inferir que selecionar "Plataforma de e-commerce" equivale a habilitação de Marketplace. A aplicação legada `Kyrub` já existente é "integração para sua conta" e processou pagamentos históricos; preservá-la.
+A aplicação Kyrub **já existente** foi criada para Checkout Transparente + Payments API e dispõe, em **Configurações avançadas**, de Redirect URLs, PKCE e permissões `read`, `offline_access` e `write`. O formulário **novo** de criação de aplicação mostra Checkout Transparente e escolha Payments/Orders, mas **não mostra uma opção visível "Marketplace"**.
 
-A documentação oficial sobre migração, conferida em 15/10/2026, esclarece:
-- Payments API **ainda não foi desligada**, está em manutenção de segurança/estabilidade; admite coexistência com Orders API.
-- A Orders API suporta Pix, mas exige endpoints, contratos de dados, webhook `orders`, estados, idempotência e reembolsos próprios — **não** substitui diretamente `/v1/payments`.
-- Na Payments API, a comissão de marketplace 1:1 usa `application_fee` com OAuth do vendedor. Orders **não documenta campo equivalente**; `integration_data.sponsor.id` não é split.
-- A Orders API documenta `splits` para 1:N, mas **somente com habilitação/comunicação comercial**, consentimentos e `receiver_id`; não presumir acesso.
-- O guia 1:1 cita pagamentos com saldo disponível entre contas Mercado Pago e restrições a transferências externas. **Verificar expressamente com o MP se comissão 1:1 funciona no Pix que o Kyrub pretende emitir**; não afirmar suporte automaticamente.
+O retorno de orientação técnica encaminhado pelo proprietário explica que, no painel novo, marketplace é **modelo operacional**: app + **OAuth individual do vendedor** + checkout com credenciais do vendedor. A documentação pública atual de OAuth e de checkout em marketplace confirma esse fluxo operacional. Porém, a **página mais antiga de configuração de Split 1:1 ainda diz "Escolha o modelo de integração Marketplace"**; portanto, registrar essa divergência documental sem afirmar que exista botão oculto ou autorização comercial automática.
 
-## Política Kyrub aprovada — Modelo B
+**Recomendação atual: NÃO criar outra aplicação só por ausência da opção Marketplace.** Primeiro testar elegibilidade e capacidade OAuth da aplicação Kyrub existente. Aplicação separada é opcional por isolamento operacional, e somente mediante decisão explícita posterior; não uma condição demonstrada.
 
-1. Recebedor do pagamento da loja = **lojista OAuth**; plataforma só recebe pela própria assinatura e, futuramente, por comissão aprovada e comprovadamente suportada.
-2. Sem split habilitado, a comissão de marketplace é **inexistente**, não 0 estimado; não enviar `application_fee`, `marketplace_fee`, `splits` ou repasses artificiais.
-3. Transações externas do MP podem ser **espelhadas**, sem novo Pix nem duplicação de ledger.
-4. Pagamentos históricos seguem a API/conta de **origem** para consulta, estorno, reembolso e webhook, mesmo depois de uma eventual migração. Não trocar credor ou ID em retry.
-5. Para Orders futura, registrar proveniência canônica por provedor, versão da API (`payments_v1` / `orders_v1`), `providerOrderId`, transação/ID e beneficiário, antes de rotear. Sem construir uma segunda camada de caixa/financeiro.
-6. O OAuth atual do Kyrub envia `code_challenge` S256 e `code_verifier`. No aplicativo escolhido, a opção PKCE deve estar habilitada, e o redirect URI cadastrado deve coincidir exatamente com `https://kyrub.com/api/store-connections/mercado-pago/callback`. Não mudar a aplicação histórica sem validar os efeitos.
+## Passo administrativo na aplicação já existente
 
-## Gate para criar nova aplicação
+1. Em Mercado Pago Developers → aplicação **Kyrub** → Configurações da aplicação → Configuração avançada, informar **exatamente** o redirect estático de produção `https://kyrub.com/api/store-connections/mercado-pago/callback`, sem parâmetros nem hostname temporário.
+2. Habilitar **PKCE = Sim**, porque o código vigente do Kyrub usa `code_challenge`, `code_challenge_method=S256` e `code_verifier`. Confirmar previamente que não existe outro cliente OAuth legado da **mesma aplicação** que deixe de funcionar após exigir PKCE.
+3. Preservar os escopos necessários `read`, `offline access` e `write`. Não alterar o produto Checkout Transparente nem a API Payments dessa aplicação; **não clicar em Excluir**.
+4. Depois de salvar configurações de aplicação com confirmação do proprietário, conferir **Client ID (número da aplicação)** e **Client Secret** em origem oficial, e cadastrá-los **somente** em `admin.kyrub.com → Integrações & Infraestrutura → Mercado Pago · OAuth de lojistas`, com Redirect URI igual. Jamais revelar Client Secret ou tokens no chat. Não regravar Access Token do checkout central.
+5. Confirmar retorno de status administrativo **Configurada** com sufixos mascarados e acesso ao Vault v1 em produção. A Shared `INTEGRATION_MASTER_KEY` encontrada vale **Production**, não Preview; não replicá-la indiscriminadamente a deploys efêmeros.
+6. Somente depois, autorizar conta do próprio lojista via OAuth. **Não criar Pix real automaticamente**: usar pré-verificação de autoridade/collector proposta na PR #949 e teste humano de pedido, Pix, webhook e conciliação antes de promover checkout novo.
 
-**Não clicar em Criar aplicação ainda:** o formulário novo não apresenta o passo Marketplace previsto no guia de Split 1:1. Pedir confirmação pelo suporte/comercial do Mercado Pago **antes de optar por Payments vs Orders**:
-- Como habilitar **aplicação Marketplace com OAuth de terceiros** no dashboard atual, quando o formulário só mostra Checkout Transparente + Payments/Orders e omite o modelo Marketplace?
-- Para um Pix emitido na conta OAuth do vendedor, `application_fee` é aceito no split 1:1? Se não, quais meios de pagamento são suportados para split?
-- O split 1:1 via Orders está disponível para a conta de integrador? Qual campo/autorização/comercial substitui `application_fee` (se existir)? A documentação pública nega equivalência.
-- Há sunset date oficial para `/v1/payments`? Qual orientação para marketplaces que ainda dependem de `application_fee`?
-- Para 1:N Orders, qual habilitação comercial, consentimento e prazo provável (sem presumir aprovação)?
+## Decisão de API e split
 
-Se MP confirmar **Payments API + app Marketplace OAuth** para cenário futuro 1:1, a fundação existente da PR #949 é o caminho mínimo para Modelo B imediato **sem comissão**, com uma evolução futura do mesmo checkout. Se somente Orders estiver disponível, abrir uma **PR distinta de migração** preservando Payments para legados e com webhook `orders`, contratos, reembolso, reconciliação e idempotência próprios. Não ativar modo misto silenciosamente.
+- **Payments API** continua operacional e recebendo correções de segurança e estabilidade, embora a documentação recomende Orders para integrações inteiramente novas. Não há data pública de desligamento confirmada pelo material examinado.
+- O checkout canônico Kyrub atual usa `/v1/payments`; a PR #949 busca emitir **novos Pix** sob OAuth da loja, mantendo Pix históricos vinculados à credencial de origem, sem split e sem segunda cobrança.
+- Para **split 1:1** futuro, a Payments API documenta `application_fee` com OAuth do vendedor no Checkout Transparente; exemplo público usa **cartão**. **Compatibilidade da comissão com Pix não está comprovada** pelos exemplos gerais; não cobrar nem afirmar suporte antes de teste seguro autorizado e elegibilidade real.
+- **Orders API** possui Pix, mas endpoints, modelos, notificações, estorno e conciliação diferentes. Não possui equivalente explícito documentado de `application_fee` para o modelo 1:1 no material verificado; futura migração requer PR própria e preservação dos contratos legados.
+- **Split 1:N** via Orders exige vínculo comercial, consentimento e configuração de múltiplos recebedores; não pressupor acesso automático.
 
-## Fontes oficiais
-- https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/resources/migrate-payments-to-orders
-- https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/integration-configuration/create-configuration
-- https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/integration-configuration/integrate-marketplace
-- https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/prerequisites
-- https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/resources/split-payments-1-n
-- https://www.mercadopago.com.br/developers/pt/docs/security/oauth/creation
+## Gates e princípios de segurança
+
+- A aplicação **Mercado Livre OAuth** é distinta e nunca fornece credenciais do Mercado Pago.
+- Checkout da loja pertence ao lojista; assinatura/plano do Kyrub pertence à plataforma; venda externa MP é **espelhada**, sem pagamento recriado.
+- Nenhuma nova comissão, `application_fee`, `marketplace_fee` ou `splits` entra na PR #949.
+- Nunca recadastrar credenciais por tentativa e erro ou gerar master key substituta.
+- PR #949 fica **Draft sem merge** até validação em ambiente autorizado: OAuth conectado, identidade `collector_id` correta, emissão de Pix controlada, webhook assinado, conciliação idempotente, preservação dos Pix históricos.
+
+## Documentação oficial consultada
+- Marketplace via Checkout Transparente: https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/how-tos/integrate-marketplace
+- Visão geral e manutenção Payments API: https://www.mercadopago.com.br/developers/pt/docs/checkout-api-payments/overview
+- OAuth e PKCE: https://www.mercadopago.com.br/developers/pt/docs/security/oauth/creation
+- Configurações avançadas existentes: https://www.mercadopago.com.br/developers/pt/docs/your-integrations/application-details
+- Guia legado de criação para split 1:1 (divergência "modelo Marketplace"): https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/integration-configuration/create-configuration
+- Comissão 1:1: https://www.mercadopago.com.br/developers/pt/docs/split-payments/split-1-1/integration-configuration/integrate-marketplace
+- Split 1:N: https://www.mercadopago.com.br/developers/pt/docs/checkout-api-orders/resources/split-payments-1-n
