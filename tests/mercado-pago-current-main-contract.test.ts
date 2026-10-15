@@ -17,11 +17,13 @@ test('Mercado Pago Pix adapter remains server-only and idempotent', () => {
   assert.doesNotMatch(providerSource, /VITE_.*MERCADO|import\.meta\.env.*MERCADO/i);
 });
 
-test('Mercado Pago bridge is a no-op only when no runtime credential can be resolved', () => {
-  assert.match(providerSource, /isMercadoPagoPixRuntimeConfigured/);
-  assert.match(providerSource, /resolveMercadoPagoAccessToken/);
-  assert.match(bridgeSource, /await isMercadoPagoPixRuntimeConfigured\(\)/);
-  assert.doesNotMatch(bridgeSource, /isMercadoPagoPixConfigured/);
+test('Mercado Pago storefront now charges only through merchant OAuth, keeping legacy resumes', () => {
+  assert.match(bridgeSource, /createStoreScopedMercadoPagoMarketplacePix/);
+  assert.match(bridgeSource, /getStoreScopedMercadoPagoPixCheckout/);
+  assert.match(bridgeSource, /loadMercadoPagoPaymentProviderBinding/);
+  assert.match(bridgeSource, /getMercadoPagoPixCheckout/);
+  assert.doesNotMatch(bridgeSource, /createMercadoPagoPixPayment\(/);
+  assert.doesNotMatch(bridgeSource, /isMercadoPagoPixRuntimeConfigured\(\)/);
   assert.match(bridgeSource, /status !== 'pending'/);
   assert.match(bridgeSource, /CHECKOUT_PROVIDER_PAYMENT_CONFLICT/);
   assert.match(bridgeSource, /adminDb\.runTransaction/);
