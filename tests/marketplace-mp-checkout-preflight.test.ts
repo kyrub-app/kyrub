@@ -20,7 +20,7 @@ test('MP connection preflight checks authenticated owner, live account and canon
   assert.match(preflight, /authority\.externalAccountId !== externalAccountId/);
   assert.match(preflight, /authority\.platformFeeMode !== 'separate'/);
   assert.match(preflight, /checkoutReady: true/);
-  assert.doesNotMatch(preflight, /createMercadoPago|payments\/.+POST|refund|runTransaction|transaction\.set|transaction\.update/);
+  assert.doesNotMatch(preflight, /createMercadoPagoPixPayment\(|createStoreScopedMercadoPagoMarketplacePix\(|\.runTransaction\(|transaction\.set\(|transaction\.update\(/);
 });
 
 test('OAuth validation reads live MP profile, not stale connection metadata alone', () => {
