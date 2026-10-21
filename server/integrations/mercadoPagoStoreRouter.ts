@@ -139,7 +139,8 @@ export const createMercadoPagoStoreRouter = (): Router => {
       response.status(200).json({
         ok: true,
         recipientPreflightReady: true,
-        checkoutActivated: false,
+        // Indicates code routing only, never that a real Pix/webhook succeeded.
+        checkoutActivated: process.env.VERCEL_ENV === 'production',
         externalAccountId,
       });
     } catch (error) {
