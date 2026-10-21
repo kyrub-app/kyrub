@@ -7,6 +7,7 @@ import {
 } from './paymentProviderBindingService.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
+import { mercadoPagoMerchantPixRolloutError } from './mercadoPagoMerchantPixRolloutPolicy.js';
 
 interface MercadoPagoPayment {
   id?: string | number;
@@ -31,29 +32,11 @@ interface MercadoPagoPayment {
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
-// Release switch controls the feature, not the ownership of a merchant account.
-// Pilot mode authorizes one canonical store for the first controlled payment.
-// Later, connected_stores permits each eligible store's OWN validated OAuth;
-// no store receives another store's token or payment. Default stays disabled.
+// Deployment eligibility is independent of ownership. The payment provider
+// still resolves and verifies each store's OAuth token and actual collector.
 export const assertMerchantMarketplacePixCanaryAllowed = (storeId: string): void => {
-  if (process.env.VERCEL_ENV !== 'production') {
-    throw new Error('MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY');
-  }
-  if (process.env.KYRUB_MP_MERCHANT_PIX_ENABLED !== 'true') {
-    throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
-  }
-  const rolloutMode = clean(process.env.KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE);
-  if (rolloutMode === 'canary') {
-    const canaryStoreId = clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID);
-    if (!canaryStoreId || canaryStoreId !== clean(storeId)) {
-      throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
-    }
-  } else if (rolloutMode !== 'connected_stores') {
-    // Refuse implicit general release if the mode is omitted or mistyped.
-    throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
-  }
-  // Recipient verification is performed per store immediately before the POST:
-  // resolveCommercialRecipientAuthority -> live OAuth /users/me -> collector_id.
+  const rejection = mercadoPagoMerchantPixRolloutError(storeId, process.env);
+  if (rejection) throw new Error(rejection);
 };
 
 const checkout = (payment: MercadoPagoPayment) => {
