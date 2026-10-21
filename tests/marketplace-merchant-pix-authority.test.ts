@@ -43,7 +43,7 @@ test('storefront approved marketplace Pix emits through store-owned OAuth only',
   assert.match(provider, /verifyCollectorForMarketplace: true/);
   assert.match(provider, /validateMercadoPagoStoreConnection\(credentialScopeId\)/);
   assert.match(provider, /mercadoPagoMerchantPixRolloutError\(storeId, process\.env\)/);
-  assert.match(provider, /MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY/);
+  assert.match(read('server/payments/mercadoPagoMerchantPixRolloutPolicy.ts'), /MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY/);
   assert.match(provider, /saveMercadoPagoPaymentProviderBinding/);
   assert.ok(provider.indexOf("throw new Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH')") < provider.indexOf('await saveMercadoPagoPaymentProviderBinding('));
   assert.match(provider, /payerEmail: input\.intent\.orderDraft\.buyerEmail/);
