@@ -15,6 +15,7 @@ import {
 import {
   createStoreScopedMercadoPagoMarketplacePix,
   getStoreScopedMercadoPagoPixCheckout,
+  assertMerchantMarketplacePixCanaryAllowed,
 } from './mercadoPagoStoreScopedProvider.js';
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
 import { freezeOrderCommercialSnapshot } from './orderCommercialSnapshotService.js';
@@ -126,6 +127,12 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   const approval = assertApprovedOperationalOrder({ data: orderSnapshot.data() as Record<string, unknown>, intent, payment });
   if (approval.approvalRequired) {
     return emptyBridge(intent.expiresAt, { approvalRequired: true, orderStatus: approval.status });
+  }
+
+  // Fail before any snapshot/expiry writes when a new merchant Pix is not
+  // explicitly enabled. Existing issued Pix still use their original creditor.
+  if (!intent.providerIntentId && !payment.providerPaymentId) {
+    assertMerchantMarketplacePixCanaryAllowed(intent.storeId);
   }
 
   // Once the order is approved for payment, freeze its commercial composition
