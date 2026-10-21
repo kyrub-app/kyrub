@@ -19,6 +19,7 @@
 - O **piloto de uma única loja** é provisório: `KYRUB_MP_MERCHANT_PIX_ENABLED=true` + `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=canary` + `KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID` para o primeiro teste financeiro autorizado.
 - Após concluir os gates e autorizar a expansão, `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=connected_stores` permite a emissão por todas as lojas com **sua própria** autorização Mercado Pago válida. Cada venda usa a conexão vinculada àquela loja, confere `/users/me` e `collector_id` e grava o vínculo ao pagamento daquela loja.
 - O estado padrão continua **desativado**; modo omitido ou desconhecido também falha fechado. A aplicação central OAuth pertence ao Kyrub, mas **nenhum token, conta recebedora ou resultado financeiro é compartilhado entre lojistas**.
+- **Limite estrutural atual:** o router OAuth exige `identity.uid === storeId` e o escopo canônico exige `credentialScopeId === ownerUserId`. Portanto, a implementação atual suporta a loja principal associada a cada proprietário, mas **não comprova múltiplas lojas distintas pertencentes ao mesmo usuário**. Esse cenário exigirá separar `storeId`/`ownerUid`, autenticação e cofre por loja, com migração e testes de isolamento próprios, antes de ser anunciado como suportado.
 
 ## Gates
 1. Compilar, rodar testes de contratos de beneficiário, pedido pendente/aprovado, cupom, idempotência, fallback histórico, webhook e conciliação financeira.
