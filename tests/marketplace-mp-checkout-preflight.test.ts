@@ -41,7 +41,7 @@ test('owner-only preflight shows separate readiness, no Pix confirmation claim',
   assert.match(panel, /setVerifiedCheckoutAccountId\(result\.externalAccountId\)/);
   assert.match(panel, /data-kyrub-mp-checkout-preflight="verified"/);
   assert.match(panel, /A emissão, o webhook e a conciliação ainda exigem um teste financeiro controlado/);
-  assert.match(panel, /Nenhum Pix foi criado/);
+  assert.match(panel, /Esta verificação não criou Pix nem confirmou pagamento/);
   assert.match(panel, /Pré-validar conta recebedora/);
   assert.match(panel, /setVerifiedCheckoutAccountId\(''\)/);
   assert.doesNotMatch(panel, /createMercadoPagoPixPayment|application_fee|marketplace_fee/);
