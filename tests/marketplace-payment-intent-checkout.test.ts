@@ -57,7 +57,7 @@ test('delivery and pickup materialize an unpaid approval-gated order without cre
   assert.match(checkoutBridgeSource, /return emptyBridge\(intent\.expiresAt/);
 
   const approvalGate = checkoutBridgeSource.indexOf('if (approval.approvalRequired)');
-  const providerCreation = checkoutBridgeSource.indexOf('createMercadoPagoPixPayment({');
+  const providerCreation = checkoutBridgeSource.indexOf('createStoreScopedMercadoPagoMarketplacePix({');
   assert.ok(approvalGate >= 0);
   assert.ok(providerCreation > approvalGate);
 });
