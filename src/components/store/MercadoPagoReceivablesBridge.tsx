@@ -83,6 +83,16 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         </div>
       )}
 
+      {status?.connected && status.oauthOperationsAllowed && status.platformConfigured && (
+        <p className="mt-2 text-[10px] leading-relaxed text-slate-400" data-kyrub-mp-store-pix-readiness={status.marketplacePixPreparation}>
+          {status.marketplacePixPreparation === 'rollout_pending'
+            ? 'Conta conectada. A nova emissão Pix desta loja ainda não foi liberada pela plataforma; pagamentos já emitidos continuam sujeitos à consulta e conciliação.'
+            : status.marketplacePixPreparation === 'live_preflight_required'
+              ? 'Loja incluída na liberação do novo Pix. Antes de cobrar, cada pagamento ainda terá o recebedor e a autorização OAuth conferidos.'
+              : 'A emissão do novo Pix ainda depende das condições de autorização desta loja.'}
+        </p>
+      )}
+
       {status?.connected && verifiedCheckoutAccountId
         && status.externalAccountId === verifiedCheckoutAccountId && (
         <p className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[10px] text-emerald-100"
