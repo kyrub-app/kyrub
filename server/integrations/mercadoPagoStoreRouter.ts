@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { resolveCommercialRecipientAuthority } from '../payments/commercialRecipientAuthorityService.js';
-import { isMercadoPagoMerchantPixRolloutAllowed } from '../payments/mercadoPagoMerchantPixRolloutPolicy.js';
+import { isMercadoPagoMerchantPixRolloutAllowed, mercadoPagoMerchantPixPreparationState } from '../payments/mercadoPagoMerchantPixRolloutPolicy.js';
 import {
   beginMercadoPagoStoreAuthorization,
   completeMercadoPagoStoreAuthorization,
@@ -87,9 +87,17 @@ export const createMercadoPagoStoreRouter = (): Router => {
       const storeId = clean(request.params.storeId);
       await requireOwner(request.get('authorization') ?? '', storeId);
       response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const connection = await getMercadoPagoStoreConnectionStatus(storeId);
       response.status(200).json({
-        ...(await getMercadoPagoStoreConnectionStatus(storeId)),
+        ...connection,
         oauthOperationsAllowed: oauthOperationsAllowed(),
+        marketplacePixPreparation: mercadoPagoMerchantPixPreparationState({
+          storeId,
+          platformConfigured: connection.platformConfigured,
+          connected: connection.connected,
+          oauthOperationsAllowed: oauthOperationsAllowed(),
+          env: process.env,
+        }),
       });
     } catch (error) {
       const mapped = mapError(error);
