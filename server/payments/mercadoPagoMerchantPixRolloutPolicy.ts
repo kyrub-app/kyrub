@@ -32,3 +32,29 @@ export const isMercadoPagoMerchantPixRolloutAllowed = (
   storeId: string,
   env: MercadoPagoMerchantPixRolloutEnvironment
 ): boolean => mercadoPagoMerchantPixRolloutError(storeId, env) === null;
+
+/**
+ * Non-financial preparation signal for a store owner. This does NOT imply
+ * OAuth token freshness, provider merchant capability or successful payment.
+ * No token or other merchant's connection is consulted.
+ */
+export type MercadoPagoMerchantPixPreparationState =
+  | 'preview_readonly'
+  | 'platform_setup_required'
+  | 'store_connection_required'
+  | 'rollout_pending'
+  | 'live_preflight_required';
+
+export const mercadoPagoMerchantPixPreparationState = (input: {
+  storeId: string;
+  platformConfigured: boolean;
+  connected: boolean;
+  oauthOperationsAllowed: boolean;
+  env: MercadoPagoMerchantPixRolloutEnvironment;
+}): MercadoPagoMerchantPixPreparationState => {
+  if (!input.oauthOperationsAllowed) return 'preview_readonly';
+  if (!input.platformConfigured) return 'platform_setup_required';
+  if (!input.connected) return 'store_connection_required';
+  if (mercadoPagoMerchantPixRolloutError(input.storeId, input.env)) return 'rollout_pending';
+  return 'live_preflight_required';
+};
