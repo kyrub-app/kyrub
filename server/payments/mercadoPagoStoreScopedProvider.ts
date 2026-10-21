@@ -31,6 +31,21 @@ interface MercadoPagoPayment {
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
+// Rollout is off by default. Only one explicitly selected, canonical store may
+// create new marketplace Pix during the controlled production payment test.
+export const assertMerchantMarketplacePixCanaryAllowed = (storeId: string): void => {
+  if (process.env.VERCEL_ENV !== 'production') {
+    throw new Error('MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY');
+  }
+  if (
+    process.env.KYRUB_MP_MERCHANT_PIX_ENABLED !== 'true'
+    || !clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID)
+    || clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID) !== clean(storeId)
+  ) {
+    throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
+  }
+};
+
 const checkout = (payment: MercadoPagoPayment) => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
@@ -104,10 +119,8 @@ export const createStoreScopedMercadoPagoMarketplacePix = async (input: {
   intent: MarketplaceCanonicalPaymentIntent;
   paymentId: string;
 }) => {
-  // Preview uses shared Firestore metadata: never mint new merchant Pix there.
-  if (process.env.VERCEL_ENV !== 'production') {
-    throw new Error('MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY');
-  }
+  // Repeat the gate here as defense in depth if another caller skips the bridge.
+  assertMerchantMarketplacePixCanaryAllowed(input.intent.storeId);
   return createStoreScopedMercadoPagoLocalPix({
     intent: input.intent,
     paymentId: input.paymentId,
