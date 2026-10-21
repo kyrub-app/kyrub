@@ -14,6 +14,12 @@
 ## Split
 **Split 1:1**: **DESATIVADO**; sem `application_fee` ou `marketplace_fee` no checkout. **Split 1:N** e **carteira assessorada**: evolução futura independente. A assinatura do plano do próprio Kyrub permanece faturada diretamente pela plataforma.
 
+## Modelo multi-loja e fases de liberação
+
+- O **piloto de uma única loja** é provisório: `KYRUB_MP_MERCHANT_PIX_ENABLED=true` + `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=canary` + `KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID` para o primeiro teste financeiro autorizado.
+- Após concluir os gates e autorizar a expansão, `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=connected_stores` permite a emissão por todas as lojas com **sua própria** autorização Mercado Pago válida. Cada venda usa a conexão vinculada àquela loja, confere `/users/me` e `collector_id` e grava o vínculo ao pagamento daquela loja.
+- O estado padrão continua **desativado**; modo omitido ou desconhecido também falha fechado. A aplicação central OAuth pertence ao Kyrub, mas **nenhum token, conta recebedora ou resultado financeiro é compartilhado entre lojistas**.
+
 ## Gates
 1. Compilar, rodar testes de contratos de beneficiário, pedido pendente/aprovado, cupom, idempotência, fallback histórico, webhook e conciliação financeira.
 2. Preview Vercel READY **não constitui teste financeiro real**.
