@@ -41,3 +41,17 @@ test('store inventory reports prepared vs blocked, not a payment settled flag', 
   assert.match(inventory, /isMercadoPagoMerchantPixRolloutAllowed\(canonicalStoreId, env\)/);
   assert.doesNotMatch(inventory, /payment\.paid|payment\.approved|payment\.refunded|paymentCompleted/);
 });
+
+test('inventory is visible only inside the existing admin integrations workspace, not as a second finance panel', () => {
+  const workspace = read('src/components/admin/AdminIntegrationsWorkspace.tsx');
+  const card = read('src/components/admin/AdminMercadoPagoMigrationInventoryCard.tsx');
+  assert.match(workspace, /AdminMercadoPagoOAuthCard user=\{authenticatedUser\}/);
+  assert.match(workspace, /AdminMercadoPagoMigrationInventoryCard user=\{authenticatedUser\}/);
+  assert.match(workspace, /profile\.role !== 'super_admin'/);
+  assert.match(card, /\/api\/admin\/operations\/health\?transport=mercado-pago-migration-inventory/);
+  assert.match(card, /data\.error|Inventário Mercado Pago indisponível/);
+  assert.match(card, /snapshot\.complete/);
+  assert.match(card, /snapshot\.items\.map/);
+  assert.match(card, /Este inventário NÃO autoriza merge, Pix ou migração automática/);
+  assert.doesNotMatch(card, /Access Token|Client Secret|\.post\(|method: 'POST'/);
+});
