@@ -354,6 +354,12 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY') {
     return { status: 503, body: { error: 'O checkout Pix de lojistas está bloqueado neste ambiente de testes.' } };
   }
+  if (message === 'MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED') {
+    return {
+      status: 503,
+      body: { error: 'O Pix desta loja ainda não foi liberado para a nova integração. Nenhuma cobrança foi iniciada.' },
+    };
+  }
   if (/Collector user without key enabled for QR render/i.test(message)) {
     return {
       status: 503,
