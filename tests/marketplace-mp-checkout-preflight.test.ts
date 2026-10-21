@@ -54,7 +54,9 @@ test('preflight does not issue Pix and merchant cutover remains outside preview'
   const panel = source('src/components/store/MercadoPagoReceivablesBridge.tsx');
   assert.match(bridge, /createStoreScopedMercadoPagoMarketplacePix/);
   assert.doesNotMatch(bridge, /createMercadoPagoPixPayment\(/);
-  assert.match(provider, /process\.env\.VERCEL_ENV !== 'production'/);
+  const policy = source('server/payments/mercadoPagoMerchantPixRolloutPolicy.ts');
+  assert.match(policy, /env\.VERCEL_ENV !== 'production'/);
+  assert.match(provider, /mercadoPagoMerchantPixRolloutError\(storeId, process\.env\)/);
   assert.doesNotMatch(provider, /application_fee|marketplace_fee/);
   assert.match(panel, /Esta verificação não criou Pix nem confirmou pagamento/);
   assert.match(panel, /disabled=\{busy \|\| !status\?\.platformConfigured \|\| !status\?\.oauthOperationsAllowed\}/);
