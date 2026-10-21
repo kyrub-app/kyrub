@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 export interface MercadoPagoStoreConnectionStatus {
   provider: 'mercado_pago';
   platformConfigured: boolean;
+  oauthOperationsAllowed: boolean;
   connected: boolean;
   externalAccountId: string;
   expiresAt: string;
@@ -45,7 +46,7 @@ export const beginMercadoPagoStoreConnection = async (user: User): Promise<void>
 
 export const validateMercadoPagoStoreConnection = (
   user: User
-): Promise<{ ok: true; externalAccountId: string }> =>
+): Promise<{ ok: true; recipientPreflightReady: true; checkoutActivated: false; externalAccountId: string }> =>
   request(
     user,
     `/api/store-connections/mercado-pago/${encodeURIComponent(user.uid)}/validate`,
