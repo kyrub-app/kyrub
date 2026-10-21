@@ -10,6 +10,7 @@ import AdminGoogleMapsProviderCard from './AdminGoogleMapsProviderCard';
 import AdminMercadoLivrePlatformCard from './AdminMercadoLivrePlatformCard';
 import AdminMercadoPagoProviderCard from './AdminMercadoPagoProviderCard';
 import AdminMercadoPagoOAuthCard from './AdminMercadoPagoOAuthCard';
+import AdminMercadoPagoMigrationInventoryCard from './AdminMercadoPagoMigrationInventoryCard';
 import AdminProviderCatalogGrid from './AdminProviderCatalogGrid';
 import AdminSerproCnpjProviderCard from './AdminSerproCnpjProviderCard';
 
@@ -40,6 +41,7 @@ export default function AdminIntegrationsWorkspace({ authenticatedUser, profile,
       <div className="mt-5 grid gap-3 md:grid-cols-2"><article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4"><div className="flex items-center gap-2 text-slate-200"><KeyRound className="h-4 w-4 text-cyan-300" /><strong className="text-xs">Vault v1 — envelopes AES</strong></div><p className="mt-2 text-[11px] leading-relaxed text-slate-500">Autoridade criptográfica ativa para integrações enquanto a migração controlada ao Secret Manager não termina.</p><span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase text-slate-300">{vaultReady ? 'Chave mestre disponível' : 'Chave mestre indisponível'}</span></article><article className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4"><div className="flex items-center gap-2 text-slate-200"><ShieldCheck className="h-4 w-4 text-emerald-300" /><strong className="text-xs">Vault v2 — Google Secret Manager</strong></div><p className="mt-2 text-[11px] leading-relaxed text-slate-500">Adapter disponível; infraestrutura e migração de secrets continuam etapas separadas.</p><span className="mt-3 inline-flex rounded-full border border-slate-700 px-2.5 py-1 text-[9px] font-black uppercase text-slate-300">{snapshot?.vault.googleSecretManagerAdapterEnabled ? 'Adapter habilitado — infraestrutura não verificada' : 'Adapter desabilitado'}</span></article></div>
       <AdminMercadoPagoProviderCard authenticatedUser={authenticatedUser} profile={profile} providerState={mercadoPago?.state} vaultReady={vaultReady} onChanged={refresh} />
       <AdminMercadoPagoOAuthCard user={authenticatedUser} />
+      <AdminMercadoPagoMigrationInventoryCard user={authenticatedUser} />
       <AdminGoogleMapsProviderCard authenticatedUser={authenticatedUser} profile={profile} providerState={googleMaps?.state} vaultReady={vaultReady} onChanged={refresh} />
       <AdminSerproCnpjProviderCard authenticatedUser={authenticatedUser} profile={profile} vaultReady={vaultReady} />
       <AdminMercadoLivrePlatformCard authenticatedUser={authenticatedUser} profile={profile} />
