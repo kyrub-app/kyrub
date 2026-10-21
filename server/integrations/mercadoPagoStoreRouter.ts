@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { resolveCommercialRecipientAuthority } from '../payments/commercialRecipientAuthorityService.js';
+import { isMercadoPagoMerchantPixRolloutAllowed } from '../payments/mercadoPagoMerchantPixRolloutPolicy.js';
 import {
   beginMercadoPagoStoreAuthorization,
   completeMercadoPagoStoreAuthorization,
@@ -139,8 +140,8 @@ export const createMercadoPagoStoreRouter = (): Router => {
       response.status(200).json({
         ok: true,
         recipientPreflightReady: true,
-        // Indicates code routing only, never that a real Pix/webhook succeeded.
-        checkoutActivated: process.env.VERCEL_ENV === 'production',
+        // Reports rollout eligibility for THIS store, not Pix payment or webhook success.
+        checkoutActivated: isMercadoPagoMerchantPixRolloutAllowed(storeId, process.env),
         externalAccountId,
       });
     } catch (error) {
