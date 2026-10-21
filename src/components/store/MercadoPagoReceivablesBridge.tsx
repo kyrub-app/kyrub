@@ -20,7 +20,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
     try {
       const next = await loadMercadoPagoStoreConnectionStatus(user);
       setStatus(next);
-      if (!next.connected) setVerifiedCheckoutAccountId('');
+      if (!next.connected || !next.oauthOperationsAllowed) setVerifiedCheckoutAccountId('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível consultar o Mercado Pago.');
     }
@@ -73,7 +73,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           </p>
         </div>
         <span className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase ${status?.connected ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 bg-slate-950 text-slate-400'}`}>
-          {status?.connected ? (status.platformConfigured ? 'Conectado' : 'Conta registrada · ambiente pendente') : 'Não conectado'}
+          {status?.connected ? (!status.oauthOperationsAllowed ? 'Conta registrada · homologação protegida' : status.platformConfigured ? 'Conectado' : 'Conta registrada · ambiente pendente') : 'Não conectado'}
         </span>
       </div>
 
@@ -93,7 +93,13 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         </p>
       )}
 
-      {status && !status.platformConfigured && (
+      {status && !status.oauthOperationsAllowed && (
+        <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100" data-kyrub-mp-preview-readonly="true">
+          Homologação protegida: a conta cadastrada aparece porque o Firestore é compartilhado. Autorização, desconexão e renovação de tokens ficam bloqueadas aqui. A pré-validação real precisa ser feita com segurança em produção, sem gerar Pix. Não copie credenciais para a preview.
+        </div>
+      )}
+
+      {status && status.oauthOperationsAllowed && !status.platformConfigured && (
         <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100">
           A integração Mercado Pago ainda não foi configurada pela administração do Kyrub neste ambiente. Para conectar a própria conta, primeiro precisamos ativar o aplicativo OAuth da plataforma. Não informe tokens nem repita pagamentos.
         </div>
@@ -105,7 +111,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         {!status?.connected ? (
           <button
             type="button"
-            disabled={busy || !status?.platformConfigured}
+            disabled={busy || !status?.platformConfigured || !status?.oauthOperationsAllowed}
             onClick={() => void beginMercadoPagoStoreConnection(user).catch(error => setMessage(error instanceof Error ? error.message : 'Falha ao abrir autorização.'))}
             className="min-h-11 rounded-xl bg-sky-400 px-4 text-[10px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -113,12 +119,14 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           </button>
         ) : (
           <>
-            <button type="button" disabled={busy || !status?.platformConfigured} onClick={() => void verifyCheckout()} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
+            <button type="button" disabled={busy || !status?.platformConfigured || !status?.oauthOperationsAllowed} onClick={() => void verifyCheckout()} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
               Pré-validar conta recebedora
             </button>
-            <button type="button" disabled={busy} onClick={() => void execute(() => disconnectMercadoPagoStoreConnection(user), 'Mercado Pago desconectado desta loja.')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40">
-              Desconectar
-            </button>
+            {status?.oauthOperationsAllowed && (
+              <button type="button" disabled={busy} onClick={() => void execute(() => disconnectMercadoPagoStoreConnection(user), 'Mercado Pago desconectado desta loja.')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40">
+                Desconectar
+              </button>
+            )}
           </>
         )}
       </div>
