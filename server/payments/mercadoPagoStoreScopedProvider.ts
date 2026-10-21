@@ -31,19 +31,29 @@ interface MercadoPagoPayment {
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
-// Rollout is off by default. Only one explicitly selected, canonical store may
-// create new marketplace Pix during the controlled production payment test.
+// Release switch controls the feature, not the ownership of a merchant account.
+// Pilot mode authorizes one canonical store for the first controlled payment.
+// Later, connected_stores permits each eligible store's OWN validated OAuth;
+// no store receives another store's token or payment. Default stays disabled.
 export const assertMerchantMarketplacePixCanaryAllowed = (storeId: string): void => {
   if (process.env.VERCEL_ENV !== 'production') {
     throw new Error('MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY');
   }
-  if (
-    process.env.KYRUB_MP_MERCHANT_PIX_ENABLED !== 'true'
-    || !clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID)
-    || clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID) !== clean(storeId)
-  ) {
+  if (process.env.KYRUB_MP_MERCHANT_PIX_ENABLED !== 'true') {
     throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
   }
+  const rolloutMode = clean(process.env.KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE);
+  if (rolloutMode === 'canary') {
+    const canaryStoreId = clean(process.env.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID);
+    if (!canaryStoreId || canaryStoreId !== clean(storeId)) {
+      throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
+    }
+  } else if (rolloutMode !== 'connected_stores') {
+    // Refuse implicit general release if the mode is omitted or mistyped.
+    throw new Error('MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED');
+  }
+  // Recipient verification is performed per store immediately before the POST:
+  // resolveCommercialRecipientAuthority -> live OAuth /users/me -> collector_id.
 };
 
 const checkout = (payment: MercadoPagoPayment) => {
