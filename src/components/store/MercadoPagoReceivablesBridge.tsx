@@ -14,26 +14,49 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
   const [status, setStatus] = useState<MercadoPagoStoreConnectionStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState('');
+  const [verifiedCheckoutAccountId, setVerifiedCheckoutAccountId] = useState('');
 
   const refresh = async (): Promise<void> => {
     try {
-      setStatus(await loadMercadoPagoStoreConnectionStatus(user));
+      const next = await loadMercadoPagoStoreConnectionStatus(user);
+      setStatus(next);
+      if (!next.connected || !next.oauthOperationsAllowed) setVerifiedCheckoutAccountId('');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível consultar o Mercado Pago.');
     }
   };
 
-  useEffect(() => { void refresh(); }, [user.uid]);
+  useEffect(() => { setVerifiedCheckoutAccountId(''); void refresh(); }, [user.uid]);
 
   const execute = async (operation: () => Promise<unknown>, success: string): Promise<void> => {
     try {
       setBusy(true);
       setMessage('');
+      setVerifiedCheckoutAccountId('');
       await operation();
       setMessage(success);
       await refresh();
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível concluir a operação.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const verifyCheckout = async (): Promise<void> => {
+    try {
+      setBusy(true);
+      setMessage('');
+      setVerifiedCheckoutAccountId('');
+      const result = await validateMercadoPagoStoreConnection(user);
+      if (!result.ok || !result.recipientPreflightReady || result.checkoutActivated !== false || !result.externalAccountId) {
+        throw new Error('Não foi possível comprovar a conta recebedora do checkout.');
+      }
+      await refresh();
+      setVerifiedCheckoutAccountId(result.externalAccountId);
+      setMessage('Conta recebedora pré-validada. O checkout Pix da vitrine ainda não foi alterado. Nenhum Pix foi criado.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível validar o recebimento desta loja.');
     } finally {
       setBusy(false);
     }
@@ -50,7 +73,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           </p>
         </div>
         <span className={`rounded-full border px-3 py-1 font-mono text-[8px] font-black uppercase ${status?.connected ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-200' : 'border-slate-700 bg-slate-950 text-slate-400'}`}>
-          {status?.connected ? 'Conectado' : 'Não conectado'}
+          {status?.connected ? (!status.oauthOperationsAllowed ? 'Conta registrada · homologação protegida' : status.platformConfigured ? 'Conectado' : 'Conta registrada · ambiente pendente') : 'Não conectado'}
         </span>
       </div>
 
@@ -60,9 +83,25 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         </div>
       )}
 
-      {status && !status.platformConfigured && (
+      {status?.connected && verifiedCheckoutAccountId
+        && status.externalAccountId === verifiedCheckoutAccountId && (
+        <p className="mt-3 rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[10px] text-emerald-100"
+          data-kyrub-mp-checkout-preflight="verified">
+          <strong>Conta recebedora pré-validada.</strong> Conta recebedora MP final …{verifiedCheckoutAccountId.slice(-4)}.
+          A identidade OAuth e a conta prevista como recebedora foram conferidas.
+          O checkout Pix da vitrine ainda não foi alterado. O pagamento e o webhook precisam de teste controlado após a PR #949.
+        </p>
+      )}
+
+      {status && !status.oauthOperationsAllowed && (
+        <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100" data-kyrub-mp-preview-readonly="true">
+          Homologação protegida: a conta cadastrada aparece porque o Firestore é compartilhado. Autorização, desconexão e renovação de tokens ficam bloqueadas aqui. A pré-validação real precisa ser feita com segurança em produção, sem gerar Pix. Não copie credenciais para a preview.
+        </div>
+      )}
+
+      {status && status.oauthOperationsAllowed && !status.platformConfigured && (
         <div className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/[0.07] p-3 text-[10px] leading-relaxed text-amber-100">
-          A conexão com o Mercado Pago está temporariamente indisponível. Tente novamente mais tarde.
+          A integração Mercado Pago ainda não foi configurada pela administração do Kyrub neste ambiente. Para conectar a própria conta, primeiro precisamos ativar o aplicativo OAuth da plataforma. Não informe tokens nem repita pagamentos.
         </div>
       )}
 
@@ -72,7 +111,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
         {!status?.connected ? (
           <button
             type="button"
-            disabled={busy || !status?.platformConfigured}
+            disabled={busy || !status?.platformConfigured || !status?.oauthOperationsAllowed}
             onClick={() => void beginMercadoPagoStoreConnection(user).catch(error => setMessage(error instanceof Error ? error.message : 'Falha ao abrir autorização.'))}
             className="min-h-11 rounded-xl bg-sky-400 px-4 text-[10px] font-black uppercase text-slate-950 disabled:cursor-not-allowed disabled:opacity-40"
           >
@@ -80,12 +119,14 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           </button>
         ) : (
           <>
-            <button type="button" disabled={busy} onClick={() => void execute(() => validateMercadoPagoStoreConnection(user), 'Conexão Mercado Pago validada.')} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
-              Verificar conexão
+            <button type="button" disabled={busy || !status?.platformConfigured || !status?.oauthOperationsAllowed} onClick={() => void verifyCheckout()} className="min-h-11 rounded-xl border border-emerald-500/25 bg-emerald-500/10 px-4 text-[10px] font-black uppercase text-emerald-100 disabled:opacity-40">
+              Pré-validar conta recebedora
             </button>
-            <button type="button" disabled={busy} onClick={() => void execute(() => disconnectMercadoPagoStoreConnection(user), 'Mercado Pago desconectado desta loja.')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40">
-              Desconectar
-            </button>
+            {status?.oauthOperationsAllowed && (
+              <button type="button" disabled={busy} onClick={() => void execute(() => disconnectMercadoPagoStoreConnection(user), 'Mercado Pago desconectado desta loja.')} className="min-h-11 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[10px] font-black uppercase text-slate-300 disabled:opacity-40">
+                Desconectar
+              </button>
+            )}
           </>
         )}
       </div>
