@@ -88,14 +88,20 @@ test('webhooks preserve signature authority without demanding platform Pix acces
   assert.match(webhook, /settleMarketplaceOperationalOrderAfterPayment/);
 });
 
-test('merchant Pix rollout is off by default and restricted to one canonical store', () => {
+test('merchant Pix rollout defaults off; canary is temporary and general mode still uses separate OAuth for every store', () => {
   const provider = read('server/payments/mercadoPagoStoreScopedProvider.ts');
   const bridge = read('server/payments/mercadoPagoCheckoutBridge.ts');
   const router = read('server/payments/paymentIntentRouter.ts');
   assert.match(provider, /process\.env\.VERCEL_ENV !== 'production'/);
   assert.match(provider, /process\.env\.KYRUB_MP_MERCHANT_PIX_ENABLED !== 'true'/);
+  assert.match(provider, /KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE/);
+  assert.match(provider, /rolloutMode === 'canary'/);
+  assert.match(provider, /canaryStoreId !== clean\(storeId\)/);
+  assert.match(provider, /rolloutMode !== 'connected_stores'/);
   assert.match(provider, /KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID/);
-  assert.match(provider, /clean\(process\.env\.KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID\) !== clean\(storeId\)/);
+  assert.match(provider, /resolveCommercialRecipientAuthority/);
+  assert.match(provider, /validateMercadoPagoStoreConnection\(credentialScopeId\)/);
+  assert.match(provider, /mercadoPagoStoreRequest<MercadoPagoPayment>\(credentialScopeId/);
   assert.match(provider, /MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED/);
   assert.match(provider, /assertMerchantMarketplacePixCanaryAllowed\(input\.intent\.storeId\)/);
   assert.match(bridge, /if \(!intent\.providerIntentId && !payment\.providerPaymentId\)/);
