@@ -11,6 +11,32 @@
 6. Se o checkout já tiver clientes reais ativos, planejar janela de migração; o gate desativado recusa novas emissões Pix, sem fallback para a conta da plataforma. Não liberar migração sem operação de suporte.
 7. Confirmar segredo HMAC do webhook e rota operacional; não assumir que Pix gerado é Pix pago.
 
+## Gate de continuidade operacional — obrigatório antes do merge
+
+A versão atual da produção ainda tem o emissor legado para novos Pix da vitrine. A PR #956 remove essa emissão para vendas de lojas e **não** faz fallback para o Access Token da plataforma. Portanto, ativar `main` sem preparar as lojas pode interromper novas vendas Pix. Preview READY e CI verde não comprovam que todas as lojas estejam prontas.
+
+Antes de aprovar promoção, a equipe autorizada deve conferir no ambiente real, **sem alterar dados ou exportar tokens**, e registrar de forma restrita:
+
+1. Quantidade de lojas com vendas Pix recentes ou pedidos aceitos/pendentes, incluindo cobranças já emitidas e ainda não pagas (não presumir que exista somente a loja piloto).
+2. Para cada loja ativa, seu identificador canônico, proprietário legítimo, estado de OAuth Mercado Pago **daquela loja**, pré-validação real de beneficiário e possibilidade de receber Pix — sem revelar credenciais. Sinal `connected` ou `live_preflight_required` isoladamente não prova aprovação do Mercado Pago.
+3. Destino atual de novos Pix, quantidade de pedidos aguardando pagamento e responsável operacional. Se houver lojas ainda usando o checkout legado ou sem OAuth, definir migração e comunicação **antes** do merge.
+4. Planos de cobrança da plataforma, PDV presencial, Pix já emitido, webhooks e conciliação devem permanecer funcionais. Reconciliar histórico mesmo após desativar a nova emissão.
+5. A primeira compra real exige somente a loja piloto já autorizada e o gate `canary`. Não habilitar `connected_stores` até verificar que a ativação das demais lojas não interromperá vendas e que cada uma tem OAuth próprio.
+
+### Matriz de impacto esperada
+
+| Situação | Comportamento no novo código | Ação antes do lançamento |
+|---|---|---|
+| Pix antigo emitido, ainda em aberto | Reconsulta na conta que emitiu; não cria novo Pix | Conferir consultas, expiração e webhook |
+| Loja do piloto, OAuth validado, canary ativo | Novo Pix na conta do próprio lojista | Uma transação real autorizada |
+| Outra loja, mesmo com OAuth, canary ativo | Nova emissão bloqueada (503) | **Não promover para produção sem plano de continuidade** |
+| Loja sem OAuth, modo `connected_stores` | Nova emissão bloqueada (409), sem fallback para a plataforma | Conectar e pré-validar a conta antes de aceitar novos pagamentos |
+| Cobrança de assinatura Kyrub | Permanece no faturamento da plataforma | Validar regressão independentemente |
+
+**Critério de parada:** se não houver inventário confiável das lojas ativas, se alguma loja ainda depender do emissor legado para novas vendas, ou se não existir janela de migração autorizada, manter PR #956 Draft e não realizar merge. Não prometer ausência de interrupção com dados desconhecidos e não religar a conta da plataforma como recebedora de vendas de outros lojistas para contornar o bloqueio.
+
+O status `marketplacePixPreparation` exposto no cartão Recebimentos é **somente um diagnóstico de prontidão da configuração por loja**; nunca substitui consulta ao Mercado Pago, validação de identidade, Pix pago ou conciliação.
+
 ## Matriz de validação
 
 | Caso | Ação | Evidência exigida | Aprovação |
