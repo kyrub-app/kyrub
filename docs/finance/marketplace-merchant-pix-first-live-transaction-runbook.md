@@ -7,7 +7,7 @@
 2. Revisão da PR #956 e aprovação específica de promoção em `main`; confirmação no domínio `kyrub.com` do SHA READY, sem alterar o link fixo de homologação para Pix.
 3. Verificar conexão e pré-validação OAuth da loja; confirmar conta MP alvo por ID mascarado. Registrar beneficiário esperado *antes* do teste.
 4. Confirmar pela operação da loja um único pedido de teste, valor total e descontos explicitamente aprovados. Não inventar produto ou valor; não criar pagamentos sem confirmação.
-5. Ativar a liberação somente em **Production**, para uma única loja canônica verificada: `KYRUB_MP_MERCHANT_PIX_ENABLED=true` e `KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID=<id canônico da loja>`. Variáveis ausentes, incorretas ou Preview devem bloquear novas emissões. Exigir redeploy/READY se alterar env de Vercel. Não publicar o ID em logs ou screenshots que não precisem dele.
+5. Para o **piloto inicial**, habilitar somente em **Production**: `KYRUB_MP_MERCHANT_PIX_ENABLED=true`, `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=canary` e `KYRUB_MP_MERCHANT_PIX_CANARY_STORE_ID=<id canônico da loja piloto>`. Variáveis ausentes, incorretas ou Preview devem bloquear novas emissões. Exigir redeploy/READY se alterar env de Vercel. Não publicar o ID em logs ou screenshots que não precisem dele. Após a validação completa e autorização expressa de expansão, configurar `KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE=connected_stores`: cada loja que possuir sua própria conexão OAuth válida poderá emitir seus Pix para sua própria conta, sem limitação permanente a uma loja e sem reutilizar o token de outras.
 6. Se o checkout já tiver clientes reais ativos, planejar janela de migração; o gate desativado recusa novas emissões Pix, sem fallback para a conta da plataforma. Não liberar migração sem operação de suporte.
 7. Confirmar segredo HMAC do webhook e rota operacional; não assumir que Pix gerado é Pix pago.
 
@@ -36,4 +36,4 @@ Registrar (em local autorizado e com dados pessoais mascarados) SHA/deployment, 
 ## Desativação / rollback
 - Parar novas emissões removendo/desabilitando a variável de liberação no ambiente certo e confirmar deployment READY; não revogar OAuth da loja.
 - Nunca desfazer lançamentos financeiros por simples rollback de código. Pix já emitidos precisam manter consulta via vínculo original e webhook/reconciliação disponíveis.
-- Antes de ampliar para mais lojas, concluir a matriz acima e aprovar outro rollout. A canary é propositalmente de uma loja.
+- A canary de uma loja é apenas a fase inicial. Para expandir, concluir a matriz e aprovar explicitamente a alteração para `connected_stores`; o próprio vínculo individual OAuth de cada loja continua obrigatório para receber. Não há conta recebedora, token ou extrato financeiro compartilhado entre lojas.
