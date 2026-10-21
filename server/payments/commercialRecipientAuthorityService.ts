@@ -1,4 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
+import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
+import { legacyMercadoPagoStoreIdFromPrimaryOwner } from '../../shared/mercadoPagoLegacyOwnerStoreScope.js';
 import {
   buildPlatformPlanRecipientAuthority,
   buildStoreCommercialRecipientAuthority,
@@ -22,12 +24,21 @@ const canonicalStoreIdentity = async (
   }
 
   const snapshot = await adminDb.doc(`stores/${canonicalStoreId}`).get();
-  if (!snapshot.exists) {
-    throw new Error('COMMERCIAL_RECIPIENT_STORE_NOT_FOUND');
+  let ownerUserId = '';
+  let credentialScopeId = '';
+  if (snapshot.exists) {
+    const data = snapshot.data() as Record<string, unknown>;
+    ownerUserId = clean(data.ownerId);
+    credentialScopeId = clean(data.legacyTenantId) || ownerUserId;
+  } else {
+    // Some existing canonical owner stores are saved only under users/{uid}/stores/{uid}.
+    // This is a strict identity-checked read fallback, never a new store or token.
+    const primary = await adminDb.doc(getPrimaryUserStoreDocumentPath(canonicalStoreId)).get();
+    if (!primary.exists) throw new Error('COMMERCIAL_RECIPIENT_STORE_NOT_FOUND');
+    const primaryStore = primary.data() as Record<string, unknown>;
+    credentialScopeId = legacyMercadoPagoStoreIdFromPrimaryOwner(canonicalStoreId, primaryStore);
+    ownerUserId = canonicalStoreId;
   }
-  const data = snapshot.data() as Record<string, unknown>;
-  const ownerUserId = clean(data.ownerId);
-  const credentialScopeId = clean(data.legacyTenantId) || ownerUserId;
 
   if (
     !validIdentity(ownerUserId) ||
