@@ -64,7 +64,7 @@ export const loadMercadoPagoMerchantPixMigrationInventory = async (
     .get();
   const complete = tenants.size <= MAX_PUBLISHED_STORES;
   const candidates = tenants.docs.slice(0, MAX_PUBLISHED_STORES);
-  const items = await Promise.all(candidates.map(async tenantDoc: FirebaseFirestore.QueryDocumentSnapshot => {
+  const items = await Promise.all(candidates.map(async (tenantDoc: FirebaseFirestore.QueryDocumentSnapshot) => {
     const tenant = tenantDoc.data() as Record<string, unknown>;
     const tenantId = tenantDoc.id;
     const ownerId = clean(tenant.ownerId) || tenantId;
