@@ -20,7 +20,7 @@ test('MP connection preflight checks authenticated owner, live account and canon
   assert.match(preflight, /authority\.externalAccountId !== externalAccountId/);
   assert.match(preflight, /authority\.platformFeeMode !== 'separate'/);
   assert.match(preflight, /recipientPreflightReady: true/);
-  assert.match(preflight, /checkoutActivated: process\.env\.VERCEL_ENV === 'production'/);
+  assert.match(preflight, /checkoutActivated: isMercadoPagoMerchantPixRolloutAllowed\(storeId, process\.env\)/);
   assert.doesNotMatch(preflight, /createMercadoPagoPixPayment\(|createStoreScopedMercadoPagoMarketplacePix\(|\.runTransaction\(|transaction\.set\(|transaction\.update\(/);
 });
 
