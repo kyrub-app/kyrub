@@ -49,12 +49,12 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
       setMessage('');
       setVerifiedCheckoutAccountId('');
       const result = await validateMercadoPagoStoreConnection(user);
-      if (!result.ok || !result.recipientPreflightReady || result.checkoutActivated !== false || !result.externalAccountId) {
+      if (!result.ok || !result.recipientPreflightReady || typeof result.checkoutActivated !== 'boolean' || !result.externalAccountId) {
         throw new Error('Não foi possível comprovar a conta recebedora do checkout.');
       }
       await refresh();
       setVerifiedCheckoutAccountId(result.externalAccountId);
-      setMessage('Conta recebedora pré-validada. O checkout Pix da vitrine ainda não foi alterado. Nenhum Pix foi criado.');
+      setMessage('Conta recebedora pré-validada. Esta verificação não criou Pix nem confirmou pagamento.');
     } catch (error) {
       setMessage(error instanceof Error ? error.message : 'Não foi possível validar o recebimento desta loja.');
     } finally {
@@ -89,7 +89,7 @@ function MercadoPagoReceivablesPanel({ user }: { user: User }) {
           data-kyrub-mp-checkout-preflight="verified">
           <strong>Conta recebedora pré-validada.</strong> Conta recebedora MP final …{verifiedCheckoutAccountId.slice(-4)}.
           A identidade OAuth e a conta prevista como recebedora foram conferidas.
-          O checkout Pix da vitrine ainda não foi alterado. O pagamento e o webhook precisam de teste controlado após a PR #949.
+          A validação não prova que um Pix tenha sido pago. A emissão, o webhook e a conciliação ainda exigem um teste financeiro controlado.
         </p>
       )}
 
