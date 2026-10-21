@@ -4,6 +4,7 @@ export interface MercadoPagoStoreConnectionStatus {
   provider: 'mercado_pago';
   platformConfigured: boolean;
   oauthOperationsAllowed: boolean;
+  marketplacePixPreparation: 'preview_readonly' | 'platform_setup_required' | 'store_connection_required' | 'rollout_pending' | 'live_preflight_required';
   connected: boolean;
   externalAccountId: string;
   expiresAt: string;
