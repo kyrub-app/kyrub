@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
+  authorizeIntegrationReadiness,
   loadAuthorizedIntegrationReadiness,
   mapIntegrationReadinessError,
 } from './integrationReadinessService.js';
@@ -20,6 +21,7 @@ import {
   saveAuthorizedCustomerArrivalPolicy,
 } from './customerArrivalPolicyAdminService.js';
 import { loadOperationalResponsibilityReviewQueue } from './operationalResponsibilityRouter.js';
+import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
 
@@ -161,6 +163,18 @@ export const createOperationsHealthRouter = (): Router => {
     if (transport === 'integration-readiness') {
       try {
         response.json(await loadAuthorizedIntegrationReadiness(request.get('authorization') ?? ''));
+      } catch (error) {
+        const mapped = mapIntegrationReadinessError(error);
+        response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
+    if (transport === 'mercado-pago-migration-inventory') {
+      try {
+        // Super Admin only: published-store metadata, never private tokens.
+        await authorizeIntegrationReadiness(request.get('authorization') ?? '');
+        response.setHeader('Cache-Control', 'no-store, max-age=0');
+        response.json(await loadMercadoPagoMerchantPixMigrationInventory());
       } catch (error) {
         const mapped = mapIntegrationReadinessError(error);
         response.status(mapped.status).json(mapped.body);
