@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import {
   isMercadoPagoMerchantPixRolloutAllowed,
   mercadoPagoMerchantPixRolloutError,
+  mercadoPagoMerchantPixPreparationState,
   type MercadoPagoMerchantPixRolloutEnvironment,
 } from '../server/payments/mercadoPagoMerchantPixRolloutPolicy';
 
@@ -51,4 +52,23 @@ test('connected_stores permits eligible store identities independently, not a gl
   assert.equal(isMercadoPagoMerchantPixRolloutAllowed('abc/def', env), false);
   // Passing this pure gate is not OAuth authorization: merchant-specific
   // identity and collector matching remain mandatory in the provider.
+});
+
+test('merchant status remains preparation only, does not imply payment or OAuth validation', () => {
+  const makeStatus = (storeId: string, env: MercadoPagoMerchantPixRolloutEnvironment, connected: boolean, oauthOperationsAllowed = true) =>
+    mercadoPagoMerchantPixPreparationState({
+      storeId, env, platformConfigured: true, connected, oauthOperationsAllowed,
+    });
+  assert.equal(makeStatus(merchantA, {}, true, false), 'preview_readonly');
+  assert.equal(makeStatus(merchantA, { VERCEL_ENV: 'production' }, false), 'store_connection_required');
+  assert.equal(makeStatus(merchantA, controlled, false), 'store_connection_required');
+  assert.equal(makeStatus(merchantB, controlled, true), 'rollout_pending');
+  assert.equal(makeStatus(merchantA, controlled, true), 'live_preflight_required');
+  const general = { ...controlled, KYRUB_MP_MERCHANT_PIX_ROLLOUT_MODE: 'connected_stores' };
+  assert.equal(makeStatus(merchantA, general, true), 'live_preflight_required');
+  assert.equal(makeStatus(merchantB, general, false), 'store_connection_required');
+  assert.equal(mercadoPagoMerchantPixPreparationState({
+    storeId: merchantA, env: controlled, platformConfigured: false,
+    connected: true, oauthOperationsAllowed: true,
+  }), 'platform_setup_required');
 });
