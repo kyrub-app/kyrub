@@ -8,3 +8,11 @@
 - Gate automático específico: `tests/marketplace-mp-checkout-preflight.test.ts`, incluindo preservação do checkout antigo na homologação.
 - Gate humano posterior: validar sem emitir Pix no link fixo com uma configuração **segura e autorizada** para este ambiente; se não houver acesso OAuth válido, registrar o bloqueio e não inventar sucesso.
 - A PR #949 contém a mudança verdadeira do recebedor na emissão Pix; mantê-la Draft até validação separada de QR, collector_id, webhook e conciliação. Nenhum merge para `main` autorizado por este bloco.
+
+## Segurança de dados compartilhados — 21/10/2026
+
+Homologação acessa metadados no mesmo Firestore da produção, mas não tem a chave de produção para operar o cofre. A UI deixava `Desconectar` ativo; o endpoint original faria delete de `stores/{storeId}/integrationSecrets/mercado_pago_payments` e atualizaria o status compartilhado.
+
+O backend agora rejeita qualquer operação de autorização, callback, validação ao vivo ou desconexão nos ambientes Vercel não-production; a validação pode renovar tokens e escrever no cofre. A leitura de status do proprietário continua disponível, retorna `oauthOperationsAllowed:false` e o painel explica claramente o bloqueio. Botões de escrita ou validação ficam indisponíveis na Preview. Nenhum token é copiado e nenhuma cobrança é criada.
+
+O próximo gate real depende de um endpoint de pré-validação autorizado na **produção**, isolado do checkout e somente para a conta autenticada da loja; exige PR separada e aprovação antes de merge em `main`.

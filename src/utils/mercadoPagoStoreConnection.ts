@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 export interface MercadoPagoStoreConnectionStatus {
   provider: 'mercado_pago';
   platformConfigured: boolean;
+  oauthOperationsAllowed: boolean;
   connected: boolean;
   externalAccountId: string;
   expiresAt: string;

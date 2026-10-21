@@ -56,5 +56,23 @@ test('fixed homologation preflight does not activate legacy storefront checkout 
   assert.doesNotMatch(bridge, /createStoreScopedMercadoPagoMarketplacePix/);
   assert.doesNotMatch(provider, /application_fee|marketplace_fee/);
   assert.match(panel, /checkout Pix da vitrine ainda não foi alterado/);
-  assert.match(panel, /disabled=\{busy \|\| !status\?\.platformConfigured\}/);
+  assert.match(panel, /disabled=\{busy \|\| !status\?\.platformConfigured \|\| !status\?\.oauthOperationsAllowed\}/);
+});
+
+
+test('preview cannot mutate production OAuth tokens or disconnect the merchant', () => {
+  const router = source('server/integrations/mercadoPagoStoreRouter.ts');
+  const panel = source('src/components/store/MercadoPagoReceivablesBridge.tsx');
+  const client = source('src/utils/mercadoPagoStoreConnection.ts');
+  assert.match(router, /process\.env\.VERCEL_ENV === 'production'/);
+  assert.match(router, /MERCADO_PAGO_OAUTH_PREVIEW_READONLY/);
+  assert.match(router, /oauthOperationsAllowed: oauthOperationsAllowed\(\)/);
+  for (const route of ["router.get('/callback'", "router.post('/:storeId/authorize'", "router.post('/:storeId/validate'", "router.post('/:storeId/disconnect'"]) {
+    const section = router.split(route)[1]?.split("\n  });")[0] ?? '';
+    assert.match(section, /requireOauthOperationsAllowed\(\)/);
+  }
+  assert.match(client, /oauthOperationsAllowed: boolean/);
+  assert.match(panel, /data-kyrub-mp-preview-readonly="true"/);
+  assert.match(panel, /status\?\.oauthOperationsAllowed && \(/);
+  assert.match(panel, /!status\?\.oauthOperationsAllowed/);
 });
