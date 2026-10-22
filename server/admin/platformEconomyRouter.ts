@@ -115,6 +115,19 @@ export const mapPlatformEconomyError = (
     };
   }
 
+  if (/The query requires an index/i.test(message) && (code === '9' || code === 'FAILED_PRECONDITION')) {
+    // Return a bounded diagnostic rather than a raw Firestore stack/index URL.
+    // Creating the index is a separate Firebase deployment, not a Vercel build.
+    console.warn('[Admin Platform Economy] Required Firestore composite index not ready');
+    return {
+      status: 503,
+      body: {
+        error: 'Índice do Firestore necessário para Economia da Plataforma ainda não está ativo. As demais áreas administrativas continuam disponíveis.',
+        code: 'PLATFORM_ECONOMY_INDEX_PENDING',
+      },
+    };
+  }
+
   console.error('[Admin Platform Economy]', error);
   return {
     status: 503,
