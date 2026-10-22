@@ -22,6 +22,7 @@ import {
 } from './customerArrivalPolicyAdminService.js';
 import { loadOperationalResponsibilityReviewQueue } from './operationalResponsibilityRouter.js';
 import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
+import { loadMerchantPixStorePaymentAudit } from './mercadoPagoMerchantPixPaymentAuditService.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
 
@@ -166,6 +167,22 @@ export const createOperationsHealthRouter = (): Router => {
       } catch (error) {
         const mapped = mapIntegrationReadinessError(error);
         response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
+    if (transport === 'mercado-pago-store-payment-audit') {
+      try {
+        await authorizeIntegrationReadiness(request.get('authorization') ?? '');
+        response.setHeader('Cache-Control', 'no-store, max-age=0');
+        response.json(await loadMerchantPixStorePaymentAudit(clean(request.query.storeId)));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : '';
+        if (message.startsWith('STORE_AUDIT_')) {
+          response.status(409).json({ error: 'Escopo da loja não confirmado.', code: message });
+        } else {
+          const mapped = mapIntegrationReadinessError(error);
+          response.status(mapped.status).json(mapped.body);
+        }
       }
       return;
     }
