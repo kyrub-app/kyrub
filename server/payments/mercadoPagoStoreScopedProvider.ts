@@ -1,15 +1,17 @@
-import type { ExistingOrderCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
+import type { ExistingOrderCanonicalPaymentIntent, MarketplaceCanonicalPaymentIntent } from '../../src/utils/canonicalPaymentIntent.js';
 import type { PaymentProviderEventType, VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvider.js';
-import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
+import { mercadoPagoStoreRequest, validateMercadoPagoStoreConnection } from '../integrations/mercadoPagoStoreOauthService.js';
 import {
   loadMercadoPagoPaymentProviderBinding,
   saveMercadoPagoPaymentProviderBinding,
 } from './paymentProviderBindingService.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
+import { mercadoPagoMerchantPixRolloutError } from './mercadoPagoMerchantPixRolloutPolicy.js';
 
 interface MercadoPagoPayment {
   id?: string | number;
+  collector_id?: string | number;
   status?: string;
   status_detail?: string;
   transaction_amount?: number;
@@ -30,6 +32,13 @@ interface MercadoPagoPayment {
 const clean = (value: unknown): string =>
   typeof value === 'string' || typeof value === 'number' ? String(value).trim() : '';
 
+// Deployment eligibility is independent of ownership. The payment provider
+// still resolves and verifies each store's OAuth token and actual collector.
+export const assertMerchantMarketplacePixCanaryAllowed = (storeId: string): void => {
+  const rejection = mercadoPagoMerchantPixRolloutError(storeId, process.env);
+  if (rejection) throw new Error(rejection);
+};
+
 const checkout = (payment: MercadoPagoPayment) => {
   const providerPaymentId = clean(payment.id);
   if (!providerPaymentId) throw new Error('MERCADO_PAGO_PAYMENT_ID_MISSING');
@@ -46,15 +55,23 @@ const checkout = (payment: MercadoPagoPayment) => {
 };
 
 export const createStoreScopedMercadoPagoLocalPix = async (input: {
-  intent: ExistingOrderCanonicalPaymentIntent;
+  intent: ExistingOrderCanonicalPaymentIntent | MarketplaceCanonicalPaymentIntent;
   paymentId: string;
   payerEmail: string;
+  verifyCollectorForMarketplace?: boolean;
 }) => {
   const recipientAuthority = await resolveCommercialRecipientAuthority({
     context: 'store_sale',
     canonicalStoreId: input.intent.storeId,
   });
   const credentialScopeId = recipientAuthority.credentialScopeId;
+  if (input.verifyCollectorForMarketplace) {
+    // Verify live OAuth identity before creating a Pix, not only after provider response.
+    const liveAccountId = await validateMercadoPagoStoreConnection(credentialScopeId);
+    if (liveAccountId !== recipientAuthority.externalAccountId) {
+      throw new Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH');
+    }
+  }
   const payment = await mercadoPagoStoreRequest<MercadoPagoPayment>(credentialScopeId, '/v1/payments', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': input.intent.idempotencyKey },
@@ -73,6 +90,12 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
     }),
   });
   const normalized = checkout(payment);
+  // Storefront cutover must not expose a QR whose actual beneficiary differs
+  // from the OAuth account authorized by the merchant. Local legacy callers
+  // keep their existing behavior until their separate migration gate.
+  if (input.verifyCollectorForMarketplace && clean(payment.collector_id) !== recipientAuthority.externalAccountId) {
+    throw new Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH');
+  }
   await saveMercadoPagoPaymentProviderBinding({
     provider: 'mercado-pago',
     providerPaymentId: normalized.providerPaymentId,
@@ -82,6 +105,21 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
     paymentIntentId: input.intent.id,
   });
   return normalized;
+};
+
+/** The marketplace's already-validated draft owns payer identity, never request.body. */
+export const createStoreScopedMercadoPagoMarketplacePix = async (input: {
+  intent: MarketplaceCanonicalPaymentIntent;
+  paymentId: string;
+}) => {
+  // Repeat the gate here as defense in depth if another caller skips the bridge.
+  assertMerchantMarketplacePixCanaryAllowed(input.intent.storeId);
+  return createStoreScopedMercadoPagoLocalPix({
+    intent: input.intent,
+    paymentId: input.paymentId,
+    payerEmail: input.intent.orderDraft.buyerEmail,
+    verifyCollectorForMarketplace: true,
+  });
 };
 
 export const getStoreScopedMercadoPagoPixCheckout = async (providerPaymentId: string) => {
