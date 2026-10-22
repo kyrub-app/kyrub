@@ -50,6 +50,25 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'mercado-pago-migration-inventory') {
+    if (method !== 'GET') {
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let mapError: ((error: unknown) => HttpErrorResult) | null = null;
+    try {
+      const readiness = await import('../../../server/admin/integrationReadinessService.js');
+      mapError = readiness.mapIntegrationReadinessError;
+      await readiness.authorizeIntegrationReadiness(authorization);
+      const inventory = await import('../../../server/admin/mercadoPagoMerchantPixMigrationInventoryService.js');
+      response.status(200).json(await inventory.loadMercadoPagoMerchantPixMigrationInventory());
+    } catch (error) {
+      const mapped = mapError ? mapError(error) : unavailable('Inventário indisponível.');
+      response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'fiscal-platform-status' || transport === 'fiscal-platform-credentials' || transport === 'fiscal-platform-validate') {
     const expectedMethod = transport === 'fiscal-platform-status' ? 'GET' : 'POST';
     if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }

@@ -32,15 +32,82 @@ const labels: Record<Readiness, string> = {
   connection_review: 'Revisar cadastro de recebimentos',
 };
 
+const inventoryShapeError = (field: string): Error =>
+  new Error(`O inventário retornou formato inesperado (${field}). Consulte o diagnóstico do servidor; nenhuma conexão foi alterada.`);
+
+const readinessValues = new Set<Readiness>([
+  'oauth_connected_rollout_enabled', 'oauth_connected_rollout_pending',
+  'oauth_required', 'identity_review', 'connection_review',
+]);
+
+// Treat the response as untrusted data: a failed or partial API response must
+// show an inline error, never throw from React's render path.
+export const parseMerchantPixMigrationInventory = (raw: unknown): MigrationInventory => {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    throw inventoryShapeError('resposta não é objeto');
+  }
+  const data = raw as Record<string, unknown>;
+  if (!Array.isArray(data.items)) throw inventoryShapeError('items');
+  if (typeof data.generatedAt !== 'string') throw inventoryShapeError('generatedAt');
+  if (typeof data.scanned !== 'number' || !Number.isSafeInteger(data.scanned)) throw inventoryShapeError('scanned');
+  if (data.complete !== true && data.complete !== false) throw inventoryShapeError('complete');
+  if (!Array.isArray(data.warnings)) throw inventoryShapeError('warnings');
+  if (!['disabled', 'canary', 'connected_stores'].includes(String(data.rolloutMode))) throw inventoryShapeError('rolloutMode');
+  const items: MigrationRow[] = data.items.map(item => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      throw new Error('Cadastro de loja inválido no inventário Mercado Pago.');
+    }
+    const row = item as Record<string, unknown>;
+    if (typeof row.tenantId !== 'string' || typeof row.storeName !== 'string'
+      || typeof row.canonicalStoreId !== 'string'
+      || typeof row.providerAccountLast4 !== 'string'
+      || !['connected', 'not_connected', 'review'].includes(String(row.connection))
+      || !readinessValues.has(row.readiness as Readiness)) {
+      throw inventoryShapeError('item de loja');
+    }
+    return {
+      canonicalStoreId: row.canonicalStoreId,
+      tenantId: row.tenantId,
+      storeName: row.storeName,
+      publicationStatus: 'published',
+      connection: row.connection as MigrationRow['connection'],
+      providerAccountLast4: row.providerAccountLast4.slice(-4),
+      readiness: row.readiness as Readiness,
+      needsLivePreflight: true,
+    };
+  });
+  return {
+    generatedAt: data.generatedAt,
+    scanned: data.scanned,
+    complete: data.complete as boolean,
+    requiresOperationalSalesReview: true,
+    rolloutMode: data.rolloutMode as MigrationInventory['rolloutMode'],
+    items,
+    warnings: data.warnings.filter((item): item is string => typeof item === 'string'),
+  };
+};
+
 const load = async (user: User): Promise<MigrationInventory> => {
   const token = await user.getIdToken();
   const response = await fetch('/api/admin/operations/health?transport=mercado-pago-migration-inventory', {
     headers: { authorization: `Bearer ${token}` },
     cache: 'no-store',
   });
-  const data = await response.json().catch(() => ({})) as MigrationInventory & { error?: string };
-  if (!response.ok) throw new Error(data.error || 'Inventário Mercado Pago indisponível.');
-  return data;
+  const data = await response.json().catch(() => ({})) as unknown;
+  const serverError = data && typeof data === 'object' && 'error' in data
+    && typeof (data as { error?: unknown }).error === 'string'
+      ? (data as { error: string }).error : '';
+  if (!response.ok) throw new Error(serverError || 'Inventário Mercado Pago indisponível.');
+  try {
+    return parseMerchantPixMigrationInventory(data);
+  } catch (error) {
+    // Only safe field names and HTTP status; no token, customer record or raw payload.
+    console.warn('[Mercado Pago inventory] Invalid API contract', {
+      httpStatus: response.status,
+      field: error instanceof Error ? error.message : 'unknown',
+    });
+    throw error;
+  }
 };
 
 export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user: User }) {
