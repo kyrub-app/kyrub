@@ -20,7 +20,7 @@ test('MP connection preflight checks authenticated owner, live account and canon
   assert.match(preflight, /authority\.externalAccountId !== externalAccountId/);
   assert.match(preflight, /authority\.platformFeeMode !== 'separate'/);
   assert.match(preflight, /recipientPreflightReady: true/);
-  assert.match(preflight, /checkoutActivated: false/);
+  assert.match(preflight, /checkoutActivated: isMercadoPagoMerchantPixRolloutAllowed\(storeId, process\.env\)/);
   assert.doesNotMatch(preflight, /createMercadoPagoPixPayment\(|createStoreScopedMercadoPagoMarketplacePix\(|\.runTransaction\(|transaction\.set\(|transaction\.update\(/);
 });
 
@@ -36,26 +36,29 @@ test('OAuth validation reads live MP profile, not stale connection metadata alon
 test('owner-only preflight shows separate readiness, no Pix confirmation claim', () => {
   const panel = source('src/components/store/MercadoPagoReceivablesBridge.tsx');
   const client = source('src/utils/mercadoPagoStoreConnection.ts');
-  assert.match(client, /recipientPreflightReady: true; checkoutActivated: false; externalAccountId: string/);
+  assert.match(client, /recipientPreflightReady: true; checkoutActivated: boolean; externalAccountId: string/);
   assert.match(panel, /await validateMercadoPagoStoreConnection\(user\)/);
   assert.match(panel, /setVerifiedCheckoutAccountId\(result\.externalAccountId\)/);
   assert.match(panel, /data-kyrub-mp-checkout-preflight="verified"/);
-  assert.match(panel, /O pagamento e o webhook precisam de teste controlado após a PR #949/);
-  assert.match(panel, /Nenhum Pix foi criado/);
+  assert.match(panel, /A emissão, o webhook e a conciliação ainda exigem um teste financeiro controlado/);
+  assert.match(panel, /Esta verificação não criou Pix nem confirmou pagamento/);
   assert.match(panel, /Pré-validar conta recebedora/);
   assert.match(panel, /setVerifiedCheckoutAccountId\(''\)/);
   assert.doesNotMatch(panel, /createMercadoPagoPixPayment|application_fee|marketplace_fee/);
 });
 
 
-test('production preflight does not activate existing storefront Pix checkout or split', () => {
+test('preflight does not issue Pix and merchant cutover remains outside preview', () => {
   const bridge = source('server/payments/mercadoPagoCheckoutBridge.ts');
   const provider = source('server/payments/mercadoPagoStoreScopedProvider.ts');
   const panel = source('src/components/store/MercadoPagoReceivablesBridge.tsx');
-  assert.match(bridge, /createMercadoPagoPixPayment/);
-  assert.doesNotMatch(bridge, /createStoreScopedMercadoPagoMarketplacePix/);
+  assert.match(bridge, /createStoreScopedMercadoPagoMarketplacePix/);
+  assert.doesNotMatch(bridge, /createMercadoPagoPixPayment\(/);
+  const policy = source('server/payments/mercadoPagoMerchantPixRolloutPolicy.ts');
+  assert.match(policy, /env\.VERCEL_ENV !== 'production'/);
+  assert.match(provider, /mercadoPagoMerchantPixRolloutError\(storeId, process\.env\)/);
   assert.doesNotMatch(provider, /application_fee|marketplace_fee/);
-  assert.match(panel, /checkout Pix da vitrine ainda não foi alterado/);
+  assert.match(panel, /Esta verificação não criou Pix nem confirmou pagamento/);
   assert.match(panel, /disabled=\{busy \|\| !status\?\.platformConfigured \|\| !status\?\.oauthOperationsAllowed\}/);
 });
 
