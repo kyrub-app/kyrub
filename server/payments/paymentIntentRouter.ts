@@ -338,6 +338,28 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'CHECKOUT_ORDER_ALREADY_PAID') {
     return { status: 409, body: { error: 'Este pedido já está pago.' } };
   }
+  if (message === 'MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH'
+      || message === 'MERCADO_PAGO_STORE_IDENTITY_MISMATCH') {
+    return { status: 409, body: { error: 'A conta recebedora retornada pelo Mercado Pago não coincide com a autorização da loja. O QR Code foi bloqueado.' } };
+  }
+  if (message === 'COMMERCIAL_RECIPIENT_STORE_PAYMENT_NOT_CONNECTED'
+      || message === 'MERCADO_PAGO_STORE_NOT_CONNECTED') {
+    return { status: 409, body: { error: 'Conecte a conta Mercado Pago da loja antes de cobrar Pix. Nenhum pagamento foi criado.' } };
+  }
+  if (message === 'COMMERCIAL_RECIPIENT_STORE_NOT_FOUND'
+      || message === 'COMMERCIAL_RECIPIENT_STORE_SCOPE_INVALID'
+      || message === 'STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID') {
+    return { status: 409, body: { error: 'O cadastro financeiro da loja precisa de revisão antes de receber Pix. Nenhum pagamento foi criado.' } };
+  }
+  if (message === 'MERCADO_PAGO_STORE_PIX_PRODUCTION_ONLY') {
+    return { status: 503, body: { error: 'O checkout Pix de lojistas está bloqueado neste ambiente de testes.' } };
+  }
+  if (message === 'MERCADO_PAGO_STORE_PIX_ROLLOUT_NOT_ENABLED') {
+    return {
+      status: 503,
+      body: { error: 'O Pix desta loja ainda não foi liberado para a nova integração. Nenhuma cobrança foi iniciada.' },
+    };
+  }
   if (/Collector user without key enabled for QR render/i.test(message)) {
     return {
       status: 503,
