@@ -50,6 +50,26 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'mercado-pago-store-payment-audit') {
+    if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
+    try {
+      const readiness = await import('../../../server/admin/integrationReadinessService.js');
+      await readiness.authorizeIntegrationReadiness(authorization);
+      const audit = await import('../../../server/admin/mercadoPagoMerchantPixPaymentAuditService.js');
+      response.status(200).json(await audit.loadMerchantPixStorePaymentAudit(headerValue(request.query?.storeId)));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message.startsWith('STORE_AUDIT_')) {
+        response.status(409).json({ error: 'Não foi possível confirmar o escopo da loja para esta auditoria.', code: message });
+      } else {
+        const readiness = await import('../../../server/admin/integrationReadinessService.js');
+        const mapped = readiness.mapIntegrationReadinessError(error);
+        response.status(mapped.status).json(mapped.body);
+      }
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-migration-inventory') {
     if (method !== 'GET') {
       response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
