@@ -54,3 +54,29 @@ jobs:
       - name: Report complete dependency audit for triage
         if: always()
         run: npm audit --audit-level=moderate || true
+
+
+  dependency-remediation-proposal:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Propose lockfile-only dependency remediation
+        run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Verify proposed lockfile and audit
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+      - name: Upload proposed lockfile for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: proposed-secure-package-lock
+          path: package-lock.json
+          retention-days: 3
