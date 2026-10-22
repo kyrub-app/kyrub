@@ -50,7 +50,19 @@ test('invalid or partial Mercado Pago inventory does not crash the render tree',
   assert.equal(parsed.complete, true);
   assert.throws(() => parseMerchantPixMigrationInventory({
     ...valid, items: [{ ...valid.items[0], readiness: 'unknown' }],
-  }), /incompleto/i);
+  }), /formato inesperado/i);
+});
+
+test('inventory malformed backend response identifies a safe field without crashing', () => {
+  assert.throws(() => parseMerchantPixMigrationInventory({}), /\(items\)/);
+  assert.throws(() => parseMerchantPixMigrationInventory({
+    items: [], generatedAt: '2026-10-21T00:00:00Z',
+    scanned: 0, complete: true, warnings: [], rolloutMode: 'unknown',
+  }), /\(rolloutMode\)/);
+  assert.throws(() => parseMerchantPixMigrationInventory({
+    items: [], generatedAt: '2026-10-21T00:00:00Z',
+    scanned: 0, complete: false, warnings: null, rolloutMode: 'disabled',
+  }), /\(warnings\)/);
 });
 
 test('integration/fiscal/economy workspaces have local recovery boundaries', () => {
@@ -63,4 +75,15 @@ test('integration/fiscal/economy workspaces have local recovery boundaries', () 
   assert.match(boundary, /getDerivedStateFromError/);
   assert.match(boundary, /Tentar abrir esta seção novamente/);
   assert.doesNotMatch(boundary, /\.set\(\{|createMercadoPagoPixPayment|loadMercadoPagoStoreTokenSecret/);
+});
+
+test('Vercel production route dispatches inventory via super-admin authorization', () => {
+  const route = read('api/admin/operations/health.ts');
+  const block = route.split("if (transport === 'mercado-pago-migration-inventory')")[1]
+    ?.split("if (transport === 'fiscal-platform-status'")[0] ?? '';
+  assert.match(block, /method !== 'GET'/);
+  assert.match(block, /authorizeIntegrationReadiness\(authorization\)/);
+  assert.match(block, /loadMercadoPagoMerchantPixMigrationInventory\(\)/);
+  assert.match(block, /mapIntegrationReadinessError/);
+  assert.doesNotMatch(block, /saveAuthorized|mercadoPagoStoreRequest|createStoreScopedMercadoPagoMarketplacePix/);
 });
