@@ -37,6 +37,19 @@ Antes de aprovar promoção, a equipe autorizada deve conferir no ambiente real,
 
 O status `marketplacePixPreparation` exposto no cartão Recebimentos é **somente um diagnóstico de prontidão da configuração por loja**; nunca substitui consulta ao Mercado Pago, validação de identidade, Pix pago ou conciliação.
 
+## Auditoria prévia de registros (uma loja, sem consultas financeiras mutantes)
+
+O inventário já confirmou **uma loja publicada com vínculo OAuth registrado**, mas isso não comprova que não existam pedidos ou Pix anteriores. Consultar na produção com acesso autorizado, sem assumir valores ou fabricar histórico:
+
+- Determinar o `storeId` canônico a partir da identidade da loja confirmada, nunca pelo nome exibido `Minha Loja` ou pelo número mascarado da conta. Para cada registro, conferir `storeId` e `orderId` antes de usá-lo.
+- Pedidos operacionais: `artifacts/{storeId}/public/data/customerOrders/{orderId}`, distinguindo pedidos `pending`, aceitos/aprovados, pagos, cancelados e com pagamento expirado.
+- Intenções: `stores/{storeId}/paymentIntents/{intentId}`, identificando `status`, `target.orderId`, `paymentId`, `providerIntentId`, `idempotencyKey` e expiração. Nunca expor dados sensíveis em capturas públicas.
+- Pagamentos: `stores/{storeId}/payments/{paymentId}`, cruzando `paymentIntentId`, `providerPaymentId`, `status`, valor em unidades menores e timestamps.
+- Para cada `providerPaymentId` existente, usar o vínculo de provedor já salvo para a consulta no **emissor original**; não reemitir Pix nem inferir a conta recebedora a partir do token atual.
+- Registrar contagens por categoria (apenas totais agregados e IDs mascarados), quaisquer divergências entre pedido/intenção/pagamento e a necessidade de conciliação. Verificar casos com Pix aberto, pago sem webhook ou pedido pendente de aprovação.
+
+**Critério de avanço:** ausência de registros antigos não pode ser presumida com base na contagem de lojas. A primeira emissão só é permitida após demonstrar consistência dos registros existentes, validar novamente o OAuth/beneficiário real e autorizar uma compra controlada. A revisão de recibos e webhooks após essa compra é uma etapa diferente; nenhuma consulta do inventário conta como liquidação.
+
 ## Matriz de validação
 
 | Caso | Ação | Evidência exigida | Aprovação |
