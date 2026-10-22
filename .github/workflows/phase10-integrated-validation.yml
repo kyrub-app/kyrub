@@ -5,6 +5,7 @@ on:
     branches:
       - integration/roadmap-v1
       - main
+      - feat/profile-react-rebuild
     paths:
       - 'src/**'
       - 'server/**'
