@@ -87,6 +87,27 @@ export const parseMerchantPixMigrationInventory = (raw: unknown): MigrationInven
   };
 };
 
+type AuditSummary = {
+  generatedAt: string;
+  complete: boolean;
+  orders: { scanned: number; complete: boolean; statuses: Record<string, number> };
+  intents: { scanned: number; complete: boolean; statuses: Record<string, number> };
+  payments: { scanned: number; complete: boolean; statuses: Record<string, number> };
+  warning: string;
+};
+const loadAudit = async (user: User, storeId: string): Promise<AuditSummary> => {
+  const token = await user.getIdToken();
+  const response = await fetch(`/api/admin/operations/health?transport=mercado-pago-store-payment-audit&storeId=${encodeURIComponent(storeId)}`, {
+    headers: { authorization: `Bearer ${token}` },
+    cache: 'no-store',
+  });
+  const body = await response.json().catch(() => ({})) as Partial<AuditSummary> & { error?: string };
+  if (!response.ok || !body.orders || !body.intents || !body.payments || typeof body.complete !== 'boolean') {
+    throw new Error(body.error || 'Auditoria financeira indisponível.');
+  }
+  return body as AuditSummary;
+};
+
 const load = async (user: User): Promise<MigrationInventory> => {
   const token = await user.getIdToken();
   const response = await fetch('/api/admin/operations/health?transport=mercado-pago-migration-inventory', {
@@ -114,6 +135,16 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
   const [snapshot, setSnapshot] = useState<MigrationInventory | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [audit, setAudit] = useState<AuditSummary | null>(null);
+  const [auditError, setAuditError] = useState('');
+  const [auditBusy, setAuditBusy] = useState(false);
+  const runAudit = async (storeId: string): Promise<void> => {
+    setAuditBusy(true);
+    setAudit(null);
+    try { setAudit(await loadAudit(user, storeId)); setAuditError(''); }
+    catch (reason) { setAuditError(reason instanceof Error ? reason.message : 'Não foi possível consultar os pagamentos.'); }
+    finally { setAuditBusy(false); }
+  };
 
   const refresh = async (): Promise<void> => {
     setBusy(true);
@@ -160,6 +191,21 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
           <span className="text-[10px] text-slate-300">{labels[item.readiness]}</span>
         </div>)}
       </div>
+      {snapshot.complete && snapshot.items.length === 1 && snapshot.items[0].canonicalStoreId && <>
+        <button type="button" disabled={auditBusy} onClick={() => void runAudit(snapshot.items[0].canonicalStoreId)}
+          className="mt-3 rounded-xl border border-sky-500/40 px-3 py-2 text-xs font-bold text-sky-200 disabled:opacity-40">
+          {auditBusy ? 'Conferindo registros…' : 'Conferir pedidos e Pix (somente leitura)'}
+        </button>
+        {auditError && <p role="alert" className="mt-2 text-xs text-amber-200">{auditError}</p>}
+        {audit && <div className="mt-3 space-y-1 rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
+          <strong className="block text-slate-100">Conferência financeira por loja {audit.complete ? '' : '— leitura parcial'}</strong>
+          {(['orders', 'intents', 'payments'] as const).map(kind => <p key={kind}>
+            {kind === 'orders' ? 'Pedidos' : kind === 'intents' ? 'Intenções' : 'Pagamentos'}: {audit[kind].scanned} registros analisados;
+            pendentes {audit[kind].statuses.pending ?? 0}; pagos {audit[kind].statuses.paid ?? 0}; demais estados {Object.entries(audit[kind].statuses).filter(([status]) => !['pending', 'paid'].includes(status)).reduce((total, [, value]) => total + value, 0)}
+          </p>)}
+          <p className="text-amber-200">{audit.warning}</p>
+        </div>}
+      </>}
       <p className="mt-3 text-[10px] leading-relaxed text-amber-200">
         Próximo gate: validar atividade de vendas, cobranças em aberto e beneficiário no Mercado Pago. Este inventário NÃO autoriza merge, Pix ou migração automática.
       </p>
