@@ -50,6 +50,12 @@ jobs:
         run: npm ci
       - name: Audit production dependency graph for high or critical vulnerabilities
         run: npm audit --omit=dev --audit-level=high
+      - name: Diagnose dependency tree after audit failure
+        if: failure()
+        run: |
+          node --version
+          npm --version
+          npm ls --omit=dev --all || true
       - name: Report complete dependency audit for triage
         if: always()
         run: npm audit --audit-level=moderate || true
