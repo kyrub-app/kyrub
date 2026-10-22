@@ -76,3 +76,14 @@ test('integration/fiscal/economy workspaces have local recovery boundaries', () 
   assert.match(boundary, /Tentar abrir esta seção novamente/);
   assert.doesNotMatch(boundary, /\.set\(\{|createMercadoPagoPixPayment|loadMercadoPagoStoreTokenSecret/);
 });
+
+test('Vercel production route dispatches inventory via super-admin authorization', () => {
+  const route = read('api/admin/operations/health.ts');
+  const block = route.split("if (transport === 'mercado-pago-migration-inventory')")[1]
+    ?.split("if (transport === 'fiscal-platform-status'")[0] ?? '';
+  assert.match(block, /method !== 'GET'/);
+  assert.match(block, /authorizeIntegrationReadiness\(authorization\)/);
+  assert.match(block, /loadMercadoPagoMerchantPixMigrationInventory\(\)/);
+  assert.match(block, /mapIntegrationReadinessError/);
+  assert.doesNotMatch(block, /saveAuthorized|mercadoPagoStoreRequest|createStoreScopedMercadoPagoMarketplacePix/);
+});
