@@ -40,6 +40,12 @@ jobs:
       - name: Validate Mercado Pago merchant migration inventory (read only)
         run: node --test --import tsx tests/marketplace-merchant-pix-migration-inventory.test.ts >> build.log 2>&1
 
+      - name: Validate store-scoped Mercado Pago Pix history audit
+        run: node --test --import tsx tests/marketplace-merchant-pix-payment-audit.test.ts >> build.log 2>&1
+
+      - name: Validate merchant OAuth marketplace Pix contracts
+        run: node --test --import tsx tests/marketplace-merchant-pix-authority.test.ts tests/marketplace-merchant-pix-rollout-policy.test.ts tests/marketplace-merchant-pix-migration-readiness.test.ts tests/marketplace-merchant-pix-migration-inventory.test.ts tests/marketplace-split-disabled-by-default.test.ts tests/mercado-pago-current-main-contract.test.ts tests/marketplace-payment-intent-checkout.test.ts >> build.log 2>&1
+
       - name: Validate marketplace payment expiry contract
         run: node --test --import tsx tests/marketplace-payment-expiry-contract.test.ts >> build.log 2>&1
 

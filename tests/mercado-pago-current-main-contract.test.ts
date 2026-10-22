@@ -17,20 +17,26 @@ test('Mercado Pago Pix adapter remains server-only and idempotent', () => {
   assert.doesNotMatch(providerSource, /VITE_.*MERCADO|import\.meta\.env.*MERCADO/i);
 });
 
-test('Mercado Pago bridge is a no-op only when no runtime credential can be resolved', () => {
+test('Marketplace Pix uses merchant OAuth but preserves historical payment lookups', () => {
   assert.match(providerSource, /isMercadoPagoPixRuntimeConfigured/);
   assert.match(providerSource, /resolveMercadoPagoAccessToken/);
-  assert.match(bridgeSource, /await isMercadoPagoPixRuntimeConfigured\(\)/);
-  assert.doesNotMatch(bridgeSource, /isMercadoPagoPixConfigured/);
+  assert.match(bridgeSource, /createStoreScopedMercadoPagoMarketplacePix/);
+  assert.doesNotMatch(bridgeSource, /createMercadoPagoPixPayment\(/);
+  assert.doesNotMatch(bridgeSource, /isMercadoPagoPixRuntimeConfigured\(/);
+  assert.match(bridgeSource, /loadMercadoPagoPaymentProviderBinding/);
+  assert.match(bridgeSource, /getMercadoPagoPixCheckout/);
   assert.match(bridgeSource, /status !== 'pending'/);
   assert.match(bridgeSource, /CHECKOUT_PROVIDER_PAYMENT_CONFLICT/);
   assert.match(bridgeSource, /adminDb\.runTransaction/);
 });
 
-test('Mercado Pago webhook gate resolves both runtime credentials through Vault-aware resolver', () => {
+test('Merchant webhook gate needs HMAC webhook secret, independent of platform Pix token', () => {
   assert.match(providerSource, /isMercadoPagoWebhookRuntimeConfigured/);
   assert.match(providerSource, /resolveMercadoPagoAccessToken\(\)/);
   assert.match(providerSource, /resolveMercadoPagoWebhookSecret\(\)/);
+  const webhookGate = providerSource.split('export const isMercadoPagoWebhookRuntimeConfigured = async')[1]?.split('const mercadoPagoRequest')[0] ?? '';
+  assert.match(webhookGate, /resolveMercadoPagoWebhookSecret\(\)/);
+  assert.doesNotMatch(webhookGate, /resolveMercadoPagoAccessToken\(\)/);
   assert.match(webhookSource, /await isMercadoPagoWebhookRuntimeConfigured\(\)/);
   assert.doesNotMatch(webhookSource, /isMercadoPagoWebhookConfigured/);
 });
