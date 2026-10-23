@@ -490,3 +490,35 @@ Já temos evidência suficiente para iniciar a Onda 1 sem reconstrução cega:
 - estado mínimo a extrair delimitado.
 
 Ainda será necessário validar os contratos/props exatos de `LegacyKyrubTab` durante a implementação para garantir paridade funcional antes de removê-lo.
+
+
+## Revisão de runtime — 23/10/2026 (main@32ab2223)
+
+**Importante: analisar o grafo após os aliases do Vite, não apenas imports literais.**
+
+- `vite.config.ts` resolve `./components/RetailerPanel` para `src/components/RetailerPanelRuntimeRouter.tsx`. Assim, o import textual em `LegacyApp.tsx` não prova que o painel antigo seja a entrada efetiva do build Vite.
+- `vite.config.ts` resolve `./components/MobileErpMenu` para `src/components/MobileErpMenuRuntime.tsx`. O runtime mobile usa os itens exportados por `MobileErpMenu.tsx` e mantém o fallback de seleção em `requestAnimationFrame`.
+- `RetailerPanelRuntimeRouter.tsx` recebe `KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT`, monta `DirectManagementModule` para os módulos de gestão e bloqueia a rota `gerencial` antiga. Nas abas operacionais delega a `RetailerPanel.tsx`, que ainda envolve `LegacyRetailerPanel.tsx`.
+- `GerencialIntegrationsNativeBridge.tsx` continua montada em `main.tsx` e procura `#erp-gerencial-tab`/título antigo para inserir um portal. Sua necessidade no fluxo Vite canônico ainda **não foi demonstrada**; pode ser compatibilidade redundante, mas não remover antes de provar ausência de consumidores.
+- `tests/gerencial-render-isolation.test.ts` protege o alias e o roteamento direto. `tests/gerencial-integrations-native-bridge.test.ts` protege a bridge antiga. `tests/mobile-erp-menu-interaction-isolation.test.ts` examina a implementação base, não diretamente o menu de runtime.
+
+### Classificação de migração (não é autorização de exclusão)
+
+| Elemento | Classificação | Evidência/ação exigida |
+| --- | --- | --- |
+| Runtime router e módulos diretos | CANÔNICO no build Vite | Preservar, testar autorização e navegação mobile/desktop |
+| Runtime mobile ERP | CANÔNICO no build Vite | Preservar fallback Android e matriz de permissões |
+| `RetailerPanel.tsx` + `LegacyRetailerPanel.tsx` | TRANSIÇÃO operacional ativa | Migrar por aba, sem quebrar PDV, Caixa, KDS, Reservas ou Ponto |
+| `GerencialIntegrationsRuntime.tsx` | CANÔNICO para Integrações diretas | Preservar identidade de loja, OAuth e estado fiscal |
+| `GerencialIntegrationsNativeBridge.tsx` | CANDIDATO A REDUNDÂNCIA | Rastrear execução e efeitos; remover somente com prova e testes ajustados |
+| Testes da bridge e menu base | CONTRATOS A RECONCILIAR | Validar comportamento real do build, não só correspondência textual |
+
+### Gate para a primeira PR de código
+
+1. Reproduzir o caminho real com aliases em build/testes e confirmar qual componente recebe o evento de gestão.
+2. Provar se a bridge de Integrações tem algum host ativo no runtime canônico e quais cenários alternativos atende.
+3. Cobrir entrada/saída de Integrações, retorno OAuth Mercado Livre, troca de loja e acesso de staff.
+4. Se comprovadamente redundante, retirar apenas a montagem global da bridge e adaptar o teste correspondente, sem tocar em serviços de pagamento/fiscal nem no roteador.
+5. Validar TypeScript, testes, build e homologação fixa antes de qualquer promoção a produção.
+
+**Escopo desta revisão:** documentação e análise estática; nenhuma afirmação de execução E2E, remoção de código ou aprovação de deploy.
