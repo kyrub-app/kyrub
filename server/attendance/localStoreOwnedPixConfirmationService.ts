@@ -19,6 +19,7 @@ import {
   type StoreEconomicLedgerEntry,
 } from '../../shared/storeEconomicLedger.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
+import { buildMarketplaceEconomicAllocationSnapshot } from '../../shared/economicFeesSubsidies.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
 import { summarizeLocalOrderPayable } from './localOrderPayable.js';
 import {
@@ -140,7 +141,13 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
         audit?.sourceAuthority !== 'operator_attestation' || audit?.actorUserId !== actorUserId ||
         audit?.providerPaymentId !== request.providerPaymentId ||
         capture?.sourceAuthority !== 'operator_attestation' || capture?.paymentId !== payment.id ||
-        capture?.providerPaymentId !== request.providerPaymentId
+        capture?.providerPaymentId !== request.providerPaymentId ||
+        (intent.commercialSnapshot?.couponCode && (
+          !capture?.economicAllocation ||
+          (capture.economicAllocation as Record<string, unknown>).customerPaidMinor !== brlToMinor(payment.amount) ||
+          (capture.economicAllocation as Record<string, unknown>).storeSubsidyMinor !== brlToMinor(intent.commercialSnapshot.discountTotal) ||
+          (capture.economicAllocation as Record<string, unknown>).merchandiseGrossMinor !== brlToMinor(intent.commercialSnapshot.subtotal)
+        ))
       ) throw new Error('LOCAL_STORE_PIX_CONFIRM_RECONCILIATION_REQUIRED');
       return {
         confirmed: true, duplicate: true, paymentIntentId: intent.id, paymentId: payment.id,
@@ -191,7 +198,18 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
     }
     if (!currentFound) throw new Error('LOCAL_STORE_PIX_CONFIRM_PAYMENT_NOT_INDEXED');
     const remaining = Number((payable.billableAmount - otherPaidAmount).toFixed(2));
-    if (Math.abs(remaining - payment.amount) > 0.009) throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    const commercialSnapshot = intent.commercialSnapshot;
+    if (commercialSnapshot?.couponCode) {
+      if (
+        otherPaidAmount > 0.009 ||
+        Math.abs(commercialSnapshot.subtotal - remaining) > 0.009 ||
+        commercialSnapshot.discountTotal <= 0 ||
+        Math.abs(commercialSnapshot.subtotal - commercialSnapshot.discountTotal - payment.amount) > 0.009 ||
+        Math.abs(commercialSnapshot.total - payment.amount) > 0.009
+      ) throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    } else if (Math.abs(remaining - payment.amount) > 0.009) {
+      throw new Error('LOCAL_STORE_PIX_CONFIRM_INTENT_STALE');
+    }
 
     const audit = {
       schemaVersion: 1, storeId: storeContext.canonicalStoreId, legacyStoreId: request.storeId,
@@ -220,6 +238,14 @@ export const confirmStoreOwnedPixLocalPayment = async (input: {
       sourceAuthority: 'operator_attestation',
       reversalOfEntryId: '',
       occurredAt: attestedAt,
+      ...(commercialSnapshot?.couponCode ? {
+        economicAllocation: buildMarketplaceEconomicAllocationSnapshot({
+          subtotal: commercialSnapshot.subtotal,
+          discountTotal: commercialSnapshot.discountTotal,
+          deliveryFee: 0,
+          total: payment.amount,
+        }),
+      } : {}),
     };
 
     transaction.set(attestationRef, audit);

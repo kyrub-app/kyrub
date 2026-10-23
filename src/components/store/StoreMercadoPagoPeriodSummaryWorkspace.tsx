@@ -14,7 +14,14 @@ type ProviderPeriodSummary = {
   explicitNetReceivedMinor: number;
   explicitNetReceivedCount: number;
   releaseDateEvidenceCount: number;
+  providerRefundedMinor: number;
+  providerRefundedEvidenceCount: number;
+  missingRefundEvidenceCount: number;
+  missingReleaseEvidenceCount: number;
   complete: boolean;
+  balanced: boolean;
+  hasDivergences: boolean;
+  grossDivergenceCount: number;
 };
 
 type ProviderPeriodPayload = {
@@ -58,8 +65,8 @@ async function fetchProviderPeriod(storeId: string, period: string): Promise<Pro
   if (!response.ok) {
     throw new Error(payload.error || 'Não foi possível consolidar a conciliação do Mercado Pago.');
   }
-  if (!payload.summary?.complete) {
-    throw new Error('A conciliação mensal do Mercado Pago não foi concluída.');
+  if (!payload.summary) {
+    throw new Error('O Mercado Pago não retornou um resumo financeiro válido.');
   }
   return payload.summary;
 }
@@ -106,7 +113,7 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
           type="month"
           value={period}
           onChange={event => setPeriod(event.target.value || currentMonth)}
-          className="min-h-9 shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-sky-400"
+          className="min-h-9 w-full min-w-0 rounded-xl sm:w-auto border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-sky-400"
         />
       </div>
 
@@ -125,31 +132,55 @@ export default function StoreMercadoPagoPeriodSummaryWorkspace({ storeId }: { st
         <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Nenhuma venda Mercado Pago confirmada foi encontrada nesta competência.</p>
       ) : summary ? (
         <>
-          <div className="mt-4 grid min-w-0 gap-2 sm:grid-cols-2 xl:grid-cols-5">
+          {summary.hasDivergences && (
+            <p role="alert" className="mt-4 rounded-2xl border border-rose-500/25 bg-rose-500/10 p-3 text-[9px] text-rose-100">
+              Divergência financeira: {summary.grossDivergenceCount} pagamento(s) apresentam valor diferente entre o registro canônico e o Mercado Pago. Verifique os pagamentos antes de considerar o período conciliado.
+            </p>
+          )}
+          {summary.complete && !summary.balanced && !summary.hasDivergences && (
+            <p role="status" className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[9px] text-amber-100">
+              Todas as evidências exigidas estão disponíveis, mas o período ainda não foi classificado como balanceado.
+            </p>
+          )}
+          {!summary.complete && (
+            <p role="status" className="mt-4 rounded-2xl border border-amber-500/25 bg-amber-500/10 p-3 text-[9px] text-amber-100">
+              Conciliação parcial: existem evidências do Mercado Pago ainda pendentes. Os valores abaixo representam somente informações confirmadas, não o fechamento definitivo do período.
+            </p>
+          )}
+          <div className="mt-4 grid min-w-0 grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-5">
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Pagamentos MP</span><strong className="mt-1 block text-sm text-white">{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Conciliados</span><strong className={`mt-1 block text-sm ${reconciliationComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.reconciledPaymentCount}/{summary.paymentCount}</strong></article>
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Taxas com evidência</span><strong className={`mt-1 block text-sm ${feeCoverageComplete ? 'text-emerald-200' : 'text-amber-200'}`}>{summary.feeCoverageCount}/{summary.paymentCount}</strong></article>
-            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
-            <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido explícito</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount} pagamento(s)</span></article>
+            <article className="rounded-2xl border border-sky-500/20 bg-sky-500/[0.06] p-3"><span className="text-[8px] font-black uppercase text-sky-300">Taxas conhecidas (parcial)</span><strong className="mt-1 block text-sm text-amber-200">{money(knownProviderFeesMinor)}</strong></article>
+            <article className="rounded-2xl border border-emerald-500/20 bg-emerald-500/[0.05] p-3"><span className="text-[8px] font-black uppercase text-emerald-300">Líquido informado pelo MP</span><strong className="mt-1 block text-sm text-emerald-200">{money(summary.explicitNetReceivedMinor)}</strong><span className="mt-1 block text-[7px] text-slate-600">{summary.explicitNetReceivedCount}/{summary.paymentCount} pagamento(s) com evidência</span></article>
           </div>
 
           <div className="mt-4 grid min-w-0 gap-3 lg:grid-cols-2">
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px]">
               <h5 className="text-[10px] font-black uppercase text-slate-200">Cobertura da evidência</h5>
               <div className="mt-3 space-y-2">
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
+                <div className="flex min-w-0 flex-wrap items-start justify-between gap-2"><span className="text-slate-500">Taxa já presente no ledger</span><b>{summary.ledgerFeeEvidenceCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Taxa recuperada pela conciliação MP</span><b>{summary.reconciliationFallbackFeeCount}</b></div>
                 <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com líquido explícito do provedor</span><b>{summary.explicitNetReceivedCount}</b></div>
-                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com data de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Pagamento com data/status de liberação</span><b>{summary.releaseDateEvidenceCount}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Reembolso informado pelo provedor</span><b>{summary.providerRefundedEvidenceCount}/{summary.paymentCount} — {money(summary.providerRefundedMinor)}</b></div>
+                <div className="flex justify-between gap-3"><span className="text-slate-500">Sem data/status de liberação</span><b>{summary.missingReleaseEvidenceCount}</b></div>
               </div>
             </article>
 
             <article className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
               <h5 className="text-[10px] font-black uppercase text-slate-200">Como interpretar</h5>
               <p className="mt-3">“Líquido explícito” é a soma apenas dos pagamentos em que o próprio Mercado Pago informou <code className="text-sky-200">net_received_amount</code>. Se a cobertura não for total, esse valor não representa o líquido completo do mês.</p>
+              <p className="mt-2">Pagamento aprovado não significa dinheiro liberado. A contagem de liberação inclui data ou status informado pelo provedor, inclusive uma data futura ou prevista. Não é contagem de valores efetivamente creditados na conta bancária.</p>
               <p className="mt-2">As taxas conhecidas combinam a evidência já registrada no ledger com a conciliação do provedor somente quando o ledger ainda não tinha aquela taxa, evitando dupla contagem.</p>
             </article>
           </div>
+
+          {summary.missingRefundEvidenceCount > 0 && (
+            <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">
+              {summary.missingRefundEvidenceCount} pagamento(s) sem evidência explícita de reembolso do Mercado Pago. Ausência dessa informação não significa reembolso zero.
+            </p>
+          )}
 
           {!feeCoverageComplete && (
             <p className="mt-4 rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-[8px] leading-relaxed text-amber-100">

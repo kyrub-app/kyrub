@@ -39,7 +39,7 @@ import {
   type TablePaymentMethod,
   type TableSettlementEntry,
 } from '../../utils/tableOperations';
-import { quoteLocalCoupon } from '../../utils/localPixCheckout';
+import { quoteLocalCoupon, quoteLocalOrderCoupon } from '../../utils/localPixCheckout';
 import type { StorePromotionQuote } from '../../utils/storePromotions';
 import { SharedPdvCatalog } from '../pdv/SharedPdvCatalog';
 
@@ -251,6 +251,7 @@ export const TableServiceWorkspace = ({
   const [excludingLineKey, setExcludingLineKey] = useState('');
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<StorePromotionQuote | null>(null);
+  const [validatedPixCoupon, setValidatedPixCoupon] = useState<{ code: string; orderId: string; subtotal: number } | null>(null);
   const [isCouponApplying, setIsCouponApplying] = useState(false);
   const [paymentAmountInput, setPaymentAmountInput] = useState('');
   const [settlementHistory, setSettlementHistory] = useState<TableSettlementEntry[]>([]);
@@ -267,6 +268,7 @@ export const TableServiceWorkspace = ({
     setExcludingLineKey('');
     setCouponCode('');
     setCouponQuote(null);
+    setValidatedPixCoupon(null);
     setIsCouponApplying(false);
     setPaymentAmountInput('');
     setSettlementHistory([]);
@@ -277,6 +279,7 @@ export const TableServiceWorkspace = ({
   useEffect(() => {
     setCouponQuote(null);
     onAppliedCouponChange?.('');
+    setValidatedPixCoupon(null);
   }, [paymentSelections, onAppliedCouponChange]);
 
   useEffect(() =>
@@ -471,6 +474,27 @@ export const TableServiceWorkspace = ({
     if (isCouponApplying) return;
     setIsCouponApplying(true);
     try {
+      if (paymentMethod === 'pix') {
+        if (selectedPaymentOrderIds.length !== 1 || selectedPaymentTotal + 0.009 < openLines.filter(line => line.orderId === selectedPaymentOrderIds[0]).reduce((total, line) => total + line.outstandingAmount, 0)) {
+          throw new Error('Para usar cupom no Pix, selecione a conta integral de um único pedido, sem pagamentos parciais.');
+        }
+        if (confirmedPaymentExists) {
+          throw new Error('Não é possível aplicar cupom Pix depois de um pagamento confirmado.');
+        }
+        const quote = await quoteLocalOrderCoupon({
+          storeId,
+          orderId: selectedPaymentOrderIds[0],
+          couponCode: code,
+        });
+        if (Math.abs(quote.subtotal - selectedPaymentTotal) > 0.009) {
+          throw new Error('O saldo canônico diverge da seleção. Revise a conta antes de cobrar.');
+        }
+        setValidatedPixCoupon({ code: quote.couponCode, orderId: quote.orderId, subtotal: quote.subtotal });
+        onAppliedCouponChange?.(quote.couponCode);
+        setCouponCode(quote.couponCode);
+        notify(`Cupom ${quote.couponCode} validado: ${formatCurrency(quote.discountTotal)} de desconto. O valor líquido será calculado ao gerar o Pix.`, 'success');
+        return;
+      }
       const quote = await quoteLocalCoupon({
         storeId,
         couponCode: code,
@@ -494,6 +518,7 @@ export const TableServiceWorkspace = ({
       );
     } catch (error) {
       setCouponQuote(null);
+      setValidatedPixCoupon(null);
       onAppliedCouponChange?.('');
       setIsCouponApplying(false);
       notify(
@@ -521,6 +546,33 @@ export const TableServiceWorkspace = ({
       return;
     }
     if (paymentMethod === 'pix') {
+      if (validatedPixCoupon && (selectedPaymentOrderIds.length !== 1 || selectedPaymentOrderIds[0] !== validatedPixCoupon.orderId || Math.abs(selectedPaymentTotal - validatedPixCoupon.subtotal) > 0.009 || selectedPaymentTotal + 0.009 < openLines.filter(line => line.orderId === selectedPaymentOrderIds[0]).reduce((total, line) => total + line.outstandingAmount, 0))) {
+        notify('A seleção da conta mudou após a validação do cupom. Valide o cupom novamente.', 'error');
+        setValidatedPixCoupon(null);
+        onAppliedCouponChange?.('');
+        return;
+      }
+      if (validatedPixCoupon && Math.abs(paymentAmount - selectedPaymentTotal) > 0.009) {
+        notify('O cupom Pix exige a cobrança integral do pedido. Use o saldo completo ou valide novamente.', 'error');
+        return;
+      }
+      if (validatedPixCoupon) {
+        try {
+          const refreshedQuote = await quoteLocalOrderCoupon({
+            storeId,
+            orderId: validatedPixCoupon.orderId,
+            couponCode: validatedPixCoupon.code,
+          });
+          if (Math.abs(refreshedQuote.subtotal - validatedPixCoupon.subtotal) > 0.009 || refreshedQuote.couponCode !== validatedPixCoupon.code) {
+            throw new Error('O cupom ou o saldo da conta mudou. Valide o cupom novamente.');
+          }
+        } catch (error) {
+          setValidatedPixCoupon(null);
+          onAppliedCouponChange?.('');
+          notify(error instanceof Error ? error.message : 'Não foi possível revalidar o cupom.', 'error');
+          return;
+        }
+      }
       if (selectedPaymentOrderIds.length !== 1) {
         notify('Para Pix parcial, selecione itens de um único pedido por vez.', 'info');
         return;
@@ -833,6 +885,7 @@ export const TableServiceWorkspace = ({
                         onChange={event => {
                           setCouponCode(event.target.value.toUpperCase());
                           setCouponQuote(null);
+                          setValidatedPixCoupon(null);
                           onAppliedCouponChange?.('');
                         }}
                         disabled={confirmedPaymentExists || isCouponApplying}
@@ -866,7 +919,11 @@ export const TableServiceWorkspace = ({
                       <button
                         key={method}
                         type="button"
-                        onClick={() => setPaymentMethod(method)}
+                        onClick={() => {
+                          setPaymentMethod(method);
+                          setValidatedPixCoupon(null);
+                          onAppliedCouponChange?.('');
+                        }}
                         className={`rounded-xl border px-3 py-2 text-[9px] font-black uppercase ${
                           paymentMethod === method
                             ? 'border-orange-500 bg-orange-500 text-slate-950'

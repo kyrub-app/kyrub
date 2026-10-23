@@ -243,3 +243,35 @@ export const confirmLocalStoreOwnedPix = async (input: {
     }),
     'Não foi possível registrar a confirmação manual do Pix.'
   );
+
+export interface LocalOrderCouponQuote {
+  orderId: string;
+  couponCode: string;
+  promotionId: string;
+  title: string;
+  badge: string;
+  discountType: 'percentage' | 'fixed';
+  discountValue: number;
+  eligibleProductIds: string[];
+  subtotal: number;
+  discountTotal: number;
+  total: number;
+}
+
+/** Staff checkout: coupon eligibility belongs to the identified order buyer, not the operator. */
+export const quoteLocalOrderCoupon = async (input: {
+  storeId: string;
+  orderId: string;
+  couponCode: string;
+}): Promise<LocalOrderCouponQuote> => {
+  if (!input.storeId.trim() || !input.orderId.trim() || !input.couponCode.trim()) {
+    throw new Error('Selecione um pedido e informe o cupom.');
+  }
+  return json<LocalOrderCouponQuote>(
+    await authorizedFetch('/api/local-attendance/coupon-quote', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    }),
+    'Não foi possível validar o cupom deste pedido.'
+  );
+};

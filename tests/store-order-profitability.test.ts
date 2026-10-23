@@ -161,6 +161,44 @@ describe('canonical store order profitability', () => {
     assert.equal(snapshot.effectiveMarginAvailable, false);
   });
 
+  test('local coupon Pix refund keeps historical gross and discount but disables effective margin', () => {
+    const localAllocation = buildEconomicAllocationSnapshot({
+      merchandiseGrossMinor: 3000,
+      customerPaidMinor: 2500,
+      deliveryFeeMinor: 0,
+      storeSubsidyMinor: 500,
+      kyrubIncentiveMinor: 0,
+      partnerSubsidyMinor: 0,
+      observedCosts: [],
+    });
+    const capture = entry('payment_capture', 2500, {
+      paymentContext: 'table', economicAllocation: localAllocation,
+    });
+    const refund = entry('payment_refund', -2500, {
+      id: 'payment:refund:pay-1',
+      paymentContext: 'table',
+      economicAllocation: localAllocation,
+      reversalOfEntryId: capture.id,
+      occurredAt: '2026-09-30T14:00:00.000Z',
+    });
+    const snapshot = buildStoreOrderProfitabilitySnapshot({
+      storeId: 'store-1', orderId: 'order-1',
+      economicEntries: [capture, refund],
+      inventoryEvidence: inventory(),
+      calculatedAt: '2026-09-30T15:00:00.000Z',
+    });
+    assert.equal(snapshot.financialState, 'refunded');
+    assert.equal(snapshot.merchandiseGrossMinor, 3000);
+    assert.equal(snapshot.storeDiscountMinor, 500);
+    assert.equal(snapshot.customerPaidMinor, 2500);
+    assert.equal(snapshot.paymentCapturedMinor, 2500);
+    assert.equal(snapshot.paymentRefundedMinor, 2500);
+    assert.equal(snapshot.paymentNetMinor, 0);
+    assert.equal(snapshot.saleCmvMinor, 1030);
+    assert.equal(snapshot.inventoryState, 'consumed');
+    assert.equal(snapshot.effectiveMarginAvailable, false);
+  });
+
   test('physical reversal restores active inventory CMV without rewriting historical sale CMV', () => {
     const snapshot = buildStoreOrderProfitabilitySnapshot({
       storeId: 'store-1',

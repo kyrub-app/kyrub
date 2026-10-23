@@ -63,6 +63,9 @@ export const summarizeLocalOrderPayable = (
     const billableQuantity = ordered - transferred - voided;
     const grossBillableAmount = billableQuantity * price;
     const legacyPaidAmount = paid * price;
+    if (discountAmount > grossBillableAmount + 0.009 || legacyPaidAmount + settledAmount > grossBillableAmount - discountAmount + 0.009) {
+      throw new Error('LOCAL_ORDER_PAYABLE_ITEM_INVALID');
+    }
     const netBillableAmount = Math.max(0, grossBillableAmount - discountAmount);
     const lineOpenAmount = Math.max(0, netBillableAmount - legacyPaidAmount - settledAmount);
     billableAmount += netBillableAmount;

@@ -71,6 +71,12 @@ const mapError = (error: unknown): { status: number; message: string } => {
   if (message === 'LOCAL_ORDER_FINANCIAL_ORDER_NOT_LOCAL') {
     return { status: 409, message: 'Este pedido não pertence ao atendimento local.' };
   }
+  if (message === 'LOCAL_PAYMENT_INTENT_COUPON_ALREADY_APPLIED') {
+    return { status: 409, message: 'Este pedido já possui desconto aplicado. Não é possível aplicar outro cupom na cobrança Pix.' };
+  }
+  if (message === 'LOCAL_PAYMENT_INTENT_COUPON_REQUIRES_FULL_SETTLEMENT') {
+    return { status: 409, message: 'Para usar cupom no Pix, cobre o valor líquido integral do pedido. Pagamento parcial com cupom ainda não está disponível.' };
+  }
   if (message === 'LOCAL_PAYMENT_INTENT_ORDER_NOT_FOUND') {
     return { status: 404, message: 'Pedido presencial não encontrado.' };
   }
