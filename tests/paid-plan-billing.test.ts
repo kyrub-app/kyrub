@@ -100,3 +100,15 @@ test('Plan Center separates provider authorization from payment-confirmed activa
   assert.match(planCenter, /providerStatus === 'authorized' && !subscription\.activatedAt/);
   assert.match(planCenter, /pagamento aprovado e creditado diretamente com o Mercado Pago/);
 });
+
+test('shared Mercado Pago webhook routes platform subscription events without replacing payment processing', () => {
+  const action = readFileSync('api/action-execute.ts', 'utf8');
+  const routing = action.indexOf("eventType === 'subscription_preapproval'");
+  const existingPayment = action.indexOf("const webhook = await import('../server/payments/mercadoPagoWebhook.js')");
+  assert.ok(routing > 0 && existingPayment > routing, 'subscription dispatch must precede the unchanged payment handler');
+  assert.match(action, /eventType === 'subscription_authorized_payment'/);
+  assert.match(action, /billing\.handlePaidPlanProviderWebhook\(/);
+  assert.match(action, /signature: request\.headers\['x-signature'\]/);
+  assert.match(action, /requestId: request\.headers\['x-request-id'\]/);
+  assert.match(action, /response\.status\(405\)/);
+});
