@@ -305,6 +305,42 @@ export default async function handler(
   }
 
   if (transport === 'mercado-pago-webhook') {
+    // The Mercado Pago application uses one webhook URL for payment and
+    // subscription events. Route subscription events before the payment
+    // handler, retaining independent signature validation in each service.
+    const bodyRecord = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
+      ? request.body as Record<string, unknown>
+      : {};
+    const eventType = clean(bodyRecord.type ?? bodyRecord.topic ?? request.query?.type ?? request.query?.topic);
+    if (eventType === 'subscription_preapproval' || eventType === 'subscription_authorized_payment') {
+      if (method !== 'POST') {
+        response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+        return;
+      }
+      const data = bodyRecord.data && typeof bodyRecord.data === 'object' && !Array.isArray(bodyRecord.data)
+        ? bodyRecord.data as Record<string, unknown>
+        : {};
+      const dataId = clean(data.id ?? request.query?.['data.id'] ?? request.query?.id);
+      if (!dataId) {
+        response.status(400).json({ error: 'Assinatura não informada.', code: 'SUBSCRIPTION_ID_REQUIRED' });
+        return;
+      }
+      try {
+        const billing = await import('../server/admin/paidPlanSubscriptionService.js');
+        const result = await billing.handlePaidPlanProviderWebhook({
+          signature: request.headers['x-signature'],
+          requestId: request.headers['x-request-id'],
+          dataId,
+          eventType,
+        });
+        response.status(200).json(result);
+      } catch (error) {
+        const { mapPlanManagementError } = await import('../server/admin/planManagementService.js');
+        const mapped = mapPlanManagementError(error);
+        response.status(mapped.status).json(mapped.body);
+      }
+      return;
+    }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const webhook = await import('../server/payments/mercadoPagoWebhook.js');
