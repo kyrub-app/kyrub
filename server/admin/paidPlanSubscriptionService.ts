@@ -293,17 +293,32 @@ const deactivateSubscriptionEntitlement = async (
   status: 'paused' | 'cancelled'
 ): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
+  const officialStore = await getOfficialStoreIdentity();
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const customerRef = officialStore
+      ? adminDb.doc(`stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`)
+      : null;
+    const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
     const owns = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
     const wasActive = owns && data.status === 'active';
     const now = FieldValue.serverTimestamp();
     if (owns) {
       writePlanMirrors(transaction, ownerId, canonicalStoreId, 'free', now);
       transaction.set(entitlementRef, { status: 'revoked', revokedAt: now, updatedAt: now }, { merge: true });
+    }
+    if (customerRef && customerSnapshot?.exists) {
+      const crmData = customerSnapshot.data() as Record<string, unknown>;
+      const planData = crmData.kyrubPlanSubscription as Record<string, unknown> | undefined;
+      if (clean(planData?.providerSubscriptionId) === providerSubscriptionId) {
+        transaction.set(customerRef, {
+          kyrubPlanSubscription: { status, updatedAt: now },
+          updatedAt: now,
+        }, { merge: true });
+      }
     }
     transaction.set(subscriptionRef, {
       providerStatus: status,
