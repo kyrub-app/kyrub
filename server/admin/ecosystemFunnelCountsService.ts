@@ -27,7 +27,7 @@ export async function readEcosystemFunnelCounts(): Promise<EcosystemFunnelCounts
   const activePaidOwners = results[2].status === 'fulfilled'
     ? countActivePaidOwners(results[2].value.docs.map(doc => ({
         ...doc.data(),
-        ownerId: doc.id,
+        ownerId: doc.data().ownerId,
       })))
     : null;
   return {
