@@ -13,6 +13,7 @@ import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { PlanManagementError } from './planManagementService.js';
 import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
+import { getOfficialStoreIdentity } from './officialStoreService.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
@@ -213,11 +214,16 @@ const selectedPlan = async (targetPlan: 'pro' | 'business') => {
 
 const activateSubscriptionEntitlement = async (ownerId: string, subscription: KyrubPlanSubscriptionSnapshot): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
+  const officialStore = await getOfficialStoreIdentity();
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const customerRef = officialStore
+      ? adminDb.doc(`stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`)
+      : null;
+    const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
     const alreadyActive = data.status === 'active' && data.source === 'subscription' &&
       clean(data.providerSubscriptionId) === subscription.providerSubscriptionId && data.plan === subscription.plan;
     const now = FieldValue.serverTimestamp();
@@ -237,6 +243,30 @@ const activateSubscriptionEntitlement = async (ownerId: string, subscription: Ky
       updatedAt: now,
     });
     transaction.set(subscriptionRef, { providerStatus: 'authorized', activatedAt: data.activatedAt ?? now, cancelledAt: null, updatedAt: now }, { merge: true });
+    // Commercial relationship belongs to the designated official store, not to the
+    // subscribing merchant's own store. Repeated webhooks merge the same customer.
+    if (officialStore && customerRef && customerSnapshot) {
+      transaction.set(customerRef, {
+        schemaVersion: 1,
+        storeId: officialStore.legacyStoreId,
+        customerId: ownerId,
+        kyrubPlanSubscription: {
+          plan: subscription.plan,
+          providerSubscriptionId: subscription.providerSubscriptionId,
+          status: 'active',
+          updatedAt: now,
+        },
+        ...(!customerSnapshot.exists ? {
+          marketingConsent: {
+            whatsapp: { status: 'unknown' },
+            email: { status: 'unknown' },
+            sms: { status: 'unknown' },
+          },
+          createdAt: now,
+        } : {}),
+        updatedAt: now,
+      }, { merge: true });
+    }
     if (!alreadyActive) {
       const auditRef = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
       transaction.set(auditRef, {
@@ -263,17 +293,32 @@ const deactivateSubscriptionEntitlement = async (
   status: 'paused' | 'cancelled'
 ): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
+  const officialStore = await getOfficialStoreIdentity();
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const customerRef = officialStore
+      ? adminDb.doc(`stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`)
+      : null;
+    const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
     const owns = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
     const wasActive = owns && data.status === 'active';
     const now = FieldValue.serverTimestamp();
     if (owns) {
       writePlanMirrors(transaction, ownerId, canonicalStoreId, 'free', now);
       transaction.set(entitlementRef, { status: 'revoked', revokedAt: now, updatedAt: now }, { merge: true });
+    }
+    if (customerRef && customerSnapshot?.exists) {
+      const crmData = customerSnapshot.data() as Record<string, unknown>;
+      const planData = crmData.kyrubPlanSubscription as Record<string, unknown> | undefined;
+      if (clean(planData?.providerSubscriptionId) === providerSubscriptionId) {
+        transaction.set(customerRef, {
+          kyrubPlanSubscription: { status, updatedAt: now },
+          updatedAt: now,
+        }, { merge: true });
+      }
     }
     transaction.set(subscriptionRef, {
       providerStatus: status,

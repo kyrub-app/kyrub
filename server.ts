@@ -20,6 +20,7 @@ import { createDeliveryTrackingRouter } from "./server/delivery/deliveryTracking
 import { createPaidWaitingFundingResponsibilityRouter } from "./server/delivery/paidWaitingFundingResponsibilityRouter";
 import { createOperationsHealthRouter } from "./server/admin/operationsHealthRouter";
 import { createPlatformEconomyRouter } from "./server/admin/platformEconomyRouter";
+import { createEcosystemFunnelRouter } from "./server/admin/ecosystemFunnelRouter";
 import { createMercadoLivrePlatformCredentialRouter } from "./server/admin/mercadoLivrePlatformCredentialRouter";
 import { createNinetyNineFoodPlatformCredentialRouter } from "./server/admin/ninetyNineFoodPlatformCredentialRouter";
 import { createNinetyNineFoodStatusSyncExecutionRouter } from "./server/inventory/ninetyNineFoodStatusSyncExecutionRouter";
@@ -264,6 +265,7 @@ app.use(
   createOperationsHealthRouter()
 );
 
+app.use("/api/admin/ecosystem-funnel", createEcosystemFunnelRouter());
 app.use(
   "/api/admin/platform-economy",
   integrationRateLimiter,
