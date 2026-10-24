@@ -13,6 +13,7 @@ import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { PlanManagementError } from './planManagementService.js';
 import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
+import { getOfficialStoreIdentity } from './officialStoreService.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
@@ -213,6 +214,7 @@ const selectedPlan = async (targetPlan: 'pro' | 'business') => {
 
 const activateSubscriptionEntitlement = async (ownerId: string, subscription: KyrubPlanSubscriptionSnapshot): Promise<void> => {
   const canonicalStoreId = await findCanonicalStore(ownerId);
+  const officialStore = await getOfficialStoreIdentity();
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
@@ -237,6 +239,34 @@ const activateSubscriptionEntitlement = async (ownerId: string, subscription: Ky
       updatedAt: now,
     });
     transaction.set(subscriptionRef, { providerStatus: 'authorized', activatedAt: data.activatedAt ?? now, cancelledAt: null, updatedAt: now }, { merge: true });
+    // Commercial relationship belongs to the designated official store, not to the
+    // subscribing merchant's own store. Repeated webhooks merge the same customer.
+    if (officialStore) {
+      const customerRef = adminDb.doc(
+        `stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`
+      );
+      const customerSnapshot = await transaction.get(customerRef);
+      transaction.set(customerRef, {
+        schemaVersion: 1,
+        storeId: officialStore.legacyStoreId,
+        customerId: ownerId,
+        kyrubPlanSubscription: {
+          plan: subscription.plan,
+          providerSubscriptionId: subscription.providerSubscriptionId,
+          status: 'active',
+          updatedAt: now,
+        },
+        ...(!customerSnapshot.exists ? {
+          marketingConsent: {
+            whatsapp: { status: 'unknown' },
+            email: { status: 'unknown' },
+            sms: { status: 'unknown' },
+          },
+          createdAt: now,
+        } : {}),
+        updatedAt: now,
+      }, { merge: true });
+    }
     if (!alreadyActive) {
       const auditRef = adminDb.doc(`${AUDIT_COLLECTION}/${randomUUID().replaceAll('-', '_')}`);
       transaction.set(auditRef, {
