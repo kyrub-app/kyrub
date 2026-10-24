@@ -220,6 +220,10 @@ const activateSubscriptionEntitlement = async (ownerId: string, subscription: Ky
   await adminDb.runTransaction(async transaction => {
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
+    const customerRef = officialStore
+      ? adminDb.doc(`stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`)
+      : null;
+    const customerSnapshot = customerRef ? await transaction.get(customerRef) : null;
     const alreadyActive = data.status === 'active' && data.source === 'subscription' &&
       clean(data.providerSubscriptionId) === subscription.providerSubscriptionId && data.plan === subscription.plan;
     const now = FieldValue.serverTimestamp();
@@ -241,11 +245,7 @@ const activateSubscriptionEntitlement = async (ownerId: string, subscription: Ky
     transaction.set(subscriptionRef, { providerStatus: 'authorized', activatedAt: data.activatedAt ?? now, cancelledAt: null, updatedAt: now }, { merge: true });
     // Commercial relationship belongs to the designated official store, not to the
     // subscribing merchant's own store. Repeated webhooks merge the same customer.
-    if (officialStore) {
-      const customerRef = adminDb.doc(
-        `stores/${officialStore.legacyStoreId}/crmCustomers/${ownerId}`
-      );
-      const customerSnapshot = await transaction.get(customerRef);
+    if (officialStore && customerRef && customerSnapshot) {
       transaction.set(customerRef, {
         schemaVersion: 1,
         storeId: officialStore.legacyStoreId,
