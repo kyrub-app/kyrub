@@ -37,7 +37,8 @@ export const createMyClubsCandidateRouter = (): Router => {
       const clubs = results.flatMap((result, index) => {
         if (result.status !== 'fulfilled') return [];
         const summary = result.value;
-        const hasActivity = summary.points.balance > 0 ||
+        const hasActivity = summary.level.confirmedPurchases > 0 ||
+          summary.points.balance > 0 ||
           summary.points.lifetimeEarned > 0 ||
           summary.vouchers.some(voucher => voucher.status === 'active') ||
           summary.history.length > 0;
@@ -55,6 +56,10 @@ export const createMyClubsCandidateRouter = (): Router => {
       }
       response.status(200).json({ schemaVersion: 1, clubs, checkedStores: storeIds.length, complete: false });
     } catch (error) {
+      if (error instanceof Error && error.message === 'AUTH_REQUIRED') {
+        response.status(401).json({ error: 'Faça login para consultar seus clubes.' });
+        return;
+      }
       console.error('[My Clubs candidates]', error);
       response.status(503).json({ error: 'Não foi possível consultar seus clubes.' });
     }
