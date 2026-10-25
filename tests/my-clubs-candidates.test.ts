@@ -39,6 +39,8 @@ describe('my clubs candidate endpoint contract', () => {
   test('keeps mobile club benefits readable and labels the candidate list as partial', () => {
     const marketplace = readFileSync('src/components/tabs/LegacyKyrubTab.tsx', 'utf8');
     assert.match(marketplace, /Outros clubes e o Clube Kyrub ainda não estão incluídos/);
+    assert.match(marketplace, /allCandidateStoreIds\.length > 12/);
+    assert.match(marketplace, /esta consulta não inclui todas elas/);
     assert.match(marketplace, /sm:flex-row sm:items-center sm:justify-between/);
     assert.match(marketplace, /flex flex-wrap gap-x-3 gap-y-1/);
     assert.match(marketplace, /club\.pointsBalance/);
