@@ -701,9 +701,13 @@ export function KyrubTab({
               {clubCandidates.map(club => {
                 const store = storesWithCoords.find(item => item.id === club.storeId);
                 return (
-                  <div key={club.storeId} className="flex items-center justify-between gap-2 rounded-xl border border-slate-800 p-2 text-xs">
-                    <span className="truncate font-semibold text-white">{store?.name || 'Loja vinculada'}</span>
-                    <span className="shrink-0 text-slate-300">{club.pointsBalance} pontos · {club.activeVouchers} vouchers · {club.redeemableRewards} recompensas</span>
+                  <div key={club.storeId} className="flex min-w-0 flex-col gap-1 rounded-xl border border-slate-800 p-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                    <span className="min-w-0 break-words font-semibold text-white">{store?.name || 'Loja vinculada'}</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-300" aria-label="Benefícios da loja">
+                      <span>{club.pointsBalance} pontos</span>
+                      <span>{club.activeVouchers} vouchers</span>
+                      <span>{club.redeemableRewards} recompensas</span>
+                    </div>
                   </div>
                 );
               })}
