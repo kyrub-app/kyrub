@@ -37,11 +37,21 @@ jobs:
           npm explain zod > dependency-zod.txt 2>&1 || true
           npm explain uuid > dependency-uuid.txt 2>&1 || true
           npm explain @vercel/cli-config > dependency-vercel-cli-config.txt 2>&1 || true
+      - name: Evaluate isolated transitive dependency overrides
+        if: always()
+        continue-on-error: true
+        run: |
+          npm pkg set 'overrides.@vercel/cli-config.zod=^4.6.6'
+          npm pkg set 'overrides.gaxios.uuid=^11.1.1'
+          npm install --package-lock-only --ignore-scripts
+          npm ci
+          npm audit --omit=dev --audit-level=high
+          npm run lint
       - name: Record proposed lockfile changes
         if: always()
         run: |
-          git diff -- package-lock.json > dependency-remediation.patch
-          git diff --stat -- package-lock.json > dependency-remediation-summary.txt
+          git diff -- package.json package-lock.json > dependency-remediation.patch
+          git diff --stat -- package.json package-lock.json > dependency-remediation-summary.txt
       - name: Validate proposed lockfile and security audit
         run: |
           npm ci
