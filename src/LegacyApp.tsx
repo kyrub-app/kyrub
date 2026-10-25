@@ -51,6 +51,7 @@ import {
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
 import { AppHeader } from './components/AppHeader';
+import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 
 // Import our modular sub-panels
 import { AdminPanel } from './components/AdminPanel';
@@ -1501,6 +1502,9 @@ if (newMomentPublishToPraca) {
                 triggerToast={triggerToast}
               />
             )}
+
+            {/* Kyrubia owns its workspace only while its tab is active. */}
+            {activeTab === 'kyrub' && <KyrubAiWorkspaceBridge />}
 
             {/* GUIA 3: KYRUB (Social Feed, Discovery & Proximity map) */}
             {(activeTab === 'kyrub' || activeTab === 'marketplace') && (
