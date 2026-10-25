@@ -28,8 +28,8 @@ Base: feat/profile-react-rebuild @ 424d01a8136b208f04891aa2dde5a2b9518ee369. Thi
 
 - [x] A1. Inventory source-of-truth services and existing marketplace filters.
 - [x] A2. Identify the conflicting platform/merchant payment paths and legacy names.
-- [ ] A3. Audit all plan feature and credit enforcement call sites; prepare compatibility plan.
-- [ ] A4. Audit global gamification UI wiring and ledger reads.
+- [x] A3. Identify key plan feature and credit enforcement call sites; compatibility implementation still pending.
+- [ ] A4. Audit global gamification UI wiring and ledger reads; current file inventory confirms contracts but not a mounted global UI.
 - [ ] B1. Define explicit Official Store plan-product mapping and buyer/store onboarding states.
 - [ ] B2. Add an idempotent platform-billing adapter to the ERP purchase flow; prove recipient and payment authority.
 - [ ] B3. Reconcile commercial order, entitlement, and Official Store CRM from one verified event; no duplicate invoice.
@@ -48,3 +48,20 @@ Base: feat/profile-react-rebuild @ 424d01a8136b208f04891aa2dde5a2b9518ee369. Thi
 - No automatic conversion between Kyrub Points and Store Points.
 - No assumed automatic Mercado Pago split; shared/marketplaceSellerSplit.ts reports splitPlanMovesMoney() === false.
 - Do not merge draft PR #968 into homologation without reviewing its nine changed files.
+
+## Plan enforcement follow-up (2026-10-25)
+
+- server/admin/executablePlanCatalogService.ts derives activeCatalogLimit from features.catalog and kyrubiaIntelligenceCredits from features.kyrubia_intelligence. Removing flags only from presentation is insufficient.
+- shared/kyrubPlanManagement.ts models capabilities and credit_limit enforcement; shared/kyrubActivePlanCatalog.ts exposes credits and feature states.
+- src/components/plans/PlanCenterApp.tsx advertises Kyrubia credits and selectively displays team, automation, integration features. Update only after authoritative enforcement is reconciled.
+- src/ai/activePlanProductCapacity.ts enforces active catalog capacity and references the legacy Free five-product limit. Preserve catalog guard, but align with published plan version.
+- server/admin/storeEntitlementService.ts and server/admin/storeEntitlementLifecycleService.ts also grant/reconcile plans via coupons, complimentary admin grants, and expiration. Payment is not the only valid entitlement source.
+- CustomerStoreRelationshipPanel.tsx renders store points, redeemable rewards, vouchers, and coupons; route mounting needs verification.
+- shared/gamification.ts still defines KCoin ledger, challenge and XP contracts; no global customer UI mounting was proven by this audit. Avoid claiming it is live.
+
+### Required regression cases
+1. Free, Pro, Business all receive enabled product features while active catalog caps remain enforced.
+2. Existing entitlement from coupon or admin courtesy remains valid after migration; expiration still restores prior rights.
+3. Existing KCoin ledger records remain readable and cannot be silently re-denominated.
+4. Store points remain tenant-isolated; refunds/reversals cannot generate duplicate credits.
+5. Marketplace Meus Clubes includes verified purchase relationships and eligible benefits, without turning global Club into a merchant record.
