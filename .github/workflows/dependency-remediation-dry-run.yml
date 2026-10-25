@@ -30,6 +30,13 @@ jobs:
         id: remediation
         continue-on-error: true
         run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Capture remaining vulnerable dependency paths
+        if: always()
+        run: |
+          npm audit --omit=dev --json > audit-after.json || true
+          npm explain zod > dependency-zod.txt 2>&1 || true
+          npm explain uuid > dependency-uuid.txt 2>&1 || true
+          npm explain @vercel/cli-config > dependency-vercel-cli-config.txt 2>&1 || true
       - name: Record proposed lockfile changes
         if: always()
         run: |
@@ -49,6 +56,10 @@ jobs:
           name: dependency-remediation-preview
           path: |
             audit-before.json
+            audit-after.json
+            dependency-zod.txt
+            dependency-uuid.txt
+            dependency-vercel-cli-config.txt
             dependency-remediation.patch
             dependency-remediation-summary.txt
           retention-days: 7
