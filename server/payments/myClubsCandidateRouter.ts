@@ -40,13 +40,13 @@ export const createMyClubsCandidateRouter = (): Router => {
         const hasActivity = summary.level.confirmedPurchases > 0 ||
           summary.points.balance > 0 ||
           summary.points.lifetimeEarned > 0 ||
-          summary.vouchers.some(voucher => voucher.status === 'active') ||
+          summary.vouchers.some(voucher => voucher.status === 'available') ||
           summary.history.length > 0;
         if (!hasActivity) return [];
         return [{
           storeId: storeIds[index],
           pointsBalance: summary.points.balance,
-          activeVouchers: summary.vouchers.filter(voucher => voucher.status === 'active').length,
+          activeVouchers: summary.vouchers.filter(voucher => voucher.status === 'available').length,
           redeemableRewards: summary.rewards.filter(reward => reward.canRedeem).length,
         }];
       });
