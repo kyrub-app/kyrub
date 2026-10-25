@@ -1,0 +1,124 @@
+# Kyrub — Integrated Commerce, CRM and Clubs: implementation gates
+
+Base: feat/profile-react-rebuild @ 424d01a8136b208f04891aa2dde5a2b9518ee369. This document is an audit contract, not a claim of deployed functionality.
+
+## Authority and source-of-truth matrix
+
+| Domain | Authority | Existing implementation | Integration requirement |
+|---|---|---|---|
+| Free/Pro/Business plan versions, catalog caps, marketplace commission policy | Global Admin | shared/kyrubPlanManagement.ts; server/admin/planManagementService.ts | Commercial presentation in Official Store ERP must reference the published version, never shadow-edit it |
+| Official Store identity | Global Admin for designation; ERP for operation | server/admin/officialStoreService.ts | Resolve canonical store ID and owner ID; do not create synthetic merchant |
+| Kyrub plan payment and entitlement | Platform billing | server/admin/paidPlanSubscriptionService.ts; kyrub_admin/control_plane/store_subscriptions and store_entitlements | Only verified provider evidence can activate entitlement; one subscription/provider reference |
+| Ordinary merchant recurring sales | Merchant OAuth account | server/payments/storeSubscriptionService.ts; stores/{canonicalStoreId}/subscriptions | Never route Kyrub platform-plan charges through merchant OAuth subscription checkout |
+| Merchant CRM | Store tenant | server/payments/storeSubscriberRegistryService.ts; stores/{canonicalStoreId}/crmCustomers | Merchant can only read own customers; no global counts |
+| Ecosystem CRM | Global Admin | PR #968 draft, NOT integrated | Verify canonical user/store identities, eliminate double counting, do not write merchant CRM into legacy owner path |
+| Kyrub Club / Kyrub Points | Global gamification | shared/gamification.ts and related ledger/economy contracts | Legacy KCoins identifiers require backward-compatible migration; global points are not money |
+| Store Club / Store Points | Each store | shared/storePoints.ts; server/payments/storeRelationshipService.ts | Isolate balances by store; do not convert automatically |
+| Marketplace My Clubs | User-facing marketplace | src/components/tabs/LegacyKyrubTab.tsx ('cliente'); KyrubTab.tsx ('Para você') | Evolve existing filter; global Club card is not a fake store |
+
+## Critical incompatibilities verified
+
+1. Platform-plan checkout currently calls assertStoreExists(ownerId), so a customer without a store cannot directly purchase a plan. Define legitimate store-onboarding path; never fabricate a store or grant entitlement to a different identity.
+2. Store subscription checkout requires recipientKind === merchant_store and merchant OAuth identity. Reusing this endpoint for Kyrub platform plans would charge the wrong recipient. Reuse ERP presentation/catalog only; retain platform billing authority.
+3. Plan contracts still include kyrubiaIntelligenceCredits and per-feature flags. Audit all enforcement before migrating to all-features-available commercial policy. Do not silently remove persisted fields.
+4. Existing gamification contracts refer to KCoins; UI naming can be updated separately from stored ledger identifiers until migration tests prove compatibility.
+5. PR #968 is a draft with partial ecosystem funnel changes. Do not merge blindly.
+
+## Execution order and gates
+
+- [x] A1. Inventory source-of-truth services and existing marketplace filters.
+- [x] A2. Identify the conflicting platform/merchant payment paths and legacy names.
+- [x] A3. Identify key plan feature and credit enforcement call sites; compatibility implementation still pending.
+- [ ] A4. Audit global gamification UI wiring and ledger reads; current file inventory confirms contracts but not a mounted global UI.
+- [ ] B1. Define explicit Official Store plan-product mapping and buyer/store onboarding states.
+- [ ] B2. Add an idempotent platform-billing adapter to the ERP purchase flow; prove recipient and payment authority.
+- [ ] B3. Reconcile commercial order, entitlement, and Official Store CRM from one verified event; no duplicate invoice.
+- [ ] C1. Implement Admin ecosystem CRM with disjoint person counts and overlapping role segments.
+- [ ] C2. Integrate Admin-managed Kyrub Club and user-facing balance.
+- [ ] C3. Evolve marketplace Cliente to Meus Clubes with global card first, merchant club summaries after.
+- [ ] D1. Prove refunds, reversals, reward redemption, tenant isolation, and commission settlement evidence.
+- [ ] D2. Run TypeScript, tests, E2E and mobile/desktop visual verification before merge/deploy.
+
+## Invariants
+
+- Free plan has zero payment; no fabricated order.
+- A payment approval does not imply fiscal authorization.
+- Exceeding advisory turnover threshold never blocks checkout in initial rollout.
+- No merchant sees platform-global customer counts.
+- No automatic conversion between Kyrub Points and Store Points.
+- No assumed automatic Mercado Pago split; shared/marketplaceSellerSplit.ts reports splitPlanMovesMoney() === false.
+- Do not merge draft PR #968 into homologation without reviewing its nine changed files.
+
+## Plan enforcement follow-up (2026-10-25)
+
+- server/admin/executablePlanCatalogService.ts derives activeCatalogLimit from features.catalog and kyrubiaIntelligenceCredits from features.kyrubia_intelligence. Removing flags only from presentation is insufficient.
+- shared/kyrubPlanManagement.ts models capabilities and credit_limit enforcement; shared/kyrubActivePlanCatalog.ts exposes credits and feature states.
+- src/components/plans/PlanCenterApp.tsx advertises Kyrubia credits and selectively displays team, automation, integration features. Update only after authoritative enforcement is reconciled.
+- src/ai/activePlanProductCapacity.ts enforces active catalog capacity and references the legacy Free five-product limit. Preserve catalog guard, but align with published plan version.
+- server/admin/storeEntitlementService.ts and server/admin/storeEntitlementLifecycleService.ts also grant/reconcile plans via coupons, complimentary admin grants, and expiration. Payment is not the only valid entitlement source.
+- CustomerStoreRelationshipPanel.tsx renders store points, redeemable rewards, vouchers, and coupons; route mounting needs verification.
+- shared/gamification.ts still defines KCoin ledger, challenge and XP contracts; no global customer UI mounting was proven by this audit. Avoid claiming it is live.
+
+### Required regression cases
+1. Free, Pro, Business all receive enabled product features while active catalog caps remain enforced.
+2. Existing entitlement from coupon or admin courtesy remains valid after migration; expiration still restores prior rights.
+3. Existing KCoin ledger records remain readable and cannot be silently re-denominated.
+4. Store points remain tenant-isolated; refunds/reversals cannot generate duplicate credits.
+5. Marketplace Meus Clubes includes verified purchase relationships and eligible benefits, without turning global Club into a merchant record.
+
+## A3: plan enforcement audit (2026-10-25)
+
+Verified enforcement and display paths:
+- shared/kyrubPlanManagement.ts baselineFeatures grants team, automations and integrations only for Business in bootstrap; other capabilities are enabled. The new all-features policy requires a versioned Admin catalog update, not a direct mutation of active contracts.
+- server/admin/planManagementService.ts parses, validates and versions feature booleans, activeCatalogLimit, kyrubiaIntelligenceCredits and marketplace commission. Existing published versions may override bootstrap.
+- server/admin/executablePlanCatalogService.ts hydrates runtime limits and AI credits from Admin's published plan_catalog; disabling catalog sets capacity to zero, disabling kyrubia_intelligence sets credits to zero.
+- src/ai/activePlanProductCapacity.ts applies the catalog product limit, with a Free=5 legacy fallback and user-facing upgrade prompts. Preserve capacity policy; update prompts only after Admin rules are migrated.
+- src/components/plans/PlanCenterApp.tsx still displays Kyrubia credit allotments and Business-only capability bullets, so its copy will be stale under the proposed commercial policy.
+- shared/kyrubCommercialPlans.ts fallback still defines Free 5 products / 30 AI credits / 10% commission; Pro 100 / 300 / 7%; Business unlimited / 1500 / 5%, with reference prices 0 / 79.90 / 199.90 BRL. **These are compiled fallbacks, not proof of current Admin prices.** Do not overwrite published prices.
+- shared/gamificationEconomies.ts treats kyrubia_credits as a separate economy from loyalty points. Removing plan credit differentiation must not accidentally convert credits into reward points.
+
+Required before runtime edits:
+1. Inspect actual Admin plan_catalog documents and their version history with authorized access.
+2. Search all runtime callers of activeCatalogLimit, kyrubiaIntelligenceCredits and feature gates; verify server enforcement and UI, not only shared contracts.
+3. Specify operational AI usage limits separately from marketing feature availability; keep abuse and cost safeguards.
+4. Add compatibility tests for historical plan versions and free/pro/business access; publish versioned changes only after test results.
+
+## A4: customer loyalty UI audit (partial)
+
+- src/components/CustomerStoreRelationshipPanel.tsx loads store-specific relationship and supports reward redemption. Its presence in the tree does not establish that a user-facing screen mounts it; caller/mount tracing remains open.
+- src/components/tabs/LegacyKyrubTab.tsx has the 'cliente' filter based on order history. It is not yet a full union of store relationships and available benefits.
+- src/components/tabs/KyrubTab.tsx adds discovery filters ('Em promoção', 'Para você'). Preserve them during 'Meus Clubes' integration.
+- Global gamification economy/ledger contracts exist, but a confirmed global Club UI mount and authoritative read API remain open.
+
+## A3/A4 targeted runtime trace (2026-10-25, second pass)
+
+- src/LegacyApp.tsx:434 declares the existing ofertasFilter union and passes it into the marketplace tab at line 1514.
+- src/components/tabs/LegacyKyrubTab.tsx:298-300: 'cliente' means orders.some(order => order.storeId === store.id), with no loyalty benefit eligibility check. Lines 648-650 render 'Cliente' in the filter. Renaming the label alone would falsely promise My Clubs; implementation must add an authoritative per-store relationship summary query.
+- src/components/tabs/KyrubTab.tsx:206-208 resets discovery when ofertasFilter is not 'todas'; 215-235 filters discovery based on promotion/for-you signals. Any new club filter must preserve this coordination and existing search/radius/favorites behavior.
+- src/components/CustomerStoreRelationshipPanel.tsx:66-113 loads a single store's relationship after auth. It is not a bulk per-user club membership listing API and should not be invoked once per marketplace store without a bounded aggregate endpoint.
+- Direct inspection of src/App.tsx, src/LegacyApp.tsx, both marketplace tabs did not find a mount/import of CustomerStoreRelationshipPanel. This is a scoped negative result, not a repository-wide proof of unused code.
+- server/admin/executablePlanCatalogService.ts:30-45 maps features.catalog=false to activeCatalogLimit=0 and features.kyrubia_intelligence=false to credits=0; these are actual executable gates, not merely marketing copy.
+- shared/kyrubPlanManagement.ts:101-112 bootstrap Business-only flags for team, automations, integrations; these are fallback defaults, not evidence of the live Admin catalog.
+- Next: audit server-side consumers of hydrated limits/credits, inspect authoritative relationship aggregate APIs, and confirm current Admin plan catalog before editing operational gates.
+
+**Do not implement UI-only label change:** it would misrepresent order history as loyalty membership.
+
+## A4: confirmed store relationship query contract (2026-10-25)
+
+Verified in server/payments/storeRelationshipService.ts:
+- loadStoreRelationshipSummary({storeId, customerId, now}) is scoped to one store and one customer.
+- Its authoritative inputs are stores/{storeId}/storePointLedger filtered by customerId; stores/{storeId}/payments filtered by buyerId; stores/{storeId}/challengeProgress and rewardRedemptions filtered by customerId; and public promotions plus tenant reward definitions.
+- It derives points balance and confirmed purchase count, and enriches vouchers with promotion status. The returned StoreRelationshipSummary has points, level, challenges, rewards, coupons, vouchers and history (shared/storeRelationship.ts).
+- src/utils/storeRelationship.ts calls /api/store-relationship?storeId=... using the current user's authentication; the existing CustomerStoreRelationshipPanel consumes this endpoint for one store.
+- This endpoint is **not** a bulk 'My Clubs' API. A marketplace-wide N+1 fan-out would be costly and expose unnecessary queries.
+
+Proposed implementation contract (not yet coded):
+1. Authenticated server-side GET /api/my-clubs (final route subject to existing router conventions), with a bounded, paginated list of canonical store IDs derived from authenticated customer purchase/loyalty relationships. Do not infer membership from public store listings or use all marketplace stores as the candidate set.
+2. For each candidate, return minimal summary: canonical storeId, confirmed purchase count, points balance, active voucher count, redeemable reward count, last activity timestamp. Full detail remains /api/store-relationship?storeId=....
+3. Include a separate global Kyrub Club payload only after validating the global ledger reader and identity binding; global card must not be modeled as a merchant tenant.
+4. Eligibility: confirmed customer relationship OR meaningful store loyalty activity/benefit; mere publicly available coupons should not automatically enroll all users in all stores.
+5. Security: server derives customerId from authentication, never trusts client-supplied customerId; isolate tenants, cap page size, validate cursors, avoid cross-tenant reads and double counting.
+6. UI: retain legacy filter key 'cliente' temporarily for compatibility; display 'Meus Clubes' only when backed by the new authoritative endpoint. Preserve search, geolocation radius, favorites and discovery filter coordination.
+7. Tests: no-store, one-store, multiple stores, user isolation, refunded purchase, points with zero orders, expired voucher, pending redemption, pagination, legacy orders, global club pinned first.
+
+The existing per-store panel is a reusable detail view, not a replacement for the aggregate index.

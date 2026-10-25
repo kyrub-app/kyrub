@@ -23,6 +23,7 @@ import { StoreOfferCarousel } from '../StoreOfferCarousel';
 import { MediaCarousel } from '../MediaCarousel';
 import { Friend, Order, SocialPost, Store } from '../../types';
 import { auth } from '../../utils/firebase';
+import { loadMyClubCandidates, type MyStoreClubCandidate } from '../../utils/myClubsCandidates';
 
 interface KyrubTabProps {
   searchQuery: string;
@@ -203,6 +204,27 @@ export function KyrubTab({
   getDistance,
 }: KyrubTabProps) {
   const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
+  const [clubCandidates, setClubCandidates] = useState<MyStoreClubCandidate[]>([]);
+  const [clubsLoading, setClubsLoading] = useState(false);
+  const [clubsError, setClubsError] = useState('');
+  const allCandidateStoreIds = useMemo(() => Array.from(new Set(orders.map(order => order.storeId).filter((id): id is string => typeof id === 'string' && !!id))), [orders]);
+  const candidateStoreIds = useMemo(() => allCandidateStoreIds.slice(0, 12), [allCandidateStoreIds]);
+  const candidateKey = candidateStoreIds.join('|');
+  useEffect(() => {
+    if (socialSubTab !== 'lojas' || ofertasFilter !== 'cliente') return;
+    let cancelled = false;
+    setClubsLoading(true);
+    setClubsError('');
+    setClubCandidates([]);
+    loadMyClubCandidates(candidateStoreIds).then(result => {
+      if (!cancelled) setClubCandidates(result.clubs);
+    }).catch(() => {
+      if (!cancelled) setClubsError('Não foi possível carregar os clubes agora.');
+    }).finally(() => {
+      if (!cancelled) setClubsLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [candidateKey, ofertasFilter, socialSubTab]);
   const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState<
     'idle' | 'loading' | 'ready' | 'error'
@@ -647,7 +669,7 @@ export function KyrubTab({
             {[
               { id: 'novas', label: 'Novas' },
               { id: 'favoritas', label: 'Favoritas' },
-              { id: 'cliente', label: 'Cliente' },
+              { id: 'cliente', label: 'Meus Clubes' },
             ].map(filter => (
               <button
                 type="button"
@@ -669,6 +691,30 @@ export function KyrubTab({
               </button>
             ))}
           </div>
+
+          {ofertasFilter === 'cliente' && (
+            <section aria-label="Meus Clubes" className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
+              <h3 className="text-sm font-bold text-white">Meus Clubes</h3>
+              <p className="text-xs text-slate-400">Consulta inicial de até 12 lojas identificadas nos pedidos carregados. Outros clubes e o Clube Kyrub ainda não estão incluídos nesta lista.</p>
+              {allCandidateStoreIds.length > 12 && <p className="text-xs text-amber-300">Existem mais de 12 lojas nos pedidos; esta consulta não inclui todas elas.</p>}
+              {clubsLoading && <p role="status" className="text-xs text-slate-400">Consultando pontos e benefícios…</p>}
+              {clubsError && <p role="alert" className="text-xs text-amber-400">{clubsError}</p>}
+              {!clubsLoading && !clubsError && clubCandidates.length === 0 && <p className="text-xs text-slate-400">Nenhum clube identificado nas lojas consultadas.</p>}
+              {clubCandidates.map(club => {
+                const store = storesWithCoords.find(item => item.id === club.storeId);
+                return (
+                  <div key={club.storeId} className="flex min-w-0 flex-col gap-1 rounded-xl border border-slate-800 p-2 text-xs sm:flex-row sm:items-center sm:justify-between">
+                    <span className="min-w-0 break-words font-semibold text-white">{store?.name || 'Loja vinculada'}</span>
+                    <div className="flex flex-wrap gap-x-3 gap-y-1 text-slate-300" aria-label="Benefícios da loja">
+                      <span>{club.pointsBalance} pontos</span>
+                      <span>{club.activeVouchers} vouchers</span>
+                      <span>{club.redeemableRewards} recompensas</span>
+                    </div>
+                  </div>
+                );
+              })}
+            </section>
+          )}
 
           <div className="grid grid-cols-2 gap-2 sm:gap-3">
             {filteredStores.map(store => {

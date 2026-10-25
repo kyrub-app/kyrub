@@ -36,6 +36,7 @@ import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter
 import { createStorePromotionManagementRouter } from "./server/payments/storePromotionManagementRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
 import { createStoreRelationshipRouter } from "./server/payments/storeRelationshipRouter";
+import { createMyClubsCandidateRouter } from "./server/payments/myClubsCandidateRouter";
 import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceDiscoveryRouter";
 import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
@@ -188,6 +189,12 @@ app.use(
   "/api/store-relationship",
   integrationRateLimiter,
   createStoreRelationshipRouter()
+);
+
+app.use(
+  "/api/my-clubs",
+  integrationRateLimiter,
+  createMyClubsCandidateRouter()
 );
 
 app.use(
