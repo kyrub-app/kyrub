@@ -207,7 +207,8 @@ export function KyrubTab({
   const [clubCandidates, setClubCandidates] = useState<MyStoreClubCandidate[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState('');
-  const candidateStoreIds = useMemo(() => Array.from(new Set(orders.map(order => order.storeId).filter((id): id is string => typeof id === 'string' && !!id))).slice(0, 12), [orders]);
+  const allCandidateStoreIds = useMemo(() => Array.from(new Set(orders.map(order => order.storeId).filter((id): id is string => typeof id === 'string' && !!id))), [orders]);
+  const candidateStoreIds = useMemo(() => allCandidateStoreIds.slice(0, 12), [allCandidateStoreIds]);
   const candidateKey = candidateStoreIds.join('|');
   useEffect(() => {
     if (socialSubTab !== 'lojas' || ofertasFilter !== 'cliente') return;
@@ -694,7 +695,8 @@ export function KyrubTab({
           {ofertasFilter === 'cliente' && (
             <section aria-label="Meus Clubes" className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
               <h3 className="text-sm font-bold text-white">Meus Clubes</h3>
-              <p className="text-xs text-slate-400">Consulta inicial das lojas com pedidos neste dispositivo. Outros clubes e o Clube Kyrub ainda não estão incluídos nesta lista.</p>
+              <p className="text-xs text-slate-400">Consulta inicial de até 12 lojas identificadas nos pedidos carregados. Outros clubes e o Clube Kyrub ainda não estão incluídos nesta lista.</p>
+              {allCandidateStoreIds.length > 12 && <p className="text-xs text-amber-300">Existem mais de 12 lojas nos pedidos; esta consulta não inclui todas elas.</p>}
               {clubsLoading && <p role="status" className="text-xs text-slate-400">Consultando pontos e benefícios…</p>}
               {clubsError && <p role="alert" className="text-xs text-amber-400">{clubsError}</p>}
               {!clubsLoading && !clubsError && clubCandidates.length === 0 && <p className="text-xs text-slate-400">Nenhum clube identificado nas lojas consultadas.</p>}
