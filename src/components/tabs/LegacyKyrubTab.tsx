@@ -26,6 +26,7 @@ import { auth } from '../../utils/firebase';
 import { loadMyClubCandidates, type MyStoreClubCandidate } from '../../utils/myClubsCandidates';
 
 interface KyrubTabProps {
+  marketplaceMode?: boolean;
   searchQuery: string;
   setSearchQuery: (val: string) => void;
   radiusKm: number;
@@ -202,6 +203,7 @@ export function KyrubTab({
   handleDeclineRequest,
   triggerToast,
   getDistance,
+  marketplaceMode = false,
 }: KyrubTabProps) {
   const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
   const [clubCandidates, setClubCandidates] = useState<MyStoreClubCandidate[]>([]);
@@ -550,7 +552,7 @@ export function KyrubTab({
   }, [currentUser?.uid, posts, selectedRegister]);
 
   return (
-    <div className="space-y-5 animate-fade-in" id="kyrub-tab-container">
+    <div className="space-y-5 animate-fade-in" id={marketplaceMode ? "marketplace-tab-container" : "kyrub-tab-container"}>
       <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
         <div className="flex items-center gap-2">
           <button
