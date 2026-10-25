@@ -110,6 +110,16 @@ export function KyrubAiWorkspaceBridge() {
     let currentHost: HTMLDivElement | null = null;
 
     const sync = () => {
+      // Marketplace is a separate destination. Never let the Kyrubia portal
+      // hide or replace its store discovery content.
+      if (document.getElementById('marketplace-tab-container')) {
+        if (currentContainer) currentContainer.style.display = '';
+        currentHost?.remove();
+        currentContainer = null;
+        currentHost = null;
+        setHost(null);
+        return;
+      }
       document.querySelectorAll('nav button').forEach(button => {
         const label = button.querySelector('span');
         if (label?.textContent?.trim() === 'Kyrub') {
