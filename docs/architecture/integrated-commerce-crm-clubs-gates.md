@@ -89,3 +89,16 @@ Required before runtime edits:
 - src/components/tabs/LegacyKyrubTab.tsx has the 'cliente' filter based on order history. It is not yet a full union of store relationships and available benefits.
 - src/components/tabs/KyrubTab.tsx adds discovery filters ('Em promoção', 'Para você'). Preserve them during 'Meus Clubes' integration.
 - Global gamification economy/ledger contracts exist, but a confirmed global Club UI mount and authoritative read API remain open.
+
+## A3/A4 targeted runtime trace (2026-10-25, second pass)
+
+- src/LegacyApp.tsx:434 declares the existing ofertasFilter union and passes it into the marketplace tab at line 1514.
+- src/components/tabs/LegacyKyrubTab.tsx:298-300: 'cliente' means orders.some(order => order.storeId === store.id), with no loyalty benefit eligibility check. Lines 648-650 render 'Cliente' in the filter. Renaming the label alone would falsely promise My Clubs; implementation must add an authoritative per-store relationship summary query.
+- src/components/tabs/KyrubTab.tsx:206-208 resets discovery when ofertasFilter is not 'todas'; 215-235 filters discovery based on promotion/for-you signals. Any new club filter must preserve this coordination and existing search/radius/favorites behavior.
+- src/components/CustomerStoreRelationshipPanel.tsx:66-113 loads a single store's relationship after auth. It is not a bulk per-user club membership listing API and should not be invoked once per marketplace store without a bounded aggregate endpoint.
+- Direct inspection of src/App.tsx, src/LegacyApp.tsx, both marketplace tabs did not find a mount/import of CustomerStoreRelationshipPanel. This is a scoped negative result, not a repository-wide proof of unused code.
+- server/admin/executablePlanCatalogService.ts:30-45 maps features.catalog=false to activeCatalogLimit=0 and features.kyrubia_intelligence=false to credits=0; these are actual executable gates, not merely marketing copy.
+- shared/kyrubPlanManagement.ts:101-112 bootstrap Business-only flags for team, automations, integrations; these are fallback defaults, not evidence of the live Admin catalog.
+- Next: audit server-side consumers of hydrated limits/credits, inspect authoritative relationship aggregate APIs, and confirm current Admin plan catalog before editing operational gates.
+
+**Do not implement UI-only label change:** it would misrepresent order history as loyalty membership.
