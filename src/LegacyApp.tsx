@@ -263,7 +263,7 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub'>('renda');
+  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub' | 'marketplace'>('renda');
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -1406,7 +1406,7 @@ if (newMomentPublishToPraca) {
           {/* One React-owned header: no portal hosts or delegated header controls. */}
           <AppHeader
             profilePhotoUrl={profilePhotoUrl}
-            marketplaceActive={activeTab === 'kyrub' && socialSubTab === 'lojas'}
+            marketplaceActive={activeTab === 'marketplace'}
             notesActive={activeTab === 'perfil'}
             onLogout={async () => {
               try {
@@ -1428,7 +1428,7 @@ if (newMomentPublishToPraca) {
               setIsWalletOpen(false);
               window.dispatchEvent(new Event('kyrub-personal-page-close-requested'));
               setSocialSubTab('lojas');
-              setActiveTab('kyrub');
+              setActiveTab('marketplace');
               window.scrollTo({ top: 0, behavior: 'smooth' });
             }}
             onNotes={() => {
@@ -1503,8 +1503,9 @@ if (newMomentPublishToPraca) {
             )}
 
             {/* GUIA 3: KYRUB (Social Feed, Discovery & Proximity map) */}
-            {activeTab === 'kyrub' && (
+            {(activeTab === 'kyrub' || activeTab === 'marketplace') && (
               <KyrubTab
+                marketplaceMode={activeTab === 'marketplace'}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
                 radiusKm={radiusKm}
