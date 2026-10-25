@@ -102,3 +102,23 @@ Required before runtime edits:
 - Next: audit server-side consumers of hydrated limits/credits, inspect authoritative relationship aggregate APIs, and confirm current Admin plan catalog before editing operational gates.
 
 **Do not implement UI-only label change:** it would misrepresent order history as loyalty membership.
+
+## A4: confirmed store relationship query contract (2026-10-25)
+
+Verified in server/payments/storeRelationshipService.ts:
+- loadStoreRelationshipSummary({storeId, customerId, now}) is scoped to one store and one customer.
+- Its authoritative inputs are stores/{storeId}/storePointLedger filtered by customerId; stores/{storeId}/payments filtered by buyerId; stores/{storeId}/challengeProgress and rewardRedemptions filtered by customerId; and public promotions plus tenant reward definitions.
+- It derives points balance and confirmed purchase count, and enriches vouchers with promotion status. The returned StoreRelationshipSummary has points, level, challenges, rewards, coupons, vouchers and history (shared/storeRelationship.ts).
+- src/utils/storeRelationship.ts calls /api/store-relationship?storeId=... using the current user's authentication; the existing CustomerStoreRelationshipPanel consumes this endpoint for one store.
+- This endpoint is **not** a bulk 'My Clubs' API. A marketplace-wide N+1 fan-out would be costly and expose unnecessary queries.
+
+Proposed implementation contract (not yet coded):
+1. Authenticated server-side GET /api/my-clubs (final route subject to existing router conventions), with a bounded, paginated list of canonical store IDs derived from authenticated customer purchase/loyalty relationships. Do not infer membership from public store listings or use all marketplace stores as the candidate set.
+2. For each candidate, return minimal summary: canonical storeId, confirmed purchase count, points balance, active voucher count, redeemable reward count, last activity timestamp. Full detail remains /api/store-relationship?storeId=....
+3. Include a separate global Kyrub Club payload only after validating the global ledger reader and identity binding; global card must not be modeled as a merchant tenant.
+4. Eligibility: confirmed customer relationship OR meaningful store loyalty activity/benefit; mere publicly available coupons should not automatically enroll all users in all stores.
+5. Security: server derives customerId from authentication, never trusts client-supplied customerId; isolate tenants, cap page size, validate cursors, avoid cross-tenant reads and double counting.
+6. UI: retain legacy filter key 'cliente' temporarily for compatibility; display 'Meus Clubes' only when backed by the new authoritative endpoint. Preserve search, geolocation radius, favorites and discovery filter coordination.
+7. Tests: no-store, one-store, multiple stores, user isolation, refunded purchase, points with zero orders, expired voucher, pending redemption, pagination, legacy orders, global club pinned first.
+
+The existing per-store panel is a reusable detail view, not a replacement for the aggregate index.
