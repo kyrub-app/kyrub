@@ -1,0 +1,44 @@
+name: Dependency remediation dry run
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit-fix-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Record baseline audit
+        run: npm audit --omit=dev --json > audit-before.json || true
+      - name: Calculate compatible lockfile-only remediation
+        run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Record proposed lockfile changes
+        if: always()
+        run: |
+          git diff -- package-lock.json > dependency-remediation.patch
+          git diff --stat -- package-lock.json > dependency-remediation-summary.txt
+      - name: Validate proposed lockfile and security audit
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+      - name: Validate TypeScript
+        run: npm run lint
+      - name: Upload remediation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-preview
+          path: |
+            audit-before.json
+            dependency-remediation.patch
+            dependency-remediation-summary.txt
+          retention-days: 7
