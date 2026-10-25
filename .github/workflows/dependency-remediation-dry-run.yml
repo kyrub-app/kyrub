@@ -1,0 +1,64 @@
+name: Dependency remediation dry run
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - .github/workflows/dependency-remediation-dry-run.yml
+      - package.json
+      - package-lock.json
+
+permissions:
+  contents: read
+
+jobs:
+  audit-fix-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci
+      - name: Record baseline audit
+        run: npm audit --omit=dev --json > audit-before.json || true
+      - name: Calculate compatible lockfile-only remediation
+        id: remediation
+        continue-on-error: true
+        run: npm audit fix --package-lock-only --ignore-scripts
+      - name: Capture remaining vulnerable dependency paths
+        if: always()
+        run: |
+          npm audit --omit=dev --json > audit-after.json || true
+          npm explain zod > dependency-zod.txt 2>&1 || true
+          npm explain uuid > dependency-uuid.txt 2>&1 || true
+          npm explain @vercel/cli-config > dependency-vercel-cli-config.txt 2>&1 || true
+      - name: Record proposed lockfile changes
+        if: always()
+        run: |
+          git diff -- package.json package-lock.json > dependency-remediation.patch
+          git diff --stat -- package.json package-lock.json > dependency-remediation-summary.txt
+      - name: Validate proposed lockfile and security audit
+        run: |
+          npm ci
+          npm audit --omit=dev --audit-level=high
+      - name: Validate TypeScript
+        run: npm run lint
+      - name: Upload remediation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-preview
+          path: |
+            audit-before.json
+            audit-after.json
+            dependency-zod.txt
+            dependency-uuid.txt
+            dependency-vercel-cli-config.txt
+            dependency-remediation.patch
+            dependency-remediation-summary.txt
+          retention-days: 7
