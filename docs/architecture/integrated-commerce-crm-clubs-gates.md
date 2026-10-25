@@ -65,3 +65,27 @@ Base: feat/profile-react-rebuild @ 424d01a8136b208f04891aa2dde5a2b9518ee369. Thi
 3. Existing KCoin ledger records remain readable and cannot be silently re-denominated.
 4. Store points remain tenant-isolated; refunds/reversals cannot generate duplicate credits.
 5. Marketplace Meus Clubes includes verified purchase relationships and eligible benefits, without turning global Club into a merchant record.
+
+## A3: plan enforcement audit (2026-10-25)
+
+Verified enforcement and display paths:
+- shared/kyrubPlanManagement.ts baselineFeatures grants team, automations and integrations only for Business in bootstrap; other capabilities are enabled. The new all-features policy requires a versioned Admin catalog update, not a direct mutation of active contracts.
+- server/admin/planManagementService.ts parses, validates and versions feature booleans, activeCatalogLimit, kyrubiaIntelligenceCredits and marketplace commission. Existing published versions may override bootstrap.
+- server/admin/executablePlanCatalogService.ts hydrates runtime limits and AI credits from Admin's published plan_catalog; disabling catalog sets capacity to zero, disabling kyrubia_intelligence sets credits to zero.
+- src/ai/activePlanProductCapacity.ts applies the catalog product limit, with a Free=5 legacy fallback and user-facing upgrade prompts. Preserve capacity policy; update prompts only after Admin rules are migrated.
+- src/components/plans/PlanCenterApp.tsx still displays Kyrubia credit allotments and Business-only capability bullets, so its copy will be stale under the proposed commercial policy.
+- shared/kyrubCommercialPlans.ts fallback still defines Free 5 products / 30 AI credits / 10% commission; Pro 100 / 300 / 7%; Business unlimited / 1500 / 5%, with reference prices 0 / 79.90 / 199.90 BRL. **These are compiled fallbacks, not proof of current Admin prices.** Do not overwrite published prices.
+- shared/gamificationEconomies.ts treats kyrubia_credits as a separate economy from loyalty points. Removing plan credit differentiation must not accidentally convert credits into reward points.
+
+Required before runtime edits:
+1. Inspect actual Admin plan_catalog documents and their version history with authorized access.
+2. Search all runtime callers of activeCatalogLimit, kyrubiaIntelligenceCredits and feature gates; verify server enforcement and UI, not only shared contracts.
+3. Specify operational AI usage limits separately from marketing feature availability; keep abuse and cost safeguards.
+4. Add compatibility tests for historical plan versions and free/pro/business access; publish versioned changes only after test results.
+
+## A4: customer loyalty UI audit (partial)
+
+- src/components/CustomerStoreRelationshipPanel.tsx loads store-specific relationship and supports reward redemption. Its presence in the tree does not establish that a user-facing screen mounts it; caller/mount tracing remains open.
+- src/components/tabs/LegacyKyrubTab.tsx has the 'cliente' filter based on order history. It is not yet a full union of store relationships and available benefits.
+- src/components/tabs/KyrubTab.tsx adds discovery filters ('Em promoção', 'Para você'). Preserve them during 'Meus Clubes' integration.
+- Global gamification economy/ledger contracts exist, but a confirmed global Club UI mount and authoritative read API remain open.
