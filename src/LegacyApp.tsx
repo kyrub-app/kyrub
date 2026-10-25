@@ -1505,6 +1505,7 @@ if (newMomentPublishToPraca) {
             {/* GUIA 3: KYRUB (Social Feed, Discovery & Proximity map) */}
             {(activeTab === 'kyrub' || activeTab === 'marketplace') && (
               <KyrubTab
+                key={activeTab === 'marketplace' ? 'marketplace' : 'kyrubia'}
                 marketplaceMode={activeTab === 'marketplace'}
                 searchQuery={searchQuery}
                 setSearchQuery={setSearchQuery}
