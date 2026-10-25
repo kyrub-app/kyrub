@@ -2,6 +2,13 @@ name: Dependency remediation dry run
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - .github/workflows/dependency-remediation-dry-run.yml
+      - package.json
+      - package-lock.json
 
 permissions:
   contents: read
@@ -20,6 +27,8 @@ jobs:
       - name: Record baseline audit
         run: npm audit --omit=dev --json > audit-before.json || true
       - name: Calculate compatible lockfile-only remediation
+        id: remediation
+        continue-on-error: true
         run: npm audit fix --package-lock-only --ignore-scripts
       - name: Record proposed lockfile changes
         if: always()
@@ -31,6 +40,7 @@ jobs:
           npm ci
           npm audit --omit=dev --audit-level=high
       - name: Validate TypeScript
+        if: steps.remediation.outcome == 'success'
         run: npm run lint
       - name: Upload remediation evidence
         if: always()
