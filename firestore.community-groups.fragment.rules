@@ -59,25 +59,9 @@
         // their deterministic invitation ID without seeing other invitees.
         allow list: if false;
 
-        allow create: if canAccessCommunityGroup(groupId)
-          && request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
-          && inviteeId != request.auth.uid
-          && isActiveCommunityMember(get(communityGroupPath(groupId)).data.communityId)
-          && request.resource.data.keys().hasOnly(['inviteeId', 'invitedBy', 'status', 'createdAt'])
-          && request.resource.data.keys().hasAll(['inviteeId', 'invitedBy', 'status', 'createdAt'])
-          && request.resource.data.inviteeId == inviteeId
-          && request.resource.data.invitedBy == request.auth.uid
-          && request.resource.data.status == 'pending'
-          && request.resource.data.createdAt == request.time;
-
-        allow update: if isSignedIn()
-          && request.auth.uid == inviteeId
-          && exists(communityGroupPath(groupId))
-          && isActiveCommunityMember(get(communityGroupPath(groupId)).data.communityId)
-          && resource.data.inviteeId == inviteeId
-          && resource.data.status == 'pending'
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
-          && request.resource.data.status in ['accepted', 'declined'];
+        // Invitations and consent transitions are exclusively server-controlled.
+        // This prevents direct client status changes from bypassing membership updates.
+        allow create, update: if false;
 
         allow delete: if false;
       }
