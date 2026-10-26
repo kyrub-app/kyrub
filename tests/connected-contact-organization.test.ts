@@ -64,7 +64,9 @@ test('contact cards keep compact favorite, chat and legacy-compatible menu actio
   assert.match(profileSource, /<MessageCircle className="h-4 w-4"/);
   assert.match(profileSource, /aria-label=\{`Mais ações para \$\{friend\.name\}`\}/);
   assert.match(profileSource, /grid-cols-\[1fr_42px\]/);
-  assert.match(profileSource, /data-profile-connected-friend-id=\{friend\.id\}/);\n  assert.match(profileSource, /data-profile-connected-menu="true"/);\n  assert.match(profileSource, /object-contain/);
+  assert.match(profileSource, /data-profile-connected-friend-id=\{friend\.id\}/);
+  assert.match(profileSource, /data-profile-connected-menu="true"/);
+  assert.match(profileSource, /object-contain/);
 });
 
 test('group management reuses private groups and updates membership natively', () => {
