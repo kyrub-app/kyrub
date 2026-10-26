@@ -325,6 +325,23 @@ export function ProfileConnectedCardsPolishBridge() {
   }, [latestStatusByAuthor, users]);
 
   useEffect(() => {
+    const handleNativeDetail = (event: Event) => {
+      const detail = (event as CustomEvent<{ friendId?: string; view?: string }>).detail;
+      if (!detail?.friendId || (detail.view !== 'profile' && detail.view !== 'status')) return;
+      const card = [...document.querySelectorAll<HTMLElement>(
+        '#profile-social-hub-modal article[data-profile-connected-friend-id]'
+      )].find(item => item.dataset.profileConnectedFriendId === detail.friendId);
+      if (!card) return;
+      const target = resolveTarget(card);
+      if (!target) return;
+      if (detail.view === 'status' && target.status) setStatusTarget(target);
+      else setProfileTarget(target);
+    };
+    window.addEventListener('kyrub:profile-contact-detail', handleNativeDetail);
+    return () => window.removeEventListener('kyrub:profile-contact-detail', handleNativeDetail);
+  }, [latestStatusByAuthor, users]);
+
+  useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const element = event.target as Element | null;
       const menuButton = element?.closest<HTMLButtonElement>(
@@ -349,7 +366,7 @@ export function ProfileConnectedCardsPolishBridge() {
       const card = element?.closest<HTMLElement>(
         'article[data-profile-connected-card="true"]'
       );
-      if (!card) return;
+      if (!card || card.dataset.profileConnectedFriendId) return;
 
       if (
         element?.closest(

@@ -375,6 +375,11 @@ function ContactCard({
   onChat: () => void;
   onRemove: () => void;
 }) {
+  const openContactDetail = (view: 'profile' | 'status') => {
+    window.dispatchEvent(new CustomEvent('kyrub:profile-contact-detail', {
+      detail: { friendId: friend.id, view },
+    }));
+  };
   const mediaUrl = latestStatus?.mediaUrls?.[0] || friend.avatar;
   const mediaBackground = mediaUrl
     ? `url("${mediaUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
@@ -390,6 +395,7 @@ function ContactCard({
             style={{ backgroundImage: mediaBackground }}
           />
         )}
+        <button type="button" onClick={() => openContactDetail(latestStatus ? 'status' : 'profile')} className="absolute inset-0 z-[3]" aria-label={latestStatus ? `Ver Status de ${friend.name}` : `Ver perfil de ${friend.name}`} />
         <Avatar
           src={mediaUrl}
           name={friend.name}
@@ -417,8 +423,8 @@ function ContactCard({
           <Star className={`h-4 w-4 ${friend.favorited ? 'fill-current' : ''}`} />
         </button>
       </div>
-      <div data-profile-connected-content="true" className="relative z-[3] min-h-[72px] p-3 pointer-events-none">
-        <h4 data-profile-connected-heading="true" className="truncate text-xs font-black text-white">{friend.name}</h4>
+      <div data-profile-connected-content="true" className="relative z-[3] min-h-[72px] p-3">
+        <button type="button" onClick={() => openContactDetail('profile')} className="block w-full text-left" aria-label={`Ver perfil de ${friend.name}`}><h4 data-profile-connected-heading="true" className="truncate text-xs font-black text-white">{friend.name}</h4></button>
         <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
           {latestStatus?.content || friend.bio || friend.role}
         </p>
