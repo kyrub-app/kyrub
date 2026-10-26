@@ -105,6 +105,8 @@ const tenantListingToStore = (
 };
 
 export function KyrubTab(props: KyrubTabProps) {
+  const [distanceFilterEnabled, setDistanceFilterEnabled] = useState(false);
+  const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
   const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
   const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('none');
@@ -302,6 +304,10 @@ export function KyrubTab(props: KyrubTabProps) {
 
       <LegacyKyrubTab
         {...props}
+        distanceFilterEnabled={distanceFilterEnabled}
+        setDistanceFilterEnabled={setDistanceFilterEnabled}
+        isDistancePanelOpen={isDistancePanelOpen}
+        setIsDistancePanelOpen={setIsDistancePanelOpen}
         posts={socialFeed.posts}
         storesWithCoords={publishedStores}
       />
