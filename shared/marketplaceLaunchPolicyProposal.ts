@@ -42,3 +42,38 @@ export const quoteMarketplaceLaunchPolicy = (input: {
     consumerServiceFeeMinor: MARKETPLACE_LAUNCH_POLICY_PROPOSAL.consumerServiceFeeMinor,
   };
 };
+
+/**
+ * Preview-only exemption determination. Activation must be supplied by an
+ * authoritative, immutable server-side record; store creation is not activation.
+ * The anniversary is calculated in UTC calendar months, not as 90 days.
+ */
+export const isWithinMarketplaceCommissionExemption = (
+  firstActivationIso: string,
+  orderCreatedIso: string
+): boolean => {
+  const activation = new Date(firstActivationIso);
+  const order = new Date(orderCreatedIso);
+  if (!Number.isFinite(activation.getTime()) || !Number.isFinite(order.getTime())) {
+    throw new Error('Valid activation and order timestamps are required.');
+  }
+  const end = new Date(activation.getTime());
+  const targetMonthStart = new Date(Date.UTC(
+    activation.getUTCFullYear(),
+    activation.getUTCMonth() + MARKETPLACE_LAUNCH_POLICY_PROPOSAL.merchantCommissionExemptionMonths,
+    1
+  ));
+  const lastDay = new Date(Date.UTC(
+    targetMonthStart.getUTCFullYear(), targetMonthStart.getUTCMonth() + 1, 0
+  )).getUTCDate();
+  end.setTime(Date.UTC(
+    targetMonthStart.getUTCFullYear(),
+    targetMonthStart.getUTCMonth(),
+    Math.min(activation.getUTCDate(), lastDay),
+    activation.getUTCHours(),
+    activation.getUTCMinutes(),
+    activation.getUTCSeconds(),
+    activation.getUTCMilliseconds()
+  ));
+  return order.getTime() >= activation.getTime() && order.getTime() < end.getTime();
+};
