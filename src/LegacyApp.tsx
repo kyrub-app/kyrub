@@ -1123,6 +1123,32 @@ export default function App() {
     }
   };
 
+  // Keep the claim callback in the persistent app: LandingView unmounts after login.
+  const acceptPublicDelivery = (deliveryId: string) => {
+    requireAuthenticatedAction(() => {
+      void (async () => {
+        try {
+          const user = auth.currentUser;
+          if (!user) throw new Error('Entre com Google para continuar.');
+          const token = await user.getIdToken();
+          const response = await fetch(`/api/delivery-opportunities/${encodeURIComponent(deliveryId)}/status`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({ status: 'accepted' }),
+          });
+          if (!response.ok) {
+            const result = await response.json().catch(() => ({}));
+            throw new Error(typeof result.error === 'string' ? result.error : 'Não foi possível aceitar a entrega.');
+          }
+          setActiveTab('renda');
+          triggerToast('Entrega aceita pelo servidor. Consulte o acompanhamento de entregas.', 'success');
+        } catch (error) {
+          triggerToast(error instanceof Error ? error.message : 'Não foi possível aceitar a entrega.', 'error');
+        }
+      })();
+    });
+  };
+
   // Handle Login Flow
 const handleLogin = async (provider: 'google' | 'apple') => {
   if (provider === 'apple') {
@@ -1432,6 +1458,7 @@ if (newMomentPublishToPraca) {
           setCurrentPath={setCurrentPath}
           requireAuthenticatedAction={requireAuthenticatedAction}
           openAuthenticatedRendaAction={openAuthenticatedRendaAction}
+          acceptPublicDelivery={acceptPublicDelivery}
         />
       ) : (
         /* REGISTERED LOGIN SCREEN WORKSPACE */
