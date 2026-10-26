@@ -136,16 +136,9 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
     setFreelanceJobs(prev =>
       prev.map(g => {
         if (g.id !== gigId) return g;
-        if (setWalletBalance) {
-          setWalletBalance(curr => curr + g.payment);
-        }
-        if (setWalletHistory) {
-          setWalletHistory(currHistory => [
-            { id: `tx-gig-${Date.now()}`, type: 'Serviço Gig', desc: `Faturamento freela: ${g.title}`, val: g.payment, date: new Date().toLocaleString('pt-BR') },
-            ...currHistory
-          ]);
-        }
-        triggerToast(`Parabéns! Trabalho concluído e R$ ${g.payment.toFixed(2)} recebidos.`, 'success');
+        // A local status transition must never mint a wallet balance or
+        // claim that money was received without server-confirmed settlement.
+        triggerToast('Freela concluído localmente. Pagamento não confirmado; nenhum valor foi creditado.', 'info');
         return { ...g, status: 'done' };
       })
     );
