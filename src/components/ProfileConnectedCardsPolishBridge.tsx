@@ -282,6 +282,16 @@ export function ProfileConnectedCardsPolishBridge() {
         button.dataset.profileConnectedName = name;
         button.setAttribute('aria-label', `Mais ações para ${name}`);
         media?.setAttribute('data-profile-connected-media', 'true');
+        // Keep image presentation synchronized in the card owner, not a second polling bridge.
+        if (media) {
+          const imageUrl = media.querySelector<HTMLImageElement>('img')?.src;
+          if (imageUrl) {
+            const escaped = imageUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+            media.style.setProperty('--profile-connected-image', `url("${escaped}")`);
+          } else {
+            media.style.removeProperty('--profile-connected-image');
+          }
+        }
         footer?.setAttribute('data-profile-connected-footer', 'true');
 
         if (content) {
@@ -457,6 +467,20 @@ export function ProfileConnectedCardsPolishBridge() {
           cursor: pointer;
         }
 
+        #profile-social-hub-modal [data-profile-connected-media="true"]::before {
+          content: '';
+          position: absolute;
+          inset: -24px;
+          z-index: 0;
+          background-image: var(--profile-connected-image);
+          background-position: center;
+          background-size: cover;
+          filter: blur(20px) saturate(.86);
+          opacity: .68;
+          transform: scale(1.08);
+          pointer-events: none;
+        }
+
         #profile-social-hub-modal [data-profile-connected-media="true"]::after {
           content: '';
           position: absolute;
@@ -468,9 +492,12 @@ export function ProfileConnectedCardsPolishBridge() {
 
         #profile-social-hub-modal [data-profile-connected-media="true"] > img,
         #profile-social-hub-modal [data-profile-connected-media="true"] > span[role="img"] {
+          position: relative !important;
+          z-index: 2 !important;
           width: 100% !important;
           height: 100% !important;
-          object-fit: cover !important;
+          object-fit: contain !important;
+          object-position: center !important;
         }
 
         #profile-social-hub-modal [data-profile-connected-media="true"] > button {
