@@ -95,7 +95,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
         employer: profileName || 'Você',
         description: `${freelaDesc} (Requisitos: ${freelaRequirements})`,
         payment: paymentNum,
-        distance: parseFloat((Math.random() * 3 + 0.5).toFixed(1)),
+        distance: 0, // Unknown until a real route/distance is available; never fabricate proximity.
         status: 'open'
       };
       setFreelanceJobs([newFreela, ...freelanceJobs]);
