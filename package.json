@@ -9,6 +9,7 @@
   "scripts": {
     "dev": "tsx server.ts",
     "firestore:compose": "node scripts/compose-firestore-rules.mjs",
+    "test:community-group-invitations": "node --test --import tsx tests/community-group-invitation-response.test.ts",
     "test:operational": "node --test --import tsx tests/operational-test-bench.test.ts",
     "operations:check": "node scripts/validate-operations-readiness.mjs",
     "operations:check:json": "node scripts/validate-operations-readiness.mjs --json",
