@@ -522,3 +522,24 @@ Ainda será necessário validar os contratos/props exatos de `LegacyKyrubTab` du
 5. Validar TypeScript, testes, build e homologação fixa antes de qualquer promoção a produção.
 
 **Escopo desta revisão:** documentação e análise estática; nenhuma afirmação de execução E2E, remoção de código ou aprovação de deploy.
+
+
+## Onda 1 — checkpoint de autoridade (26/10/2026, homologação)
+
+Verificação direta da branch `feat/profile-react-rebuild` após a correção do filtro geográfico:
+
+- `LegacyApp.tsx` continua proprietário dos estados `socialSubTab`, `ofertasFilter` e `pracaFilter`; passa seus valores e setters para `KyrubTab`.
+- `KyrubTab.tsx` lê listings publicados, compõe descoberta e delega a renderização dos cards e filtros a `LegacyKyrubTab`.
+- `LegacyKyrubTab.tsx` mantém estado local de ativação/painel do filtro de distância e executa `filteredStores`; portanto **não** é seguro removê-lo antes de extrair sua lógica e provar paridade.
+- Os dois adaptadores de loja publicada em `KyrubTab.tsx` atribuem `isNew: false`, enquanto a aba Novas em `LegacyKyrubTab.tsx` filtra por `Boolean(store.isNew)`. É um defeito funcional identificado, mas **não corrigir inventando data de publicação**: localizar primeiro o timestamp canônico e definir a janela de novidade.
+- O domínio fixo de homologação esteve associado a um deployment antigo mesmo após builds READY. A validação de cada PR deve verificar **o commit servido pelo alias fixo**, além do status do deployment, antes de solicitar teste visual.
+
+### Contrato mínimo para a primeira extração de código
+
+1. Isolar o estado de filtros de lojas (aba, distância habilitada, raio, coordenadas) sob um único dono React, sem duplicar estados entre wrapper e componente visual.
+2. Manter os adaptadores e consultas canônicas existentes e preservar os estados vazios, favoritos, clube, geolocalização e carrossel.
+3. Testar explicitamente: filtro desligado inclui lojas publicadas sem coordenadas; filtro ligado exclui lojas sem coordenadas; fechar/desativar restaura a lista; aba Novas usa metadado real; alternar Praça/Marketplace não reinicia indevidamente os filtros.
+4. Migrar consumidores de `LegacyApp` por etapas; não retirar `LegacyKyrubTab` nem bridges antes de confirmar paridade mobile/desktop e testes automatizados.
+5. Só considerar o gate visual concluído quando o alias fixo estiver apontando para o SHA da alteração validada.
+
+Este checkpoint é documentação de autoridade e critérios de aceite; não representa migração de estado concluída nem aprovação E2E.
