@@ -18,7 +18,7 @@ export function subscribeMyCommunityGroups(
   if (!uid) throw new Error('Entre no Kyrub para consultar seus grupos.');
   if (!communityId) throw new Error('Selecione uma comunidade.');
   return onSnapshot(
-    query(collection(db, 'community_groups'), where('memberIds', 'array-contains', uid)),
+    query(collection(db, 'community_groups'), where('communityId', '==', communityId), where('memberIds', 'array-contains', uid)),
     snapshot => onChange(snapshot.docs.flatMap(entry => {
       const data = entry.data();
       if (data.communityId !== communityId) return [];
