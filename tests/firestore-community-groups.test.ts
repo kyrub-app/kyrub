@@ -107,3 +107,14 @@ test('non-creator cannot issue group invitations', async () => {
     inviteeId: 'outsider', invitedBy: 'member', status: 'pending', createdAt: serverTimestamp(),
   }));
 });
+
+test('recipient can decline an invitation without joining group', async () => {
+  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner']));
+  const invitationPath = [...groupPath, 'invitations', 'member'] as const;
+  await assertSucceeds(setDoc(doc(dbFor('owner'), ...invitationPath), {
+    inviteeId: 'member', invitedBy: 'owner', status: 'pending', createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(dbFor('member'), ...invitationPath), { status: 'declined' }));
+  await assertFails(getDoc(doc(dbFor('member'), ...groupPath)));
+  await assertFails(updateDoc(doc(dbFor('member'), ...invitationPath), { status: 'accepted' }));
+});
