@@ -46,6 +46,42 @@
       // Membership changes require a separate audited invitation flow.
       allow update, delete: if false;
 
+      // An invitation is visible only to its intended recipient and the group creator.
+      // Acceptance records consent; membership mutation remains server-controlled.
+      match /invitations/{inviteeId} {
+        allow get: if isSignedIn()
+          && exists(communityGroupPath(groupId))
+          && (
+            request.auth.uid == inviteeId
+            || request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
+          );
+        allow list: if isSignedIn()
+          && exists(communityGroupPath(groupId))
+          && request.auth.uid == get(communityGroupPath(groupId)).data.creatorId;
+
+        allow create: if canAccessCommunityGroup(groupId)
+          && request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
+          && inviteeId != request.auth.uid
+          && isActiveCommunityMember(get(communityGroupPath(groupId)).data.communityId)
+          && request.resource.data.keys().hasOnly(['inviteeId', 'invitedBy', 'status', 'createdAt'])
+          && request.resource.data.keys().hasAll(['inviteeId', 'invitedBy', 'status', 'createdAt'])
+          && request.resource.data.inviteeId == inviteeId
+          && request.resource.data.invitedBy == request.auth.uid
+          && request.resource.data.status == 'pending'
+          && request.resource.data.createdAt == request.time;
+
+        allow update: if isSignedIn()
+          && request.auth.uid == inviteeId
+          && exists(communityGroupPath(groupId))
+          && isActiveCommunityMember(get(communityGroupPath(groupId)).data.communityId)
+          && resource.data.inviteeId == inviteeId
+          && resource.data.status == 'pending'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+          && request.resource.data.status in ['accepted', 'declined'];
+
+        allow delete: if false;
+      }
+
       match /messages/{messageId} {
         allow get, list: if canAccessCommunityGroup(groupId);
 
