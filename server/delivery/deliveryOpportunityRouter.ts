@@ -282,6 +282,35 @@ export const publishKyrubDeliveryOpportunity = async (
   return { ...payload, created: !existing.exists };
 };
 
+// Remove an unclaimed Kyrub opportunity when its source order leaves production.
+// Never erase an active courier claim: that requires an operational resolution.
+export const withdrawUnclaimedKyrubDeliveryOpportunity = async (
+  tenantId: string,
+  orderId: string
+): Promise<'withdrawn' | 'claimed' | 'missing'> => {
+  const id = deliveryJobId(tenantId, orderId);
+  const reference = adminDb.doc(deliveryPath(id));
+  const claimReference = adminDb.doc(claimPath(id));
+  const scheduleReference = adminDb.doc(escalationQueuePath(id));
+  return adminDb.runTransaction(async transaction => {
+    const [delivery, claim, schedule] = await Promise.all([
+      transaction.get(reference), transaction.get(claimReference), transaction.get(scheduleReference),
+    ]);
+    if (!delivery.exists) return 'missing';
+    if (claim.exists) return 'claimed';
+    if (clean(delivery.data()?.status) !== 'available') return 'missing';
+    transaction.update(reference, {
+      status: 'cancelled', fallbackStatus: 'source_order_cancelled',
+      updatedAt: FieldValue.serverTimestamp(),
+    });
+    if (schedule.exists) transaction.update(scheduleReference, {
+      status: 'cancelled', cancelledReason: 'source_order_cancelled',
+      availableAt: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp(),
+    });
+    return 'withdrawn';
+  });
+};
+
 export const updateKyrubDeliveryStatus = async (
   deliveryId: string,
   status: DeliveryOperationalStatus,
