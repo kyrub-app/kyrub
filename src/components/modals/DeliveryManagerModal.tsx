@@ -145,16 +145,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
           return d;
         }
         if (nextStatus === 'done') {
-          if (d.payment > 0) {
-            setWalletBalance(curr => curr + d.payment);
-            setWalletHistory(currHistory => [
-              { id: `tx-del-${Date.now()}`, type: 'Logística', desc: `Faturamento de entrega ID ${d.id}`, val: d.payment, date: new Date().toLocaleString('pt-BR') },
-              ...currHistory
-            ]);
-            triggerToast(`Pacote entregue! R$ ${d.payment.toFixed(2)} adicionados à sua carteira.`, 'success');
-          } else {
-            triggerToast('Pacote entregue. O valor desta corrida ainda depende da cotação real.', 'success');
-          }
+          // Operational completion is not proof of payment. Only a verified
+          // financial settlement may credit the user's wallet.
+          triggerToast('Entrega concluída localmente. Pagamento não confirmado; nenhum valor foi creditado.', 'info');
         } else {
           triggerToast('Pacote coletado. A caminho do destino final!', 'info');
         }
