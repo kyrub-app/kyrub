@@ -37,9 +37,9 @@
         && incoming().name.size() > 0
         && incoming().name.size() <= 80
         && incoming().memberIds is list
-        && incoming().memberIds.size() >= 1
-        && incoming().memberIds.size() <= 50
-        && request.auth.uid in incoming().memberIds
+        // Until invitations are implemented, the creator is the only member.
+        // Arbitrary UIDs must never be added without their consent.
+        && incoming().memberIds == [request.auth.uid]
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
