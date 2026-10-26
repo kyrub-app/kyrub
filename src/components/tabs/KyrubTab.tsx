@@ -29,6 +29,17 @@ type DiscoveryFilter = 'none' | 'promotion' | 'for_you';
 const CANONICAL_MARKETPLACE_READ_ENABLED =
   import.meta.env.VITE_ENABLE_CANONICAL_MARKETPLACE_READ === 'true';
 
+const NEW_STORE_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+const isRecentlyPublished = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object' || !('toMillis' in value)) return false;
+  const toMillis = value.toMillis;
+  if (typeof toMillis !== 'function') return false;
+  const publishedMs = toMillis.call(value);
+  const age = Date.now() - publishedMs;
+  return Number.isFinite(age) && age >= 0 && age <= NEW_STORE_WINDOW_MS;
+};
+
 const canonicalListingToStore = (
   listing: MarketplaceStoreListingDocument
 ): Store => ({
@@ -48,7 +59,7 @@ const canonicalListingToStore = (
   status: listing.status,
   lat: listing.geoPosition?.latitude,
   lng: listing.geoPosition?.longitude,
-  isNew: false,
+  isNew: isRecentlyPublished(listing.publishedAt),
 });
 
 const tenantListingToStore = (
@@ -89,7 +100,7 @@ const tenantListingToStore = (
       typeof data.lng === 'number' && Number.isFinite(data.lng)
         ? data.lng
         : undefined,
-    isNew: false,
+    isNew: isRecentlyPublished(data.publishedAt),
   };
 };
 
