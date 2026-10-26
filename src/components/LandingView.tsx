@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
@@ -22,6 +23,15 @@ interface LandingViewProps {
   requireAuthenticatedAction: (action: () => void) => void;
   openAuthenticatedRendaAction: (action: 'delivery-request' | 'delivery-work' | 'freela-request' | 'freela-work' | 'store') => void;
 }
+
+type PublicDelivery = {
+  id: string;
+  type: 'delivery';
+  status: 'available';
+  payment: number;
+  distance: number;
+  source: string;
+};
 
 const rendaCards = [
   {
@@ -64,6 +74,27 @@ const ecosystemCards = [
 
 export function LandingView(props: LandingViewProps) {
   const origin = loadStorefrontOriginContext();
+  const [publicDeliveries, setPublicDeliveries] = useState<PublicDelivery[]>([]);
+  const [deliveryFeedState, setDeliveryFeedState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    fetch('/api/delivery-opportunities/public', { signal: controller.signal })
+      .then(async response => {
+        if (!response.ok) throw new Error('Public delivery feed unavailable');
+        return response.json();
+      })
+      .then(data => {
+        if (controller.signal.aborted) return;
+        setPublicDeliveries(Array.isArray(data?.opportunities) ? data.opportunities : []);
+        setDeliveryFeedState('ready');
+      })
+      .catch(() => {
+        if (!controller.signal.aborted) setDeliveryFeedState('error');
+      });
+    return () => controller.abort();
+  }, []);
+
 
   const requestLogin = (): void => {
     props.setShowLoginModal(false);
@@ -150,9 +181,25 @@ export function LandingView(props: LandingViewProps) {
         {/* The actual Renda workspace is available to visitors. Never seed fake
             jobs here: shared public opportunities require an authoritative feed. */}
         <section aria-label="Renda Aberta" className="space-y-3">
-          <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 text-xs text-slate-300">
-            Explore as ferramentas de Renda. Oportunidades compartilhadas serão exibidas quando a fonte pública estiver integrada; entrar com Google será necessário para operar.
+          <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 text-xs text-slate-300" role="status">
+            {deliveryFeedState === 'loading' && 'Consultando entregas disponíveis…'}
+            {deliveryFeedState === 'error' && 'Não foi possível consultar as entregas agora. Tente novamente mais tarde.'}
+            {deliveryFeedState === 'ready' && publicDeliveries.length === 0 && 'Nenhuma entrega pública disponível neste momento.'}
+            {deliveryFeedState === 'ready' && publicDeliveries.length > 0 && `${publicDeliveries.length} entrega(s) disponível(is) no mural público. Entre com Google para trabalhar.`}
           </div>
+          {deliveryFeedState === 'ready' && publicDeliveries.length > 0 && (
+            <div className="grid gap-2 sm:grid-cols-2">
+              {publicDeliveries.map(job => (
+                <div key={job.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-200">
+                  <p className="font-semibold">Entrega disponível</p>
+                  <p className="mt-1 text-xs text-slate-400">Valor informado: R$ {job.payment.toFixed(2).replace('.', ',')}</p>
+                  <button type="button" className="mt-2 text-xs font-semibold text-orange-400" onClick={() => props.openAuthenticatedRendaAction('delivery-work')}>
+                    Entrar para trabalhar
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
           <RendaTab
             deliveries={[]}
             freelanceJobs={[]}
