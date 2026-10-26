@@ -22,6 +22,7 @@ const fragmentPaths = [
   resolve(root, 'firestore.profile-social-hub.fragment.rules'),
   resolve(root, 'firestore.contact-groups.fragment.rules'),
   resolve(root, 'firestore.communities.fragment.rules'),
+  resolve(root, 'firestore.community-groups.fragment.rules'),
   resolve(root, 'firestore.community-debate-comment-query.fragment.rules'),
   resolve(root, 'firestore.social-feed.fragment.rules'),
   resolve(root, 'firestore.kyrubia-conversations.fragment.rules'),
