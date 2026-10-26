@@ -622,14 +622,18 @@ export function KyrubTab({
               </div>
               <button
                 type="button"
-                onClick={() => setIsDistancePanelOpen(false)}
+                onClick={() => { setDistanceFilterEnabled(false); setIsDistancePanelOpen(false); }}
                 className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-900 hover:text-white"
-                title="Fechar filtro"
+                title="Desativar filtro de distância"
+                aria-label="Desativar filtro de distância"
               >
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
 
+            <div className="mt-2 flex justify-end">
+              <button type="button" onClick={() => { setDistanceFilterEnabled(false); setIsDistancePanelOpen(false); }} className="text-[10px] font-bold text-orange-400 hover:text-orange-300">Desativar distância · Ver todas as lojas</button>
+            </div>
             <div className="mt-3 flex items-center gap-3">
               <input
                 type="range"
