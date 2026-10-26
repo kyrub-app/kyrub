@@ -51,7 +51,7 @@ test('Marketplace and Notas navigate using application state, not hidden nav cli
 test('pressed header states describe the selected destination, not merely the parent tab', () => {
   assert.match(header, /aria-pressed=\{marketplaceActive\}/);
   assert.match(header, /aria-pressed=\{notesActive\}/);
-  assert.match(legacy, /marketplaceActive=\{activeTab === 'kyrub' && socialSubTab === 'lojas'\}/);
+  assert.match(legacy, /marketplaceActive=\{activeTab === 'marketplace'\}/);
   assert.match(legacy, /notesActive=\{activeTab === 'perfil'\}/);
   assert.doesNotMatch(header, /aria-pressed=\{activeSection === 'kyrub'\}/);
 });
