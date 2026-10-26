@@ -438,7 +438,7 @@ function ContactCard({
           data-profile-connected-menu="true"
           data-profile-connected-name={friend.name}
           className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-          aria-label={`Remover ${friend.name}`}
+          aria-label={`Mais ações para ${friend.name}`}
         >
           <UserMinus className="h-4 w-4" />
         </button>
