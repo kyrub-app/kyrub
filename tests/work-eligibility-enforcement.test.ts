@@ -29,6 +29,8 @@ test('composed Firestore rules require verified profiles for freelance activity'
   assert.match(composer, /hardenKyrubFreelanceRules/);
   assert.match(composer, /firestore\.identity-eligibility\.fragment\.rules/);
   assert.match(transform, /hasApprovedIdentityProfile\('requester'\)/);
-  assert.match(transform, /hasApprovedIdentityProfile\('freelancer'\)/);
+  // Candidaturas remain server-only until the trusted submission flow exists.
+  assert.match(transform, /match \/candidaturas\/\{candiId\}/);
+  assert.match(transform, /allow create, update, delete: if false;/);
   assert.match(helpers, /hasApprovedCourierProfile/);
 });
