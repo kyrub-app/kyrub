@@ -477,6 +477,33 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
 export const createDeliveryOpportunityRouter = (): Router => {
   const router = Router();
 
+  // Anonymous discovery returns a deliberately small public projection.
+  // Never serialize operational delivery documents (buyer, destination,
+  // contact details, order total, or private pickup information).
+  router.get('/public', async (_request, response) => {
+    try {
+      const snapshot = await adminDb.collection(DELIVERY_COLLECTION)
+        .where('status', '==', 'available')
+        .limit(30)
+        .get();
+      const opportunities = snapshot.docs.map(document => {
+        const data = document.data();
+        return {
+          id: document.id,
+          type: 'delivery' as const,
+          status: 'available' as const,
+          payment: finite(data.payment),
+          distance: finite(data.distance),
+          source: clean(data.source),
+        };
+      });
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json({ opportunities });
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
   router.post('/orders/:orderId/publish', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
