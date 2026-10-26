@@ -375,23 +375,39 @@ function ContactCard({
   onChat: () => void;
   onRemove: () => void;
 }) {
+  const mediaUrl = latestStatus?.mediaUrls?.[0] || friend.avatar;
+  const mediaBackground = mediaUrl
+    ? `url("${mediaUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}")`
+    : undefined;
+
   return (
-    <article data-profile-connected-friend-id={friend.id} className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
-      <div className="relative">
+    <article data-profile-connected-friend-id={friend.id} className="relative flex min-h-[310px] min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 isolate">
+      <div className="absolute inset-0 overflow-hidden" data-profile-connected-media="true">
+        {mediaBackground && (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute -inset-6 scale-110 bg-cover bg-center opacity-70 blur-xl saturate-[.86]"
+            style={{ backgroundImage: mediaBackground }}
+          />
+        )}
         <Avatar
-          src={latestStatus?.mediaUrls?.[0] || friend.avatar}
+          src={mediaUrl}
           name={friend.name}
-          className="aspect-[4/3] w-full object-cover"
+          className="relative z-[1] h-full w-full object-contain"
+        />
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 z-[2] bg-gradient-to-b from-slate-950/90 via-slate-950/20 to-slate-950"
         />
         {latestStatus && (
-          <span className="absolute bottom-2 left-2 rounded-full border border-teal-400/30 bg-slate-950/85 px-2 py-1 text-[8px] font-black uppercase text-teal-300 backdrop-blur">
+          <span className="absolute left-3 top-[62px] z-[3] rounded-full border border-teal-400/30 bg-slate-950/85 px-2 py-1 text-[8px] font-black uppercase text-teal-300 backdrop-blur">
             Status · {remainingStatusLabel(latestStatus, Date.now())}
           </span>
         )}
         <button
           type="button"
           onClick={onFavorite}
-          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 backdrop-blur ${
+          className={`absolute right-2 top-2 z-[3] flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 backdrop-blur ${
             friend.favorited ? 'text-amber-300' : 'text-slate-400'
           }`}
           aria-label={
@@ -401,13 +417,13 @@ function ContactCard({
           <Star className={`h-4 w-4 ${friend.favorited ? 'fill-current' : ''}`} />
         </button>
       </div>
-      <div className="min-h-[72px] p-3">
+      <div className="relative z-[3] min-h-[72px] p-3 pointer-events-none">
         <h4 className="truncate text-xs font-black text-white">{friend.name}</h4>
         <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
           {latestStatus?.content || friend.bio || friend.role}
         </p>
       </div>
-      <div className="mt-auto grid grid-cols-[1fr_42px] gap-2 border-t border-slate-800 p-2">
+      <div className="relative z-[3] mt-auto grid grid-cols-[1fr_42px] gap-2 border-t border-slate-800/40 p-2">
         <button
           type="button"
           onClick={onChat}
