@@ -36,7 +36,7 @@ export async function respondToCommunityGroupInvitation(input: {
     const communityId = group.communityId;
     if (!validId(communityId) || !Array.isArray(group.memberIds) ||
       !group.memberIds.includes(group.creatorId) ||
-      group.memberIds.length >= 50) {
+      (decision === 'accepted' && group.memberIds.length >= 50)) {
       throw new Error('COMMUNITY_GROUP_INVITATION_INVALID');
     }
     const membershipRef = adminDb.doc(`community_members/${communityId}__${recipientUserId}`);
