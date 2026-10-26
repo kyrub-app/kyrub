@@ -61,7 +61,9 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 
-import { subscribeMyCommunityGroups, type CloudCommunityGroup } from '../utils/communityGroupsCloud';
+import { auth } from '../utils/firebase';
+import { createPrivateCommunityGroup, subscribeMyCommunityGroups, type CloudCommunityGroup } from '../utils/communityGroupsCloud';
+import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
@@ -233,6 +235,9 @@ export function ProfileCommunitiesCloudBridge() {
   const [groupsLoadError, setGroupsLoadError] = useState('');
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [groupDraftName, setGroupDraftName] = useState('');
+  const [groupSaving, setGroupSaving] = useState(false);
+  const [groupSaveError, setGroupSaveError] = useState('');
+  const [groupSaveNotice, setGroupSaveNotice] = useState('');
   const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<string[]>([]);
   const [selectedDebateId, setSelectedDebateId] = useState('');
   const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
@@ -272,6 +277,37 @@ export function ProfileCommunitiesCloudBridge() {
   const canParticipate = Boolean(
     selectedCommunity?.isOwner || selectedCommunity?.isActiveMember
   );
+
+  const saveCommunityGroup = async (): Promise<void> => {
+    if (!selectedCommunityId || !canParticipate || groupSaving) return;
+    setGroupSaving(true);
+    setGroupSaveError('');
+    setGroupSaveNotice('');
+    try {
+      const groupId = await createPrivateCommunityGroup(selectedCommunityId, groupDraftName);
+      const recipients = [...new Set(groupSelectedMemberIds)].filter(id => id !== auth.currentUser?.uid);
+      const failed: string[] = [];
+      for (const recipient of recipients) {
+        try {
+          await issueCommunityGroupInvite(groupId, recipient);
+        } catch {
+          failed.push(recipient);
+        }
+      }
+      setGroupComposerOpen(false);
+      setGroupDraftName('');
+      setGroupSelectedMemberIds([]);
+      if (failed.length) {
+        setGroupSaveNotice(`Grupo criado. ${recipients.length - failed.length} convite(s) enviado(s); ${failed.length} falharam. Você pode convidar novamente mais tarde.`);
+      } else {
+        setGroupSaveNotice(`Grupo criado. ${recipients.length} convite(s) enviado(s) pelo sino.`);
+      }
+    } catch (error) {
+      setGroupSaveError(error instanceof Error ? error.message : 'Não foi possível criar o grupo.');
+    } finally {
+      setGroupSaving(false);
+    }
+  };
 
   useEffect(() => {
     const openCreate = () => {
@@ -773,7 +809,9 @@ export function ProfileCommunitiesCloudBridge() {
                     <span className="min-w-0 flex-1 truncate">{member.userName}</span>
                   </label>
                 ))}
-                <p className="text-xs text-amber-300">Rascunho local: salvar e conversar ficarão disponíveis após a validação das regras privadas no Firestore.</p>
+                <p className="text-xs text-slate-400">Os membros selecionados receberão um convite no sino e só entrarão após aceitar.</p>
+                {groupSaveError && <p role="alert" className="text-xs text-red-300">{groupSaveError}</p>}
+                <button type="button" disabled={groupSaving || !groupDraftName.trim()} onClick={() => void saveCommunityGroup()} className="min-h-10 rounded-xl bg-orange-600 px-4 text-xs font-bold text-white disabled:opacity-50">{groupSaving ? 'Criando e enviando convites...' : 'Criar grupo e convidar'}</button>
                 <button type="button" onClick={() => setGroupComposerOpen(false)} className="min-h-10 rounded-xl border border-slate-700 px-4 text-xs text-slate-200">Voltar</button>
               </div>
             )}
