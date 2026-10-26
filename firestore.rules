@@ -442,8 +442,17 @@ match /connections/{connectionId} {
     // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
     match /hub/renda/deliveries/{deliveryId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn(); // Qualquer usuário ou lojista logado pode solicitar
-      allow update, delete: if isSignedIn();
+      // New jobs must identify their authenticated owner. The legacy client
+      // does not yet supply an authoritative ownership/worker contract.
+      allow create: if isSignedIn()
+        && incoming().ownerId == request.auth.uid
+        && incoming().status == 'available'
+        && incoming().keys().hasAll(['ownerId', 'status']);
+      // Until an atomic, server-verified claim workflow is implemented,
+      // clients may not rewrite delivery state or ownership. An owner may
+      // remove their own listing without affecting another tenant.
+      allow update: if false;
+      allow delete: if isSignedIn() && existing().ownerId == request.auth.uid;
     }
 
     // --- Guia Renda: Vagas de Freela (Otimizado com Custom Claims) ---
