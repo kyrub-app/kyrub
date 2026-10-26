@@ -220,12 +220,16 @@ export function ProfileConnectedCardsPolishBridge() {
     if (!menuButton) return null;
 
     const name = menuButton.dataset.profileConnectedName ?? '';
-    const profile = users.find(user => normalize(user.name) === normalize(name));
-    const friendId = profile?.id ?? '';
-    const status =
-      (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
-      latestStatusByAuthor.byName.get(normalize(name)) ??
-      null;
+    const canonicalFriendId = card.dataset.profileConnectedFriendId;
+    const profile = canonicalFriendId
+      ? users.find(user => user.id === canonicalFriendId)
+      : users.find(user => normalize(user.name) === normalize(name));
+    const friendId = canonicalFriendId || profile?.id || '';
+    const status = canonicalFriendId
+      ? latestStatusByAuthor.byId.get(canonicalFriendId) ?? null
+      : (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
+        latestStatusByAuthor.byName.get(normalize(name)) ??
+        null;
 
     return {
       card,
@@ -266,12 +270,16 @@ export function ProfileConnectedCardsPolishBridge() {
           button.dataset.profileConnectedName ||
           button.getAttribute('aria-label')?.replace(/^Remover\s+/, '').trim() ||
           '';
-        const profile = users.find(user => normalize(user.name) === normalize(name));
-        const friendId = profile?.id ?? '';
-        const status =
-          (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
-          latestStatusByAuthor.byName.get(normalize(name)) ??
-          null;
+        const canonicalFriendId = card.dataset.profileConnectedFriendId;
+        const profile = canonicalFriendId
+          ? users.find(user => user.id === canonicalFriendId)
+          : users.find(user => normalize(user.name) === normalize(name));
+        const friendId = canonicalFriendId || profile?.id || '';
+        const status = canonicalFriendId
+          ? latestStatusByAuthor.byId.get(canonicalFriendId) ?? null
+          : (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
+            latestStatusByAuthor.byName.get(normalize(name)) ??
+            null;
         const content = card.children.item(1) as HTMLElement | null;
         const media = card.firstElementChild as HTMLElement | null;
         const footer = card.lastElementChild as HTMLElement | null;

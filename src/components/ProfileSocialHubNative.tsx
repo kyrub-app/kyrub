@@ -376,7 +376,7 @@ function ContactCard({
   onRemove: () => void;
 }) {
   return (
-    <article className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
+    <article data-profile-connected-friend-id={friend.id} className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
       <div className="relative">
         <Avatar
           src={latestStatus?.mediaUrls?.[0] || friend.avatar}
