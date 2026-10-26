@@ -18,5 +18,7 @@ test('marketplace listing adapters do not fabricate novelty metadata', () => {
   const tab = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
   assert.match(tab, /const canonicalListingToStore/);
   assert.match(tab, /const tenantListingToStore/);
-  assert.match(tab, /isNew: false/);
+  assert.match(tab, /isNew: isRecentlyPublished\(listing\.publishedAt\)/);
+  assert.match(tab, /isNew: isRecentlyPublished\(data\.publishedAt\)/);
+  assert.match(tab, /age >= 0 && age <= NEW_STORE_WINDOW_MS/);
 });
