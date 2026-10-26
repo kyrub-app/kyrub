@@ -109,6 +109,7 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
   }, [preferences]);
 
   useEffect(() => {
+    setResolvedInvites({});
     notificationBaselineRef.current = null;
     setNotifications([]);
     setUnreadCount(0);
@@ -206,7 +207,9 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
     try {
       await respondToCommunityGroupInvite(groupId, decision);
       setResolvedInvites(current => ({ ...current, [notification.id]: decision }));
-      if (!notification.readAt) await markUserNotificationRead(notification.id);
+      if (!notification.readAt) {
+        await markUserNotificationRead(notification.id);
+      }
       await refresh(true);
     } catch (error) {
       setErrorMessage(error instanceof Error ? error.message : 'Não foi possível responder ao convite.');
