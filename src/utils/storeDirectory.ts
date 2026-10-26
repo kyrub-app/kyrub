@@ -232,7 +232,8 @@ export const createCanonicalStore = async (
     id: storeId,
     ownerId: user.uid,
     name,
-    publicationStatus: input.publicationStatus ?? 'paused',
+    // Creation is always a draft. Commercial publication requires a verified server transition.
+    publicationStatus: 'paused',
     plan: input.plan ?? 'free',
     legacyTenantId: cleanString(input.legacyTenantId),
     migrationStatus: 'registry_only',
