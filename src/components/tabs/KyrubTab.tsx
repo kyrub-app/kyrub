@@ -257,7 +257,7 @@ export function KyrubTab(props: KyrubTabProps) {
 
   return (
     <div className={wrapperClassName || undefined}>
-      {props.socialSubTab === 'lojas' && (
+      {props.socialSubTab === 'lojas' && !props.marketplaceMode && (
         <div
           className="mb-3 grid grid-cols-2 gap-2"
           id="marketplace-discovery-filters"
