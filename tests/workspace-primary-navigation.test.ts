@@ -10,7 +10,7 @@ const navStyles = readFileSync('src/styles/workspace-navigation.css', 'utf8');
 const socialHub = readFileSync('src/components/ProfileSocialHubNative.tsx', 'utf8');
 
 test('Renda stays the default and the native header owns all shortcuts', () => {
-  assert.match(legacy, /useState<'perfil' \| 'renda' \| 'kyrub'>\('renda'\)/);
+  assert.match(legacy, /useState<'perfil' \| 'renda' \| 'kyrub' \| 'marketplace'>\('renda'\)/);
   assert.match(legacy, /<AppHeader/);
   assert.match(header, /id="header-marketplace-trigger"/);
   assert.match(header, /id="header-notes-trigger"/);
@@ -20,7 +20,7 @@ test('Renda stays the default and the native header owns all shortcuts', () => {
 });
 
 test('Marketplace targets Ofertas directly and Notas targets the existing productivity page', () => {
-  assert.match(legacy, /setSocialSubTab\('lojas'\);[\s\S]*setActiveTab\('kyrub'\);/);
+  assert.match(legacy, /setSocialSubTab\('lojas'\);[\s\S]*setActiveTab\('marketplace'\);/);
   assert.match(legacy, /onNotes=\{\(\) => \{[\s\S]*setActiveTab\('perfil'\);/);
   assert.match(legacy, /activeTab === 'perfil'/);
   assert.match(legacy, /<PerfilTab/);

@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const legacyAppSource = readFileSync('src/LegacyApp.tsx', 'utf8');
 const mainSource = readFileSync('src/main.tsx', 'utf8');
 const profileSource = readFileSync(
   'src/components/ProfileSocialHubNative.tsx',
@@ -231,7 +232,8 @@ describe('native React profile social hub', () => {
   });
 
   test('keeps the authenticated Kyrub AI workspace unchanged', () => {
-    assert.match(appSource, /KyrubAiWorkspaceBridge/);
+    assert.match(appSource, /<LegacyApp/);
+    assert.match(legacyAppSource, /<KyrubAiWorkspaceBridge/);
     assert.match(aiSource, /Kyrub I\.A/);
     assert.match(aiSource, /Em que posso ajudar hoje\?/);
     assert.match(aiSource, /requestKyrubAiConsultant/);

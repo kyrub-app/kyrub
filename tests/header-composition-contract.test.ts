@@ -43,7 +43,7 @@ test('every header shortcut belongs to the same React header', () => {
 test('Marketplace and Notas navigate using application state, not hidden nav clicks', () => {
   assert.match(header, /onClick=\{\(\) => navigate\(onMarketplace\)\}/);
   assert.match(header, /onClick=\{\(\) => navigate\(onNotes\)\}/);
-  assert.match(legacy, /onMarketplace=\{\(\) => \{[\s\S]*?setSocialSubTab\('lojas'\);[\s\S]*?setActiveTab\('kyrub'\);/);
+  assert.match(legacy, /onMarketplace=\{\(\) => \{[\s\S]*?setSocialSubTab\('lojas'\);[\s\S]*?setActiveTab\('marketplace'\);/);
   assert.match(legacy, /onNotes=\{\(\) => \{[\s\S]*?setActiveTab\('perfil'\);/);
   assert.doesNotMatch(bottomNav, /openKyrubDestination|pendingKyrubDestination|header-marketplace-trigger|header-notes-trigger/);
 });
@@ -51,7 +51,7 @@ test('Marketplace and Notas navigate using application state, not hidden nav cli
 test('pressed header states describe the selected destination, not merely the parent tab', () => {
   assert.match(header, /aria-pressed=\{marketplaceActive\}/);
   assert.match(header, /aria-pressed=\{notesActive\}/);
-  assert.match(legacy, /marketplaceActive=\{activeTab === 'kyrub' && socialSubTab === 'lojas'\}/);
+  assert.match(legacy, /marketplaceActive=\{activeTab === 'marketplace'\}/);
   assert.match(legacy, /notesActive=\{activeTab === 'perfil'\}/);
   assert.doesNotMatch(header, /aria-pressed=\{activeSection === 'kyrub'\}/);
 });
