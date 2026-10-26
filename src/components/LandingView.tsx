@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { auth } from '../utils/firebase';
 import {
   ArrowLeft,
   ArrowRight,
@@ -23,6 +22,7 @@ interface LandingViewProps {
   /** The parent retains the intended operation across guest view unmount. */
   requireAuthenticatedAction: (action: () => void) => void;
   openAuthenticatedRendaAction: (action: 'delivery-request' | 'delivery-work' | 'freela-request' | 'freela-work' | 'store') => void;
+  acceptPublicDelivery: (deliveryId: string) => void;
 }
 
 type PublicDelivery = {
@@ -96,38 +96,6 @@ export function LandingView(props: LandingViewProps) {
     return () => controller.abort();
   }, []);
 
-
-  const [claimingDeliveryId, setClaimingDeliveryId] = useState<string | null>(null);
-  const [claimMessage, setClaimMessage] = useState('');
-
-  const claimDelivery = (deliveryId: string) => {
-    props.requireAuthenticatedAction(() => {
-      void (async () => {
-        setClaimingDeliveryId(deliveryId);
-        setClaimMessage('');
-        try {
-          const user = auth.currentUser;
-          if (!user) throw new Error('Entre com Google para continuar.');
-          const token = await user.getIdToken();
-          const response = await fetch(`/api/delivery-opportunities/${encodeURIComponent(deliveryId)}/status`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-            body: JSON.stringify({ status: 'accepted' }),
-          });
-          if (!response.ok) {
-            const result = await response.json().catch(() => ({}));
-            throw new Error(typeof result.error === 'string' ? result.error : 'Não foi possível aceitar a entrega.');
-          }
-          setPublicDeliveries(previous => previous.filter(job => job.id !== deliveryId));
-          setClaimMessage('Entrega aceita. Consulte o acompanhamento de entregas na sua conta.');
-        } catch (error) {
-          setClaimMessage(error instanceof Error ? error.message : 'Não foi possível aceitar a entrega.');
-        } finally {
-          setClaimingDeliveryId(null);
-        }
-      })();
-    });
-  };
 
   const requestLogin = (): void => {
     props.setShowLoginModal(false);
@@ -220,15 +188,14 @@ export function LandingView(props: LandingViewProps) {
             {deliveryFeedState === 'ready' && publicDeliveries.length === 0 && 'Nenhuma entrega pública disponível neste momento.'}
             {deliveryFeedState === 'ready' && publicDeliveries.length > 0 && `${publicDeliveries.length} entrega(s) disponível(is) no mural público. Entre com Google para trabalhar.`}
           </div>
-          {claimMessage && <p role="status" className="text-xs text-orange-300">{claimMessage}</p>}
           {deliveryFeedState === 'ready' && publicDeliveries.length > 0 && (
             <div className="grid gap-2 sm:grid-cols-2">
               {publicDeliveries.map(job => (
                 <div key={job.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-sm text-slate-200">
                   <p className="font-semibold">Entrega disponível</p>
                   <p className="mt-1 text-xs text-slate-400">Valor informado: R$ {job.payment.toFixed(2).replace('.', ',')}</p>
-                  <button type="button" className="mt-2 text-xs font-semibold text-orange-400" onClick={() => claimDelivery(job.id)} disabled={claimingDeliveryId === job.id}>
-                    {claimingDeliveryId === job.id ? 'Confirmando…' : 'Aceitar entrega'}
+                  <button type="button" className="mt-2 text-xs font-semibold text-orange-400" onClick={() => props.acceptPublicDelivery(job.id)}>
+                    Aceitar entrega
                   </button>
                 </div>
               ))}
