@@ -441,7 +441,16 @@ match /connections/{connectionId} {
 
     // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
     match /hub/renda/deliveries/{deliveryId} {
-      allow read: if isSignedIn();
+      // Operational delivery records contain buyer addresses and contact details.
+      // Do not expose them to every signed-in account. Public discovery uses
+      // the server's explicitly redacted /api/delivery-opportunities/public feed.
+      allow read: if isSignedIn() && (
+        (existing().keys().hasAny(['ownerId']) && existing().ownerId == request.auth.uid)
+        || (existing().keys().hasAny(['requestedBy']) && existing().requestedBy == request.auth.uid)
+        || (existing().keys().hasAny(['buyerId']) && existing().buyerId == request.auth.uid)
+        || (existing().keys().hasAny(['acceptedBy']) && existing().acceptedBy == request.auth.uid)
+        || (existing().keys().hasAny(['storeId']) && existing().storeId == request.auth.uid)
+      );
       // New jobs must identify their authenticated owner. The legacy client
       // does not yet supply an authoritative ownership/worker contract.
       allow create: if isSignedIn()
