@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { User } from 'firebase/auth';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { MapPin } from 'lucide-react';
 import type { DeliveryJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
@@ -98,7 +98,7 @@ export function KyrubDeliveryStatusSyncBridge() {
       if (!user) return;
 
       unsubscribeDeliveries = onSnapshot(
-        collection(db, DELIVERY_COLLECTION_PATH),
+        query(collection(db, DELIVERY_COLLECTION_PATH), where('acceptedBy', '==', user.uid)),
         snapshot => {
           const matching = snapshot.docs.flatMap(document => {
             const data = document.data() as Record<string, unknown>;

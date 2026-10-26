@@ -63,7 +63,8 @@ test('unaccepted jobs escalate after three minutes to admin control plane', () =
 
 test('delivery opportunities refresh the authorized Renda mural cache', () => {
   assert.match(bridgeSource, /kyrub_deliveries/);
-  assert.match(bridgeSource, /hub\/renda\/deliveries/);
+  assert.match(bridgeSource, /subscribeAuthorizedDeliveryBoard/);
+  assert.match(readFileSync('src/utils/deliveryBoardSubscription.ts', 'utf8'), /hub\/renda\/deliveries/);
   assert.match(bridgeSource, /acceptedByName/);
   assert.match(appSource, /KyrubDeliveryOpportunityBridge/);
   assert.match(appSource, /onOpportunitiesChanged=\{refreshLegacyCache\}/);
