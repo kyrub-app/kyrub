@@ -463,6 +463,7 @@ export function ProfileSocialHubNative() {
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
+  const [openGroupId, setOpenGroupId] = useState<string | null>(null);
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
   const [squareSearch, setSquareSearch] = useState('');
   const [storeSearch, setStoreSearch] = useState('');
@@ -1624,20 +1625,36 @@ export function ProfileSocialHubNative() {
                                 pessoas
                               </p>
                             </div>
-                            <button
-                              type="button"
-                              onClick={() => void deleteGroup(group)}
-                              className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-                              aria-label={`Excluir grupo ${group.name}`}
-                            >
-                              <Trash2 className="h-4 w-4" />
-                            </button>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setOpenGroupId(current =>
+                                    current === group.id ? null : group.id
+                                  )
+                                }
+                                className={`flex h-9 w-9 items-center justify-center rounded-xl border ${openGroupId === group.id ? 'border-violet-400/50 bg-violet-500 text-white' : 'border-violet-500/25 bg-violet-500/10 text-violet-300'}`}
+                                aria-label={openGroupId === group.id
+                                  ? `Concluir inclusão no grupo ${group.name}`
+                                  : `Adicionar pessoas ao grupo ${group.name}`}
+                              >
+                                {openGroupId === group.id ? <Check className="h-4 w-4" /> : <UserPlus className="h-4 w-4" />}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => void deleteGroup(group)}
+                                className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
+                                aria-label={`Excluir grupo ${group.name}`}
+                              >
+                                <Trash2 className="h-4 w-4" />
+                              </button>
+                            </div>
                           </div>
                           <div className="grid gap-2 sm:grid-cols-2">
-                            {directory.friends.map(friend => {
-                              const selected = group.memberIds.includes(
-                                friend.id
-                              );
+                            {directory.friends.filter(friend =>
+                              openGroupId === group.id || group.memberIds.includes(friend.id)
+                            ).map(friend => {
+                              const selected = group.memberIds.includes(friend.id);
                               return (
                                 <button
                                   key={friend.id}
@@ -1665,6 +1682,16 @@ export function ProfileSocialHubNative() {
                                 </button>
                               );
                             })}
+                            {group.memberIds.length === 0 && openGroupId !== group.id && (
+                              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 px-4 py-5 text-center text-[9px] text-slate-500 sm:col-span-2">
+                                Nenhuma pessoa adicionada. Toque em + para incluir contatos.
+                              </div>
+                            )}
+                            {openGroupId === group.id && directory.friends.length === group.memberIds.length && (
+                              <div className="rounded-2xl border border-dashed border-slate-700 bg-slate-950 px-4 py-5 text-center text-[9px] text-slate-500 sm:col-span-2">
+                                Todos os seus conectados já fazem parte deste grupo.
+                              </div>
+                            )}
                           </div>
                         </section>
                       ))}

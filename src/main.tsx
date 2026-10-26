@@ -17,7 +17,6 @@ import { StoreOwnedPixReceivablesBridge } from './components/store/StoreOwnedPix
 import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileConnectedImageFitBridge } from './components/ProfileConnectedImageFitBridge';
-import { ProfileContactGroupsPolishBridge } from './components/ProfileContactGroupsPolishBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
 import { ProfilePublishingDestinationsCloudBridge } from './components/ProfilePublishingDestinationsCloudBridge';
@@ -49,7 +48,6 @@ createRoot(rootElement).render(
           <ProfileNextPolishBridge />
           <ProfileConnectedCardsPolishBridge />
           <ProfileConnectedImageFitBridge />
-          <ProfileContactGroupsPolishBridge />
           <ProfileOffersFiltersBridge />
           <ProfilePublishingDestinationsCloudBridge />
           <ProfileCommunitiesCloudBridge />
