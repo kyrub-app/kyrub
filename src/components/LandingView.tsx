@@ -11,6 +11,7 @@ import {
   Users,
 } from 'lucide-react';
 import { loadStorefrontOriginContext } from '../utils/storefrontOriginContext';
+import { RendaTab } from './tabs/RendaTab';
 
 interface LandingViewProps {
   showLoginModal: boolean;
@@ -141,6 +142,26 @@ export function LandingView(props: LandingViewProps) {
           <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400 sm:text-base sm:leading-7">
             Você pode conhecer o ecossistema sem login. Quando decidir salvar uma informação, assumir uma oportunidade, ativar sua loja ou concluir uma compra, o Kyrub pede sua autenticação e continua a ação com a mesma conta.
           </p>
+        </section>
+
+        {/* The actual Renda workspace is available to visitors. Never seed fake
+            jobs here: shared public opportunities require an authoritative feed. */}
+        <section aria-label="Renda Aberta" className="space-y-3">
+          <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-4 text-xs text-slate-300">
+            Explore as ferramentas de Renda. Oportunidades compartilhadas serão exibidas quando a fonte pública estiver integrada; entrar com Google será necessário para operar.
+          </div>
+          <RendaTab
+            deliveries={[]}
+            freelanceJobs={[]}
+            setShowDeliveryModal={requestLogin}
+            setShowFazerEntregasModal={requestLogin}
+            setShowFreelaModal={requestLogin}
+            setShowFazerFreelasModal={requestLogin}
+            setIsGestaoOpen={requestLogin}
+            setGestaoRole={() => {}}
+            triggerToast={() => {}}
+            requireAuthenticatedAction={() => requestLogin()}
+          />
         </section>
 
         <section aria-labelledby="guest-renda-title">
