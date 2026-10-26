@@ -309,6 +309,22 @@ export function ProfileConnectedCardsPolishBridge() {
   }, [groups, latestStatusByAuthor, users]);
 
   useEffect(() => {
+    const handleNativeMenu = (event: Event) => {
+      const friendId = (event as CustomEvent<{ friendId?: string }>).detail?.friendId;
+      if (!friendId) return;
+      const cards = document.querySelectorAll<HTMLElement>(
+        '#profile-social-hub-modal article[data-profile-connected-friend-id]'
+      );
+      const card = [...cards].find(item => item.dataset.profileConnectedFriendId === friendId);
+      if (!card) return;
+      const target = resolveTarget(card);
+      if (target) setMenuTarget(target);
+    };
+    window.addEventListener('kyrub:profile-contact-menu', handleNativeMenu);
+    return () => window.removeEventListener('kyrub:profile-contact-menu', handleNativeMenu);
+  }, [latestStatusByAuthor, users]);
+
+  useEffect(() => {
     const handleClick = (event: MouseEvent) => {
       const element = event.target as Element | null;
       const menuButton = element?.closest<HTMLButtonElement>(
@@ -316,7 +332,7 @@ export function ProfileConnectedCardsPolishBridge() {
       );
 
       if (menuButton) {
-        if (menuButton.dataset.profileConnectedBypass === 'true') return;
+        if (menuButton.closest('article[data-profile-connected-friend-id]')) return;
         const card = menuButton.closest<HTMLElement>(
           'article[data-profile-connected-card="true"]'
         );
@@ -371,13 +387,11 @@ export function ProfileConnectedCardsPolishBridge() {
 
   const removeConnection = () => {
     if (!removeTarget) return;
-    const button = removeTarget.menuButton;
-    button.dataset.profileConnectedBypass = 'true';
+    const button = removeTarget.card.querySelector<HTMLButtonElement>(
+      'button[data-profile-connected-remove-action="true"]'
+    );
     setRemoveTarget(null);
-    window.setTimeout(() => {
-      button.click();
-      delete button.dataset.profileConnectedBypass;
-    }, 0);
+    button?.click();
   };
 
   const toggleGroup = async (group: ContactGroup) => {
