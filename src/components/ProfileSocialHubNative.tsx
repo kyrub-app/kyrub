@@ -438,7 +438,6 @@ function ContactCard({
           <MessageCircle className="h-4 w-4" />
           Chat
         </button>
-        <button type="button" hidden data-profile-connected-remove-action="true" onClick={onRemove} aria-label={`Confirmar remoção de ${friend.name}`} />
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('kyrub:profile-contact-menu', { detail: { friendId: friend.id } }))}
@@ -497,6 +496,7 @@ export function ProfileSocialHubNative() {
     message: string;
     type: ToastType;
   } | null>(null);
+  const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -521,6 +521,16 @@ export function ProfileSocialHubNative() {
     triggerToast,
   });
   const communityDirectory = useCommunityDirectory();
+
+  useEffect(() => {
+    const handleRemoveIntent = (event: Event) => {
+      const friendId = (event as CustomEvent<{ friendId?: string }>).detail?.friendId;
+      const friend = directory.friends.find(item => item.id === friendId);
+      if (friend) setRemoveContactTarget(friend);
+    };
+    window.addEventListener('kyrub:profile-contact-remove', handleRemoveIntent);
+    return () => window.removeEventListener('kyrub:profile-contact-remove', handleRemoveIntent);
+  }, [directory.friends]);
 
   useEffect(() => {
     return onAuthStateChanged(auth, nextUser => {
@@ -1556,9 +1566,7 @@ export function ProfileSocialHubNative() {
                             setChatMessageText('');
                             setChatTarget(friend);
                           }}
-                          onRemove={() =>
-                            void directory.handleToggleFriend(friend.id)
-                          }
+                          onRemove={() => setRemoveContactTarget(friend)}
                         />
                       ))}
                       {directory.friends.length === 0 && (
@@ -1588,9 +1596,7 @@ export function ProfileSocialHubNative() {
                               setChatMessageText('');
                               setChatTarget(friend);
                             }}
-                            onRemove={() =>
-                              void directory.handleToggleFriend(friend.id)
-                            }
+                            onRemove={() => setRemoveContactTarget(friend)}
                           />
                         ))}
                       {directory.friends.filter(friend => friend.favorited)
@@ -1938,6 +1944,23 @@ export function ProfileSocialHubNative() {
                   )}
                 </div>
               )}
+            </div>
+          </section>
+        </div>
+      )}
+
+      {removeContactTarget && (
+        <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md" role="dialog" aria-modal="true" aria-label="Confirmar remoção de contato">
+          <section className="w-full max-w-sm rounded-3xl border border-red-500/25 bg-slate-950 p-5">
+            <h3 className="text-base font-black text-white">Remover esta conexão?</h3>
+            <p className="mt-2 text-xs text-slate-400">{removeContactTarget.name} deixará de aparecer entre seus conectados.</p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button type="button" onClick={() => setRemoveContactTarget(null)} className="h-11 rounded-xl border border-slate-800 bg-slate-900 text-xs text-slate-300">Cancelar</button>
+              <button type="button" onClick={() => {
+                const friendId = removeContactTarget.id;
+                setRemoveContactTarget(null);
+                void directory.handleToggleFriend(friendId);
+              }} className="h-11 rounded-xl bg-red-500 text-xs font-black text-white">Remover</button>
             </div>
           </section>
         </div>
