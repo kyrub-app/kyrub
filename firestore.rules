@@ -457,7 +457,12 @@ match /connections/{connectionId} {
     match /candidaturas/{candiId} {
       allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
-      allow update, delete: if isSignedIn();
+      // A candidate may manage only their own application. Never allow
+      // another signed-in user to overwrite its ownership or contents.
+      allow update: if isSignedIn()
+        && existing().userId == request.auth.uid
+        && incoming().userId == existing().userId;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
     }
 
     match /artifacts { allow list: if isSignedIn(); }
