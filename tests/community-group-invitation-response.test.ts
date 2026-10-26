@@ -24,7 +24,7 @@ test('invitation acceptance uses transaction and checks recipient and pending st
 test('group admission checks community membership and capacity before write', () => {
   assert.match(service, /membershipSnap\.data\(\)\?\.status !== 'active'/);
   assert.match(service, /membershipSnap\.data\(\)\?\.userId !== recipientUserId/);
-  assert.match(service, /group\.memberIds\.length >= 50/);
+  assert.match(service, /decision === 'accepted' && group\.memberIds\.length >= 50/);
   assert.match(service, /decision === 'accepted'/);
   assert.match(service, /transaction\.update\(groupRef/);
   assert.match(service, /transaction\.update\(inviteRef, \{ status: decision \}\)/);
