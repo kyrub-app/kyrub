@@ -57,6 +57,17 @@ on:
       - 'tests/canonical-cash-rules-contract.test.ts'
       - 'tests/store-security-rules-contract.test.ts'
       - '.github/workflows/store-security-rules.yml'
+  push:
+    branches: ['feat/profile-react-rebuild']
+    paths:
+      - 'firestore.rules'
+      - 'firestore.*.fragment.rules'
+      - 'firebase.security.json'
+      - 'package.json'
+      - 'scripts/compose-firestore-rules.mjs'
+      - 'scripts/firestore-rule-composition.mjs'
+      - 'tests/firestore-*.test.ts'
+      - '.github/workflows/store-security-rules.yml'
   workflow_dispatch:
 
 permissions:
