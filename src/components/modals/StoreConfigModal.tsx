@@ -63,7 +63,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [isSaving, setIsSaving] = useState(false);
   const [isPublishing, setIsPublishing] = useState(false);
   const [canonicalPublished, setCanonicalPublished] = useState(false);
-  const [fallbackPublished, setFallbackPublished] = useState(false);
   const [toast, setToast] = useState<ToastState>(null);
   const [pendingSync, setPendingSync] = useState(false);
   const [configStoreLogo, setConfigStoreLogo] = useState('');
@@ -72,7 +71,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [operationalSettings, setOperationalSettings] =
     useState<StoreOperationalSettings>(createEmptyStoreOperationalSettings);
 
-  const isPublished = canonicalPublished || fallbackPublished;
+  const isPublished = canonicalPublished;
 
   const notify = (
     message: string,
@@ -193,17 +192,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       () => setCanonicalPublished(false)
     );
 
-    const unsubscribeFallback = onSnapshot(
-      doc(db, 'tenants', user.uid),
-      snapshot => {
-        setFallbackPublished(snapshot.data()?.publicationStatus === 'published');
-      },
-      () => setFallbackPublished(false)
-    );
-
     return () => {
       unsubscribeCanonical();
-      unsubscribeFallback();
     };
   }, [props.isOpen]);
 
@@ -247,20 +237,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const resolvePublishedState = async (uid: string): Promise<boolean> => {
     if (isPublished) return true;
 
-    const [canonicalResult, fallbackResult] = await Promise.allSettled([
-      getDoc(doc(db, getMarketplaceStoreListingDocumentPath(uid))),
-      getDoc(doc(db, 'tenants', uid)),
-    ]);
-
-    const canonicalIsPublished =
-      canonicalResult.status === 'fulfilled' &&
-      (canonicalResult.value.data() as MarketplaceListingDocument | undefined)
-        ?.publicationStatus === 'published';
-    const fallbackIsPublished =
-      fallbackResult.status === 'fulfilled' &&
-      fallbackResult.value.data()?.publicationStatus === 'published';
-
-    return canonicalIsPublished || fallbackIsPublished;
+    const snapshot = await getDoc(doc(db, getMarketplaceStoreListingDocumentPath(uid)));
+    const listing = snapshot.data() as MarketplaceListingDocument | undefined;
+    return listing?.listingType === 'store' && listing.publicationStatus === 'published';
   };
 
   const saveStore = async (
@@ -386,7 +365,6 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       );
 
       setCanonicalPublished(targetPublished);
-      setFallbackPublished(targetPublished);
 
       notify(
         targetPublished
