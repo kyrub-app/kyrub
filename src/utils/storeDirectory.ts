@@ -84,7 +84,6 @@ export interface CreateCanonicalStoreInput {
   name: string;
   legacyTenantId?: string;
   plan?: StorePlan;
-  publicationStatus?: 'paused' | 'published';
 }
 
 export interface InviteStoreMemberInput {
@@ -159,7 +158,7 @@ export const parseCanonicalStore = (value: unknown): CanonicalStoreRecord | null
     plan,
     legacyTenantId: cleanString(candidate.legacyTenantId),
     migrationStatus,
-    ...(candidate.firstMarketplaceActivatedAt != null
+    ...(candidate.firstMarketplaceActivatedAt != null && timestampToIso(candidate.firstMarketplaceActivatedAt)
       ? { firstMarketplaceActivatedAt: timestampToIso(candidate.firstMarketplaceActivatedAt) }
       : {}),
     createdAt: timestampToIso(candidate.createdAt),
@@ -259,7 +258,6 @@ export const createCanonicalStoreFromLegacy = async (
     name: legacyStore.name.trim() || 'Minha loja',
     legacyTenantId,
     plan: legacyStore.plan,
-    publicationStatus: 'paused',
   });
 
 export const searchExistingKyrubUsers = async (
