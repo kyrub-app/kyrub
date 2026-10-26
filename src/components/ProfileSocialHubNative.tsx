@@ -434,7 +434,7 @@ function ContactCard({
         </button>
         <button
           type="button"
-          onClick={onRemove}
+          onClick={() => window.dispatchEvent(new CustomEvent('kyrub:profile-contact-menu', { detail: { friendId: friend.id } }))}
           data-profile-connected-menu="true"
           data-profile-connected-name={friend.name}
           className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
