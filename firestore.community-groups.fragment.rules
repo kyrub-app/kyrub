@@ -55,9 +55,9 @@
             request.auth.uid == inviteeId
             || request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
           );
-        allow list: if isSignedIn()
-          && exists(communityGroupPath(groupId))
-          && request.auth.uid == get(communityGroupPath(groupId)).data.creatorId;
+        // Collection listing is intentionally disabled: a recipient can fetch
+        // their deterministic invitation ID without seeing other invitees.
+        allow list: if false;
 
         allow create: if canAccessCommunityGroup(groupId)
           && request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
