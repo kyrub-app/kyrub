@@ -206,6 +206,7 @@ export function KyrubTab({
   marketplaceMode = false,
 }: KyrubTabProps) {
   const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
+  const [distanceFilterEnabled, setDistanceFilterEnabled] = useState(false);
   const [clubCandidates, setClubCandidates] = useState<MyStoreClubCandidate[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState('');
@@ -250,6 +251,12 @@ export function KyrubTab({
   const currentUserAvatar = currentUser?.photoURL || '';
 
   const requestActualLocation = () => {
+    if (distanceFilterEnabled) {
+      setDistanceFilterEnabled(false);
+      setIsDistancePanelOpen(false);
+      return;
+    }
+    setDistanceFilterEnabled(true);
     setIsDistancePanelOpen(true);
 
     if (!navigator.geolocation) {
@@ -301,7 +308,7 @@ export function KyrubTab({
         }
       }
 
-      if (effectiveUserCoords) {
+      if (distanceFilterEnabled && effectiveUserCoords) {
         if (!Number.isFinite(store.lat) || !Number.isFinite(store.lng)) {
           return false;
         }
@@ -326,6 +333,7 @@ export function KyrubTab({
     });
   }, [
     effectiveUserCoords,
+    distanceFilterEnabled,
     favoriteStoreIds,
     getDistance,
     normalizedSearch,
@@ -355,7 +363,7 @@ export function KyrubTab({
       };
     }
 
-    if (effectiveUserCoords) {
+    if (distanceFilterEnabled && effectiveUserCoords) {
       return {
         icon: MapPin,
         title: `Nenhuma loja em até ${radiusKm} km`,
@@ -363,8 +371,8 @@ export function KyrubTab({
           radiusKm < 50
             ? 'Amplie o raio de busca para descobrir vitrines publicadas em outras regiões.'
             : 'Ainda não há vitrines com localização cadastrada dentro do maior raio disponível.',
-        actionLabel: radiusKm < 50 ? 'Buscar em até 50 km' : undefined,
-        onAction: radiusKm < 50 ? () => setRadiusKm(50) : undefined,
+        actionLabel: radiusKm < 50 ? 'Buscar em até 50 km' : 'Desativar distância',
+        onAction: radiusKm < 50 ? () => setRadiusKm(50) : () => { setDistanceFilterEnabled(false); setIsDistancePanelOpen(false); },
       };
     }
 
@@ -559,14 +567,14 @@ export function KyrubTab({
             type="button"
             onClick={requestActualLocation}
             className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border transition-colors ${
-              locationStatus === 'ready'
+              distanceFilterEnabled && locationStatus === 'ready'
                 ? 'border-orange-500/50 bg-orange-500/15 text-orange-400'
                 : locationStatus === 'error'
                   ? 'border-red-500/40 bg-red-500/10 text-red-400'
                   : 'border-slate-800 bg-slate-950 text-slate-500 hover:text-orange-400'
             }`}
-            title="Usar localização atual e ajustar distância"
-            aria-label="Filtro de distância"
+            title={distanceFilterEnabled ? "Desativar filtro de distância" : "Ativar filtro de distância"}
+            aria-label={distanceFilterEnabled ? "Desativar filtro de distância" : "Ativar filtro de distância"}
             id="distance-filter-trigger"
           >
             {locationStatus === 'loading' ? (
@@ -607,7 +615,7 @@ export function KyrubTab({
                   Distância
                 </span>
                 <p className="mt-1 text-[9px] text-slate-500">
-                  {locationStatus === 'ready'
+                  {distanceFilterEnabled && locationStatus === 'ready'
                     ? 'Localização ativa. Lojas sem coordenadas não entram no resultado.'
                     : 'Autorize sua localização para filtrar as vitrines próximas.'}
                 </p>
