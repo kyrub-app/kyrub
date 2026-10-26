@@ -23,6 +23,7 @@ import {
   loadUserNotificationInbox,
   markAllUserNotificationsRead,
   markUserNotificationRead,
+  respondToCommunityGroupInvite,
 } from '../utils/userNotifications';
 import { UserCommunicationPreferencesModal } from './UserCommunicationPreferencesModal';
 
@@ -96,6 +97,8 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [pendingInviteResponse, setPendingInviteResponse] = useState<string | null>(null);
+  const [resolvedInvites, setResolvedInvites] = useState<Record<string, 'accepted' | 'declined'>>({});
   const notificationBaselineRef = useRef<Set<string> | null>(null);
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
@@ -106,6 +109,7 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
   }, [preferences]);
 
   useEffect(() => {
+    setResolvedInvites({});
     notificationBaselineRef.current = null;
     setNotifications([]);
     setUnreadCount(0);
@@ -191,6 +195,28 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
     () => preferences ?? (user ? buildDefaultUserCommunicationPreferences(user.uid) : null),
     [preferences, user]
   );
+
+  const respondToInvite = async (
+    notification: UserNotification,
+    decision: 'accepted' | 'declined'
+  ): Promise<void> => {
+    const groupId = notification.target.groupId;
+    if (notification.target.kind !== 'community_group_invite' || !groupId) return;
+    setPendingInviteResponse(notification.id);
+    setErrorMessage('');
+    try {
+      await respondToCommunityGroupInvite(groupId, decision);
+      setResolvedInvites(current => ({ ...current, [notification.id]: decision }));
+      if (!notification.readAt) {
+        await markUserNotificationRead(notification.id);
+      }
+      await refresh(true);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível responder ao convite.');
+    } finally {
+      setPendingInviteResponse(null);
+    }
+  };
 
   const readOne = async (notification: UserNotification): Promise<void> => {
     if (!notification.readAt) {
@@ -330,16 +356,15 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
                 notifications.map(notification => {
                   const unread = unreadIds.has(notification.id);
                   return (
-                    <button
-                      type="button"
+                    <div
                       key={notification.id}
-                      onClick={() => void readOne(notification)}
                       className={`mb-1 flex w-full items-start gap-3 rounded-2xl border px-3 py-3 text-left transition-colors ${
                         unread
                           ? 'border-orange-500/25 bg-orange-500/10'
                           : 'border-transparent bg-slate-900/50 hover:border-slate-800'
                       }`}
                     >
+                      <button type="button" onClick={() => void readOne(notification)} aria-label={`Abrir notificação: ${notification.title}`} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                       <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${unread ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-900 text-slate-500'}`}>
                         {notification.category === 'store_chat'
                           ? <MessageSquareText className="h-4 w-4" />
@@ -361,7 +386,20 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
                           {formatTime(notification.createdAt)}
                         </span>
                       </div>
-                    </button>
+                      </button>
+                      {notification.target.kind === 'community_group_invite' && (
+                        <div className="flex shrink-0 flex-col gap-1">
+                          {resolvedInvites[notification.id] ? (
+                            <span className="text-[9px] text-slate-400">{resolvedInvites[notification.id] === 'accepted' ? 'Aceito' : 'Recusado'}</span>
+                          ) : (
+                            <>
+                              <button type="button" disabled={pendingInviteResponse !== null} onClick={() => void respondToInvite(notification, 'accepted')} className="rounded-lg bg-emerald-700 px-2 py-1 text-[10px] text-white disabled:opacity-50">Aceitar</button>
+                              <button type="button" disabled={pendingInviteResponse !== null} onClick={() => void respondToInvite(notification, 'declined')} className="rounded-lg border border-slate-600 px-2 py-1 text-[10px] text-slate-200 disabled:opacity-50">Recusar</button>
+                            </>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   );
                 })
               )}

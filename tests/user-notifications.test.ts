@@ -183,3 +183,16 @@ describe('community group invitation notification contract', () => {
     }), /USER_NOTIFICATION_TARGET_INVALID/);
   });
 });
+
+describe('community group invitation bell actions', () => {
+  test('accept and decline are routed through authenticated notification API', () => {
+    const center = readFileSync('src/components/UserNotificationCenter.tsx', 'utf8');
+    const client = readFileSync('src/utils/userNotifications.ts', 'utf8');
+    assert.match(center, /respondToCommunityGroupInvite\(groupId, decision\)/);
+    assert.match(center, /respondToInvite\(notification, 'accepted'\)/);
+    assert.match(center, /respondToInvite\(notification, 'declined'\)/);
+    assert.match(center, /notification\.target\.kind === 'community_group_invite'/);
+    assert.match(client, /authorizedFetch\('\/api\/notifications\/community-group-invitations\/respond'/);
+    assert.doesNotMatch(center, /updateDoc\(|setDoc\(/);
+  });
+});
