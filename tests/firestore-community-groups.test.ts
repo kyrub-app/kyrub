@@ -85,3 +85,36 @@ test('scoped group listing returns only memberships in selected community', asyn
 test('creator cannot add arbitrary community UIDs at group creation', async () => {
   await assertFails(setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner', 'outsider'])));
 });
+
+test('group creator may invite; only recipient can accept or decline', async () => {
+  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner']));
+  const invitation = doc(dbFor('owner'), ...groupPath, 'invitations', 'member');
+  await assertSucceeds(setDoc(invitation, {
+    inviteeId: 'member', invitedBy: 'owner', status: 'pending', createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'member')));
+  await assertFails(getDoc(doc(dbFor('outsider'), ...groupPath, 'invitations', 'member')));
+  await assertFails(getDocs(collection(dbFor('member'), ...groupPath, 'invitations')));
+  await assertFails(updateDoc(doc(dbFor('outsider'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
+  await assertFails(updateDoc(doc(dbFor('owner'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
+  await assertSucceeds(updateDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
+  await assertFails(getDoc(doc(dbFor('member'), ...groupPath)));
+  await assertFails(updateDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'member'), { status: 'pending' }));
+});
+test('non-creator cannot issue group invitations', async () => {
+  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner']));
+  await assertFails(setDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'outsider'), {
+    inviteeId: 'outsider', invitedBy: 'member', status: 'pending', createdAt: serverTimestamp(),
+  }));
+});
+
+test('recipient can decline an invitation without joining group', async () => {
+  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner']));
+  const invitationPath = [...groupPath, 'invitations', 'member'] as const;
+  await assertSucceeds(setDoc(doc(dbFor('owner'), ...invitationPath), {
+    inviteeId: 'member', invitedBy: 'owner', status: 'pending', createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(dbFor('member'), ...invitationPath), { status: 'declined' }));
+  await assertFails(getDoc(doc(dbFor('member'), ...groupPath)));
+  await assertFails(updateDoc(doc(dbFor('member'), ...invitationPath), { status: 'accepted' }));
+});
