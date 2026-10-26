@@ -3,6 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth';
 import { authorizeInPersonOrderOperator } from '../attendance/inPersonOrderService.js';
 import { canStoreRoleTransitionOrderStatus } from '../../src/utils/storeSecurity.js';
+import { publishKyrubDeliveryOpportunity } from '../delivery/deliveryOpportunityRouter';
 import { ConsultantHttpError } from '../ai/types';
 import { adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
@@ -612,10 +613,32 @@ export const createOrderInventoryRouter = (): Router => {
         }
       }
 
+      // KDS/ERP transitions publish Kyrub deliveries from the canonical order.
+      // Publishing is idempotent; failures must not roll back an already committed
+      // order status transition or silently pretend the delivery was advertised.
+      let deliveryPublication: 'not-applicable' | 'published' | 'attention' = 'not-applicable';
+      let deliveryPublicationWarning = '';
+      if (['preparing', 'ready', 'out_for_delivery'].includes(result.status)) {
+        const updatedOrder = await orderReference(tenantId, result.orderId).get();
+        const updatedData = updatedOrder.data() as Record<string, unknown> | undefined;
+        if (updatedData?.fulfillmentType === 'delivery' && clean(updatedData.deliveryProvider) === 'kyrub') {
+          try {
+            await publishKyrubDeliveryOpportunity(tenantId, result.orderId);
+            deliveryPublication = 'published';
+          } catch (error) {
+            deliveryPublication = 'attention';
+            deliveryPublicationWarning = error instanceof Error ? error.message : String(error);
+            console.error('[Order Inventory] Kyrub delivery publication needs attention.', error);
+          }
+        }
+      }
+
       response.json({
         ...result,
         partnerSync,
         partnerWarning,
+        deliveryPublication,
+        deliveryPublicationWarning,
       });
     } catch (error) {
       errorResponse(response, error);
