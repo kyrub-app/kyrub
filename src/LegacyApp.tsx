@@ -1600,6 +1600,18 @@ if (newMomentPublishToPraca) {
         </div>
       )}
 
+      {/* Contextual Google sign-in for actions requested after a session expires. */}
+      {showLoginModal && !auth.currentUser && isLoggedIn && (
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-5" role="dialog" aria-modal="true" aria-label="Entrar para continuar">
+          <div className="w-full max-w-sm space-y-4 rounded-3xl border border-slate-700 bg-slate-900 p-6 text-center">
+            <h2 className="text-lg font-black text-white">Entre para continuar</h2>
+            <p className="text-sm text-slate-300">Sua operação será retomada depois do login com Google.</p>
+            <button type="button" onClick={() => void handleLogin('google')} className="w-full rounded-xl bg-orange-500 px-4 py-3 font-bold text-slate-950">Entrar com Google</button>
+            <button type="button" onClick={() => { pendingAuthenticatedAction.current = null; setShowLoginModal(false); }} className="w-full rounded-xl border border-slate-700 px-4 py-3 text-slate-300">Cancelar</button>
+          </div>
+        </div>
+      )}
+
       {/* 4. MODAL DETALHADO DO ERP / GESTÃO (PRESERVA TODAS AS TELAS ANTERIORES) */}
       {isGestaoOpen && !(gestaoRole === 'retailer' && !erpAccessRole) && (
         <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
