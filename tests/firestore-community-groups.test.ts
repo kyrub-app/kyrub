@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
 
 let env: RulesTestEnvironment;
 const communityId = 'community_a';
@@ -59,4 +59,21 @@ test('revoked community member loses access even if listed in group', async () =
     await updateDoc(doc(context.firestore(), 'community_members', communityId + '__member'), { status: 'pending' });
   });
   await assertFails(getDoc(doc(dbFor('member'), ...groupPath)));
+});
+
+test('scoped group listing returns only memberships in selected community', async () => {
+  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner', 'member']));
+  const q = query(
+    collection(dbFor('member'), 'community_groups'),
+    where('communityId', '==', communityId),
+    where('memberIds', 'array-contains', 'member')
+  );
+  const snapshot = await assertSucceeds(getDocs(q));
+  if (snapshot.size !== 1) throw new Error('Expected one private group.');
+  const outsiderQuery = query(
+    collection(dbFor('outsider'), 'community_groups'),
+    where('communityId', '==', communityId),
+    where('memberIds', 'array-contains', 'member')
+  );
+  await assertFails(getDocs(outsiderQuery));
 });
