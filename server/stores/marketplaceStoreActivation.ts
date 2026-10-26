@@ -67,6 +67,11 @@ export const publishMarketplaceStoreAndRecordFirstActivation = async (
       throw new Error('Store owner does not match activation request.');
     }
     const previous = data.firstMarketplaceActivatedAt;
+    // A previously published store without a marker may be historical. Do not
+    // silently grant it a fresh three-month promotion on the next publication.
+    if (data.publicationStatus === 'published' && previous == null) {
+      throw new Error('Published store has no first activation record; manual reconciliation required.');
+    }
     if (previous != null && !(previous instanceof Timestamp)) {
       throw new Error('Invalid existing activation marker; manual reconciliation required.');
     }
