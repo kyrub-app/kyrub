@@ -23,6 +23,12 @@ export const publishMarketplaceStoreAndRecordFirstActivation = async (
     if (data.ownerId !== normalizedOwnerId) {
       throw new Error('Store owner does not match activation request.');
     }
+    if (data.id !== normalizedStoreId || typeof data.name !== 'string' || !data.name.trim()) {
+      throw new Error('Store canonical identity is incomplete.');
+    }
+    if (data.publicationStatus !== 'paused' && data.publicationStatus !== 'published') {
+      throw new Error('Store publication status is invalid.');
+    }
     // A registry-only record has not completed canonical commercial migration.
     // Publishing it now could expose a legacy storefront without verified setup.
     if (data.migrationStatus !== 'canonical') {
