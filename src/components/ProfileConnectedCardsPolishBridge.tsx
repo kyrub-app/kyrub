@@ -290,16 +290,6 @@ export function ProfileConnectedCardsPolishBridge() {
         button.dataset.profileConnectedName = name;
         button.setAttribute('aria-label', `Mais ações para ${name}`);
         media?.setAttribute('data-profile-connected-media', 'true');
-        // Keep image presentation synchronized in the card owner, not a second polling bridge.
-        if (media) {
-          const imageUrl = media.querySelector<HTMLImageElement>('img')?.src;
-          if (imageUrl) {
-            const escaped = imageUrl.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-            media.style.setProperty('--profile-connected-image', `url("${escaped}")`);
-          } else {
-            media.style.removeProperty('--profile-connected-image');
-          }
-        }
         footer?.setAttribute('data-profile-connected-footer', 'true');
 
         if (content) {
@@ -473,39 +463,6 @@ export function ProfileConnectedCardsPolishBridge() {
           height: 100% !important;
           overflow: hidden !important;
           cursor: pointer;
-        }
-
-        #profile-social-hub-modal [data-profile-connected-media="true"]::before {
-          content: '';
-          position: absolute;
-          inset: -24px;
-          z-index: 0;
-          background-image: var(--profile-connected-image);
-          background-position: center;
-          background-size: cover;
-          filter: blur(20px) saturate(.86);
-          opacity: .68;
-          transform: scale(1.08);
-          pointer-events: none;
-        }
-
-        #profile-social-hub-modal [data-profile-connected-media="true"]::after {
-          content: '';
-          position: absolute;
-          inset: 0;
-          z-index: 1;
-          pointer-events: none;
-          background: linear-gradient(to bottom, rgba(2,6,23,.88) 0%, rgba(2,6,23,.2) 34%, rgba(2,6,23,.16) 55%, rgba(2,6,23,.74) 78%, rgba(2,6,23,.98) 100%);
-        }
-
-        #profile-social-hub-modal [data-profile-connected-media="true"] > img,
-        #profile-social-hub-modal [data-profile-connected-media="true"] > span[role="img"] {
-          position: relative !important;
-          z-index: 2 !important;
-          width: 100% !important;
-          height: 100% !important;
-          object-fit: contain !important;
-          object-position: center !important;
         }
 
         #profile-social-hub-modal [data-profile-connected-media="true"] > button {
