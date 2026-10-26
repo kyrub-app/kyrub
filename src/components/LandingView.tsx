@@ -18,6 +18,9 @@ interface LandingViewProps {
   setShowLoginModal: (val: boolean) => void;
   handleLogin: (provider: 'google' | 'apple') => void;
   setCurrentPath: (path: string) => void;
+  /** The parent retains the intended operation across guest view unmount. */
+  requireAuthenticatedAction: (action: () => void) => void;
+  openAuthenticatedRendaAction: (action: 'delivery-request' | 'delivery-work' | 'freela-request' | 'freela-work' | 'store') => void;
 }
 
 const rendaCards = [
@@ -153,14 +156,14 @@ export function LandingView(props: LandingViewProps) {
           <RendaTab
             deliveries={[]}
             freelanceJobs={[]}
-            setShowDeliveryModal={requestLogin}
-            setShowFazerEntregasModal={requestLogin}
-            setShowFreelaModal={requestLogin}
-            setShowFazerFreelasModal={requestLogin}
-            setIsGestaoOpen={requestLogin}
+            setShowDeliveryModal={() => props.openAuthenticatedRendaAction('delivery-request')}
+            setShowFazerEntregasModal={() => props.openAuthenticatedRendaAction('delivery-work')}
+            setShowFreelaModal={() => props.openAuthenticatedRendaAction('freela-request')}
+            setShowFazerFreelasModal={() => props.openAuthenticatedRendaAction('freela-work')}
+            setIsGestaoOpen={() => props.openAuthenticatedRendaAction('store')}
             setGestaoRole={() => {}}
             triggerToast={() => {}}
-            requireAuthenticatedAction={() => requestLogin()}
+            requireAuthenticatedAction={props.requireAuthenticatedAction}
           />
         </section>
 
