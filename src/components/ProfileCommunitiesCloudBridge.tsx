@@ -728,7 +728,7 @@ export function ProfileCommunitiesCloudBridge() {
               {members.filter(member => member.status === 'active').map(member => (
                 <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
                   <Avatar name={member.userName} url={member.userAvatar} />
-                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-[9px] text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'admin' ? 'Administrador' : 'Membro'}</p></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-[9px] text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'moderator' ? 'Moderador' : 'Membro'}</p></div>
                 </div>
               ))}
               {members.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum membro ativo encontrado.</p>}
