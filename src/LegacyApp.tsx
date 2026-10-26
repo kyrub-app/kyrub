@@ -1138,6 +1138,23 @@ export default function App() {
           });
           if (!response.ok) {
             const result = await response.json().catch(() => ({}));
+            if (response.status === 403 && result.code === 'IDENTITY_VERIFICATION_REQUIRED') {
+              const eligibilityResponse = await fetch('/api/delivery-opportunities/eligibility', {
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (eligibilityResponse.ok) {
+                const eligibility = await eligibilityResponse.json();
+                const state = eligibility.status;
+                const guidance = state === 'pending'
+                  ? 'Seus documentos estão em análise. Aguarde a aprovação para aceitar entregas.'
+                  : state === 'rejected'
+                    ? 'Sua verificação documental foi reprovada. Revise o cadastro de identidade antes de tentar novamente.'
+                    : state === 'approved'
+                      ? 'Sua identidade foi aprovada, mas falta aprovação específica para atuar como entregador.'
+                      : 'Você precisa enviar seus documentos para aprovação como entregador antes de aceitar entregas.';
+                throw new Error(guidance);
+              }
+            }
             throw new Error(typeof result.error === 'string' ? result.error : 'Não foi possível aceitar a entrega.');
           }
           setActiveTab('renda');
