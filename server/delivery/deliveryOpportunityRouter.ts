@@ -479,6 +479,17 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
       }
 
       const delivery = deliverySnapshot.data() as Record<string, unknown> | undefined;
+      // A stale schedule must never escalate a withdrawn or unavailable job.
+      if (!deliverySnapshot.exists || clean(delivery?.status) !== 'available'
+        || clean(delivery?.source) !== 'kyrub-order') {
+        transaction.update(scheduleReference, {
+          status: 'cancelled',
+          cancelledReason: 'delivery_not_available',
+          availableAt: FieldValue.delete(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+        return 'cancelled' as const;
+      }
       const escalationReference = adminDb.doc(
         `${ESCALATION_COLLECTION}/${scheduleDocument.id}`
       );
