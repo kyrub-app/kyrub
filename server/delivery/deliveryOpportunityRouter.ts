@@ -486,6 +486,27 @@ export const createDeliveryOpportunityRouter = (): Router => {
   // Anonymous discovery returns a deliberately small public projection.
   // Never serialize operational delivery documents (buyer, destination,
   // contact details, order total, or private pickup information).
+  // Only the signed-in user can inspect their own eligibility summary.
+  // No uploaded documents or reviewer notes are returned.
+  router.get('/eligibility', async (request, response) => {
+    try {
+      const actor = await authenticatedActor(request);
+      const snapshot = await adminDb.doc(`identity_verifications/${actor.uid}`).get();
+      const data = snapshot.data() as Record<string, unknown> | undefined;
+      const status = data?.status === 'approved' || data?.status === 'pending'
+        || data?.status === 'rejected' ? data.status : 'not_submitted';
+      const allowedProfiles = ['requester', 'freelancer', 'bicycle_courier', 'motorized_courier'];
+      const approvedProfiles = status === 'approved' && Array.isArray(data?.approvedProfiles)
+        ? data.approvedProfiles.filter((profile: unknown): profile is string =>
+          typeof profile === 'string' && allowedProfiles.includes(profile))
+        : [];
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json({ status, approvedProfiles });
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
   router.get('/public', async (_request, response) => {
     try {
       const snapshot = await adminDb.collection(DELIVERY_COLLECTION)
