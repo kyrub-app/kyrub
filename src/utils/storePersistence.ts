@@ -334,19 +334,15 @@ export const setStoreMarketplacePublication = async (
   published: boolean
 ): Promise<void> => {
   const publicationStatus = published ? 'published' : 'paused';
-  let canonicalError: unknown = null;
-
-  try {
-    await persistCanonicalMarketplaceListing(user, store, publicationStatus);
-  } catch (error) {
-    canonicalError = error;
-    console.warn('Canonical marketplace publication is unavailable.', error);
-  }
+  // Canonical listing must succeed before updating the legacy compatibility view.
+  // Never report publication success based solely on a tenant fallback write.
+  await persistCanonicalMarketplaceListing(user, store, publicationStatus);
 
   try {
     await persistTenantMarketplaceFallback(user, store, publicationStatus);
-  } catch (fallbackError) {
-    if (canonicalError) throw canonicalError;
-    throw fallbackError;
+  } catch (error) {
+    // Do not hide a failed compatibility mirror: legacy readers may be stale.
+    console.error('Legacy tenant publication mirror failed after canonical write.', error);
+    throw error;
   }
 };
