@@ -432,6 +432,7 @@ function ContactCard({
           <MessageCircle className="h-4 w-4" />
           Chat
         </button>
+        <button type="button" hidden data-profile-connected-remove-action="true" onClick={onRemove} aria-label={`Confirmar remoção de ${friend.name}`} />
         <button
           type="button"
           onClick={() => window.dispatchEvent(new CustomEvent('kyrub:profile-contact-menu', { detail: { friendId: friend.id } }))}
