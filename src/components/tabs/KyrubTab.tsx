@@ -23,7 +23,8 @@ import { loadMarketplaceDiscovery } from '../../utils/marketplaceDiscovery';
 import { getMarketplaceListingsCollectionPath } from '../../utils/marketplacePaths';
 import type { MarketplaceStoreDiscoverySignal } from '../../../shared/marketplaceDiscovery';
 
-type KyrubTabProps = React.ComponentProps<typeof LegacyKyrubTab>;
+type KyrubTabProps = Omit<React.ComponentProps<typeof LegacyKyrubTab>,
+  'distanceFilterEnabled' | 'setDistanceFilterEnabled' | 'isDistancePanelOpen' | 'setIsDistancePanelOpen'>;
 type DiscoveryFilter = 'none' | 'promotion' | 'for_you';
 
 const CANONICAL_MARKETPLACE_READ_ENABLED =
