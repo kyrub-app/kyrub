@@ -37,15 +37,13 @@ export function subscribeMyCommunityGroups(
 export async function createPrivateCommunityGroup(
   communityId: string,
   name: string,
-  selectedMemberIds: string[]
 ): Promise<string> {
   const uid = auth.currentUser?.uid;
   if (!uid) throw new Error('Entre no Kyrub para criar um grupo.');
   const cleanName = name.trim();
   if (!cleanName || cleanName.length > 80) throw new Error('Informe um nome de até 80 caracteres.');
   if (!communityId || communityId.length > 128) throw new Error('Comunidade inválida.');
-  const memberIds = [...new Set([uid, ...selectedMemberIds.filter(Boolean)])];
-  if (memberIds.length > 50) throw new Error('O grupo permite até 50 integrantes.');
+  const memberIds = [uid];
   const groupRef = doc(collection(db, 'community_groups'));
   await setDoc(groupRef, {
     groupId: groupRef.id,
