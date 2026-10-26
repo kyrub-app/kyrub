@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ShieldCheck,
   Package,
@@ -259,6 +259,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [authenticatedUserId, setAuthenticatedUserId] = useState('');
   const [showLoginModal, setShowLoginModal] = useState(false);
+  const pendingAuthenticatedAction = useRef<(() => void) | null>(null);
   const [gpsGranted, setGpsGranted] = useState(false);
   const [showGpsOverlay, setShowGpsOverlay] = useState(false);
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
@@ -1100,6 +1101,17 @@ export default function App() {
     return () => clearInterval(checkAlarms);
   }, [notes, dismissedAlarms, activeAlarmNote]);
 
+  // A visitor's requested operation is resumed only after Firebase authenticates.
+  const requireAuthenticatedAction = (action: () => void) => {
+    if (auth.currentUser) {
+      action();
+      return;
+    }
+    pendingAuthenticatedAction.current = action;
+    setShowLoginModal(true);
+    triggerToast('Entre com Google para continuar esta operação.', 'info');
+  };
+
   // Handle Login Flow
 const handleLogin = async (provider: 'google' | 'apple') => {
   if (provider === 'apple') {
@@ -1119,7 +1131,10 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
     await signInWithPopup(auth, googleProvider);
 
+    const resumeAction = pendingAuthenticatedAction.current;
+    pendingAuthenticatedAction.current = null;
     setShowLoginModal(false);
+    resumeAction?.();
     setShowGpsOverlay(true);
 
     triggerToast(
@@ -1500,6 +1515,7 @@ if (newMomentPublishToPraca) {
                 setIsGestaoOpen={setIsGestaoOpen}
                 setGestaoRole={setGestaoRole}
                 triggerToast={triggerToast}
+                requireAuthenticatedAction={requireAuthenticatedAction}
               />
             )}
 
