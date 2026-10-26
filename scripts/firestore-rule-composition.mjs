@@ -20,7 +20,13 @@ const SECURE_DELIVERY_RULES = `    // --- Guia Renda: Entregas Solicitadas/Dispo
     // Esta coleção é uma projeção server-authoritative. O Firebase Admin SDK
     // publica e atualiza as oportunidades sem passar pelas regras de cliente.
     match /hub/renda/deliveries/{deliveryId} {
-      allow read: if isSignedIn();
+      // UID fields are server-owned; display names never authorize access.
+      allow read: if isSignedIn() && (
+        resource.data.get('storeId', '') == request.auth.uid
+        || resource.data.get('buyerId', '') == request.auth.uid
+        || resource.data.get('acceptedBy', '') == request.auth.uid
+        || (resource.data.status == 'available' && hasApprovedCourierProfile())
+      );
       allow create, update, delete: if false;
     }`;
 
@@ -41,16 +47,11 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
 
     // --- Candidaturas (Prestar o serviço de Freela) ---
     match /candidaturas/{candiId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn()
-        && incoming().userId == request.auth.uid
-        && hasApprovedIdentityProfile('freelancer');
-      allow update: if isAdmin()
-        || hasRole(['owner', 'manager', 'staff'])
-        || (isSignedIn() && existing().userId == request.auth.uid);
-      allow delete: if isAdmin()
-        || hasRole(['owner', 'manager', 'staff'])
-        || (isSignedIn() && existing().userId == request.auth.uid);
+      // Submissions are already disabled in the UI pending a trusted server flow.
+      // No validated vacancy/tenant write contract exists in this codebase.
+      allow read: if isSignedIn()
+        && (existing().userId == request.auth.uid || isAdmin());
+      allow create, update, delete: if false;
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
@@ -104,11 +105,17 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
         allow delete: if false;
       }
 
-      match /{allData=**} {
+      match /{scope}/{dataId} {
         allow read: if isSignedIn()
           && request.auth.uid == tenantId;
         allow create, update, delete: if isSignedIn()
           && request.auth.uid == tenantId;
+      }
+      // Additive grants must exclude the specific customerOrders policy.
+      match /{scope}/{dataId}/{collectionId}/{rest=**} {
+        allow read, write: if isSignedIn()
+          && request.auth.uid == tenantId
+          && !(scope == 'public' && dataId == 'data' && collectionId == 'customerOrders');
       }
     }`;
 

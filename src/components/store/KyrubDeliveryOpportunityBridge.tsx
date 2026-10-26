@@ -3,9 +3,9 @@ import { collection, onSnapshot } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { DeliveryJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
+import { subscribeAuthorizedDeliveryBoard } from '../../utils/deliveryBoardSubscription';
 
 const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
-const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 
 type OperationalDeliveryJob = DeliveryJob & {
   source?: string;
@@ -59,6 +59,8 @@ export function KyrubDeliveryOpportunityBridge({
       unsubscribeOrders = () => undefined;
       unsubscribeJobs = () => undefined;
       publicationAttempts.current.clear();
+      localStorage.removeItem(DELIVERY_STORAGE_KEY);
+      onOpportunitiesChanged();
       if (!user) return;
 
       unsubscribeOrders = onSnapshot(
@@ -88,8 +90,8 @@ export function KyrubDeliveryOpportunityBridge({
         }
       );
 
-      unsubscribeJobs = onSnapshot(
-        collection(db, DELIVERY_COLLECTION_PATH),
+      unsubscribeJobs = subscribeAuthorizedDeliveryBoard(
+        db, user.uid,
         snapshot => {
           const jobs = snapshot.docs.flatMap(document => {
             const data = document.data() as Record<string, unknown>;
@@ -117,7 +119,13 @@ export function KyrubDeliveryOpportunityBridge({
           onOpportunitiesChanged();
         },
         error => {
+          localStorage.removeItem(DELIVERY_STORAGE_KEY);
+          onOpportunitiesChanged();
           console.warn('Mural Kyrub Entregas indisponível.', error);
+        },
+        () => {
+          localStorage.removeItem(DELIVERY_STORAGE_KEY);
+          onOpportunitiesChanged();
         }
       );
     });

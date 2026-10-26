@@ -6,7 +6,7 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, deleteDoc, doc, getDoc, getDocs, query, where, setDoc, updateDoc } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
 const STORE_ID = 'store-owner-a';
@@ -50,7 +50,7 @@ before(async () => {
   environment = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: readFileSync('.firebase/firestore.combined.rules', 'utf8'),
+      rules: readFileSync(process.env.TEST_RULES_PATH || '.firebase/firestore.combined.rules', 'utf8'),
       host: '127.0.0.1',
       port: 8088,
     },
@@ -167,4 +167,25 @@ test('buyer may cancel own pending dine-in order but cannot mutate financial sta
     paymentStatus: 'paid',
     updatedAt: '2026-08-21T19:02:00.000Z',
   }));
+});
+
+test('owner cannot delete customer orders through overlapping fallback but keeps other legacy deletes', async () => {
+  const db = environment.authenticatedContext(STORE_ID).firestore();
+  const order = doc(db, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a');
+  await assertSucceeds(setDoc(order, customerOrder()));
+  await assertFails(deleteDoc(order));
+  const legacy = doc(db, 'artifacts', STORE_ID, 'public', 'data', 'products', 'product-a');
+  await assertSucceeds(setDoc(legacy, { name: 'Product' }));
+  await assertSucceeds(getDoc(legacy));
+  await assertSucceeds(deleteDoc(legacy));
+});
+
+test('buyer order queries require identity constraints and outsiders cannot list tenant data', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'artifacts', STORE_ID, 'public', 'data', 'customerOrders', 'customer-order-a'), customerOrder());
+  });
+  const buyer = environment.authenticatedContext('buyer-a').firestore();
+  const orders = collection(buyer, 'artifacts', STORE_ID, 'public', 'data', 'customerOrders');
+  await assertSucceeds(getDocs(query(orders, where('buyerId', '==', 'buyer-a'))));
+  await assertFails(getDocs(orders));
 });

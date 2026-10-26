@@ -100,11 +100,11 @@ test('composition fails clearly when the delivery section is absent', () => {
   );
 });
 
-test('freelance applications and vacancy creation require approved profiles', () => {
+test('applications are server-authoritative while vacancy creation requires approval', () => {
   const result = hardenKyrubFreelanceRules(legacyFreelanceRules);
 
   assert.match(result, /hasApprovedIdentityProfile\('requester'\)/);
-  assert.match(result, /hasApprovedIdentityProfile\('freelancer'\)/);
+  assert.match(result, /allow create, update, delete: if false;/);
   assert.match(result, /hasRole\(\['owner', 'manager', 'staff'\]\)/);
   assert.match(result, /existing\(\)\.userId == request\.auth\.uid/);
   assert.doesNotMatch(result, /allow update, delete: if isSignedIn\(\);/);

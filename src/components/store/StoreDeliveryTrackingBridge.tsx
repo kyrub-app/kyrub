@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { KeyRound, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CanonicalOrderLocationControl } from '../customer/CanonicalOrderLocationControl';
@@ -100,7 +100,7 @@ export function StoreDeliveryTrackingBridge({
     }
 
     return onSnapshot(
-      collection(db, DELIVERY_COLLECTION_PATH),
+      query(collection(db, DELIVERY_COLLECTION_PATH), where('storeId', '==', user.uid)),
       snapshot => {
         setDeliveries(
           snapshot.docs.flatMap(document => {

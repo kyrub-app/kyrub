@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { CheckCircle2, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { AuthorizedDeliveryTrackingViewer } from './AuthorizedDeliveryTrackingViewer';
@@ -58,7 +58,7 @@ export function BuyerDeliveryTrackingBridge({
     }
 
     return onSnapshot(
-      collection(db, DELIVERY_COLLECTION_PATH),
+      query(collection(db, DELIVERY_COLLECTION_PATH), where('buyerId', '==', user.uid)),
       snapshot => {
         setDeliveries(
           snapshot.docs.flatMap(document => {
