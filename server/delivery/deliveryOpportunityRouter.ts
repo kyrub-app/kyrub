@@ -308,6 +308,12 @@ export const updateKyrubDeliveryStatus = async (
     const courierId = clean(claim?.courierId);
 
     if (status === 'accepted') {
+      // The public acceptance endpoint must not claim arbitrary legacy jobs.
+      if (clean(delivery.source) !== 'kyrub-order'
+        || !clean(delivery.storeId)
+        || !clean(delivery.sourceOrderId)) {
+        throw new Error('Esta oportunidade não possui publicação válida do Kyrub.');
+      }
       if (claimSnapshot.exists) {
         if (courierId === actor.uid) return;
         throw new Error('Outro entregador já aceitou esta oportunidade.');
