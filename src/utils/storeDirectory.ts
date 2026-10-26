@@ -42,6 +42,8 @@ export interface CanonicalStoreRecord {
   plan: StorePlan;
   legacyTenantId: string;
   migrationStatus: CanonicalStoreMigrationStatus;
+  /** First verified commercial activation; absent until server records publication. */
+  firstMarketplaceActivatedAt?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -157,6 +159,9 @@ export const parseCanonicalStore = (value: unknown): CanonicalStoreRecord | null
     plan,
     legacyTenantId: cleanString(candidate.legacyTenantId),
     migrationStatus,
+    ...(candidate.firstMarketplaceActivatedAt != null
+      ? { firstMarketplaceActivatedAt: timestampToIso(candidate.firstMarketplaceActivatedAt) }
+      : {}),
     createdAt: timestampToIso(candidate.createdAt),
     updatedAt: timestampToIso(candidate.updatedAt),
   };
