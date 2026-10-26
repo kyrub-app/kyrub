@@ -33,6 +33,8 @@ interface RendaTabProps {
     msg: string,
     type?: 'success' | 'error' | 'info' | 'warning'
   ) => void;
+  /** Visitor actions must authenticate before any operational modal opens. */
+  requireAuthenticatedAction?: (action: () => void) => void;
 }
 
 const STORE_CHECK_TIMEOUT_MS = 4_000;
@@ -55,6 +57,7 @@ export function RendaTab({
   setIsGestaoOpen,
   setGestaoRole,
   triggerToast,
+  requireAuthenticatedAction = action => action(),
 }: RendaTabProps) {
   const [hasConfiguredStore, setHasConfiguredStore] =
     useState(false);
@@ -151,7 +154,7 @@ export function RendaTab({
     };
   }, [isDeliveryEarningsOpen]);
 
-  const openRetailerWorkspace = () => {
+  const openRetailerWorkspace = () => requireAuthenticatedAction(() => {
     setIsGestaoOpen(true);
     setGestaoRole('retailer');
     triggerToast(
@@ -160,7 +163,7 @@ export function RendaTab({
         : 'Vamos ativar sua loja no Kyrub Ofertas.',
       'success'
     );
-  };
+  });
 
   return (
     <div
@@ -200,7 +203,7 @@ export function RendaTab({
           <div className="space-y-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowDeliveryModal(true)}
+              onClick={() => requireAuthenticatedAction(() => setShowDeliveryModal(true))}
               className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all hover:bg-orange-500"
               id="btn-solicitar-entrega"
             >
@@ -208,9 +211,7 @@ export function RendaTab({
             </button>
             <button
               type="button"
-              onClick={() =>
-                setShowFazerEntregasModal(true)
-              }
+              onClick={() => requireAuthenticatedAction(() => setShowFazerEntregasModal(true))}
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-all hover:text-orange-300"
               id="btn-fazer-entregas"
             >
@@ -248,7 +249,7 @@ export function RendaTab({
           <div className="space-y-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowFreelaModal(true)}
+              onClick={() => requireAuthenticatedAction(() => setShowFreelaModal(true))}
               className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-teal-400"
               id="btn-solicitar-freela"
             >
@@ -256,9 +257,7 @@ export function RendaTab({
             </button>
             <button
               type="button"
-              onClick={() =>
-                setShowFazerFreelasModal(true)
-              }
+              onClick={() => requireAuthenticatedAction(() => setShowFazerFreelasModal(true))}
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
               id="btn-fazer-freela"
             >
