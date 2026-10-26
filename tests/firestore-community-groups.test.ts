@@ -94,6 +94,7 @@ test('group creator may invite; only recipient can accept or decline', async () 
   }));
   await assertSucceeds(getDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'member')));
   await assertFails(getDoc(doc(dbFor('outsider'), ...groupPath, 'invitations', 'member')));
+  await assertFails(getDocs(collection(dbFor('member'), ...groupPath, 'invitations')));
   await assertFails(updateDoc(doc(dbFor('outsider'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
   await assertFails(updateDoc(doc(dbFor('owner'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
   await assertSucceeds(updateDoc(doc(dbFor('member'), ...groupPath, 'invitations', 'member'), { status: 'accepted' }));
