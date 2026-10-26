@@ -737,7 +737,7 @@ export function KyrubTab({
                   key={store.id}
                   className="group relative flex h-[300px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
                 >
-                  <StoreOfferCarousel images={[...(store.offerImages ?? []), ...(store.banner ? [store.banner] : [])]} />
+                  <StoreOfferCarousel showcase images={[...(store.offerImages ?? []), ...(store.banner ? [store.banner] : [])]} />
 
                   <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between p-2">
                     <div className="relative h-9 w-9 shrink-0">
