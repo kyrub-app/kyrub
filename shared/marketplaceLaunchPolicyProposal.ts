@@ -8,7 +8,7 @@
 export const MARKETPLACE_LAUNCH_POLICY_PROPOSAL = Object.freeze({
   policyId: 'marketplace-launch-v1-proposal',
   merchantCommissionBasisPoints: 700,
-  merchantCommissionExemptionMonths: 6,
+  merchantCommissionExemptionMonths: 3,
   consumerServiceFeeMinor: 100,
   currency: 'BRL',
   commissionBase: 'eligible_product_total_after_discounts',
