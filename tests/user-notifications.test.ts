@@ -148,3 +148,38 @@ describe('canonical user notifications', () => {
     assert.doesNotMatch(service, /preference|campaign/i);
   });
 });
+
+describe('community group invitation notification contract', () => {
+  test('builds a targeted invitation without changing legacy notification shape', () => {
+    const notification = buildUserNotification({
+      recipientUserId: 'member-1',
+      category: 'community_group_invite',
+      eventType: 'invited',
+      sourceId: 'group-1_member-1',
+      actorPrincipalId: 'owner-1',
+      title: 'Convite para grupo',
+      body: 'Você recebeu um convite.',
+      target: { kind: 'community_group_invite', communityId: 'community-1', groupId: 'group-1' },
+      createdAt: '2026-10-26T12:00:00.000Z',
+    });
+    assert.equal(notification.category, 'community_group_invite');
+    assert.equal(notification.target.kind, 'community_group_invite');
+    assert.equal(notification.target.groupId, 'group-1');
+    assert.equal(notification.target.communityId, 'community-1');
+    assert.equal(notification.readAt, '');
+  });
+
+  test('rejects invitation notifications without a group target', () => {
+    assert.throws(() => buildUserNotification({
+      recipientUserId: 'member-1',
+      category: 'community_group_invite',
+      eventType: 'invited',
+      sourceId: 'group-1_member-1',
+      actorPrincipalId: 'owner-1',
+      title: 'Convite',
+      body: '',
+      target: { kind: 'community_group_invite' },
+      createdAt: '2026-10-26T12:00:00.000Z',
+    }), /USER_NOTIFICATION_TARGET_INVALID/);
+  });
+});
