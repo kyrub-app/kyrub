@@ -216,6 +216,39 @@ service cloud.firestore {
       }
     }
 
+    // --- Private catalog customization defaults (migration target) ---
+    match /users/{userId}/private_store/catalog_customization {
+      function isCatalogCustomizationOwner() {
+        return isSignedIn() && request.auth.uid == userId;
+      }
+
+      function validCatalogCustomization(data) {
+        return data.keys().hasAll(['ownerId', 'catalogCustomizationDefaults', 'createdAt', 'updatedAt'])
+          && data.keys().hasOnly(['ownerId', 'catalogCustomizationDefaults', 'createdAt', 'updatedAt'])
+          && data.ownerId == userId
+          && data.catalogCustomizationDefaults is list
+          && data.catalogCustomizationDefaults.size() <= 200
+          && data.createdAt is timestamp
+          && data.updatedAt is timestamp;
+      }
+
+      allow get: if isCatalogCustomizationOwner();
+      allow list: if false;
+      allow create: if isCatalogCustomizationOwner()
+        && validCatalogCustomization(incoming())
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+      allow update: if isCatalogCustomizationOwner()
+        && existing().ownerId == userId
+        && validCatalogCustomization(incoming())
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'catalogCustomizationDefaults', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
     // --- Collection Group Match para permitir leitura de notas compartilhadas ---
     match /{path=**}/tasks/{taskId} {
       allow read: if isSignedIn() && (
