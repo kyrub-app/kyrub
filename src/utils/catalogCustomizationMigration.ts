@@ -30,9 +30,15 @@ export const migrateLegacyCatalogCustomizationDefaults = async (
     }
 
     const legacySnapshot = await transaction.get(legacy);
+    // Do not create an empty private document for users without legacy data.
+    if (!legacySnapshot.exists()) return [];
     const defaults = parseCatalogCustomizationDefaults(
-      legacySnapshot.data()?.catalogCustomizationDefaults
+      legacySnapshot.data().catalogCustomizationDefaults
     );
+    if (defaults.length === 0) return [];
+    if (defaults.length > 200) {
+      throw new Error('Os padrões herdados excedem o limite do destino privado.');
+    }
     const now = serverTimestamp();
     transaction.set(destination, {
       ownerId: user.uid,
