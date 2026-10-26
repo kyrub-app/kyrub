@@ -486,16 +486,21 @@ export const createDeliveryOpportunityRouter = (): Router => {
         .where('status', '==', 'available')
         .limit(30)
         .get();
-      const opportunities = snapshot.docs.map(document => {
+      const opportunities = snapshot.docs.flatMap(document => {
         const data = document.data();
-        return {
+        // Only expose opportunities published from canonical Kyrub orders.
+        // Legacy/manual documents have no verified publication contract.
+        if (clean(data.source) !== 'kyrub-order' || !clean(data.storeId) || !clean(data.sourceOrderId)) {
+          return [];
+        }
+        return [{
           id: document.id,
           type: 'delivery' as const,
           status: 'available' as const,
           payment: finite(data.payment),
           distance: finite(data.distance),
-          source: clean(data.source),
-        };
+          source: 'kyrub-order' as const,
+        }];
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.json({ opportunities });
