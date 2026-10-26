@@ -1337,49 +1337,11 @@ if (newMomentPublishToPraca) {
     setNewProdIsService(false);
   };
 
-  // Cart B2C Checkout Simulation
+  // Legacy storefront has no authoritative order/payment integration.
+  // Never create a local-only order, credit a fake wallet or claim checkout succeeded.
   const checkoutCart = (e: React.FormEvent) => {
     e.preventDefault();
-    if (cart.length === 0 || !visitingStore) return;
-
-    const subtotal = cart.reduce((sum, item) => sum + item.product.price * item.quantity, 0);
-
-    const newOrder: Order = {
-      id: `ord-b2c-${Date.now().toString().slice(-4)}`,
-      storeId: visitingStore.id,
-      buyerName,
-      buyerEmail,
-      items: cart.map(it => ({
-        productId: it.product.id,
-        name: it.product.name,
-        price: it.product.price,
-        quantity: it.quantity,
-        wholesalePrice: it.product.wholesalePrice
-      })),
-      total: subtotal,
-      status: 'pending',
-      createdAt: new Date().toISOString(),
-      type: 'retail'
-    };
-
-    // Calculate platform split, retailer split, and mock it
-    const platformFee = subtotal * 0.1;
-    const retailerProfit = subtotal * 0.9;
-
-    setWalletBalance(curr => curr + retailerProfit);
-    setWalletHistory([
-      { id: `tx-sale-${Date.now()}`, type: 'Venda Recebida', desc: `Venda B2C via ${visitingStore.name}`, val: retailerProfit, date: new Date().toLocaleString('pt-BR') },
-      ...walletHistory
-    ]);
-
-    setOrders(prev => [newOrder, ...prev]);
-    setCart([]);
-    setIsCartOpen(false);
-    setVisitingStore(null);
-    setBuyerName('');
-    setBuyerEmail('');
-    setBuyerAddress('');
-    triggerToast(`Pedido finalizado com sucesso! Gateway Kyrub dividindo splits (10% Plataforma / 90% Loja)...`, 'success');
+    triggerToast('Este checkout ainda não está conectado ao pedido e pagamento reais da loja. Nenhuma compra foi registrada ou cobrada.', 'error');
   };
 
   const updateCartQty = (productId: string, qty: number) => {
