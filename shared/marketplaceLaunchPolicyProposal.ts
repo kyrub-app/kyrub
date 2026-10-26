@@ -77,3 +77,30 @@ export const isWithinMarketplaceCommissionExemption = (
   ));
   return order.getTime() >= activation.getTime() && order.getTime() < end.getTime();
 };
+
+/**
+ * Deterministic proposal preview; never charge from client-supplied activation.
+ * An actual checkout must read the activation timestamp from the store record
+ * on the server and snapshot the signed policy and computed fee amounts.
+ */
+export const quoteMarketplaceLaunchPolicyAt = (input: {
+  eligibleProductsMinor: number;
+  firstActivationIso: string;
+  orderCreatedIso: string;
+}): {
+  merchantCommissionMinor: number;
+  consumerServiceFeeMinor: number;
+  merchantExempt: boolean;
+} => {
+  const merchantExempt = isWithinMarketplaceCommissionExemption(
+    input.firstActivationIso,
+    input.orderCreatedIso
+  );
+  return {
+    ...quoteMarketplaceLaunchPolicy({
+      eligibleProductsMinor: input.eligibleProductsMinor,
+      merchantExempt,
+    }),
+    merchantExempt,
+  };
+};
