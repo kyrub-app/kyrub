@@ -226,6 +226,10 @@ export function ProfileCommunitiesCloudBridge() {
   const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
+  const [groupsModalOpen, setGroupsModalOpen] = useState(false);
+  const [groupComposerOpen, setGroupComposerOpen] = useState(false);
+  const [groupDraftName, setGroupDraftName] = useState('');
+  const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<string[]>([]);
   const [selectedDebateId, setSelectedDebateId] = useState('');
   const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -717,6 +721,38 @@ export function ProfileCommunitiesCloudBridge() {
 
   return (
     <>
+      {groupsModalOpen && selectedCommunity && createPortal(
+        <div className="fixed inset-0 z-[211] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setGroupsModalOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-label="Grupos da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div><h3 className="text-base font-black text-white">Grupos</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
+              <button type="button" onClick={() => setGroupsModalOpen(false)} aria-label="Fechar grupos" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
+            </div>
+            {!groupComposerOpen ? (
+              <div className="space-y-3">
+                <p className="text-xs text-slate-400">Organize conversas privadas com participantes desta comunidade.</p>
+                {selectedCommunity.isOwner && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
+                <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Os grupos estarão disponíveis após a ativação do armazenamento privado e das regras de acesso.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <label className="block text-xs font-bold text-slate-300">Nome do grupo
+                  <input value={groupDraftName} onChange={event => setGroupDraftName(event.target.value.slice(0,80))} maxLength={80} placeholder="Ex.: Equipe do projeto" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" />
+                </label>
+                <p className="text-xs font-bold text-slate-300">Selecionar membros</p>
+                {members.filter(member => member.status === 'active').map(member => (
+                  <label key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-white">
+                    <input type="checkbox" checked={groupSelectedMemberIds.includes(member.userId)} onChange={event => setGroupSelectedMemberIds(current => event.target.checked ? [...current,member.userId] : current.filter(id => id !== member.userId))} />
+                    <span className="min-w-0 flex-1 truncate">{member.userName}</span>
+                  </label>
+                ))}
+                <p className="text-xs text-amber-300">Rascunho local: salvar e conversar ficarão disponíveis após a validação das regras privadas no Firestore.</p>
+                <button type="button" onClick={() => setGroupComposerOpen(false)} className="min-h-10 rounded-xl border border-slate-700 px-4 text-xs text-slate-200">Voltar</button>
+              </div>
+            )}
+          </section>
+        </div>, document.body
+      )}
       {membersModalOpen && selectedCommunity && createPortal(
         <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setMembersModalOpen(false)}>
           <section role="dialog" aria-modal="true" aria-label="Membros da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
@@ -1313,6 +1349,8 @@ export function ProfileCommunitiesCloudBridge() {
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400">
                           <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}</button>
+                          <span>•</span>
+                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
                           <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
                           {selectedCommunity.location && (
