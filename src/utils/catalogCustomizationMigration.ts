@@ -1,8 +1,10 @@
 import type { User } from 'firebase/auth';
 import { doc, runTransaction, serverTimestamp } from 'firebase/firestore';
+import type { ProductOptionGroup } from '../types';
 import { db } from './firebase';
 import {
   parseCatalogCustomizationDefaults,
+  upsertCatalogCustomizationDefaults,
   type CatalogCustomizationDefaults,
 } from './catalogCustomizationInheritance';
 
@@ -47,5 +49,36 @@ export const migrateLegacyCatalogCustomizationDefaults = async (
       updatedAt: now,
     });
     return defaults;
+  });
+};
+
+/**
+ * Future private editor write path. Do not wire into the UI before Firebase rules
+ * deployment and the storefront's public projection have been validated.
+ * Requires a migrated destination; never creates an empty replacement for legacy data.
+ */
+export const savePrivateCatalogCustomizationDefaults = async (
+  user: Pick<User, 'uid'>,
+  path: string,
+  patch: { quickNotes?: string[]; optionGroups?: ProductOptionGroup[] }
+): Promise<CatalogCustomizationDefaults[]> => {
+  const destination = doc(db, getPrivateCatalogCustomizationPath(user.uid));
+  return runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(destination);
+    if (!snapshot.exists()) {
+      throw new Error('Migração dos padrões do catálogo ainda não concluída.');
+    }
+    const current = parseCatalogCustomizationDefaults(
+      snapshot.data().catalogCustomizationDefaults
+    );
+    const next = upsertCatalogCustomizationDefaults(current, path, patch);
+    if (next.length > 200) {
+      throw new Error('Limite de 200 configurações herdáveis atingido.');
+    }
+    transaction.update(destination, {
+      catalogCustomizationDefaults: next,
+      updatedAt: serverTimestamp(),
+    });
+    return next;
   });
 };
