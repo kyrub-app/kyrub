@@ -43,7 +43,7 @@ test('every header shortcut belongs to the same React header', () => {
 test('Marketplace and Notas navigate using application state, not hidden nav clicks', () => {
   assert.match(header, /onClick=\{\(\) => navigate\(onMarketplace\)\}/);
   assert.match(header, /onClick=\{\(\) => navigate\(onNotes\)\}/);
-  assert.match(legacy, /onMarketplace=\{\(\) => \{[\s\S]*?setSocialSubTab\('lojas'\);[\s\S]*?setActiveTab\('kyrub'\);/);
+  assert.match(legacy, /onMarketplace=\{\(\) => \{[\s\S]*?setSocialSubTab\('lojas'\);[\s\S]*?setActiveTab\('marketplace'\);/);
   assert.match(legacy, /onNotes=\{\(\) => \{[\s\S]*?setActiveTab\('perfil'\);/);
   assert.doesNotMatch(bottomNav, /openKyrubDestination|pendingKyrubDestination|header-marketplace-trigger|header-notes-trigger/);
 });
