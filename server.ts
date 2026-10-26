@@ -41,6 +41,7 @@ import { createMarketplaceDiscoveryRouter } from "./server/payments/marketplaceD
 import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
+import { createMarketplaceStoreActivationRouter } from "./server/stores/marketplaceStoreActivationRouter";
 
 dotenv.config();
 
@@ -219,6 +220,12 @@ app.use(
   "/api/local-attendance",
   integrationRateLimiter,
   createLocalAttendanceRouter()
+);
+
+app.use(
+  "/api/marketplace-store-activation",
+  integrationRateLimiter,
+  createMarketplaceStoreActivationRouter()
 );
 
 app.use(
