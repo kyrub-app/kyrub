@@ -490,6 +490,24 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
         });
         return 'cancelled' as const;
       }
+      // A cancellation may have committed before the delivery withdrawal.
+      // Check the source order before sending anything to admin logistics.
+      const sourceStoreId = clean(delivery.storeId);
+      const sourceOrderId = clean(delivery.sourceOrderId);
+      const sourceOrder = sourceStoreId && sourceOrderId
+        ? await transaction.get(adminDb.doc(orderPath(sourceStoreId, sourceOrderId)))
+        : null;
+      const sourceData = sourceOrder?.data() as Record<string, unknown> | undefined;
+      if (!sourceOrder?.exists || !sourceData
+        || sourceData.fulfillmentType !== 'delivery'
+        || clean(sourceData.deliveryProvider) !== 'kyrub'
+        || !['preparing', 'ready', 'out_for_delivery'].includes(clean(sourceData.status))) {
+        transaction.update(scheduleReference, {
+          status: 'cancelled', cancelledReason: 'source_order_not_available',
+          availableAt: FieldValue.delete(), updatedAt: FieldValue.serverTimestamp(),
+        });
+        return 'cancelled' as const;
+      }
       const escalationReference = adminDb.doc(
         `${ESCALATION_COLLECTION}/${scheduleDocument.id}`
       );
