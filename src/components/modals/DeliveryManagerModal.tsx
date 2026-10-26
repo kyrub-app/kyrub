@@ -109,14 +109,10 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
     }
   };
 
-  const handleAcceptDelivery = (jobId: string) => {
-    setDeliveries(prev =>
-      prev.map(d => {
-        if (d.id !== jobId) return d;
-        triggerToast(`Entrega de ${d.from} aceita. Você já pode se deslocar até a coleta.`, 'success');
-        return { ...d, status: 'accepted', acceptedBy: profileName || 'Você', updatedAt: new Date().toISOString() };
-      })
-    );
+  const handleAcceptDelivery = (_jobId: string) => {
+    // Claiming a job requires an authenticated, atomic server transaction
+    // and verified worker eligibility. Never reserve it in localStorage.
+    triggerToast('Aceitação indisponível até a validação do trabalhador e a reserva segura no servidor.', 'warning');
   };
 
   const handleStartPickup = (job: DeliveryJob): void => {
