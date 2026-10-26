@@ -61,6 +61,8 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 
+import { subscribeMyCommunityGroups, type CloudCommunityGroup } from '../utils/communityGroupsCloud';
+
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
 
@@ -227,6 +229,8 @@ export function ProfileCommunitiesCloudBridge() {
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [groupsModalOpen, setGroupsModalOpen] = useState(false);
+  const [myCommunityGroups, setMyCommunityGroups] = useState<CloudCommunityGroup[]>([]);
+  const [groupsLoadError, setGroupsLoadError] = useState('');
   const [groupComposerOpen, setGroupComposerOpen] = useState(false);
   const [groupDraftName, setGroupDraftName] = useState('');
   const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<string[]>([]);
@@ -376,6 +380,27 @@ export function ProfileCommunitiesCloudBridge() {
       unsubscribeMembers();
     };
   }, [selectedCommunityId]);
+
+  useEffect(() => {
+    if (!groupsModalOpen || !selectedCommunityId || !canParticipate) {
+      setMyCommunityGroups([]);
+      setGroupsLoadError('');
+      return;
+    }
+    setGroupsLoadError('');
+    try {
+      return subscribeMyCommunityGroups(
+        selectedCommunityId,
+        setMyCommunityGroups,
+        error => {
+          console.warn('Não foi possível carregar grupos privados.', error);
+          setGroupsLoadError('Não foi possível consultar seus grupos agora.');
+        }
+      );
+    } catch {
+      setGroupsLoadError('Entre no Kyrub para consultar seus grupos.');
+    }
+  }, [groupsModalOpen, selectedCommunityId, canParticipate]);
 
   useEffect(() => {
     if (!selectedDebateId) {
@@ -731,8 +756,10 @@ export function ProfileCommunitiesCloudBridge() {
             {!groupComposerOpen ? (
               <div className="space-y-3">
                 <p className="text-xs text-slate-400">Organize conversas privadas com participantes desta comunidade.</p>
-                {selectedCommunity.isOwner && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
-                <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Os grupos estarão disponíveis após a ativação do armazenamento privado e das regras de acesso.</p>
+                {canParticipate && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
+                {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
+                {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
+                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes · Conversas disponíveis após ativação das mensagens privadas.</p></div>)}
               </div>
             ) : (
               <div className="space-y-3">
