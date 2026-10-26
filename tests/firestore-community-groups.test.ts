@@ -49,7 +49,7 @@ test('group membership cannot be rewritten by client', async () => {
   await assertFails(updateDoc(doc(dbFor('owner'), ...groupPath), { memberIds: ['owner', 'outsider'] }));
 });
 test('only group members may post and read messages', async () => {
-  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner', 'member']));
+  await seedGroup(['owner', 'member']);
   const message = (uid: string) => ({ authorId: uid, text: 'Olá', createdAt: serverTimestamp() });
   await assertSucceeds(setDoc(doc(dbFor('member'), ...groupPath, 'messages', 'one'), message('member')));
   await assertSucceeds(getDoc(doc(dbFor('owner'), ...groupPath, 'messages', 'one')));
@@ -58,7 +58,7 @@ test('only group members may post and read messages', async () => {
   await assertFails(setDoc(doc(dbFor('member'), ...groupPath, 'messages', 'three'), message('owner')));
 });
 test('revoked community member loses access even if listed in group', async () => {
-  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner', 'member']));
+  await seedGroup(['owner', 'member']);
   await env.withSecurityRulesDisabled(async context => {
     await updateDoc(doc(context.firestore(), 'community_members', communityId + '__member'), { status: 'pending' });
   });
@@ -66,7 +66,7 @@ test('revoked community member loses access even if listed in group', async () =
 });
 
 test('scoped group listing returns only memberships in selected community', async () => {
-  await setDoc(doc(dbFor('owner'), ...groupPath), groupData(['owner', 'member']));
+  await seedGroup(['owner', 'member']);
   const q = query(
     collection(dbFor('member'), 'community_groups'),
     where('communityId', '==', communityId),
