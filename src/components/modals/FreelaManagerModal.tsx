@@ -121,14 +121,10 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
   };
 
   // Worker apply to a job
-  const handleApplyFreelance = (gigId: string) => {
-    setFreelanceJobs(prev =>
-      prev.map(g => {
-        if (g.id !== gigId) return g;
-        triggerToast(`Sua candidatura para "${g.title}" foi enviada para ${g.employer}!`, 'success');
-        return { ...g, status: 'applied' };
-      })
-    );
+  const handleApplyFreelance = (_gigId: string) => {
+    // Applications must be recorded against the authoritative job with
+    // verified worker identity; local-only status is not a submission.
+    triggerToast('Candidatura indisponível até a validação do trabalhador e o registro seguro no servidor.', 'warning');
   };
 
   // Worker completes a job
