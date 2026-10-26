@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 
 interface StoreOfferCarouselProps {
   images: string[];
+  showcase?: boolean;
 }
 
-export const StoreOfferCarousel: React.FC<StoreOfferCarouselProps> = ({ images }) => {
+export const StoreOfferCarousel: React.FC<StoreOfferCarouselProps> = ({ images, showcase = false }) => {
   const [index, setIndex] = useState(0);
 
   useEffect(() => {
@@ -18,7 +19,7 @@ export const StoreOfferCarousel: React.FC<StoreOfferCarouselProps> = ({ images }
   if (!images || images.length === 0) return null;
 
   return (
-    <div className="absolute inset-0 w-full h-full select-none pointer-events-none">
+    <div className={`absolute inset-x-0 top-0 select-none pointer-events-none ${showcase ? "h-[210px]" : "h-full"}`}>
       {images.map((img, i) => (
         <img
           key={img}
@@ -26,11 +27,11 @@ export const StoreOfferCarousel: React.FC<StoreOfferCarouselProps> = ({ images }
           alt="Oferta Vitrine"
           referrerPolicy="no-referrer"
           className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-1000 ${
-            i === index ? 'opacity-35' : 'opacity-0'
+            i === index ? (showcase ? 'opacity-100' : 'opacity-35') : 'opacity-0'
           }`}
         />
       ))}
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/60 to-slate-950/85" />
+      {!showcase && <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-900/60 to-slate-950/85" />}
     </div>
   );
 };
