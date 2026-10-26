@@ -282,27 +282,15 @@ export function ProfileConnectedCardsPolishBridge() {
             null;
         const content = card.children.item(1) as HTMLElement | null;
         const media = card.firstElementChild as HTMLElement | null;
-        const footer = card.lastElementChild as HTMLElement | null;
-        const heading = content?.querySelector<HTMLElement>('h4');
 
-        card.dataset.profileConnectedCard = 'true';
-        button.dataset.profileConnectedMenu = 'true';
-        button.dataset.profileConnectedName = name;
-        button.setAttribute('aria-label', `Mais ações para ${name}`);
-        media?.setAttribute('data-profile-connected-media', 'true');
-        footer?.setAttribute('data-profile-connected-footer', 'true');
 
         if (content) {
-          content.dataset.profileConnectedContent = 'true';
           content.dataset.profileGroupLabel = groupLabelForFriend(
             groups,
             friendId
           );
         }
 
-        if (heading) {
-          heading.dataset.profileConnectedHeading = 'true';
-        }
 
         const nativeStatus = media
           ? [...media.querySelectorAll<HTMLElement>('span')].find(item =>
