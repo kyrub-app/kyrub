@@ -14,6 +14,7 @@ on:
       - 'firestore.profile-social-hub.fragment.rules'
       - 'firestore.contact-groups.fragment.rules'
       - 'firestore.communities.fragment.rules'
+      - 'firestore.community-groups.fragment.rules'
       - 'firestore.social-feed.fragment.rules'
       - 'firestore.kyrubia-conversations.fragment.rules'
       - 'firestore.operational-dual-write.fragment.rules'
