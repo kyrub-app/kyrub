@@ -350,6 +350,18 @@ export const updateKyrubDeliveryStatus = async (
       if (currentStatus !== 'available') {
         throw new Error('Esta entrega já foi aceita.');
       }
+      // The listing can be stale if a cancellation was committed before its
+      // withdrawal job ran. Recheck the canonical order in this transaction.
+      const sourceOrder = await transaction.get(adminDb.doc(orderPath(
+        clean(delivery.storeId), clean(delivery.sourceOrderId)
+      )));
+      const sourceData = sourceOrder.data() as Record<string, unknown> | undefined;
+      if (!sourceOrder.exists || !sourceData
+        || sourceData.fulfillmentType !== 'delivery'
+        || clean(sourceData.deliveryProvider) !== 'kyrub'
+        || !['preparing', 'ready', 'out_for_delivery'].includes(clean(sourceData.status))) {
+        throw new Error('Este pedido não está mais disponível para entrega.');
+      }
 
       transaction.create(claimReference, {
         id: normalizedId,
