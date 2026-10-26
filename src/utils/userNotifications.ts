@@ -71,3 +71,14 @@ export const markAllUserNotificationsRead = async (): Promise<number> => {
   );
   return Number.isSafeInteger(result.marked) ? result.marked : 0;
 };
+
+export const respondToCommunityGroupInvite = async (
+  groupId: string,
+  decision: 'accepted' | 'declined'
+): Promise<{ status: 'accepted' | 'declined' }> =>
+  json<{ status: 'accepted' | 'declined' }>(
+    await authorizedFetch('/api/notifications/community-group-invitations/respond', {
+      method: 'POST',
+      body: JSON.stringify({ groupId, decision }),
+    })
+  );
