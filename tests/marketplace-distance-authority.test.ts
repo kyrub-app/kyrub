@@ -22,3 +22,15 @@ test('marketplace listing adapters do not fabricate novelty metadata', () => {
   assert.match(tab, /isNew: isRecentlyPublished\(data\.publishedAt\)/);
   assert.match(tab, /age >= 0 && age <= NEW_STORE_WINDOW_MS/);
 });
+
+test('store publication timestamp is created once and not rewritten on edits', () => {
+  const documents = readFileSync('src/utils/marketplaceDocuments.ts', 'utf8');
+  const createStart = documents.indexOf('export const buildMarketplaceStoreCreateData');
+  const updateStart = documents.indexOf('export const buildMarketplaceStoreUpdateData');
+  const offerStart = documents.indexOf('export const buildMarketplaceOfferCreateData');
+  assert.ok(createStart >= 0 && updateStart > createStart && offerStart > updateStart);
+  const createStore = documents.slice(createStart, updateStart);
+  const updateStore = documents.slice(updateStart, offerStart);
+  assert.match(createStore, /data\.publishedAt = timestamp/);
+  assert.doesNotMatch(updateStore, /data\.publishedAt = timestamp/);
+});
