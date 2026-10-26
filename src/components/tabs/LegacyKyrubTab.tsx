@@ -639,7 +639,7 @@ export function KyrubTab({
           </div>
         )}
 
-        <div className="flex border-b border-slate-800" id="social-tabs">
+        {!marketplaceMode && <div className="flex border-b border-slate-800" id="social-tabs">
           <button
             type="button"
             onClick={() => setSocialSubTab('lojas')}
@@ -662,7 +662,7 @@ export function KyrubTab({
           >
             Praça
           </button>
-        </div>
+        </div>}
       </section>
 
       {socialSubTab === 'lojas' && (
