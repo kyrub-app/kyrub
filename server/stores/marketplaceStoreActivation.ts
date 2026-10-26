@@ -66,6 +66,11 @@ export const publishMarketplaceStoreAndRecordFirstActivation = async (
     if (data.ownerId !== normalizedOwnerId) {
       throw new Error('Store owner does not match activation request.');
     }
+    // A registry-only record has not completed canonical commercial migration.
+    // Publishing it now could expose a legacy storefront without verified setup.
+    if (data.migrationStatus !== 'canonical') {
+      throw new Error('Store commercial migration is not complete.');
+    }
     const previous = data.firstMarketplaceActivatedAt;
     // A previously published store without a marker may be historical. Do not
     // silently grant it a fresh three-month promotion on the next publication.
