@@ -28,6 +28,10 @@ import { matchesMarketplaceDistance } from '../../utils/marketplaceDistanceFilte
 
 interface KyrubTabProps {
   marketplaceMode?: boolean;
+  distanceFilterEnabled: boolean;
+  setDistanceFilterEnabled: React.Dispatch<React.SetStateAction<boolean>>;
+  isDistancePanelOpen: boolean;
+  setIsDistancePanelOpen: React.Dispatch<React.SetStateAction<boolean>>;
   searchQuery: string;
   setSearchQuery: (val: string) => void;
   radiusKm: number;
@@ -205,9 +209,12 @@ export function KyrubTab({
   triggerToast,
   getDistance,
   marketplaceMode = false,
+  distanceFilterEnabled,
+  setDistanceFilterEnabled,
+  isDistancePanelOpen,
+  setIsDistancePanelOpen,
 }: KyrubTabProps) {
   const [effectiveUserCoords, setEffectiveUserCoords] = useState(userCoords);
-  const [distanceFilterEnabled, setDistanceFilterEnabled] = useState(false);
   const [clubCandidates, setClubCandidates] = useState<MyStoreClubCandidate[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState('');
@@ -229,7 +236,6 @@ export function KyrubTab({
     });
     return () => { cancelled = true; };
   }, [candidateKey, ofertasFilter, socialSubTab]);
-  const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
   const [locationStatus, setLocationStatus] = useState<
     'idle' | 'loading' | 'ready' | 'error'
   >(userCoords ? 'ready' : 'idle');
