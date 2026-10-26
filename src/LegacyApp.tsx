@@ -1112,6 +1112,17 @@ export default function App() {
     triggerToast('Entre com Google para continuar esta operação.', 'info');
   };
 
+  const openAuthenticatedRendaAction = (kind: 'delivery-request' | 'delivery-work' | 'freela-request' | 'freela-work' | 'store') => {
+    setActiveTab('renda');
+    switch (kind) {
+      case 'delivery-request': setShowDeliveryModal(true); break;
+      case 'delivery-work': setShowFazerEntregasModal(true); break;
+      case 'freela-request': setShowFreelaModal(true); break;
+      case 'freela-work': setShowFazerFreelasModal(true); break;
+      case 'store': setGestaoRole('retailer'); setIsGestaoOpen(true); break;
+    }
+  };
+
   // Handle Login Flow
 const handleLogin = async (provider: 'google' | 'apple') => {
   if (provider === 'apple') {
@@ -1414,6 +1425,8 @@ if (newMomentPublishToPraca) {
           setShowLoginModal={setShowLoginModal}
           handleLogin={handleLogin}
           setCurrentPath={setCurrentPath}
+          requireAuthenticatedAction={requireAuthenticatedAction}
+          openAuthenticatedRendaAction={openAuthenticatedRendaAction}
         />
       ) : (
         /* REGISTERED LOGIN SCREEN WORKSPACE */
