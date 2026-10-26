@@ -293,56 +293,13 @@ const persistCanonicalMarketplaceListing = async (
   }
 };
 
-const persistTenantMarketplaceFallback = async (
-  user: Pick<User, 'uid' | 'email'>,
-  store: Store,
-  publicationStatus: 'published' | 'paused'
-): Promise<void> => {
-  const reference = doc(db, 'tenants', user.uid);
-  const snapshot = await getDoc(reference);
-  const payload: Record<string, unknown> = {
-    id: user.uid,
-    ownerId: user.uid,
-    name: store.name,
-    email: user.email ?? '',
-    role: 'retailer',
-    plan: store.plan,
-    slug: store.slug,
-    description: store.description,
-    address: store.address ?? '',
-    logo: store.logo,
-    banner: store.banner,
-    primaryColor: store.primaryColor,
-    keywords: [...(store.keywords ?? [])],
-    status: store.status ?? 'closed',
-    publicationStatus,
-    updatedAt: serverTimestamp(),
-  };
-
-  if (!snapshot.exists()) payload.createdAt = serverTimestamp();
-  if (hasStoreCoordinates(store)) {
-    payload.lat = store.lat;
-    payload.lng = store.lng;
-  }
-
-  await setDoc(reference, payload, { merge: true });
-};
-
 export const setStoreMarketplacePublication = async (
   user: Pick<User, 'uid' | 'email'>,
   store: Store,
   published: boolean
 ): Promise<void> => {
   const publicationStatus = published ? 'published' : 'paused';
-  // Canonical listing must succeed before updating the legacy compatibility view.
-  // Never report publication success based solely on a tenant fallback write.
+  // The canonical public listing is the only publication write target.
+  // Existing legacy tenant documents remain readable during migration.
   await persistCanonicalMarketplaceListing(user, store, publicationStatus);
-
-  try {
-    await persistTenantMarketplaceFallback(user, store, publicationStatus);
-  } catch (error) {
-    // Do not hide a failed compatibility mirror: legacy readers may be stale.
-    console.error('Legacy tenant publication mirror failed after canonical write.', error);
-    throw error;
-  }
 };
