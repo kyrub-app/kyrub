@@ -381,7 +381,7 @@ function ContactCard({
     : undefined;
 
   return (
-    <article data-profile-connected-friend-id={friend.id} className="relative flex min-h-[310px] min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 isolate">
+    <article data-profile-connected-friend-id={friend.id} data-profile-connected-card="true" className="relative flex min-h-[310px] min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 isolate">
       <div className="absolute inset-0 overflow-hidden" data-profile-connected-media="true">
         {mediaBackground && (
           <div
@@ -417,13 +417,13 @@ function ContactCard({
           <Star className={`h-4 w-4 ${friend.favorited ? 'fill-current' : ''}`} />
         </button>
       </div>
-      <div className="relative z-[3] min-h-[72px] p-3 pointer-events-none">
-        <h4 className="truncate text-xs font-black text-white">{friend.name}</h4>
+      <div data-profile-connected-content="true" className="relative z-[3] min-h-[72px] p-3 pointer-events-none">
+        <h4 data-profile-connected-heading="true" className="truncate text-xs font-black text-white">{friend.name}</h4>
         <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-500">
           {latestStatus?.content || friend.bio || friend.role}
         </p>
       </div>
-      <div className="relative z-[3] mt-auto grid grid-cols-[1fr_42px] gap-2 border-t border-slate-800/40 p-2">
+      <div data-profile-connected-footer="true" className="relative z-[3] mt-auto grid grid-cols-[1fr_42px] gap-2 border-t border-slate-800/40 p-2">
         <button
           type="button"
           onClick={onChat}
@@ -435,6 +435,8 @@ function ContactCard({
         <button
           type="button"
           onClick={onRemove}
+          data-profile-connected-menu="true"
+          data-profile-connected-name={friend.name}
           className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
           aria-label={`Remover ${friend.name}`}
         >
