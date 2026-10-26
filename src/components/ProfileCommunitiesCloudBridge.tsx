@@ -225,6 +225,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [posts, setPosts] = useState<CloudCommunityPost[]>([]);
   const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
+  const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [selectedDebateId, setSelectedDebateId] = useState('');
   const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -716,6 +717,25 @@ export function ProfileCommunitiesCloudBridge() {
 
   return (
     <>
+      {membersModalOpen && selectedCommunity && createPortal(
+        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setMembersModalOpen(false)}>
+          <section role="dialog" aria-modal="true" aria-label="Membros da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div><h3 className="text-base font-black text-white">Membros</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
+              <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar membros" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
+            </div>
+            <div className="space-y-2">
+              {members.filter(member => member.status === 'active').map(member => (
+                <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
+                  <Avatar name={member.userName} url={member.userAvatar} />
+                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-[9px] text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'admin' ? 'Administrador' : 'Membro'}</p></div>
+                </div>
+              ))}
+              {members.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum membro ativo encontrado.</p>}
+            </div>
+          </section>
+        </div>, document.body
+      )}
       {host &&
         createPortal(
           <section
@@ -1292,7 +1312,7 @@ export function ProfileCommunitiesCloudBridge() {
                           {selectedCommunity.description}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400">
-                          <span>{selectedCommunity.memberCount} membros</span>
+                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}</button>
                           <span>•</span>
                           <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
                           {selectedCommunity.location && (
