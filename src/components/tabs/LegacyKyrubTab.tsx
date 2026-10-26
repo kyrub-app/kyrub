@@ -735,9 +735,9 @@ export function KyrubTab({
               return (
                 <article
                   key={store.id}
-                  className="group relative flex h-[156px] flex-col justify-between overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
+                  className="group relative flex h-[300px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
                 >
-                  <StoreOfferCarousel images={store.offerImages} />
+                  <StoreOfferCarousel images={[...(store.offerImages ?? []), ...(store.banner ? [store.banner] : [])]} />
 
                   <div className="absolute inset-x-0 top-0 z-10 flex items-start justify-between p-2">
                     <div className="relative h-9 w-9 shrink-0">
@@ -780,7 +780,7 @@ export function KyrubTab({
                     </button>
                   </div>
 
-                  <div className="relative z-10 mt-auto bg-gradient-to-t from-slate-950 via-slate-950/95 to-transparent p-2">
+                  <div className="relative z-10 mt-auto bg-slate-950/95 p-2">
                     <h3 className="truncate text-[13px] font-black uppercase tracking-wider text-white">
                       {store.name}
                     </h3>
