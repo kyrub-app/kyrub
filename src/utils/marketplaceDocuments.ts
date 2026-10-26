@@ -205,9 +205,6 @@ export const buildMarketplaceStoreUpdateData = (
     updatedAt: timestamp,
   };
 
-  if (input.publicationStatus === 'published') {
-    data.publishedAt = timestamp;
-  }
 
   return data;
 };
