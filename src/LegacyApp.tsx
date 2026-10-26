@@ -1145,8 +1145,13 @@ const handleLogin = async (provider: 'google' | 'apple') => {
     const resumeAction = pendingAuthenticatedAction.current;
     pendingAuthenticatedAction.current = null;
     setShowLoginModal(false);
-    resumeAction?.();
-    setShowGpsOverlay(true);
+    if (resumeAction) {
+      // Do not cover the requested operation with the optional GPS onboarding.
+      setShowGpsOverlay(false);
+      resumeAction();
+    } else {
+      setShowGpsOverlay(true);
+    }
 
     triggerToast(
       'Conectado com sucesso via Google!',
