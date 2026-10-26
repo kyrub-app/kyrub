@@ -24,6 +24,7 @@ import { MediaCarousel } from '../MediaCarousel';
 import { Friend, Order, SocialPost, Store } from '../../types';
 import { auth } from '../../utils/firebase';
 import { loadMyClubCandidates, type MyStoreClubCandidate } from '../../utils/myClubsCandidates';
+import { matchesMarketplaceDistance } from '../../utils/marketplaceDistanceFilter';
 
 interface KyrubTabProps {
   marketplaceMode?: boolean;
@@ -308,18 +309,8 @@ export function KyrubTab({
         }
       }
 
-      if (distanceFilterEnabled && effectiveUserCoords) {
-        if (!Number.isFinite(store.lat) || !Number.isFinite(store.lng)) {
-          return false;
-        }
-
-        const distance = getDistance(
-          effectiveUserCoords.lat,
-          effectiveUserCoords.lng,
-          store.lat as number,
-          store.lng as number
-        );
-        if (distance > radiusKm) return false;
+      if (!matchesMarketplaceDistance(store, distanceFilterEnabled, effectiveUserCoords, radiusKm, getDistance)) {
+        return false;
       }
 
       if (ofertasFilter === 'novas') return Boolean(store.isNew);
