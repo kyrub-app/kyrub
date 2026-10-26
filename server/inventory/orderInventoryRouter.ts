@@ -3,7 +3,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth';
 import { authorizeInPersonOrderOperator } from '../attendance/inPersonOrderService.js';
 import { canStoreRoleTransitionOrderStatus } from '../../src/utils/storeSecurity.js';
-import { publishKyrubDeliveryOpportunity } from '../delivery/deliveryOpportunityRouter';
+import { publishKyrubDeliveryOpportunity, withdrawUnclaimedKyrubDeliveryOpportunity } from '../delivery/deliveryOpportunityRouter';
 import { ConsultantHttpError } from '../ai/types';
 import { adminDb } from '../firebaseAdmin';
 import { sendNinetyNineFoodOrderStatus } from '../integrations/ninetyNineFoodService';
@@ -633,12 +633,23 @@ export const createOrderInventoryRouter = (): Router => {
         }
       }
 
+      let deliveryWithdrawal: 'not-applicable' | 'withdrawn' | 'claimed' | 'missing' | 'attention' = 'not-applicable';
+      if (['cancelled', 'rejected'].includes(result.status)) {
+        try {
+          deliveryWithdrawal = await withdrawUnclaimedKyrubDeliveryOpportunity(tenantId, result.orderId);
+        } catch (error) {
+          deliveryWithdrawal = 'attention';
+          console.error('[Order Inventory] Kyrub delivery withdrawal needs attention.', error);
+        }
+      }
+
       response.json({
         ...result,
         partnerSync,
         partnerWarning,
         deliveryPublication,
         deliveryPublicationWarning,
+        deliveryWithdrawal,
       });
     } catch (error) {
       errorResponse(response, error);
