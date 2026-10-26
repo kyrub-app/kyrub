@@ -46,10 +46,10 @@ export async function respondToCommunityGroupInvitation(input: {
       membershipSnap.data()?.userId !== recipientUserId) {
       throw new Error('COMMUNITY_GROUP_MEMBERSHIP_REQUIRED');
     }
+    if (group.memberIds.includes(recipientUserId)) {
+      throw new Error('COMMUNITY_GROUP_INVITATION_NOT_PENDING');
+    }
     if (decision === 'accepted') {
-      if (group.memberIds.includes(recipientUserId)) {
-        throw new Error('COMMUNITY_GROUP_INVITATION_NOT_PENDING');
-      }
       transaction.update(groupRef, {
         memberIds: [...group.memberIds, recipientUserId],
         updatedAt: new Date(),
