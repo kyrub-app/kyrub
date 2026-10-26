@@ -17,3 +17,10 @@ test('connected card owns native image containment and background', () => {
   assert.match(card, /onClick=\{onChat\}/);
   assert.match(card, /onClick=\{onRemove\}/);
 });
+
+test('legacy bridge does not duplicate the native image overlay', () => {
+  const legacy = readFileSync('src/components/ProfileConnectedCardsPolishBridge.tsx', 'utf8');
+  assert.doesNotMatch(legacy, /--profile-connected-image/);
+  assert.doesNotMatch(legacy, /data-profile-connected-media="true"\]::before/);
+  assert.doesNotMatch(legacy, /data-profile-connected-media="true"\]::after/);
+});
