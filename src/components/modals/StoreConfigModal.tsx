@@ -299,7 +299,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       try {
         await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
-        setFallbackPublished(true);
+
       } catch (error) {
         marketplaceSynced = false;
         console.warn('Published store profile refresh is pending.', error);
