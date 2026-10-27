@@ -37,6 +37,34 @@ describe('99Food inbound KDS payment gate', () => {
     assert.equal(mayApplyNinetyNineFoodAcceptance('pending', 'accepted'), true);
     assert.equal(mayApplyNinetyNineFoodAcceptance('preparing', 'ready'), true);
   });
+  it('preserves payment gate and terminal authority through a replayed event sequence', () => {
+    type Stage = 'pending' | 'accepted' | 'preparing' | 'ready' | 'completed' | 'cancelled';
+    let stage: Stage = 'pending';
+    let payment: 'unpaid' | 'paid' = 'unpaid';
+    const event = (incoming: Stage) => {
+      const allowed = mayTransitionNinetyNineFoodTerminalOrder(stage, incoming) &&
+        mayApplyNinetyNineFoodAcceptance(stage, incoming) &&
+        mayApplyNinetyNineFoodInboundStatus(incoming, payment);
+      if (allowed) stage = incoming;
+      return allowed;
+    };
+    assert.equal(event('accepted'), true);
+    assert.equal(event('preparing'), false);
+    assert.equal(stage, 'accepted');
+    payment = 'paid';
+    assert.equal(event('preparing'), true);
+    assert.equal(event('accepted'), false);
+    assert.equal(event('ready'), true);
+    assert.equal(event('completed'), true);
+    assert.equal(event('preparing'), false);
+    assert.equal(event('cancelled'), false);
+    assert.equal(stage, 'completed');
+  });
+  it('allows pay-on-delivery preparation but not false paid settlement', () => {
+    const paymentStatus = 'unpaid';
+    assert.equal(mayApplyNinetyNineFoodInboundStatus('preparing', paymentStatus, true), true);
+    assert.equal(paymentStatus, 'unpaid');
+  });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
   });
