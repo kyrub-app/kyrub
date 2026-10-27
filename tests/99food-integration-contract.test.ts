@@ -68,6 +68,24 @@ test('webhooks are authenticated and events are idempotent and retryable', () =>
   assert.match(serviceSource, /acknowledgeEvents\(acknowledged\)/);
 });
 
+test('duplicate webhook events are reserved atomically and only acknowledged after processing', () => {
+  const reserveStart = serviceSource.indexOf('const reserveEvent = async');
+  const processStart = serviceSource.indexOf('export const processNinetyNineFoodEvent', reserveStart);
+  const pollStart = serviceSource.indexOf('export const pollNinetyNineFood', processStart);
+  assert.ok(reserveStart >= 0 && processStart > reserveStart && pollStart > processStart);
+  const reserve = serviceSource.slice(reserveStart, processStart);
+  const process = serviceSource.slice(processStart, pollStart);
+  assert.match(reserve, /runTransaction\(async transaction =>/);
+  assert.match(reserve, /status === 'processed' \|\| \(status === 'processing' && leaseActive\)/);
+  assert.match(reserve, /return false/);
+  assert.match(process, /if \(!reservation\.reserved\) return \{ duplicate: true, event \}/);
+  assert.match(process, /status: 'processed'/);
+  assert.match(process, /status: 'failed'/);
+  const polling = serviceSource.slice(pollStart);
+  assert.match(polling, /acknowledged\.push\(event\)/);
+  assert.match(polling, /acknowledgeEvents\(acknowledged\)/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
