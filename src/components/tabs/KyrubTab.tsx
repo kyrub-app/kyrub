@@ -110,6 +110,7 @@ export function KyrubTab(props: KyrubTabProps) {
   const [isDistancePanelOpen, setIsDistancePanelOpen] = useState(false);
   const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
   const [canonicalOffers, setCanonicalOffers] = useState<MarketplaceOfferListingDocument[]>([]);
+  const [bestSellerCounts, setBestSellerCounts] = useState<Record<string, Record<string, number>>>({});
   const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('none');
   const [discoverySignals, setDiscoverySignals] = useState<MarketplaceStoreDiscoverySignal[]>([]);
@@ -191,16 +192,54 @@ export function KyrubTab(props: KyrubTabProps) {
     };
   }, []);
 
+  useEffect(() => {
+    const user = auth.currentUser;
+    const storeIds = Array.from(new Set([...canonicalStores, ...fallbackStores].map(store => store.id))).slice(0, 24);
+    if (!user || storeIds.length === 0) {
+      setBestSellerCounts({});
+      return;
+    }
+    let cancelled = false;
+    void user.getIdToken().then(token =>
+      fetch('/api/marketplace-discovery/best-sellers', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ storeIds }),
+        cache: 'no-store',
+      })
+    ).then(async response => {
+      if (!response.ok) throw new Error('Best-seller ranking unavailable');
+      return response.json() as Promise<{ countsByStoreId?: Record<string, Record<string, number>> }>;
+    }).then(payload => {
+      if (!cancelled) setBestSellerCounts(payload.countsByStoreId ?? {});
+    }).catch(error => {
+      console.warn('Marketplace best sellers unavailable.', error);
+      if (!cancelled) setBestSellerCounts({});
+    });
+    return () => { cancelled = true; };
+  }, [canonicalStores, fallbackStores]);
+
   const allPublishedStores = useMemo(() => {
     const imagesByStoreId = new Map<string, string[]>();
+    const offersByStore = new Map<string, MarketplaceOfferListingDocument[]>();
     for (const offer of canonicalOffers) {
-      const images = imagesByStoreId.get(offer.storeId) ?? [];
-      for (const image of offer.imageUrls ?? []) {
-        if (typeof image === 'string' && image.trim() && !images.includes(image)) {
-          images.push(image);
+      const offers = offersByStore.get(offer.storeId) ?? [];
+      offers.push(offer);
+      offersByStore.set(offer.storeId, offers);
+    }
+    for (const [storeId, offers] of offersByStore) {
+      const counts = bestSellerCounts[storeId] ?? {};
+      const sold = offers.filter(offer => (counts[offer.offerId] ?? 0) > 0);
+      const orderedOffers = sold.length > 0
+        ? sold.sort((a, b) => (counts[b.offerId] ?? 0) - (counts[a.offerId] ?? 0))
+        : offers;
+      const images: string[] = [];
+      for (const offer of orderedOffers) {
+        for (const image of offer.imageUrls ?? []) {
+          if (typeof image === 'string' && image.trim() && !images.includes(image)) images.push(image);
         }
       }
-      imagesByStoreId.set(offer.storeId, images);
+      imagesByStoreId.set(storeId, images);
     }
     const storesById = new Map<string, Store>();
     for (const store of fallbackStores) storesById.set(store.id, store);
@@ -209,7 +248,7 @@ export function KyrubTab(props: KyrubTabProps) {
       ...store,
       offerImages: (imagesByStoreId.get(store.id) ?? store.offerImages ?? []).slice(0, 12),
     }));
-  }, [canonicalStores, canonicalOffers, fallbackStores]);
+  }, [canonicalStores, canonicalOffers, fallbackStores, bestSellerCounts]);
 
   useEffect(() => {
     let cancelled = false;
