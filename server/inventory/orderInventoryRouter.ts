@@ -482,7 +482,7 @@ export const createOrderInventoryRouter = (): Router => {
           orderId,
           externalOrderId,
           status: providerWriteAuthorization.status,
-          partnerSync: 'attention',
+          partnerSync: 'reconciliation_required',
           partnerWarning,
           localTransitionApplied: false,
         });
