@@ -31,6 +31,7 @@ describe('99Food payment evidence', () => {
       pending: null,
       onlineMethodPresent: false,
       methodsReported: false,
+      payOnDelivery: false,
     });
     const online = normalize(order({ prepaid: 25, pending: 0, methods: [{ type: 'ONLINE', value: 25 }] }));
     assert.deepEqual(online.integration.paymentEvidence, {
@@ -38,7 +39,18 @@ describe('99Food payment evidence', () => {
       pending: 0,
       onlineMethodPresent: true,
       methodsReported: true,
+      payOnDelivery: false,
     });
+  });
+  it('recognizes full explicit offline collection without marking it paid', () => {
+    const result = normalize(order({ prepaid: 0, pending: 25, methods: [{ type: 'OFFLINE', value: 25 }] }));
+    assert.equal(result.paymentStatus, 'unpaid');
+    assert.equal(result.integration.paymentEvidence?.payOnDelivery, true);
+  });
+  it('does not infer pay-on-delivery from unknown or incomplete methods', () => {
+    assert.equal(normalize(order({ prepaid: 0, pending: 25 })).integration.paymentEvidence?.payOnDelivery, false);
+    assert.equal(normalize(order({ prepaid: 0, pending: 25, methods: [{ type: 'OFFLINE' }] })).integration.paymentEvidence?.payOnDelivery, false);
+    assert.equal(normalize(order({ prepaid: 0, pending: 25, methods: [{ type: 'OFFLINE', value: 10 }] })).integration.paymentEvidence?.payOnDelivery, false);
   });
   it('does not treat a missing pending amount as a settled balance', () => {
     assert.equal(normalize(order({ prepaid: 25 })).paymentStatus, 'partial');
