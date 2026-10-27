@@ -750,6 +750,48 @@ export const updateCustomerOrderStatus = async (
   });
 };
 
+/**
+ * Operational transitions are authorized by the existing server endpoint,
+ * which validates store membership, payment readiness and inventory effects.
+ * The caller must pass the authenticated Firebase user; never trust a role
+ * supplied by the browser.
+ */
+export const updateStaffCustomerOrderStatus = async (
+  storeId: string,
+  orderId: string,
+  nextStatus: CustomerOrderStatus,
+  user: Pick<User, 'getIdToken'>
+): Promise<void> => {
+  const requestedStoreId = storeId.trim();
+  const requestedOrderId = orderId.trim();
+  if (!requestedStoreId || !requestedOrderId || requestedOrderId.includes('/')) {
+    throw new Error('Identificação do pedido ou da loja inválida.');
+  }
+  if (!canTransitionCustomerOrderStatus('pending', nextStatus) &&
+      !['preparing', 'ready', 'out_for_delivery', 'completed'].includes(nextStatus)) {
+    throw new Error('Use o fluxo operacional autorizado para esta decisão.');
+  }
+  const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(requestedStoreId);
+  if (!canonicalStoreId) {
+    throw new Error('Loja sem identidade canônica configurada.');
+  }
+  const token = await user.getIdToken();
+  const response = await fetch(`/api/orders/${encodeURIComponent(requestedOrderId)}/status`, {
+    method: 'POST',
+    headers: {
+      authorization: `Bearer ${token}`,
+      'content-type': 'application/json',
+    },
+    body: JSON.stringify({ storeId: requestedStoreId, status: nextStatus }),
+  });
+  if (!response.ok) {
+    const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+    throw new Error(typeof result.error === 'string'
+      ? result.error
+      : 'Não foi possível atualizar o status do pedido.');
+  }
+};
+
 export const isTerminalCustomerOrderStatus = (
   status: CustomerOrderStatus
 ): boolean =>
