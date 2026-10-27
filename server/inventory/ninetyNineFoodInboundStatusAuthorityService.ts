@@ -67,13 +67,6 @@ export const mayTransitionNinetyNineFoodTerminalOrder = (
     incomingStatus === current;
 };
 
-/** A delayed acceptance must not roll back an order already in fulfillment. */
-export const mayApplyNinetyNineFoodAcceptance = (
-  currentStatus: unknown,
-  incomingStatus: InventoryOrderStatus | null
-): boolean => incomingStatus !== 'accepted' ||
-  !['preparing', 'ready', 'out_for_delivery'].includes(clean(currentStatus));
-
 /** Provider event replay cannot move fulfillment backwards. */
 export const mayAdvanceNinetyNineFoodFulfillment = (
   currentStatus: unknown,
