@@ -24,6 +24,22 @@ describe('99Food payment evidence', () => {
     assert.equal(result.sourceChannel, '99food');
     assert.equal(result.integration.protocol, 'open-delivery');
   });
+  it('preserves reported payment evidence without inventing absent fields', () => {
+    const missing = normalize(order());
+    assert.deepEqual(missing.integration.paymentEvidence, {
+      prepaid: null,
+      pending: null,
+      onlineMethodPresent: false,
+      methodsReported: false,
+    });
+    const online = normalize(order({ prepaid: 25, pending: 0, methods: [{ type: 'ONLINE', value: 25 }] }));
+    assert.deepEqual(online.integration.paymentEvidence, {
+      prepaid: 25,
+      pending: 0,
+      onlineMethodPresent: true,
+      methodsReported: true,
+    });
+  });
   it('does not treat a missing pending amount as a settled balance', () => {
     assert.equal(normalize(order({ prepaid: 25 })).paymentStatus, 'partial');
   });
