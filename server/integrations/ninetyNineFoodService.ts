@@ -452,10 +452,10 @@ export const processNinetyNineFoodEvent = async (
   const eventReference = adminDb.doc(reservation.referencePath);
 
   try {
-    const legacyReference = adminDb.doc(
-      legacyOrderPath(connection.tenantId, internalOrderId(event.orderId))
-    );
-    const currentOrder = await legacyReference.get();
+    const canonicalStoreId = await canonicalStoreIdForTenant(connection.tenantId);
+    const currentOrder = await adminDb.doc(
+      `stores/${canonicalStoreId}/orders/${internalOrderId(event.orderId)}`
+    ).get();
     const status = mapOpenDeliveryEventToOrderStatus(event.eventType);
 
     if (!currentOrder.exists) {
