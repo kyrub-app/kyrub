@@ -97,6 +97,20 @@ test('expired event workers cannot finalize a reservation claimed by another att
   assert.match(serviceSource, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
 });
 
+test('first order creation and existing order updates both require the active event lease', () => {
+  const creationStart = serviceSource.indexOf('const persistNormalizedOrder = async');
+  const creationEnd = serviceSource.indexOf('const updatePersistedOrderStatus', creationStart);
+  const creation = serviceSource.slice(creationStart, creationEnd);
+  assert.match(creation, /transaction\.get\(eventReference\)/);
+  assert.match(creation, /reserved\?\.attemptId !== eventAttemptId/);
+  assert.match(creation, /lease\.toMillis\(\) <= Date\.now\(\)/);
+  assert.match(creation, /transaction\.create\(reference/);
+  const inboundSource = readFileSync('server/inventory/ninetyNineFoodInboundStatusAuthorityService.ts', 'utf8');
+  assert.match(inboundSource, /transaction\.get\(adminDb\.doc\(eventReferencePath\)\)/);
+  assert.match(inboundSource, /clean\(reservedEvent\.attemptId\) !== eventAttemptId/);
+  assert.match(serviceSource, /reservation\.attemptId, event\.eventId, event\.orderId/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
