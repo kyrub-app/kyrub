@@ -331,7 +331,7 @@ export function ProfileCommunitiesCloudBridge() {
     return subscribeCommunityGroupMessages(activeGroupChatId, setGroupMessages, error => {
       setGroupMessageError(error.message || 'Não foi possível carregar as mensagens.');
     });
-  }, [groupsModalOpen, activeGroupChatId, myCommunityGroups]);
+  }, [groupsModalOpen, activeGroupChatId, myCommunityGroups.some(group => group.id === activeGroupChatId)]);
 
   const sendGroupChatMessage = async (): Promise<void> => {
     if (!activeGroupChatId || groupMessageSending) return;
