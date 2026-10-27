@@ -425,6 +425,30 @@ export const createOrderInventoryRouter = (): Router => {
         throw new Error('Pedido 99Food sem identificador externo válido.');
       }
 
+      const syncReference = await orderReference(tenantId, orderId);
+      await adminDb.runTransaction(async transaction => {
+        const latest = await transaction.get(syncReference);
+        if (!latest.exists) throw new Error('Pedido não encontrado.');
+        const latestData = latest.data() as Record<string, unknown>;
+        const latestIntegration = latestData.integration && typeof latestData.integration === 'object'
+          ? latestData.integration as Record<string, unknown> : {};
+        const latestStatus = clean(latestData.status);
+        const latestTarget = clean(latestIntegration.outboundTargetStatus) || latestStatus;
+        if (
+          clean(latestIntegration.provider) !== '99food' ||
+          !PENDING_PARTNER_SYNC_STATUSES.has(clean(latestIntegration.outboundStatus)) ||
+          latestStatus !== providerWriteAuthorization.status ||
+          latestTarget !== providerWriteAuthorization.status ||
+          clean(latestIntegration.externalOrderId) !== externalOrderId
+        ) {
+          throw new Error('O status do pedido mudou desde a autorização 99Food. Revise a fila e confirme novamente.');
+        }
+        transaction.update(syncReference, {
+          'integration.outboundStatus': 'executing',
+          'integration.outboundUpdatedAt': new Date().toISOString(),
+        });
+      });
+
       try {
         await sendNinetyNineFoodOrderStatus(
           tenantId,
