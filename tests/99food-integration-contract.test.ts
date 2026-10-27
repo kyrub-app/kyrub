@@ -79,8 +79,10 @@ test('duplicate webhook events are reserved atomically and only acknowledged aft
   assert.match(reserve, /status === 'processed' \|\| \(status === 'processing' && leaseActive\)/);
   assert.match(reserve, /return false/);
   assert.match(process, /if \(!reservation\.reserved\) return \{ duplicate: true, event \}/);
-  assert.match(process, /status: 'processed'/);
-  assert.match(process, /status: 'failed'/);
+  assert.match(process, /finalizeReservedEvent\(/);
+  const finalizer = serviceSource.slice(serviceSource.indexOf('const finalizeReservedEvent = async'), processStart);
+  assert.match(finalizer, /status: 'processed'/);
+  assert.match(finalizer, /status: 'failed'/);
   const polling = serviceSource.slice(pollStart);
   assert.match(polling, /acknowledged\.push\(event\)/);
   assert.match(polling, /acknowledgeEvents\(acknowledged\)/);
