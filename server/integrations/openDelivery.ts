@@ -1,5 +1,5 @@
 import { URL } from 'node:url';
-import type { CanonicalSourceChannel } from '../../src/utils/sourceChannel';
+import type { CommerceChannel } from '../../shared/channelAvailabilityFiscalFoundation';
 
 export const OPEN_DELIVERY_VERSION = '1.7.0';
 
@@ -87,7 +87,7 @@ export interface NormalizedIntegrationOrder {
     | 'cancelled';
   paymentStatus: 'unpaid' | 'partial' | 'paid';
   source: 'transfer';
-  sourceChannel: CanonicalSourceChannel;
+  sourceChannel: CommerceChannel;
   operatorId: string;
   operatorName: string;
   createdAt: string;
