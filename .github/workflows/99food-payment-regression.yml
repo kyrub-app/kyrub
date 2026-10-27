@@ -19,6 +19,10 @@ on:
       - '.github/workflows/99food-payment-regression.yml'
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
+
 jobs:
   payment-status-regression:
     runs-on: ubuntu-latest
@@ -31,6 +35,7 @@ jobs:
           cache: npm
       - run: npm ci --ignore-scripts
       - name: Run 99Food, KDS, order, inventory and ledger regression tests
+        id: regression
         run: >-
           node --test --test-concurrency=4 --import tsx
           tests/open-delivery-payment-gate.test.ts
@@ -41,3 +46,22 @@ jobs:
           tests/production-station-routing.test.ts
           tests/order-inventory-consumption.test.ts
           tests/store-economic-ledger.test.ts
+
+      - name: Publish regression result to commit status
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REGRESSION_OUTCOME: ${{ steps.regression.outcome }}
+        run: |
+          if [ "$REGRESSION_OUTCOME" = "success" ]; then
+            state=success
+            description="99Food, KDS, inventory and ledger regression passed"
+          else
+            state=failure
+            description="99Food, KDS, inventory or ledger regression failed"
+          fi
+          gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \\
+            -f state="$state" \\
+            -f context="99Food operational regression" \\
+            -f description="$description" \\
+            -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
