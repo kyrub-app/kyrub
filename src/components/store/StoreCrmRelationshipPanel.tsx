@@ -84,6 +84,7 @@ export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[8px] font-black uppercase text-orange-300">{customer.confirmedPurchases} compras</span>
+                  {!customer.customerId.startsWith('99food:') && (
                   <button
                     type="button"
                     onClick={() => openStoreCustomerChat({
@@ -98,6 +99,7 @@ export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
                   >
                     <MessageSquareText className="h-3.5 w-3.5" />
                   </button>
+                  )}
                 </div>
               </div>
               <div className="mt-3 grid grid-cols-2 gap-2 text-[9px]">
