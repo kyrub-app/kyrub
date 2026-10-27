@@ -470,6 +470,7 @@ export const createOrderInventoryRouter = (): Router => {
       }
 
       const syncReference = await orderReference(tenantId, orderId);
+      const executionReference = adminDb.collection('ninetyNineFoodStatusSyncExecutions').doc();
       await adminDb.runTransaction(async transaction => {
         const latest = await transaction.get(syncReference);
         if (!latest.exists) throw new Error('Pedido não encontrado.');
@@ -487,8 +488,19 @@ export const createOrderInventoryRouter = (): Router => {
         ) {
           throw new Error('O status do pedido mudou desde a autorização 99Food. Revise a fila e confirme novamente.');
         }
+        transaction.create(executionReference, {
+          tenantId,
+          orderId,
+          provider: '99food',
+          externalOrderId,
+          status: 'provider_write_started',
+          targetStatus: providerWriteAuthorization.status,
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
         transaction.update(syncReference, {
           'integration.outboundStatus': 'executing',
+          'integration.outboundExecutionId': executionReference.id,
           'integration.outboundReconciliationReason': FieldValue.delete(),
           'integration.outboundTargetStatus': providerWriteAuthorization.status,
           'integration.outboundUpdatedAt': new Date().toISOString(),
