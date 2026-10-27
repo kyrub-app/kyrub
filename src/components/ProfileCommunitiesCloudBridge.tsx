@@ -1541,7 +1541,7 @@ export function ProfileCommunitiesCloudBridge() {
                         <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400">
                           <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}</button>
                           <span>•</span>
-                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
+                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); setGroupSaveNotice(''); setGroupSaveError(''); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
                           <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
                           {selectedCommunity.location && (
