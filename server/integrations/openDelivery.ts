@@ -344,6 +344,8 @@ export const normalizeOpenDeliveryOrder = (
   const payments = asRecord(order.payments);
   const prepaidAmount = finiteNumber(payments.prepaid);
   const pendingAmount = finiteNumber(payments.pending);
+  // Financial amounts alone do not prove settlement by the provider. Keep
+  // this mapping conservative until an authoritative payment state is known.
   const prepaid = prepaidAmount !== null && prepaidAmount > 0 ? prepaidAmount : 0;
   // A missing payment breakdown is not evidence that an online order was paid.
   const paymentStatus: NormalizedIntegrationOrder['paymentStatus'] =
