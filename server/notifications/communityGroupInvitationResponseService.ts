@@ -40,10 +40,14 @@ export async function respondToCommunityGroupInvitation(input: {
       throw new Error('COMMUNITY_GROUP_INVITATION_INVALID');
     }
     const membershipRef = adminDb.doc(`community_members/${communityId}__${recipientUserId}`);
-    const membershipSnap = await transaction.get(membershipRef);
+    const creatorMembershipRef = adminDb.doc(`community_members/${communityId}__${group.creatorId}`);
+    const [membershipSnap, creatorMembershipSnap] = await transaction.getAll(membershipRef, creatorMembershipRef);
     if (membershipSnap.data()?.status !== 'active' ||
       membershipSnap.data()?.communityId !== communityId ||
-      membershipSnap.data()?.userId !== recipientUserId) {
+      membershipSnap.data()?.userId !== recipientUserId ||
+      creatorMembershipSnap.data()?.status !== 'active' ||
+      creatorMembershipSnap.data()?.communityId !== communityId ||
+      creatorMembershipSnap.data()?.userId !== group.creatorId) {
       throw new Error('COMMUNITY_GROUP_MEMBERSHIP_REQUIRED');
     }
     if (group.memberIds.includes(recipientUserId)) {
