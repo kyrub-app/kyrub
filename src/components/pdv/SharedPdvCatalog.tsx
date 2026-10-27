@@ -676,12 +676,16 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
               <h4 className="text-sm font-black uppercase tracking-wide text-slate-100">
                 {selectedKeyword
                   ? 'Nenhuma oferta nesta coleção'
-                  : 'Nenhum item disponível'}
+                  : selectedFilter === 'best_sellers'
+                    ? 'Nenhum produto vendido ainda'
+                    : 'Nenhum item disponível'}
               </h4>
               <p className="mx-auto mt-2 max-w-sm text-xs leading-relaxed text-slate-500">
                 {selectedKeyword
                   ? `Não encontramos produtos em “${activeCollectionPath.join(' › ')}”.`
-                  : emptyCatalogMessage}
+                  : selectedFilter === 'best_sellers'
+                    ? 'Os produtos aparecerão aqui quando houver vendas registradas nesta loja.'
+                    : emptyCatalogMessage}
               </p>
             </div>
           )}
