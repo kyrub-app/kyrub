@@ -11,6 +11,8 @@ import {
 describe('store CRM relationship projection', () => {
   it('classifies known and unknown customer identities conservatively', () => {
     assert.deepEqual(classifyCrmCustomerIdentity('99food:123'), { label: '99Food', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('mercadolivre:123'), { label: 'Mercado Livre', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('meli:123'), { label: 'Mercado Livre', canUseKyrubChat: false });
     assert.deepEqual(classifyCrmCustomerIdentity('ifood:123'), { label: 'iFood', canUseKyrubChat: false });
     assert.deepEqual(classifyCrmCustomerIdentity('pos:123'), { label: 'Presencial', canUseKyrubChat: false });
     assert.deepEqual(classifyCrmCustomerIdentity('other:123'), { label: 'Origem não identificada', canUseKyrubChat: false });
