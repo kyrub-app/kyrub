@@ -468,14 +468,18 @@ export const transitionOrderStatusWithInventory = async (
   if (!isOrderStatus(nextStatus)) throw new Error('Status do pedido inválido.');
 
   return adminDb.runTransaction(async transaction => {
-    const orderReference = adminDb.doc(orderPath(normalizedTenantId, normalizedOrderId));
     const tenantReference = adminDb.doc(`tenants/${normalizedTenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(normalizedTenantId, normalizedOrderId));
-    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
-      transaction.get(orderReference),
+    const [tenantSnapshot, ledgerSnapshot] = await Promise.all([
       transaction.get(tenantReference),
       transaction.get(ledgerReference),
     ]);
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (!canonicalStoreId) {
+      throw new Error('Loja sem identidade canônica configurada para atualizar pedidos.');
+    }
+    const orderReference = adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`);
+    const orderSnapshot = await transaction.get(orderReference);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado.');
 
@@ -492,7 +496,6 @@ export const transitionOrderStatusWithInventory = async (
       throw new Error('Explique o motivo da recusa ou cancelamento.');
     }
 
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,
       tenantId: normalizedTenantId,
@@ -552,24 +555,6 @@ export const transitionOrderStatusWithInventory = async (
       },
       { merge: true }
     );
-
-    if (canonicalStoreId) {
-      transaction.set(
-        adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`),
-        {
-          status: nextStatus,
-          customerNote: nextNote,
-          updatedAt,
-          inventory: {
-            lastAction: inventoryAction,
-            authorityOwnerUserId: inventoryAuthority.ownerUserId,
-            authority: inventoryAuthority.authority,
-            reconciledAt: updatedAt,
-          },
-        },
-        { merge: true }
-      );
-    }
 
     return {
       orderId: normalizedOrderId,
