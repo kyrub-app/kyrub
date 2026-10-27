@@ -73,6 +73,7 @@ const parseOrderData = (
     clean(data.storeId) !== storeId ||
     !customerId ||
     customerId.startsWith('local-order:') ||
+    customerId.startsWith('99food:') ||
     !buyerName ||
     !buyerEmail ||
     source !== 'customer' ||
