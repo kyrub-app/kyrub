@@ -92,9 +92,6 @@ const finiteInteger = (value: unknown): number | null =>
 const isOrderStatus = (value: unknown): value is InventoryOrderStatus =>
   typeof value === 'string' && value in STATUS_TRANSITIONS;
 
-const orderPath = (tenantId: string, orderId: string): string =>
-  `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
-
 const ledgerId = (tenantId: string, orderId: string): string =>
   createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex');
 
