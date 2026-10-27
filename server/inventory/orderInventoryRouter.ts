@@ -514,7 +514,12 @@ export const createOrderInventoryRouter = (): Router => {
       }
 
       const decision = parseDecision(request.body?.decision);
-      const currentSnapshot = await orderReference(tenantId, orderId).get();
+      const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
+      const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+      if (!canonicalStoreId || canonicalStoreId.includes('/')) {
+        throw new Error('Loja sem identidade canônica configurada.');
+      }
+      const currentSnapshot = await adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`).get();
       const currentData = currentSnapshot.data() as Record<string, unknown> | undefined;
       const currentIntegration =
         currentData?.integration && typeof currentData.integration === 'object'
