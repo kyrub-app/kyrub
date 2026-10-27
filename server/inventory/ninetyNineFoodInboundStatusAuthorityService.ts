@@ -202,7 +202,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       paymentStatus,
       payOnDelivery
     );
-    const mayApplyStatus = incomingAllowed || (input.mappedStatus === null && canResumeBlocked);
+    const mayApplyStatus = incomingAllowed ||
+      (canResumeBlocked && (input.mappedStatus === null || input.mappedStatus === 'accepted'));
     if (input.mappedStatus && !incomingAllowed) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
