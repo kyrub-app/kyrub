@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   MARKETPLACE_DISCOVERY_STORE_LIMIT,
   loadMarketplaceDiscovery,
+  loadPublishedStoreBestSellers,
   loadPublicStorefrontBySlug,
 } from './marketplaceDiscoveryService.js';
 
@@ -60,6 +61,24 @@ export const createMarketplaceDiscoveryRouter = (): Router => {
       response.status(503).json({
         error: 'A vitrine está temporariamente indisponível.',
       });
+    }
+  });
+
+  router.post('/best-sellers', async (request, response) => {
+    try {
+      const token = bearerToken(request.get('authorization') ?? '');
+      if (!token) throw new Error('AUTH_REQUIRED');
+      await verifyFirebaseIdToken(token);
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown>
+        : {};
+      const storeIds = parseStoreIds(body.storeIds);
+      const countsByStoreId = await loadPublishedStoreBestSellers(storeIds);
+      response.setHeader('Cache-Control', 'private, no-store');
+      response.status(200).json({ countsByStoreId });
+    } catch (error) {
+      const mapped = mapError(error);
+      response.status(mapped.status).json({ error: mapped.message });
     }
   });
 
