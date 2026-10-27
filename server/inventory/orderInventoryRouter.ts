@@ -339,6 +339,8 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
     const executionId = clean(integration.outboundExecutionId);
     const execution = executionsById.get(executionId);
     const executionStatus = clean(execution?.status);
+    const missingExternalOrderId = !clean(integration.externalOrderId);
+    const missingTargetStatus = !clean(integration.outboundTargetStatus);
     const executionAuthorityMismatch = !executionId || !execution ||
       clean(execution.tenantId) !== tenantId ||
       clean(execution.orderId) !== document.id ||
@@ -362,13 +364,15 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
       executionId,
       executionStatus,
       executionAuthorityMismatch,
+      missingExternalOrderId,
+      missingTargetStatus,
       outboundTargetStatus: clean(integration.outboundTargetStatus),
       outboundUpdatedAt,
       reconciliationReason: clean(integration.outboundReconciliationReason),
       possiblyInterrupted,
       missingTimestamp,
       futureTimestamp,
-      requiresOperatorReview: possiblyInterrupted || missingTimestamp || futureTimestamp || executionAuthorityMismatch || outboundStatus === 'reconciliation_required',
+      requiresOperatorReview: possiblyInterrupted || missingTimestamp || futureTimestamp || executionAuthorityMismatch || missingExternalOrderId || missingTargetStatus || outboundStatus === 'reconciliation_required',
       automaticRetryAllowed: false,
     }];
   });
