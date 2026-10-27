@@ -254,7 +254,8 @@ const finalizeManualPartnerSync = async (
       clean(execution?.provider) !== '99food' ||
       clean(execution?.targetStatus) !== status ||
       clean(execution?.tenantId) !== tenantId ||
-      clean(execution?.orderId) !== orderId
+      clean(execution?.orderId) !== orderId ||
+      clean(execution?.externalOrderId) !== clean(integration?.externalOrderId)
     ) return false;
     const now = new Date().toISOString();
     transaction.update(reference, {
