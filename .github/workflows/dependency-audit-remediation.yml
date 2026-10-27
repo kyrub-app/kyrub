@@ -1,0 +1,41 @@
+name: Dependency audit remediation candidate
+
+on:
+  push:
+    branches:
+      - fix/production-dependency-audit-oct2026
+    paths:
+      - .github/workflows/dependency-audit-remediation.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  remediation-candidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts
+      - name: Apply compatible npm security fixes
+        run: npm audit fix --omit=dev --ignore-scripts
+      - name: Verify reproducible lockfile
+        run: npm ci --ignore-scripts
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=high
+      - name: Check TypeScript compatibility
+        run: npm run lint
+      - name: Export reviewed dependency candidate
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-remediation-candidate
+          path: |
+            package.json
+            package-lock.json
+          retention-days: 3
