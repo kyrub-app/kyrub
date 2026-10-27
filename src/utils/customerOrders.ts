@@ -6,7 +6,6 @@ import {
   runTransaction,
   serverTimestamp,
   setDoc,
-  writeBatch,
   type Unsubscribe,
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
@@ -19,9 +18,7 @@ import {
 import type { CartItem } from '../types';
 import { db } from './firebase';
 import {
-  chooseCanonicalReadSource,
   parseCanonicalReadConfig,
-  recordCanonicalReadDecision,
   type CanonicalReadDecision,
 } from './canonicalReadCutover';
 
@@ -528,54 +525,6 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     updatedAt:
       readOrderTimestamp(candidate.updatedAt) || readOrderTimestamp(candidate.legacyUpdatedAt),
   };
-};
-
-const comparableOrder = (order: CustomerOrder) => ({
-  id: order.id,
-  buyerId: order.buyerId,
-  fulfillmentType: order.fulfillmentType,
-  tableCode: order.tableCode,
-  serviceLocation: order.serviceLocation ?? null,
-  subtotal: Number(order.subtotal.toFixed(2)),
-  total: Number(order.total.toFixed(2)),
-  status: order.status,
-  paymentStatus: order.paymentStatus,
-  source: order.source,
-  sourceChannel: order.sourceChannel,
-  items: order.items.map(item => ({
-    lineId: item.lineId,
-    productId: item.productId,
-    price: Number(item.price.toFixed(2)),
-    quantity: item.quantity,
-    paidQuantity: item.paidQuantity,
-    transferredQuantity: item.transferredQuantity,
-    voidedQuantity: item.voidedQuantity ?? 0,
-    settledAmount: Number((item.settledAmount ?? 0).toFixed(2)),
-    discountAmount: Number((item.discountAmount ?? 0).toFixed(2)),
-    note: item.note,
-  })),
-});
-
-export const customerOrderCollectionsEquivalent = (
-  legacyOrders: CustomerOrder[],
-  canonicalOrders: CustomerOrder[]
-): boolean => {
-  if (legacyOrders.length !== canonicalOrders.length) return false;
-  const normalize = (orders: CustomerOrder[]) =>
-    orders
-      .map(comparableOrder)
-      .sort((left, right) => left.id.localeCompare(right.id));
-  return JSON.stringify(normalize(legacyOrders)) ===
-    JSON.stringify(normalize(canonicalOrders));
-};
-
-export const customerOrdersEquivalent = (
-  legacyOrder: CustomerOrder | null,
-  canonicalOrder: CustomerOrder | null
-): boolean => {
-  if (!legacyOrder || !canonicalOrder) return legacyOrder === canonicalOrder;
-  return JSON.stringify(comparableOrder(legacyOrder)) ===
-    JSON.stringify(comparableOrder(canonicalOrder));
 };
 
 const mapCanonicalOrderToLegacyStore = (
