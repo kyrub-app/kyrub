@@ -286,11 +286,18 @@ const markPartnerSyncAuthorizationRequired = async (
   });
 };
 
-const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
-  const snapshot = await (await orderCollection(tenantId))
+const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = '') => {
+  const collection = await orderCollection(tenantId);
+  const cursorDocument = cursor ? await collection.doc(cursor).get() : null;
+  if (cursor && !cursorDocument?.exists) {
+    throw new Error('Cursor de reconciliação inválido.');
+  }
+  let query = collection
     .where('integration.outboundStatus', 'in', ['executing', 'reconciliation_required'])
-    .limit(101)
-    .get();
+    .orderBy('__name__')
+    .limit(101);
+  if (cursorDocument) query = query.startAfter(cursorDocument);
+  const snapshot = await query.get();
   const truncated = snapshot.size > 100;
   const documents = snapshot.docs.slice(0, 100);
   const now = Date.now();
@@ -341,7 +348,12 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
       automaticRetryAllowed: false,
     }];
   });
-  return { items, truncated, limit: 100 };
+  return {
+    items,
+    truncated,
+    limit: 100,
+    nextCursor: truncated && documents.length ? documents[documents.length - 1].id : null,
+  };
 };
 
 const listPendingNinetyNineFoodStatusSyncs = async (tenantId: string) => {
@@ -439,7 +451,9 @@ export const createOrderInventoryRouter = (): Router => {
     try {
       const tenantId = await authenticatedTenantId(request);
       response.setHeader('Cache-Control', 'no-store');
-      response.json(await listNinetyNineFoodReconciliationCases(tenantId));
+      response.json(await listNinetyNineFoodReconciliationCases(
+        tenantId, clean(request.query.cursor)
+      ));
     } catch (error) {
       errorResponse(response, error);
     }
