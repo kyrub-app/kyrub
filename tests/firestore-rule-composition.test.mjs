@@ -203,3 +203,23 @@ test('Kyrubia conversation history is composed as UID-private cloud data', () =>
   assert.match(gate, /Using local conversation cache until cloud sync returns/);
   assert.doesNotMatch(sync, /addDoc\(/);
 });
+
+test('private community groups are included in the deployed rules composition', () => {
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const rules = readFileSync('firestore.community-groups.fragment.rules', 'utf8');
+  const communities = readFileSync('firestore.communities.fragment.rules', 'utf8');
+  const firebase = JSON.parse(readFileSync('firebase.json', 'utf8'));
+  const indexes = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
+
+  assert.equal(firebase.firestore.rules, '.firebase/firestore.combined.rules');
+  assert.match(composer, /firestore\\.community-groups\\.fragment\\.rules/);
+  assert.match(communities, /function isActiveCommunityMember\\(communityId\\)/);
+  assert.match(rules, /match \\/community_groups\\/\\{groupId\\}/);
+  assert.match(rules, /allow update, delete: if false;/);
+  assert.ok(indexes.indexes.some(index =>
+    index.collectionGroup === 'community_groups' &&
+    index.queryScope === 'COLLECTION' &&
+    index.fields.some(field => field.fieldPath === 'communityId') &&
+    index.fields.some(field => field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS')
+  ));
+});
