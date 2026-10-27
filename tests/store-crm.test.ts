@@ -2,12 +2,20 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { readFileSync } from 'node:fs';
 import { buildStoreCrmCustomerSummary, STORE_CRM_MAX_CUSTOMERS } from '../shared/storeCrm';
+import { classifyCrmCustomerIdentity } from '../shared/crmCustomerIdentity';
 import {
   buildStoreSalesAnalytics,
   type StoreSalesAnalyticsOrder,
 } from '../shared/storeSalesAnalytics';
 
 describe('store CRM relationship projection', () => {
+  it('classifies known and unknown customer identities conservatively', () => {
+    assert.deepEqual(classifyCrmCustomerIdentity('99food:123'), { label: '99Food', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('ifood:123'), { label: 'iFood', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('pos:123'), { label: 'Presencial', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('other:123'), { label: 'Origem não identificada', canUseKyrubChat: false });
+    assert.deepEqual(classifyCrmCustomerIdentity('kyrub-user-id'), { label: 'Kyrub', canUseKyrubChat: true });
+  });
   it('derives level from confirmed purchase recurrence', () => {
     const customer = buildStoreCrmCustomerSummary({
       customerId: 'customer-1',
