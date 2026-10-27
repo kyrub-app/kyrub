@@ -212,10 +212,10 @@ test('private community groups are included in the deployed rules composition', 
   const indexes = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
 
   assert.equal(firebase.firestore.rules, '.firebase/firestore.combined.rules');
-  assert.match(composer, /firestore\\.community-groups\\.fragment\\.rules/);
-  assert.match(communities, /function isActiveCommunityMember\\(communityId\\)/);
+  assert.ok(composer.includes('firestore.community-groups.fragment.rules'));
+  assert.ok(communities.includes('function isActiveCommunityMember(communityId)'));
   assert.ok(rules.includes('match /community_groups/{groupId}'));
-  assert.match(rules, /allow update, delete: if false;/);
+  assert.ok(rules.includes('allow update, delete: if false;'));
   assert.ok(indexes.indexes.some(index =>
     index.collectionGroup === 'community_groups' &&
     index.queryScope === 'COLLECTION' &&
