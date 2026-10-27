@@ -183,11 +183,25 @@ const errorResponse = (response: Response, error: unknown): void => {
   });
 };
 
-const orderReference = (tenantId: string, orderId: string) =>
-  adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
+const resolveCanonicalOrderStoreId = async (tenantId: string): Promise<string> => {
+  if (!tenantId || tenantId.includes('/')) {
+    throw new Error('Identificação da loja inválida.');
+  }
+  const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
+  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+  if (!canonicalStoreId || canonicalStoreId.includes('/')) {
+    throw new Error('Loja sem identidade canônica configurada.');
+  }
+  return canonicalStoreId;
+};
 
-const orderCollection = (tenantId: string) =>
-  adminDb.collection(`artifacts/${tenantId}/public/data/customerOrders`);
+const orderReference = async (tenantId: string, orderId: string) => {
+  if (!orderId || orderId.includes('/')) throw new Error('Identificação do pedido inválida.');
+  return adminDb.doc(`stores/${await resolveCanonicalOrderStoreId(tenantId)}/orders/${orderId}`);
+};
+
+const orderCollection = async (tenantId: string) =>
+  adminDb.collection(`stores/${await resolveCanonicalOrderStoreId(tenantId)}/orders`);
 
 const persistDeliveryProvider = async (
   tenantId: string,
@@ -219,7 +233,7 @@ const markPartnerSyncError = async (
   reason: string,
   message: string
 ): Promise<void> => {
-  await orderReference(tenantId, orderId).update({
+  await (await orderReference(tenantId, orderId)).update({
     'integration.outboundStatus': 'attention',
     'integration.outboundTargetStatus': status,
     'integration.outboundReason': reason || FieldValue.delete(),
@@ -232,7 +246,7 @@ const markPartnerSyncSuccess = async (
   tenantId: string,
   orderId: string
 ): Promise<void> => {
-  await orderReference(tenantId, orderId).update({
+  await (await orderReference(tenantId, orderId)).update({
     'integration.outboundStatus': 'sent',
     'integration.outboundTargetStatus': FieldValue.delete(),
     'integration.outboundReason': FieldValue.delete(),
@@ -247,7 +261,7 @@ const markPartnerSyncAuthorizationRequired = async (
   status: InventoryOrderStatus,
   reason: string
 ): Promise<void> => {
-  await orderReference(tenantId, orderId).update({
+  await (await orderReference(tenantId, orderId)).update({
     'integration.outboundStatus': 'authorization_required',
     'integration.outboundTargetStatus': status,
     'integration.outboundReason': reason || FieldValue.delete(),
@@ -257,7 +271,7 @@ const markPartnerSyncAuthorizationRequired = async (
 };
 
 const listPendingNinetyNineFoodStatusSyncs = async (tenantId: string) => {
-  const snapshot = await orderCollection(tenantId)
+  const snapshot = await (await orderCollection(tenantId))
     .where(
       'integration.outboundStatus',
       'in',
@@ -377,7 +391,7 @@ export const createOrderInventoryRouter = (): Router => {
         throw new Error('Autorização 99Food inválida para este status do pedido.');
       }
 
-      const currentSnapshot = await orderReference(tenantId, orderId).get();
+      const currentSnapshot = await (await orderReference(tenantId, orderId)).get();
       if (!currentSnapshot.exists) throw new Error('Pedido não encontrado.');
       const currentData = currentSnapshot.data() as Record<string, unknown>;
       const currentIntegration =
@@ -627,7 +641,7 @@ export const createOrderInventoryRouter = (): Router => {
       let deliveryPublication: 'not-applicable' | 'published' | 'attention' = 'not-applicable';
       let deliveryPublicationWarning = '';
       if (['preparing', 'ready', 'out_for_delivery'].includes(result.status)) {
-        const updatedOrder = await orderReference(tenantId, result.orderId).get();
+        const updatedOrder = await (await orderReference(tenantId, result.orderId)).get();
         const updatedData = updatedOrder.data() as Record<string, unknown> | undefined;
         if (updatedData?.fulfillmentType === 'delivery' && clean(updatedData.deliveryProvider) === 'kyrub') {
           try {
