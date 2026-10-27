@@ -342,8 +342,14 @@ export const normalizeOpenDeliveryOrder = (
   const indoor = asRecord(order.indoor);
   const customer = asRecord(order.customer);
   const payments = asRecord(order.payments);
-  const prepaid = finiteNumber(payments.prepaid) ?? 0;
-  const pending = finiteNumber(payments.pending) ?? Math.max(0, total - prepaid);
+  const prepaidAmount = finiteNumber(payments.prepaid);
+  const pendingAmount = finiteNumber(payments.pending);
+  const prepaid = prepaidAmount !== null && prepaidAmount > 0 ? prepaidAmount : 0;
+  // A missing payment breakdown is not evidence that an online order was paid.
+  const paymentStatus: NormalizedIntegrationOrder['paymentStatus'] =
+    total > 0 && pendingAmount === 0 && prepaidAmount !== null && prepaidAmount >= total
+      ? 'paid'
+      : prepaid > 0 ? 'partial' : 'unpaid';
   const lastEvent = cleanString(order.lastEvent) || 'CREATED';
   const createdAt = cleanString(order.createdAt) || context.receivedAt || new Date().toISOString();
   const customerName = firstNonEmpty(
@@ -377,12 +383,7 @@ export const normalizeOpenDeliveryOrder = (
     subtotal,
     total,
     status: mapOrderStatus(lastEvent),
-    paymentStatus:
-      pending <= 0
-        ? 'paid'
-        : prepaid > 0
-          ? 'partial'
-          : 'unpaid',
+    paymentStatus,
     source: 'transfer',
     sourceChannel: '99food',
     operatorId: 'integration:99food',
