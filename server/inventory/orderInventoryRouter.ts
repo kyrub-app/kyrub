@@ -322,7 +322,9 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
     const integration = document.data().integration as Record<string, unknown> | undefined;
     return clean(integration?.outboundExecutionId);
   }).filter(Boolean))];
-  const executionSnapshots = await Promise.all(executionIds.map(id =>
+  // Malformed execution IDs must be reported as mismatches, not abort the entire queue.
+  const validExecutionIds = executionIds.filter(id => /^[a-zA-Z0-9_-]{1,256}$/.test(id));
+  const executionSnapshots = await Promise.all(validExecutionIds.map(id =>
     adminDb.collection('ninetyNineFoodStatusSyncExecutions').doc(id).get()
   ));
   const executionsById = new Map(executionSnapshots.map(snapshot => [
