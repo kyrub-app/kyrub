@@ -449,6 +449,8 @@ export const createOrderInventoryRouter = (): Router => {
         }
         transaction.update(syncReference, {
           'integration.outboundStatus': 'executing',
+          'integration.outboundReconciliationReason': FieldValue.delete(),
+          'integration.outboundTargetStatus': providerWriteAuthorization.status,
           'integration.outboundUpdatedAt': new Date().toISOString(),
         });
       });
