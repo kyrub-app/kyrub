@@ -226,36 +226,48 @@ const persistDeliveryProvider = async (
   });
 };
 
-const markPartnerSyncError = async (
+const finalizeManualPartnerSync = async (
   tenantId: string,
   orderId: string,
+  executionId: string,
+  outcome: 'sent' | 'reconciliation_required',
   status: InventoryOrderStatus,
   reason: string,
-  message: string
-): Promise<void> => {
-  await (await orderReference(tenantId, orderId)).update({
-    // The partner may have accepted the action before the response was lost.
-    // Keep this out of the manual retry queue until reconciliation confirms the outcome.
-    'integration.outboundStatus': 'reconciliation_required',
-    'integration.outboundReconciliationReason': 'provider_outcome_unknown',
-    'integration.outboundTargetStatus': status,
-    'integration.outboundReason': reason || FieldValue.delete(),
-    'integration.outboundError': message.slice(0, 500),
-    'integration.outboundUpdatedAt': new Date().toISOString(),
-  });
-};
-
-const markPartnerSyncSuccess = async (
-  tenantId: string,
-  orderId: string
-): Promise<void> => {
-  await (await orderReference(tenantId, orderId)).update({
-    'integration.outboundStatus': 'sent',
-    'integration.outboundReconciliationReason': FieldValue.delete(),
-    'integration.outboundTargetStatus': FieldValue.delete(),
-    'integration.outboundReason': FieldValue.delete(),
-    'integration.outboundError': FieldValue.delete(),
-    'integration.outboundUpdatedAt': new Date().toISOString(),
+  message = ''
+): Promise<boolean> => {
+  const reference = await orderReference(tenantId, orderId);
+  const executionReference = adminDb.collection('ninetyNineFoodStatusSyncExecutions').doc(executionId);
+  return adminDb.runTransaction(async transaction => {
+    const [orderSnapshot, executionSnapshot] = await Promise.all([
+      transaction.get(reference),
+      transaction.get(executionReference),
+    ]);
+    const integration = orderSnapshot.data()?.integration as Record<string, unknown> | undefined;
+    const execution = executionSnapshot.data();
+    if (
+      !orderSnapshot.exists || !executionSnapshot.exists ||
+      clean(integration?.outboundExecutionId) !== executionId ||
+      clean(integration?.outboundStatus) !== 'executing' ||
+      clean(execution?.status) !== 'provider_write_started' ||
+      clean(execution?.tenantId) !== tenantId ||
+      clean(execution?.orderId) !== orderId
+    ) return false;
+    const now = new Date().toISOString();
+    transaction.update(reference, {
+      'integration.outboundStatus': outcome,
+      'integration.outboundReconciliationReason': outcome === 'sent'
+        ? FieldValue.delete() : 'provider_outcome_unknown',
+      'integration.outboundTargetStatus': outcome === 'sent' ? FieldValue.delete() : status,
+      'integration.outboundReason': outcome === 'sent' ? FieldValue.delete() : (reason || FieldValue.delete()),
+      'integration.outboundError': outcome === 'sent' ? FieldValue.delete() : message.slice(0, 500),
+      'integration.outboundUpdatedAt': now,
+    });
+    transaction.update(executionReference, {
+      status: outcome === 'sent' ? 'completed' : 'provider_write_outcome_unknown',
+      updatedAt: FieldValue.serverTimestamp(),
+      ...(outcome === 'sent' ? { completedAt: now } : { providerWarning: message.slice(0, 500) }),
+    });
+    return true;
   });
 };
 
@@ -514,23 +526,23 @@ export const createOrderInventoryRouter = (): Router => {
           providerWriteAuthorization.status,
           reason
         );
-        await markPartnerSyncSuccess(tenantId, orderId);
+        const finalized = await finalizeManualPartnerSync(
+          tenantId, orderId, executionReference.id, 'sent',
+          providerWriteAuthorization.status, reason
+        );
         response.json({
           orderId,
           externalOrderId,
           status: providerWriteAuthorization.status,
-          partnerSync: 'sent',
-          partnerWarning: '',
+          partnerSync: finalized ? 'sent' : 'reconciliation_required',
+          partnerWarning: finalized ? '' : 'A autoridade inbound alterou a execução; verifique a reconciliação.',
           localTransitionApplied: false,
         });
       } catch (error) {
         const partnerWarning = error instanceof Error ? error.message : String(error);
-        await markPartnerSyncError(
-          tenantId,
-          orderId,
-          providerWriteAuthorization.status,
-          reason,
-          partnerWarning
+        await finalizeManualPartnerSync(
+          tenantId, orderId, executionReference.id, 'reconciliation_required',
+          providerWriteAuthorization.status, reason, partnerWarning
         ).catch(markError => {
           console.error('[Order Inventory] Partner sync marker failed.', markError);
         });
