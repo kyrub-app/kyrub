@@ -274,6 +274,36 @@ const markPartnerSyncAuthorizationRequired = async (
   });
 };
 
+const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
+  const snapshot = await (await orderCollection(tenantId))
+    .where('integration.outboundStatus', 'in', ['executing', 'reconciliation_required'])
+    .limit(100)
+    .get();
+  const now = Date.now();
+  const items = snapshot.docs.flatMap(document => {
+    const data = document.data() as Record<string, unknown>;
+    const integration = data.integration && typeof data.integration === 'object'
+      ? data.integration as Record<string, unknown> : {};
+    if (clean(integration.provider) !== '99food') return [];
+    const outboundStatus = clean(integration.outboundStatus);
+    const outboundUpdatedAt = clean(integration.outboundUpdatedAt);
+    const updatedMs = Date.parse(outboundUpdatedAt);
+    const possiblyInterrupted = outboundStatus === 'executing' &&
+      Number.isFinite(updatedMs) && now - updatedMs > 10 * 60 * 1000;
+    return [{
+      orderId: document.id,
+      externalOrderId: clean(integration.externalOrderId),
+      outboundStatus,
+      outboundTargetStatus: clean(integration.outboundTargetStatus),
+      outboundUpdatedAt,
+      reconciliationReason: clean(integration.outboundReconciliationReason),
+      possiblyInterrupted,
+      automaticRetryAllowed: false,
+    }];
+  });
+  return { items };
+};
+
 const listPendingNinetyNineFoodStatusSyncs = async (tenantId: string) => {
   const snapshot = await (await orderCollection(tenantId))
     .where(
@@ -360,6 +390,16 @@ export const createOrderInventoryRouter = (): Router => {
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(200).json({ orders });
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/provider-sync/99food/reconciliation', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store');
+      response.json(await listNinetyNineFoodReconciliationCases(tenantId));
     } catch (error) {
       errorResponse(response, error);
     }
