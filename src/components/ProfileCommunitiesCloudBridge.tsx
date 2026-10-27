@@ -919,6 +919,19 @@ export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boo
               <div><h3 className="text-base font-black text-white">Membros</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
               <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar membros" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
             </div>
+            {selectedCommunity.isOwner && pendingMembers.length > 0 && (
+              <section className="mb-4 space-y-2" aria-label="Solicitações de entrada pendentes">
+                <h4 className="text-xs font-black text-amber-200">Solicitações de entrada ({pendingMembers.length})</h4>
+                {pendingMembers.map(member => (
+                  <div key={member.id} className="flex items-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+                    <Avatar name={member.userName} url={member.userAvatar} />
+                    <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-[9px] text-amber-200">Aguardando aprovação</p></div>
+                    <button type="button" disabled={actionBusy === `approve-${member.id}` || Boolean(actionBusy)} onClick={() => void runAction(`approve-${member.id}`, () => approveCommunityMember(selectedCommunity.id, member.userId))} className="rounded-lg bg-emerald-500/20 px-2 py-2 text-[10px] font-bold text-emerald-200 disabled:opacity-40" aria-label={`Aprovar ${member.userName}`}>Aprovar</button>
+                    <button type="button" disabled={actionBusy === `reject-${member.id}` || Boolean(actionBusy)} onClick={() => void runAction(`reject-${member.id}`, () => rejectCommunityMember(selectedCommunity.id, member.userId))} className="rounded-lg bg-red-500/15 px-2 py-2 text-[10px] font-bold text-red-200 disabled:opacity-40" aria-label={`Recusar ${member.userName}`}>Recusar</button>
+                  </div>
+                ))}
+              </section>
+            )}
             <div className="space-y-2">
               {members.filter(member => member.status === 'active').map(member => (
                 <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
@@ -1481,7 +1494,7 @@ export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boo
                           {selectedCommunity.description}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-[8px] text-slate-400">
-                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}</button>
+                          <button type="button" onClick={() => setMembersModalOpen(true)} className="inline-flex items-center gap-1.5 underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}{selectedCommunity.isOwner && pendingMembers.length > 0 && <span className="inline-flex min-h-4 min-w-4 items-center justify-center rounded-full bg-amber-500 px-1 text-[9px] font-black text-slate-950 no-underline" aria-label={`${pendingMembers.length} solicitações pendentes`}>{pendingMembers.length > 99 ? '99+' : pendingMembers.length}</span>}</button>
                           <span>•</span>
                           <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); setGroupSaveNotice(''); setGroupSaveError(''); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
