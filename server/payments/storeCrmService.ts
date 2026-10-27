@@ -81,7 +81,13 @@ const parseCanonicalOrder = (
     : {};
   // An order-ID fallback is not a stable customer identity across 99Food orders.
   // Keep the order in the canonical sales history; do not invent a CRM person.
-  if (clean(integration.provider) === '99food' && !clean(integration.externalCustomerId)) {
+  if (
+    clean(integration.provider) === '99food' &&
+    (
+      !clean(integration.externalCustomerId) ||
+      customerId !== '99food:' + clean(integration.externalCustomerId)
+    )
+  ) {
     return null;
   }
   const buyerName = clean(data.buyerName);
