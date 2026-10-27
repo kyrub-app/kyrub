@@ -228,8 +228,9 @@ export function UserNotificationCenterBridge() {
     notification: UserNotification,
     decision: 'accepted' | 'declined'
   ): Promise<void> => {
+    if (notification.target.kind !== 'community_group_invite') return;
     const groupId = notification.target.groupId;
-    if (notification.target.kind !== 'community_group_invite' || !groupId) return;
+    if (!groupId) return;
     setPendingInviteResponse(notification.id);
     setErrorMessage('');
     try {
