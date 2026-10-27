@@ -384,7 +384,7 @@ export const loadStoreCrmSummary = async (input: { storeId: string; now?: Date }
   }
 
   const ids = Array.from(customerIds).slice(0, STORE_CRM_MAX_CUSTOMERS);
-  const profileRefs = ids.map(customerId => adminDb.doc(`users/${customerId}`));
+  const profileRefs = ids.filter(customerId => !customerId.startsWith('99food:')).map(customerId => adminDb.doc(`users/${customerId}`));
   const profileSnapshots = profileRefs.length ? await adminDb.getAll(...profileRefs) : [];
   const profileById = new Map(profileSnapshots.map(snapshot => [snapshot.id, snapshot.data() as Record<string, unknown> | undefined]));
 
