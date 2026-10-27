@@ -221,6 +221,12 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     if (providerPayment) {
       integrationPatch.lastPaymentReconciledAt = observedAt;
       integrationPatch.payOnDelivery = payOnDelivery;
+      // Persist the fresh decision in both locations so later events without
+      // payment details cannot revive stale offline collection permission.
+      integrationPatch.paymentEvidence = {
+        ...record(integration.paymentEvidence),
+        payOnDelivery,
+      };
     }
     // A previously blocked production stage can be resumed only while the
     // canonical order is still pending/accepted. Never revive cancelled orders.
