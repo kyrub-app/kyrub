@@ -299,8 +299,15 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
     throw new Error('Cursor de reconciliação inválido.');
   }
   const cursorDocument = cursor ? await collection.doc(cursor).get() : null;
-  if (cursor && !cursorDocument?.exists) {
-    throw new Error('Cursor de reconciliação inválido.');
+  if (cursor) {
+    const cursorIntegration = cursorDocument?.data()?.integration as Record<string, unknown> | undefined;
+    if (
+      !cursorDocument?.exists ||
+      clean(cursorIntegration?.provider) !== '99food' ||
+      !['executing', 'reconciliation_required'].includes(clean(cursorIntegration?.outboundStatus))
+    ) {
+      throw new Error('Cursor de reconciliação inválido ou não pertence à fila 99Food.');
+    }
   }
   let query = collection
     .where('integration.outboundStatus', 'in', ['executing', 'reconciliation_required'])
