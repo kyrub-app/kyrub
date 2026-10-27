@@ -191,16 +191,27 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       integrationPatch.lastPaymentReconciledAt = observedAt;
       integrationPatch.payOnDelivery = payOnDelivery;
     }
-    const mayApplyStatus = mayApplyNinetyNineFoodInboundStatus(
+    // A previously blocked production stage can be resumed only while the
+    // canonical order is still pending/accepted. Never revive cancelled orders.
+    const blockedStatus = clean(integration.paymentGateBlockedStatus) as InventoryOrderStatus;
+    const canResumeBlocked = ['pending', 'accepted'].includes(clean(order.status)) &&
+      ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(blockedStatus) &&
+      mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
+    const incomingAllowed = mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
       paymentStatus,
       payOnDelivery
     );
-    if (input.mappedStatus && !mayApplyStatus) {
+    const mayApplyStatus = incomingAllowed || (input.mappedStatus === null && canResumeBlocked);
+    if (input.mappedStatus && !incomingAllowed) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
-    } else if (input.mappedStatus && mayApplyStatus) {
+    } else if (incomingAllowed && input.mappedStatus) {
       orderPatch.status = input.mappedStatus;
+      integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
+      integrationPatch.paymentGateBlockedAt = FieldValue.delete();
+    } else if (canResumeBlocked && (!input.mappedStatus || input.mappedStatus === 'accepted')) {
+      orderPatch.status = blockedStatus;
       integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
       integrationPatch.paymentGateBlockedAt = FieldValue.delete();
     }
