@@ -395,6 +395,18 @@ export const buildCustomerOrder = (
   };
 };
 
+const readOrderTimestamp = (value: unknown): string => {
+  if (typeof value === 'string') return value.trim();
+  if (value && typeof value === 'object' && 'toDate' in value) {
+    const toDate = (value as { toDate?: unknown }).toDate;
+    if (typeof toDate === 'function') {
+      const date = (toDate as () => Date).call(value);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+    }
+  }
+  return '';
+};
+
 export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   if (!value || typeof value !== 'object') return null;
 
@@ -512,9 +524,9 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     operatorId: cleanString(candidate.operatorId),
     operatorName: cleanString(candidate.operatorName),
     createdAt:
-      cleanString(candidate.createdAt) || cleanString(candidate.legacyCreatedAt),
+      readOrderTimestamp(candidate.createdAt) || readOrderTimestamp(candidate.legacyCreatedAt),
     updatedAt:
-      cleanString(candidate.updatedAt) || cleanString(candidate.legacyUpdatedAt),
+      readOrderTimestamp(candidate.updatedAt) || readOrderTimestamp(candidate.legacyUpdatedAt),
   };
 };
 
@@ -604,7 +616,7 @@ export const resolveCanonicalCustomerOrderStoreId = async (
     return parseCanonicalReadConfig(snapshot.data()).canonicalStoreId;
   } catch (error) {
     console.warn(
-      '[customer-orders] Não foi possível resolver a loja canônica; mantendo fallback legado.',
+      '[customer-orders] Não foi possível resolver a identidade canônica da loja.',
       error
     );
     return '';
