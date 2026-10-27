@@ -636,11 +636,7 @@ export const sendNinetyNineFoodOrderStatus = async (
     reason,
   });
   const client = new OpenDeliveryClient(connectionRuntime(connection));
+  // Only transmit the partner action. The caller owns the authoritative
+  // order/execution transaction and must decide whether it can finalize.
   await client.sendAction(action);
-  await updatePersistedOrderStatus(
-    tenantId,
-    externalOrderId,
-    nextStatus,
-    `KYRUB_${nextStatus.toLocaleUpperCase('en-US')}`
-  );
 };
