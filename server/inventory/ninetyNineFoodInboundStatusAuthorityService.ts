@@ -206,12 +206,12 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     if (input.mappedStatus && !incomingAllowed) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
-    } else if (incomingAllowed && input.mappedStatus) {
-      orderPatch.status = input.mappedStatus;
-      integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
-      integrationPatch.paymentGateBlockedAt = FieldValue.delete();
     } else if (canResumeBlocked && (!input.mappedStatus || input.mappedStatus === 'accepted')) {
       orderPatch.status = blockedStatus;
+      integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
+      integrationPatch.paymentGateBlockedAt = FieldValue.delete();
+    } else if (incomingAllowed && input.mappedStatus) {
+      orderPatch.status = input.mappedStatus;
       integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
       integrationPatch.paymentGateBlockedAt = FieldValue.delete();
     }
