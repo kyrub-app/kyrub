@@ -767,10 +767,6 @@ export const updateStaffCustomerOrderStatus = async (
   if (!requestedStoreId || !requestedOrderId || requestedOrderId.includes('/')) {
     throw new Error('Identificação do pedido ou da loja inválida.');
   }
-  if (!canTransitionCustomerOrderStatus('pending', nextStatus) &&
-      !['preparing', 'ready', 'out_for_delivery', 'completed'].includes(nextStatus)) {
-    throw new Error('Use o fluxo operacional autorizado para esta decisão.');
-  }
   const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(requestedStoreId);
   if (!canonicalStoreId) {
     throw new Error('Loja sem identidade canônica configurada.');
