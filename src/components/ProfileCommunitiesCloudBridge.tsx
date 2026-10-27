@@ -794,7 +794,7 @@ export function ProfileCommunitiesCloudBridge() {
           ? 'Por convite'
           : community.visibility === 'moderated'
             ? 'Solicitar'
-            : 'Entrar';
+            : 'Participar';
     return (
       <article
         key={community.id}
@@ -805,7 +805,7 @@ export function ProfileCommunitiesCloudBridge() {
           <div className="relative p-3">
             {(community.isOwner || community.isActiveMember) && (
               <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-[7px] font-black uppercase text-emerald-300">
-                Você participa
+                {community.isOwner ? 'Criador' : 'Participando'}
               </span>
             )}
             <strong className="block line-clamp-2 min-h-8 text-[10px] font-black text-white">
@@ -1642,14 +1642,14 @@ export function ProfileCommunitiesCloudBridge() {
                           }`}
                         >
                           {selectedCommunity.isActiveMember
-                            ? 'Sair'
+                            ? 'Participando · Sair'
                             : selectedCommunity.isPendingMember
                               ? 'Cancelar'
                               : selectedCommunity.visibility === 'moderated'
                                 ? 'Solicitar'
                                 : selectedCommunity.visibility === 'private'
                                   ? 'Por convite'
-                                  : 'Entrar'}
+                                  : 'Participar'}
                         </button>
                       )}
                     </div>
