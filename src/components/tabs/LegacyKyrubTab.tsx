@@ -744,6 +744,7 @@ export function KyrubTab({
               return (
                 <article
                   key={store.id}
+                  data-offer-store-card="true"
                   className="group relative flex h-[300px] flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
                 >
                   <StoreOfferCarousel showcase images={[...(store.offerImages ?? []), ...(store.banner ? [store.banner] : [])]} />
@@ -796,7 +797,7 @@ export function KyrubTab({
                     <p className="mb-1 line-clamp-1 text-[8.5px] leading-none text-slate-400">
                       {store.description}
                     </p>
-                    <div className="flex items-center justify-between gap-1 font-mono text-[8px] text-slate-400">
+                    <div className="flex items-center justify-between gap-1 font-mono text-[8px] text-slate-400" data-store-keywords={(store.keywords ?? []).map(keyword => keyword.trim()).filter(Boolean).slice(0, 6).join(' • ') || 'Palavras-chave não informadas'} aria-label={`Palavras-chave da loja: ${(store.keywords ?? []).map(keyword => keyword.trim()).filter(Boolean).slice(0, 6).join(' • ') || 'Palavras-chave não informadas'}`}>
                       <span className="shrink-0 font-bold">
                         {distance !== null
                           ? `📍 ${distance.toFixed(1)} KM`
