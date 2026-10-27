@@ -84,6 +84,7 @@ describe('store CRM relationship projection', () => {
     const panel = readFileSync('src/components/store/StoreCrmRelationshipPanel.tsx', 'utf8');
     assert.match(panel, /!customer\.customerId\.startsWith\('99food:'\)/);
     assert.match(panel, /openStoreCustomerChat/);
+    assert.match(panel, /\? '99Food' : 'Kyrub'/);
   });
 
   it('buyer POST authorizes from the persisted order and accepts canonical or operational order storage', () => {
