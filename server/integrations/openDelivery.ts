@@ -103,6 +103,13 @@ export interface NormalizedIntegrationOrder {
     sourceAppId: string;
     routingTarget: string;
     lastEvent: string;
+    /** Provider-reported amounts; do not treat as a settlement receipt. */
+    paymentEvidence?: {
+      prepaid: number | null;
+      pending: number | null;
+      onlineMethodPresent: boolean;
+      methodsReported: boolean;
+    };
   };
 }
 
@@ -408,6 +415,12 @@ export const normalizeOpenDeliveryOrder = (
       sourceAppId: firstNonEmpty(order.sourceAppId, context.sourceAppId),
       routingTarget: context.routingTarget.trim(),
       lastEvent,
+      paymentEvidence: {
+        prepaid: prepaidAmount,
+        pending: pendingAmount,
+        onlineMethodPresent: explicitlyOnline,
+        methodsReported: Array.isArray(payments.methods),
+      },
     },
   };
 };
