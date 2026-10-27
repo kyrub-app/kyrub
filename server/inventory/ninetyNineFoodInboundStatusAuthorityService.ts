@@ -70,6 +70,11 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
   eventType: string;
   eventReferencePath: string;
   mappedStatus: InventoryOrderStatus | null;
+  providerPayment?: {
+    paymentStatus: 'unpaid' | 'partial' | 'paid';
+    payOnDelivery: boolean;
+    externalOrderId: string;
+  };
 }): Promise<NinetyNineFoodInboundStatusAuthorityResult> => {
   const tenantId = clean(input.tenantId);
   const externalOrderId = clean(input.externalOrderId);
@@ -169,10 +174,27 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     };
     // Preserve provider event evidence without starting unpaid online production.
     // Cancellation and rejection remain actionable regardless of payment state.
+    const providerPayment = input.providerPayment;
+    if (providerPayment && providerPayment.externalOrderId !== externalOrderId) {
+      throw new Error('NINETY_NINE_FOOD_PAYMENT_ORDER_MISMATCH');
+    }
+    // Never downgrade a confirmed payment from a later incomplete provider response.
+    const paymentStatus = clean(order.paymentStatus) === 'paid'
+      ? 'paid'
+      : providerPayment?.paymentStatus === 'paid' ? 'paid' : order.paymentStatus;
+    const payOnDelivery = providerPayment?.payOnDelivery === true ||
+      record(integration.paymentEvidence).payOnDelivery === true;
+    if (paymentStatus === 'paid' && clean(order.paymentStatus) !== 'paid') {
+      orderPatch.paymentStatus = 'paid';
+    }
+    if (providerPayment) {
+      integrationPatch.lastPaymentReconciledAt = observedAt;
+      integrationPatch.payOnDelivery = payOnDelivery;
+    }
     const mayApplyStatus = mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
-      order.paymentStatus,
-      record(integration.paymentEvidence).payOnDelivery === true
+      paymentStatus,
+      payOnDelivery
     );
     if (input.mappedStatus && !mayApplyStatus) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
