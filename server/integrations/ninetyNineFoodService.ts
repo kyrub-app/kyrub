@@ -383,12 +383,29 @@ const canonicalOrder = (
 
 const persistNormalizedOrder = async (
   tenantId: string,
-  order: NormalizedIntegrationOrder
+  order: NormalizedIntegrationOrder,
+  eventReferencePath: string,
+  eventAttemptId: string,
+  eventId: string,
+  externalOrderId: string
 ): Promise<void> => {
   const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
   const reference = adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`);
+  const eventReference = adminDb.doc(eventReferencePath);
   await adminDb.runTransaction(async transaction => {
-    const existing = await transaction.get(reference);
+    const [existing, eventSnapshot] = await Promise.all([
+      transaction.get(reference),
+      transaction.get(eventReference),
+    ]);
+    const reserved = eventSnapshot.data();
+    const lease = reserved?.leaseExpiresAt;
+    if (reserved?.status !== 'processing' ||
+        reserved?.attemptId !== eventAttemptId ||
+        reserved?.eventId !== eventId ||
+        reserved?.externalOrderId !== externalOrderId ||
+        !(lease instanceof Timestamp) || lease.toMillis() <= Date.now()) {
+      throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_LOST');
+    }
     if (existing.exists) return;
     transaction.create(reference, canonicalOrder(order, canonicalStoreId, tenantId));
   });
@@ -503,7 +520,10 @@ export const processNinetyNineFoodEvent = async (
         routingTarget: connection.routingTarget,
         sourceAppId: event.sourceAppId,
       });
-      await persistNormalizedOrder(connection.tenantId, order);
+      await persistNormalizedOrder(
+        connection.tenantId, order, reservation.referencePath,
+        reservation.attemptId, event.eventId, event.orderId
+      );
     } else {
       // Refresh financial evidence for existing orders; status-only webhooks
       // must not be treated as payment confirmation.
