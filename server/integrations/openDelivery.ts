@@ -109,6 +109,7 @@ export interface NormalizedIntegrationOrder {
       pending: number | null;
       onlineMethodPresent: boolean;
       methodsReported: boolean;
+      payOnDelivery: boolean;
     };
   };
 }
@@ -359,6 +360,15 @@ export const normalizeOpenDeliveryOrder = (
     return ['ONLINE', 'PREPAID'].includes(cleanString(entry.type).toUpperCase()) &&
       (finiteNumber(entry.value) ?? 0) > 0;
   });
+  // Only explicit offline methods with the full balance due qualify for
+  // pay-on-delivery preparation; unknown methods remain blocked.
+  const explicitlyOffline = methods.some(method => {
+    const entry = asRecord(method);
+    return ['OFFLINE', 'ON_DELIVERY', 'PAY_ON_DELIVERY'].includes(cleanString(entry.type).toUpperCase()) &&
+      (finiteNumber(entry.value) ?? 0) >= total;
+  });
+  const payOnDelivery = total > 0 && prepaidAmount === 0 && pendingAmount !== null &&
+    pendingAmount >= total && explicitlyOffline && !explicitlyOnline;
   const prepaid = prepaidAmount !== null && prepaidAmount > 0 ? prepaidAmount : 0;
   // A missing payment breakdown is not evidence that an online order was paid.
   const paymentStatus: NormalizedIntegrationOrder['paymentStatus'] =
@@ -420,6 +430,7 @@ export const normalizeOpenDeliveryOrder = (
         pending: pendingAmount,
         onlineMethodPresent: explicitlyOnline,
         methodsReported: Array.isArray(payments.methods),
+        payOnDelivery,
       },
     },
   };
