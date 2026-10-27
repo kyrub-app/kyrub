@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -222,6 +223,9 @@ export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boo
   const { user, communities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
+  const setInlineHost = useCallback((node: HTMLDivElement | null) => {
+    setHost(current => (current === node ? current : node));
+  }, []);
   const [listTab, setListTab] = useState<CommunityListTab>('mine');
   const [searchValue, setSearchValue] = useState('');
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
@@ -869,7 +873,7 @@ export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boo
 
   return (
     <>
-      {inline && <div ref={node => setHost(current => current === node ? current : node)} data-kyrub-community-slot="square" />}
+      {inline && <div ref={setInlineHost} data-kyrub-community-slot="square" />}
       {groupsModalOpen && selectedCommunity && createPortal(
         <div className="fixed inset-0 z-[211] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setGroupsModalOpen(false)}>
           <section role="dialog" aria-modal="true" aria-label="Grupos da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
