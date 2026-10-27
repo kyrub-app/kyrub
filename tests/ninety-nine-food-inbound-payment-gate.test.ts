@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mayApplyNinetyNineFoodInboundStatus } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
+import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
 
 describe('99Food inbound KDS payment gate', () => {
   it('blocks preparation and fulfillment without confirmed payment', () => {
@@ -20,6 +20,15 @@ describe('99Food inbound KDS payment gate', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus('accepted', 'unpaid'), true);
     assert.equal(mayApplyNinetyNineFoodInboundStatus('cancelled', 'unpaid'), true);
     assert.equal(mayApplyNinetyNineFoodInboundStatus('rejected', 'unpaid'), true);
+  });
+  it('does not revive cancelled, rejected, or completed orders with stale provider events', () => {
+    for (const terminal of ['cancelled', 'rejected', 'completed'] as const) {
+      assert.equal(mayTransitionNinetyNineFoodTerminalOrder(terminal, 'preparing'), false);
+      assert.equal(mayTransitionNinetyNineFoodTerminalOrder(terminal, 'accepted'), false);
+      assert.equal(mayTransitionNinetyNineFoodTerminalOrder(terminal, terminal), true);
+    }
+    assert.equal(mayTransitionNinetyNineFoodTerminalOrder('accepted', 'preparing'), true);
+    assert.equal(mayTransitionNinetyNineFoodTerminalOrder('pending', 'cancelled'), true);
   });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
