@@ -414,7 +414,14 @@ export const loadPublishedStoreBestSellers = async (
       result[storeId] = {};
       return;
     }
-    const orders = await adminDb.collection(`stores/${storeId}/orders`).get();
+    // The marketplace store ID is the public tenant identity; orders use the canonical store ID.
+    const tenant = await adminDb.collection('tenants').doc(storeId).get();
+    const canonicalStoreId = clean(tenant.data()?.canonicalStoreId);
+    if (!canonicalStoreId) {
+      result[storeId] = {};
+      return;
+    }
+    const orders = await adminDb.collection(`stores/${canonicalStoreId}/orders`).get();
     const counts: Record<string, number> = {};
     for (const order of orders.docs) {
       const data = order.data();
