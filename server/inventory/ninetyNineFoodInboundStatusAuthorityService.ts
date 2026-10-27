@@ -154,7 +154,19 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       updatedAt: observedAt,
       integration: integrationPatch,
     };
-    if (input.mappedStatus) orderPatch.status = input.mappedStatus;
+    // Preserve provider event evidence without starting unpaid online production.
+    // Cancellation and rejection remain actionable regardless of payment state.
+    const productionStatuses = new Set(['preparing', 'ready', 'out_for_delivery', 'completed']);
+    const requiresPayment = input.mappedStatus !== null && productionStatuses.has(input.mappedStatus);
+    const paymentConfirmed = clean(order.paymentStatus) === 'paid';
+    if (requiresPayment && !paymentConfirmed) {
+      integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
+      integrationPatch.paymentGateBlockedAt = observedAt;
+    } else if (input.mappedStatus) {
+      orderPatch.status = input.mappedStatus;
+      integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
+      integrationPatch.paymentGateBlockedAt = FieldValue.delete();
+    }
 
     transaction.set(orderReference, orderPatch, { merge: true });
 
@@ -182,7 +194,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     return {
       reconciliationRequired: hasActiveAuthority,
       executionId: hasActiveAuthority ? executionId : '',
-      localStatusApplied: Boolean(input.mappedStatus),
+      localStatusApplied: Boolean(input.mappedStatus) && !(requiresPayment && !paymentConfirmed),
     };
   });
 };
