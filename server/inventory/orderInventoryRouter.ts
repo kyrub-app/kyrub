@@ -351,6 +351,8 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
     const possiblyInterrupted = outboundStatus === 'executing' &&
       Number.isFinite(updatedMs) && now - updatedMs > 10 * 60 * 1000;
     const missingTimestamp = outboundStatus === 'executing' && !Number.isFinite(updatedMs);
+    const futureTimestamp = outboundStatus === 'executing' &&
+      Number.isFinite(updatedMs) && updatedMs > now + 5 * 60 * 1000;
     return [{
       orderId: document.id,
       externalOrderId: clean(integration.externalOrderId),
@@ -363,7 +365,8 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
       reconciliationReason: clean(integration.outboundReconciliationReason),
       possiblyInterrupted,
       missingTimestamp,
-      requiresOperatorReview: possiblyInterrupted || missingTimestamp || executionAuthorityMismatch || outboundStatus === 'reconciliation_required',
+      futureTimestamp,
+      requiresOperatorReview: possiblyInterrupted || missingTimestamp || futureTimestamp || executionAuthorityMismatch || outboundStatus === 'reconciliation_required',
       automaticRetryAllowed: false,
     }];
   });
