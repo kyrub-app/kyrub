@@ -251,6 +251,7 @@ const markPartnerSyncSuccess = async (
 ): Promise<void> => {
   await (await orderReference(tenantId, orderId)).update({
     'integration.outboundStatus': 'sent',
+    'integration.outboundReconciliationReason': FieldValue.delete(),
     'integration.outboundTargetStatus': FieldValue.delete(),
     'integration.outboundReason': FieldValue.delete(),
     'integration.outboundError': FieldValue.delete(),
