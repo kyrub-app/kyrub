@@ -67,7 +67,7 @@ import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 
-type CommunityListTab = 'mine' | 'discover' | 'trending';
+type CommunityListTab = 'mine' | 'participating' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
 
 type CreateDraft = {
@@ -570,8 +570,9 @@ export function ProfileCommunitiesCloudBridge() {
           .includes(normalizedSearch);
       if (!matches) return false;
       if (listTab === 'mine') {
-        return community.isOwner || community.isActiveMember || community.isPendingMember;
+        return community.isOwner;
       }
+      if (listTab === 'participating') return !community.isOwner && community.isActiveMember;
       return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
     });
     return listTab === 'trending'
@@ -973,6 +974,7 @@ export function ProfileCommunitiesCloudBridge() {
             <div className="flex gap-1.5 overflow-x-auto">
               {([
                 ['mine', 'Minhas'],
+                ['participating', 'Participando'],
                 ['discover', 'Descobrir'],
                 ['trending', 'Em alta'],
               ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
