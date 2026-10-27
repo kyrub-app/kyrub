@@ -62,7 +62,7 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 import { auth } from '../utils/firebase';
-import { createPrivateCommunityGroup, subscribeMyCommunityGroups, type CloudCommunityGroup } from '../utils/communityGroupsCloud';
+import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
 import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
@@ -242,6 +242,11 @@ export function ProfileCommunitiesCloudBridge() {
   const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<string[]>([]);
   const [groupInviteExistingId, setGroupInviteExistingId] = useState('');
   const [groupInviteTargetId, setGroupInviteTargetId] = useState('');
+  const [activeGroupChatId, setActiveGroupChatId] = useState('');
+  const [groupMessages, setGroupMessages] = useState<CloudCommunityGroupMessage[]>([]);
+  const [groupMessageDraft, setGroupMessageDraft] = useState('');
+  const [groupMessageError, setGroupMessageError] = useState('');
+  const [groupMessageSending, setGroupMessageSending] = useState(false);
   const [selectedDebateId, setSelectedDebateId] = useState('');
   const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -314,6 +319,31 @@ export function ProfileCommunitiesCloudBridge() {
     } finally {
       setGroupSaving(false);
       setGroupInviteTargetId('');
+    }
+  };
+
+  useEffect(() => {
+    if (!groupsModalOpen || !activeGroupChatId || !myCommunityGroups.some(group => group.id === activeGroupChatId)) {
+      setGroupMessages([]);
+      return;
+    }
+    setGroupMessageError('');
+    return subscribeCommunityGroupMessages(activeGroupChatId, setGroupMessages, error => {
+      setGroupMessageError(error.message || 'Não foi possível carregar as mensagens.');
+    });
+  }, [groupsModalOpen, activeGroupChatId, myCommunityGroups]);
+
+  const sendGroupChatMessage = async (): Promise<void> => {
+    if (!activeGroupChatId || groupMessageSending) return;
+    setGroupMessageSending(true);
+    setGroupMessageError('');
+    try {
+      await sendCommunityGroupMessage(activeGroupChatId, groupMessageDraft);
+      setGroupMessageDraft('');
+    } catch (error) {
+      setGroupMessageError(error instanceof Error ? error.message : 'Falha ao enviar mensagem.');
+    } finally {
+      setGroupMessageSending(false);
     }
   };
 
@@ -846,7 +876,7 @@ export function ProfileCommunitiesCloudBridge() {
                 {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
                 {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
-                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes · Conversas disponíveis após ativação das mensagens privadas.</p>{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
+                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes</p><button type="button" className="mt-2 rounded-lg border border-sky-700 px-3 py-2 text-xs text-sky-200" onClick={() => { setActiveGroupChatId(current => current === group.id ? "" : group.id); setGroupMessageDraft(""); }}> {activeGroupChatId === group.id ? "Fechar conversa" : "Abrir conversa"} </button>{activeGroupChatId === group.id && <div className="mt-3 space-y-2"><div role="log" aria-label={`Mensagens de ${group.name}`} className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-700 p-3">{groupMessages.length === 0 && <p className="text-xs text-slate-400">Nenhuma mensagem ainda.</p>}{groupMessages.map(message => <div key={message.id} className="rounded-lg bg-slate-800 p-2"><p className="text-[10px] text-sky-300">{message.authorId === auth.currentUser?.uid ? "Você" : members.find(member => member.userId === message.authorId)?.userName || "Integrante"}</p><p className="whitespace-pre-wrap break-words text-xs text-white">{message.text}</p></div>)}</div><textarea aria-label="Mensagem para o grupo" maxLength={3000} value={groupMessageDraft} onChange={event => setGroupMessageDraft(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white" rows={2} /><button type="button" disabled={groupMessageSending || !groupMessageDraft.trim()} onClick={() => void sendGroupChatMessage()} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Enviar mensagem</button>{groupMessageError && <p role="alert" className="text-xs text-red-300">{groupMessageError}</p>}</div>}{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
               </div>
             ) : (
               <div className="space-y-3">
