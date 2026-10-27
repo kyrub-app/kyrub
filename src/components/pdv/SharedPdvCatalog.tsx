@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { sortByNewest, sortByBestSellers } from '../../utils/storefrontProductRanking';
 import type React from 'react';
 import {
   Check,
@@ -93,22 +94,6 @@ const categoryStartsWithPath = (
       normalizeSearchValue(segment)
   );
 };
-
-const getProductRecency = (product: Product): number => {
-  const updatedAt = (product as Product & { updatedAt?: string }).updatedAt?.trim() ?? '';
-  const parsedUpdatedAt = Date.parse(updatedAt);
-  if (Number.isFinite(parsedUpdatedAt)) return parsedUpdatedAt;
-
-  const idTimestamp = product.id.match(/(\d{10,})$/)?.[1];
-  const parsedIdTimestamp = idTimestamp ? Number(idTimestamp) : 0;
-  return Number.isFinite(parsedIdTimestamp) ? parsedIdTimestamp : 0;
-};
-
-const sortByNewest = (offers: Product[]): Product[] =>
-  [...offers].sort((left, right) => {
-    const recencyDifference = getProductRecency(right) - getProductRecency(left);
-    return recencyDifference || right.id.localeCompare(left.id);
-  });
 
 const findCollectionImage = (product: Product, path: string[]): string => {
   const normalizedTarget = normalizePath(path);
@@ -236,12 +221,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
 
   const filteredProducts = useMemo(() => {
     if (selectedFilter === 'best_sellers') {
-      return sortByNewest(products).sort((left, right) => {
-        const salesDifference =
-          (salesByProductId[right.id] ?? 0) -
-          (salesByProductId[left.id] ?? 0);
-        return salesDifference || getProductRecency(right) - getProductRecency(left);
-      });
+      return sortByBestSellers(products, salesByProductId);
     }
 
     if (selectedKeyword) {
