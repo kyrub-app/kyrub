@@ -292,6 +292,10 @@ export function ProfileCommunitiesCloudBridge() {
 
   const saveCommunityGroup = async (): Promise<void> => {
     if (!selectedCommunityId || !canParticipate || groupSaving) return;
+    if (!auth.currentUser?.uid) {
+      setGroupSaveError('Faça login novamente antes de criar um grupo.');
+      return;
+    }
     if (groupSelectedMemberIds.some(id => !members.some(member => member.userId === id && member.status === 'active'))) {
       setGroupSaveError('A seleção contém membros que não estão mais ativos. Atualize a lista antes de criar o grupo.');
       return;
