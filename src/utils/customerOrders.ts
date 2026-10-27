@@ -616,15 +616,9 @@ export const persistCustomerOrder = async (
 ): Promise<void> => {
   if (!order.id.trim()) throw new Error('Pedido inválido.');
 
-  const legacyReference = doc(
-    db,
-    getCustomerOrderDocumentPath(order.storeId, order.id)
-  );
   const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(order.storeId);
-
   if (!canonicalStoreId) {
-    await setDoc(legacyReference, order);
-    return;
+    throw new Error('Loja sem identidade canônica configurada. Pedido não gravado.');
   }
 
   const canonicalReference = doc(
@@ -638,17 +632,13 @@ export const persistCustomerOrder = async (
     if (!existingOrder || existingOrder.buyerId !== order.buyerId) {
       throw new Error('Já existe um pedido canônico incompatível com este identificador.');
     }
-    await setDoc(legacyReference, order);
     return;
   }
 
-  const batch = writeBatch(db);
-  batch.set(
+  await setDoc(
     canonicalReference,
     buildCanonicalCustomerOrderWriteData(order, canonicalStoreId)
   );
-  batch.set(legacyReference, order);
-  await batch.commit();
 };
 
 export const subscribeToPreferredCustomerOrder = (
