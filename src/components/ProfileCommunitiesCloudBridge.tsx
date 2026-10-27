@@ -327,10 +327,15 @@ export function ProfileCommunitiesCloudBridge() {
       setGroupMessages([]);
       return;
     }
+    setGroupMessages([]);
     setGroupMessageError('');
-    return subscribeCommunityGroupMessages(activeGroupChatId, setGroupMessages, error => {
-      setGroupMessageError(error.message || 'Não foi possível carregar as mensagens.');
-    });
+    try {
+      return subscribeCommunityGroupMessages(activeGroupChatId, setGroupMessages, error => {
+        setGroupMessageError(error.message || 'Não foi possível carregar as mensagens.');
+      });
+    } catch (error) {
+      setGroupMessageError(error instanceof Error ? error.message : 'Não foi possível abrir a conversa.');
+    }
   }, [groupsModalOpen, activeGroupChatId, myCommunityGroups.some(group => group.id === activeGroupChatId)]);
 
   const sendGroupChatMessage = async (): Promise<void> => {
@@ -873,6 +878,7 @@ export function ProfileCommunitiesCloudBridge() {
               <div className="space-y-3">
                 <p className="text-xs text-slate-400">Organize conversas privadas com participantes desta comunidade.</p>
                 {canParticipate && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
+                {groupSaveError && <p role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-3 text-xs text-red-200">{groupSaveError}</p>}
                 {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
                 {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
