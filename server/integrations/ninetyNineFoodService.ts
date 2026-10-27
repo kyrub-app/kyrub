@@ -631,7 +631,8 @@ export const sendNinetyNineFoodOrderStatus = async (
     throw new Error('A integração 99Food não está configurada.');
   }
   const orderId = internalOrderId(externalOrderId);
-  const snapshot = await adminDb.doc(legacyOrderPath(tenantId, orderId)).get();
+  const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
+  const snapshot = await adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`).get();
   const data = snapshot.data();
   if (!data) throw new Error('Pedido 99Food não encontrado no Kyrub.');
   const integration = data.integration as Record<string, unknown> | undefined;
