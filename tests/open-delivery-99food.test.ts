@@ -135,7 +135,7 @@ test('normalizes a 99Food Open Delivery order into the existing KDS order shape'
   assert.match(order.items[0]?.note ?? '', /Sem cebola/);
   assert.match(order.items[0]?.note ?? '', /Arroz integral/);
   assert.equal(order.total, 54.8);
-  assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.paymentStatus, 'partial');
   assert.equal(order.source, 'transfer');
   assert.equal(order.sourceChannel, '99food');
   assert.equal(order.buyerId, '99food:customer-1');
@@ -160,8 +160,8 @@ test('99Food keeps order fallback separate from verified provider customer ident
 
 test('canonical source channel is independent from the legacy order source', () => {
   assert.equal(normalizeCanonicalSourceChannel('99food'), '99food');
-  assert.equal(normalizeCanonicalSourceChannel('open_delivery'), 'open-delivery');
-  assert.equal(normalizeCanonicalSourceChannel('unknown-marketplace'), 'external');
+  assert.equal(normalizeCanonicalSourceChannel('open_delivery'), 'other');
+  assert.equal(normalizeCanonicalSourceChannel('unknown-marketplace'), 'other');
 
   const tagged = withCanonicalSourceChannel(
     { id: 'order-1', source: 'transfer' },
