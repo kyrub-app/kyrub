@@ -138,8 +138,24 @@ test('normalizes a 99Food Open Delivery order into the existing KDS order shape'
   assert.equal(order.paymentStatus, 'paid');
   assert.equal(order.source, 'transfer');
   assert.equal(order.sourceChannel, '99food');
+  assert.equal(order.buyerId, '99food:customer-1');
+  assert.equal(order.integration.externalCustomerId, 'customer-1');
   assert.equal(order.integration.provider, '99food');
   assert.equal(order.integration.routingTarget, 'COZINHA');
+});
+
+test('99Food keeps order fallback separate from verified provider customer identity', () => {
+  const context = { tenantId: 'tenant-a', routingTarget: 'COZINHA' };
+  const raw = { id: 'order-no-customer', items: [{ id: 'item-1', name: 'Prato', quantity: 1, price: 12 }] };
+  const withoutCustomer = normalizeOpenDeliveryOrder(raw, context);
+  assert.equal(withoutCustomer.buyerId, '99food:order-no-customer');
+  assert.equal(withoutCustomer.integration.externalCustomerId, undefined);
+  const withCustomer = normalizeOpenDeliveryOrder({
+    ...raw,
+    customer: { id: ' customer-123 ', name: 'Cliente' },
+  }, context);
+  assert.equal(withCustomer.buyerId, '99food:customer-123');
+  assert.equal(withCustomer.integration.externalCustomerId, 'customer-123');
 });
 
 test('canonical source channel is independent from the legacy order source', () => {
