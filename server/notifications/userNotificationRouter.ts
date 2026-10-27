@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
+import { respondToCommunityGroupInvitation } from './communityGroupInvitationResponseService.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   listUserNotifications,
@@ -82,6 +84,60 @@ export const createUserNotificationRouter = (): Router => {
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/community-group-invitations/issue', async (request, response) => {
+    try {
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      const result = await issueCommunityGroupInvitation({
+        groupId: clean(request.body?.groupId),
+        inviterUserId: identity.uid,
+        inviteeUserId: clean(request.body?.inviteeUserId),
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'COMMUNITY_GROUP_INVITATION_INVALID') {
+        response.status(400).json({ error: 'Convite inválido.' });
+      } else if (message === 'COMMUNITY_GROUP_INVITATION_NOT_FOUND') {
+        response.status(404).json({ error: 'Grupo não encontrado.' });
+      } else if (message.startsWith('COMMUNITY_GROUP_')) {
+        response.status(403).json({ error: 'Não foi possível convidar este integrante.' });
+      } else {
+        const mapped = mapError(error);
+        response.status(mapped.status).json({ error: mapped.message });
+      }
+    }
+  });
+
+  router.post('/community-group-invitations/respond', async (request, response) => {
+    try {
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      const decision = request.body?.decision;
+      if (decision !== 'accepted' && decision !== 'declined') {
+        response.status(400).json({ error: 'Resposta inválida para o convite.' });
+        return;
+      }
+      const result = await respondToCommunityGroupInvitation({
+        recipientUserId: identity.uid,
+        groupId: clean(request.body?.groupId),
+        decision,
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'COMMUNITY_GROUP_INVITATION_NOT_FOUND') {
+        response.status(404).json({ error: 'Convite não encontrado.' });
+      } else if (message === 'COMMUNITY_GROUP_INVITATION_NOT_PENDING' ||
+        message === 'COMMUNITY_GROUP_MEMBERSHIP_REQUIRED') {
+        response.status(409).json({ error: 'Este convite não está mais disponível.' });
+      } else if (message === 'COMMUNITY_GROUP_INVITATION_INVALID') {
+        response.status(400).json({ error: 'Convite inválido.' });
+      } else {
+        const mapped = mapError(error);
+        response.status(mapped.status).json({ error: mapped.message });
+      }
     }
   });
 
