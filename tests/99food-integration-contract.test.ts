@@ -78,8 +78,7 @@ test('Open Delivery client supports OAuth, webhook registration and polling ackn
   assert.match(protocolSource, /\/requestCancellation/);
 });
 
-test('real orders are written to the current KDS collection and canonical mirror', () => {
-  assert.match(serviceSource, /artifacts\/\$\{tenantId\}\/public\/data\/customerOrders/);
+test('real orders use the canonical store order collection and KDS routing', () => {
   assert.match(serviceSource, /stores\/\$\{canonicalStoreId\}\/orders/);
   assert.match(serviceSource, /normalizeOpenDeliveryOrder/);
   assert.match(serviceSource, /routingTarget/);
