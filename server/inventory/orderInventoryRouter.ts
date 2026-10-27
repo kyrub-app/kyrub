@@ -248,7 +248,11 @@ const finalizeManualPartnerSync = async (
       !orderSnapshot.exists || !executionSnapshot.exists ||
       clean(integration?.outboundExecutionId) !== executionId ||
       clean(integration?.outboundStatus) !== 'executing' ||
+      clean(integration?.provider) !== '99food' ||
+      clean(integration?.outboundTargetStatus) !== status ||
       clean(execution?.status) !== 'provider_write_started' ||
+      clean(execution?.provider) !== '99food' ||
+      clean(execution?.targetStatus) !== status ||
       clean(execution?.tenantId) !== tenantId ||
       clean(execution?.orderId) !== orderId
     ) return false;
