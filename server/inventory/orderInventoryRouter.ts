@@ -341,6 +341,8 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
       clean(execution.tenantId) !== tenantId ||
       clean(execution.orderId) !== document.id ||
       clean(execution.provider) !== '99food' ||
+      clean(execution.externalOrderId) !== clean(integration.externalOrderId) ||
+      clean(execution.targetStatus) !== clean(integration.outboundTargetStatus) ||
       !(outboundStatus === 'executing'
         ? ['claimed', 'provider_write_started'].includes(executionStatus)
         : ['provider_write_outcome_unknown', 'reconciliation_uncertain', 'reconciliation_checking'].includes(executionStatus));
