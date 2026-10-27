@@ -97,6 +97,8 @@ export interface NormalizedIntegrationOrder {
     protocol: 'open-delivery';
     protocolVersion: string;
     externalOrderId: string;
+    /** Only a customer identifier explicitly supplied by the provider; never an order-ID fallback. */
+    externalCustomerId?: string;
     displayId: string;
     sourceAppId: string;
     routingTarget: string;
@@ -392,6 +394,7 @@ export const normalizeOpenDeliveryOrder = (
       protocol: 'open-delivery',
       protocolVersion: OPEN_DELIVERY_VERSION,
       externalOrderId,
+      ...(cleanString(customer.id) ? { externalCustomerId: cleanString(customer.id) } : {}),
       displayId,
       sourceAppId: firstNonEmpty(order.sourceAppId, context.sourceAppId),
       routingTarget: context.routingTarget.trim(),
