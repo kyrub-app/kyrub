@@ -308,6 +308,7 @@ export function ProfileCommunitiesCloudBridge() {
       await issueCommunityGroupInvite(groupId, groupInviteExistingId);
       setGroupSaveNotice('Convite enviado ou já pendente. A pessoa poderá aceitar ou recusar pelo sino.');
       setGroupInviteExistingId('');
+      setGroupInviteTargetId('');
     } catch (error) {
       setGroupSaveError(error instanceof Error ? error.message : 'Não foi possível enviar o convite.');
     } finally {
