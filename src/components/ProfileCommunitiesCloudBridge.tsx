@@ -1538,8 +1538,6 @@ export function ProfileCommunitiesCloudBridge() {
                           <span>•</span>
                           <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
-                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
-                          <span>•</span>
                           <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
                           {selectedCommunity.location && (
                             <>
