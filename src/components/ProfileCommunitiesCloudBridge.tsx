@@ -822,10 +822,10 @@ export function ProfileCommunitiesCloudBridge() {
                 <label className="block text-xs font-bold text-slate-300">Nome do grupo
                   <input value={groupDraftName} onChange={event => setGroupDraftName(event.target.value.slice(0,80))} maxLength={80} placeholder="Ex.: Equipe do projeto" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" />
                 </label>
-                <p className="text-xs font-bold text-slate-300">Selecionar membros</p>
+                <p className="text-xs font-bold text-slate-300">Selecionar membros ({groupSelectedMemberIds.length}/49 convidados)</p>
                 {members.filter(member => member.status === 'active' && member.userId !== user?.uid).map(member => (
                   <label key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-white">
-                    <input type="checkbox" checked={groupSelectedMemberIds.includes(member.userId)} onChange={event => setGroupSelectedMemberIds(current => event.target.checked ? [...current,member.userId] : current.filter(id => id !== member.userId))} />
+                    <input type="checkbox" checked={groupSelectedMemberIds.includes(member.userId)} disabled={!groupSelectedMemberIds.includes(member.userId) && groupSelectedMemberIds.length >= 49} onChange={event => setGroupSelectedMemberIds(current => event.target.checked ? [...current,member.userId] : current.filter(id => id !== member.userId))} />
                     <span className="min-w-0 flex-1 truncate">{member.userName}</span>
                   </label>
                 ))}
