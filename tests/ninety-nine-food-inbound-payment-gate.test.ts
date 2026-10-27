@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance, mayAdvanceNinetyNineFoodFulfillment } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
+import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance, mayAdvanceNinetyNineFoodFulfillment, resolveNinetyNineFoodPayOnDelivery } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
 
 describe('99Food inbound KDS payment gate', () => {
   it('blocks preparation and fulfillment without confirmed payment', () => {
@@ -72,6 +72,20 @@ describe('99Food inbound KDS payment gate', () => {
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'ready'), true);
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'out_for_delivery'), true);
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'cancelled'), true);
+  });
+  it('revokes stale pay-on-delivery permission when fresh provider details disagree', () => {
+    assert.equal(resolveNinetyNineFoodPayOnDelivery(
+      { payOnDelivery: false }, { payOnDelivery: true }, true
+    ), false);
+    assert.equal(resolveNinetyNineFoodPayOnDelivery(
+      { payOnDelivery: true }, { payOnDelivery: false }, false
+    ), true);
+    assert.equal(resolveNinetyNineFoodPayOnDelivery(
+      undefined, { payOnDelivery: true }, false
+    ), true);
+    assert.equal(resolveNinetyNineFoodPayOnDelivery(
+      undefined, {}, true
+    ), true);
   });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
