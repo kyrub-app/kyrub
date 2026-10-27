@@ -459,6 +459,11 @@ export function ProfileSocialHubNative() {
   const [editOpen, setEditOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
+  useEffect(() => {
+    const openSaved = () => setSavedOpen(true);
+    window.addEventListener('kyrub:open-saved-publications', openSaved);
+    return () => window.removeEventListener('kyrub:open-saved-publications', openSaved);
+  }, []);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
   const [newConnectionsTab, setNewConnectionsTab] =
