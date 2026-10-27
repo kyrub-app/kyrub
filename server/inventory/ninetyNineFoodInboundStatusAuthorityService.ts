@@ -72,7 +72,7 @@ export const mayAdvanceNinetyNineFoodFulfillment = (
   currentStatus: unknown,
   incomingStatus: InventoryOrderStatus | null
 ): boolean => {
-  const stages = ['accepted', 'preparing', 'ready', 'out_for_delivery', 'completed'];
+  const stages = ['pending', 'accepted', 'preparing', 'ready', 'out_for_delivery', 'completed'];
   const currentIndex = stages.indexOf(clean(currentStatus));
   const incomingIndex = stages.indexOf(clean(incomingStatus));
   return currentIndex < 0 || incomingIndex < 0 || incomingIndex >= currentIndex;
