@@ -318,7 +318,7 @@ export function ProfileCommunitiesCloudBridge() {
       setGroupDraftName('');
       setGroupSelectedMemberIds([]);
       if (failed.length) {
-        setGroupSaveNotice(`Grupo criado. ${recipients.length - failed.length} convite(s) enviado(s); ${failed.length} falharam. Você pode convidar novamente mais tarde.`);
+        setGroupSaveNotice(`Grupo criado. ${recipients.length - failed.length} convite(s) enviado(s); ${failed.length} falharam. Os convites não enviados precisarão ser reenviados quando a opção de reenvio estiver disponível.`);
       } else {
         setGroupSaveNotice(`Grupo criado. ${recipients.length} convite(s) enviado(s) pelo sino.`);
       }
