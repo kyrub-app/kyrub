@@ -126,6 +126,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
         clean(execution.tenantId) !== tenantId ||
         clean(execution.orderId) !== orderId ||
         clean(execution.provider) !== '99food' ||
+        clean(execution.externalOrderId) !== externalOrderId ||
+        clean(execution.targetStatus) !== clean(integration.outboundTargetStatus) ||
         !expectedPhase
       ) {
         throw new Error(
