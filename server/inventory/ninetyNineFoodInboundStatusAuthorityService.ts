@@ -47,11 +47,12 @@ const activeStatusMutationId = (value: unknown): string => {
 /** Provider status is evidence, not permission to start unpaid KDS work. */
 export const mayApplyNinetyNineFoodInboundStatus = (
   mappedStatus: InventoryOrderStatus | null,
-  paymentStatus: unknown
+  paymentStatus: unknown,
+  payOnDelivery = false
 ): boolean => {
   if (!mappedStatus) return false;
   if (['preparing', 'ready', 'out_for_delivery', 'completed'].includes(mappedStatus)) {
-    return paymentStatus === 'paid';
+    return paymentStatus === 'paid' || payOnDelivery;
   }
   return true;
 };
@@ -168,7 +169,11 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     };
     // Preserve provider event evidence without starting unpaid online production.
     // Cancellation and rejection remain actionable regardless of payment state.
-    const mayApplyStatus = mayApplyNinetyNineFoodInboundStatus(input.mappedStatus, order.paymentStatus);
+    const mayApplyStatus = mayApplyNinetyNineFoodInboundStatus(
+      input.mappedStatus,
+      order.paymentStatus,
+      record(integration.paymentEvidence).payOnDelivery === true
+    );
     if (input.mappedStatus && !mayApplyStatus) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
