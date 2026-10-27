@@ -278,6 +278,34 @@ const finalizeManualPartnerSync = async (
   });
 };
 
+// Legacy status endpoint markers. These do not claim ownership of a manual
+// outbound execution; an uncertain provider response must remain reconcilable.
+const markPartnerSyncSuccess = async (tenantId: string, orderId: string): Promise<void> => {
+  await (await orderReference(tenantId, orderId)).update({
+    'integration.outboundStatus': 'sent',
+    'integration.outboundTargetStatus': FieldValue.delete(),
+    'integration.outboundReason': FieldValue.delete(),
+    'integration.outboundError': FieldValue.delete(),
+    'integration.outboundUpdatedAt': new Date().toISOString(),
+  });
+};
+
+const markPartnerSyncError = async (
+  tenantId: string,
+  orderId: string,
+  status: InventoryOrderStatus,
+  reason: string,
+  warning: string
+): Promise<void> => {
+  await (await orderReference(tenantId, orderId)).update({
+    'integration.outboundStatus': 'reconciliation_required',
+    'integration.outboundTargetStatus': status,
+    'integration.outboundReason': reason || FieldValue.delete(),
+    'integration.outboundError': warning.slice(0, 500),
+    'integration.outboundUpdatedAt': new Date().toISOString(),
+  });
+};
+
 const markPartnerSyncAuthorizationRequired = async (
   tenantId: string,
   orderId: string,
