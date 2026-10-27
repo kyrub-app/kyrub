@@ -684,9 +684,14 @@ export const loadStaffStoreCustomerOrders = async (
   storeId: string,
   user: Pick<User, 'getIdToken'>
 ): Promise<CustomerOrder[]> => {
+  const requestedStoreId = storeId.trim();
+  const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(requestedStoreId);
+  if (!canonicalStoreId) {
+    throw new Error('Loja sem identidade canônica configurada.');
+  }
   const token = await user.getIdToken();
   const response = await fetch(
-    `/api/orders/kds?storeId=${encodeURIComponent(storeId.trim())}`,
+    `/api/orders/kds?storeId=${encodeURIComponent(requestedStoreId)}`,
     {
       headers: { authorization: `Bearer ${token}` },
       cache: 'no-store',
@@ -703,7 +708,9 @@ export const loadStaffStoreCustomerOrders = async (
   return (Array.isArray(value.orders) ? value.orders : [])
     .flatMap(item => {
       const parsed = parseCustomerOrder(item);
-      return parsed && parsed.storeId === storeId.trim() ? [parsed] : [];
+      return parsed && parsed.storeId === canonicalStoreId
+        ? [{ ...parsed, storeId: requestedStoreId }]
+        : [];
     });
 };
 
