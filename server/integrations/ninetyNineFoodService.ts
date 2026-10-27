@@ -368,6 +368,7 @@ const canonicalOrder = (
   // An external preparation state is evidence from the provider, not a
   // license to start KDS production without confirmed settlement.
   ...(order.paymentStatus !== 'paid' &&
+    !order.integration.paymentEvidence?.payOnDelivery &&
     ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(order.status)
     ? {
         status: 'pending',
