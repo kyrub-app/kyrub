@@ -765,7 +765,11 @@ export const updateCustomerOrderStatus = async (
   orderId: string,
   nextStatus: CustomerOrderStatus
 ): Promise<void> => {
-  const reference = doc(db, getCustomerOrderDocumentPath(storeId, orderId));
+  const canonicalStoreId = await resolveCanonicalCustomerOrderStoreId(storeId);
+  if (!canonicalStoreId) {
+    throw new Error('Loja sem identidade canônica configurada. Status não alterado.');
+  }
+  const reference = doc(db, getCanonicalOrderDocumentPath(canonicalStoreId, orderId));
 
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(reference);
