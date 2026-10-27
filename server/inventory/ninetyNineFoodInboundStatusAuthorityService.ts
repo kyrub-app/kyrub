@@ -197,7 +197,10 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     const canResumeBlocked = ['pending', 'accepted'].includes(clean(order.status)) &&
       ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(blockedStatus) &&
       mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
-    const incomingAllowed = mayApplyNinetyNineFoodInboundStatus(
+    const terminalOrder = ['cancelled', 'rejected', 'completed'].includes(clean(order.status));
+    const incomingAllowed = !(
+      terminalOrder && input.mappedStatus !== clean(order.status)
+    ) && mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
       paymentStatus,
       payOnDelivery
