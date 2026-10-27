@@ -414,7 +414,7 @@ export const loadPublishedStoreBestSellers = async (
       result[storeId] = {};
       return;
     }
-    const orders = await adminDb.collection(`artifacts/${storeId}/public/data/customerOrders`).get();
+    const orders = await adminDb.collection(`stores/${storeId}/orders`).get();
     const counts: Record<string, number> = {};
     for (const order of orders.docs) {
       const data = order.data();
