@@ -1,10 +1,12 @@
+/** Commercial origin, not the transport protocol used by an integration. */
 export type CanonicalSourceChannel = 'kyrub-shop' | 'open-delivery' | 'ifood' | '99food' | 'mercado-livre' | 'shopee' | 'sefaz' | 'external';
 
 const aliases: Record<string, CanonicalSourceChannel> = {
   kyrub: 'kyrub-shop',
   'kyrub-shop': 'kyrub-shop',
-  open_delivery: 'open-delivery',
-  'open-delivery': 'open-delivery',
+  // Legacy values remain readable; Open Delivery itself is not a sales channel.
+  open_delivery: 'external',
+  'open-delivery': 'external',
   ifood: 'ifood',
   '99food': '99food',
   mercado_livre: 'mercado-livre',
