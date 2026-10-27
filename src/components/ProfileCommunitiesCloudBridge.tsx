@@ -241,6 +241,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [groupSaveNotice, setGroupSaveNotice] = useState('');
   const [groupSelectedMemberIds, setGroupSelectedMemberIds] = useState<string[]>([]);
   const [groupInviteExistingId, setGroupInviteExistingId] = useState('');
+  const [groupInviteTargetId, setGroupInviteTargetId] = useState('');
   const [selectedDebateId, setSelectedDebateId] = useState('');
   const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
@@ -292,7 +293,8 @@ export function ProfileCommunitiesCloudBridge() {
   }, [user?.uid]);
 
   const inviteToExistingGroup = async (groupId: string): Promise<void> => {
-    if (groupSaving || !auth.currentUser?.uid) return;
+    if (groupSaving || !auth.currentUser?.uid || !groupInviteExistingId) return;
+    setGroupInviteTargetId(groupId);
     setGroupSaving(true);
     setGroupSaveError('');
     setGroupSaveNotice('');
@@ -304,6 +306,7 @@ export function ProfileCommunitiesCloudBridge() {
       setGroupSaveError(error instanceof Error ? error.message : 'Não foi possível enviar o convite.');
     } finally {
       setGroupSaving(false);
+      setGroupInviteTargetId('');
     }
   };
 
@@ -836,7 +839,7 @@ export function ProfileCommunitiesCloudBridge() {
                 {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
                 {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
-                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes · Conversas disponíveis após ativação das mensagens privadas.</p>{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteExistingId} onChange={event => setGroupInviteExistingId(event.target.value)} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={!groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
+                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes · Conversas disponíveis após ativação das mensagens privadas.</p>{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
               </div>
             ) : (
               <div className="space-y-3">
