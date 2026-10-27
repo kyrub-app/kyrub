@@ -394,10 +394,26 @@ export const buildCustomerOrder = (
 
 const readOrderTimestamp = (value: unknown): string => {
   if (typeof value === 'string') return value.trim();
-  if (value && typeof value === 'object' && 'toDate' in value) {
-    const toDate = (value as { toDate?: unknown }).toDate;
-    if (typeof toDate === 'function') {
-      const date = (toDate as () => Date).call(value);
+  if (value && typeof value === 'object') {
+    const timestamp = value as {
+      toDate?: unknown;
+      seconds?: unknown;
+      nanoseconds?: unknown;
+      _seconds?: unknown;
+      _nanoseconds?: unknown;
+    };
+    if (typeof timestamp.toDate === 'function') {
+      const date = (timestamp.toDate as () => Date).call(value);
+      return Number.isFinite(date.getTime()) ? date.toISOString() : '';
+    }
+    // Firestore Admin timestamps lose their toDate method when sent as JSON
+    // through the authenticated KDS endpoint.
+    const seconds = timestamp.seconds ?? timestamp._seconds;
+    const nanoseconds = timestamp.nanoseconds ?? timestamp._nanoseconds ?? 0;
+    if (typeof seconds === 'number' && Number.isFinite(seconds) &&
+        typeof nanoseconds === 'number' && Number.isFinite(nanoseconds) &&
+        nanoseconds >= 0 && nanoseconds < 1_000_000_000) {
+      const date = new Date(seconds * 1000 + Math.floor(nanoseconds / 1_000_000));
       return Number.isFinite(date.getTime()) ? date.toISOString() : '';
     }
   }
