@@ -80,6 +80,12 @@ describe('store CRM relationship projection', () => {
     assert.match(source, /targetOrder\.customerId !== authenticatedBuyerId/);
   });
 
+  it('does not offer Kyrub chat to 99Food-only buyers', () => {
+    const panel = readFileSync('src/components/store/StoreCrmRelationshipPanel.tsx', 'utf8');
+    assert.match(panel, /!customer\.customerId\.startsWith\('99food:'\)/);
+    assert.match(panel, /openStoreCustomerChat/);
+  });
+
   it('buyer POST authorizes from the persisted order and accepts canonical or operational order storage', () => {
     const router = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
