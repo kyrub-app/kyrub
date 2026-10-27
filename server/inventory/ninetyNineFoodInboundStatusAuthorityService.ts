@@ -44,6 +44,18 @@ const activeStatusMutationId = (value: unknown): string => {
     : '';
 };
 
+/** Provider status is evidence, not permission to start unpaid KDS work. */
+export const mayApplyNinetyNineFoodInboundStatus = (
+  mappedStatus: InventoryOrderStatus | null,
+  paymentStatus: unknown
+): boolean => {
+  if (!mappedStatus) return false;
+  if (['preparing', 'ready', 'out_for_delivery', 'completed'].includes(mappedStatus)) {
+    return paymentStatus === 'paid';
+  }
+  return true;
+};
+
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   reconciliationRequired: boolean;
   executionId: string;
@@ -156,13 +168,11 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     };
     // Preserve provider event evidence without starting unpaid online production.
     // Cancellation and rejection remain actionable regardless of payment state.
-    const productionStatuses = new Set(['preparing', 'ready', 'out_for_delivery', 'completed']);
-    const requiresPayment = input.mappedStatus !== null && productionStatuses.has(input.mappedStatus);
-    const paymentConfirmed = clean(order.paymentStatus) === 'paid';
-    if (requiresPayment && !paymentConfirmed) {
+    const mayApplyStatus = mayApplyNinetyNineFoodInboundStatus(input.mappedStatus, order.paymentStatus);
+    if (input.mappedStatus && !mayApplyStatus) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
-    } else if (input.mappedStatus) {
+    } else if (input.mappedStatus && mayApplyStatus) {
       orderPatch.status = input.mappedStatus;
       integrationPatch.paymentGateBlockedStatus = FieldValue.delete();
       integrationPatch.paymentGateBlockedAt = FieldValue.delete();
@@ -194,7 +204,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     return {
       reconciliationRequired: hasActiveAuthority,
       executionId: hasActiveAuthority ? executionId : '',
-      localStatusApplied: Boolean(input.mappedStatus) && !(requiresPayment && !paymentConfirmed),
+      localStatusApplied: mayApplyStatus,
     };
   });
 };
