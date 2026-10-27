@@ -302,6 +302,7 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
     const updatedMs = Date.parse(outboundUpdatedAt);
     const possiblyInterrupted = outboundStatus === 'executing' &&
       Number.isFinite(updatedMs) && now - updatedMs > 10 * 60 * 1000;
+    const missingTimestamp = outboundStatus === 'executing' && !Number.isFinite(updatedMs);
     return [{
       orderId: document.id,
       externalOrderId: clean(integration.externalOrderId),
@@ -310,6 +311,8 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
       outboundUpdatedAt,
       reconciliationReason: clean(integration.outboundReconciliationReason),
       possiblyInterrupted,
+      missingTimestamp,
+      requiresOperatorReview: possiblyInterrupted || missingTimestamp || outboundStatus === 'reconciliation_required',
       automaticRetryAllowed: false,
     }];
   });
