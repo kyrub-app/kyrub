@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import { assertFails, assertSucceeds, initializeTestEnvironment, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, updateDoc } from 'firebase/firestore';
+import { collection, doc, getDoc, getDocs, query, where, setDoc, serverTimestamp, updateDoc, deleteDoc } from 'firebase/firestore';
 
 let env: RulesTestEnvironment;
 const communityId = 'community_a';
@@ -70,6 +70,7 @@ test('group messages reject empty, oversized, edited and deleted content', async
     authorId: 'member', text: 'Mensagem original', createdAt: serverTimestamp(),
   }));
   await assertFails(updateDoc(messageRef, { text: 'Mensagem alterada' }));
+  await assertFails(deleteDoc(messageRef));
 });
 
 test('revoked community member loses access even if listed in group', async () => {
