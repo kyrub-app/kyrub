@@ -14,7 +14,6 @@ import { MercadoPagoReceivablesBridge } from './components/store/MercadoPagoRece
 import { PickupPdvNavigationBridge } from './components/store/PickupPdvNavigationBridge';
 import { ServiceLocationOperationalWorkspaceBridge } from './components/store/ServiceLocationOperationalWorkspaceBridge';
 import { StoreOwnedPixReceivablesBridge } from './components/store/StoreOwnedPixReceivablesBridge';
-import { ProfileCommunitiesCloudBridge } from './components/ProfileCommunitiesCloudBridge';
 import { ProfileConnectedCardsPolishBridge } from './components/ProfileConnectedCardsPolishBridge';
 import { ProfileNextPolishBridge } from './components/ProfileNextPolishBridge';
 import { ProfileOffersFiltersBridge } from './components/ProfileOffersFiltersBridge';
@@ -48,7 +47,6 @@ createRoot(rootElement).render(
           <ProfileConnectedCardsPolishBridge />
           <ProfileOffersFiltersBridge />
           <ProfilePublishingDestinationsCloudBridge />
-          <ProfileCommunitiesCloudBridge />
           <BuyerPickupCodeBridge />
           <ServiceLocationOperationalWorkspaceBridge />
           <MercadoLivreOAuthReturnBridge />
