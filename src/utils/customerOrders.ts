@@ -591,15 +591,6 @@ export const buildCanonicalCustomerOrderWriteData = (
   storeId: canonicalStoreId.trim(),
   createdByUserId: order.buyerId,
   createdByRole: 'customer',
-  legacyStoreId: order.storeId,
-  legacyCreatedAt: order.createdAt,
-  legacyUpdatedAt: order.updatedAt,
-  migratedFromPath: getCustomerOrderDocumentPath(order.storeId, order.id),
-  migration: {
-    mode: 'canonical_first',
-    originatedByUserId: order.buyerId,
-    originatedByRole: 'customer',
-  },
   createdAt: serverTimestamp(),
   updatedAt: serverTimestamp(),
 });
