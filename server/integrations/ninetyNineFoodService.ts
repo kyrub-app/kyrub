@@ -92,8 +92,6 @@ const eventDocumentId = (eventId: string): string =>
   `${PROVIDER}-${createHash('sha256').update(eventId).digest('hex')}`;
 const internalOrderId = (externalOrderId: string): string =>
   `99food-${externalOrderId.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
-const legacyOrderPath = (tenantId: string, orderId: string): string =>
-  `artifacts/${tenantId}/public/data/customerOrders/${orderId}`;
 
 const timestampToIso = (value: unknown): string => {
   if (
@@ -365,14 +363,8 @@ const canonicalOrder = (
   ...order,
   storeId: canonicalStoreId,
   legacyStoreId: tenantId,
-  migratedFromPath: legacyOrderPath(tenantId, order.id),
   createdByUserId: 'integration:99food',
   createdByRole: 'integration',
-  migration: {
-    mode: 'integration',
-    provider: PROVIDER,
-    source: 'open-delivery',
-  },
 });
 
 const persistNormalizedOrder = async (
