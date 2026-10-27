@@ -74,6 +74,17 @@ export const mayApplyNinetyNineFoodAcceptance = (
 ): boolean => incomingStatus !== 'accepted' ||
   !['preparing', 'ready', 'out_for_delivery'].includes(clean(currentStatus));
 
+/** Provider event replay cannot move fulfillment backwards. */
+export const mayAdvanceNinetyNineFoodFulfillment = (
+  currentStatus: unknown,
+  incomingStatus: InventoryOrderStatus | null
+): boolean => {
+  const stages = ['accepted', 'preparing', 'ready', 'out_for_delivery', 'completed'];
+  const currentIndex = stages.indexOf(clean(currentStatus));
+  const incomingIndex = stages.indexOf(clean(incomingStatus));
+  return currentIndex < 0 || incomingIndex < 0 || incomingIndex >= currentIndex;
+};
+
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   reconciliationRequired: boolean;
   executionId: string;
@@ -217,7 +228,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
     const incomingAllowed = mayTransitionNinetyNineFoodTerminalOrder(
       order.status, input.mappedStatus
-    ) && mayApplyNinetyNineFoodAcceptance(
+    ) && mayAdvanceNinetyNineFoodFulfillment(
       order.status, input.mappedStatus
     ) && mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
@@ -228,7 +239,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       (canResumeBlocked && (input.mappedStatus === null || input.mappedStatus === 'accepted'));
     if (input.mappedStatus && !incomingAllowed &&
         mayTransitionNinetyNineFoodTerminalOrder(order.status, input.mappedStatus) &&
-        mayApplyNinetyNineFoodAcceptance(order.status, input.mappedStatus) &&
+        mayAdvanceNinetyNineFoodFulfillment(order.status, input.mappedStatus) &&
         !mayApplyNinetyNineFoodInboundStatus(input.mappedStatus, paymentStatus, payOnDelivery)) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
