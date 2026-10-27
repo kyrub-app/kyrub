@@ -210,7 +210,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
     const incomingAllowed = mayTransitionNinetyNineFoodTerminalOrder(
       order.status, input.mappedStatus
-    ) && mayApplyNinetyNineFoodInboundStatus(
+    ) && !(input.mappedStatus === 'accepted' &&
+      ['preparing', 'ready', 'out_for_delivery'].includes(clean(order.status))) && mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
       paymentStatus,
       payOnDelivery
