@@ -528,6 +528,7 @@ export const processNinetyNineFoodEvent = async (
         eventId: event.eventId,
         eventType: event.eventType,
         eventReferencePath: reservation.referencePath,
+        eventAttemptId: reservation.attemptId,
         mappedStatus: event.eventType === 'CREATED' ? null : status,
       });
     }
