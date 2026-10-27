@@ -292,6 +292,10 @@ export function ProfileCommunitiesCloudBridge() {
 
   const saveCommunityGroup = async (): Promise<void> => {
     if (!selectedCommunityId || !canParticipate || groupSaving) return;
+    if (groupSelectedMemberIds.some(id => !members.some(member => member.userId === id && member.status === 'active'))) {
+      setGroupSaveError('A seleção contém membros que não estão mais ativos. Atualize a lista antes de criar o grupo.');
+      return;
+    }
     if (new Set(groupSelectedMemberIds.filter(id => id !== auth.currentUser?.uid)).size > 49) {
       setGroupSaveError('Selecione no máximo 49 convidados por grupo (50 integrantes incluindo você).');
       return;
