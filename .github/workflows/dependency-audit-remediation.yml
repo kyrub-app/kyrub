@@ -28,7 +28,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci --ignore-scripts
       - name: Apply compatible npm security fixes
-        run: npm audit fix --omit=dev --ignore-scripts
+        run: npm audit fix --omit=dev --ignore-scripts || true
+      - name: Inspect remaining vulnerable dependency chains
+        run: |
+          npm ls zod uuid @vercel/cli-config @vercel/oidc gaxios || true
+          npm audit --omit=dev --json > audit-remediation.json || true
       - name: Verify reproducible lockfile
         run: npm ci --ignore-scripts
       - name: Audit production dependencies
@@ -43,4 +47,5 @@ jobs:
           path: |
             package.json
             package-lock.json
+            audit-remediation.json
           retention-days: 3
