@@ -320,7 +320,12 @@ export const createOrderInventoryRouter = (): Router => {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('STORE_ORDER_ACCESS_FORBIDDEN');
       const { tenantId } = await authorizeOrderActor(request, storeId);
-      const snapshot = await orderCollection(tenantId)
+      const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
+      const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+      if (!canonicalStoreId || canonicalStoreId.includes('/')) {
+        throw new Error('Loja sem identidade canônica configurada.');
+      }
+      const snapshot = await adminDb.collection(`stores/${canonicalStoreId}/orders`)
         .orderBy('createdAt', 'desc')
         .limit(150)
         .get();
@@ -335,7 +340,7 @@ export const createOrderInventoryRouter = (): Router => {
       const orders = snapshot.docs.map(document => {
         const data = document.data() as Record<string, unknown>;
         const projected = Object.fromEntries(allowed.map(key => [key, data[key]]));
-        return { ...projected, id: document.id, storeId: tenantId };
+        return { ...projected, id: document.id, storeId: canonicalStoreId };
       });
       response.setHeader('Cache-Control', 'no-store, max-age=0');
       response.status(200).json({ orders });
