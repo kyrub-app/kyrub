@@ -7,12 +7,14 @@ export type UserNotificationCategory =
   | 'order'
   | 'loyalty'
   | 'marketing'
+  | 'community_group_invite'
   | 'system';
 
 export type UserNotificationTargetKind =
   | 'store_chat'
   | 'storefront'
   | 'order'
+  | 'community_group_invite'
   | 'none';
 
 export interface UserNotificationTarget {
@@ -20,6 +22,8 @@ export interface UserNotificationTarget {
   storeId: string;
   customerId: string;
   orderId: string;
+  communityId?: string;
+  groupId?: string;
 }
 
 export interface UserNotification {
@@ -120,8 +124,14 @@ export const buildUserNotification = (input: {
     targetKind !== 'store_chat' &&
     targetKind !== 'storefront' &&
     targetKind !== 'order' &&
+    targetKind !== 'community_group_invite' &&
     targetKind !== 'none'
   ) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
+
+  if (targetKind === 'community_group_invite' &&
+    (!validPathId(clean(input.target?.communityId)) || !validPathId(clean(input.target?.groupId)))) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
 
@@ -140,6 +150,9 @@ export const buildUserNotification = (input: {
       storeId: clean(input.target?.storeId),
       customerId: clean(input.target?.customerId),
       orderId: clean(input.target?.orderId),
+      ...(targetKind === 'community_group_invite'
+        ? { communityId: clean(input.target?.communityId), groupId: clean(input.target?.groupId) }
+        : {}),
     },
     createdAt,
     readAt: '',
