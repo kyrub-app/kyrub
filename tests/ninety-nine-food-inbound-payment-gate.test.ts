@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance, mayAdvanceNinetyNineFoodFulfillment, resolveNinetyNineFoodPayOnDelivery } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
+import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayAdvanceNinetyNineFoodFulfillment, resolveNinetyNineFoodPayOnDelivery } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
 
 describe('99Food inbound KDS payment gate', () => {
   it('blocks preparation and fulfillment without confirmed payment', () => {
@@ -32,10 +32,10 @@ describe('99Food inbound KDS payment gate', () => {
   });
   it('does not roll back fulfillment on delayed acceptance', () => {
     for (const current of ['preparing', 'ready', 'out_for_delivery'] as const) {
-      assert.equal(mayApplyNinetyNineFoodAcceptance(current, 'accepted'), false);
+      assert.equal(mayAdvanceNinetyNineFoodFulfillment(current, 'accepted'), false);
     }
-    assert.equal(mayApplyNinetyNineFoodAcceptance('pending', 'accepted'), true);
-    assert.equal(mayApplyNinetyNineFoodAcceptance('preparing', 'ready'), true);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('pending', 'accepted'), true);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'ready'), true);
   });
   it('preserves payment gate and terminal authority through a replayed event sequence', () => {
     type Stage = 'pending' | 'accepted' | 'preparing' | 'ready' | 'completed' | 'cancelled';
@@ -43,7 +43,7 @@ describe('99Food inbound KDS payment gate', () => {
     let payment: 'unpaid' | 'paid' = 'unpaid';
     const event = (incoming: Stage) => {
       const allowed = mayTransitionNinetyNineFoodTerminalOrder(stage, incoming) &&
-        mayApplyNinetyNineFoodAcceptance(stage, incoming) &&
+        mayAdvanceNinetyNineFoodFulfillment(stage, incoming) &&
         mayApplyNinetyNineFoodInboundStatus(incoming, payment);
       if (allowed) stage = incoming;
       return allowed;
