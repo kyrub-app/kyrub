@@ -476,7 +476,24 @@ export const processNinetyNineFoodEvent = async (
       });
       await persistNormalizedOrder(connection.tenantId, order);
     } else {
+      // Refresh financial evidence for existing orders; status-only webhooks
+      // must not be treated as payment confirmation.
+      const client = new OpenDeliveryClient(connectionRuntime(connection));
+      const details = await client.getOrder(event);
+      const normalized = normalizeOpenDeliveryOrder(details, {
+        tenantId: connection.tenantId,
+        routingTarget: connection.routingTarget,
+        sourceAppId: event.sourceAppId,
+      });
+      if (normalized.integration.externalOrderId !== event.orderId) {
+        throw new Error('NINETY_NINE_FOOD_PAYMENT_ORDER_MISMATCH');
+      }
       await applyNinetyNineFoodInboundStatusWithAuthority({
+        providerPayment: {
+          externalOrderId: normalized.integration.externalOrderId,
+          paymentStatus: normalized.paymentStatus,
+          payOnDelivery: normalized.integration.paymentEvidence?.payOnDelivery === true,
+        },
         tenantId: connection.tenantId,
         externalOrderId: event.orderId,
         eventId: event.eventId,
