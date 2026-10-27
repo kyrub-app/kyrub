@@ -214,7 +214,7 @@ test('private community groups are included in the deployed rules composition', 
   assert.equal(firebase.firestore.rules, '.firebase/firestore.combined.rules');
   assert.match(composer, /firestore\\.community-groups\\.fragment\\.rules/);
   assert.match(communities, /function isActiveCommunityMember\\(communityId\\)/);
-  assert.match(rules, /match \\/community_groups\\/\\{groupId\\}/);
+  assert.ok(rules.includes('match /community_groups/{groupId}'));
   assert.match(rules, /allow update, delete: if false;/);
   assert.ok(indexes.indexes.some(index =>
     index.collectionGroup === 'community_groups' &&
