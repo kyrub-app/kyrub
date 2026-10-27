@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
+import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance, mayAdvanceNinetyNineFoodFulfillment } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
 
 describe('99Food inbound KDS payment gate', () => {
   it('blocks preparation and fulfillment without confirmed payment', () => {
@@ -64,6 +64,14 @@ describe('99Food inbound KDS payment gate', () => {
     const paymentStatus = 'unpaid';
     assert.equal(mayApplyNinetyNineFoodInboundStatus('preparing', paymentStatus, true), true);
     assert.equal(paymentStatus, 'unpaid');
+  });
+  it('rejects replayed earlier fulfillment stages without blocking cancellation', () => {
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'preparing'), false);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('out_for_delivery', 'ready'), false);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'accepted'), false);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'ready'), true);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'out_for_delivery'), true);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'cancelled'), true);
   });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
