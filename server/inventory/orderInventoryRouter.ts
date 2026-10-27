@@ -196,22 +196,20 @@ const persistDeliveryProvider = async (
 ): Promise<void> => {
   const tenantSnapshot = await adminDb.doc(`tenants/${tenantId}`).get();
   const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-  const updatedAt = new Date().toISOString();
-  const payload = {
-    deliveryProvider,
-    deliveryProviderChosenAt: updatedAt,
-    updatedAt,
-  };
-  const batch = adminDb.batch();
-  batch.set(orderReference(tenantId, orderId), payload, { merge: true });
-  if (canonicalStoreId) {
-    batch.set(
-      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-      payload,
-      { merge: true }
-    );
+  if (!canonicalStoreId || canonicalStoreId.includes('/') ||
+      !orderId || orderId.includes('/')) {
+    throw new Error('Loja ou pedido sem identidade canônica válida.');
   }
-  await batch.commit();
+  const orderRef = adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`);
+  await adminDb.runTransaction(async transaction => {
+    const orderSnapshot = await transaction.get(orderRef);
+    if (!orderSnapshot.exists) throw new Error('Pedido canônico não encontrado.');
+    transaction.update(orderRef, {
+      deliveryProvider,
+      deliveryProviderChosenAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    });
+  });
 };
 
 const markPartnerSyncError = async (
