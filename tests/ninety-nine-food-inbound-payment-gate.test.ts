@@ -107,6 +107,33 @@ describe('99Food inbound KDS payment gate', () => {
     }
     assert.equal(mayApplyNinetyNineFoodInboundStatus('cancelled', 'unpaid', payOnDelivery), true);
   });
+  it('keeps a terminal order closed across delayed, repeated and out-of-order provider events', () => {
+    for (const terminal of ['cancelled', 'rejected', 'completed'] as const) {
+      for (const delayed of ['pending', 'accepted', 'preparing', 'ready', 'out_for_delivery'] as const) {
+        const allowed = mayTransitionNinetyNineFoodTerminalOrder(terminal, delayed) &&
+          mayAdvanceNinetyNineFoodFulfillment(terminal, delayed) &&
+          mayApplyNinetyNineFoodInboundStatus(delayed, 'paid', true);
+        assert.equal(allowed, false, `${terminal} must not reopen as ${delayed}`);
+      }
+      assert.equal(mayTransitionNinetyNineFoodTerminalOrder(terminal, terminal), true);
+    }
+  });
+  it('rejects older stages even when the provider repeats paid evidence', () => {
+    const progression = ['accepted', 'preparing', 'ready', 'out_for_delivery', 'completed'] as const;
+    for (let currentIndex = 1; currentIndex < progression.length; currentIndex++) {
+      for (let previousIndex = 0; previousIndex < currentIndex; previousIndex++) {
+        const current = progression[currentIndex];
+        const delayed = progression[previousIndex];
+        assert.equal(
+          mayTransitionNinetyNineFoodTerminalOrder(current, delayed) &&
+          mayAdvanceNinetyNineFoodFulfillment(current, delayed) &&
+          mayApplyNinetyNineFoodInboundStatus(delayed, 'paid'),
+          false,
+          `${current} must not regress to ${delayed}`
+        );
+      }
+    }
+  });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
   });
