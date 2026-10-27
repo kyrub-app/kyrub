@@ -11,6 +11,11 @@ describe('99Food inbound KDS payment gate', () => {
       assert.equal(mayApplyNinetyNineFoodInboundStatus(status, 'paid'), true);
     }
   });
+  it('allows explicitly identified pay-on-delivery production without recording payment', () => {
+    assert.equal(mayApplyNinetyNineFoodInboundStatus('preparing', 'unpaid', true), true);
+    assert.equal(mayApplyNinetyNineFoodInboundStatus('ready', 'unpaid', true), true);
+    assert.equal(mayApplyNinetyNineFoodInboundStatus('preparing', 'unpaid', false), false);
+  });
   it('preserves acceptance and cancellation independently of payment', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus('accepted', 'unpaid'), true);
     assert.equal(mayApplyNinetyNineFoodInboundStatus('cancelled', 'unpaid'), true);
