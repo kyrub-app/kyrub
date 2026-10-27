@@ -412,10 +412,11 @@ const updatePersistedOrderStatus = async (
 const reserveEvent = async (
   connection: NinetyNineFoodConnectionDocument,
   event: OpenDeliveryEvent
-): Promise<{ reserved: boolean; referencePath: string }> => {
+): Promise<{ reserved: boolean; referencePath: string; attemptId: string }> => {
   const referencePath =
     `tenants/${connection.tenantId}/integrationEvents/${eventDocumentId(event.eventId)}`;
   const reference = adminDb.doc(referencePath);
+  const attemptId = randomBytes(16).toString('hex');
   const reserved = await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(reference);
     const existing = snapshot.data() as Record<string, unknown> | undefined;
@@ -437,6 +438,7 @@ const reserveEvent = async (
         eventType: event.eventType,
         externalOrderId: event.orderId,
         status: 'processing',
+        attemptId,
         attempts: FieldValue.increment(1),
         receivedAt: FieldValue.serverTimestamp(),
         leaseExpiresAt: Timestamp.fromMillis(Date.now() + EVENT_LEASE_MS),
@@ -447,8 +449,36 @@ const reserveEvent = async (
     return true;
   });
 
-  return { reserved, referencePath };
+  return { reserved, referencePath, attemptId };
 };
+
+/** A timed-out worker must never finalize another worker's reservation. */
+const finalizeReservedEvent = async (
+  referencePath: string,
+  attemptId: string,
+  outcome: 'processed' | 'failed',
+  error = ''
+): Promise<boolean> => adminDb.runTransaction(async transaction => {
+  const reference = adminDb.doc(referencePath);
+  const snapshot = await transaction.get(reference);
+  const data = snapshot.data();
+  if (data?.status !== 'processing' || data.attemptId !== attemptId) return false;
+  transaction.update(reference, outcome === 'processed'
+    ? {
+        status: 'processed',
+        processedAt: FieldValue.serverTimestamp(),
+        leaseExpiresAt: FieldValue.delete(),
+        attemptId: FieldValue.delete(),
+      }
+    : {
+        status: 'failed',
+        error: error.slice(0, 1_000),
+        failedAt: FieldValue.serverTimestamp(),
+        leaseExpiresAt: FieldValue.delete(),
+        attemptId: FieldValue.delete(),
+      });
+  return true;
+});
 
 export const processNinetyNineFoodEvent = async (
   connection: NinetyNineFoodConnectionDocument,
@@ -457,7 +487,6 @@ export const processNinetyNineFoodEvent = async (
   const event = parseOpenDeliveryEvent(eventValue);
   const reservation = await reserveEvent(connection, event);
   if (!reservation.reserved) return { duplicate: true, event };
-  const eventReference = adminDb.doc(reservation.referencePath);
 
   try {
     const canonicalStoreId = await canonicalStoreIdForTenant(connection.tenantId);
@@ -503,13 +532,14 @@ export const processNinetyNineFoodEvent = async (
       });
     }
 
-    await Promise.all([
-      eventReference.update({
-        status: 'processed',
-        processedAt: FieldValue.serverTimestamp(),
-        leaseExpiresAt: FieldValue.delete(),
-      }),
-      adminDb.doc(connectionPath(connection.tenantId)).set(
+    const finalized = await finalizeReservedEvent(
+      reservation.referencePath, reservation.attemptId, 'processed'
+    );
+    if (!finalized) {
+      // Another worker owns the lease; do not acknowledge or overwrite its result.
+      throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_LOST');
+    }
+    await adminDb.doc(connectionPath(connection.tenantId)).set(
         {
           status: 'connected',
           lastWebhookAt: FieldValue.serverTimestamp(),
@@ -517,19 +547,13 @@ export const processNinetyNineFoodEvent = async (
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
-      ),
-    ]);
+      );
 
     return { duplicate: false, event };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     await Promise.allSettled([
-      eventReference.update({
-        status: 'failed',
-        error: message.slice(0, 1_000),
-        failedAt: FieldValue.serverTimestamp(),
-        leaseExpiresAt: FieldValue.delete(),
-      }),
+      finalizeReservedEvent(reservation.referencePath, reservation.attemptId, 'failed', message),
       adminDb.doc(connectionPath(connection.tenantId)).set(
         {
           status: 'attention',
