@@ -380,16 +380,10 @@ const persistNormalizedOrder = async (
   order: NormalizedIntegrationOrder
 ): Promise<void> => {
   const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
-  const batch = adminDb.batch();
-  batch.set(adminDb.doc(legacyOrderPath(tenantId, order.id)), order, { merge: true });
-  if (canonicalStoreId) {
-    batch.set(
-      adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`),
-      canonicalOrder(order, canonicalStoreId, tenantId),
-      { merge: true }
-    );
-  }
-  await batch.commit();
+  await adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`).set(
+    canonicalOrder(order, canonicalStoreId, tenantId),
+    { merge: true }
+  );
 };
 
 const updatePersistedOrderStatus = async (
