@@ -8,7 +8,7 @@ export async function issueCommunityGroupInvitation(input: {
   groupId: string;
   inviterUserId: string;
   inviteeUserId: string;
-}): Promise<{ status: 'pending' }> {
+}): Promise<{ status: 'pending'; created: boolean }> {
   const { groupId, inviterUserId, inviteeUserId } = input;
   if (![groupId, inviterUserId, inviteeUserId].every(validId) || inviterUserId === inviteeUserId) {
     throw new Error('COMMUNITY_GROUP_INVITATION_INVALID');
@@ -35,7 +35,7 @@ export async function issueCommunityGroupInvitation(input: {
       }
     }
     if (inviteSnap.exists) {
-      if (inviteSnap.data()?.status === 'pending') return { status: 'pending' as const };
+      if (inviteSnap.data()?.status === 'pending') return { status: 'pending' as const, created: false };
       throw new Error('COMMUNITY_GROUP_INVITATION_NOT_PENDING');
     }
     const now = new Date().toISOString();
@@ -57,6 +57,6 @@ export async function issueCommunityGroupInvitation(input: {
       createdAt: new Date(now),
     });
     transaction.create(adminDb.doc(userNotificationPath(inviteeUserId, notification.id)), notification);
-    return { status: 'pending' as const };
+    return { status: 'pending' as const, created: true };
   });
 }
