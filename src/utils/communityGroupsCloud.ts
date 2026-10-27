@@ -1,5 +1,5 @@
 import { auth, db } from './firebase';
-import { collection, doc, onSnapshot, query, serverTimestamp, setDoc, where, type Unsubscribe } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, orderBy, query, serverTimestamp, setDoc, where, type Unsubscribe } from 'firebase/firestore';
 
 export interface CloudCommunityGroup {
   id: string;
@@ -55,4 +55,46 @@ export async function createPrivateCommunityGroup(
     updatedAt: serverTimestamp(),
   });
   return groupRef.id;
+}
+
+export interface CloudCommunityGroupMessage {
+  id: string;
+  authorId: string;
+  text: string;
+  createdAt: Date | null;
+}
+
+export function subscribeCommunityGroupMessages(
+  groupId: string,
+  onChange: (messages: CloudCommunityGroupMessage[]) => void,
+  onError: (error: Error) => void
+): Unsubscribe {
+  if (!auth.currentUser?.uid) throw new Error('Entre no Kyrub para ler as mensagens.');
+  if (!groupId || groupId.includes('/')) throw new Error('Grupo inválido.');
+  return onSnapshot(
+    query(collection(db, 'community_groups', groupId, 'messages'), orderBy('createdAt', 'desc'), limit(100)),
+    snapshot => onChange(snapshot.docs.map(entry => {
+      const data = entry.data();
+      return {
+        id: entry.id,
+        authorId: String(data.authorId || ''),
+        text: String(data.text || ''),
+        createdAt: data.createdAt?.toDate?.() ?? null,
+      };
+    }).reverse()),
+    onError
+  );
+}
+
+export async function sendCommunityGroupMessage(groupId: string, text: string): Promise<void> {
+  const uid = auth.currentUser?.uid;
+  if (!uid) throw new Error('Entre no Kyrub para enviar mensagens.');
+  if (!groupId || groupId.includes('/')) throw new Error('Grupo inválido.');
+  const content = text.trim();
+  if (!content || content.length > 3000) throw new Error('Escreva uma mensagem de até 3.000 caracteres.');
+  await setDoc(doc(collection(db, 'community_groups', groupId, 'messages')), {
+    authorId: uid,
+    text: content,
+    createdAt: serverTimestamp(),
+  });
 }
