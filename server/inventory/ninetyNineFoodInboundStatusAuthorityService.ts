@@ -30,9 +30,6 @@ const internalOrderId = (externalOrderId: string): string =>
 const authorityDocumentId = (tenantId: string, orderId: string): string =>
   createHash('sha256').update(`${tenantId}:${orderId}`).digest('hex');
 
-const legacyOrderReference = (tenantId: string, orderId: string) =>
-  adminDb.doc(`artifacts/${tenantId}/public/data/customerOrders/${orderId}`);
-
 const mutationLockReference = (tenantId: string, orderId: string) =>
   adminDb.doc(
     `${STATUS_MUTATION_LOCK_COLLECTION}/${authorityDocumentId(tenantId, orderId)}`
@@ -72,16 +69,20 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
 
   const orderId = internalOrderId(externalOrderId);
   const tenantReference = adminDb.doc(`tenants/${tenantId}`);
-  const legacyReference = legacyOrderReference(tenantId, orderId);
   const lockReference = mutationLockReference(tenantId, orderId);
 
   return adminDb.runTransaction(async transaction => {
-    const [tenantSnapshot, legacySnapshot, lockSnapshot] = await Promise.all([
+    const [tenantSnapshot, lockSnapshot] = await Promise.all([
       transaction.get(tenantReference),
-      transaction.get(legacyReference),
       transaction.get(lockReference),
     ]);
-    if (!legacySnapshot.exists) {
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (!canonicalStoreId || canonicalStoreId.includes('/')) {
+      throw new Error('NINETY_NINE_FOOD_CANONICAL_STORE_MISSING: loja sem identidade canônica válida.');
+    }
+    const orderReference = adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`);
+    const orderSnapshot = await transaction.get(orderReference);
+    if (!orderSnapshot.exists) {
       throw new Error(
         'NINETY_NINE_FOOD_INBOUND_ORDER_DISAPPEARED: o pedido deixou de existir antes da aplicação autoritativa do evento inbound.'
       );
@@ -92,8 +93,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       );
     }
 
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-    const order = record(legacySnapshot.data());
+    const order = record(orderSnapshot.data());
     const integration = integrationData(order);
     const provider = clean(integration.provider);
     const outboundStatus = clean(integration.outboundStatus);
@@ -154,14 +154,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     };
     if (input.mappedStatus) orderPatch.status = input.mappedStatus;
 
-    transaction.set(legacyReference, orderPatch, { merge: true });
-    if (canonicalStoreId) {
-      transaction.set(
-        adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-        orderPatch,
-        { merge: true }
-      );
-    }
+    transaction.set(orderReference, orderPatch, { merge: true });
 
     if (hasActiveAuthority && executionSnapshot) {
       const execution = record(executionSnapshot.data());
