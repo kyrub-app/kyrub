@@ -383,3 +383,52 @@ export const loadMarketplaceDiscovery = async (input: {
 };
 
 export const MARKETPLACE_DISCOVERY_STORE_LIMIT = MAX_DISCOVERY_STORES;
+const BEST_SELLER_STATUSES = new Set([
+  'accepted', 'preparing', 'ready', 'out_for_delivery', 'completed',
+]);
+
+export const loadPublishedStoreBestSellers = async (
+  storeIds: readonly string[]
+): Promise<Record<string, Record<string, number>>> => {
+  const uniqueIds = uniqueStoreIds(storeIds);
+  if (storeIds.length > MAX_DISCOVERY_STORES) {
+    throw new Error('MARKETPLACE_DISCOVERY_STORE_LIMIT');
+  }
+  const result: Record<string, Record<string, number>> = {};
+  await Promise.all(uniqueIds.map(async storeId => {
+    const listing = await adminDb.collection('marketplace_listings')
+      .where('storeId', '==', storeId)
+      .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
+      .get();
+    const publishedOfferIds = new Set(listing.docs.flatMap(doc => {
+      const data = doc.data();
+      return data.listingType === 'offer' && data.publicationStatus === 'published'
+        ? [clean(data.offerId) || clean(data.productId)]
+        : [];
+    }).filter(Boolean));
+    const hasPublishedStore = listing.docs.some(doc => {
+      const data = doc.data();
+      return data.listingType === 'store' && data.publicationStatus === 'published';
+    });
+    if (!hasPublishedStore) {
+      result[storeId] = {};
+      return;
+    }
+    const orders = await adminDb.collection(`artifacts/${storeId}/public/data/customerOrders`).get();
+    const counts: Record<string, number> = {};
+    for (const order of orders.docs) {
+      const data = order.data();
+      if (!BEST_SELLER_STATUSES.has(clean(data.status)) || !Array.isArray(data.items)) continue;
+      for (const item of data.items) {
+        if (!item || typeof item !== 'object') continue;
+        const productId = clean(item.productId).split('::', 1)[0]?.trim() ?? '';
+        const quantity = item.quantity;
+        if (!publishedOfferIds.has(productId) ||
+          !Number.isSafeInteger(quantity) || quantity <= 0) continue;
+        counts[productId] = (counts[productId] ?? 0) + quantity;
+      }
+    }
+    result[storeId] = counts;
+  }));
+  return result;
+};
