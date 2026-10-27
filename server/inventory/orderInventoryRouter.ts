@@ -242,7 +242,9 @@ const finalizeManualPartnerSync = async (
       transaction.get(reference),
       transaction.get(executionReference),
     ]);
-    const integration = orderSnapshot.data()?.integration as Record<string, unknown> | undefined;
+    const integrationValue = orderSnapshot.data()?.integration;
+    const integration = integrationValue && typeof integrationValue === 'object' && !Array.isArray(integrationValue)
+      ? integrationValue as Record<string, unknown> : {};
     const execution = executionSnapshot.data();
     if (
       !orderSnapshot.exists || !executionSnapshot.exists ||
