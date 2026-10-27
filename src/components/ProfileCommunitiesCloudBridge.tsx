@@ -1511,7 +1511,7 @@ export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boo
                           }`}
                         >
                           {selectedCommunity.isActiveMember
-                            ? 'Participando · Sair'
+                            ? 'Deixar comunidade'
                             : selectedCommunity.isPendingMember
                               ? 'Cancelar'
                               : selectedCommunity.visibility === 'moderated'
