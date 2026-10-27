@@ -106,9 +106,9 @@ describe('store CRM relationship projection', () => {
     const localRouter = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
 
-    assert.match(syncService, /reconcilePersistedCustomerOrdersIntoCrm/);
-    assert.match(syncService, /collection\(canonicalOrderPath\(storeId\)\)\.get\(\)/);
-    assert.match(syncService, /collection\(operationalOrderPath\(storeId\)\)\.get\(\)/);
+    assert.doesNotMatch(syncService, /reconcilePersistedCustomerOrdersIntoCrm/);
+    assert.doesNotMatch(transport, /reconcilePersistedCustomerOrdersIntoCrm/);
+    assert.doesNotMatch(localRouter, /reconcilePersistedCustomerOrdersIntoCrm/);
     assert.match(transport, /const summary = await loadStoreCrmSummary\(\{ storeId \}\);\s*response\.status\(200\)\.json\(summary\)/s);
     assert.match(localRouter, /const summary = await loadStoreCrmSummary\(\{ storeId \}\);\s*response\.status\(200\)\.json\(summary\)/s);
   });
