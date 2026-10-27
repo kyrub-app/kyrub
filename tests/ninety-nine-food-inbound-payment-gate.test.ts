@@ -66,6 +66,9 @@ describe('99Food inbound KDS payment gate', () => {
     assert.equal(paymentStatus, 'unpaid');
   });
   it('rejects replayed earlier fulfillment stages without blocking cancellation', () => {
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('accepted', 'pending'), false);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'pending'), false);
+    assert.equal(mayAdvanceNinetyNineFoodFulfillment('pending', 'accepted'), true);
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('ready', 'preparing'), false);
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('out_for_delivery', 'ready'), false);
     assert.equal(mayAdvanceNinetyNineFoodFulfillment('preparing', 'accepted'), false);
