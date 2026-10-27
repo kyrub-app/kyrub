@@ -849,3 +849,25 @@ export const getFulfillmentLabel = (
 
   return labels[fulfillmentType];
 };
+
+/** Compare operational snapshots across legacy/canonical store IDs, ignoring
+ * transport timestamps but preserving commercial, payment and line details. */
+export const customerOrdersEquivalent = (left: CustomerOrder, right: CustomerOrder): boolean => {
+  const comparable = (order: CustomerOrder) => {
+    const { storeId: _storeId, createdAt: _createdAt, updatedAt: _updatedAt, ...fields } = order;
+    return fields;
+  };
+  return JSON.stringify(comparable(left)) === JSON.stringify(comparable(right));
+};
+
+/** Reconciliation must be independent of Firestore query ordering. */
+export const customerOrderCollectionsEquivalent = (
+  left: CustomerOrder[],
+  right: CustomerOrder[]
+): boolean => {
+  if (left.length !== right.length) return false;
+  const byId = (orders: CustomerOrder[]) => [...orders].sort((a, b) => a.id.localeCompare(b.id));
+  const first = byId(left);
+  const second = byId(right);
+  return first.every((order, index) => customerOrdersEquivalent(order, second[index]));
+};
