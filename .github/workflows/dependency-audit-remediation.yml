@@ -14,7 +14,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   remediation-candidate:
@@ -27,18 +27,6 @@ jobs:
         with:
           node-version: '22'
           cache: npm
-      - name: Regenerate and commit patched lockfile on isolated branch
-        run: |
-          npm install --package-lock-only --ignore-scripts --no-audit
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add package-lock.json
-          if ! git diff --cached --quiet; then
-            git commit -m 'fix(security): synchronize audited dependency lockfile'
-            git fetch origin fix/production-dependency-audit-oct2026
-            git rebase origin/fix/production-dependency-audit-oct2026
-            git push origin HEAD:fix/production-dependency-audit-oct2026
-          fi
       - name: Install candidate locked dependencies
         run: npm ci --ignore-scripts
       - name: Apply compatible npm security fixes
