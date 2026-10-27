@@ -29,3 +29,18 @@ test('group admission checks community membership and capacity before write', ()
   assert.match(service, /transaction\.update\(groupRef/);
   assert.match(service, /transaction\.update\(inviteRef, \{ status: decision \}\)/);
 });
+
+const invitationIssue = readFileSync('server/notifications/communityGroupInvitationIssueService.ts', 'utf8');
+const square = readFileSync('src/components/ProfileSocialHubNative.tsx', 'utf8');
+const communities = readFileSync('src/components/ProfileCommunitiesCloudBridge.tsx', 'utf8');
+
+test('Praça provides an explicit communities mount independent of search placeholder', () => {
+  assert.match(square, /id="praca-communities-host"/);
+  assert.match(communities, /querySelector<HTMLElement>\('#praca-communities-host'\)/);
+});
+
+test('declined invitations cannot be silently reused as pending', () => {
+  assert.match(invitationIssue, /inviteSnap\.data\(\)\?\.status === 'pending'/);
+  assert.match(invitationIssue, /COMMUNITY_GROUP_INVITATION_NOT_PENDING/);
+  assert.match(service, /invite\.status !== 'pending'/);
+});
