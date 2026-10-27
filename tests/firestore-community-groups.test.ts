@@ -57,6 +57,21 @@ test('only group members may post and read messages', async () => {
   await assertFails(setDoc(doc(dbFor('outsider'), ...groupPath, 'messages', 'two'), message('outsider')));
   await assertFails(setDoc(doc(dbFor('member'), ...groupPath, 'messages', 'three'), message('owner')));
 });
+test('group messages reject empty, oversized, edited and deleted content', async () => {
+  await seedGroup(['owner', 'member']);
+  const messageRef = doc(dbFor('member'), ...groupPath, 'messages', 'immutable');
+  await assertFails(setDoc(doc(dbFor('member'), ...groupPath, 'messages', 'empty'), {
+    authorId: 'member', text: '', createdAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(dbFor('member'), ...groupPath, 'messages', 'oversized'), {
+    authorId: 'member', text: 'x'.repeat(3001), createdAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(messageRef, {
+    authorId: 'member', text: 'Mensagem original', createdAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(messageRef, { text: 'Mensagem alterada' }));
+});
+
 test('revoked community member loses access even if listed in group', async () => {
   await seedGroup(['owner', 'member']);
   await env.withSecurityRulesDisabled(async context => {
