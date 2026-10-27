@@ -780,9 +780,13 @@ export const updateCustomerOrderStatus = async (
       throw new Error('Esta mudança de status não é permitida.');
     }
 
+    if (nextStatus !== 'cancelled' || currentOrder.source !== 'customer' || currentOrder.status !== 'pending') {
+      throw new Error('Mudanças operacionais de status exigem autorização pelo servidor.');
+    }
+
     transaction.update(reference, {
       status: nextStatus,
-      updatedAt: new Date().toISOString(),
+      updatedAt: serverTimestamp(),
     });
   });
 };
