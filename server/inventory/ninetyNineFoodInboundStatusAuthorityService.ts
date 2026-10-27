@@ -216,7 +216,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     );
     const mayApplyStatus = incomingAllowed ||
       (canResumeBlocked && (input.mappedStatus === null || input.mappedStatus === 'accepted'));
-    if (input.mappedStatus && !incomingAllowed) {
+    if (input.mappedStatus && !incomingAllowed &&
+        mayTransitionNinetyNineFoodTerminalOrder(order.status, input.mappedStatus)) {
       integrationPatch.paymentGateBlockedStatus = input.mappedStatus;
       integrationPatch.paymentGateBlockedAt = observedAt;
     } else if (canResumeBlocked && (!input.mappedStatus || input.mappedStatus === 'accepted')) {
