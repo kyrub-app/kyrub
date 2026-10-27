@@ -1,4 +1,4 @@
-name: 99Food payment and status regression
+name: 99Food payment and operational regression
 
 on:
   push:
@@ -10,6 +10,12 @@ on:
       - 'server/integrations/ninetyNineFoodService.ts'
       - 'tests/ninety-nine-food-inbound-payment-gate.test.ts'
       - 'tests/open-delivery-payment-gate.test.ts'
+      - 'tests/open-delivery-99food.test.ts'
+      - 'tests/99food-integration-contract.test.ts'
+      - 'tests/99food-explicit-status-write-authority.test.ts'
+      - 'tests/production-station-routing.test.ts'
+      - 'tests/order-inventory-consumption.test.ts'
+      - 'tests/store-economic-ledger.test.ts'
       - '.github/workflows/99food-payment-regression.yml'
   workflow_dispatch:
 
@@ -24,5 +30,14 @@ jobs:
           node-version: '22'
           cache: npm
       - run: npm ci --ignore-scripts
-      - name: Run 99Food payment and inbound status tests
-        run: node --test --import tsx tests/open-delivery-payment-gate.test.ts tests/ninety-nine-food-inbound-payment-gate.test.ts
+      - name: Run 99Food, KDS, order, inventory and ledger regression tests
+        run: >-
+          node --test --test-concurrency=4 --import tsx
+          tests/open-delivery-payment-gate.test.ts
+          tests/ninety-nine-food-inbound-payment-gate.test.ts
+          tests/open-delivery-99food.test.ts
+          tests/99food-integration-contract.test.ts
+          tests/99food-explicit-status-write-authority.test.ts
+          tests/production-station-routing.test.ts
+          tests/order-inventory-consumption.test.ts
+          tests/store-economic-ledger.test.ts
