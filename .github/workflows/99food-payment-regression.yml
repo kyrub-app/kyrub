@@ -60,8 +60,8 @@ jobs:
             state=failure
             description="99Food, KDS, inventory or ledger regression failed"
           fi
-          gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \\
-            -f state="$state" \\
-            -f context="99Food operational regression" \\
-            -f description="$description" \\
+          gh api --method POST "repos/${{ github.repository }}/statuses/${{ github.sha }}" \
+            -f state="$state" \
+            -f context="99Food operational regression" \
+            -f description="$description" \
             -f target_url="${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
