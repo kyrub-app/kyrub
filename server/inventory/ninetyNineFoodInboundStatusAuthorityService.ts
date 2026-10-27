@@ -67,6 +67,13 @@ export const mayTransitionNinetyNineFoodTerminalOrder = (
     incomingStatus === current;
 };
 
+/** A delayed acceptance must not roll back an order already in fulfillment. */
+export const mayApplyNinetyNineFoodAcceptance = (
+  currentStatus: unknown,
+  incomingStatus: InventoryOrderStatus | null
+): boolean => incomingStatus !== 'accepted' ||
+  !['preparing', 'ready', 'out_for_delivery'].includes(clean(currentStatus));
+
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   reconciliationRequired: boolean;
   executionId: string;
@@ -210,8 +217,9 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
     const incomingAllowed = mayTransitionNinetyNineFoodTerminalOrder(
       order.status, input.mappedStatus
-    ) && !(input.mappedStatus === 'accepted' &&
-      ['preparing', 'ready', 'out_for_delivery'].includes(clean(order.status))) && mayApplyNinetyNineFoodInboundStatus(
+    ) && mayApplyNinetyNineFoodAcceptance(
+      order.status, input.mappedStatus
+    ) && mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
       paymentStatus,
       payOnDelivery
