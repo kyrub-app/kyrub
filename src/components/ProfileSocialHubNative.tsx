@@ -52,6 +52,7 @@ import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
 import { ChatModal } from './modals/ChatModal';
+import { ProfileCommunitiesCloudBridge } from './ProfileCommunitiesCloudBridge';
 
 type ProfileTab = 'publications' | 'saved' | 'communities' | 'connected' | 'square';
 type ConnectionSection = 'connected' | 'favorites' | 'groups';
@@ -1760,7 +1761,7 @@ export function ProfileSocialHubNative() {
                       + Publicar
                     </button>
                   </div>
-                  <div id="praca-communities-host" data-kyrub-community-slot="square" />
+                  <ProfileCommunitiesCloudBridge inline />
                   {renderPostList(
                     squarePosts.filter(
                       post =>
