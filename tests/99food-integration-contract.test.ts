@@ -86,6 +86,15 @@ test('duplicate webhook events are reserved atomically and only acknowledged aft
   assert.match(polling, /acknowledgeEvents\(acknowledged\)/);
 });
 
+test('expired event workers cannot finalize a reservation claimed by another attempt', () => {
+  assert.match(serviceSource, /const attemptId = randomBytes\(16\)\.toString\('hex'\)/);
+  assert.match(serviceSource, /attemptId,\s*attempts: FieldValue\.increment\(1\)/);
+  assert.match(serviceSource, /data\.attemptId !== attemptId\) return false/);
+  assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'processed'/);
+  assert.match(serviceSource, /finalizeReservedEvent\(reservation\.referencePath, reservation\.attemptId, 'failed', message\)/);
+  assert.match(serviceSource, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
