@@ -394,21 +394,11 @@ const updatePersistedOrderStatus = async (
 ): Promise<void> => {
   const orderId = internalOrderId(externalOrderId);
   const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
-  const patch = {
+  await adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`).update({
     status,
     updatedAt: new Date().toISOString(),
-    integration: { lastEvent },
-  };
-  const batch = adminDb.batch();
-  batch.set(adminDb.doc(legacyOrderPath(tenantId, orderId)), patch, { merge: true });
-  if (canonicalStoreId) {
-    batch.set(
-      adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-      patch,
-      { merge: true }
-    );
-  }
-  await batch.commit();
+    'integration.lastEvent': lastEvent,
+  });
 };
 
 const reserveEvent = async (
