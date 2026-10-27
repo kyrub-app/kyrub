@@ -288,6 +288,9 @@ const markPartnerSyncAuthorizationRequired = async (
 
 const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = '') => {
   const collection = await orderCollection(tenantId);
+  if (cursor && (!/^[a-zA-Z0-9_-]{1,256}$/.test(cursor))) {
+    throw new Error('Cursor de reconciliação inválido.');
+  }
   const cursorDocument = cursor ? await collection.doc(cursor).get() : null;
   if (cursor && !cursorDocument?.exists) {
     throw new Error('Cursor de reconciliação inválido.');
