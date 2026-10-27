@@ -85,6 +85,15 @@ export const mayAdvanceNinetyNineFoodFulfillment = (
   return currentIndex < 0 || incomingIndex < 0 || incomingIndex >= currentIndex;
 };
 
+/** Fresh provider details take precedence over cached payment-on-delivery evidence. */
+export const resolveNinetyNineFoodPayOnDelivery = (
+  providerPayment: { payOnDelivery: boolean } | undefined,
+  previousEvidence: unknown,
+  previouslyReconciled: unknown
+): boolean => providerPayment
+  ? providerPayment.payOnDelivery === true
+  : record(previousEvidence).payOnDelivery === true || previouslyReconciled === true;
+
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   reconciliationRequired: boolean;
   executionId: string;
@@ -210,9 +219,9 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     const paymentStatus = clean(order.paymentStatus) === 'paid'
       ? 'paid'
       : providerPayment?.paymentStatus === 'paid' ? 'paid' : order.paymentStatus;
-    const payOnDelivery = providerPayment?.payOnDelivery === true ||
-      record(integration.paymentEvidence).payOnDelivery === true ||
-      integration.payOnDelivery === true;
+    const payOnDelivery = resolveNinetyNineFoodPayOnDelivery(
+      providerPayment, integration.paymentEvidence, integration.payOnDelivery
+    );
     if (paymentStatus === 'paid' && clean(order.paymentStatus) !== 'paid') {
       orderPatch.paymentStatus = 'paid';
     }
