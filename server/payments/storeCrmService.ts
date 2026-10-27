@@ -76,6 +76,14 @@ const parseCanonicalOrder = (
   const data = doc.data() as Record<string, unknown>;
   const orderId = clean(data.id) || doc.id;
   const customerId = clean(data.buyerId);
+  const integration = data.integration && typeof data.integration === 'object' && !Array.isArray(data.integration)
+    ? data.integration as Record<string, unknown>
+    : {};
+  // An order-ID fallback is not a stable customer identity across 99Food orders.
+  // Keep the order in the canonical sales history; do not invent a CRM person.
+  if (clean(integration.provider) === '99food' && !clean(integration.externalCustomerId)) {
+    return null;
+  }
   const buyerName = clean(data.buyerName);
   const buyerEmail = clean(data.buyerEmail);
   const source = clean(data.source) || 'customer';
