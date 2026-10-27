@@ -530,7 +530,7 @@ export const createOrderInventoryRouter = (): Router => {
           tenantId, orderId, executionReference.id, 'sent',
           providerWriteAuthorization.status, reason
         );
-        response.json({
+        response.status(finalized ? 200 : 202).json({
           orderId,
           externalOrderId,
           status: providerWriteAuthorization.status,
