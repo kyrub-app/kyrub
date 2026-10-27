@@ -57,6 +57,16 @@ export const mayApplyNinetyNineFoodInboundStatus = (
   return true;
 };
 
+/** Terminal canonical states cannot be reopened by delayed provider events. */
+export const mayTransitionNinetyNineFoodTerminalOrder = (
+  currentStatus: unknown,
+  incomingStatus: InventoryOrderStatus | null
+): boolean => {
+  const current = clean(currentStatus);
+  return !['cancelled', 'rejected', 'completed'].includes(current) ||
+    incomingStatus === current;
+};
+
 export interface NinetyNineFoodInboundStatusAuthorityResult {
   reconciliationRequired: boolean;
   executionId: string;
@@ -197,9 +207,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
     const canResumeBlocked = ['pending', 'accepted'].includes(clean(order.status)) &&
       ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(blockedStatus) &&
       mayApplyNinetyNineFoodInboundStatus(blockedStatus, paymentStatus, payOnDelivery);
-    const terminalOrder = ['cancelled', 'rejected', 'completed'].includes(clean(order.status));
-    const incomingAllowed = !(
-      terminalOrder && input.mappedStatus !== clean(order.status)
+    const incomingAllowed = mayTransitionNinetyNineFoodTerminalOrder(
+      order.status, input.mappedStatus
     ) && mayApplyNinetyNineFoodInboundStatus(
       input.mappedStatus,
       paymentStatus,
