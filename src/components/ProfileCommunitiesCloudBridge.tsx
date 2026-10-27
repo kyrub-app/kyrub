@@ -293,7 +293,13 @@ export function ProfileCommunitiesCloudBridge() {
   }, [user?.uid]);
 
   const inviteToExistingGroup = async (groupId: string): Promise<void> => {
-    if (groupSaving || !auth.currentUser?.uid || !groupInviteExistingId) return;
+    if (groupSaving || !auth.currentUser?.uid || !groupInviteExistingId || groupInviteTargetId !== groupId) return;
+    const group = myCommunityGroups.find(item => item.id === groupId);
+    if (!group || group.creatorId !== auth.currentUser.uid || group.memberIds.includes(groupInviteExistingId) || group.memberIds.length >= 50 ||
+      !members.some(member => member.userId === groupInviteExistingId && member.status === 'active')) {
+      setGroupSaveError('A seleção não está mais disponível para este grupo. Atualize os membros e tente novamente.');
+      return;
+    }
     setGroupInviteTargetId(groupId);
     setGroupSaving(true);
     setGroupSaveError('');
