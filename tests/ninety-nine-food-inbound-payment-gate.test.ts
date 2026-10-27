@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
-import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
+import { mayApplyNinetyNineFoodInboundStatus, mayTransitionNinetyNineFoodTerminalOrder, mayApplyNinetyNineFoodAcceptance } from '../server/inventory/ninetyNineFoodInboundStatusAuthorityService';
 
 describe('99Food inbound KDS payment gate', () => {
   it('blocks preparation and fulfillment without confirmed payment', () => {
@@ -29,6 +29,13 @@ describe('99Food inbound KDS payment gate', () => {
     }
     assert.equal(mayTransitionNinetyNineFoodTerminalOrder('accepted', 'preparing'), true);
     assert.equal(mayTransitionNinetyNineFoodTerminalOrder('pending', 'cancelled'), true);
+  });
+  it('does not roll back fulfillment on delayed acceptance', () => {
+    for (const current of ['preparing', 'ready', 'out_for_delivery'] as const) {
+      assert.equal(mayApplyNinetyNineFoodAcceptance(current, 'accepted'), false);
+    }
+    assert.equal(mayApplyNinetyNineFoodAcceptance('pending', 'accepted'), true);
+    assert.equal(mayApplyNinetyNineFoodAcceptance('preparing', 'ready'), true);
   });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
