@@ -218,7 +218,7 @@ function CommunityCover({
   );
 }
 
-export function ProfileCommunitiesCloudBridge() {
+export function ProfileCommunitiesCloudBridge({ inline = false }: { inline?: boolean }) {
   const { user, communities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
@@ -406,6 +406,7 @@ export function ProfileCommunitiesCloudBridge() {
   }, []);
 
   useEffect(() => {
+    if (inline) return;
     let frame = 0;
     const detach = () => {
       if (searchInputRef.current && searchListenerRef.current) {
@@ -467,7 +468,7 @@ export function ProfileCommunitiesCloudBridge() {
         mountRef.current.remove();
       }
     };
-  }, []);
+  }, [inline]);
 
   useEffect(() => {
     if (!selectedCommunityId) {
@@ -868,6 +869,7 @@ export function ProfileCommunitiesCloudBridge() {
 
   return (
     <>
+      {inline && <div ref={node => setHost(current => current === node ? current : node)} data-kyrub-community-slot="square" />}
       {groupsModalOpen && selectedCommunity && createPortal(
         <div className="fixed inset-0 z-[211] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setGroupsModalOpen(false)}>
           <section role="dialog" aria-modal="true" aria-label="Grupos da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
