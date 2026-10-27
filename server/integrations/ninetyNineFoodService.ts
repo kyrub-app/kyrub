@@ -372,10 +372,12 @@ const persistNormalizedOrder = async (
   order: NormalizedIntegrationOrder
 ): Promise<void> => {
   const canonicalStoreId = await canonicalStoreIdForTenant(tenantId);
-  await adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`).set(
-    canonicalOrder(order, canonicalStoreId, tenantId),
-    { merge: true }
-  );
+  const reference = adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`);
+  await adminDb.runTransaction(async transaction => {
+    const existing = await transaction.get(reference);
+    if (existing.exists) return;
+    transaction.create(reference, canonicalOrder(order, canonicalStoreId, tenantId));
+  });
 };
 
 const updatePersistedOrderStatus = async (
