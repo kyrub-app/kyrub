@@ -804,6 +804,7 @@ export function ProfileCommunitiesCloudBridge() {
               <div className="space-y-3">
                 <p className="text-xs text-slate-400">Organize conversas privadas com participantes desta comunidade.</p>
                 {canParticipate && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
+                {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
                 {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
                 {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes · Conversas disponíveis após ativação das mensagens privadas.</p></div>)}
@@ -814,7 +815,7 @@ export function ProfileCommunitiesCloudBridge() {
                   <input value={groupDraftName} onChange={event => setGroupDraftName(event.target.value.slice(0,80))} maxLength={80} placeholder="Ex.: Equipe do projeto" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" />
                 </label>
                 <p className="text-xs font-bold text-slate-300">Selecionar membros</p>
-                {members.filter(member => member.status === 'active').map(member => (
+                {members.filter(member => member.status === 'active' && member.userId !== user?.uid).map(member => (
                   <label key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-white">
                     <input type="checkbox" checked={groupSelectedMemberIds.includes(member.userId)} onChange={event => setGroupSelectedMemberIds(current => event.target.checked ? [...current,member.userId] : current.filter(id => id !== member.userId))} />
                     <span className="min-w-0 flex-1 truncate">{member.userName}</span>
