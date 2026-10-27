@@ -89,6 +89,10 @@ describe('99Food inbound KDS payment gate', () => {
     assert.equal(resolveNinetyNineFoodPayOnDelivery(
       undefined, {}, true
     ), true);
+    const updatedEvidence = { payOnDelivery: false };
+    assert.equal(resolveNinetyNineFoodPayOnDelivery(
+      undefined, updatedEvidence, false
+    ), false);
   });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
