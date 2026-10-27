@@ -1,0 +1,28 @@
+name: 99Food payment and status regression
+
+on:
+  push:
+    branches:
+      - feat/profile-react-rebuild
+    paths:
+      - 'server/inventory/ninetyNineFoodInboundStatusAuthorityService.ts'
+      - 'server/integrations/openDelivery.ts'
+      - 'server/integrations/ninetyNineFoodService.ts'
+      - 'tests/ninety-nine-food-inbound-payment-gate.test.ts'
+      - 'tests/open-delivery-payment-gate.test.ts'
+      - '.github/workflows/99food-payment-regression.yml'
+  workflow_dispatch:
+
+jobs:
+  payment-status-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - name: Run 99Food payment and inbound status tests
+        run: node --test --import tsx tests/open-delivery-payment-gate.test.ts tests/ninety-nine-food-inbound-payment-gate.test.ts
