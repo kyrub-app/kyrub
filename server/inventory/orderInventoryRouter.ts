@@ -292,12 +292,32 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
     .limit(100)
     .get();
   const now = Date.now();
+  const executionIds = [...new Set(snapshot.docs.map(document => {
+    const integration = document.data().integration as Record<string, unknown> | undefined;
+    return clean(integration?.outboundExecutionId);
+  }).filter(Boolean))];
+  const executionSnapshots = await Promise.all(executionIds.map(id =>
+    adminDb.collection('ninetyNineFoodStatusSyncExecutions').doc(id).get()
+  ));
+  const executionsById = new Map(executionSnapshots.map(snapshot => [
+    snapshot.id, snapshot.exists ? snapshot.data() : undefined,
+  ]));
   const items = snapshot.docs.flatMap(document => {
     const data = document.data() as Record<string, unknown>;
     const integration = data.integration && typeof data.integration === 'object'
       ? data.integration as Record<string, unknown> : {};
     if (clean(integration.provider) !== '99food') return [];
     const outboundStatus = clean(integration.outboundStatus);
+    const executionId = clean(integration.outboundExecutionId);
+    const execution = executionsById.get(executionId);
+    const executionStatus = clean(execution?.status);
+    const executionAuthorityMismatch = !executionId || !execution ||
+      clean(execution.tenantId) !== tenantId ||
+      clean(execution.orderId) !== document.id ||
+      clean(execution.provider) !== '99food' ||
+      !(outboundStatus === 'executing'
+        ? ['claimed', 'provider_write_started'].includes(executionStatus)
+        : ['provider_write_outcome_unknown', 'reconciliation_uncertain', 'reconciliation_checking'].includes(executionStatus));
     const outboundUpdatedAt = clean(integration.outboundUpdatedAt);
     const updatedMs = Date.parse(outboundUpdatedAt);
     const possiblyInterrupted = outboundStatus === 'executing' &&
@@ -307,12 +327,15 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
       orderId: document.id,
       externalOrderId: clean(integration.externalOrderId),
       outboundStatus,
+      executionId,
+      executionStatus,
+      executionAuthorityMismatch,
       outboundTargetStatus: clean(integration.outboundTargetStatus),
       outboundUpdatedAt,
       reconciliationReason: clean(integration.outboundReconciliationReason),
       possiblyInterrupted,
       missingTimestamp,
-      requiresOperatorReview: possiblyInterrupted || missingTimestamp || outboundStatus === 'reconciliation_required',
+      requiresOperatorReview: possiblyInterrupted || missingTimestamp || executionAuthorityMismatch || outboundStatus === 'reconciliation_required',
       automaticRetryAllowed: false,
     }];
   });
