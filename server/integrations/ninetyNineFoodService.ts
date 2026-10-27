@@ -350,7 +350,11 @@ const resolveConnectionForWebhook = async (
 
 const canonicalStoreIdForTenant = async (tenantId: string): Promise<string> => {
   const tenant = await adminDb.doc(`tenants/${tenantId}`).get();
-  return clean(tenant.data()?.canonicalStoreId);
+  const id = clean(tenant.data()?.canonicalStoreId);
+  if (!id || id.includes('/')) {
+    throw new Error('Loja sem identidade canônica configurada.');
+  }
+  return id;
 };
 
 const canonicalOrder = (
