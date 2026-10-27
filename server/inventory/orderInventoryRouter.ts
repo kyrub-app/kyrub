@@ -319,8 +319,10 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string, cursor = 
   const documents = snapshot.docs.slice(0, 100);
   const now = Date.now();
   const executionIds = [...new Set(documents.map(document => {
-    const integration = document.data().integration as Record<string, unknown> | undefined;
-    return clean(integration?.outboundExecutionId);
+    const value = document.data().integration;
+    const integration = value && typeof value === 'object' && !Array.isArray(value)
+      ? value as Record<string, unknown> : {};
+    return clean(integration.outboundExecutionId);
   }).filter(Boolean))];
   // Malformed execution IDs must be reported as mismatches, not abort the entire queue.
   const validExecutionIds = executionIds.filter(id => /^[a-zA-Z0-9_-]{1,256}$/.test(id));
