@@ -81,6 +81,7 @@ export const StoreCrmRelationshipPanel = ({ storeId }: { storeId: string }) => {
                 <div className="min-w-0">
                   <strong className="block truncate text-xs text-white">{customer.displayName}</strong>
                   <span className="text-[9px] font-mono text-slate-600">{customer.level.label}</span>
+                  <span className="ml-2 text-[9px] text-slate-400">{customer.customerId.startsWith('99food:') ? '99Food' : 'Kyrub'}</span>
                 </div>
                 <div className="flex shrink-0 items-center gap-1.5">
                   <span className="rounded-full border border-orange-500/20 bg-orange-500/10 px-2 py-1 text-[8px] font-black uppercase text-orange-300">{customer.confirmedPurchases} compras</span>
