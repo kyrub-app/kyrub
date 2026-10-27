@@ -1,7 +1,6 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
-  reconcilePersistedCustomerOrdersIntoCrm,
   syncCanonicalOrderCustomerIntoCrm,
 } from './storeCrmOrderSyncService.js';
 import { loadStoreCrmSummary } from './storeCrmService.js';
@@ -38,7 +37,6 @@ export const createStoreCrmRouter = (): Router => {
       }
 
       const summary = await loadStoreCrmSummary({ storeId });
-      await reconcilePersistedCustomerOrdersIntoCrm({ storeId });
       response.status(200).json(summary);
     } catch (error) {
       console.error('[Store CRM]', error);
