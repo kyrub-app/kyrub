@@ -107,6 +107,8 @@ export function UserNotificationCenterBridge() {
 
   useEffect(() => {
     notificationBaselineRef.current = null;
+    setResolvedInvites({});
+    setPendingInviteResponse(null);
     setNotifications([]);
     setUnreadCount(0);
     setPreferences(null);
