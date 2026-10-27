@@ -583,17 +583,20 @@ export const updateIntegratedOrderStatusWithInventory = async (
   lastEvent: string
 ): Promise<OrderInventoryTransitionResult> =>
   adminDb.runTransaction(async transaction => {
-    const orderReference = adminDb.doc(orderPath(tenantId, orderId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
-    const [orderSnapshot, tenantSnapshot, ledgerSnapshot] = await Promise.all([
-      transaction.get(orderReference),
+    const [tenantSnapshot, ledgerSnapshot] = await Promise.all([
       transaction.get(tenantReference),
       transaction.get(ledgerReference),
     ]);
-    const order = parseOrder(orderSnapshot.data());
-    if (!order) throw new Error('Pedido integrado não encontrado.');
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (!canonicalStoreId) {
+      throw new Error('Loja sem identidade canônica configurada para pedidos integrados.');
+    }
+    const orderReference = adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`);
+    const orderSnapshot = await transaction.get(orderReference);
+    const order = parseOrder(orderSnapshot.data());
+    if (!order) throw new Error('Pedido integrado canônico não encontrado.');
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,
       tenantId,
@@ -637,26 +640,6 @@ export const updateIntegratedOrderStatusWithInventory = async (
       },
       { merge: true }
     );
-    if (canonicalStoreId) {
-      transaction.set(
-        adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
-        {
-          status: effectiveStatus,
-          updatedAt,
-          integration: {
-            ...order.integration,
-            lastEvent,
-          },
-          inventory: {
-            lastAction: inventoryAction,
-            authorityOwnerUserId: inventoryAuthority.ownerUserId,
-            authority: inventoryAuthority.authority,
-            reconciledAt: updatedAt,
-          },
-        },
-        { merge: true }
-      );
-    }
     return {
       orderId,
       status: effectiveStatus,
