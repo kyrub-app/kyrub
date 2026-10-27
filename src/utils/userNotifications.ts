@@ -86,8 +86,8 @@ export const respondToCommunityGroupInvite = async (
 export const issueCommunityGroupInvite = async (
   groupId: string,
   inviteeUserId: string
-): Promise<{ status: 'pending' }> =>
-  json<{ status: 'pending' }>(
+): Promise<{ status: 'pending'; created: boolean }> =>
+  json<{ status: 'pending'; created: boolean }>(
     await authorizedFetch('/api/notifications/community-group-invitations/issue', {
       method: 'POST',
       body: JSON.stringify({ groupId, inviteeUserId }),
