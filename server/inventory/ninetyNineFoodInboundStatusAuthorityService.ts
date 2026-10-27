@@ -104,9 +104,9 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       );
     }
     const hasActiveOutboundState = ACTIVE_OUTBOUND_STATUSES.has(outboundStatus);
-    if (hasActiveOutboundState && !executionId) {
+    if (hasActiveOutboundState && !/^[a-zA-Z0-9_-]{1,256}$/.test(executionId)) {
       throw new Error(
-        'NINETY_NINE_FOOD_INBOUND_EXECUTION_AUTHORITY_CONFLICT: o pedido possui estado outbound ativo sem executionId server-only.'
+        'NINETY_NINE_FOOD_INBOUND_EXECUTION_AUTHORITY_CONFLICT: o pedido possui estado outbound ativo sem executionId server-only válido.'
       );
     }
     const hasActiveAuthority = hasActiveOutboundState && Boolean(executionId);
