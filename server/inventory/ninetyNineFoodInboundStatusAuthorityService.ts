@@ -193,7 +193,8 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
       ? 'paid'
       : providerPayment?.paymentStatus === 'paid' ? 'paid' : order.paymentStatus;
     const payOnDelivery = providerPayment?.payOnDelivery === true ||
-      record(integration.paymentEvidence).payOnDelivery === true;
+      record(integration.paymentEvidence).payOnDelivery === true ||
+      integration.payOnDelivery === true;
     if (paymentStatus === 'paid' && clean(order.paymentStatus) !== 'paid') {
       orderPatch.paymentStatus = 'paid';
     }
