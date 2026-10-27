@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { FieldValue, type DocumentSnapshot } from 'firebase-admin/firestore';
+import { FieldValue, Timestamp, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { InventoryOrderStatus } from '../../shared/inventoryConsumption.js';
 
@@ -99,6 +99,7 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
   eventId: string;
   eventType: string;
   eventReferencePath: string;
+  eventAttemptId: string;
   mappedStatus: InventoryOrderStatus | null;
   providerPayment?: {
     paymentStatus: 'unpaid' | 'partial' | 'paid';
@@ -111,6 +112,10 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
   const eventId = clean(input.eventId);
   const eventType = clean(input.eventType);
   const eventReferencePath = clean(input.eventReferencePath);
+  const eventAttemptId = clean(input.eventAttemptId);
+  if (!eventAttemptId || !eventReferencePath.startsWith(`tenants/${tenantId}/integrationEvents/`)) {
+    throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_INVALID');
+  }
   if (!tenantId || !externalOrderId || !eventId || !eventType || !eventReferencePath) {
     throw new Error('Evento inbound 99Food não possui identidade suficiente para autoridade de status.');
   }
@@ -120,10 +125,20 @@ export const applyNinetyNineFoodInboundStatusWithAuthority = async (input: {
   const lockReference = mutationLockReference(tenantId, orderId);
 
   return adminDb.runTransaction(async transaction => {
-    const [tenantSnapshot, lockSnapshot] = await Promise.all([
+    const [tenantSnapshot, lockSnapshot, eventSnapshot] = await Promise.all([
       transaction.get(tenantReference),
       transaction.get(lockReference),
+      transaction.get(adminDb.doc(eventReferencePath)),
     ]);
+    const reservedEvent = record(eventSnapshot.data());
+    const eventLease = reservedEvent.leaseExpiresAt;
+    if (!eventSnapshot.exists || clean(reservedEvent.status) !== 'processing' ||
+        clean(reservedEvent.attemptId) !== eventAttemptId ||
+        clean(reservedEvent.eventId) !== eventId ||
+        clean(reservedEvent.externalOrderId) !== externalOrderId ||
+        !(eventLease instanceof Timestamp) || eventLease.toMillis() <= Date.now()) {
+      throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_LOST');
+    }
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     if (!canonicalStoreId || canonicalStoreId.includes('/')) {
       throw new Error('NINETY_NINE_FOOD_CANONICAL_STORE_MISSING: loja sem identidade canônica válida.');
