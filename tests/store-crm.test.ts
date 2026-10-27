@@ -59,6 +59,7 @@ describe('store CRM relationship projection', () => {
     assert.match(normalizer, /externalCustomerId: cleanString\(customer\.id\)/);
     assert.match(source, /orderCount: sorted\.length/);
     assert.match(source, /crmCustomerPath\(input\.storeId\)/);
+    assert.match(source, /ids\.filter\(customerId => !customerId\.startsWith\('99food:'\)\)/);
   });
 
   it('new CRM customers start marketing channels unknown without overwriting existing consent or relationship history', () => {
