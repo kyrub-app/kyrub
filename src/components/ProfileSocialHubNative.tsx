@@ -1755,6 +1755,7 @@ export function ProfileSocialHubNative() {
                       + Publicar
                     </button>
                   </div>
+                  <div id="praca-communities-host" data-kyrub-community-slot="square" />
                   {renderPostList(
                     squarePosts.filter(
                       post =>
