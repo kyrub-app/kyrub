@@ -71,6 +71,12 @@ describe('store CRM relationship projection', () => {
     assert.doesNotMatch(source, /\bcontactHistory:/);
   });
 
+  it('authenticated buyer sync rejects external 99Food buyer identifiers', () => {
+    const source = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
+    assert.match(source, /customerId\.startsWith\('99food:'\)/);
+    assert.match(source, /targetOrder\.customerId !== authenticatedBuyerId/);
+  });
+
   it('buyer POST authorizes from the persisted order and accepts canonical or operational order storage', () => {
     const router = readFileSync('server/payments/storeCrmRouter.ts', 'utf8');
     const syncService = readFileSync('server/payments/storeCrmOrderSyncService.ts', 'utf8');
