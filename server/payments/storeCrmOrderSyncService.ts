@@ -240,33 +240,3 @@ export const syncPersistedCustomerOrderIntoCrm = async (input: {
   });
 };
 
-export const reconcilePersistedCustomerOrdersIntoCrm = async (input: {
-  storeId: string;
-  now?: Date;
-}): Promise<number> => {
-  const storeId = clean(input.storeId);
-  if (!storeId) throw new Error('STORE_CRM_STORE_REQUIRED');
-  const [canonical, operational] = await Promise.all([
-    adminDb.collection(canonicalOrderPath(storeId)).get(),
-    adminDb.collection(operationalOrderPath(storeId)).get(),
-  ]);
-  const orders = dedupeOrders([
-    ...canonical.docs.map(doc => parseOrderDocument(doc, storeId)).filter((order): order is PersistedCrmOrder => order !== null),
-    ...operational.docs.map(doc => parseOrderDocument(doc, storeId)).filter((order): order is PersistedCrmOrder => order !== null),
-  ]);
-  const byCustomer = new Map<string, PersistedCrmOrder[]>();
-  for (const order of orders) {
-    const current = byCustomer.get(order.customerId) ?? [];
-    current.push(order);
-    byCustomer.set(order.customerId, current);
-  }
-  for (const [customerId, customerOrders] of byCustomer) {
-    await writeCustomerAggregate({
-      storeId,
-      customerId,
-      orders: customerOrders,
-      now: input.now,
-    });
-  }
-  return byCustomer.size;
-};
