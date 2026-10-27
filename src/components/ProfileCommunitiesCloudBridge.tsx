@@ -941,35 +941,8 @@ export function ProfileCommunitiesCloudBridge() {
                   Encontre espaços para participar
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('kyrub:open-saved-publications'))} className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"><Bookmark className="h-4 w-4" /> Salvos</button>
             </header>
-
-            {showLocalImport && user && (
-              <button
-                type="button"
-                disabled={actionBusy === 'import-local'}
-                onClick={() => void importLocal()}
-                className="flex w-full items-center gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/10 p-3 text-left disabled:opacity-45"
-              >
-                <Import className="h-5 w-5 shrink-0 text-violet-300" />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-[9px] font-black uppercase text-violet-200">
-                    Importar teste deste aparelho
-                  </strong>
-                  <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                    O perfil conectado agora se tornará dono das comunidades locais importadas.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-violet-300" />
-              </button>
-            )}
 
             <div className="flex gap-1.5 overflow-x-auto">
               {([
@@ -1052,35 +1025,8 @@ export function ProfileCommunitiesCloudBridge() {
                   Encontre espaços para participar
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
+              <button type="button" onClick={() => window.dispatchEvent(new Event('kyrub:open-saved-publications'))} className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"><Bookmark className="h-4 w-4" /> Salvos</button>
             </header>
-
-            {showLocalImport && user && (
-              <button
-                type="button"
-                disabled={actionBusy === 'import-local'}
-                onClick={() => void importLocal()}
-                className="flex w-full items-center gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/10 p-3 text-left disabled:opacity-45"
-              >
-                <Import className="h-5 w-5 shrink-0 text-violet-300" />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-[9px] font-black uppercase text-violet-200">
-                    Importar teste deste aparelho
-                  </strong>
-                  <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                    O perfil conectado agora se tornará dono das comunidades locais importadas.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-violet-300" />
-              </button>
-            )}
 
             <div className="flex gap-1.5 overflow-x-auto">
               {([
