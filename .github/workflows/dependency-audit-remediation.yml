@@ -6,6 +6,11 @@ on:
       - fix/production-dependency-audit-oct2026
     paths:
       - .github/workflows/dependency-audit-remediation.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - .github/workflows/dependency-audit-remediation.yml
   workflow_dispatch:
 
 permissions:
