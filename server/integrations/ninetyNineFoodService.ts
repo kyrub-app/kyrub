@@ -365,6 +365,19 @@ const canonicalOrder = (
   legacyStoreId: tenantId,
   createdByUserId: 'integration:99food',
   createdByRole: 'integration',
+  // An external preparation state is evidence from the provider, not a
+  // license to start KDS production without confirmed settlement.
+  ...(order.paymentStatus !== 'paid' &&
+    ['preparing', 'ready', 'out_for_delivery', 'completed'].includes(order.status)
+    ? {
+        status: 'pending',
+        integration: {
+          ...order.integration,
+          paymentGateBlockedStatus: order.status,
+          paymentGateBlockedAt: new Date().toISOString(),
+        },
+      }
+    : {}),
 });
 
 const persistNormalizedOrder = async (
