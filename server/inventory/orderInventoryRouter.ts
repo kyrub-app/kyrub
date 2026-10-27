@@ -289,10 +289,12 @@ const markPartnerSyncAuthorizationRequired = async (
 const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
   const snapshot = await (await orderCollection(tenantId))
     .where('integration.outboundStatus', 'in', ['executing', 'reconciliation_required'])
-    .limit(100)
+    .limit(101)
     .get();
+  const truncated = snapshot.size > 100;
+  const documents = snapshot.docs.slice(0, 100);
   const now = Date.now();
-  const executionIds = [...new Set(snapshot.docs.map(document => {
+  const executionIds = [...new Set(documents.map(document => {
     const integration = document.data().integration as Record<string, unknown> | undefined;
     return clean(integration?.outboundExecutionId);
   }).filter(Boolean))];
@@ -302,7 +304,7 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
   const executionsById = new Map(executionSnapshots.map(snapshot => [
     snapshot.id, snapshot.exists ? snapshot.data() : undefined,
   ]));
-  const items = snapshot.docs.flatMap(document => {
+  const items = documents.flatMap(document => {
     const data = document.data() as Record<string, unknown>;
     const integration = data.integration && typeof data.integration === 'object'
       ? data.integration as Record<string, unknown> : {};
@@ -339,7 +341,7 @@ const listNinetyNineFoodReconciliationCases = async (tenantId: string) => {
       automaticRetryAllowed: false,
     }];
   });
-  return { items };
+  return { items, truncated, limit: 100 };
 };
 
 const listPendingNinetyNineFoodStatusSyncs = async (tenantId: string) => {
