@@ -50,6 +50,15 @@ describe('store CRM relationship projection', () => {
     assert.match(source, /customerIds\.add\(customer\.customerId\)/);
   });
 
+  it('99Food CRM projection only recognizes a provider-supplied customer identity', () => {
+    const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
+    const normalizer = readFileSync('server/integrations/openDelivery.ts', 'utf8');
+    assert.match(source, /clean\(integration\.provider\) === '99food' && !clean\(integration\.externalCustomerId\)/);
+    assert.match(normalizer, /externalCustomerId: cleanString\(customer\.id\)/);
+    assert.match(source, /orderCount: sorted\.length/);
+    assert.match(source, /crmCustomerPath\(input\.storeId\)/);
+  });
+
   it('new CRM customers start marketing channels unknown without overwriting existing consent or relationship history', () => {
     const source = readFileSync('server/payments/storeCrmService.ts', 'utf8');
     assert.match(source, /whatsapp: \{ status: 'unknown'/);
