@@ -94,6 +94,19 @@ describe('99Food inbound KDS payment gate', () => {
       undefined, updatedEvidence, false
     ), false);
   });
+  it('blocks all production stages when fresh provider evidence revokes offline collection', () => {
+    const payOnDelivery = resolveNinetyNineFoodPayOnDelivery(
+      { payOnDelivery: false },
+      { payOnDelivery: true },
+      true
+    );
+    assert.equal(payOnDelivery, false);
+    for (const stage of ['preparing', 'ready', 'out_for_delivery', 'completed'] as const) {
+      assert.equal(mayApplyNinetyNineFoodInboundStatus(stage, 'unpaid', payOnDelivery), false);
+      assert.equal(mayApplyNinetyNineFoodInboundStatus(stage, 'partial', payOnDelivery), false);
+    }
+    assert.equal(mayApplyNinetyNineFoodInboundStatus('cancelled', 'unpaid', payOnDelivery), true);
+  });
   it('does not apply informational events without mapped status', () => {
     assert.equal(mayApplyNinetyNineFoodInboundStatus(null, 'paid'), false);
   });
