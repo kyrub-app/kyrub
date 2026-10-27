@@ -100,11 +100,11 @@ test('composition fails clearly when the delivery section is absent', () => {
   );
 });
 
-test('applications are server-authoritative while vacancy creation requires approval', () => {
+test('freelance applications and vacancy creation require approved profiles', () => {
   const result = hardenKyrubFreelanceRules(legacyFreelanceRules);
 
   assert.match(result, /hasApprovedIdentityProfile\('requester'\)/);
-  assert.match(result, /allow create, update, delete: if false;/);
+  assert.match(result, /hasApprovedIdentityProfile\('freelancer'\)/);
   assert.match(result, /hasRole\(\['owner', 'manager', 'staff'\]\)/);
   assert.match(result, /existing\(\)\.userId == request\.auth\.uid/);
   assert.doesNotMatch(result, /allow update, delete: if isSignedIn\(\);/);
@@ -202,4 +202,24 @@ test('Kyrubia conversation history is composed as UID-private cloud data', () =>
   assert.match(gate, /deleteKyrubAiCloudConversation/);
   assert.match(gate, /Using local conversation cache until cloud sync returns/);
   assert.doesNotMatch(sync, /addDoc\(/);
+});
+
+test('private community groups are included in the deployed rules composition', () => {
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  const rules = readFileSync('firestore.community-groups.fragment.rules', 'utf8');
+  const communities = readFileSync('firestore.communities.fragment.rules', 'utf8');
+  const firebase = JSON.parse(readFileSync('firebase.json', 'utf8'));
+  const indexes = JSON.parse(readFileSync('firestore.indexes.json', 'utf8'));
+
+  assert.equal(firebase.firestore.rules, '.firebase/firestore.combined.rules');
+  assert.ok(composer.includes('firestore.community-groups.fragment.rules'));
+  assert.ok(communities.includes('function isActiveCommunityMember(communityId)'));
+  assert.ok(rules.includes('match /community_groups/{groupId}'));
+  assert.ok(rules.includes('allow update, delete: if false;'));
+  assert.ok(indexes.indexes.some(index =>
+    index.collectionGroup === 'community_groups' &&
+    index.queryScope === 'COLLECTION' &&
+    index.fields.some(field => field.fieldPath === 'communityId') &&
+    index.fields.some(field => field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS')
+  ));
 });
