@@ -237,6 +237,7 @@ const markPartnerSyncError = async (
     // The partner may have accepted the action before the response was lost.
     // Keep this out of the manual retry queue until reconciliation confirms the outcome.
     'integration.outboundStatus': 'reconciliation_required',
+    'integration.outboundReconciliationReason': 'provider_outcome_unknown',
     'integration.outboundTargetStatus': status,
     'integration.outboundReason': reason || FieldValue.delete(),
     'integration.outboundError': message.slice(0, 500),
