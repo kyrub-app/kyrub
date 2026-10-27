@@ -28,3 +28,15 @@ export const withCanonicalSourceChannel = <T extends Record<string, unknown>>(
   ...value,
   sourceChannel: normalizeCanonicalSourceChannel(sourceChannel),
 });
+
+/** Maps integration channel names to the existing operational order contract. */
+export const toOperationalCommerceChannel = (source: CanonicalSourceChannel): import('../../shared/channelAvailabilityFiscalFoundation').CommerceChannel => {
+  switch (source) {
+    case 'kyrub-shop': return 'kyrub';
+    case 'mercado-livre': return 'mercado_livre';
+    case '99food': return '99food';
+    case 'ifood': return 'ifood';
+    case 'shopee': return 'shopee';
+    default: return 'other';
+  }
+};
