@@ -1,0 +1,87 @@
+    // --- Community-scoped private groups (not personal contact groups) ---
+    function communityGroupPath(groupId) {
+      return /databases/$(database)/documents/community_groups/$(groupId);
+    }
+
+    function canAccessCommunityGroup(groupId) {
+      return isSignedIn()
+        && exists(communityGroupPath(groupId))
+        && request.auth.uid in get(communityGroupPath(groupId)).data.memberIds
+        && isActiveCommunityMember(get(communityGroupPath(groupId)).data.communityId);
+    }
+
+    match /community_groups/{groupId} {
+      allow get, list: if isSignedIn()
+        && request.auth.uid in existing().memberIds
+        && isActiveCommunityMember(existing().communityId);
+
+      // The group creator must be an active member. Each invited UID is checked
+      // again at read time against community membership, preventing outsiders
+      // from reading even if a stale or invalid UID appears in memberIds.
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'groupId', 'communityId', 'creatorId', 'name', 'memberIds',
+          'createdAt', 'updatedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'groupId', 'communityId', 'creatorId', 'name', 'memberIds',
+          'createdAt', 'updatedAt'
+        ])
+        && incoming().groupId == groupId
+        && incoming().communityId is string
+        && incoming().communityId.size() > 0
+        && incoming().communityId.size() <= 128
+        && incoming().creatorId == request.auth.uid
+        && isActiveCommunityMember(incoming().communityId)
+        && incoming().name is string
+        && incoming().name.size() > 0
+        && incoming().name.size() <= 80
+        && incoming().memberIds is list
+        // Until invitations are implemented, the creator is the only member.
+        // Arbitrary UIDs must never be added without their consent.
+        && incoming().memberIds == [request.auth.uid]
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time;
+
+      // Membership changes require a separate audited invitation flow.
+      allow update, delete: if false;
+
+      // An invitation is visible only to its intended recipient and the group creator.
+      // Acceptance records consent; membership mutation remains server-controlled.
+      match /invitations/{inviteeId} {
+        allow get: if isSignedIn()
+          && exists(communityGroupPath(groupId))
+          && (
+            request.auth.uid == inviteeId
+            || request.auth.uid == get(communityGroupPath(groupId)).data.creatorId
+          );
+        // Collection listing is intentionally disabled: a recipient can fetch
+        // their deterministic invitation ID without seeing other invitees.
+        allow list: if false;
+
+        // Invitations and consent transitions are exclusively server-controlled.
+        // This prevents direct client status changes from bypassing membership updates.
+        allow create, update: if false;
+
+        allow delete: if false;
+      }
+
+      match /messages/{messageId} {
+        allow get, list: if canAccessCommunityGroup(groupId);
+
+        allow create: if canAccessCommunityGroup(groupId)
+          && request.resource.data.keys().hasAll([
+            'authorId', 'text', 'createdAt'
+          ])
+          && request.resource.data.keys().hasOnly([
+            'authorId', 'text', 'createdAt'
+          ])
+          && request.resource.data.authorId == request.auth.uid
+          && request.resource.data.text is string
+          && request.resource.data.text.size() > 0
+          && request.resource.data.text.size() <= 3000
+          && request.resource.data.createdAt == request.time;
+
+        allow update, delete: if false;
+      }
+    }
