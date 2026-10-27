@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 import { normalizeOpenDeliveryOrder } from '../server/integrations/openDelivery';
 
-const order = (payments?: Record<string, number>, lastEvent = 'CONFIRMED') => ({
+const order = (payments?: Record<string, unknown>, lastEvent = 'CONFIRMED') => ({
   id: 'provider-order-1',
   displayId: '001',
   type: 'TAKEOUT',
@@ -28,7 +28,11 @@ describe('99Food payment evidence', () => {
     assert.equal(normalize(order({ prepaid: 25 })).paymentStatus, 'partial');
   });
   it('marks fully prepaid only with explicit zero pending and full prepaid amount', () => {
-    assert.equal(normalize(order({ prepaid: 25, pending: 0 })).paymentStatus, 'paid');
+    assert.equal(normalize(order({ prepaid: 25, pending: 0, methods: [{ type: 'ONLINE', value: 25 }] })).paymentStatus, 'paid');
+  });
+  it('does not infer online settlement from amounts without an online method', () => {
+    assert.equal(normalize(order({ prepaid: 25, pending: 0 })).paymentStatus, 'partial');
+    assert.equal(normalize(order({ prepaid: 25, pending: 0, methods: [{ type: 'OFFLINE', value: 25 }] })).paymentStatus, 'partial');
   });
   it('keeps partially paid and unpaid orders outside paid classification', () => {
     assert.equal(normalize(order({ prepaid: 10, pending: 15 })).paymentStatus, 'partial');
