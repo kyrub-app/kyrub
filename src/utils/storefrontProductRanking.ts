@@ -19,7 +19,7 @@ export const sortByBestSellers = (
   offers: Product[],
   salesByProductId: Record<string, number>
 ): Product[] =>
-  sortByNewest(offers).sort((left, right) => {
+  sortByNewest(offers.filter(product => (salesByProductId[product.id] ?? 0) > 0)).sort((left, right) => {
     const salesDifference =
       (salesByProductId[right.id] ?? 0) -
       (salesByProductId[left.id] ?? 0);
