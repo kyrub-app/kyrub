@@ -96,7 +96,7 @@ export const StoreTeamWorkspace = ({
   const [claimInvitationId, setClaimInvitationId] = useState('');
   const [claimToken, setClaimToken] = useState('');
   const [issuedExternalInvite, setIssuedExternalInvite] = useState<IssuedExternalTeamInvitation | null>(null);
-  const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
+  const [inviteRole, setInviteRole] = useState<ExternalTeamInviteRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
   const [draftDepartment, setDraftDepartment] = useState('');
   const [draftWorkArea, setDraftWorkArea] = useState('');
@@ -302,7 +302,7 @@ export const StoreTeamWorkspace = ({
         const issued = await issueExternalTeamInvitation(idToken, {
           storeId: selectedAccess.store.id,
           recipientEmail: externalInviteEmail.trim(),
-          role: inviteRole as ExternalTeamInviteRole,
+          role: inviteRole,
         });
         setIssuedExternalInvite(issued);
         notify('Convite criado. Compartilhe o código apenas com o destinatário.', 'success');
