@@ -93,6 +93,7 @@ export default function StorePayrollWorkspace({ legacyStoreId, notify }: Props) 
   const [generatingMemberId, setGeneratingMemberId] = useState('');
   const [feedback, setFeedback] = useState('');
   const [feedbackError, setFeedbackError] = useState(false);
+  const [activeSection, setActiveSection] = useState<'overview' | 'team' | 'payroll'>('overview');
 
   const user = auth.currentUser;
   const activeMembers = useMemo(
@@ -262,12 +263,27 @@ export default function StorePayrollWorkspace({ legacyStoreId, notify }: Props) 
         </p>
       </div>
 
+      {activeSection === 'overview' && <>
       <div className="grid gap-3 sm:grid-cols-3" aria-label="Resumo de recursos humanos">
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Colaboradores ativos</p><strong className="mt-1 block text-xl font-black">{activeMembers.length}</strong></div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Remunerações ativas</p><strong className="mt-1 block text-xl font-black">{compensations.filter(item => item.active).length}</strong></div>
         <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Total mensal configurado</p><strong className="mt-1 block text-lg font-black">{money(compensations.filter(item => item.active).reduce((total, item) => total + item.monthlyAmountMinor, 0))}</strong><p className="mt-1 text-[8px] text-slate-500">Valor previsto; não representa pagamento efetuado.</p></div>
       </div>
 
+      </>}
+      <nav aria-label="Seções de recursos humanos" className="flex flex-wrap gap-2">
+        {([['overview', 'Visão geral'], ['team', 'Colaboradores'], ['payroll', 'Remuneração e folha']] as const).map(([id, label]) => (
+          <button key={id} type="button" onClick={() => setActiveSection(id)} aria-pressed={activeSection === id} className={`min-h-10 rounded-xl border px-3 text-[10px] font-bold ${activeSection === id ? 'border-violet-400 bg-violet-500/20 text-white' : 'border-slate-700 text-slate-300'}`}>{label}</button>
+        ))}
+      </nav>
+      {activeSection === 'team' && (
+        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4">
+          <h5 className="text-xs font-bold">Colaboradores da loja</h5>
+          <p className="mt-1 text-[10px] text-slate-400">A identidade e as permissões são administradas em Equipe & Permissões; o RH utiliza os mesmos registros.</p>
+          {activeMembers.length === 0 ? <p className="mt-3 text-xs text-slate-500">Nenhum colaborador ativo.</p> : <ul className="mt-3 space-y-2">{activeMembers.map(member => <li key={member.userId} className="rounded-lg border border-slate-800 px-3 py-2 text-xs">{member.displayName || member.email}</li>)}</ul>}
+        </div>
+      )}
+      {activeSection === 'payroll' && <>
       {activeMembers.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">
           Não há colaborador ativo nesta equipe para configurar remuneração.
@@ -357,6 +373,8 @@ export default function StorePayrollWorkspace({ legacyStoreId, notify }: Props) 
           </div>
         )}
       </div>
+
+      </>}
 
       {feedback && (
         <p className={`rounded-xl border p-3 text-[9px] ${feedbackError ? 'border-rose-500/20 bg-rose-500/10 text-rose-200' : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-200'}`}>
