@@ -50,13 +50,13 @@ export const validateSubscriptionContractDiscounts = (
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_TERMS');
   }
   const seen = new Set<number>();
-  if (!entries.some(entry => entry.months === 1 && entry.discountPercent === 0)) {
-    throw new Error('MISSING_MONTHLY_BASELINE');
-  }
   for (const entry of entries) {
     if (seen.has(entry.months)) throw new Error('DUPLICATE_SUBSCRIPTION_CONTRACT_TERM');
     seen.add(entry.months);
     calculateSubscriptionContractOffer(0, entry.months, entry.discountPercent);
+  }
+  if (!entries.some(entry => entry.months === 1 && entry.discountPercent === 0)) {
+    throw new Error('MISSING_MONTHLY_BASELINE');
   }
 };
 
