@@ -18,6 +18,10 @@ const paidPlanSource = readFileSync(
   'server/admin/paidPlanSubscriptionService.ts',
   'utf8'
 );
+const merchantSubscriptionSource = readFileSync(
+  'server/payments/storeSubscriptionService.ts',
+  'utf8'
+);
 
 test('store sales and store subscriptions belong to the merchant store', () => {
   for (const context of ['store_sale', 'store_subscription'] as const) {
@@ -88,4 +92,20 @@ test('paid Pro and Business keep the dedicated Kyrub billing credential', () => 
   assert.match(paidPlanSource, /KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET/);
   assert.doesNotMatch(paidPlanSource, /mercadoPagoStoreRequest/);
   assert.doesNotMatch(paidPlanSource, /loadMercadoPagoStoreConnectionMetadata/);
+});
+
+// Until official-store plan products have a verified entitlement bridge, these
+// two checkout authorities must remain distinct. A checkout alone grants nothing.
+test('merchant subscription checkout cannot silently become Kyrub plan billing', () => {
+  assert.match(merchantSubscriptionSource, /context: 'store_subscription'/);
+  assert.match(merchantSubscriptionSource, /recipient\.recipientKind !== 'merchant_store'/);
+  assert.match(merchantSubscriptionSource, /mercadoPagoStoreRequest<MpPreapproval>/);
+  assert.doesNotMatch(merchantSubscriptionSource, /activateSubscriptionEntitlement/);
+  assert.doesNotMatch(merchantSubscriptionSource, /writePlanMirrors/);
+});
+
+test('Kyrub plan activation is gated by provider reconciliation, not checkout creation', () => {
+  assert.match(paidPlanSource, /loadApprovedSubscriptionPayment/);
+  assert.match(paidPlanSource, /await activateSubscriptionEntitlement\(ownerId, next\)/);
+  assert.match(paidPlanSource, /providerPaymentStatus: 'pending_confirmation'/);
 });
