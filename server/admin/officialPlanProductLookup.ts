@@ -31,6 +31,15 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     throw new OfficialPlanCheckoutRouteError('PRODUCT_NOT_FOUND', 'Produto não encontrado.');
   }
   const data = product.data() ?? {};
+  // Legacy publicProducts remain owner-writable. A missing canonical product
+  // must fail closed; never infer a platform plan from the legacy array.
+  // Until product-tag writes are platform-admin-only, reject any privileged tag.
+  if (data.platformPlanId !== undefined && data.platformPlanId !== null) {
+    throw new OfficialPlanCheckoutRouteError(
+      'PLATFORM_PLAN_TAG_NOT_AUTHORIZED',
+      'Produto de plano aguarda cadastro protegido pela plataforma.'
+    );
+  }
   const rawTag = data.platformPlanId;
   if (rawTag !== undefined && rawTag !== null &&
       rawTag !== 'free' && rawTag !== 'pro' && rawTag !== 'business') {
