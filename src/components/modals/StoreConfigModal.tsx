@@ -8,6 +8,7 @@ import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import { GooglePhotosImagePickerButton } from '../GooglePhotosImagePickerButton';
 import { StoreIntegrationsPanel } from '../store/StoreIntegrationsPanel';
 import { StoreLocationEditor } from '../store/StoreLocationEditor';
+import { StoreOperationalPointsEditor } from '../store/StoreOperationalPointsEditor';
 import { StoreOpeningHoursEditor } from '../store/StoreOpeningHoursEditor';
 import type { MarketplaceListingDocument, Store } from '../../types';
 import { auth, db } from '../../utils/firebase';
@@ -450,6 +451,11 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       <StoreLocationEditor
         value={locationDraft}
         onChange={setLocationDraft}
+        disabled={isSaving || isPublishing}
+      />
+      <StoreOperationalPointsEditor
+        value={operationalSettings.operationalPoints}
+        onChange={operationalPoints => setOperationalSettings(current => ({ ...current, operationalPoints }))}
         disabled={isSaving || isPublishing}
       />
       <StoreOpeningHoursEditor
