@@ -656,7 +656,7 @@ export const StoreTeamWorkspace = ({
                       </div>
                       <select
                         value={inviteRole}
-                        onChange={event => setInviteRole(event.target.value as StoreRole)}
+                        onChange={event => setInviteRole(event.target.value as ExternalTeamInviteRole)}
                         className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs font-bold text-white"
                       >
                         {assignableRoles.map(role => (
