@@ -543,3 +543,41 @@ Verificação direta da branch `feat/profile-react-rebuild` após a correção d
 5. Só considerar o gate visual concluído quando o alias fixo estiver apontando para o SHA da alteração validada.
 
 Este checkpoint é documentação de autoridade e critérios de aceite; não representa migração de estado concluída nem aprovação E2E.
+
+
+## Checkpoint de reconciliação e promoção — 28/10/2026
+
+> **Status: planejamento documentado; não é autorização de merge nem de deploy.** A PR #964 continua sendo documental e tem como base \`main\`. O desenvolvimento funcional recente está predominantemente na branch fixa de homologação \`feat/profile-react-rebuild\`. Não confundir implementação salva em homologação, aprovação de testes, deploy READY e funcionalidade publicada em produção.
+
+### Divergência confirmada entre branches
+
+Comparação GitHub \`main...feat/profile-react-rebuild\` em 28/10/2026: **diverged**, homologação **656 commits à frente** e **212 atrás** de \`main\`, com **230 arquivos** reportados na comparação. Contagens de commits não equivalem a funcionalidades independentes ou a um diff pronto para promoção. Um merge integral não está autorizado: precisa primeiro reconciliar mudanças concorrentes, dependências e contratos de produção.
+
+### Marcos posteriores ao mapa inicial
+
+| Frente | Estado de acompanhamento | Próxima evidência exigida |
+| --- | --- | --- |
+| Social/Pessoal/Praça/Marketplace | Intervenções e checkpoints posteriores na homologação; migração estrutural não declarada concluída | Confirmar autoridade de navegação/filtros, dependências de \`LegacyKyrubTab\` e comportamento no alias fixo |
+| Perfil/Comunidades | Revisões de membros, conexões, grupos e perfil; não equivalem à retirada comprovada de todas as bridges | Rastrear consumidores/portais legados e testar paridade |
+| Loja/ERP — Equipes e Colaboradores | Frente funcional mais recente: vínculos profissionais, Renda → Trabalhos, convites, permissões e notificações | E2E de convite existente e externo, aceite/recusa, isolamento por loja e acesso de staff |
+| Firestore — segurança de lojas | Testes de segurança migrados para regras compostas; contratos e cenários de convites reforçados. Arquivo standalone antigo ainda preservado | Executar composição, testes de contrato e emulador; rastrear referências restantes antes de excluir duplicata |
+| Dependências de produção | PR #1002 **mergeada em \`main\`** em 27/10/2026; frente distinta da modernização funcional | Preservar correções da \`main\` ao reconciliar branches |
+| Marketplace/ERP/CRM/Assinaturas | Decisões de responsabilidade e checkout registradas em desenvolvimento; não declarar E2E concluído | Revalidar contratos, rotas, pagamentos e isolamento multi-tenant |
+
+### Bloqueio de publicação e política de promoção
+
+O status Vercel consultado para commits recentes da homologação indicou **failure** com URL de **build-rate-limit/upgradeToPro**. Esse retorno indica impedimento de build por limite do plano, **não comprova falha de código** e **não prova que o GitHub esteja impedindo merges**. Também não substitui os testes de CI, cuja execução ainda precisa ser confirmada.
+
+1. Inventariar PRs/commits e classificar por domínio, dependências e risco; comparar sempre com \`main\` atual.
+2. Resolver divergências e preservar mudanças que já entraram em produção (inclusive a PR #1002); evitar merge indiscriminado de \`feat/profile-react-rebuild\`.
+3. Preparar PRs de promoção pequenas e rastreáveis, por bloco funcional, com critérios de aceite e plano de reversão.
+4. Exigir testes locais/CI pertinentes e, quando a Vercel voltar a permitir builds, deployment READY vinculado ao SHA exato; conferir o SHA servido pelo domínio fixo de homologação.
+5. Executar smoke/E2E por papel (usuário, lojista, gerente, colaborador) e fluxos financeiros críticos antes de promover mudanças de alto risco.
+6. Não publicar regras Firestore, pagamentos, fiscal ou permissões apenas por merge de código; tratar seus deploys e validações como gates específicos.
+7. Registrar para cada bloco: SHA de origem, PR de promoção, CI, deployment, validação e decisão de merge/rollback.
+
+### Posição na ordem original da auditoria
+
+A sequência de sete ondas permanece: (1) Social/Pessoal/Praça/Marketplace; (2) Shell; (3) Perfil/Comunidades; (4) Loja/ERP; (5) IA/Kyrubia; (6) Legados operacionais; (7) Bridges legítimas. **Equipes e Colaboradores está sendo tratado na onda 4**, com pendências transversais de segurança; isso **não** significa que as ondas 1–3 estejam integralmente concluídas. A promoção gradual à produção é uma trilha paralela de entrega, não uma oitava onda.
+
+**Próxima ação recomendada:** levantar a primeira fatia de alterações de homologação que possa ser reconciliada com \`main\` e testada isoladamente, mantendo a #964 como mapa e não como PR de código.
