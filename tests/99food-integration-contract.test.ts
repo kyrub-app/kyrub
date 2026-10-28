@@ -150,7 +150,9 @@ test('event finalization and connection health share one transaction', () => {
   assert.match(finalizer, /transaction\.get\(connectionReference\)/);
   assert.match(finalizer, /transaction\.update\(reference/);
   assert.match(finalizer, /transaction\.set\(connectionReference/);
-  assert.match(finalizer, /else if \(!alreadyHealthy\)/);
+  assert.match(finalizer, /\} else \{/);
+  assert.match(finalizer, /status: 'attention'/);
+  assert.match(finalizer, /status: 'connected'/);
   assert.match(finalizer, /data\.attemptId !== attemptId/);
   assert.match(finalizer, /lease\.toMillis\(\) <= Date\.now\(\)/);
   const handler = serviceSource.slice(
