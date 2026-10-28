@@ -389,3 +389,27 @@ test('external team invitation records are inaccessible to every client role', a
     await assertFails(deleteDoc(reference));
   }
 });
+
+
+test('invited and suspended staff cannot read or modify operational orders', async () => {
+  await seedStore();
+  await environment.withSecurityRulesDisabled(async context => {
+    const database = context.firestore();
+    await setDoc(doc(database, 'stores', STORE_ID, 'orders', 'order-gated'), orderRecord('order-gated', 'buyer-a'));
+    await setDoc(doc(database, 'stores', STORE_ID, 'members', 'invited-a'), memberRecord('invited-a', 'seller', 'invited'));
+    await setDoc(doc(database, 'stores', STORE_ID, 'members', 'suspended-a'), {
+      ...memberRecord('suspended-a', 'seller'),
+      status: 'suspended',
+    });
+  });
+
+  for (const uid of ['invited-a', 'suspended-a']) {
+    const database = environment.authenticatedContext(uid).firestore();
+    const orderRef = doc(database, 'stores', STORE_ID, 'orders', 'order-gated');
+    await assertFails(getDoc(orderRef));
+    await assertFails(updateDoc(orderRef, { customerNote: 'unauthorized', updatedAt: serverTimestamp() }));
+  }
+
+  const active = environment.authenticatedContext('seller-a').firestore();
+  await assertSucceeds(getDoc(doc(active, 'stores', STORE_ID, 'orders', 'order-gated')));
+});
