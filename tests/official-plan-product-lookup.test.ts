@@ -6,13 +6,15 @@ const source = readFileSync(new URL('../server/admin/officialPlanProductLookup.t
 describe('official plan product lookup boundaries', () => {
   it('reads a persisted product from the canonical store instead of trusting a cart plan tag', () => {
     assert.match(source, /stores\/\$\{seller\.canonicalStoreId\}\/products\/\$\{productId\}/);
-    assert.match(source, /data\.platformPlanId/);
+    assert.match(source, /official_plan_products/);
+    assert.match(source, /mappingData\.planId/);
     assert.doesNotMatch(source, /input\.platformPlanId/);
   });
   it('checks subscription modality and official store identity before platform routing', () => {
     assert.match(source, /parseProductSaleModality/);
     assert.match(source, /getOfficialStoreIdentity/);
     assert.match(source, /resolveCheckoutBillingRoute/);
-    assert.match(source, /PLATFORM_PLAN_TAG_NOT_AUTHORIZED/);
+    assert.match(source, /UNTRUSTED_PRODUCT_PLAN_TAG/);
+    assert.match(source, /INVALID_PLATFORM_PLAN_MAPPING/);
   });
 });
