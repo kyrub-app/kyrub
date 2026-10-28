@@ -56,7 +56,7 @@ export function isValidStoreAccessProfile(value: unknown): value is StoreAccessP
       typeof profile.storeId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(profile.storeId) ||
       typeof profile.name !== 'string' || !profile.name.trim() || profile.name.length > 80 ||
       profile.active !== true && profile.active !== false ||
-      typeof profile.baseRole !== 'string' || !(profile.baseRole in STORE_ROLE_PERMISSIONS) ||
+      typeof profile.baseRole !== 'string' || profile.baseRole === 'owner' || !(profile.baseRole in STORE_ROLE_PERMISSIONS) ||
       !Array.isArray(profile.permissions)) return false;
   const baseline = STORE_ROLE_PERMISSIONS[profile.baseRole as StoreRole];
   return profile.permissions.every(permission => typeof permission === 'string' && baseline.includes(permission as StorePermission)) &&
