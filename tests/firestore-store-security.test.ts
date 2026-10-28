@@ -29,6 +29,7 @@ const storeRecord = (ownerId = 'owner-a') => ({
   ownerId,
   name: 'Loja de teste',
   publicationStatus: 'paused',
+  migrationStatus: 'canonical',
   createdAt: Timestamp.fromMillis(1_700_000_000_000),
   updatedAt: Timestamp.fromMillis(1_700_000_000_000),
 });
@@ -145,6 +146,7 @@ test('owner creates a store with an id independent from the Google uid', async (
       ownerId: 'owner-a',
       name: 'Loja',
       publicationStatus: 'paused',
+      migrationStatus: 'canonical',
       createdAt: serverTimestamp(),
       updatedAt: serverTimestamp(),
     })
