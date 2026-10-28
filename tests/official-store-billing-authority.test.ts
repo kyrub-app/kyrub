@@ -24,6 +24,12 @@ test('Kyrub plan checkout and merchant subscriptions keep separate route authori
   assert.match(merchantBillingSource, /createAuthorizedStoreSubscription/);
 });
 
+test('platform preapproval uses its persisted billing reference for provider correlation', () => {
+  assert.match(planBillingSource, /const billingReference = randomUUID\(\)\.replaceAll\('-', '_'\)/);
+  assert.match(planBillingSource, /external_reference: billingReference/);
+  assert.match(planBillingSource, /billingReference,\s*payerEmail: user\.email/);
+});
+
 test('Kyrub plan activation requires approved payment evidence', () => {
   assert.match(planBillingSource, /loadApprovedSubscriptionPayment\(fallback\)/);
   assert.match(planBillingSource, /status === 'authorized' && paymentEvidence/);
