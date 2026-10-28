@@ -121,7 +121,7 @@ before(async () => {
   environment = await initializeTestEnvironment({
     projectId: PROJECT_ID,
     firestore: {
-      rules: readFileSync('firestore.store-security.rules', 'utf8'),
+      rules: readFileSync('.firebase/firestore.combined.rules', 'utf8'),
       host: '127.0.0.1',
       port: 8088,
     },
