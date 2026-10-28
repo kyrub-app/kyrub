@@ -59,3 +59,28 @@ export const validateSubscriptionContractDiscounts = (
     calculateSubscriptionContractOffer(0, entry.months, entry.discountPercent);
   }
 };
+
+/** Strict persisted-offer parser shared by storefront and checkout. */
+export const parseSubscriptionContractDiscounts = (
+  value: unknown
+): { months: ContractTermMonths; discountPercent: number }[] | null => {
+  if (!Array.isArray(value)) return null;
+  const offers: { months: ContractTermMonths; discountPercent: number }[] = [];
+  for (const candidate of value) {
+    if (!candidate || typeof candidate !== 'object' || Array.isArray(candidate)) return null;
+    const record = candidate as Record<string, unknown>;
+    if (typeof record.months !== 'number' ||
+        !CONTRACT_TERM_MONTHS.includes(record.months as ContractTermMonths) ||
+        typeof record.discountPercent !== 'number') return null;
+    offers.push({
+      months: record.months as ContractTermMonths,
+      discountPercent: record.discountPercent,
+    });
+  }
+  try {
+    validateSubscriptionContractDiscounts(offers);
+    return offers;
+  } catch {
+    return null;
+  }
+};
