@@ -659,7 +659,10 @@ export const pollNinetyNineFood = async (
   // Polling records its own observation time; event finalization alone owns
   // connection health, so a delayed poll cannot overwrite a newer result.
   await adminDb.doc(connectionPath(tenantId)).set(
-    { lastPollAt: FieldValue.serverTimestamp() },
+    {
+      lastPollAt: FieldValue.serverTimestamp(),
+      lastPollError: '',
+    },
     { merge: true }
   );
   return { received: events.length, processed, failed };
@@ -688,11 +691,12 @@ export const pollAllNinetyNineFoodConnections = async (): Promise<{
       failures += result.failed;
     } catch (error) {
       failures += 1;
+      // Poll transport errors are distinct from event-processing failures.
+      // Keep their evidence without racing the event finalizer's health state.
       await document.ref.set(
         {
-          status: 'attention',
-          lastError: (error instanceof Error ? error.message : String(error)).slice(0, 1_000),
-          updatedAt: FieldValue.serverTimestamp(),
+          lastPollError: (error instanceof Error ? error.message : String(error)).slice(0, 1_000),
+          lastPollFailedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
       );
