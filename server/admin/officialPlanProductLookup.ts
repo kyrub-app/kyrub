@@ -10,8 +10,8 @@ import {
 } from './officialPlanCheckoutRouting.js';
 
 /**
- * Read-only checkout boundary. The plan tag is read from the persisted product,
- * never from the cart payload or its title. No order or payment is created here.
+ * Read-only checkout boundary. Plan identity comes from an admin-owned mapping,
+ * not the owner-writable product, cart payload or product title. No payment is created.
  */
 export const resolvePersistedProductCheckoutRoute = async (input: {
   sellerStoreReference: string;
@@ -47,6 +47,8 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     );
   }
   const rawPlan = mappingData.planId;
+  // A published product without a mapping is an ordinary merchant product.
+  // An inactive or malformed mapping must never silently fall back to merchant billing.
   if (rawPlan !== undefined && rawPlan !== 'free' && rawPlan !== 'pro' && rawPlan !== 'business') {
     throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN', 'Plano Kyrub inválido.');
   }
