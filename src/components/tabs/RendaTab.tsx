@@ -18,7 +18,7 @@ import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
-import { subscribeToUserStoreAccess, type StoreAccessRecord } from '../../utils/storeDirectory';
+import { subscribeToUserStoreAccess, updateOwnStoreInvitation, type StoreAccessRecord } from '../../utils/storeDirectory';
 
 interface RendaTabProps {
   deliveries: DeliveryJob[];
@@ -71,14 +71,36 @@ export function RendaTab({
   const [workConnections, setWorkConnections] = useState<StoreAccessRecord[]>([]);
   const [workConnectionsError, setWorkConnectionsError] = useState(false);
 
-  useEffect(() => onAuthStateChanged(auth, user => {
-    setWorkConnections([]);
-    setWorkConnectionsError(false);
+  const [workInvitationBusy, setWorkInvitationBusy] = useState<string | null>(null);
+
+  useEffect(() => {
+    let unsubscribeMemberships: (() => void) | undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeMemberships?.();
+      unsubscribeMemberships = undefined;
+      setWorkConnections([]);
+      setWorkConnectionsError(false);
+      if (!user) return;
+      unsubscribeMemberships = subscribeToUserStoreAccess(user.uid, accesses => {
+        setWorkConnections(accesses.filter(access => access.member && access.status !== 'suspended'));
+      }, () => setWorkConnectionsError(true));
+    });
+    return () => { unsubscribeAuth(); unsubscribeMemberships?.(); };
+  }, []);
+
+  const respondToWorkInvitation = async (storeId: string, decision: 'accept' | 'decline') => {
+    const user = auth.currentUser;
     if (!user) return;
-    return subscribeToUserStoreAccess(user.uid, accesses => {
-      setWorkConnections(accesses.filter(access => access.member && access.status !== 'suspended'));
-    }, () => setWorkConnectionsError(true));
-  }), []);
+    setWorkInvitationBusy(storeId);
+    try {
+      await updateOwnStoreInvitation(user, storeId, decision);
+      triggerToast(decision === 'accept' ? 'Convite aceito.' : 'Convite recusado.', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível responder ao convite.', 'error');
+    } finally {
+      setWorkInvitationBusy(null);
+    }
+  };
 
   useEffect(() => {
     let cancelled = false;
@@ -379,6 +401,10 @@ export function RendaTab({
                 <strong className="block text-xs text-white">{access.store.name}</strong>
                 <p className="mt-1 text-[10px] text-slate-400">{[access.member?.jobTitle, access.member?.department, access.member?.workArea].filter(Boolean).join(' · ') || 'Colaborador'}</p>
                 <span className="mt-1 block text-[10px] text-teal-300">{access.status === 'invited' ? 'Convite pendente' : 'Vínculo ativo'}</span>
+                {access.status === 'invited' && <div className="mt-3 flex gap-2">
+                  <button type="button" disabled={workInvitationBusy === access.store.id} onClick={() => void respondToWorkInvitation(access.store.id, 'accept')} className="rounded-lg bg-teal-500 px-3 py-2 text-[10px] font-bold text-slate-950 disabled:opacity-50">Aceitar convite</button>
+                  <button type="button" disabled={workInvitationBusy === access.store.id} onClick={() => void respondToWorkInvitation(access.store.id, 'decline')} className="rounded-lg border border-slate-700 px-3 py-2 text-[10px] text-slate-300 disabled:opacity-50">Recusar</button>
+                </div>}
               </div>)}
             </div>
           </section>
