@@ -23,7 +23,7 @@ export const authorizeExternalTeamInvitation = async (input: {
   const storeId = clean(input.storeId);
   const actorUserId = clean(input.actorUserId);
   const recipientEmail = normalizeExternalInviteEmail(input.recipientEmail);
-  if (!storeId || !actorUserId || !recipientEmail || !isStoreRole(input.invitedRole) || input.invitedRole === 'owner') {
+  if (!/^[^/]{1,128}$/.test(storeId) || !/^[^/]{1,128}$/.test(actorUserId) || !recipientEmail || !isStoreRole(input.invitedRole) || input.invitedRole === 'owner') {
     throw new Error('TEAM_INVITE_INVALID_INPUT');
   }
   const store = await adminDb.doc(`stores/${storeId}`).get();
