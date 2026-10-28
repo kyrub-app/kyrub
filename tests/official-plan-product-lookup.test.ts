@@ -13,5 +13,6 @@ describe('official plan product lookup boundaries', () => {
     assert.match(source, /parseProductSaleModality/);
     assert.match(source, /getOfficialStoreIdentity/);
     assert.match(source, /resolveCheckoutBillingRoute/);
+    assert.match(source, /PLATFORM_PLAN_TAG_NOT_AUTHORIZED/);
   });
 });
