@@ -94,7 +94,7 @@ test('expired event workers cannot finalize a reservation claimed by another att
   assert.match(serviceSource, /data\.attemptId !== attemptId/);
   assert.match(serviceSource, /lease\.toMillis\(\) <= Date\.now\(\)\) return false/);
   assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'processed'/);
-  assert.match(serviceSource, /finalizeReservedEvent\(reservation\.referencePath, reservation\.attemptId, 'failed', message\)/);
+  assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'failed', message/);
   assert.match(serviceSource, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
 });
 
