@@ -399,10 +399,15 @@ export const persistPublicProduct = async (
       ...product,
       storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
       saleModality,
-      ...(contractDiscounts ? { contractDiscounts } : {}),
       quickNotes,
       optionGroups,
     };
+    // Do not retain stale offers if a subscription is converted to a one-time sale.
+    if (contractDiscounts) {
+      normalizedProduct.contractDiscounts = contractDiscounts;
+    } else {
+      delete normalizedProduct.contractDiscounts;
+    }
     const nextProducts = [
       normalizedProduct,
       ...existingProducts.filter(item => item.id !== product.id),
