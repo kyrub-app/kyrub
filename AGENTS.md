@@ -23,6 +23,10 @@ This file is the repository-level operating contract for AI engineering agents w
 10. Prefer provider adapters and capability contracts over coupling Kyrub to a single PSP, LLM or logistics provider.
 11. If a task crosses another active workstream's contract, stop at the boundary and raise the dependency instead of silently redesigning it.
 12. Production-affecting work needs a rollback/kill-switch story appropriate to its risk.
+13. **Search before creating:** before introducing a component, route, API, service, model, database collection, business rule, integration, or test helper, inspect the repository for equivalent or overlapping implementations. Record the searched paths, existing owners, and reuse decision in the PR.
+14. **Reuse before duplicating:** extend the canonical implementation when its contract supports the need. If a new implementation is unavoidable, document why reuse is unsafe and define migration/deprecation boundaries; do not leave competing active paths by default.
+15. **Consolidate safely:** when legacy duplicates are found, map all callers, data contracts, security boundaries, migrations, and tests before removal. Do not delete an old path merely because a replacement exists; require evidence of cutover and rollback.
+
 
 ## Current workstreams
 
@@ -74,6 +78,7 @@ Invariant: AI review does not replace qualified legal review where required.
 ## Parallel-work protocol
 
 Before implementation, each agent must identify:
+- existing equivalent or overlapping code/data paths found by repository search, and the canonical owner to reuse (or why a new implementation is justified);
 - workstream and bounded objective;
 - files/contracts expected to change;
 - dependencies on other workstreams;
@@ -92,7 +97,8 @@ A PR is not ready merely because code compiles. At minimum:
 - no secret is introduced;
 - architecture invariants remain intact;
 - production/runtime evidence is checked for production-facing changes;
-- superseded branches/PRs are identified rather than left as competing implementations.
+- superseded branches/PRs are identified rather than left as competing implementations;
+- the PR documents the duplication search and reuse/consolidation decision, including any remaining legacy paths and their cutover gate.
 
 ## Owner escalation
 
