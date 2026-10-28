@@ -371,6 +371,12 @@ test('external team invitation records are inaccessible to every client role', a
       status: 'issued',
     });
   });
+  const anonymous = environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(anonymous, ...path, 'invite-a')));
+  await assertFails(getDocs(collection(anonymous, ...path)));
+  await assertFails(setDoc(doc(anonymous, ...path, 'anonymous-invite'), {
+    recipientEmail: 'other@example.com', tokenHash: 'forged', status: 'issued',
+  }));
   for (const uid of ['owner-a', 'manager-a', 'seller-a', 'recipient-a']) {
     const client = environment.authenticatedContext(uid).firestore();
     const reference = doc(client, ...path, 'invite-a');
