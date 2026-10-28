@@ -463,6 +463,8 @@ export const subscribeToUserStoreAccess = (
     memberEntries.forEach(member => {
       const store = storeMap.get(member.storeId);
       if (!store || ownedStores.has(member.storeId)) return;
+      // Only an explicitly accepted invitation grants active operational access.
+      // Removed memberships are filtered above; invited/suspended stay non-active.
       accesses.push({
         store,
         role: member.role,
