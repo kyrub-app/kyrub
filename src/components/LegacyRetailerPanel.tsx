@@ -183,7 +183,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
-  const [hrWorkers, setHrWorkers] = useState<any[]>([]);
 
   const [finMovements, setFinMovements] = useState<any[]>([]);
   const [newFinDesc, setNewFinDesc] = useState('');
