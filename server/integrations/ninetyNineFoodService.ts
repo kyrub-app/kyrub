@@ -491,10 +491,9 @@ const finalizeReservedEvent = async (
   // Serialize health changes with event finalization. A later failure must not
   // replace a connection already recovered by a successful event.
   const observedAt = Timestamp.now();
-  // A successful event has priority over an unrelated event failure.
-  // Preserve a healthy connection rather than allowing a late failure to
-  // overwrite it; the individual failed event retains its own error evidence.
-  const alreadyHealthy = connection?.status === 'connected';
+  // A failed event must remain visible even when another event succeeded.
+  // The connection status is the latest committed finalization, serialized
+  // with the event record in this transaction.
   transaction.update(reference, outcome === 'processed'
     ? {
         status: 'processed',
@@ -516,7 +515,7 @@ const finalizeReservedEvent = async (
       lastError: '',
       updatedAt: FieldValue.serverTimestamp(),
     }, { merge: true });
-  } else if (!alreadyHealthy) {
+  } else {
     transaction.set(connectionReference, {
       status: 'attention',
       lastError: error.slice(0, 1_000),
