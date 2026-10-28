@@ -42,3 +42,8 @@ test('optional official product reference is validated before platform preapprov
   assert.match(planBillingSource, /officialStoreId: officialProduct\.canonicalStoreId/);
   assert.match(planBillingSource, /officialProductId: officialProduct\.productId/);
 });
+
+test('platform preapproval sends a provider idempotency header', () => {
+  assert.match(planBillingSource, /const providerIdempotencyKey =/);
+  assert.match(planBillingSource, /'X-Idempotency-Key': providerIdempotencyKey/);
+});
