@@ -40,5 +40,5 @@ export const validateOfficialPlanProduct = async (
   if (!matchesOfficialPlanProduct(data, expectedPlan, expectedAmountMinor)) {
     throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_MISMATCH', 'O produto não corresponde ao plano mensal e preço vigentes.');
   }
-  return { canonicalStoreId: official.canonicalStoreId, productId, plan: expectedPlan, amountMinor };
+  return { canonicalStoreId: official.canonicalStoreId, productId, plan: expectedPlan, amountMinor: expectedAmountMinor };
 };
