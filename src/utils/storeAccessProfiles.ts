@@ -116,6 +116,27 @@ export function isValidStoreJobTitle(value: unknown): value is string {
     normalizeStoreJobTitle(value).length <= 80;
 }
 
+/** Organizational labels are independent from access rights. */
+export interface StoreStaffOrganization {
+  jobTitle: string;
+  department?: string;
+  workArea?: string;
+}
+
+export function normalizeStoreOrganizationLabel(value: string): string {
+  return value.trim().replace(/\\s+/g, ' ');
+}
+
+export function isValidStoreStaffOrganization(value: unknown): value is StoreStaffOrganization {
+  if (!value || typeof value !== 'object') return false;
+  const candidate = value as Record<string, unknown>;
+  if (!isValidStoreJobTitle(candidate.jobTitle)) return false;
+  return (candidate.department === undefined ||
+    (typeof candidate.department === 'string' && normalizeStoreOrganizationLabel(candidate.department).length <= 80)) &&
+    (candidate.workArea === undefined ||
+    (typeof candidate.workArea === 'string' && normalizeStoreOrganizationLabel(candidate.workArea).length <= 80));
+}
+
 /** Copy a template into the store's editable profile draft; never write it implicitly. */
 export function createStoreAccessProfileFromTemplate(
   storeId: string,
