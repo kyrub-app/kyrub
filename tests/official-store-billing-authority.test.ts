@@ -35,3 +35,10 @@ test('Kyrub plan activation requires approved payment evidence', () => {
   assert.match(planBillingSource, /status === 'authorized' && paymentEvidence/);
   assert.match(planBillingSource, /await activateSubscriptionEntitlement\(ownerId, next\)/);
 });
+
+test('optional official product reference is validated before platform preapproval', () => {
+  assert.match(planRouterSource, /createOwnPaidPlanCheckout\(authorization, body\.plan, body\.productId\)/);
+  assert.match(planBillingSource, /validateOfficialPlanProduct\(productId, targetPlan, Math\.round\(plan\.monthlyPriceBRL \* 100\)\)/);
+  assert.match(planBillingSource, /officialStoreId: officialProduct\.canonicalStoreId/);
+  assert.match(planBillingSource, /officialProductId: officialProduct\.productId/);
+});
