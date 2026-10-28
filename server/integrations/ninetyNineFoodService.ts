@@ -565,15 +565,19 @@ export const processNinetyNineFoodEvent = async (
       // Another worker owns the lease; do not acknowledge or overwrite its result.
       throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_LOST');
     }
+    // Connection health is informational. Once the event is committed as processed,
+    // a transient health-write failure must not turn the successful event into a retry.
     await adminDb.doc(connectionPath(connection.tenantId)).set(
-        {
-          status: 'connected',
-          lastWebhookAt: FieldValue.serverTimestamp(),
-          lastError: '',
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      );
+      {
+        status: 'connected',
+        lastWebhookAt: FieldValue.serverTimestamp(),
+        lastError: '',
+        updatedAt: FieldValue.serverTimestamp(),
+      },
+      { merge: true }
+    ).catch(error => {
+      console.error('[99Food] Event processed; connection health update failed.', error);
+    });
 
     return { duplicate: false, event };
   } catch (error) {
