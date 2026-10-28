@@ -87,7 +87,7 @@ export const StoreTeamWorkspace = ({
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [members, setMembers] = useState<StoreMemberDirectoryRecord[]>([]);
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
-  const [lastInvited, setLastInvited] = useState<{ name: string; storeName: string } | null>(null);
+  const [lastInvited, setLastInvited] = useState<{ name: string; email: string; storeName: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
@@ -272,7 +272,7 @@ export const StoreTeamWorkspace = ({
         setDirectoryResults(current =>
           current.filter(result => result.uid !== targetUser.uid)
         );
-        setLastInvited({ name: targetUser.name, storeName: selectedAccess.store.name });
+        setLastInvited({ name: targetUser.name, email: targetUser.email, storeName: selectedAccess.store.name });
         setDraftJobTitle('');
         setDraftDepartment('');
         setDraftWorkArea('');
@@ -622,6 +622,13 @@ export const StoreTeamWorkspace = ({
                           rel="noopener noreferrer"
                           className="mt-2 inline-flex rounded-lg border border-emerald-500/40 px-3 py-2 font-bold text-emerald-300 hover:bg-emerald-500/10"
                         >Compartilhar pelo WhatsApp</a>
+                        {lastInvited.email && (
+                          <a
+                            href={`mailto:${encodeURIComponent(lastInvited.email)}?subject=${encodeURIComponent('Convite de trabalho no Kyrub')}&body=${encodeURIComponent(`Olá, ${lastInvited.name}! A empresa ${lastInvited.storeName} convidou você para sua equipe no Kyrub. Entre em https://kyrub.com com sua conta e responda ao convite pelo sino de notificações. O convite só pode ser aceito pela conta destinatária.`)}`}
+                            className="ml-2 mt-2 inline-flex rounded-lg border border-slate-600 px-3 py-2 font-bold text-slate-200 hover:bg-slate-800"
+                          >Compartilhar por e-mail</a>
+                        )}
+                        <p className="mt-2 text-[10px] text-slate-400">O envio depende de sua confirmação no aplicativo escolhido. SMS requer um número de celular e será habilitado quando esse dado estiver disponível no cadastro.</p>
                       </div>
                     )}
                     <div className="space-y-2">
