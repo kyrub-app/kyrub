@@ -94,6 +94,18 @@ export const STORE_ACCESS_PROFILE_TEMPLATES: readonly StoreAccessProfileTemplate
   ] },
 ];
 
+/** Enumerate permissions eligible for a role, rather than only those preselected by a template. */
+export function getEditableStoreProfilePermissions(role: StoreRole): readonly StorePermission[] {
+  if (role === 'owner') return [];
+  return STORE_ROLE_PERMISSIONS[role].filter(permission =>
+    permission !== 'ownership.transfer' &&
+    permission !== 'store.update' &&
+    permission !== 'store.publish' &&
+    permission !== 'members.assign_manager' &&
+    permission !== 'fiscal.policy.manage'
+  );
+}
+
 /** Copy a template into the store's editable profile draft; never write it implicitly. */
 export function createStoreAccessProfileFromTemplate(
   storeId: string,
