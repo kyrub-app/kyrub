@@ -11,6 +11,7 @@
     "firestore:compose": "node scripts/compose-firestore-rules.mjs",
     "test:community-group-invitations": "node --test --import tsx tests/community-group-invitation-response.test.ts",
     "test:operational": "node --test --import tsx tests/operational-test-bench.test.ts",
+    "test:store-access-profiles": "node --test --import tsx tests/store-access-profiles.test.ts",
     "operations:check": "node scripts/validate-operations-readiness.mjs",
     "operations:check:json": "node scripts/validate-operations-readiness.mjs --json",
     "mvp:check": "node scripts/validate-mvp-readiness.mjs",
