@@ -582,17 +582,26 @@ export const processNinetyNineFoodEvent = async (
     return { duplicate: false, event };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await Promise.allSettled([
-      finalizeReservedEvent(reservation.referencePath, reservation.attemptId, 'failed', message),
-      adminDb.doc(connectionPath(connection.tenantId)).set(
+    const failureFinalized = await finalizeReservedEvent(
+      reservation.referencePath, reservation.attemptId, 'failed', message
+    ).catch(finalizationError => {
+      console.error('[99Food] Could not finalize failed event reservation.', finalizationError);
+      return false;
+    });
+    // A superseded or expired worker no longer owns this event. It must not
+    // overwrite connection health after another worker has taken over.
+    if (failureFinalized) {
+      await adminDb.doc(connectionPath(connection.tenantId)).set(
         {
           status: 'attention',
           lastError: message.slice(0, 1_000),
           updatedAt: FieldValue.serverTimestamp(),
         },
         { merge: true }
-      ),
-    ]);
+      ).catch(healthError => {
+        console.error('[99Food] Failed to record connection health after event failure.', healthError);
+      });
+    }
     throw error;
   }
 };
