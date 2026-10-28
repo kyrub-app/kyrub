@@ -123,6 +123,25 @@ test('first import rejects mismatched provider order details before writing', ()
     initial.indexOf('await persistNormalizedOrder('));
 });
 
+test('retry after first order persistence reuses canonical identity instead of creating a duplicate', () => {
+  const handler = serviceSource.slice(
+    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
+    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
+  );
+  assert.match(handler, /stores\/\$\{canonicalStoreId\}\/orders\/\$\{internalOrderId\(event\.orderId\)\}/);
+  assert.match(handler, /if \(!currentOrder\.exists\) \{/);
+  assert.match(handler, /await persistNormalizedOrder\(/);
+  assert.match(handler, /await applyNinetyNineFoodInboundStatusWithAuthority\(/);
+  const persist = serviceSource.slice(
+    serviceSource.indexOf('const persistNormalizedOrder = async'),
+    serviceSource.indexOf('const updatePersistedOrderStatus')
+  );
+  assert.match(persist, /if \(existing\.exists\) return;/);
+  assert.match(persist, /transaction\.create\(reference/);
+  assert.match(handler, /if \(!finalized\) \{/);
+  assert.match(handler, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
