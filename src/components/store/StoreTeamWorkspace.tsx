@@ -89,6 +89,9 @@ export const StoreTeamWorkspace = ({
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
+  const [draftJobTitle, setDraftJobTitle] = useState('');
+  const [draftDepartment, setDraftDepartment] = useState('');
+  const [draftWorkArea, setDraftWorkArea] = useState('');
   const [isLoadingAccess, setIsLoadingAccess] = useState(true);
   const [isSearching, setIsSearching] = useState(false);
   const [busyKey, setBusyKey] = useState('');
@@ -584,6 +587,12 @@ export const StoreTeamWorkspace = ({
                           <option key={role} value={role}>{STORE_ROLE_LABELS[role]}</option>
                         ))}
                       </select>
+                      <div className="space-y-2 rounded-xl border border-slate-800 p-3">
+                        <p className="text-[10px] text-slate-400">Organização do colaborador (rascunho; ainda não será enviada com o convite)</p>
+                        <input value={draftJobTitle} onChange={event => setDraftJobTitle(event.target.value)} maxLength={80} placeholder="Cargo ou função (ex.: Representante de vendas)" aria-label="Cargo ou função" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+                        <input value={draftDepartment} onChange={event => setDraftDepartment(event.target.value)} maxLength={80} placeholder="Setor (opcional, ex.: Marketing)" aria-label="Setor" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+                        <input value={draftWorkArea} onChange={event => setDraftWorkArea(event.target.value)} maxLength={80} placeholder="Área de atuação (opcional, ex.: Conteúdo digital)" aria-label="Área de atuação" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+                      </div>
                       <button
                         type="submit"
                         disabled={isSearching || !searchTerm.trim()}
