@@ -22,5 +22,8 @@ describe('contract term versus provider billing cadence', () => {
     assert.throws(() => validateSubscriptionContractPaymentTerms(annual, {
       collectionMode: 'prepaid', installments: 0,
     }), /INVALID_CONTRACT_INSTALLMENTS/);
+    assert.throws(() => validateSubscriptionContractPaymentTerms(annual, {
+      collectionMode: 'prepaid', installments: 6, billingIntervalMonths: 1,
+    } as never), /INVALID_CONTRACT_PAYMENT_TERMS/);
   });
 });
