@@ -142,6 +142,18 @@ test('retry after first order persistence reuses canonical identity instead of c
   assert.match(handler, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
 });
 
+test('connection health failure cannot undo a successfully finalized provider event', () => {
+  const handler = serviceSource.slice(
+    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
+    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
+  );
+  const success = handler.slice(handler.indexOf('const finalized = await finalizeReservedEvent('), handler.indexOf('return { duplicate: false, event };'));
+  assert.match(success, /if \(!finalized\) \{/);
+  assert.match(success, /connectionPath\(connection\.tenantId\)/);
+  assert.match(success, /\{ merge: true \}\s*\)\.catch\(error => \{/);
+  assert.match(success, /Event processed; connection health update failed/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
