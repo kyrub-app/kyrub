@@ -73,6 +73,14 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
       throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_PRODUCT', 'Produto de plano sem assinatura mensal válida.');
     }
   }
+  // Even ordinary subscriptions must not silently enter one-time merchant billing.
+  // The merchant recurring-payment contract service is a separate authorized route.
+  if (planId === null && parseProductSaleModality(data.saleModality)?.mode === 'subscription') {
+    throw new OfficialPlanCheckoutRouteError(
+      'MERCHANT_SUBSCRIPTION_CHECKOUT_REQUIRED',
+      'Assinaturas de lojistas exigem o checkout de contratos.'
+    );
+  }
   return resolveCheckoutBillingRoute({
     sellerStoreId: seller.canonicalStoreId,
     officialStoreId: official?.canonicalStoreId ?? null,
