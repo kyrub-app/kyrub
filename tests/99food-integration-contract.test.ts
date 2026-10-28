@@ -91,7 +91,8 @@ test('duplicate webhook events are reserved atomically and only acknowledged aft
 test('expired event workers cannot finalize a reservation claimed by another attempt', () => {
   assert.match(serviceSource, /const attemptId = randomBytes\(16\)\.toString\('hex'\)/);
   assert.match(serviceSource, /attemptId,\s*attempts: FieldValue\.increment\(1\)/);
-  assert.match(serviceSource, /data\.attemptId !== attemptId\) return false/);
+  assert.match(serviceSource, /data\.attemptId !== attemptId/);
+  assert.match(serviceSource, /lease\.toMillis\(\) <= Date\.now\(\)\) return false/);
   assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'processed'/);
   assert.match(serviceSource, /finalizeReservedEvent\(reservation\.referencePath, reservation\.attemptId, 'failed', message\)/);
   assert.match(serviceSource, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
