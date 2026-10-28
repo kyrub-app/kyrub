@@ -13,6 +13,11 @@ describe('shared subscription contract offers', () => {
     assert.equal(calculateSubscriptionContractOffer(7000, 6, 10).totalMinor, 37800);
     assert.equal(calculateSubscriptionContractOffer(7000, 12, 20).totalMinor, 67200);
   });
+  it('handles two-decimal discounts and large safe amounts without precision drift', () => {
+    assert.equal(calculateSubscriptionContractOffer(10000, 3, 12.34).totalMinor, 26298);
+    const large = calculateSubscriptionContractOffer(900719925474000, 1, 20);
+    assert.equal(large.totalMinor, 720575940379200);
+  });
   it('parses persisted offers strictly and preserves monthly baseline', () => {
     const offers = [{ months: 1, discountPercent: 0 }, { months: 12, discountPercent: 20 }];
     assert.deepEqual(parseSubscriptionContractDiscounts(offers), offers);
