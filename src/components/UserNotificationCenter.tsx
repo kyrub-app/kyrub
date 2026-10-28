@@ -17,6 +17,7 @@ import {
 } from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
 import { auth } from '../utils/firebase';
+import { subscribeToUserStoreAccess, updateOwnStoreInvitation, type StoreAccessRecord } from '../utils/storeDirectory';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
 import { loadUserCommunicationPreferences } from '../utils/userCommunicationPreferences';
 import {
@@ -94,6 +95,8 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [storeInvitations, setStoreInvitations] = useState<StoreAccessRecord[]>([]);
+  const [storeInviteBusy, setStoreInviteBusy] = useState<string | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -103,6 +106,27 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+
+  useEffect(() => {
+    setStoreInvitations([]);
+    if (!user) return;
+    return subscribeToUserStoreAccess(user.uid, accesses => {
+      setStoreInvitations(accesses.filter(access => access.status === 'invited' && access.member !== null));
+    }, error => console.warn('Convites de equipe indisponíveis.', error));
+  }, [user?.uid]);
+
+  const respondToStoreInvite = async (storeId: string, decision: 'accept' | 'decline') => {
+    if (!user) return;
+    setStoreInviteBusy(storeId);
+    setErrorMessage('');
+    try {
+      await updateOwnStoreInvitation(user, storeId, decision);
+    } catch (error) {
+      setErrorMessage(error instanceof Error ? error.message : 'Não foi possível responder ao convite de trabalho.');
+    } finally {
+      setStoreInviteBusy(null);
+    }
+  };
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -267,14 +291,14 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
       type="button"
       onClick={() => onOpenChange(!open)}
       className="relative flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300 max-[390px]:h-9 max-[390px]:w-9"
-      aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
+      aria-label={unreadCount + storeInvitations.length > 0 ? `Notificações, ${unreadCount + storeInvitations.length} pendentes` : 'Notificações'}
       aria-expanded={open}
       id="canonical-notification-trigger"
     >
       <Bell className="h-4 w-4" />
-      {unreadCount > 0 && (
+      {unreadCount + storeInvitations.length > 0 && (
         <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-orange-500 px-1 text-center font-mono text-[8px] font-black leading-4 text-slate-950">
-          {unreadCount > 99 ? '99+' : unreadCount}
+          {unreadCount + storeInvitations.length > 99 ? '99+' : unreadCount + storeInvitations.length}
         </span>
       )}
     </button>
@@ -344,7 +368,16 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
             )}
 
             <div className="max-h-[calc(78dvh-4rem)] overflow-y-auto p-2">
-              {loading && notifications.length === 0 ? (
+              {storeInvitations.map(access => <div key={access.store.id} className="mb-2 rounded-xl border border-teal-500/25 bg-teal-500/10 p-3">
+                <strong className="block text-[11px] text-white">Convite de trabalho · {access.store.name}</strong>
+                <p className="mt-1 text-[10px] text-slate-400">{access.member?.jobTitle || 'Colaborador'}{access.member?.department ? ` · ${access.member.department}` : ''}</p>
+                <div className="mt-2 flex gap-2">
+                  <button type="button" disabled={storeInviteBusy !== null} onClick={() => void respondToStoreInvite(access.store.id, 'accept')} className="rounded-lg bg-teal-500 px-3 py-1.5 text-[10px] font-bold text-slate-950 disabled:opacity-50">Aceitar</button>
+                  <button type="button" disabled={storeInviteBusy !== null} onClick={() => void respondToStoreInvite(access.store.id, 'decline')} className="rounded-lg border border-slate-700 px-3 py-1.5 text-[10px] text-slate-200 disabled:opacity-50">Recusar</button>
+                </div>
+              </div>)}
+
+              {loading && notifications.length === 0 && storeInvitations.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 px-4 py-12 text-xs text-slate-500">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   Carregando notificações…
