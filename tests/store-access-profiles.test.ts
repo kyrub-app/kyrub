@@ -5,7 +5,7 @@ import { STORE_ROLE_PERMISSIONS } from '../src/utils/storeSecurity';
 
 const profile: StoreAccessProfile = {
   id: 'shift-lead', storeId: 'store-a', name: 'Líder de turno', baseRole: 'manager',
-  permissions: ['orders.read', 'orders.cancel', 'cash.read', 'ownership.transfer'], active: true,
+  permissions: ['orders.read', 'orders.cancel', 'cash.read'], active: true,
 };
 const assignment = { profileId: 'shift-lead' };
 
@@ -33,4 +33,11 @@ test('member-specific revocation removes permissions', () => {
 
 test('owner access cannot be reduced by a staff profile', () => {
   assert.deepEqual(resolveStoreAccessPermissions('owner', 'store-a', assignment, profile), STORE_ROLE_PERMISSIONS.owner);
+});
+
+test('malformed or escalated profile permissions are rejected', () => {
+  assert.deepEqual(resolveStoreAccessPermissions('manager', 'store-a', assignment,
+    { ...profile, permissions: ['orders.read', 'ownership.transfer'] }), []);
+  assert.deepEqual(resolveStoreAccessPermissions('manager', 'store-a', assignment,
+    { ...profile, permissions: ['orders.read', 'orders.read'] }), []);
 });
