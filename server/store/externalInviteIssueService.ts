@@ -3,6 +3,7 @@ import { Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { authorizeExternalTeamInvitation } from './externalInviteAuthority.js';
 import { generateExternalInviteToken } from './externalInvitePrimitives.js';
+import { canAssignStoreRole } from '../../src/utils/storeSecurity.js';
 
 const INVITE_LIFETIME_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -28,7 +29,7 @@ export const issueExternalTeamInvitation = async (input: {
     if (!store.exists) throw new Error('TEAM_INVITE_STORE_NOT_FOUND');
     if (store.get('ownerId') !== authority.actorUserId) {
       const member = await transaction.get(actorRef);
-      if (!member.exists || member.get('status') !== 'active' || member.get('role') !== authority.actorRole) {
+      if (!member.exists || member.get('status') !== 'active' || member.get('role') !== authority.actorRole || !canAssignStoreRole(authority.actorRole, authority.invitedRole)) {
         throw new Error('TEAM_INVITE_FORBIDDEN');
       }
     }
