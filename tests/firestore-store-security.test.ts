@@ -8,8 +8,11 @@ import {
   type RulesTestEnvironment,
 } from '@firebase/rules-unit-testing';
 import {
+  collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -353,5 +356,28 @@ test('seller and manager must use the authorized KDS server for status and payme
       paymentStatus: 'paid',
       updatedAt: serverTimestamp(),
     }));
+  }
+});
+
+test('external team invitation records are inaccessible to every client role', async () => {
+  await seedStore();
+  const path = ['stores', STORE_ID, 'externalTeamInvitations'];
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), ...path, 'invite-a'), {
+      recipientEmail: 'recipient@example.com',
+      tokenHash: 'secret-hash',
+      status: 'issued',
+    });
+  });
+  for (const uid of ['owner-a', 'manager-a', 'seller-a', 'recipient-a']) {
+    const client = environment.authenticatedContext(uid).firestore();
+    const reference = doc(client, ...path, 'invite-a');
+    await assertFails(getDoc(reference));
+    await assertFails(getDocs(collection(client, ...path)));
+    await assertFails(setDoc(doc(client, ...path, `new-${uid}`), {
+      recipientEmail: 'other@example.com', tokenHash: 'forged', status: 'issued',
+    }));
+    await assertFails(updateDoc(reference, { status: 'claimed' }));
+    await assertFails(deleteDoc(reference));
   }
 });
