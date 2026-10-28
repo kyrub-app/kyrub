@@ -1,7 +1,7 @@
 import { adminDb } from '../firebaseAdmin.js';
 import { getOfficialStoreIdentity } from './officialStoreService.js';
 import { PlanManagementError } from './planManagementService.js';
-import { parseProductSaleModality } from '../../shared/productSaleModality.js';
+import { matchesOfficialPlanProduct } from './officialPlanProductContract.js';
 
 export interface OfficialPlanProduct {
   canonicalStoreId: string;
@@ -37,21 +37,7 @@ export const validateOfficialPlanProduct = async (
     throw new PlanManagementError(404, 'OFFICIAL_PLAN_PRODUCT_NOT_FOUND', 'O produto não existe no catálogo da loja oficial.');
   }
   const data = snapshot.data() as Record<string, unknown>;
-  const modality = parseProductSaleModality(data.saleModality);
-  const amount = Number(data.price);
-  const amountMinor = Number.isFinite(amount) ? Math.round(amount * 100) : 0;
-  const plan = clean(data.kyrubPlanId);
-  if (
-    data.publicationStatus !== 'published' ||
-    !modality ||
-    modality.mode !== 'subscription' ||
-    !modality.subscription ||
-    modality.subscription.billingInterval.unit !== 'month' ||
-    modality.subscription.billingInterval.count !== 1 ||
-    plan !== expectedPlan ||
-    amountMinor !== expectedAmountMinor ||
-    amountMinor <= 0
-  ) {
+  if (!matchesOfficialPlanProduct(data, expectedPlan, expectedAmountMinor)) {
     throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_MISMATCH', 'O produto não corresponde ao plano mensal e preço vigentes.');
   }
   return { canonicalStoreId: official.canonicalStoreId, productId, plan: expectedPlan, amountMinor };
