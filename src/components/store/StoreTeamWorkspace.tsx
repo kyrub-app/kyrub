@@ -302,7 +302,7 @@ export const StoreTeamWorkspace = ({
         const issued = await issueExternalTeamInvitation(idToken, {
           storeId: selectedAccess.store.id,
           recipientEmail: externalInviteEmail.trim(),
-          role: inviteRole,
+          role: inviteRole as ExternalTeamInviteRole,
         });
         setIssuedExternalInvite(issued);
         notify('Convite criado. Compartilhe o código apenas com o destinatário.', 'success');
