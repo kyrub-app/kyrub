@@ -206,7 +206,9 @@ const assertSubscriptionCanReplaceEntitlement = async (ownerId: string): Promise
 const selectedPlan = async (targetPlan: 'pro' | 'business') => {
   const catalog = await loadPublicActivePlanCatalog();
   const entry = catalog.plans.find(item => item.planId === targetPlan);
-  if (!entry || entry.monthlyPriceBRL <= 0) {
+  // The public catalog may fall back to compiled reference prices on read failures.
+  // Never initiate a real charge from that fallback: require a published control-plane price.
+  if (!entry || entry.source !== 'control_plane' || entry.monthlyPriceBRL <= 0) {
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
   return entry;
