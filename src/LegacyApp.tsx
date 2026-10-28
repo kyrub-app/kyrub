@@ -363,11 +363,16 @@ export default function App() {
       accesses => {
         const operational = accesses.filter(access => access.status === 'active');
         setStaffAccesses(operational);
-        setSelectedStaffStoreId(current =>
-          current
+        setSelectedStaffStoreId(current => {
+          // The URL selects a store only when the signed-in user has an active membership.
+          const requestedStoreId = new URLSearchParams(window.location.search).get('storeId');
+          if (requestedStoreId && operational.some(access => access.store.id === requestedStoreId)) {
+            return requestedStoreId;
+          }
+          return current && operational.some(access => access.store.id === current)
             ? current
-            : operational[0]?.store.id ?? ''
-        );
+            : operational[0]?.store.id ?? '';
+        });
         setStaffAccessLoading(false);
       },
       error => {
