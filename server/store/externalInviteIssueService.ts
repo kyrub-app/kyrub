@@ -32,6 +32,9 @@ export const issueExternalTeamInvitation = async (input: {
         throw new Error('TEAM_INVITE_FORBIDDEN');
       }
     }
+    if (store.get('ownerId') === authority.actorUserId && authority.actorRole !== 'owner') {
+      throw new Error('TEAM_INVITE_FORBIDDEN');
+    }
     transaction.create(invitationRef, {
       storeId: authority.storeId,
       storeName: authority.storeName,
