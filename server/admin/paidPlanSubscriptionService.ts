@@ -13,6 +13,7 @@ import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { PlanManagementError } from './planManagementService.js';
 import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
+import { validateOfficialPlanProduct } from './officialPlanProductService.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
@@ -352,7 +353,7 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   };
 };
 
-export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown): Promise<KyrubPlanCheckoutResult> => {
+export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, productId?: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
@@ -363,6 +364,11 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
   const plan = await selectedPlan(targetPlan);
+  // Official-store product checkout is validated against the published catalog
+  // before any platform Mercado Pago preapproval is created.
+  const officialProduct = productId === undefined
+    ? null
+    : await validateOfficialPlanProduct(productId, targetPlan, Math.round(plan.monthlyPriceBRL * 100));
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
@@ -418,6 +424,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
     ...subscription,
     billingReference,
+    ...(officialProduct ? { officialStoreId: officialProduct.canonicalStoreId, officialProductId: officialProduct.productId } : {}),
     payerEmail: user.email,
     providerPaymentStatus: 'pending_confirmation',
     providerPaymentStatusDetail: null,
