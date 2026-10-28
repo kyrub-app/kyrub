@@ -37,7 +37,7 @@ test('manager hierarchy excludes manager and owner targets', () => {
   );
   assert.doesNotMatch(
     rules,
-    /managerCanManageRole\(role\)[\s\S]{0,120}\['owner'/
+    /storeSecManagerCanManageRole\(role\)[\s\S]{0,120}\['owner'/
   );
 });
 
@@ -76,4 +76,8 @@ test('canonical product dual-write accepts current product shape without reopeni
     productDualWriteRules,
     /allow update:[\s\S]*canonicalProductServerProvenanceIsImmutable\(\)/
   );
+});
+
+test('external invitation tokens remain server-only in the canonical rules', () => {
+  assert.match(rules, /match \/externalTeamInvitations\/\{invitationId\}\s*\{\s*allow read, write: if false;/);
 });
