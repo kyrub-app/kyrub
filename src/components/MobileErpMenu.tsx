@@ -55,7 +55,7 @@ export const canStoreRoleAccessErpMenuItem = (
 ): boolean => {
   if (role === 'owner') return true;
   if (itemId === 'planos' || itemId === 'loja') return false;
-  if (itemId === 'rh') return role === 'manager';
+  if (itemId === 'rh' || itemId === 'recursos-humanos') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
   if (itemId === 'crm') return role === 'manager';
   if (itemId === 'vendas') return hasStorePermission(role, 'reports.read');
@@ -83,6 +83,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
   { id: 'fiscal', label: 'Fiscal', icon: ReceiptText, section: 'gestao' },
   { id: 'rh', label: 'Equipe & Permissões', icon: Briefcase, section: 'gestao' },
+  { id: 'recursos-humanos', label: 'Recursos Humanos', icon: Users, section: 'gestao' },
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
   { id: 'integracoes', label: 'Integrações & Sandbox', icon: Settings, section: 'gestao' },
@@ -102,6 +103,7 @@ const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'financeiro',
   'fiscal',
   'rh',
+  'recursos-humanos',
   'crm',
   'marketing',
   'integracoes',
