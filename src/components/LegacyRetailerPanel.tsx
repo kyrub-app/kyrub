@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { StoreTeamWorkspace } from './store/StoreTeamWorkspace';
 import { 
   Users, DollarSign, ClipboardList, Calendar, Clock, LayoutGrid, 
   Plus, Tag, Play, Pause, Trash2, Upload, AlertCircle, ShieldAlert,
@@ -928,17 +929,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                     </div>
                   )}
 
-                  {/* SUBMODULE: RECURSOS HUMANOS — acesso e convites são geridos pelo workspace canônico. */}
+                  {/* SUBMODULE: RECURSOS HUMANOS — fonte canônica de membros e convites. */}
                   {activeGerencialModule === 'rh' && (
-                    <div className="bg-slate-900 p-6 rounded-3xl border border-slate-850 space-y-3">
-                      <h4 className="text-xs font-black text-pink-500 uppercase">Recursos Humanos</h4>
-                      <p className="text-xs text-slate-300">
-                        A gestão de membros, cargos, permissões e convites da loja é realizada na área de Equipe da loja.
-                      </p>
-                      <p className="text-[11px] text-slate-400">
-                        Esta seção legada não altera acessos nem emite folhas de pagamento. Use os módulos operacionais próprios para ponto e demais rotinas trabalhistas.
-                      </p>
-                    </div>
+                    <StoreTeamWorkspace
+                      legacyStore={activeStore}
+                      legacyStoreId={activeRetailerId}
+                      notify={triggerToast}
+                    />
                   )}
 
                   {/* SUBMODULE: FINANCEIRO INTERNO */}
