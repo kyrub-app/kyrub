@@ -81,3 +81,13 @@ test('canonical product dual-write accepts current product shape without reopeni
 test('external invitation tokens remain server-only in the canonical rules', () => {
   assert.match(rules, /match \/externalTeamInvitations\/\{invitationId\}\s*\{\s*allow read, write: if false;/);
 });
+
+test('production and emulator configurations share the composed rules artifact', () => {
+  for (const config of ['firebase.json', 'firebase.security.json']) {
+    const parsed = JSON.parse(readFileSync(config, 'utf8')) as { firestore?: { rules?: string } };
+    assert.equal(parsed.firestore?.rules, '.firebase/firestore.combined.rules');
+  }
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  assert.match(composer, /firestore\.store-security\.fragment\.rules/);
+  assert.doesNotMatch(composer, /resolve\(root, 'firestore\.store-security\.rules'\)/);
+});
