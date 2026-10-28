@@ -35,8 +35,8 @@ describe('Official Store Kyrub plan billing boundaries', () => {
   });
 
   test('default billing return does not send buyers to the retired Plan Center', () => {
-    assert.match(platform, /https:\/\/www\\.kyrub\\.com\/\\?app=1/);
-    assert.doesNotMatch(platform, /https:\/\/planos\\.kyrub\\.com/);
+    assert.match(platform, /https:\/\/www\.kyrub\.com\/\?app=1/);
+    assert.doesNotMatch(platform, /https:\/\/planos\.kyrub\.com/);
   });
 
   test('platform subscription checkout never fabricates a store for the buyer', () => {
