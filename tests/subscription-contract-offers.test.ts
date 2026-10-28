@@ -3,6 +3,7 @@ import { describe, it } from 'node:test';
 import {
   calculateSubscriptionContractOffer,
   validateSubscriptionContractDiscounts,
+  parseSubscriptionContractDiscounts,
 } from '../shared/subscriptionContractOffers.js';
 
 describe('shared subscription contract offers', () => {
@@ -11,6 +12,13 @@ describe('shared subscription contract offers', () => {
     assert.equal(calculateSubscriptionContractOffer(7000, 3, 5).totalMinor, 19950);
     assert.equal(calculateSubscriptionContractOffer(7000, 6, 10).totalMinor, 37800);
     assert.equal(calculateSubscriptionContractOffer(7000, 12, 20).totalMinor, 67200);
+  });
+  it('parses persisted offers strictly and preserves monthly baseline', () => {
+    const offers = [{ months: 1, discountPercent: 0 }, { months: 12, discountPercent: 20 }];
+    assert.deepEqual(parseSubscriptionContractDiscounts(offers), offers);
+    assert.equal(parseSubscriptionContractDiscounts([{ months: 12, discountPercent: 20 }]), null);
+    assert.equal(parseSubscriptionContractDiscounts([{ months: 1, discountPercent: 0 }, { months: 3, discountPercent: 101 }]), null);
+    assert.equal(parseSubscriptionContractDiscounts([{ months: 1, discountPercent: 0 }, { months: 1, discountPercent: 0 }]), null);
   });
   it('rejects duplicate terms and invalid discounts', () => {
     assert.throws(() => validateSubscriptionContractDiscounts([
