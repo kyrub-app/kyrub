@@ -14,6 +14,8 @@ export interface NinetyNineFoodConnectionStatus {
   lastVerifiedAt: string;
   lastWebhookAt: string;
   lastPollAt: string;
+  lastPollError: string;
+  lastPollFailedAt: string;
   credentialAuthority?: 'platform_vault' | 'merchant_vault';
   onboardingMode?: NinetyNineFoodOnboardingMode;
 }
