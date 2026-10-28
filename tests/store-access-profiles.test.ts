@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { hasStoreAccessPermission, resolveStoreAccessPermissions, type StoreAccessProfile } from '../src/utils/storeAccessProfiles';
+import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate, hasStoreAccessPermission, isValidStoreAccessProfile, resolveStoreAccessPermissions, type StoreAccessProfile } from '../src/utils/storeAccessProfiles';
 import { STORE_ROLE_PERMISSIONS } from '../src/utils/storeSecurity';
 
 const profile: StoreAccessProfile = {
@@ -40,4 +40,20 @@ test('malformed or escalated profile permissions are rejected', () => {
     { ...profile, permissions: ['orders.read', 'ownership.transfer'] }), []);
   assert.deepEqual(resolveStoreAccessPermissions('manager', 'store-a', assignment,
     { ...profile, permissions: ['orders.read', 'orders.read'] }), []);
+});
+
+test('all starter templates are valid, store-scoped, and exclude owner', () => {
+  for (const template of STORE_ACCESS_PROFILE_TEMPLATES) {
+    assert.notEqual(template.baseRole, 'owner');
+    const created = createStoreAccessProfileFromTemplate('store-a', template);
+    assert.equal(isValidStoreAccessProfile(created), true, template.id);
+    assert.equal(created.storeId, 'store-a');
+  }
+});
+
+test('template creation returns an editable copy without mutating the template', () => {
+  const template = STORE_ACCESS_PROFILE_TEMPLATES[0];
+  const created = createStoreAccessProfileFromTemplate('store-a', template, 'custom-manager');
+  assert.equal(created.id, 'custom-manager');
+  assert.notEqual(created.permissions, template.permissions);
 });
