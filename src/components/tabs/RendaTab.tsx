@@ -237,12 +237,11 @@ export function RendaTab({
             <div className="flex items-center gap-1.5">
               <Briefcase className="h-4 w-4 text-teal-400" />
               <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Freelas
+                Kyrub Trabalhos
               </h3>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
-              Contrate profissionais para sua loja ou preste
-              serviços especializados para negócios locais.
+              Encontre oportunidades de trabalho fixo, temporário ou por demanda e conecte-se a empresas.
             </p>
           </div>
 
@@ -261,7 +260,7 @@ export function RendaTab({
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
               id="btn-fazer-freela"
             >
-              <span>Fazer freela</span>
+              <span>Encontrar trabalhos</span>
               {freelanceJobs.filter(
                 job => job.status === 'open'
               ).length > 0 && (
