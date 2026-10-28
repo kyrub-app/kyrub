@@ -31,21 +31,34 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     throw new OfficialPlanCheckoutRouteError('PRODUCT_NOT_FOUND', 'Produto não encontrado.');
   }
   const data = product.data() ?? {};
-  // Legacy publicProducts remain owner-writable. A missing canonical product
-  // must fail closed; never infer a platform plan from the legacy array.
-  // Until product-tag writes are platform-admin-only, reject any privileged tag.
+  // A platform-owned control-plane mapping is the only authority for Kyrub
+  // plan identity. Store owners may edit ordinary product documents.
+  const mapping = await adminDb.doc(
+    `kyrub_admin/control_plane/official_plan_products/${productId}`
+  ).get();
+  const mappingData = mapping.exists ? mapping.data() ?? {} : {};
   if (data.platformPlanId !== undefined && data.platformPlanId !== null) {
     throw new OfficialPlanCheckoutRouteError(
-      'PLATFORM_PLAN_TAG_NOT_AUTHORIZED',
-      'Produto de plano aguarda cadastro protegido pela plataforma.'
+      'UNTRUSTED_PRODUCT_PLAN_TAG',
+      'O identificador de plano não pode ser definido no cadastro comum.'
     );
   }
-  const rawTag = data.platformPlanId;
-  if (rawTag !== undefined && rawTag !== null &&
-      rawTag !== 'free' && rawTag !== 'pro' && rawTag !== 'business') {
-    throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN', 'Identificação de plano inválida.');
+  const rawPlan = mappingData.planId;
+  if (rawPlan !== undefined && rawPlan !== 'free' && rawPlan !== 'pro' && rawPlan !== 'business') {
+    throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN', 'Plano Kyrub inválido.');
   }
-  const planId = (rawTag ?? null) as KyrubCommercialPlanId | null;
+  if (mapping.exists && (
+    mappingData.canonicalStoreId !== seller.canonicalStoreId ||
+    official?.canonicalStoreId !== seller.canonicalStoreId ||
+    mappingData.productId !== productId ||
+    mappingData.status !== 'active'
+  )) {
+    throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Vínculo oficial do plano inválido.');
+  }
+  const planId = (mapping.exists ? rawPlan : null) as KyrubCommercialPlanId | null;
+  if (mapping.exists && planId === null) {
+    throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Plano oficial não identificado.');
+  }
   if (planId !== null) {
     const modality = parseProductSaleModality(data.saleModality);
     if (!modality || modality.mode !== 'subscription' ||
