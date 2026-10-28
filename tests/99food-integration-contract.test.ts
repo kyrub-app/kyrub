@@ -93,8 +93,8 @@ test('expired event workers cannot finalize a reservation claimed by another att
   assert.match(serviceSource, /attemptId,\s*attempts: FieldValue\.increment\(1\)/);
   assert.match(serviceSource, /data\.attemptId !== attemptId/);
   assert.match(serviceSource, /lease\.toMillis\(\) <= Date\.now\(\)\) return false/);
-  assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'processed'/);
-  assert.match(serviceSource, /finalizeReservedEvent\(\s*reservation\.referencePath, reservation\.attemptId, 'failed', message/);
+  assert.match(serviceSource, /finalizeReservedEvent\(\s*connection\.tenantId, reservation\.referencePath, reservation\.attemptId, 'processed'/);
+  assert.match(serviceSource, /finalizeReservedEvent\(\s*connection\.tenantId, reservation\.referencePath, reservation\.attemptId, 'failed', message/);
   assert.match(serviceSource, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
 });
 
@@ -142,29 +142,24 @@ test('retry after first order persistence reuses canonical identity instead of c
   assert.match(handler, /NINETY_NINE_FOOD_EVENT_RESERVATION_LOST/);
 });
 
-test('connection health failure cannot undo a successfully finalized provider event', () => {
+test('event finalization and connection health share one transaction', () => {
+  const finalizer = serviceSource.slice(
+    serviceSource.indexOf('const finalizeReservedEvent = async'),
+    serviceSource.indexOf('export const processNinetyNineFoodEvent')
+  );
+  assert.match(finalizer, /transaction\.get\(connectionReference\)/);
+  assert.match(finalizer, /transaction\.update\(reference/);
+  assert.match(finalizer, /transaction\.set\(connectionReference/);
+  assert.match(finalizer, /else if \(!alreadyHealthy\)/);
+  assert.match(finalizer, /data\.attemptId !== attemptId/);
+  assert.match(finalizer, /lease\.toMillis\(\) <= Date\.now\(\)/);
   const handler = serviceSource.slice(
     serviceSource.indexOf('export const processNinetyNineFoodEvent'),
     serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
   );
-  const success = handler.slice(handler.indexOf('const finalized = await finalizeReservedEvent('), handler.indexOf('return { duplicate: false, event };'));
-  assert.match(success, /if \(!finalized\) \{/);
-  assert.match(success, /connectionPath\(connection\.tenantId\)/);
-  assert.match(success, /\{ merge: true \}\s*\)\.catch\(error => \{/);
-  assert.match(success, /Event processed; connection health update failed/);
-});
-
-test('superseded event workers cannot report connection failure', () => {
-  const handler = serviceSource.slice(
-    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
-    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
-  );
-  const failure = handler.slice(handler.indexOf('} catch (error) {'));
-  assert.match(failure, /const failureFinalized = await finalizeReservedEvent\(/);
-  assert.match(failure, /if \(failureFinalized\) \{/);
-  assert.ok(failure.indexOf('if (failureFinalized) {') <
-    failure.indexOf("status: 'attention'"));
-  assert.match(failure, /Could not finalize failed event reservation/);
+  assert.doesNotMatch(handler, /status: 'attention'/);
+  assert.doesNotMatch(handler, /status: 'connected'/);
+  assert.match(handler, /connection\.tenantId, reservation\.referencePath, reservation\.attemptId, 'failed'/);
 });
 
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
