@@ -19,5 +19,7 @@ describe('shared subscription contract offers', () => {
     ]), /DUPLICATE/);
     assert.throws(() => calculateSubscriptionContractOffer(7000, 12, 101), /INVALID/);
     assert.throws(() => calculateSubscriptionContractOffer(-1, 1, 0), /INVALID/);
+    assert.throws(() => validateSubscriptionContractDiscounts([{ months: 3, discountPercent: 5 }]), /MISSING_MONTHLY_BASELINE/);
+    assert.throws(() => calculateSubscriptionContractOffer(Number.MAX_SAFE_INTEGER, 12, 20), /INVALID/);
   });
 });
