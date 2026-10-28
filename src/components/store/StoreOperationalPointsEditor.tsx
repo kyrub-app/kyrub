@@ -6,6 +6,8 @@ const empty = () => ({ name: '', purpose: 'pickup' as StoreOperationalPointPurpo
 export function StoreOperationalPointsEditor({ value, onChange, disabled = false }: Props) {
  const [draft, setDraft] = useState(empty); const [error, setError] = useState('');
  const add = () => { try { if (value.length >= 50) throw new Error('Limite de 50 pontos por loja.');
+ if (!draft.latitude.trim() || !draft.longitude.trim()) throw new Error('Informe latitude e longitude.');
+ if (draft.purpose === 'attendance' && !draft.radius.trim()) throw new Error('Informe o raio autorizado.');
  const point = validateStoreOperationalPoint({ id: `point_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, name: draft.name, purpose: draft.purpose, lat: Number(draft.latitude.trim().replace(',', '.')), lng: Number(draft.longitude.trim().replace(',', '.')), instructions: draft.instructions, ...(draft.purpose === 'attendance' ? { geofenceRadiusMeters: Number(draft.radius) } : {}) });
  onChange([...value, point]); setDraft(empty()); setError(''); } catch (cause) { setError(cause instanceof Error ? cause.message : 'Dados inválidos.'); } };
  return <section className="space-y-3 rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-4"><h3 className="text-xs font-black text-cyan-200">Pontos operacionais da loja</h3><p className="text-xs text-slate-400">Locais de retirada, acesso da equipe e áreas de presença vinculados à mesma loja.</p>
