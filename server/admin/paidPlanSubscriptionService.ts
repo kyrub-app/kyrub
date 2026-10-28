@@ -19,6 +19,8 @@ const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
 const ENTITLEMENT_COLLECTION = `${ROOT}/store_entitlements`;
 const AUDIT_COLLECTION = `${ROOT}/audit_logs`;
+const CHECKOUT_LOCK_COLLECTION = `${ROOT}/plan_checkout_locks`;
+const CHECKOUT_LOCK_MS = 10 * 60 * 1000;
 const PROVIDER = 'mercado_pago' as const;
 const MP_API = 'https://api.mercadopago.com';
 
@@ -353,6 +355,33 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   };
 };
 
+
+const reservePlanCheckout = async (ownerId: string): Promise<string> => {
+  const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
+  const reference = randomUUID().replaceAll('-', '_');
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    const current = snapshot.exists ? record(snapshot.data()) : {};
+    const startedAt = Number(current.startedAt);
+    if (current.state === 'creating' && Number.isFinite(startedAt) &&
+        Date.now() - startedAt >= 0 && Date.now() - startedAt < CHECKOUT_LOCK_MS) {
+      throw new PlanManagementError(409, 'PLAN_CHECKOUT_IN_PROGRESS', 'Uma contratação já está em andamento para esta loja.');
+    }
+    transaction.set(ref, { state: 'creating', reference, startedAt: Date.now() });
+  });
+  return reference;
+};
+
+const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed'): Promise<void> => {
+  const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (record(snapshot.data()).reference === reference) {
+      transaction.set(ref, { state, reference, updatedAt: Date.now() }, { merge: true });
+    }
+  });
+};
+
 export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, productId?: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
@@ -380,7 +409,8 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }
   }
 
-  const billingReference = randomUUID().replaceAll('-', '_');
+  const billingReference = await reservePlanCheckout(ownerId);
+  try {
   const providerIdempotencyKey = `kyrub-plan-${ownerId}-${billingReference}`;
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
@@ -433,7 +463,12 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await finishPlanCheckout(ownerId, billingReference, 'ready');
   return { checkoutUrl, subscription };
+  } catch (error) {
+    await finishPlanCheckout(ownerId, billingReference, 'failed');
+    throw error;
+  }
 };
 
 export const reconcileOwnPaidPlanSubscription = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
