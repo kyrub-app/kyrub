@@ -89,6 +89,7 @@ export const StoreTeamWorkspace = ({
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
   const [lastInvited, setLastInvited] = useState<{ name: string; email: string; storeName: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
+  const [invitePhone, setInvitePhone] = useState('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
   const [draftDepartment, setDraftDepartment] = useState('');
@@ -256,6 +257,10 @@ export const StoreTeamWorkspace = ({
       setIsSearching(false);
     }
   };
+
+  const normalizedInvitePhone = invitePhone.replace(/\D/g, '');
+  const validInvitePhone = normalizedInvitePhone.length === 11 || (normalizedInvitePhone.length === 13 && normalizedInvitePhone.startsWith('55'));
+  const invitePhoneE164 = normalizedInvitePhone.length === 11 ? `55${normalizedInvitePhone}` : normalizedInvitePhone;
 
   const handleInvite = async (targetUser: KyrubDirectoryUser): Promise<void> => {
     if (!user || !selectedAccess) return;
@@ -603,6 +608,11 @@ export const StoreTeamWorkspace = ({
                         <input value={draftDepartment} onChange={event => setDraftDepartment(event.target.value)} maxLength={80} placeholder="Setor (opcional, ex.: Marketing)" aria-label="Setor" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
                         <input value={draftWorkArea} onChange={event => setDraftWorkArea(event.target.value)} maxLength={80} placeholder="Área de atuação (opcional, ex.: Conteúdo digital)" aria-label="Área de atuação" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
                       </div>
+                      <div className="space-y-1">
+                        <label htmlFor="team-invite-phone" className="block text-[10px] text-slate-400">Celular para avisar por SMS (opcional, DDD brasileiro)</label>
+                        <input id="team-invite-phone" type="tel" inputMode="tel" autoComplete="off" value={invitePhone} onChange={event => setInvitePhone(event.target.value)} placeholder="(11) 99999-9999" className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white" />
+                        {invitePhone.trim() && !validInvitePhone && <p className="text-[10px] text-amber-300">Informe 11 dígitos com DDD ou +55 seguido do DDD e número.</p>}
+                      </div>
                       <button
                         type="submit"
                         disabled={isSearching || !searchTerm.trim()}
@@ -628,7 +638,13 @@ export const StoreTeamWorkspace = ({
                             className="ml-2 mt-2 inline-flex rounded-lg border border-slate-600 px-3 py-2 font-bold text-slate-200 hover:bg-slate-800"
                           >Compartilhar por e-mail</a>
                         )}
-                        <p className="mt-2 text-[10px] text-slate-400">O envio depende de sua confirmação no aplicativo escolhido. SMS requer um número de celular e será habilitado quando esse dado estiver disponível no cadastro.</p>
+                        {validInvitePhone && (
+                          <a
+                            href={`sms:+${invitePhoneE164}?body=${encodeURIComponent(`Olá, ${lastInvited.name}! ${lastInvited.storeName} convidou você para trabalhar pelo Kyrub. Acesse https://kyrub.com e responda pelo sino de notificações com sua conta.`)}`}
+                            className="ml-2 mt-2 inline-flex rounded-lg border border-slate-600 px-3 py-2 font-bold text-slate-200 hover:bg-slate-800"
+                          >Compartilhar por SMS</a>
+                        )}
+                        <p className="mt-2 text-[10px] text-slate-400">O envio depende de confirmação no aplicativo escolhido. O número digitado é usado apenas para abrir o SMS; não identifica nem autentica o convidado.</p>
                       </div>
                     )}
                     <div className="space-y-2">
