@@ -47,3 +47,11 @@ test('platform preapproval sends a provider idempotency header', () => {
   assert.match(planBillingSource, /const providerIdempotencyKey =/);
   assert.match(planBillingSource, /'X-Idempotency-Key': providerIdempotencyKey/);
 });
+
+test('platform checkout reserves creation before provider call', () => {
+  assert.match(planBillingSource, /const billingReference = await reservePlanCheckout\(ownerId\)/);
+  assert.match(planBillingSource, /adminDb\.runTransaction\(async transaction =>/);
+  assert.match(planBillingSource, /PLAN_CHECKOUT_IN_PROGRESS/);
+  assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'ready'\)/);
+  assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'failed'\)/);
+});
