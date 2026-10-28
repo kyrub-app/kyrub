@@ -98,6 +98,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify canonical store rules contracts
+        run: node --test --import tsx tests/store-security-rules-contract.test.ts tests/firestore-rule-composition.test.mjs
+
       - name: Run complete Firestore emulator authorization suite
         shell: bash
         run: |
