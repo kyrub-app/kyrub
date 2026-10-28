@@ -225,6 +225,8 @@
             || (
               storeSecActorCanManageRole(storeId, existing().role)
               && storeSecActorCanManageRole(storeId, incoming().role)
+              // An administrator cannot accept an invitation on behalf of its recipient.
+              && !(existing().status == 'invited' && incoming().status == 'active')
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'role',
                 'status',
