@@ -104,7 +104,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         KYRUB_ERP_MANAGEMENT_NAVIGATION_EVENT,
         handleManagementNavigation
       );
-  }, []);
+  }, [props.accessRole]);
 
   useEffect(() => {
     if (previousActiveSubTabRef.current === props.activeSubTab) return;

@@ -9,6 +9,7 @@ import {
 } from '../../src/utils/canonicalPaymentIntent.js';
 import { classifyCompatiblePaymentRecord } from '../payments/paymentRecordCompatibility.js';
 import { resolveInPersonOrderStoreContext } from './inPersonOrderService.js';
+import { expireStaleUnboundLocalPayment } from './localPendingPaymentExpirationService.js';
 
 const MAX_PAYMENT_RECORDS_PER_ORDER = 50;
 
@@ -139,7 +140,12 @@ export const loadPendingLocalPayment = async (input: {
     throw new Error('LOCAL_PENDING_PAYMENT_RECONCILIATION_REQUIRED');
   }
 
-  const payment = pending[0];
+  const payment = await expireStaleUnboundLocalPayment({
+    canonicalStoreId: storeContext.canonicalStoreId,
+    orderId,
+    payment: pending[0],
+  });
+  if (payment.status !== 'pending') return null;
   const paymentIntentId = clean(payment.paymentIntentId);
   if (!paymentIntentId) {
     throw new Error('LOCAL_PENDING_PAYMENT_LINK_REQUIRED');

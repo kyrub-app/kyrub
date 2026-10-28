@@ -189,6 +189,12 @@ export function ServiceLocationFinancialContextPanel({
     patchPix(order.id, { loading: true, error: '', copied: false, confirmedCredit: false });
     try {
       let pending = await loadPendingLocalPayment({ storeId, orderId: order.id });
+      if (pending && (!Number.isFinite(Date.parse(pending.expiresAt)) || Date.parse(pending.expiresAt) <= Date.now())) {
+        throw new Error('A cobrança Pix pendente atingiu seu prazo de validade. Consulte a situação do pagamento e concilie a tentativa anterior antes de emitir outra cobrança.');
+      }
+      if (pending && !couponCode && requestedAmount > 0 && Math.abs(pending.amount - requestedAmount) > 0.009) {
+        throw new Error('Já existe um Pix pendente com valor diferente. Retome a cobrança original ou aguarde seu encerramento antes de alterar o valor.');
+      }
       if (pending && couponCode) {
         throw new Error('Já existe uma cobrança pendente para este pedido. O cupom só pode ser definido ao criar uma nova tentativa de pagamento.');
       }
@@ -202,7 +208,7 @@ export function ServiceLocationFinancialContextPanel({
           orderId: order.id,
           idempotencyKey: newLocalPaymentAttemptKey(order.id),
           ...(couponCode ? { couponCode } : {}),
-          ...(requestedAmount > 0 ? { amount: requestedAmount } : {}),
+          ...(!couponCode && requestedAmount > 0 ? { amount: requestedAmount } : {}),
         });
       }
       const checkout = provider === 'mercado-pago'
