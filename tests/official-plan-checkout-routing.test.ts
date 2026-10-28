@@ -28,6 +28,13 @@ describe('Official Store plan checkout routing', () => {
     }), { kind: 'free-plan', plan: 'free' });
   });
 
+  it('fails closed on malformed explicit plan tags', () => {
+    assert.throws(() => resolveCheckoutBillingRoute({
+      sellerStoreId: officialStoreId, officialStoreId,
+      platformPlanId: 'enterprise' as never,
+    }), { code: 'INVALID_PLATFORM_PLAN' });
+  });
+
   it('rejects platform plans from other stores or without an official designation', () => {
     assert.throws(() => resolveCheckoutBillingRoute({
       sellerStoreId: 'merchant-1', officialStoreId, platformPlanId: 'pro',
