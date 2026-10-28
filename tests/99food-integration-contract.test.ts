@@ -164,6 +164,28 @@ test('event finalization and connection health share one transaction', () => {
   assert.match(handler, /connection\.tenantId, reservation\.referencePath, reservation\.attemptId, 'failed'/);
 });
 
+test('polling never acknowledges an event currently leased by another worker', () => {
+  const reservation = serviceSource.slice(
+    serviceSource.indexOf('const reserveEvent = async'),
+    serviceSource.indexOf('const finalizeReservedEvent')
+  );
+  assert.match(reservation, /if \(status === 'processed'\) return 'processed'/);
+  assert.match(reservation, /if \(status === 'processing' && leaseActive\) return 'busy'/);
+  const handler = serviceSource.slice(
+    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
+    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
+  );
+  assert.match(handler, /if \(reservation\.alreadyProcessed\) return \{ duplicate: true, event \}/);
+  assert.match(handler, /throw new Error\('NINETY_NINE_FOOD_EVENT_ALREADY_PROCESSING'\)/);
+  const polling = serviceSource.slice(
+    serviceSource.indexOf('export const pollNinetyNineFood'),
+    serviceSource.indexOf('export const pollAllNinetyNineFoodConnections')
+  );
+  assert.ok(polling.indexOf('await processNinetyNineFoodEvent') <
+    polling.indexOf('acknowledged.push(event)'));
+  assert.match(polling, /await client\.acknowledgeEvents\(acknowledged\)/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
