@@ -26,7 +26,15 @@ export const calculateSubscriptionContractOffer = (
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
   }
   // Round only once, on the total payable amount.
-  const totalMinor = Math.round(monthlyPriceMinor * months * (1 - discountPercent / 100));
+  const discountBasisPoints = Math.round(discountPercent * 100);
+  const grossMinor = monthlyPriceMinor * months;
+  if (!Number.isSafeInteger(grossMinor)) {
+    throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
+  }
+  const totalMinor = Math.round(grossMinor * (10000 - discountBasisPoints) / 10000);
+  if (!Number.isSafeInteger(totalMinor)) {
+    throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
+  }
   return {
     months,
     discountPercent,
@@ -42,6 +50,9 @@ export const validateSubscriptionContractDiscounts = (
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_TERMS');
   }
   const seen = new Set<number>();
+  if (!entries.some(entry => entry.months === 1 && entry.discountPercent === 0)) {
+    throw new Error('MISSING_MONTHLY_BASELINE');
+  }
   for (const entry of entries) {
     if (seen.has(entry.months)) throw new Error('DUPLICATE_SUBSCRIPTION_CONTRACT_TERM');
     seen.add(entry.months);
