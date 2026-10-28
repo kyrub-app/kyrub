@@ -1,3 +1,4 @@
+import { validateStoreOperationalPoint, type StoreOperationalPoint } from './storeLocation';
 import {
   doc,
   onSnapshot,
@@ -78,6 +79,7 @@ export interface StoreFiscalAccountingDecisionRecord {
 }
 
 export interface StoreOperationalSettings {
+  operationalPoints: StoreOperationalPoint[];
   openingHours: StoreOpeningHours;
   integrations: StoreIntegrationPlans;
   fiscalIssuerProfile: StoreFiscalIssuerProfile;
@@ -142,6 +144,7 @@ export const createEmptyStoreFiscalAccountingDecision = (): StoreFiscalAccountin
 });
 
 export const createEmptyStoreOperationalSettings = (): StoreOperationalSettings => ({
+  operationalPoints: [],
   openingHours: createEmptyStoreOpeningHours(),
   integrations: createEmptyStoreIntegrationPlans(),
   fiscalIssuerProfile: createEmptyStoreFiscalIssuerProfile(),
@@ -282,6 +285,23 @@ const mirrorFiscalIssuerProfileIntoSefaz = (
   },
 });
 
+/** Invalid legacy entries are ignored; newly saved points must pass strict validation. */
+export const parseStoreOperationalPoints = (value: unknown): StoreOperationalPoint[] => {
+  if (!Array.isArray(value)) return [];
+  const points: StoreOperationalPoint[] = [];
+  const ids = new Set<string>();
+  for (const item of value.slice(0, 50)) {
+    if (!item || typeof item !== 'object') continue;
+    try {
+      const point = validateStoreOperationalPoint(item as StoreOperationalPoint);
+      if (ids.has(point.id)) continue;
+      ids.add(point.id);
+      points.push(point);
+    } catch { /* Ignore invalid persisted data without breaking store settings. */ }
+  }
+  return points;
+};
+
 export const parseStoreOperationalSettings = (
   value: unknown
 ): StoreOperationalSettings => {
@@ -300,6 +320,7 @@ export const parseStoreOperationalSettings = (
     : deriveStoreFiscalIssuerProfileFromSefaz(parsedIntegrations.sefaz);
 
   return {
+    operationalPoints: parseStoreOperationalPoints(candidate.operationalPoints),
     openingHours: Object.fromEntries(
       STORE_WEEKDAYS.map(day => [day, parseOpeningDay(openingCandidate[day])])
     ) as StoreOpeningHours,
