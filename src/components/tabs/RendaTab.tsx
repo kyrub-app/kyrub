@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import {
   BadgeCheck,
+  Building2,
   Briefcase,
   CircleDollarSign,
   FileCheck2,
@@ -17,6 +18,7 @@ import { loadCachedUserStore } from '../../utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
+import { subscribeToUserStoreAccess, type StoreAccessRecord } from '../../utils/storeDirectory';
 
 interface RendaTabProps {
   deliveries: DeliveryJob[];
@@ -65,6 +67,18 @@ export function RendaTab({
     useState(true);
   const [isDeliveryEarningsOpen, setIsDeliveryEarningsOpen] =
     useState(false);
+  const [isWorkConnectionsOpen, setIsWorkConnectionsOpen] = useState(false);
+  const [workConnections, setWorkConnections] = useState<StoreAccessRecord[]>([]);
+  const [workConnectionsError, setWorkConnectionsError] = useState(false);
+
+  useEffect(() => onAuthStateChanged(auth, user => {
+    setWorkConnections([]);
+    setWorkConnectionsError(false);
+    if (!user) return;
+    return subscribeToUserStoreAccess(user.uid, accesses => {
+      setWorkConnections(accesses.filter(access => access.member && access.status !== 'suspended'));
+    }, () => setWorkConnectionsError(true));
+  }), []);
 
   useEffect(() => {
     let cancelled = false;
@@ -234,11 +248,16 @@ export function RendaTab({
 
         <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
           <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <Briefcase className="h-4 w-4 text-teal-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Trabalhos
-              </h3>
+            <div className="flex items-start justify-between gap-2">
+              <div className="flex items-center gap-1.5">
+                <Briefcase className="h-4 w-4 text-teal-400" />
+                <h3 className="text-xs font-black uppercase tracking-wider text-white">Kyrub Trabalhos</h3>
+              </div>
+              <button type="button" onClick={() => requireAuthenticatedAction(() => setIsWorkConnectionsOpen(true))}
+                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-teal-500/20 bg-teal-500/[0.08] text-teal-300 hover:bg-teal-500/[0.14]"
+                aria-label="Ver empresas vinculadas" aria-haspopup="dialog" aria-controls="work-connections-sheet" aria-expanded={isWorkConnectionsOpen}>
+                <Building2 className="h-4 w-4" />
+              </button>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               Encontre oportunidades de trabalho fixo, temporário ou por demanda e conecte-se a empresas.
@@ -343,6 +362,28 @@ export function RendaTab({
           </button>
         </section>
       </div>
+
+      {isWorkConnectionsOpen && createPortal(
+        <div className="fixed inset-0 z-[180] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-6" onMouseDown={() => setIsWorkConnectionsOpen(false)} role="presentation">
+          <section id="work-connections-sheet" role="dialog" aria-modal="true" aria-labelledby="work-connections-title"
+            className="max-h-[88dvh] w-full overflow-y-auto rounded-t-[2rem] border border-slate-700 bg-slate-950 p-5 shadow-2xl sm:max-w-2xl sm:rounded-[2rem]"
+            onMouseDown={event => event.stopPropagation()}>
+            <div className="flex items-center justify-between gap-3">
+              <h2 id="work-connections-title" className="text-sm font-black text-white">Minhas empresas</h2>
+              <button type="button" onClick={() => setIsWorkConnectionsOpen(false)} aria-label="Fechar empresas vinculadas" className="rounded-xl border border-slate-700 p-2 text-slate-300"><X className="h-4 w-4" /></button>
+            </div>
+            {workConnectionsError && <p className="mt-4 text-xs text-amber-300">Não foi possível consultar seus vínculos agora.</p>}
+            {!workConnectionsError && workConnections.length === 0 && <p className="mt-4 text-xs text-slate-400">Nenhuma empresa vinculada ou convite encontrado.</p>}
+            <div className="mt-4 space-y-2">
+              {workConnections.map(access => <div key={access.store.id} className="rounded-xl border border-slate-800 p-3">
+                <strong className="block text-xs text-white">{access.store.name}</strong>
+                <p className="mt-1 text-[10px] text-slate-400">{[access.member?.jobTitle, access.member?.department, access.member?.workArea].filter(Boolean).join(' · ') || 'Colaborador'}</p>
+                <span className="mt-1 block text-[10px] text-teal-300">{access.status === 'invited' ? 'Convite pendente' : 'Vínculo ativo'}</span>
+              </div>)}
+            </div>
+          </section>
+        </div>, document.body
+      )}
 
       {isDeliveryEarningsOpen && createPortal(
         <div
