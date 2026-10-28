@@ -22,7 +22,7 @@ export const calculateSubscriptionContractOffer = (
   if (!Number.isSafeInteger(monthlyPriceMinor) || monthlyPriceMinor < 0 ||
       !CONTRACT_TERM_MONTHS.includes(months) ||
       !Number.isFinite(discountPercent) || discountPercent < 0 || discountPercent > 100 ||
-      Math.round(discountPercent * 100) !== discountPercent * 100) {
+      Math.abs(Math.round(discountPercent * 100) - discountPercent * 100) > 1e-8) {
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
   }
   // Round only once, on the total payable amount.
@@ -31,7 +31,10 @@ export const calculateSubscriptionContractOffer = (
   if (!Number.isSafeInteger(grossMinor)) {
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
   }
-  const totalMinor = Math.round(grossMinor * (10000 - discountBasisPoints) / 10000);
+  // Split whole and fractional cents to avoid unsafe intermediate products.
+  const factor = 10000 - discountBasisPoints;
+  const totalMinor = Math.floor(grossMinor / 10000) * factor +
+    Math.round((grossMinor % 10000) * factor / 10000);
   if (!Number.isSafeInteger(totalMinor)) {
     throw new Error('INVALID_SUBSCRIPTION_CONTRACT_OFFER');
   }
