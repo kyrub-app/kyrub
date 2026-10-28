@@ -64,3 +64,35 @@ export const parseStoreLocationDraft = (
 
   return { lat, lng, geofenceRadiusMeters };
 };
+
+/** Additional access or pickup points belonging to one canonical store. */
+export type StoreOperationalPointPurpose = 'pickup' | 'staff-access' | 'attendance';
+
+export interface StoreOperationalPoint {
+  id: string;
+  name: string;
+  purpose: StoreOperationalPointPurpose;
+  lat: number;
+  lng: number;
+  instructions: string;
+  geofenceRadiusMeters?: number;
+}
+
+/** Validate without mutating the canonical store coordinates or legacy geofence. */
+export const validateStoreOperationalPoint = (point: StoreOperationalPoint): StoreOperationalPoint => {
+  const id = point.id.trim();
+  const name = point.name.trim();
+  const instructions = point.instructions.trim();
+  if (!/^[a-zA-Z0-9_-]{1,64}$/.test(id)) throw new Error('Identificador de ponto operacional inválido.');
+  if (!name || name.length > 100) throw new Error('Informe um nome de ponto operacional com até 100 caracteres.');
+  if (instructions.length > 500) throw new Error('As instruções do ponto devem ter até 500 caracteres.');
+  if (!(['pickup', 'staff-access', 'attendance'] as const).includes(point.purpose)) throw new Error('Finalidade do ponto operacional inválida.');
+  validateStoreCoordinates(point.lat, point.lng);
+  if (point.purpose === 'attendance') {
+    if (point.geofenceRadiusMeters === undefined) throw new Error('Informe o raio autorizado para registro de ponto.');
+    validateStoreGeofenceRadius(point.geofenceRadiusMeters);
+  } else if (point.geofenceRadiusMeters !== undefined) {
+    throw new Error('O raio de presença só pode ser definido em pontos de registro de ponto.');
+  }
+  return { ...point, id, name, instructions };
+};
