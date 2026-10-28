@@ -479,7 +479,9 @@ const finalizeReservedEvent = async (
   const reference = adminDb.doc(referencePath);
   const snapshot = await transaction.get(reference);
   const data = snapshot.data();
-  if (data?.status !== 'processing' || data.attemptId !== attemptId) return false;
+  const lease = data?.leaseExpiresAt;
+  if (data?.status !== 'processing' || data.attemptId !== attemptId ||
+      !(lease instanceof Timestamp) || lease.toMillis() <= Date.now()) return false;
   transaction.update(reference, outcome === 'processed'
     ? {
         status: 'processed',
