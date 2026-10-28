@@ -46,7 +46,7 @@ export const validateOfficialPlanProduct = async (
     !modality ||
     modality.mode !== 'subscription' ||
     !modality.subscription ||
-    modality.subscription.billingInterval.unit !== 'months' ||
+    modality.subscription.billingInterval.unit !== 'month' ||
     modality.subscription.billingInterval.count !== 1 ||
     plan !== expectedPlan ||
     amountMinor !== expectedAmountMinor ||
