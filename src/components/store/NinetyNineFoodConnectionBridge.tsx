@@ -33,6 +33,8 @@ const emptyStatus: NinetyNineFoodConnectionStatus = {
   lastVerifiedAt: '',
   lastWebhookAt: '',
   lastPollAt: '',
+  lastPollError: '',
+  lastPollFailedAt: '',
 };
 
 const emptyPlan = (environment: 'sandbox' | 'production'): NinetyNineFoodOnboardingPlan => ({
@@ -401,6 +403,14 @@ export function NinetyNineFoodConnectionBridge() {
           <span>Último webhook: <strong className="text-slate-200">{formatTimestamp(status.lastWebhookAt)}</strong></span>
           <span>Último polling: <strong className="text-slate-200">{formatTimestamp(status.lastPollAt)}</strong></span>
           <span className="break-all">Webhook: <strong className="text-slate-200">{status.webhookUrl || 'Ainda não registrado'}</strong></span>
+        </div>
+      )}
+
+      {status.configured && status.lastPollError && (
+        <div role="alert" className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2.5 text-[8px] leading-relaxed text-amber-200">
+          <strong>Falha de comunicação com a 99Food:</strong> {status.lastPollError}
+          <span className="mt-1 block">Última falha: {formatTimestamp(status.lastPollFailedAt)}</span>
+          <span className="mt-1 block">Este alerta é independente do processamento dos pedidos.</span>
         </div>
       )}
 
