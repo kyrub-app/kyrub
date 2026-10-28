@@ -62,3 +62,50 @@ export function isValidStoreAccessProfile(value: unknown): value is StoreAccessP
   return profile.permissions.every(permission => typeof permission === 'string' && baseline.includes(permission as StorePermission)) &&
     new Set(profile.permissions).size === profile.permissions.length;
 }
+
+/** Suggested templates are editable starting points, never privileged identities. */
+export interface StoreAccessProfileTemplate {
+  id: string;
+  name: string;
+  baseRole: StoreRole;
+  permissions: readonly StorePermission[];
+}
+
+export const STORE_ACCESS_PROFILE_TEMPLATES: readonly StoreAccessProfileTemplate[] = [
+  { id: 'gerente', name: 'Gerente', baseRole: 'manager', permissions: [
+    'store.read', 'members.read', 'members.invite', 'products.read', 'products.write',
+    'orders.read', 'orders.create', 'orders.cancel', 'cash.read', 'cash.manage', 'reports.read',
+  ] },
+  { id: 'lider-turno', name: 'Líder de turno / Maître', baseRole: 'manager', permissions: [
+    'store.read', 'members.read', 'members.invite', 'orders.read', 'orders.create',
+    'orders.transfer', 'cash.read', 'reports.read',
+  ] },
+  { id: 'caixa', name: 'Caixa', baseRole: 'cashier', permissions: [
+    'store.read', 'orders.read', 'orders.create', 'payments.create', 'cash.read', 'cash.manage',
+  ] },
+  { id: 'vendedor', name: 'Vendedor', baseRole: 'seller', permissions: [
+    'store.read', 'products.read', 'orders.read', 'orders.create', 'payments.create',
+  ] },
+  { id: 'producao', name: 'Produção', baseRole: 'production', permissions: [
+    'store.read', 'orders.read', 'production.read', 'production.update',
+  ] },
+  { id: 'financeiro', name: 'Responsável financeiro', baseRole: 'manager', permissions: [
+    'store.read', 'payments.read', 'cash.read', 'reports.read',
+  ] },
+];
+
+/** Copy a template into the store's editable profile draft; never write it implicitly. */
+export function createStoreAccessProfileFromTemplate(
+  storeId: string,
+  template: StoreAccessProfileTemplate,
+  profileId: string = template.id,
+): StoreAccessProfile {
+  return {
+    id: profileId,
+    storeId,
+    name: template.name,
+    baseRole: template.baseRole,
+    permissions: [...template.permissions],
+    active: true,
+  };
+}
