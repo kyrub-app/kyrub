@@ -17,6 +17,7 @@ import {
 } from 'firebase/firestore';
 import type { User } from 'firebase/auth';
 import type { Store, StorePlan } from '../types';
+import { isValidStoreStaffOrganization, normalizeStoreJobTitle, normalizeStoreOrganizationLabel, type StoreStaffOrganization } from './storeAccessProfiles';
 import { db } from './firebase';
 import {
   canAssignStoreRole,
@@ -56,6 +57,9 @@ export interface StoreMemberDirectoryRecord {
   email: string;
   photoUrl: string;
   role: StoreRole;
+  jobTitle: string;
+  department: string;
+  workArea: string;
   status: StoreMemberStatus;
   invitedBy: string;
   invitedAt: string;
@@ -91,6 +95,7 @@ export interface InviteStoreMemberInput {
   actorRole: StoreRole;
   targetUser: KyrubDirectoryUser;
   role: StoreRole;
+  organization?: StoreStaffOrganization;
 }
 
 const cleanString = (value: unknown): string =>
@@ -191,6 +196,9 @@ export const parseStoreMemberDirectoryRecord = (
     email: cleanString(candidate.email),
     photoUrl: cleanString(candidate.photoUrl),
     role: candidate.role,
+    jobTitle: cleanString(candidate.jobTitle),
+    department: cleanString(candidate.department),
+    workArea: cleanString(candidate.workArea),
     status: candidate.status,
     invitedBy: cleanString(candidate.invitedBy),
     invitedAt: timestampToIso(candidate.invitedAt),
@@ -293,6 +301,10 @@ export const inviteExistingKyrubUser = async (
     throw new Error('Seu papel não pode atribuir esta função.');
   }
 
+  if (input.organization && !isValidStoreStaffOrganization(input.organization)) {
+    throw new Error('Informe um cargo válido (até 80 caracteres) e revise setor e área.');
+  }
+
   const userSnapshot = await getDoc(doc(db, 'users', input.targetUser.uid));
   if (!userSnapshot.exists()) {
     throw new Error('Este usuário ainda não possui uma conta Kyrub.');
@@ -308,6 +320,11 @@ export const inviteExistingKyrubUser = async (
       email: input.targetUser.email,
       photoUrl: input.targetUser.photoUrl,
       role: input.role,
+      ...(input.organization ? {
+        jobTitle: normalizeStoreJobTitle(input.organization.jobTitle),
+        department: normalizeStoreOrganizationLabel(input.organization.department ?? ''),
+        workArea: normalizeStoreOrganizationLabel(input.organization.workArea ?? ''),
+      } : {}),
       status: 'invited',
       invitedBy: actor.uid,
       invitedAt: serverTimestamp(),
