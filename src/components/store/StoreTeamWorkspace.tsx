@@ -265,10 +265,14 @@ export const StoreTeamWorkspace = ({
           actorRole: selectedAccess.role,
           targetUser,
           role: inviteRole,
+          ...(draftJobTitle.trim() ? { organization: { jobTitle: draftJobTitle, department: draftDepartment, workArea: draftWorkArea } } : {}),
         });
         setDirectoryResults(current =>
           current.filter(result => result.uid !== targetUser.uid)
         );
+        setDraftJobTitle('');
+        setDraftDepartment('');
+        setDraftWorkArea('');
         notify(
           `${targetUser.name} foi convidado como ${STORE_ROLE_LABELS[inviteRole]}.`,
           'success'
@@ -502,6 +506,9 @@ export const StoreTeamWorkspace = ({
                                 <div className="min-w-0 flex-1">
                                   <strong className="block truncate text-xs text-white">{member.displayName || member.email}</strong>
                                   <span className="block truncate text-[10px] text-slate-500">{member.email}</span>
+                                  {(member.jobTitle || member.department || member.workArea) && (
+                                    <span className="mt-1 block text-[10px] text-slate-400">{[member.jobTitle, member.department, member.workArea].filter(Boolean).join(' · ')}</span>
+                                  )}
                                   <span className="mt-1 block text-[9px] font-bold uppercase text-slate-600">{memberStatusLabel(member.status)}</span>
                                 </div>
                               </div>
@@ -588,7 +595,7 @@ export const StoreTeamWorkspace = ({
                         ))}
                       </select>
                       <div className="space-y-2 rounded-xl border border-slate-800 p-3">
-                        <p className="text-[10px] text-slate-400">Organização do colaborador (rascunho; ainda não será enviada com o convite)</p>
+                        <p className="text-[10px] text-slate-400">Organização do colaborador (opcional; enviada com o convite quando o cargo for preenchido)</p>
                         <input value={draftJobTitle} onChange={event => setDraftJobTitle(event.target.value)} maxLength={80} placeholder="Cargo ou função (ex.: Representante de vendas)" aria-label="Cargo ou função" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
                         <input value={draftDepartment} onChange={event => setDraftDepartment(event.target.value)} maxLength={80} placeholder="Setor (opcional, ex.: Marketing)" aria-label="Setor" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
                         <input value={draftWorkArea} onChange={event => setDraftWorkArea(event.target.value)} maxLength={80} placeholder="Área de atuação (opcional, ex.: Conteúdo digital)" aria-label="Área de atuação" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
