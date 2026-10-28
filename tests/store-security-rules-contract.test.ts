@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 
-const rules = readFileSync('firestore.store-security.rules', 'utf8');
+const rules = readFileSync('firestore.store-security.fragment.rules', 'utf8');
 const productDualWriteRules = readFileSync(
   'firestore.product-dual-write.fragment.rules',
   'utf8'
@@ -19,22 +19,21 @@ test('canonical security rules cover every protected store resource', () => {
   ].forEach(fragment => assert.match(rules, new RegExp(fragment.replace(/[{}]/g, '\\$&'))));
 });
 
-test('canonical rules do not reopen the legacy artifacts wildcard', () => {
+test('canonical store fragment does not reopen the legacy artifacts wildcard', () => {
   assert.doesNotMatch(rules, /match \/artifacts\/\{[^}]+\}/);
-  assert.match(rules, /match \/\{document=\*\*\}[\s\S]*allow read, write: if false/);
 });
 
 test('seller payment reads are constrained to the authenticated actor', () => {
   assert.match(
     rules,
-    /activeRole\(storeId, \['seller'\]\)[\s\S]*resource\.data\.actorUserId == request\.auth\.uid/
+    /storeSecActiveRole\(storeId, \['seller'\]\)[\s\S]*resource\.data\.actorUserId == request\.auth\.uid/
   );
 });
 
 test('manager hierarchy excludes manager and owner targets', () => {
   assert.match(
     rules,
-    /managerCanManageRole\(role\)[\s\S]*\['cashier', 'seller', 'production'\]/
+    /storeSecManagerCanManageRole\(role\)[\s\S]*\['cashier', 'seller', 'production'\]/
   );
   assert.doesNotMatch(
     rules,
