@@ -171,6 +171,12 @@
 
       allow delete: if false;
 
+      // External invitation records contain token hashes and recipient emails.
+      // They are managed exclusively by authenticated server endpoints using Admin SDK.
+      match /externalTeamInvitations/{invitationId} {
+        allow read, write: if false;
+      }
+
       match /members/{userId} {
         allow get: if isSignedIn()
           && (
