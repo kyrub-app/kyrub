@@ -2,6 +2,12 @@ import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 
 export type PaidKyrubPlan = 'pro' | 'business';
 
+export const isKyrubPlatformPlanProduct = (value: unknown): boolean => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const plan = (value as Record<string, unknown>).kyrubPlanId;
+  return plan === 'free' || plan === 'pro' || plan === 'business';
+};
+
 export const matchesOfficialPlanProduct = (
   value: unknown,
   expectedPlan: PaidKyrubPlan,
