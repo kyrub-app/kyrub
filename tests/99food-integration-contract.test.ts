@@ -112,6 +112,17 @@ test('first order creation and existing order updates both require the active ev
   assert.match(serviceSource, /reservation\.attemptId, event\.eventId, event\.orderId/);
 });
 
+test('first import rejects mismatched provider order details before writing', () => {
+  const handler = serviceSource.slice(
+    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
+    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
+  );
+  const initial = handler.slice(handler.indexOf('if (!currentOrder.exists)'), handler.indexOf('} else {'));
+  assert.match(initial, /order\.integration\.externalOrderId !== event\.orderId/);
+  assert.ok(initial.indexOf('NINETY_NINE_FOOD_PAYMENT_ORDER_MISMATCH') <
+    initial.indexOf('await persistNormalizedOrder('));
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
