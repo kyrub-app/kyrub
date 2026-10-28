@@ -442,11 +442,23 @@ export const persistStoreIntegrationPlans = async (
   );
 };
 
+/** Reject invalid edits before caching or persisting; parsing remains tolerant of legacy data. */
+export const validateStoreOperationalPointsForSave = (points: StoreOperationalPoint[]): void => {
+  if (!Array.isArray(points) || points.length > 50) throw new Error('Limite de 50 pontos operacionais por loja.');
+  const ids = new Set<string>();
+  for (const point of points) {
+    const validated = validateStoreOperationalPoint(point);
+    if (ids.has(validated.id)) throw new Error('Existem pontos operacionais com identificadores duplicados.');
+    ids.add(validated.id);
+  }
+};
+
 export const persistStoreOperationalSettings = async (
   user: Pick<User, 'uid' | 'email'>,
   settings: StoreOperationalSettings
 ): Promise<void> => {
   validateStoreOpeningHours(settings.openingHours);
+  validateStoreOperationalPointsForSave(settings.operationalPoints);
   const normalized = parseStoreOperationalSettings(settings);
 
   await setDoc(
