@@ -55,3 +55,9 @@ test('platform checkout reserves creation before provider call', () => {
   assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'ready'\)/);
   assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'failed'\)/);
 });
+
+test('provider-created subscriptions block unsafe retries pending reconciliation', () => {
+  assert.match(planBillingSource, /PLAN_CHECKOUT_RECONCILIATION_REQUIRED/);
+  assert.match(planBillingSource, /providerCreated = Boolean\(providerSubscriptionId\)/);
+  assert.match(planBillingSource, /providerCreated \? 'reconciliation_required' : 'failed'/);
+});
