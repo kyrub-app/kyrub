@@ -31,6 +31,9 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     throw new OfficialPlanCheckoutRouteError('PRODUCT_NOT_FOUND', 'Produto não encontrado.');
   }
   const data = product.data() ?? {};
+  if (data.publicationStatus !== 'published') {
+    throw new OfficialPlanCheckoutRouteError('PRODUCT_NOT_PUBLISHED', 'Produto não publicado.');
+  }
   // A platform-owned control-plane mapping is the only authority for Kyrub
   // plan identity. Store owners may edit ordinary product documents.
   const mapping = await adminDb.doc(
