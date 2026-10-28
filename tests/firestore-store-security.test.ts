@@ -413,3 +413,20 @@ test('invited and suspended staff cannot read or modify operational orders', asy
   const active = environment.authenticatedContext('seller-a').firestore();
   await assertSucceeds(getDoc(doc(active, 'stores', STORE_ID, 'orders', 'order-gated')));
 });
+
+test('recipient can accept invitation but suspended member cannot self-reactivate', async () => {
+  await seedStore();
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'stores', STORE_ID, 'members', 'recipient-a'), memberRecord('recipient-a', 'seller', 'invited'));
+    await setDoc(doc(db, 'stores', STORE_ID, 'members', 'suspended-b'), { ...memberRecord('suspended-b', 'seller'), status: 'suspended' });
+  });
+  const recipient = environment.authenticatedContext('recipient-a').firestore();
+  await assertSucceeds(updateDoc(doc(recipient, 'stores', STORE_ID, 'members', 'recipient-a'), {
+    status: 'active', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  const suspended = environment.authenticatedContext('suspended-b').firestore();
+  await assertFails(updateDoc(doc(suspended, 'stores', STORE_ID, 'members', 'suspended-b'), {
+    status: 'active', acceptedAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+});
