@@ -170,6 +170,11 @@ service cloud.firestore {
 
       allow delete: if false;
 
+      // Only trusted server code may access external invitation records.
+      match /externalTeamInvitations/{invitationId} {
+        allow read, write: if false;
+      }
+
       match /members/{userId} {
         allow get: if signedIn()
           && (
