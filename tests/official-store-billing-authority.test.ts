@@ -35,3 +35,34 @@ test('Kyrub plan activation requires approved payment evidence', () => {
   assert.match(planBillingSource, /status === 'authorized' && paymentEvidence/);
   assert.match(planBillingSource, /await activateSubscriptionEntitlement\(ownerId, next\)/);
 });
+
+test('optional official product reference is validated before platform preapproval', () => {
+  assert.match(planRouterSource, /createOwnPaidPlanCheckout\(authorization, body\.plan, body\.productId\)/);
+  assert.match(planBillingSource, /validateOfficialPlanProduct\(productId, targetPlan, Math\.round\(plan\.monthlyPriceBRL \* 100\)\)/);
+  assert.match(planBillingSource, /officialStoreId: officialProduct\.canonicalStoreId/);
+  assert.match(planBillingSource, /officialProductId: officialProduct\.productId/);
+});
+
+test('platform preapproval sends a provider idempotency header', () => {
+  assert.match(planBillingSource, /const providerIdempotencyKey =/);
+  assert.match(planBillingSource, /'X-Idempotency-Key': providerIdempotencyKey/);
+});
+
+test('platform checkout reserves creation before provider call', () => {
+  assert.match(planBillingSource, /const billingReference = await reservePlanCheckout\(ownerId\)/);
+  assert.match(planBillingSource, /adminDb\.runTransaction\(async transaction =>/);
+  assert.match(planBillingSource, /PLAN_CHECKOUT_IN_PROGRESS/);
+  assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'ready'\)/);
+  assert.match(planBillingSource, /finishPlanCheckout\(ownerId, billingReference, 'failed'\)/);
+});
+
+test('provider-created subscriptions block unsafe retries pending reconciliation', () => {
+  assert.match(planBillingSource, /PLAN_CHECKOUT_RECONCILIATION_REQUIRED/);
+  assert.match(planBillingSource, /providerCreated = Boolean\(providerSubscriptionId\)/);
+  assert.match(planBillingSource, /providerCreated \? 'reconciliation_required' : 'failed'/);
+});
+
+test('reconciliation lock retains the provider subscription id', () => {
+  assert.match(planBillingSource, /providerSubscriptionId\?: string/);
+  assert.match(planBillingSource, /providerSubscriptionId \? \{ providerSubscriptionId \} : \{\}/);
+});

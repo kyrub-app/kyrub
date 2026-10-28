@@ -13,11 +13,14 @@ import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { PlanManagementError } from './planManagementService.js';
 import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
+import { validateOfficialPlanProduct } from './officialPlanProductService.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
 const ENTITLEMENT_COLLECTION = `${ROOT}/store_entitlements`;
 const AUDIT_COLLECTION = `${ROOT}/audit_logs`;
+const CHECKOUT_LOCK_COLLECTION = `${ROOT}/plan_checkout_locks`;
+const CHECKOUT_LOCK_MS = 10 * 60 * 1000;
 const PROVIDER = 'mercado_pago' as const;
 const MP_API = 'https://api.mercadopago.com';
 
@@ -352,7 +355,37 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   };
 };
 
-export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown): Promise<KyrubPlanCheckoutResult> => {
+
+const reservePlanCheckout = async (ownerId: string): Promise<string> => {
+  const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
+  const reference = randomUUID().replaceAll('-', '_');
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    const current = snapshot.exists ? record(snapshot.data()) : {};
+    const startedAt = Number(current.startedAt);
+    if (current.state === 'reconciliation_required') {
+      throw new PlanManagementError(409, 'PLAN_CHECKOUT_RECONCILIATION_REQUIRED', 'Uma assinatura foi criada no provedor e precisa ser conciliada antes de nova tentativa.');
+    }
+    if (current.state === 'creating' && Number.isFinite(startedAt) &&
+        Date.now() - startedAt >= 0 && Date.now() - startedAt < CHECKOUT_LOCK_MS) {
+      throw new PlanManagementError(409, 'PLAN_CHECKOUT_IN_PROGRESS', 'Uma contratação já está em andamento para esta loja.');
+    }
+    transaction.set(ref, { state: 'creating', reference, startedAt: Date.now() });
+  });
+  return reference;
+};
+
+const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed' | 'reconciliation_required', providerSubscriptionId?: string): Promise<void> => {
+  const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(ref);
+    if (record(snapshot.data()).reference === reference) {
+      transaction.set(ref, { state, reference, ...(providerSubscriptionId ? { providerSubscriptionId } : {}), updatedAt: Date.now() }, { merge: true });
+    }
+  });
+};
+
+export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, productId?: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
@@ -363,6 +396,11 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
   const plan = await selectedPlan(targetPlan);
+  // Official-store product checkout is validated against the published catalog
+  // before any platform Mercado Pago preapproval is created.
+  const officialProduct = productId === undefined
+    ? null
+    : await validateOfficialPlanProduct(productId, targetPlan, Math.round(plan.monthlyPriceBRL * 100));
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
@@ -374,9 +412,13 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }
   }
 
-  const billingReference = randomUUID().replaceAll('-', '_');
+  const billingReference = await reservePlanCheckout(ownerId);
+  let createdProviderSubscriptionId = '';
+  try {
+  const providerIdempotencyKey = `kyrub-plan-${ownerId}-${billingReference}`;
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
+    headers: { 'X-Idempotency-Key': providerIdempotencyKey },
     body: JSON.stringify({
       reason: `Kyrub ${targetPlan === 'business' ? 'Business' : 'Pro'}`,
       external_reference: billingReference,
@@ -393,6 +435,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }),
   }) as MpPreapproval;
   const providerSubscriptionId = clean(provider.id);
+  createdProviderSubscriptionId = providerSubscriptionId;
   const checkoutUrl = clean(provider.init_point);
   if (!providerSubscriptionId || !checkoutUrl) {
     throw new PlanManagementError(502, 'PLAN_BILLING_PROVIDER_INVALID', 'O provedor não retornou um checkout válido.');
@@ -418,13 +461,19 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
     ...subscription,
     billingReference,
+    ...(officialProduct ? { officialStoreId: officialProduct.canonicalStoreId, officialProductId: officialProduct.productId } : {}),
     payerEmail: user.email,
     providerPaymentStatus: 'pending_confirmation',
     providerPaymentStatusDetail: null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
+  await finishPlanCheckout(ownerId, billingReference, 'ready');
   return { checkoutUrl, subscription };
+  } catch (error) {
+    await finishPlanCheckout(ownerId, billingReference, createdProviderSubscriptionId ? 'reconciliation_required' : 'failed', createdProviderSubscriptionId);
+    throw error;
+  }
 };
 
 export const reconcileOwnPaidPlanSubscription = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
