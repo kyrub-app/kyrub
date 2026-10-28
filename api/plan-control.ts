@@ -308,7 +308,7 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
-        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan));
+        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan, body.productId));
         return;
       }
       case 'store.subscription.reconcile': {
