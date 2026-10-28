@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Store } from '../../types';
+import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate } from '../../utils/storeAccessProfiles';
 import { auth } from '../../utils/firebase';
 import {
   STORE_ROLE_LABELS,
@@ -336,6 +337,22 @@ export const StoreTeamWorkspace = ({
           Convide contas Kyrub existentes e defina o acesso de cada pessoa à loja atual.
         </p>
       </div>
+
+      <details className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+        <summary className="cursor-pointer text-xs font-bold text-white">Cargos e permissões — modelos iniciais</summary>
+        <p className="mt-2 text-[11px] text-slate-400">Modelos de referência para personalização futura. Ainda não atribuem permissões nem enviam convites; o cadastro de equipe existente permanece inalterado.</p>
+        <div className="mt-3 grid gap-2 sm:grid-cols-2">
+          {STORE_ACCESS_PROFILE_TEMPLATES.map(template => {
+            const preview = createStoreAccessProfileFromTemplate(selectedAccess?.store.id ?? legacyStoreId, template);
+            return (
+              <div key={template.id} className="rounded-xl border border-slate-800 p-3">
+                <strong className="text-xs text-white">{preview.name}</strong>
+                <p className="mt-1 text-[10px] text-slate-400">{preview.permissions.length} permissões iniciais · base técnica: {STORE_ROLE_LABELS[preview.baseRole]}</p>
+              </div>
+            );
+          })}
+        </div>
+      </details>
 
       {accessError && (
         <div className="rounded-2xl border border-amber-500/25 bg-amber-500/10 p-4 text-xs text-amber-200">
