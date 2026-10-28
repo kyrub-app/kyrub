@@ -697,8 +697,9 @@ export const createAuthorizedStoreSubscription = async (
   // Platform plans must never be billed with a merchant OAuth credential.
   // Other subscriptions sold by the official store remain merchant products.
   const officialStore = await getOfficialStoreIdentity();
-  if (officialStore?.canonicalStoreId === store.canonicalStoreId) {
-    const candidate = await adminDb.doc(`stores/${store.canonicalStoreId}/products/${safeIdentity(payload.productId)}`).get();
+  const requestedProductId = safeIdentity(payload.productId);
+  if (officialStore?.canonicalStoreId === store.canonicalStoreId && requestedProductId && !requestedProductId.includes('/')) {
+    const candidate = await adminDb.doc(`stores/${store.canonicalStoreId}/products/${requestedProductId}`).get();
     const planId = clean(record(candidate.data()).kyrubPlanId);
     if (planId === 'pro' || planId === 'business' || planId === 'free') {
       fail(409, 'PLATFORM_PLAN_REQUIRES_PLATFORM_CHECKOUT', 'Os planos Kyrub devem ser contratados pelo checkout da plataforma.');
