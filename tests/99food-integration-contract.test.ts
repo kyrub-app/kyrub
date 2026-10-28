@@ -247,3 +247,15 @@ test('Firebase Admin is installed as a server dependency', () => {
   };
   assert.equal(packageJson.dependencies?.['firebase-admin'], '^14.2.0');
 });
+
+test('99Food polling diagnostics stay in the canonical ERP connection bridge, without duplicate panels', () => {
+  const integrationRuntime = readFileSync('src/components/GerencialIntegrationsRuntime.tsx', 'utf8');
+  const integrationTypes = readFileSync('src/utils/ninetyNineFoodIntegration.ts', 'utf8');
+  assert.match(frontendSource, /status\.lastPollError/);
+  assert.match(frontendSource, /status\.lastPollFailedAt/);
+  assert.match(frontendSource, /Falha de comunicação com a 99Food/);
+  assert.match(integrationTypes, /lastPollError: string/);
+  assert.match(integrationTypes, /lastPollFailedAt: string/);
+  assert.doesNotMatch(integrationRuntime, /NinetyNineFoodOperationalStatus/);
+  assert.match(frontendSource, /kyrub-99food-secure-connection-host/);
+});
