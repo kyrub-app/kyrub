@@ -401,7 +401,7 @@ export function RendaTab({
                 <strong className="block text-xs text-white">{access.store.name}</strong>
                 <p className="mt-1 text-[10px] text-slate-400">{[access.member?.jobTitle, access.member?.department, access.member?.workArea].filter(Boolean).join(' · ') || 'Colaborador'}</p>
                 <span className="mt-1 block text-[10px] text-teal-300">{access.status === 'invited' ? 'Convite pendente' : 'Vínculo ativo'}</span>
-                {access.status === 'active' && <a href="/staff" className="mt-3 inline-flex rounded-lg border border-teal-500/30 px-3 py-2 text-[10px] font-bold text-teal-300 hover:bg-teal-500/10">Acessar área de trabalho</a>}
+                {access.status === 'active' && <a href={`/staff?storeId=${encodeURIComponent(access.store.id)}`} className="mt-3 inline-flex rounded-lg border border-teal-500/30 px-3 py-2 text-[10px] font-bold text-teal-300 hover:bg-teal-500/10">Acessar área de trabalho</a>}
                 {access.status === 'invited' && <div className="mt-3 flex gap-2">
                   <button type="button" disabled={workInvitationBusy === access.store.id} onClick={() => void respondToWorkInvitation(access.store.id, 'accept')} className="rounded-lg bg-teal-500 px-3 py-2 text-[10px] font-bold text-slate-950 disabled:opacity-50">Aceitar convite</button>
                   <button type="button" disabled={workInvitationBusy === access.store.id} onClick={() => void respondToWorkInvitation(access.store.id, 'decline')} className="rounded-lg border border-slate-700 px-3 py-2 text-[10px] text-slate-300 disabled:opacity-50">Recusar</button>
