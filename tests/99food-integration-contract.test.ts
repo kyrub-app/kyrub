@@ -199,6 +199,18 @@ test('polling writes observation time without overriding transaction-owned healt
   assert.match(polling, /await client\.acknowledgeEvents\(acknowledged\)/);
 });
 
+test('poll transport failures are reported separately from event-processing health', () => {
+  const polling = serviceSource.slice(
+    serviceSource.indexOf('export const pollNinetyNineFood'),
+    serviceSource.indexOf('export const sendNinetyNineFoodOrderStatus')
+  );
+  assert.match(polling, /lastPollError: ''/);
+  assert.match(polling, /lastPollFailedAt: FieldValue\.serverTimestamp\(\)/);
+  assert.doesNotMatch(polling, /status: 'attention'/);
+  assert.match(serviceSource, /lastPollError: clean\(document\.lastPollError\)/);
+  assert.match(serviceSource, /lastPollFailedAt: timestampToIso\(document\.lastPollFailedAt\)/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
