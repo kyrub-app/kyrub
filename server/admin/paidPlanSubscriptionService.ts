@@ -375,12 +375,12 @@ const reservePlanCheckout = async (ownerId: string): Promise<string> => {
   return reference;
 };
 
-const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed' | 'reconciliation_required'): Promise<void> => {
+const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed' | 'reconciliation_required', providerSubscriptionId?: string): Promise<void> => {
   const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(ref);
     if (record(snapshot.data()).reference === reference) {
-      transaction.set(ref, { state, reference, updatedAt: Date.now() }, { merge: true });
+      transaction.set(ref, { state, reference, ...(providerSubscriptionId ? { providerSubscriptionId } : {}), updatedAt: Date.now() }, { merge: true });
     }
   });
 };
@@ -413,7 +413,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   }
 
   const billingReference = await reservePlanCheckout(ownerId);
-  let providerCreated = false;
+  let createdProviderSubscriptionId = '';
   try {
   const providerIdempotencyKey = `kyrub-plan-${ownerId}-${billingReference}`;
   const provider = await mpRequest('/preapproval', {
@@ -435,7 +435,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }),
   }) as MpPreapproval;
   const providerSubscriptionId = clean(provider.id);
-  providerCreated = Boolean(providerSubscriptionId);
+  createdProviderSubscriptionId = providerSubscriptionId;
   const checkoutUrl = clean(provider.init_point);
   if (!providerSubscriptionId || !checkoutUrl) {
     throw new PlanManagementError(502, 'PLAN_BILLING_PROVIDER_INVALID', 'O provedor não retornou um checkout válido.');
@@ -471,7 +471,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await finishPlanCheckout(ownerId, billingReference, 'ready');
   return { checkoutUrl, subscription };
   } catch (error) {
-    await finishPlanCheckout(ownerId, billingReference, providerCreated ? 'reconciliation_required' : 'failed');
+    await finishPlanCheckout(ownerId, billingReference, createdProviderSubscriptionId ? 'reconciliation_required' : 'failed', createdProviderSubscriptionId);
     throw error;
   }
 };
