@@ -69,3 +69,10 @@ test('editable catalog offers more than template defaults without owner-only pow
   }
   assert.deepEqual(getEditableStoreProfilePermissions('owner'), []);
 });
+
+
+test('owner cannot be configured as a delegable access profile', () => {
+  const forged = { ...profile, baseRole: 'owner' as const, permissions: ['store.read', 'ownership.transfer'] as const };
+  assert.equal(isValidStoreAccessProfile(forged), false);
+  assert.deepEqual(resolveStoreAccessPermissions('manager', 'store-a', assignment, forged), []);
+});
