@@ -59,6 +59,8 @@ interface NinetyNineFoodConnectionDocument {
   lastVerifiedAt?: unknown;
   lastWebhookAt?: unknown;
   lastPollAt?: unknown;
+  lastPollError?: string;
+  lastPollFailedAt?: unknown;
   createdAt?: unknown;
   updatedAt?: unknown;
 }
@@ -77,6 +79,8 @@ export interface NinetyNineFoodPublicStatus {
   lastVerifiedAt: string;
   lastWebhookAt: string;
   lastPollAt: string;
+  lastPollError: string;
+  lastPollFailedAt: string;
 }
 
 const clean = (value: unknown): string =>
@@ -123,6 +127,8 @@ const publicStatus = (
       lastVerifiedAt: '',
       lastWebhookAt: '',
       lastPollAt: '',
+      lastPollError: '',
+      lastPollFailedAt: '',
     };
   }
 
@@ -140,6 +146,8 @@ const publicStatus = (
     lastVerifiedAt: timestampToIso(document.lastVerifiedAt),
     lastWebhookAt: timestampToIso(document.lastWebhookAt),
     lastPollAt: timestampToIso(document.lastPollAt),
+    lastPollError: clean(document.lastPollError),
+    lastPollFailedAt: timestampToIso(document.lastPollFailedAt),
   };
 };
 
