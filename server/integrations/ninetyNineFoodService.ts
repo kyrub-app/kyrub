@@ -471,17 +471,29 @@ const reserveEvent = async (
 
 /** A timed-out worker must never finalize another worker's reservation. */
 const finalizeReservedEvent = async (
+  tenantId: string,
   referencePath: string,
   attemptId: string,
   outcome: 'processed' | 'failed',
   error = ''
 ): Promise<boolean> => adminDb.runTransaction(async transaction => {
   const reference = adminDb.doc(referencePath);
-  const snapshot = await transaction.get(reference);
+  const connectionReference = adminDb.doc(connectionPath(tenantId));
+  const [snapshot, connectionSnapshot] = await Promise.all([
+    transaction.get(reference),
+    transaction.get(connectionReference),
+  ]);
   const data = snapshot.data();
   const lease = data?.leaseExpiresAt;
   if (data?.status !== 'processing' || data.attemptId !== attemptId ||
       !(lease instanceof Timestamp) || lease.toMillis() <= Date.now()) return false;
+  const connection = connectionSnapshot.data();
+  // Serialize health changes with event finalization. A later failure must not
+  // replace a connection already recovered by a successful event.
+  const observedAt = Timestamp.now();
+  const lastHealthyAt = connection?.lastWebhookAt;
+  const hasNewerSuccess = lastHealthyAt instanceof Timestamp &&
+    lastHealthyAt.toMillis() > observedAt.toMillis();
   transaction.update(reference, outcome === 'processed'
     ? {
         status: 'processed',
@@ -496,6 +508,20 @@ const finalizeReservedEvent = async (
         leaseExpiresAt: FieldValue.delete(),
         attemptId: FieldValue.delete(),
       });
+  if (outcome === 'processed') {
+    transaction.set(connectionReference, {
+      status: 'connected',
+      lastWebhookAt: observedAt,
+      lastError: '',
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  } else if (!hasNewerSuccess) {
+    transaction.set(connectionReference, {
+      status: 'attention',
+      lastError: error.slice(0, 1_000),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  }
   return true;
 });
 
@@ -559,49 +585,21 @@ export const processNinetyNineFoodEvent = async (
     }
 
     const finalized = await finalizeReservedEvent(
-      reservation.referencePath, reservation.attemptId, 'processed'
+      connection.tenantId, reservation.referencePath, reservation.attemptId, 'processed'
     );
     if (!finalized) {
       // Another worker owns the lease; do not acknowledge or overwrite its result.
       throw new Error('NINETY_NINE_FOOD_EVENT_RESERVATION_LOST');
     }
-    // Connection health is informational. Once the event is committed as processed,
-    // a transient health-write failure must not turn the successful event into a retry.
-    await adminDb.doc(connectionPath(connection.tenantId)).set(
-      {
-        status: 'connected',
-        lastWebhookAt: FieldValue.serverTimestamp(),
-        lastError: '',
-        updatedAt: FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    ).catch(error => {
-      console.error('[99Food] Event processed; connection health update failed.', error);
-    });
-
     return { duplicate: false, event };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const failureFinalized = await finalizeReservedEvent(
-      reservation.referencePath, reservation.attemptId, 'failed', message
+    await finalizeReservedEvent(
+      connection.tenantId, reservation.referencePath, reservation.attemptId, 'failed', message
     ).catch(finalizationError => {
       console.error('[99Food] Could not finalize failed event reservation.', finalizationError);
       return false;
     });
-    // A superseded or expired worker no longer owns this event. It must not
-    // overwrite connection health after another worker has taken over.
-    if (failureFinalized) {
-      await adminDb.doc(connectionPath(connection.tenantId)).set(
-        {
-          status: 'attention',
-          lastError: message.slice(0, 1_000),
-          updatedAt: FieldValue.serverTimestamp(),
-        },
-        { merge: true }
-      ).catch(healthError => {
-        console.error('[99Food] Failed to record connection health after event failure.', healthError);
-      });
-    }
     throw error;
   }
 };
