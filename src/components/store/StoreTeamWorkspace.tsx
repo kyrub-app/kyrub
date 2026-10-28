@@ -16,7 +16,7 @@ import {
 import type { Store } from '../../types';
 import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate } from '../../utils/storeAccessProfiles';
 import { auth } from '../../utils/firebase';
-import { claimExternalTeamInvitation, issueExternalTeamInvitation, type IssuedExternalTeamInvitation } from '../../utils/externalTeamInvitations';
+import { claimExternalTeamInvitation, issueExternalTeamInvitation, type IssuedExternalTeamInvitation, type ExternalTeamInviteRole } from '../../utils/externalTeamInvitations';
 import {
   STORE_ROLE_LABELS,
   canAssignStoreRole,
