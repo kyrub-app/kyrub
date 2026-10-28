@@ -27,7 +27,13 @@ export const resolveCheckoutBillingRoute = (input: {
     throw new OfficialPlanCheckoutRouteError('SELLER_REQUIRED', 'A loja vendedora não foi identificada.');
   }
 
-  if (!input.platformPlanId) return { kind: 'merchant', storeId: sellerStoreId };
+  // An absent tag means an ordinary product; a malformed explicit tag must fail closed.
+  if (input.platformPlanId === null || input.platformPlanId === undefined) {
+    return { kind: 'merchant', storeId: sellerStoreId };
+  }
+  if (!['free', 'pro', 'business'].includes(input.platformPlanId)) {
+    throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN', 'Plano Kyrub inválido.');
+  }
 
   if (!input.officialStoreId || sellerStoreId !== input.officialStoreId.trim()) {
     throw new OfficialPlanCheckoutRouteError(
