@@ -188,6 +188,17 @@ test('polling never acknowledges an event currently leased by another worker', (
   assert.match(polling, /await client\.acknowledgeEvents\(acknowledged\)/);
 });
 
+test('polling writes observation time without overriding transaction-owned health', () => {
+  const polling = serviceSource.slice(
+    serviceSource.indexOf('export const pollNinetyNineFood'),
+    serviceSource.indexOf('export const pollAllNinetyNineFoodConnections')
+  );
+  assert.match(polling, /lastPollAt: FieldValue\.serverTimestamp\(\)/);
+  assert.doesNotMatch(polling, /status: failed > 0/);
+  assert.doesNotMatch(polling, /lastError:/);
+  assert.match(polling, /await client\.acknowledgeEvents\(acknowledged\)/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
