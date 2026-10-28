@@ -522,6 +522,9 @@ export const processNinetyNineFoodEvent = async (
         routingTarget: connection.routingTarget,
         sourceAppId: event.sourceAppId,
       });
+      if (order.integration.externalOrderId !== event.orderId) {
+        throw new Error('NINETY_NINE_FOOD_PAYMENT_ORDER_MISMATCH');
+      }
       await persistNormalizedOrder(
         connection.tenantId, order, reservation.referencePath,
         reservation.attemptId, event.eventId, event.orderId
