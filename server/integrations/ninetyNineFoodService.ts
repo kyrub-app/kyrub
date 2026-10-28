@@ -429,12 +429,12 @@ const updatePersistedOrderStatus = async (
 const reserveEvent = async (
   connection: NinetyNineFoodConnectionDocument,
   event: OpenDeliveryEvent
-): Promise<{ reserved: boolean; referencePath: string; attemptId: string }> => {
+): Promise<{ reserved: boolean; alreadyProcessed: boolean; referencePath: string; attemptId: string }> => {
   const referencePath =
     `tenants/${connection.tenantId}/integrationEvents/${eventDocumentId(event.eventId)}`;
   const reference = adminDb.doc(referencePath);
   const attemptId = randomBytes(16).toString('hex');
-  const reserved = await adminDb.runTransaction(async transaction => {
+  const decision = await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(reference);
     const existing = snapshot.data() as Record<string, unknown> | undefined;
     const status = clean(existing?.status);
@@ -442,9 +442,8 @@ const reserveEvent = async (
     const leaseActive =
       lease instanceof Timestamp && lease.toMillis() > Date.now();
 
-    if (status === 'processed' || (status === 'processing' && leaseActive)) {
-      return false;
-    }
+    if (status === 'processed') return 'processed' as const;
+    if (status === 'processing' && leaseActive) return 'busy' as const;
 
     transaction.set(
       reference,
@@ -463,10 +462,10 @@ const reserveEvent = async (
       },
       { merge: true }
     );
-    return true;
+    return 'reserved' as const;
   });
 
-  return { reserved, referencePath, attemptId };
+  return { reserved: decision === 'reserved', alreadyProcessed: decision === 'processed', referencePath, attemptId };
 };
 
 /** A timed-out worker must never finalize another worker's reservation. */
@@ -531,7 +530,10 @@ export const processNinetyNineFoodEvent = async (
 ): Promise<{ duplicate: boolean; event: OpenDeliveryEvent }> => {
   const event = parseOpenDeliveryEvent(eventValue);
   const reservation = await reserveEvent(connection, event);
-  if (!reservation.reserved) return { duplicate: true, event };
+  if (!reservation.reserved) {
+    if (reservation.alreadyProcessed) return { duplicate: true, event };
+    throw new Error('NINETY_NINE_FOOD_EVENT_ALREADY_PROCESSING');
+  }
 
   try {
     const canonicalStoreId = await canonicalStoreIdForTenant(connection.tenantId);
