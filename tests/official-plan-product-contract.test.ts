@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildSubscriptionSaleModality } from '../shared/productSaleModality.js';
-import { matchesOfficialPlanProduct } from '../server/admin/officialPlanProductContract.js';
+import { isKyrubPlatformPlanProduct, matchesOfficialPlanProduct } from '../server/admin/officialPlanProductContract.js';
 
 const product = () => ({
   publicationStatus: 'published',
@@ -36,4 +36,12 @@ test('rejects missing or invalid product data', () => {
   assert.equal(matchesOfficialPlanProduct(null, 'pro', 7000), false);
   assert.equal(matchesOfficialPlanProduct({}, 'pro', 7000), false);
   assert.equal(matchesOfficialPlanProduct(product(), 'pro', 0), false);
+});
+
+test('identifies platform plan products independently of payment modality', () => {
+  assert.equal(isKyrubPlatformPlanProduct(product()), true);
+  assert.equal(isKyrubPlatformPlanProduct({ kyrubPlanId: 'free' }), true);
+  assert.equal(isKyrubPlatformPlanProduct({ kyrubPlanId: 'business' }), true);
+  assert.equal(isKyrubPlatformPlanProduct({ kyrubPlanId: 'other' }), false);
+  assert.equal(isKyrubPlatformPlanProduct({}), false);
 });
