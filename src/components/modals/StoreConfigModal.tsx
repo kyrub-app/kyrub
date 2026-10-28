@@ -24,6 +24,7 @@ import {
   saveCachedStoreOperationalSettings,
   subscribeToStoreOperationalSettings,
   validateStoreOpeningHours,
+  validateStoreOperationalPointsForSave,
   type StoreOperationalSettings,
 } from '../../utils/storeOperationalSettings';
 import {
@@ -255,6 +256,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let storeToSave: Store;
     try {
       validateStoreOpeningHours(operationalSettings.openingHours);
+      validateStoreOperationalPointsForSave(operationalSettings.operationalPoints);
       storeToSave = resolveConfiguredStore()!;
     } catch (error) {
       notify(
