@@ -61,3 +61,8 @@ test('provider-created subscriptions block unsafe retries pending reconciliation
   assert.match(planBillingSource, /providerCreated = Boolean\(providerSubscriptionId\)/);
   assert.match(planBillingSource, /providerCreated \? 'reconciliation_required' : 'failed'/);
 });
+
+test('reconciliation lock retains the provider subscription id', () => {
+  assert.match(planBillingSource, /providerSubscriptionId\?: string/);
+  assert.match(planBillingSource, /providerSubscriptionId \? \{ providerSubscriptionId \} : \{\}/);
+});
