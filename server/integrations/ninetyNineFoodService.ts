@@ -645,8 +645,6 @@ export const pollNinetyNineFood = async (
   const acknowledged: OpenDeliveryEvent[] = [];
   let processed = 0;
   let failed = 0;
-  let lastError = '';
-
   for (const event of events) {
     try {
       const result = await processNinetyNineFoodEvent(connection, event);
@@ -654,18 +652,14 @@ export const pollNinetyNineFood = async (
       if (!result.duplicate) processed += 1;
     } catch (error) {
       failed += 1;
-      lastError = error instanceof Error ? error.message : String(error);
     }
   }
 
   await client.acknowledgeEvents(acknowledged);
+  // Polling records its own observation time; event finalization alone owns
+  // connection health, so a delayed poll cannot overwrite a newer result.
   await adminDb.doc(connectionPath(tenantId)).set(
-    {
-      status: failed > 0 ? 'attention' : 'connected',
-      lastPollAt: FieldValue.serverTimestamp(),
-      lastError: lastError.slice(0, 1_000),
-      updatedAt: FieldValue.serverTimestamp(),
-    },
+    { lastPollAt: FieldValue.serverTimestamp() },
     { merge: true }
   );
   return { received: events.length, processed, failed };
