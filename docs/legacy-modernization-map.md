@@ -581,3 +581,20 @@ O status Vercel consultado para commits recentes da homologação indicou **fail
 A sequência de sete ondas permanece: (1) Social/Pessoal/Praça/Marketplace; (2) Shell; (3) Perfil/Comunidades; (4) Loja/ERP; (5) IA/Kyrubia; (6) Legados operacionais; (7) Bridges legítimas. **Equipes e Colaboradores está sendo tratado na onda 4**, com pendências transversais de segurança; isso **não** significa que as ondas 1–3 estejam integralmente concluídas. A promoção gradual à produção é uma trilha paralela de entrega, não uma oitava onda.
 
 **Próxima ação recomendada:** levantar a primeira fatia de alterações de homologação que possa ser reconciliada com \`main\` e testada isoladamente, mantendo a #964 como mapa e não como PR de código.
+
+
+### Inventário inicial de lotes de promoção (comparação de 28/10)
+
+A comparação GitHub \`main...feat/profile-react-rebuild\` inclui mudanças em código, testes, regras e workflows. **Esta é uma triagem, não um conjunto de commits aptos a cherry-pick.** Como a branch está também 212 commits atrás de \`main\`, cada arquivo listado deve ser reconciliado contra a versão atual da produção.
+
+| Lote candidato | Exemplos observados no diff | Dependências e decisão |
+| --- | --- | --- |
+| **P0 — documentação e testes isolados** | \`docs/PROFILE_BRIDGE_OWNERSHIP_AUDIT.md\`, \`docs/store-access-profiles-contract.md\`, \`docs/store-team-external-invitations-contract.md\`, \`tests/external-invite-primitives.test.ts\` | Primeiro candidato para PR pequena; validar se os testes dependem de módulos ainda ausentes na \`main\`. Documentação pode ser promovida isoladamente se descrever corretamente o estado da produção. |
+| **P1 — UI e navegação social** | \`ProfileSocialHubNative.tsx\`, \`ProfileCommunitiesCloudBridge.tsx\`, \`WorkspacePrimaryNavigationBridge.tsx\`, \`LegacyApp.tsx\`, \`KyrubTab.tsx\` | Alto acoplamento; **não** promover por arquivo isolado. Reconciliar estados, aliases, perfil e Praça; exigir smoke mobile/desktop no domínio fixo. |
+| **P2 — equipes e convites** | \`StoreTeamWorkspace.tsx\`, \`RendaTab.tsx\`, \`UserNotificationCenter.tsx\`, \`server/store/externalInvite*.ts\`, \`server/notifications/*\` | Promover somente com rotas, autenticação, regras, notificações e testes de ponta a ponta compatíveis. |
+| **P3 — regras e autorização** | \`firestore.rules\`, \`firestore.store-security.fragment.rules\`, \`firestore.store-security.rules\`, \`scripts/compose-firestore-rules.mjs\`, workflow e testes de regras | Validar composição e emulador. Não implantar regras por simples merge; manter standalone até remover consumidores e comprovar testes. |
+| **P4 — operações/ERP/financeiro** | \`server/attendance/cashRegisterSessionService.ts\`, \`CashWorkspace.tsx\`, \`canonicalCash.ts\`, \`StoreFinanceRuntime.tsx\`, \`server/payments/*\` | Dependências transacionais e risco de regressão; gates financeiros e E2E separados. |
+| **P5 — pagamentos, marketplace e integrações** | \`mercadoPagoMerchantPixRolloutPolicy.ts\`, \`paymentIntentRouter.ts\`, \`marketplaceDiscoveryService.ts\`, \`ninetyNineFoodService.ts\` | Reconciliar com correções já em \`main\`; preservar checkout e credenciais; nenhuma ativação Pix implícita. |
+| **P6 — infraestrutura e dependências** | \`package.json\`, \`package-lock.json\`, workflows de build e auditoria | Comparar com PR #1002 já mergeada; **não** substituir lockfile de produção por versão anterior. |
+
+**Próxima execução:** inspecionar os candidatos P0 na \`main\`, escolher um conjunto sem dependência funcional pendente, criar PR própria de promoção e registrar o SHA; se não houver candidato isolável, documentar o bloqueio em vez de forçar merge. Os demais lotes são categorias de risco, não uma ordem automática de publicação.
