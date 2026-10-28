@@ -21,6 +21,10 @@ import {
   parseProductSaleModality,
   type ProductSaleModality,
 } from '../../shared/productSaleModality';
+import {
+  parseSubscriptionContractDiscounts,
+  type ContractTermMonths,
+} from '../../shared/subscriptionContractOffers';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 import { db } from './firebase';
 import {
@@ -41,6 +45,7 @@ export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
 export type PublicProduct = Product & {
   storeId: string;
   updatedAt: string;
+  contractDiscounts?: { months: ContractTermMonths; discountPercent: number }[];
 };
 
 export interface PublicProductDraft {
@@ -54,6 +59,7 @@ export interface PublicProductDraft {
   isComplimentary?: boolean;
   storePointsPerUnit?: number;
   saleModality?: ProductSaleModality;
+  contractDiscounts?: { months: ContractTermMonths; discountPercent: number }[];
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
   quickNotes?: string[];
@@ -131,6 +137,12 @@ export const buildPublicProduct = (
     : Number.parseInt(draft.stock || '0', 10);
   const storePointsPerUnit = normalizeStorePointsPerUnit(draft.storePointsPerUnit);
   const saleModality = parseProductSaleModality(draft.saleModality);
+  const contractDiscounts = draft.contractDiscounts === undefined
+    ? undefined
+    : parseSubscriptionContractDiscounts(draft.contractDiscounts);
+  if (draft.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) {
+    throw new Error('Períodos de contratação inválidos.');
+  }
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
@@ -174,6 +186,7 @@ export const buildPublicProduct = (
     isComplimentary,
     storePointsPerUnit,
     saleModality,
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -196,6 +209,9 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const price = finiteNumber(product.price);
     const stock = finiteNumber(product.stock);
     const saleModality = parseProductSaleModality(product.saleModality);
+    const contractDiscounts = product.contractDiscounts === undefined
+      ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+    if (product.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) return [];
     let storePointsPerUnit = 0;
     try {
       storePointsPerUnit = normalizeStorePointsPerUnit(product.storePointsPerUnit);
@@ -240,6 +256,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       isComplimentary: product.isComplimentary === true,
       storePointsPerUnit,
       saleModality,
+      ...(contractDiscounts ? { contractDiscounts } : {}),
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
       ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -259,6 +276,9 @@ const parseCanonicalPublicProduct = (
   const price = finiteNumber(value.price);
   const stock = finiteNumber(value.stock);
   const saleModality = parseProductSaleModality(value.saleModality);
+  const contractDiscounts = value.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(value.contractDiscounts);
+  if (value.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) return null;
   let storePointsPerUnit = 0;
   try {
     storePointsPerUnit = normalizeStorePointsPerUnit(value.storePointsPerUnit);
@@ -302,6 +322,7 @@ const parseCanonicalPublicProduct = (
     isComplimentary: value.isComplimentary === true,
     storePointsPerUnit,
     saleModality,
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -330,6 +351,7 @@ const comparableProduct = (product: PublicProduct) => ({
   isComplimentary: product.isComplimentary === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
   saleModality: parseProductSaleModality(product.saleModality),
+  contractDiscounts: product.contractDiscounts ?? null,
 });
 
 export const publicProductCollectionsEquivalent = (
@@ -368,10 +390,16 @@ export const persistPublicProduct = async (
     if (!saleModality) {
       throw new Error('A forma de venda do item é inválida.');
     }
+    const contractDiscounts = product.contractDiscounts === undefined
+      ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+    if (product.contractDiscounts !== undefined && (!contractDiscounts || saleModality.mode !== 'subscription')) {
+      throw new Error('Períodos de contratação inválidos.');
+    }
     const normalizedProduct: PublicProduct = {
       ...product,
       storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
       saleModality,
+      ...(contractDiscounts ? { contractDiscounts } : {}),
       quickNotes,
       optionGroups,
     };
