@@ -87,6 +87,7 @@ export const StoreTeamWorkspace = ({
   const [selectedStoreId, setSelectedStoreId] = useState('');
   const [members, setMembers] = useState<StoreMemberDirectoryRecord[]>([]);
   const [directoryResults, setDirectoryResults] = useState<KyrubDirectoryUser[]>([]);
+  const [lastInvited, setLastInvited] = useState<{ name: string; storeName: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
@@ -258,6 +259,7 @@ export const StoreTeamWorkspace = ({
 
   const handleInvite = async (targetUser: KyrubDirectoryUser): Promise<void> => {
     if (!user || !selectedAccess) return;
+    setLastInvited(null);
     await runBusy(`invite-${targetUser.uid}`, async () => {
       try {
         await inviteExistingKyrubUser(user, {
@@ -270,6 +272,7 @@ export const StoreTeamWorkspace = ({
         setDirectoryResults(current =>
           current.filter(result => result.uid !== targetUser.uid)
         );
+        setLastInvited({ name: targetUser.name, storeName: selectedAccess.store.name });
         setDraftJobTitle('');
         setDraftDepartment('');
         setDraftWorkArea('');
@@ -610,6 +613,17 @@ export const StoreTeamWorkspace = ({
                       </button>
                     </form>
 
+                    {lastInvited && (
+                      <div className="rounded-xl border border-emerald-500/25 bg-emerald-500/10 p-3 text-[11px] text-slate-200">
+                        <p>Convite interno criado para <strong>{lastInvited.name}</strong>. Você também pode avisar pelo WhatsApp; o aceite continua exclusivo da conta convidada no Kyrub.</p>
+                        <a
+                          href={`https://wa.me/?text=${encodeURIComponent(`Olá, ${lastInvited.name}! A empresa ${lastInvited.storeName} convidou você para trabalhar pelo Kyrub. Acesse https://kyrub.com, entre com sua conta e confira o convite no sino de notificações para aceitar ou recusar.`)}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="mt-2 inline-flex rounded-lg border border-emerald-500/40 px-3 py-2 font-bold text-emerald-300 hover:bg-emerald-500/10"
+                        >Compartilhar pelo WhatsApp</a>
+                      </div>
+                    )}
                     <div className="space-y-2">
                       {directoryResults.map(result => (
                         <article key={result.uid} className="rounded-xl border border-slate-800 bg-slate-950 p-3">
