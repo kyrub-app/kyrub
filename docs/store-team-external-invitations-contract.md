@@ -29,3 +29,7 @@ Reenvio por canais diferentes referencia **o mesmo convite**, sem criar associa�
 Testes: emissor sem permissão, e-mail não verificado, e-mail divergente, token inválido/expirado/reutilizado, convite revogado, corrida de dois resgates, usuário com vínculo prévio, tentativas entre lojas, rejeição pelo destinatário e não exposição do token em logs. Executar testes de regras e E2E antes de publicar.
 
 > Documentação proveniente da homologação; não comprova implementação ou validação em produção.
+
+## Checkpoint técnico da homologação — 28/10/2026
+
+Os serviços `server/store/externalTeamInvitationRouter.ts`, `externalInviteIssueService.ts` e `externalInviteClaimService.ts` já existem na branch `feat/profile-react-rebuild`. O endpoint de emissão retorna token e identificador; o de resgate exige autenticação Firebase e e-mail verificado e cria o vínculo com status `invited`, sem aceite automático. A tela `StoreTeamWorkspace.tsx` ainda usa `inviteExistingKyrubUser` e não apresenta integração observada com esses endpoints externos. Os testes de primitivas e as regras de bloqueio de leitura do cliente existem, mas não comprovam testes HTTP/transacionais nem E2E. Não promover fluxo funcional antes da integração, testes e validação do deployment. Esta seção descreve homologação, não produção.
