@@ -106,6 +106,16 @@ export function getEditableStoreProfilePermissions(role: StoreRole): readonly St
   );
 }
 
+/** A job title is a store-local display label, never an authorization source. */
+export function normalizeStoreJobTitle(value: string): string {
+  return value.trim().replace(/\\s+/g, ' ');
+}
+
+export function isValidStoreJobTitle(value: unknown): value is string {
+  return typeof value === 'string' && normalizeStoreJobTitle(value).length > 0 &&
+    normalizeStoreJobTitle(value).length <= 80;
+}
+
 /** Copy a template into the store's editable profile draft; never write it implicitly. */
 export function createStoreAccessProfileFromTemplate(
   storeId: string,
