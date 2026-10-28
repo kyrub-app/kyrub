@@ -76,7 +76,7 @@ export const STORE_ACCESS_PROFILE_TEMPLATES: readonly StoreAccessProfileTemplate
     'store.read', 'members.read', 'members.invite', 'products.read', 'products.write',
     'orders.read', 'orders.create', 'orders.cancel', 'cash.read', 'cash.manage', 'reports.read',
   ] },
-  { id: 'lider-turno', name: 'Líder de turno / Maître', baseRole: 'manager', permissions: [
+  { id: 'lider-turno', name: 'Líder de Equipe', baseRole: 'manager', permissions: [
     'store.read', 'members.read', 'members.invite', 'orders.read', 'orders.create',
     'orders.transfer', 'cash.read', 'reports.read',
   ] },
