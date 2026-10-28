@@ -363,6 +363,9 @@ const reservePlanCheckout = async (ownerId: string): Promise<string> => {
     const snapshot = await transaction.get(ref);
     const current = snapshot.exists ? record(snapshot.data()) : {};
     const startedAt = Number(current.startedAt);
+    if (current.state === 'reconciliation_required') {
+      throw new PlanManagementError(409, 'PLAN_CHECKOUT_RECONCILIATION_REQUIRED', 'Uma assinatura foi criada no provedor e precisa ser conciliada antes de nova tentativa.');
+    }
     if (current.state === 'creating' && Number.isFinite(startedAt) &&
         Date.now() - startedAt >= 0 && Date.now() - startedAt < CHECKOUT_LOCK_MS) {
       throw new PlanManagementError(409, 'PLAN_CHECKOUT_IN_PROGRESS', 'Uma contratação já está em andamento para esta loja.');
@@ -372,7 +375,7 @@ const reservePlanCheckout = async (ownerId: string): Promise<string> => {
   return reference;
 };
 
-const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed'): Promise<void> => {
+const finishPlanCheckout = async (ownerId: string, reference: string, state: 'ready' | 'failed' | 'reconciliation_required'): Promise<void> => {
   const ref = adminDb.doc(`${CHECKOUT_LOCK_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
     const snapshot = await transaction.get(ref);
@@ -410,6 +413,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   }
 
   const billingReference = await reservePlanCheckout(ownerId);
+  let providerCreated = false;
   try {
   const providerIdempotencyKey = `kyrub-plan-${ownerId}-${billingReference}`;
   const provider = await mpRequest('/preapproval', {
@@ -431,6 +435,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }),
   }) as MpPreapproval;
   const providerSubscriptionId = clean(provider.id);
+  providerCreated = Boolean(providerSubscriptionId);
   const checkoutUrl = clean(provider.init_point);
   if (!providerSubscriptionId || !checkoutUrl) {
     throw new PlanManagementError(502, 'PLAN_BILLING_PROVIDER_INVALID', 'O provedor não retornou um checkout válido.');
@@ -466,7 +471,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await finishPlanCheckout(ownerId, billingReference, 'ready');
   return { checkoutUrl, subscription };
   } catch (error) {
-    await finishPlanCheckout(ownerId, billingReference, 'failed');
+    await finishPlanCheckout(ownerId, billingReference, providerCreated ? 'reconciliation_required' : 'failed');
     throw error;
   }
 };
