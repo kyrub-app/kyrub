@@ -16,6 +16,7 @@ import {
 import type { Store } from '../../types';
 import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate } from '../../utils/storeAccessProfiles';
 import { auth } from '../../utils/firebase';
+import { issueExternalTeamInvitation, type IssuedExternalTeamInvitation } from '../../utils/externalTeamInvitations';
 import {
   STORE_ROLE_LABELS,
   canAssignStoreRole,
@@ -90,6 +91,8 @@ export const StoreTeamWorkspace = ({
   const [lastInvited, setLastInvited] = useState<{ name: string; email: string; storeName: string } | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
+  const [externalInviteEmail, setExternalInviteEmail] = useState('');
+  const [issuedExternalInvite, setIssuedExternalInvite] = useState<IssuedExternalTeamInvitation | null>(null);
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
   const [draftDepartment, setDraftDepartment] = useState('');
@@ -261,6 +264,26 @@ export const StoreTeamWorkspace = ({
   const normalizedInvitePhone = invitePhone.replace(/\D/g, '');
   const validInvitePhone = normalizedInvitePhone.length === 11 || (normalizedInvitePhone.length === 13 && normalizedInvitePhone.startsWith('55'));
   const invitePhoneE164 = normalizedInvitePhone.length === 11 ? `55${normalizedInvitePhone}` : normalizedInvitePhone;
+
+  const handleExternalInvite = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!user || !selectedAccess || !canManageMembers) return;
+    setIssuedExternalInvite(null);
+    await runBusy('external-invite', async () => {
+      try {
+        const idToken = await user.getIdToken();
+        const issued = await issueExternalTeamInvitation(idToken, {
+          storeId: selectedAccess.store.id,
+          recipientEmail: externalInviteEmail.trim(),
+          role: inviteRole,
+        });
+        setIssuedExternalInvite(issued);
+        notify('Convite criado. Compartilhe o código apenas com o destinatário.', 'success');
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Não foi possível criar o convite externo.', 'error');
+      }
+    });
+  };
 
   const handleInvite = async (targetUser: KyrubDirectoryUser): Promise<void> => {
     if (!user || !selectedAccess) return;
@@ -621,6 +644,22 @@ export const StoreTeamWorkspace = ({
                         {isSearching ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
                         Buscar conta
                       </button>
+                    </form>
+
+                    <form onSubmit={event => void handleExternalInvite(event)} className="space-y-2 rounded-xl border border-slate-800 p-3">
+                      <strong className="block text-[11px] text-white">Convidar pessoa sem conta Kyrub</strong>
+                      <p className="text-[10px] text-slate-400">O convite é vinculado ao e-mail informado. A pessoa precisará entrar com esse e-mail verificado para resgatar o convite.</p>
+                      <input type="email" required value={externalInviteEmail} onChange={event => { setExternalInviteEmail(event.target.value); setIssuedExternalInvite(null); }} placeholder="E-mail do destinatário" aria-label="E-mail para convite externo" className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2.5 text-xs text-white" />
+                      <button type="submit" disabled={busyKey === 'external-invite' || !externalInviteEmail.trim() || assignableRoles.length === 0} className="w-full rounded-xl border border-orange-500/30 bg-orange-500/10 px-3 py-2.5 text-[10px] font-bold text-orange-300 disabled:opacity-40">Criar convite externo para a função selecionada</button>
+                      {issuedExternalInvite && (
+                        <div className="space-y-2 rounded-xl border border-amber-500/30 p-3 text-[10px] text-amber-200">
+                          <p>Convite gerado. Envie o identificador e o código ao destinatário por um canal privado. O código só será exibido nesta sessão e não concede acesso sem autenticação.</p>
+                          <p className="break-all">Loja: {selectedAccess.store.id}</p>
+                          <p className="break-all">Identificador: {issuedExternalInvite.invitationId}</p>
+                          <p className="break-all">Código: {issuedExternalInvite.token}</p>
+                          <p>Validade: {new Date(issuedExternalInvite.expiresAt).toLocaleString('pt-BR')}</p>
+                        </div>
+                      )}
                     </form>
 
                     {lastInvited && (
