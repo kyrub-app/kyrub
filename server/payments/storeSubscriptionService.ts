@@ -17,6 +17,7 @@ import {
 } from '../../shared/storeSubscriptionBilling.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { getOfficialStoreIdentity } from '../admin/officialStoreService.js';
+import { isKyrubPlatformPlanProduct } from '../admin/officialPlanProductContract.js';
 import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
 
 const PROVIDER = 'mercado_pago' as const;
@@ -700,8 +701,7 @@ export const createAuthorizedStoreSubscription = async (
   const requestedProductId = safeIdentity(payload.productId);
   if (officialStore?.canonicalStoreId === store.canonicalStoreId && requestedProductId && !requestedProductId.includes('/')) {
     const candidate = await adminDb.doc(`stores/${store.canonicalStoreId}/products/${requestedProductId}`).get();
-    const planId = clean(record(candidate.data()).kyrubPlanId);
-    if (planId === 'pro' || planId === 'business' || planId === 'free') {
+    if (isKyrubPlatformPlanProduct(candidate.data())) {
       fail(409, 'PLATFORM_PLAN_REQUIRES_PLATFORM_CHECKOUT', 'Os planos Kyrub devem ser contratados pelo checkout da plataforma.');
     }
   }
