@@ -31,7 +31,8 @@ const record = (value: unknown): Record<string, unknown> =>
 const accessToken = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN);
 const webhookSecret = (): string => clean(process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET);
 const webhookUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_WEBHOOK_URL);
-const returnUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_RETURN_URL) || 'https://planos.kyrub.com/';
+// Keep an explicitly configured return URL for existing deployments; never default to the retired Plan Center.
+const returnUrl = (): string => clean(process.env.KYRUB_PLAN_BILLING_RETURN_URL) || 'https://www.kyrub.com/?app=1';
 
 export const loadPaidPlanBillingAvailability = (): KyrubPlanBillingAvailability => ({
   available: Boolean(accessToken() && webhookSecret() && webhookUrl()),
