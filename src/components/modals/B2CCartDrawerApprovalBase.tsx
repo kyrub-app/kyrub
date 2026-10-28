@@ -290,6 +290,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       return;
     }
 
+    // Do not send subscription products through one-time merchant checkout.
+    // Contract pricing and entitlement activation require a server-verified route.
+    if (cart.some(item => item.product.saleModality?.mode === 'subscription')) {
+      setFormError('Assinaturas ainda não estão disponíveis neste checkout. Nenhuma cobrança foi iniciada.');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
