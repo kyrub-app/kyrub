@@ -16,7 +16,7 @@ import {
 import type { Store } from '../../types';
 import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate } from '../../utils/storeAccessProfiles';
 import { auth } from '../../utils/firebase';
-import { issueExternalTeamInvitation, type IssuedExternalTeamInvitation } from '../../utils/externalTeamInvitations';
+import { claimExternalTeamInvitation, issueExternalTeamInvitation, type IssuedExternalTeamInvitation } from '../../utils/externalTeamInvitations';
 import {
   STORE_ROLE_LABELS,
   canAssignStoreRole,
@@ -92,6 +92,9 @@ export const StoreTeamWorkspace = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [invitePhone, setInvitePhone] = useState('');
   const [externalInviteEmail, setExternalInviteEmail] = useState('');
+  const [claimStoreId, setClaimStoreId] = useState('');
+  const [claimInvitationId, setClaimInvitationId] = useState('');
+  const [claimToken, setClaimToken] = useState('');
   const [issuedExternalInvite, setIssuedExternalInvite] = useState<IssuedExternalTeamInvitation | null>(null);
   const [inviteRole, setInviteRole] = useState<StoreRole>('seller');
   const [draftJobTitle, setDraftJobTitle] = useState('');
@@ -265,6 +268,30 @@ export const StoreTeamWorkspace = ({
   const validInvitePhone = normalizedInvitePhone.length === 11 || (normalizedInvitePhone.length === 13 && normalizedInvitePhone.startsWith('55'));
   const invitePhoneE164 = normalizedInvitePhone.length === 11 ? `55${normalizedInvitePhone}` : normalizedInvitePhone;
 
+  const handleClaimExternalInvite = async (event: FormEvent): Promise<void> => {
+    event.preventDefault();
+    if (!user) {
+      notify('Faça login com o e-mail do destinatário para resgatar o convite.', 'error');
+      return;
+    }
+    await runBusy('external-claim', async () => {
+      try {
+        const idToken = await user.getIdToken();
+        await claimExternalTeamInvitation(idToken, {
+          storeId: claimStoreId.trim(),
+          invitationId: claimInvitationId.trim(),
+          token: claimToken.trim(),
+        });
+        setClaimToken('');
+        setClaimInvitationId('');
+        setClaimStoreId('');
+        notify('Convite resgatado. Aceite ou recuse na lista de convites recebidos.', 'success');
+      } catch (error) {
+        notify(error instanceof Error ? error.message : 'Não foi possível resgatar o convite.', 'error');
+      }
+    });
+  };
+
   const handleExternalInvite = async (event: FormEvent): Promise<void> => {
     event.preventDefault();
     if (!user || !selectedAccess || !canManageMembers) return;
@@ -408,6 +435,17 @@ export const StoreTeamWorkspace = ({
           </div>
         </div>
       )}
+
+      <details className="rounded-2xl border border-slate-700 bg-slate-950/60 p-4">
+        <summary className="cursor-pointer text-xs font-bold text-white">Recebi um convite externo</summary>
+        <p className="mt-2 text-[11px] text-slate-400">Entre com o mesmo e-mail verificado informado pelo responsável da loja. O resgate não aceita o convite automaticamente.</p>
+        <form onSubmit={event => void handleClaimExternalInvite(event)} className="mt-3 grid gap-2">
+          <input required value={claimStoreId} onChange={event => setClaimStoreId(event.target.value)} placeholder="Identificador da loja" aria-label="Identificador da loja convidante" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+          <input required value={claimInvitationId} onChange={event => setClaimInvitationId(event.target.value)} placeholder="Identificador do convite" aria-label="Identificador do convite externo" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+          <input required value={claimToken} onChange={event => setClaimToken(event.target.value)} placeholder="Código privado do convite" aria-label="Código privado do convite" autoComplete="off" className="w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white" />
+          <button type="submit" disabled={busyKey === 'external-claim' || !user} className="rounded-xl bg-orange-500 px-4 py-2 text-[10px] font-bold text-slate-950 disabled:opacity-40">Resgatar convite</button>
+        </form>
+      </details>
 
       {pendingInvites.length > 0 && (
         <div className="space-y-2">
