@@ -262,6 +262,12 @@ export default function StorePayrollWorkspace({ legacyStoreId, notify }: Props) 
         </p>
       </div>
 
+      <div className="grid gap-3 sm:grid-cols-3" aria-label="Resumo de recursos humanos">
+        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Colaboradores ativos</p><strong className="mt-1 block text-xl font-black">{activeMembers.length}</strong></div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Remunerações ativas</p><strong className="mt-1 block text-xl font-black">{compensations.filter(item => item.active).length}</strong></div>
+        <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4"><p className="text-[9px] text-slate-400">Total mensal configurado</p><strong className="mt-1 block text-lg font-black">{money(compensations.filter(item => item.active).reduce((total, item) => total + item.monthlyAmountMinor, 0))}</strong><p className="mt-1 text-[8px] text-slate-500">Valor previsto; não representa pagamento efetuado.</p></div>
+      </div>
+
       {activeMembers.length === 0 ? (
         <p className="rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">
           Não há colaborador ativo nesta equipe para configurar remuneração.
