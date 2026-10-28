@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate, hasStoreAccessPermission, isValidStoreAccessProfile, resolveStoreAccessPermissions, type StoreAccessProfile } from '../src/utils/storeAccessProfiles';
+import { STORE_ACCESS_PROFILE_TEMPLATES, createStoreAccessProfileFromTemplate, getEditableStoreProfilePermissions, hasStoreAccessPermission, isValidStoreAccessProfile, resolveStoreAccessPermissions, type StoreAccessProfile } from '../src/utils/storeAccessProfiles';
 import { STORE_ROLE_PERMISSIONS } from '../src/utils/storeSecurity';
 
 const profile: StoreAccessProfile = {
@@ -56,4 +56,16 @@ test('template creation returns an editable copy without mutating the template',
   const created = createStoreAccessProfileFromTemplate('store-a', template, 'custom-manager');
   assert.equal(created.id, 'custom-manager');
   assert.notEqual(created.permissions, template.permissions);
+});
+
+test('editable catalog offers more than template defaults without owner-only powers', () => {
+  const template = STORE_ACCESS_PROFILE_TEMPLATES.find(item => item.id === 'lider-turno');
+  assert.ok(template);
+  const options = getEditableStoreProfilePermissions(template.baseRole);
+  assert.ok(options.includes('products.write'));
+  assert.ok(!template.permissions.includes('products.write'));
+  for (const forbidden of ['ownership.transfer', 'store.update', 'store.publish', 'members.assign_manager']) {
+    assert.ok(!options.includes(forbidden as never));
+  }
+  assert.deepEqual(getEditableStoreProfilePermissions('owner'), []);
 });
