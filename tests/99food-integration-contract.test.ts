@@ -154,6 +154,19 @@ test('connection health failure cannot undo a successfully finalized provider ev
   assert.match(success, /Event processed; connection health update failed/);
 });
 
+test('superseded event workers cannot report connection failure', () => {
+  const handler = serviceSource.slice(
+    serviceSource.indexOf('export const processNinetyNineFoodEvent'),
+    serviceSource.indexOf('export const receiveNinetyNineFoodWebhook')
+  );
+  const failure = handler.slice(handler.indexOf('} catch (error) {'));
+  assert.match(failure, /const failureFinalized = await finalizeReservedEvent\(/);
+  assert.match(failure, /if \(failureFinalized\) \{/);
+  assert.ok(failure.indexOf('if (failureFinalized) {') <
+    failure.indexOf("status: 'attention'"));
+  assert.match(failure, /Could not finalize failed event reservation/);
+});
+
 test('Open Delivery client supports OAuth, webhook registration and polling acknowledgment', () => {
   assert.match(protocolSource, /grant_type: 'client_credentials'/);
   assert.match(protocolSource, /authorization: `Bearer \$\{token\}`/);
