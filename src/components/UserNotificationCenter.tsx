@@ -318,7 +318,7 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
               <div>
                 <h2 className="text-xs font-black uppercase tracking-wide text-white">Notificações</h2>
                 <span className="text-[9px] text-slate-500">
-                  {unreadCount > 0 ? `${unreadCount} não lida${unreadCount === 1 ? '' : 's'}` : 'Tudo lido'}
+                  {unreadCount + storeInvitations.length > 0 ? `${unreadCount + storeInvitations.length} pendente${unreadCount + storeInvitations.length === 1 ? '' : 's'}` : 'Tudo lido'}
                 </span>
               </div>
               <div className="flex items-center gap-1.5">
@@ -382,7 +382,7 @@ export function UserNotificationCenter({ open, onOpenChange }: UserNotificationC
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   Carregando notificações…
                 </div>
-              ) : notifications.length === 0 ? (
+              ) : notifications.length === 0 && storeInvitations.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs leading-relaxed text-slate-500">
                   Nenhuma notificação real ainda. Eventos do Kyrub aparecerão aqui quando acontecerem.
                 </div>
