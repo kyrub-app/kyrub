@@ -18,6 +18,55 @@ import { StoreIntegrationsPanel } from './store/StoreIntegrationsPanel';
 import FiscalHomologationPolicyWorkspace from './store/FiscalHomologationPolicyWorkspace';
 import FiscalPreflightWorkspace from './store/FiscalPreflightWorkspace';
 
+type NinetyNineFoodStatus = {
+  configured: boolean;
+  status: 'not-configured' | 'connected' | 'attention' | 'disabled';
+  lastError: string;
+  lastPollError: string;
+  lastPollAt: string;
+  lastPollFailedAt: string;
+};
+
+function NinetyNineFoodOperationalStatus({ user }: { user: User }) {
+  const [status, setStatus] = useState<NinetyNineFoodStatus | null>(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const refresh = async () => {
+    setLoading(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/integrations/99food/status', {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      if (!response.ok) throw new Error('Não foi possível consultar o estado operacional da 99Food.');
+      setStatus(await response.json() as NinetyNineFoodStatus);
+      setError('');
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'Consulta indisponível.');
+    } finally {
+      setLoading(false);
+    }
+  };
+  useEffect(() => { void refresh(); }, [user.uid]);
+  const when = (value: string) => value && !Number.isNaN(Date.parse(value))
+    ? new Date(value).toLocaleString('pt-BR') : 'Ainda não registrado';
+  return <div className="mt-3 rounded-2xl border border-yellow-500/20 bg-slate-950/40 p-4 text-xs text-slate-300" id="99food-operational-status">
+    <div className="flex flex-wrap items-center justify-between gap-2">
+      <strong className="text-yellow-200">99Food · Estado operacional da conexão</strong>
+      <button type="button" onClick={() => void refresh()} disabled={loading} className="rounded-lg border border-slate-600 px-3 py-2 text-[10px] disabled:opacity-50">{loading ? 'Consultando…' : 'Atualizar estado'}</button>
+    </div>
+    {error && <p role="alert" className="mt-2 text-amber-300">{error}</p>}
+    {status && <div className="mt-3 space-y-2">
+      <p>Conexão: <strong>{status.configured ? status.status === 'connected' ? 'Conectada' : status.status === 'attention' ? 'Requer atenção' : 'Desativada' : 'Não conectada'}</strong></p>
+      {status.configured && <>
+        <p>Última consulta concluída: {when(status.lastPollAt)}</p>
+        {status.lastError && <p className="text-amber-300">Processamento de pedidos: {status.lastError}</p>}
+        {status.lastPollError && <p className="text-amber-300">Comunicação com a 99Food: {status.lastPollError} (registrado em {when(status.lastPollFailedAt)})</p>}
+      </>}
+    </div>}
+  </div>;
+}
+
 type ToastType = 'success' | 'error' | 'info';
 type FiscalWorkspaceTab = 'overview' | 'sefaz' | 'homologation' | 'accountant-api';
 
@@ -499,6 +548,7 @@ export function GerencialIntegrationsRuntime({
                 onChange={updateIntegrationPlans}
                 disabled={savingChannels}
               />
+              <NinetyNineFoodOperationalStatus user={user} />
             </div>
           </section>
         </>
