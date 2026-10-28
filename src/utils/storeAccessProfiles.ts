@@ -24,7 +24,7 @@ export function resolveStoreAccessPermissions(
 ): readonly StorePermission[] {
   const baseline = STORE_ROLE_PERMISSIONS[role];
   if (role === 'owner' || !assignment) return baseline;
-  if (!profile || !profile.active || profile.storeId !== storeId ||
+  if (!isValidStoreAccessProfile(profile) || !profile.active || profile.storeId !== storeId ||
       profile.id !== assignment.profileId || profile.baseRole !== role) return [];
   const selected = new Set(profile.permissions);
   for (const permission of assignment.revokedPermissions ?? []) selected.delete(permission);
@@ -39,4 +39,26 @@ export function hasStoreAccessPermission(
   profile?: StoreAccessProfile | null,
 ): boolean {
   return resolveStoreAccessPermissions(role, storeId, assignment, profile).includes(permission);
+}
+
+/** Canonical profile storage is store-scoped; never use a global role catalog. */
+export const getStoreAccessProfilesCollectionPath = (storeId: string): string =>
+  `stores/${storeId.trim()}/accessProfiles`;
+
+export const getStoreAccessProfileDocumentPath = (storeId: string, profileId: string): string =>
+  `${getStoreAccessProfilesCollectionPath(storeId)}/${profileId.trim()}`;
+
+/** Reject untrusted profile payloads before using them for authorization. */
+export function isValidStoreAccessProfile(value: unknown): value is StoreAccessProfile {
+  if (!value || typeof value !== 'object') return false;
+  const profile = value as Record<string, unknown>;
+  if (typeof profile.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(profile.id) ||
+      typeof profile.storeId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(profile.storeId) ||
+      typeof profile.name !== 'string' || !profile.name.trim() || profile.name.length > 80 ||
+      profile.active !== true && profile.active !== false ||
+      typeof profile.baseRole !== 'string' || !(profile.baseRole in STORE_ROLE_PERMISSIONS) ||
+      !Array.isArray(profile.permissions)) return false;
+  const baseline = STORE_ROLE_PERMISSIONS[profile.baseRole as StoreRole];
+  return profile.permissions.every(permission => typeof permission === 'string' && baseline.includes(permission as StorePermission)) &&
+    new Set(profile.permissions).size === profile.permissions.length;
 }
