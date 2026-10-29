@@ -3,7 +3,6 @@ import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { resolveCanonicalStoreIdentity } from '../identity/canonicalStoreIdentityService.js';
 import { getOfficialStoreIdentity } from './officialStoreService.js';
-import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
 import {
   OfficialPlanCheckoutRouteError,
   resolveCheckoutBillingRoute,
@@ -74,28 +73,15 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     );
   }
   if (planId !== null) {
-    // The legacy platform preapproval charges the control-plane plan price,
-    // not the storefront product price. Reject mismatches before payment.
-    const catalog = await loadPublicActivePlanCatalog();
-    const activePlan = catalog.plans.find(entry => entry.planId === planId);
-    // Paid plans must use a published Control Plane price, never the compiled
-    // display fallback. Free must remain free in both catalog and storefront.
-    if (planId === 'free' ? (!activePlan || activePlan.monthlyPriceBRL !== 0) :
-        (!activePlan || activePlan.source !== 'control_plane' || activePlan.monthlyPriceBRL <= 0)) {
-      throw new OfficialPlanCheckoutRouteError(
-        'OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED',
-        'O plano não possui preço autorizado para contratação.'
-      );
-    }
+    // The Official Store owns the commercial price; the governance catalog
+    // supplies feature limits, not a competing price for this checkout.
     const productPrice = data.price;
-    if (typeof productPrice !== 'number' ||
-        !Number.isFinite(productPrice) || productPrice < 0 ||
-        !Number.isSafeInteger(Math.round(productPrice * 100)) ||
+    if (typeof productPrice !== 'number' || !Number.isFinite(productPrice) ||
+        productPrice < 0 || !Number.isSafeInteger(Math.round(productPrice * 100)) ||
         Math.abs(productPrice * 100 - Math.round(productPrice * 100)) > 1e-7 ||
-        Math.round(productPrice * 100) !== Math.round(activePlan.monthlyPriceBRL * 100)) {
+        (planId === 'free' ? productPrice !== 0 : productPrice <= 0)) {
       throw new OfficialPlanCheckoutRouteError(
-        'OFFICIAL_PLAN_PRICE_MISMATCH',
-        'O preço do plano na Loja Oficial difere do valor de cobrança vigente. A contratação foi bloqueada.'
+        'INVALID_OFFICIAL_PLAN_PRICE', 'Preço comercial inválido no produto da Loja Oficial.'
       );
     }
     const modality = parseProductSaleModality(data.saleModality);
