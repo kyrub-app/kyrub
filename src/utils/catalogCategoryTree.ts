@@ -488,7 +488,8 @@ export const persistCanonicalCategoryTree = async (
   canonicalStoreId: string,
   previousProducts: PublicProduct[],
   nextProducts: PublicProduct[],
-  nextPaths: ProductCategoryCollection[]
+  nextPaths: ProductCategoryCollection[],
+  expectedPaths: ProductCategoryCollection[]
 ): Promise<number> => {
   const updates = planCanonicalCategoryProductUpdates(previousProducts, nextProducts);
   if (updates.length > 100) {
@@ -507,6 +508,9 @@ export const persistCanonicalCategoryTree = async (
       throw new Error('A loja não está habilitada para edição canônica.');
     }
     const currentPaths = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
+    if (JSON.stringify(currentPaths) !== JSON.stringify(parseCatalogCategoryPaths(expectedPaths))) {
+      throw new Error('As pastas foram alteradas por outra sessão. Atualize o catálogo e tente novamente.');
+    }
     const canonicalPaths = parseCatalogCategoryPaths(nextPaths);
     // Ensure a stale client cannot silently overwrite another category edit.
     if (canonicalPaths.length > 500) throw new Error('Limite de pastas da loja excedido.');
