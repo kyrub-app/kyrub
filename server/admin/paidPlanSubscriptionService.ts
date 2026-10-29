@@ -425,6 +425,10 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     transaction.set(reservationRef, {
       checkoutReservationStatus: 'pending',
       billingReference,
+      reservedPlan: targetPlan,
+      reservedAmountMinor: Math.round(plan.monthlyPriceBRL * 100),
+      reservedCurrency: 'BRL',
+      reservedPayerEmail: user.email,
       officialProductId,
       officialStoreId: official.canonicalStoreId,
       checkoutReservedAt: FieldValue.serverTimestamp(),
