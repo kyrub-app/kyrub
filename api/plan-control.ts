@@ -411,7 +411,7 @@ export default async function handler(
           return;
         }
         if (Object.keys(body).some(key => !['storeId', 'productId', 'selectedMonths', 'paymentTerms'].includes(key)) ||
-            Object.keys(body.paymentTerms).some(key => !['collectionMode', 'installments'].includes(key))) {
+            Object.keys(body.paymentTerms).some(key => !['collectionMode', 'installments', 'billingIntervalMonths'].includes(key))) {
           response.status(400).json({
             error: 'A cotação não aceita preços, descontos ou parâmetros de cobrança enviados pelo navegador.',
             code: 'UNEXPECTED_SUBSCRIPTION_QUOTE_FIELDS',
