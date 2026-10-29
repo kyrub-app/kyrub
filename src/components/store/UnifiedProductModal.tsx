@@ -331,7 +331,10 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           setCatalogPaths(
             mergeCatalogCategoryPaths(
               parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths),
-              catalogProducts
+              catalogProducts.filter((item): item is PublicProduct =>
+                typeof (item as PublicProduct).storeId === 'string' &&
+                typeof (item as PublicProduct).updatedAt === 'string'
+              )
             )
           );
           if (!stationDirty) {
