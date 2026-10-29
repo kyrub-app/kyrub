@@ -419,6 +419,67 @@ export const planCanonicalCategoryProductUpdates = (
   return updates;
 };
 
+/**
+ * Apply a prevalidated category plan to the canonical catalog only.
+ * Recheck the cutover and each source category in one transaction; a concurrent
+ * edit fails closed instead of silently overwriting newer product categories.
+ * The bounded operation deliberately does not fall back to tenant.publicProducts.
+ */
+export const persistCanonicalCategoryProductUpdates = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  previous: PublicProduct[],
+  next: PublicProduct[]
+): Promise<number> => {
+  const updates = planCanonicalCategoryProductUpdates(previous, next);
+  if (updates.length > 100) {
+    throw new Error('A categoria contém produtos demais para uma alteração atômica.');
+  }
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) {
+    throw new Error('Loja canônica inválida.');
+  }
+  const originalById = new Map(previous.map(product => [product.id, product]));
+  const storeReference = doc(db, 'stores', storeId);
+  const references = updates.map(update =>
+    doc(db, 'stores', storeId, 'products', update.id)
+  );
+  await runTransaction(db, async transaction => {
+    const storeSnapshot = await transaction.get(storeReference);
+    const snapshots = [];
+    for (const reference of references) {
+      snapshots.push(await transaction.get(reference));
+    }
+    if (
+      !storeSnapshot.exists() ||
+      storeSnapshot.data().ownerId !== user.uid ||
+      storeSnapshot.data().migrationStatus !== 'canonical'
+    ) {
+      throw new Error('A loja não está habilitada para edição canônica.');
+    }
+    updates.forEach((update, index) => {
+      const snapshot = snapshots[index];
+      const original = originalById.get(update.id);
+      if (
+        !snapshot?.exists() ||
+        !original ||
+        snapshot.data().category !== original.category ||
+        snapshot.data().publicationStatus === 'archived'
+      ) {
+        throw new Error('O produto foi alterado durante a edição da categoria.');
+      }
+      transaction.update(references[index], {
+        category: update.category,
+        categoryCollections: update.categoryCollections,
+        updatedAt: serverTimestamp(),
+        updatedByUserId: user.uid,
+        updatedByRole: 'owner',
+      });
+    });
+  });
+  return updates.length;
+};
+
 export const reconcileCatalogCategoryPaths = async (
   user: Pick<User, 'uid'>
 ): Promise<ProductCategoryCollection[]> => {
