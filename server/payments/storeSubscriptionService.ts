@@ -231,7 +231,10 @@ const loadPublishedSubscriptionProduct = async (
   }
   const name = clean(data.name);
   const price = Number(data.price);
-  const amountMinor = Number.isFinite(price) ? Math.round(price * 100) : 0;
+  const priceMinor = price * 100;
+  const amountMinor = Number.isFinite(priceMinor) && Number.isSafeInteger(Math.round(priceMinor)) &&
+    Math.abs(priceMinor - Math.round(priceMinor)) <= 1e-7
+    ? Math.round(priceMinor) : 0;
   const saleModality = parseProductSaleModality(data.saleModality);
   if (!name || amountMinor <= 0) {
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_BILLABLE', 'A assinatura não possui um valor recorrente válido.');
