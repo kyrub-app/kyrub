@@ -722,6 +722,13 @@ export const handlePaidPlanProviderWebhook = async (input: {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout.');
     }
     const ownerId = reservation.id;
+    // Do not recover a provider preapproval already owned by another store.
+    // This mirrors the authenticated reconciliation identity check.
+    const linked = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+      .where('providerSubscriptionId', '==', providerSubscriptionId).limit(2).get();
+    if (linked.docs.some(doc => doc.id !== ownerId)) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura ja vinculada a outra loja.');
+    }
     const now = new Date().toISOString();
     const recovered: KyrubPlanSubscriptionSnapshot = {
       schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
