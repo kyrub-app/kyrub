@@ -259,3 +259,21 @@ test('unified catalog checkout explicitly permits merchant subscriptions without
   assert.match(lookup, /parsedModality\.mode === 'subscription' && !input\.allowMerchantSubscription/);
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
 });
+
+
+test('unified catalog checkout routes official paid plans to platform billing and merchant subscriptions to OAuth billing', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf('createOwnPaidPlanCheckout') < handler.indexOf('createAuthorizedStoreSubscription'));
+  assert.match(client, /post\('catalog\.subscription\.checkout'/);
+});
