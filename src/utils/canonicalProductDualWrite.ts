@@ -464,6 +464,13 @@ export const subscribeToCanonicalProductDualWrite = async (
     return () => undefined;
   }
 
+  // A canonical store must not install a legacy tenant listener. Otherwise
+  // future tenant snapshots would attempt a prohibited reverse migration.
+  if (canonicalStore.migrationStatus === 'canonical') {
+    callbacks.onReady?.(canonicalStore);
+    return () => undefined;
+  }
+
   const activeStore = await activateOperationalDualWrite(user, canonicalStore);
   callbacks.onReady?.(activeStore);
 
