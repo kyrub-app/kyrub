@@ -426,6 +426,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
       checkoutReservationStatus: 'pending',
       billingReference,
       reservedPlan: targetPlan,
+      reservedPlanVersion: plan.version,
       reservedAmountMinor: Math.round(plan.monthlyPriceBRL * 100),
       reservedCurrency: 'BRL',
       reservedPayerEmail: user.email,
@@ -531,6 +532,9 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
       }
     }
     if (matches.length === 1) {
+      if (!scalar(snapshot.data()?.reservedPlanVersion)) {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem versao do plano para conciliacao.');
+      }
       const candidate = matches[0];
       const provider = await mpRequest(`/preapproval/${encodeURIComponent(clean(candidate.id))}`) as MpPreapproval & Record<string, unknown>;
       const recurring = record(provider.auto_recurring);
@@ -548,8 +552,8 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
       const recovered: KyrubPlanSubscriptionSnapshot = {
         schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
         storeId: ownerId, ownerId,
-        plan: snapshot.data()?.reservedPlan === 'business' ? 'business' : 'pro',
-        planVersion: clean(snapshot.data()?.planVersion) || 'recovered',
+        plan: paidPlan(snapshot.data()?.reservedPlan),
+        planVersion: scalar(snapshot.data()?.reservedPlanVersion),
         provider: PROVIDER,
         providerSubscriptionId: clean(provider.id),
         providerStatus: providerStatus(provider.status),
