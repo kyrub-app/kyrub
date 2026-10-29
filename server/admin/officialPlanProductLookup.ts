@@ -17,7 +17,7 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   sellerStoreReference: string;
   productId: string;
 }): Promise<CheckoutBillingRoute> => {
-  const productId = input.productId.trim();
+  const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(productId)) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_ID', 'Produto inválido.');
   }
@@ -75,7 +75,11 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   }
   // Even ordinary subscriptions must not silently enter one-time merchant billing.
   // The merchant recurring-payment contract service is a separate authorized route.
-  if (planId === null && parseProductSaleModality(data.saleModality)?.mode === 'subscription') {
+  const parsedModality = parseProductSaleModality(data.saleModality);
+  if (!parsedModality) {
+    throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_SALE_MODALITY', 'Forma de venda do produto inválida.');
+  }
+  if (planId === null && parsedModality.mode === 'subscription') {
     throw new OfficialPlanCheckoutRouteError(
       'MERCHANT_SUBSCRIPTION_CHECKOUT_REQUIRED',
       'Assinaturas de lojistas exigem o checkout de contratos.'
