@@ -210,6 +210,40 @@ test('manager can create a direct canonical subscription offer without legacy pr
   }));
 });
 
+test('canonical cutover blocks legacy mirror creation and updates but keeps direct editing', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const manager = environment.authenticatedContext('manager-a').firestore();
+  const existingReference = doc(owner, 'stores', STORE_ID, 'products', 'product-a');
+
+  await assertSucceeds(setDoc(existingReference, mirroredProduct()));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'stores', STORE_ID), {
+      migrationStatus: 'canonical',
+    });
+  });
+
+  await assertFails(setDoc(
+    doc(owner, 'stores', STORE_ID, 'products', 'product-b'),
+    {
+      ...mirroredProduct(),
+      id: 'product-b',
+      legacyProductId: 'product-b',
+      migratedFromPath: 'tenants/owner-a#publicProducts/product-b',
+    }
+  ));
+  await assertFails(updateDoc(existingReference, {
+    price: 23,
+    legacyUpdatedAt: '2026-07-22T10:05:00.000Z',
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(setDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-manager-a'),
+    directManagerProduct()
+  ));
+});
+
 test('rejects contract discounts without subscription modality', async () => {
   const owner = environment.authenticatedContext('owner-a').firestore();
   await assertFails(setDoc(doc(owner, 'stores', STORE_ID, 'products', 'product-a'), {
