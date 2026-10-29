@@ -42,7 +42,8 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     `kyrub_admin/control_plane/official_plan_products/${productId}`
   ).get();
   const mappingData = mapping.exists ? mapping.data() ?? {} : {};
-  if (data.platformPlanId !== undefined && data.platformPlanId !== null) {
+  if ((data.platformPlanId !== undefined && data.platformPlanId !== null) ||
+      (data.kyrubPlanId !== undefined && data.kyrubPlanId !== null)) {
     throw new OfficialPlanCheckoutRouteError(
       'UNTRUSTED_PRODUCT_PLAN_TAG',
       'O identificador de plano não pode ser definido no cadastro comum.'
