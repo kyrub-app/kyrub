@@ -1,7 +1,6 @@
 import type { User } from 'firebase/auth';
 import {
   doc,
-  getDoc,
   runTransaction,
   serverTimestamp,
 } from 'firebase/firestore';
@@ -412,35 +411,24 @@ export const reconcileCatalogCategoryPaths = async (
   });
 };
 
-const assertLegacyCategoryMutationAllowed = async (
-  userId: string
-): Promise<void> => {
-  const tenantSnapshot = await getDoc(doc(db, 'tenants', userId));
-  const canonicalStoreId = cleanString(tenantSnapshot.data()?.canonicalStoreId);
-  if (!canonicalStoreId) return;
-  const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalStoreId));
-  if (!canonicalSnapshot.exists()) {
-    throw new Error('Loja canônica indisponível. A alteração da categoria foi bloqueada.');
-  }
-  if (canonicalSnapshot.data()?.migrationStatus === 'canonical') {
-    throw new Error(
-      'A loja utiliza o catálogo canônico. Renomear ou excluir categorias ficará disponível após a migração desta operação.'
-    );
-  }
-};
-
 export const renameCatalogCategoryPath = async (
   user: Pick<User, 'uid'>,
   targetPath: string,
   nextName: string
 ): Promise<ReturnType<typeof renameCatalogCategoryTree>> => {
-  await assertLegacyCategoryMutationAllowed(user.uid);
   const tenantReference = doc(db, 'tenants', user.uid);
 
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) {
       throw new Error('A loja não foi encontrada para editar esta pasta.');
+    }
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists() || canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A alteração da categoria foi bloqueada: a loja canônica está indisponível ou já concluiu a migração.');
+      }
     }
 
     const result = renameCatalogCategoryTree(
@@ -468,13 +456,19 @@ export const deleteCatalogCategoryPath = async (
   user: Pick<User, 'uid'>,
   targetPath: string
 ): Promise<ReturnType<typeof deleteCatalogCategoryTreePath>> => {
-  await assertLegacyCategoryMutationAllowed(user.uid);
   const tenantReference = doc(db, 'tenants', user.uid);
 
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) {
       throw new Error('A loja não foi encontrada para excluir esta pasta.');
+    }
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists() || canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A alteração da categoria foi bloqueada: a loja canônica está indisponível ou já concluiu a migração.');
+      }
     }
 
     const result = deleteCatalogCategoryTreePath(
