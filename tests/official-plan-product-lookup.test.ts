@@ -18,3 +18,16 @@ describe('official plan product lookup boundaries', () => {
     assert.match(source, /INVALID_PLATFORM_PLAN_MAPPING/);
   });
 });
+
+
+describe('official plan product management gateway', () => {
+  it('exposes the admin-only mapping operation without a new serverless function', () => {
+    const gateway = readFileSync(new URL('../api/plan-control.ts', import.meta.url), 'utf8');
+    const management = readFileSync(new URL('../server/admin/officialPlanProductManagement.ts', import.meta.url), 'utf8');
+    assert.match(gateway, /case 'admin\.official-plan-product\.assign'/);
+    assert.match(gateway, /await assignOfficialPlanProduct\(/);
+    assert.match(management, /admin\.role !== 'super_admin'/);
+    assert.match(management, /transaction\.get\(productRef\)/);
+    assert.match(management, /transaction\.set\(mappingRef/);
+  });
+});
