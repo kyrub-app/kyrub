@@ -321,6 +321,11 @@ const assertMigrationContext = (
   canonicalStore: CanonicalStoreRecord,
   legacyStoreId: string
 ): void => {
+  // Once the store has cut over, legacy snapshots must never overwrite
+  // or archive products maintained directly in the canonical catalog.
+  if (canonicalStore.migrationStatus === 'canonical') {
+    throw new Error('A loja já usa o catálogo canônico; a sincronização legada está desativada.');
+  }
   if (canonicalStore.ownerId !== user.uid) {
     throw new Error('A loja canônica não pertence ao usuário autenticado.');
   }
