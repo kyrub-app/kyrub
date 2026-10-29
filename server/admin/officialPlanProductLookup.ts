@@ -110,6 +110,16 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
       'Este produto não é uma assinatura. Utilize o checkout normal da loja.'
     );
   }
+  // Reject term-based merchant offers at the unified monthly endpoint too.
+  // The merchant service independently enforces this, but routing must not
+  // authorize a recurring checkout that discards persisted contract terms.
+  if (planId === null && input.allowMerchantSubscription &&
+      parsedModality.mode === 'subscription' && data.contractDiscounts !== undefined) {
+    throw new OfficialPlanCheckoutRouteError(
+      'MERCHANT_CONTRACT_CHECKOUT_REQUIRED',
+      'Esta assinatura possui condições contratuais. Utilize o checkout específico do contrato.'
+    );
+  }
   if (planId === null && parsedModality.mode === 'subscription' && !input.allowMerchantSubscription) {
     throw new OfficialPlanCheckoutRouteError(
       'MERCHANT_SUBSCRIPTION_CHECKOUT_REQUIRED',
