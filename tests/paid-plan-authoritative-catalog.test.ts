@@ -30,7 +30,7 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
 
   it('permits the checkout response to finish after its verified webhook completes the same reservation', () => {
     assert.ok(billing.includes("completion === 'already-completed'"));
-    assert.ok(billing.includes("clean(reservation.data()?.providerSubscriptionId) === providerSubscriptionId"));
+    assert.ok(billing.includes('decideReservationCompletion(billingReference, providerSubscriptionId, reservation.data() ?? {})'));
     assert.ok(billing.includes('A reserva desta contratacao foi alterada.'));
   });
 
