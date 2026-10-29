@@ -143,5 +143,7 @@ test('cart routes only eligible monthly subscriptions to the existing merchant p
   assert.match(cart, /subscriptions\[0\]\.product\.contractDiscounts !== undefined/);
   assert.match(cart, /subscriptionMonths !== 1/);
   assert.match(cart, /hasSubscriptionCartItem && !canStartLegacyMonthlySubscription/);
+  assert.match(cart, /disabled=\{isSubmitting \|\| isQuotingSubscription \|\|/);
+  assert.match(cart, /!isQuotingSubscription;/);
   assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
 });
