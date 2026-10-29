@@ -47,6 +47,17 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(webhook.includes('await persistProviderState(ownerId, provider, recovered)'));
   });
 
+  it('rejects mismatched early-webhook reservations before linking a subscription', () => {
+    const webhook = billing.split('export const handlePaidPlanProviderWebhook')[1];
+    assert.ok(webhook.includes("where('billingReference', '==', reference).limit(2)"));
+    assert.ok(webhook.includes('clean(provider.payer_email).toLowerCase()'));
+    assert.ok(webhook.includes('data.reservedAmountMinor'));
+    assert.ok(webhook.includes('data.reservedCurrency'));
+    assert.ok(webhook.includes("recurring.frequency_type !== 'months'"));
+    assert.ok(webhook.includes('SUBSCRIPTION_RECONCILIATION_MISMATCH'));
+    assert.ok(webhook.includes('SUBSCRIPTION_IDENTITY_CONFLICT'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
