@@ -215,3 +215,19 @@ test('unified catalog subscription checkout resolves platform and merchant recip
   assert.ok(handler.indexOf('resolvePersistedProductCheckoutRoute') < handler.indexOf('createOwnPaidPlanCheckout'));
   assert.ok(handler.indexOf('resolvePersistedProductCheckoutRoute') < handler.indexOf('createAuthorizedStoreSubscription'));
 });
+
+
+test('canonical catalog checkout routes official paid plans to platform billing and Free to enrollment', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf("route.kind === 'free-plan'") < handler.indexOf('createAuthorizedStoreSubscription(authorization, body)'));
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+});
