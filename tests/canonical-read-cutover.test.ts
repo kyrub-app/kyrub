@@ -11,6 +11,7 @@ import {
   type CustomerOrder,
 } from '../src/utils/customerOrders';
 import {
+  isCanonicalProductVisibleForCatalog,
   publicProductCollectionsEquivalent,
   type PublicProduct,
 } from '../src/utils/publicProducts';
@@ -258,4 +259,17 @@ test('pre-cutover product reads still require canonical equivalence', () => {
     choosePreferredProductReadSource('', true, false, false, 'waiting', false),
     { source: 'legacy', reason: 'disabled' }
   );
+});
+
+
+test('canonical storefront and editor enforce distinct publication visibility', () => {
+  assert.equal(isCanonicalProductVisibleForCatalog('published'), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('paused'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('draft'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('archived'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('published', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('paused', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('draft', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('archived', true), false);
+  assert.equal(isCanonicalProductVisibleForCatalog(undefined, true), false);
 });
