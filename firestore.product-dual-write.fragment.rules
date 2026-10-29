@@ -53,6 +53,11 @@
           'category',
           'isService',
           'isComplimentary',
+          'categoryCollections',
+          'optionGroups',
+          'quickNotes',
+          'saleModality',
+          'contractDiscounts',
           'storePointsPerUnit',
           'publicationStatus',
           'createdByUserId',
@@ -94,6 +99,30 @@
         && (
           !incoming().keys().hasAny(['actionExecutionId'])
           || incoming().actionExecutionId is string
+        )
+        && (
+          !incoming().keys().hasAny(['categoryCollections'])
+          || incoming().categoryCollections is list
+        )
+        && (
+          !incoming().keys().hasAny(['optionGroups'])
+          || incoming().optionGroups is list
+        )
+        && (
+          !incoming().keys().hasAny(['quickNotes'])
+          || incoming().quickNotes is list
+        )
+        && (
+          !incoming().keys().hasAny(['saleModality'])
+          || incoming().saleModality is map
+        )
+        && (
+          !incoming().keys().hasAny(['contractDiscounts'])
+          || (
+            incoming().contractDiscounts is list
+            && incoming().keys().hasAny(['saleModality'])
+            && incoming().saleModality.mode == 'subscription'
+          )
         )
         && incoming().id == productId
         && incoming().storeId == storeId
