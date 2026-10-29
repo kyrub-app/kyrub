@@ -11,11 +11,12 @@ describe('persisted contract checkout quote', () => {
     const quote = resolveSubscriptionContractQuote({
       persistedSaleModality: modality, authoritativeMonthlyPriceMinor: 7000,
       persistedOffers: offers, selectedMonths: 12,
+      paymentTerms: { collectionMode: 'prepaid', installments: 1 },
     });
     assert.equal(quote.totalMinor, 67200);
   });
   it('rejects unoffered terms and malformed persisted discounts', () => {
-    const input = { persistedSaleModality: modality, authoritativeMonthlyPriceMinor: 7000, persistedOffers: offers };
+    const input = { persistedSaleModality: modality, authoritativeMonthlyPriceMinor: 7000, persistedOffers: offers, paymentTerms: { collectionMode: 'prepaid' as const, installments: 1 } };
     assert.throws(() => resolveSubscriptionContractQuote({ ...input, selectedMonths: 6 }), /NOT_OFFERED/);
     assert.throws(() => resolveSubscriptionContractQuote({
       ...input, persistedOffers: [{ months: 1, discountPercent: 0 }, { months: 12, discountPercent: 200 }],
