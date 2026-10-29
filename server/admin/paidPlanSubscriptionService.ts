@@ -224,7 +224,11 @@ const selectedPlan = async (targetPlan: 'pro' | 'business', productId: string) =
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
   const product = await adminDb.doc(`stores/${official.canonicalStoreId}/products/${productId}`).get();
-  const price = product.data()?.price;
+  const productData = product.data();
+  if (!product.exists || productData?.publicationStatus !== 'published' || productData?.contractDiscounts !== undefined) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_CHANGED', 'Produto oficial indisponivel ou com condicoes contratuais.');
+  }
+  const price = productData.price;
   if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 ||
       !Number.isSafeInteger(Math.round(price * 100)) ||
       Math.abs(price * 100 - Math.round(price * 100)) > 1e-7) {
