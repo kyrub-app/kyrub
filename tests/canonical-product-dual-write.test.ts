@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildSubscriptionSaleModality } from '../shared/productSaleModality';
 import {
@@ -94,8 +95,7 @@ test('mirrors contract discounts and detects changes requiring canonical resync'
 });
 
 test('canonical sync update writes and removes contract discounts', () => {
-  const fs = require('node:fs') as typeof import('node:fs');
-  const source = fs.readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
+  const source = readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
   assert.match(source, /contractDiscounts: next\.contractDiscounts \?\? deleteField\(\)/);
   assert.match(source, /contractDiscounts: value\.contractDiscounts === undefined/);
 });
