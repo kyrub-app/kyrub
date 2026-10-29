@@ -367,9 +367,13 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         result => {
           // A canonical subscription reports an empty waiting result before
           // the first snapshot. Do not treat that as an empty real catalog.
-          if (result.decision.reason === 'waiting') return;
-          if (result.decision.reason === 'unavailable') {
-            console.warn('Catálogo canônico indisponível; mantendo a última hierarquia confirmada.');
+          if (
+            result.decision.source === 'canonical' &&
+            (result.decision.reason === 'waiting' || result.decision.reason === 'unavailable')
+          ) {
+            // After cutover a provisional or failed canonical read must not
+            // erase the last confirmed editor catalog. Before cutover, legacy
+            // remains a valid fallback and must still update the editor.
             return;
           }
           latestCatalogProducts = result.products;
