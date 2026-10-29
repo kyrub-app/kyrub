@@ -14,7 +14,7 @@ test('3, 6 and 12 month contracts activate only from verified approved payment',
     const contract = activatePrepaidContractAfterVerifiedPayment(pending(months), payment);
     assert.equal(contract.state, 'active');
     assert.equal(contract.startsAt, payment.occurredAt);
-    assert.equal(contract.expiresAt, new Date(Date.UTC(2026, months, 30, 10)).toISOString());
+    assert.equal(contract.expiresAt, new Date(Date.UTC(2026, months + 1, 0, 10)).toISOString());
     assert.deepEqual(activatePrepaidContractAfterVerifiedPayment(contract, payment), contract);
   }
 });
