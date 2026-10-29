@@ -208,7 +208,10 @@ const selectedPlan = async (targetPlan: 'pro' | 'business') => {
   const entry = catalog.plans.find(item => item.planId === targetPlan);
   // The public catalog may fall back to compiled reference prices on read failures.
   // Never initiate a real charge from that fallback: require a published control-plane price.
-  if (!entry || entry.source !== 'control_plane' || entry.monthlyPriceBRL <= 0) {
+  if (!entry || entry.source !== 'control_plane' ||
+      !Number.isFinite(entry.monthlyPriceBRL) || entry.monthlyPriceBRL <= 0 ||
+      !Number.isSafeInteger(Math.round(entry.monthlyPriceBRL * 100)) ||
+      Math.abs(entry.monthlyPriceBRL * 100 - Math.round(entry.monthlyPriceBRL * 100)) > 1e-7) {
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
   return entry;
