@@ -473,22 +473,32 @@ export const persistCanonicalPublicProduct = async (
  * The tenant mapping is a discovery hint; the canonical writer independently
  * verifies ownership and cutover status in its Firestore transaction.
  */
+/**
+ * Resolve the authoritative product catalog before choosing a write path.
+ * A mapped but missing store is an error, never permission to write legacy.
+ */
+export const resolveCanonicalProductWriteStore = async (
+  user: Pick<User, 'uid'>
+): Promise<string | null> => {
+  const tenant = await getDoc(doc(db, 'tenants', user.uid));
+  const mappedStoreId = typeof tenant.data()?.canonicalStoreId === 'string'
+    ? tenant.data()!.canonicalStoreId.trim() : '';
+  if (!mappedStoreId) return null;
+  const store = await getDoc(doc(db, 'stores', mappedStoreId));
+  if (!store.exists()) {
+    throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
+  }
+  return store.data().migrationStatus === 'canonical' ? mappedStoreId : null;
+};
+
 export const persistProductForStore = async (
   user: Pick<User, 'uid' | 'email'>,
   product: PublicProduct
 ): Promise<'canonical' | 'legacy'> => {
-  const tenant = await getDoc(doc(db, 'tenants', user.uid));
-  const mappedStoreId = typeof tenant.data()?.canonicalStoreId === 'string'
-    ? tenant.data()!.canonicalStoreId.trim() : '';
-  if (mappedStoreId) {
-    const store = await getDoc(doc(db, 'stores', mappedStoreId));
-    if (!store.exists()) {
-      throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
-    }
-    if (store.data().migrationStatus === 'canonical') {
-      await persistCanonicalPublicProduct(user, mappedStoreId, product);
-      return 'canonical';
-    }
+  const canonicalStoreId = await resolveCanonicalProductWriteStore(user);
+  if (canonicalStoreId) {
+    await persistCanonicalPublicProduct(user, canonicalStoreId, product);
+    return 'canonical';
   }
   await persistPublicProduct(user, product);
   return 'legacy';
