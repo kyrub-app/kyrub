@@ -96,3 +96,16 @@ it('unified subscription route rejects ordinary merchandise before payment routi
   assert.ok(source.indexOf('PRODUCT_NOT_SUBSCRIPTION') < source.indexOf('return resolveCheckoutBillingRoute'),
     'Ordinary merchandise must be rejected before a subscription billing recipient is chosen');
 });
+
+
+describe('authoritative official plan price guard', () => {
+  it('requires an active control-plane price for Pro and Business', () => {
+    assert.match(source, /activePlan\.source !== 'control_plane'/);
+    assert.match(source, /activePlan\.monthlyPriceBRL <= 0/);
+    assert.match(source, /OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED/);
+  });
+  it('rejects charging the Free plan', () => {
+    assert.match(source, /planId === 'free'/);
+    assert.match(source, /activePlan\.monthlyPriceBRL !== 0/);
+  });
+});
