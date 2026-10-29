@@ -399,6 +399,15 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
+        // Reject unknown contract fields instead of silently ignoring a
+        // browser-supplied price, recipient, discount or renamed payment key.
+        if (Object.keys(body).some(key => !['storeId', 'productId', 'selectedMonths', 'paymentTerms'].includes(key))) {
+          response.status(400).json({
+            error: 'A cotação aceita somente loja, produto, prazo e condições de pagamento.',
+            code: 'INVALID_SUBSCRIPTION_QUOTE_REQUEST',
+          });
+          return;
+        }
         await authenticateConsultantRequest(authorization);
         if (typeof body.storeId !== 'string' || typeof body.productId !== 'string' ||
             ![1, 3, 6, 12].includes(body.selectedMonths as number) ||
