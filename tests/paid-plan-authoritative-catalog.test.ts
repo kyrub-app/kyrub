@@ -10,9 +10,10 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     new URL('../server/admin/publicPlanCatalogService.ts', import.meta.url), 'utf8'
   );
 
-  it('rejects compiled fallback prices for real paid plan checkout', () => {
-    assert.match(billing, /entry\.source !== 'control_plane'/);
-    assert.match(billing, /PLAN_NOT_BILLABLE/);
+  it('charges the persisted official product price rather than compiled catalog prices', () => {
+    assert.match(billing, /monthlyPriceBRL: price/);
+    assert.match(billing, /OFFICIAL_PLAN_PRODUCT_CHANGED/);
+    assert.match(billing, /OFFICIAL_PLAN_PRICE_CHANGED/);
   });
 
   it('retains compiled fallback for public plan display only', () => {
