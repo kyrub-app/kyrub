@@ -474,6 +474,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
     ...subscription,
     billingReference,
+    checkoutReservationStatus: 'completed',
     officialProductId,
     officialStoreId: official.canonicalStoreId,
     payerEmail: user.email,
