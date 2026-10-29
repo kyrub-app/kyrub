@@ -28,6 +28,12 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(recovery.includes('SUBSCRIPTION_RECONCILIATION_MISMATCH'));
   });
 
+  it('permits the checkout response to finish after its verified webhook completes the same reservation', () => {
+    assert.ok(billing.includes("checkoutReservationStatus === 'completed'"));
+    assert.ok(billing.includes("clean(reservation.data()?.providerSubscriptionId) === providerSubscriptionId"));
+    assert.ok(billing.includes('A reserva desta contratacao foi alterada.'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
