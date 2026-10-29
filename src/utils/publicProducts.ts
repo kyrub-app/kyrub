@@ -30,7 +30,7 @@ import {
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 import { db } from './firebase';
 import {
-  chooseCanonicalReadSource,
+  choosePreferredProductReadSource,
   parseCanonicalReadConfig,
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
@@ -639,19 +639,14 @@ export const subscribeToPreferredPublicProducts = (
     // products intentionally diverge from it and must not trigger a fallback.
     // Until the mapped store status is known, do not publish legacy data:
     // this may already be a canonical-only store.
-    const decision = canonicalStoreId && !storeStatusResolved
-      ? { source: 'canonical' as const, reason: 'waiting' as const }
-      : canonicalCutover
-      ? {
-          source: 'canonical' as const,
-          reason: (canonicalState === 'available' ? 'canonical' : canonicalState) as 'canonical' | 'waiting' | 'unavailable',
-        }
-      : chooseCanonicalReadSource(
-        canonicalEnabled,
-        canonicalStoreId,
-        canonicalState,
-        publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
-      );
+    const decision = choosePreferredProductReadSource(
+      canonicalStoreId,
+      storeStatusResolved,
+      canonicalCutover,
+      canonicalEnabled,
+      canonicalState,
+      publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
+    );
     recordCanonicalReadDecision(normalizedStoreId, 'products', decision);
     // Do not advertise unverified multi-month offers while a mapped canonical
     // catalog is waiting, unavailable or divergent. The payment quote reads only
