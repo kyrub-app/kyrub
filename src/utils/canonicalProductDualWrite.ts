@@ -14,6 +14,7 @@ import {
 import { db } from './firebase';
 import {
   parsePublicProducts,
+  parseProductCategoryCollections,
   type PublicProduct,
 } from './publicProducts';
 import {
@@ -27,6 +28,7 @@ import {
   type ProductSaleModality,
 } from '../../shared/productSaleModality';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
+import { parseProductOptionGroups, parseProductQuickNotes, quickNotesToOptionGroup, QUICK_NOTES_OPTION_GROUP_ID } from './productCustomization';
 import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers';
 
 export type CanonicalProductPublicationStatus =
@@ -45,6 +47,10 @@ export interface CanonicalProductMirrorData {
   image: string;
   stock: number;
   category: string;
+  categoryCollections: PublicProduct['categoryCollections'];
+  optionGroups: PublicProduct['optionGroups'];
+  quickNotes: PublicProduct['quickNotes'];
+  isComplimentary: boolean;
   isService: boolean;
   storePointsPerUnit: number;
   saleModality: ProductSaleModality;
@@ -83,6 +89,12 @@ export interface CanonicalProductDualWriteCallbacks {
 
 const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const normalizedOptionGroups = (groups: unknown, notes: unknown) => {
+  const base = parseProductOptionGroups(groups).filter(group => group.id !== QUICK_NOTES_OPTION_GROUP_ID);
+  const quick = quickNotesToOptionGroup(notes);
+  return quick ? [...base, quick] : base;
+};
 
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -188,6 +200,10 @@ export const buildCanonicalProductMirrorData = (
     image: product.image.trim(),
     stock: product.isService ? 0 : product.stock,
     category: product.category.trim(),
+    categoryCollections: parseProductCategoryCollections(product.categoryCollections),
+    optionGroups: normalizedOptionGroups(product.optionGroups, product.quickNotes),
+    quickNotes: parseProductQuickNotes(product.quickNotes),
+    isComplimentary: product.isComplimentary === true,
     isService: product.isService === true,
     storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
     saleModality,
@@ -223,6 +239,10 @@ const comparableProductFields = (
   image: cleanString(value.image),
   stock: finiteNumber(value.stock),
   category: cleanString(value.category),
+  categoryCollections: parseProductCategoryCollections(value.categoryCollections),
+  optionGroups: normalizedOptionGroups(value.optionGroups, value.quickNotes),
+  quickNotes: parseProductQuickNotes(value.quickNotes),
+  isComplimentary: value.isComplimentary === true,
   isService: value.isService === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(value.storePointsPerUnit),
   saleModality: parseProductSaleModality(value.saleModality),
@@ -375,6 +395,10 @@ export const syncLegacyProductsToCanonical = async (
         image: next.image,
         stock: next.stock,
         category: next.category,
+        categoryCollections: next.categoryCollections,
+        optionGroups: next.optionGroups,
+        quickNotes: next.quickNotes,
+        isComplimentary: next.isComplimentary,
         isService: next.isService,
         storePointsPerUnit: next.storePointsPerUnit,
         saleModality: next.saleModality,
