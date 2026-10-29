@@ -129,7 +129,7 @@ export function CatalogHierarchySelector({
         ? addCatalogHierarchyTreePath(paths, parentPath, cleanName)
         : await createCatalogHierarchyPath(user, parentPath, cleanName);
       if (canonicalStoreId) {
-        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], products as PublicProduct[], nextPaths);
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], products as PublicProduct[], nextPaths, paths);
       }
       onCatalogDataChange(nextPaths);
       updateTierSelection(tierIndex, cleanName.slice(0, 40));
@@ -167,7 +167,7 @@ export function CatalogHierarchySelector({
         ? renameCatalogCategoryTree(products as PublicProduct[], paths, path, cleanName)
         : await renameCatalogCategoryPath(user, path, cleanName);
       if (canonicalStoreId) {
-        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths);
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths, paths);
       }
       onCatalogDataChange(result.paths, result.products);
       const currentPath = joinCatalogCategoryPath([
@@ -209,7 +209,7 @@ export function CatalogHierarchySelector({
         ? deleteCatalogCategoryTreePath(products as PublicProduct[], paths, path)
         : await deleteCatalogCategoryPath(user, path);
       if (canonicalStoreId) {
-        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths);
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths, paths);
       }
       onCatalogDataChange(result.paths, result.products);
       onSelectedSegmentsChange(selectedSegments.slice(0, tierIndex));
