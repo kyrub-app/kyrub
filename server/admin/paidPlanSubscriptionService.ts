@@ -335,7 +335,14 @@ const persistProviderState = async (
   const paymentEvidence = status === 'authorized'
     ? await loadApprovedSubscriptionPayment(fallback)
     : null;
-  await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
+  const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const current = await transaction.get(subscriptionRef);
+    if (current.data()?.checkoutReservationStatus === 'pending' ||
+        clean(current.data()?.providerSubscriptionId) !== fallback.providerSubscriptionId) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura alterada durante a conciliacao; nenhuma atualizacao foi aplicada.');
+    }
+    transaction.set(subscriptionRef, {
     providerStatus: status,
     checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
     ...(status === 'authorized'
@@ -353,7 +360,8 @@ const persistProviderState = async (
           }
       : {}),
     updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+    }, { merge: true });
+  });
   const next: KyrubPlanSubscriptionSnapshot = {
     ...fallback,
     providerStatus: status,
