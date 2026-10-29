@@ -241,3 +241,14 @@ test('unified catalog subscription route rejects merchant term offers before any
   assert.match(route, /input\.allowMerchantSubscription &&\s*parsedModality\.mode === 'subscription' && data\.contractDiscounts !== undefined/);
   assert.ok(route.indexOf('MERCHANT_CONTRACT_CHECKOUT_REQUIRED') < route.indexOf('return resolveCheckoutBillingRoute('));
 });
+
+
+test('merchant contract quote rejects unrecognized payment and pricing fields', () => {
+  const start = gateway.indexOf("case 'merchant.subscription.quote'");
+  const end = gateway.indexOf("case 'merchant.subscription.checkout'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+  assert.match(handler, /\['storeId', 'productId', 'selectedMonths', 'paymentTerms'\]/);
+  assert.ok(handler.indexOf('Object.keys(body).some') < handler.indexOf('await quotePersistedMerchantSubscription'));
+});
