@@ -1,4 +1,6 @@
 import { auth } from './firebase';
+import type { ContractTermMonths, SubscriptionContractOffer } from '../../shared/subscriptionContractOffers';
+import type { SubscriptionContractPaymentTerms } from '../../shared/subscriptionContractPaymentTerms';
 import type {
   StoreSubscriptionCheckoutResult,
   StoreSubscriptionSnapshot,
@@ -22,7 +24,7 @@ const authorization = async (): Promise<string> => {
   return `Bearer ${await user.getIdToken()}`;
 };
 
-const post = async <T>(operation: string, body: Record<string, string>): Promise<T> =>
+const post = async <T>(operation: string, body: Record<string, unknown>): Promise<T> =>
   json(await fetch(`/api/plan-control?op=${encodeURIComponent(operation)}`, {
     method: 'POST',
     cache: 'no-store',
@@ -67,4 +69,18 @@ export const cancelMerchantSubscription = async (input: {
   post('merchant.subscription.cancel', {
     storeId: input.storeId.trim(),
     subscriptionId: input.subscriptionId.trim(),
+  });
+
+/** Read-only server-authoritative quote. Does not create a provider checkout. */
+export const quoteMerchantSubscriptionContract = async (input: {
+  storeId: string;
+  productId: string;
+  selectedMonths: ContractTermMonths;
+  paymentTerms: SubscriptionContractPaymentTerms;
+}): Promise<{ quote: SubscriptionContractOffer; paymentTerms: SubscriptionContractPaymentTerms }> =>
+  post('merchant.subscription.quote', {
+    storeId: input.storeId.trim(),
+    productId: input.productId.trim(),
+    selectedMonths: input.selectedMonths,
+    paymentTerms: input.paymentTerms,
   });
