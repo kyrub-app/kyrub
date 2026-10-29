@@ -154,6 +154,46 @@ test('owner mirrors a legacy product and signed-in customers read published prod
   );
 });
 
+test('owner can publish a canonical subscription with contract offers and customization', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const reference = doc(owner, 'stores', STORE_ID, 'products', 'subscription-a');
+  await assertSucceeds(setDoc(reference, {
+    ...mirroredProduct(),
+    id: 'subscription-a',
+    legacyProductId: 'subscription-a',
+    migratedFromPath: 'tenants/owner-a#publicProducts/subscription-a',
+    isService: true,
+    stock: 0,
+    saleModality: {
+      schemaVersion: 1,
+      mode: 'subscription',
+      subscription: {
+        schemaVersion: 1,
+        billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+        autoRenew: true,
+      },
+    },
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 10 },
+    ],
+    categoryCollections: [{ path: 'assinaturas', name: 'Assinaturas', image: '' }],
+    optionGroups: [],
+    quickNotes: [],
+    isComplimentary: false,
+  }));
+});
+
+test('rejects contract discounts without subscription modality', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  await assertFails(setDoc(doc(owner, 'stores', STORE_ID, 'products', 'product-a'), {
+    ...mirroredProduct(),
+    saleModality: { schemaVersion: 1, mode: 'one_time', subscription: null },
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+  }));
+});
+
 test('outsiders cannot create or alter canonical products', async () => {
   const stranger = environment.authenticatedContext('stranger-a').firestore();
   const owner = environment.authenticatedContext('owner-a').firestore();
