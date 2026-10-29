@@ -723,6 +723,16 @@ export const createAuthorizedStoreSubscription = async (
     fail(409, 'STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
       'Este produto utiliza ofertas contratuais. Use o checkout de contratos quando disponível.');
   }
+  // Official Kyrub plans must never be sold through a merchant's recurring
+  // preapproval, even when a client omits a platform-plan tag from the cart.
+  // The privileged mapping, not owner-editable product metadata, is authoritative.
+  const officialPlanMapping = await adminDb.doc(
+    `kyrub_admin/control_plane/official_plan_products/${product.id}`
+  ).get();
+  if (officialPlanMapping.exists) {
+    fail(409, 'OFFICIAL_PLAN_REQUIRES_PLATFORM_CHECKOUT',
+      'Planos oficiais Kyrub devem ser contratados pelo checkout da plataforma.');
+  }
   const recipient = await resolveCommercialRecipientAuthority({
     context: 'store_subscription',
     canonicalStoreId: store.canonicalStoreId,
