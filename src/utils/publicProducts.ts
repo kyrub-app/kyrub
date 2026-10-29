@@ -278,6 +278,16 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
   });
 };
 
+export const isCanonicalProductVisibleForCatalog = (
+  publicationStatus: unknown,
+  includeUnpublished = false
+): boolean => {
+  const status = cleanString(publicationStatus);
+  return includeUnpublished
+    ? status === 'published' || status === 'paused' || status === 'draft'
+    : status === 'published';
+};
+
 const parseCanonicalPublicProduct = (
   snapshot: QueryDocumentSnapshot<DocumentData>,
   legacyStoreId: string,
@@ -317,9 +327,7 @@ const parseCanonicalPublicProduct = (
     stock === null ||
     stock < 0 ||
     saleModality === null ||
-    (includeUnpublished
-      ? !['published', 'paused', 'draft'].includes(cleanString(value.publicationStatus))
-      : cleanString(value.publicationStatus) !== 'published')
+    !isCanonicalProductVisibleForCatalog(value.publicationStatus, includeUnpublished)
   ) {
     return null;
   }
