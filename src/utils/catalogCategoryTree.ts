@@ -538,6 +538,38 @@ export const persistCanonicalCategoryTree = async (
   return updates.length;
 };
 
+/**
+ * One-time, idempotent import of legacy empty folders into the canonical store.
+ * This does not mutate tenant data or rewrite canonical products. A concurrent
+ * canonical edit is never overwritten: an existing canonical tree wins.
+ */
+export const migrateLegacyCatalogCategoryPaths = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string
+): Promise<ProductCategoryCollection[]> => {
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) throw new Error('Loja canônica inválida.');
+  const tenantRef = doc(db, 'tenants', user.uid);
+  const storeRef = doc(db, 'stores', storeId);
+  return runTransaction(db, async transaction => {
+    const tenant = await transaction.get(tenantRef);
+    const store = await transaction.get(storeRef);
+    if (!tenant.exists() || !store.exists() ||
+      cleanString(tenant.data().canonicalStoreId) !== storeId ||
+      store.data().ownerId !== user.uid || store.data().migrationStatus !== 'canonical') {
+      throw new Error('Não foi possível verificar o vínculo da loja canônica.');
+    }
+    const existing = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
+    if (store.data().catalogCategoryPaths !== undefined) return existing;
+    const legacy = parseCatalogCategoryPaths(tenant.data().catalogCategoryPaths);
+    transaction.update(storeRef, {
+      catalogCategoryPaths: legacy,
+      updatedAt: serverTimestamp(),
+    });
+    return legacy;
+  });
+};
+
 export const reconcileCatalogCategoryPaths = async (
   user: Pick<User, 'uid'>
 ): Promise<ProductCategoryCollection[]> => {
