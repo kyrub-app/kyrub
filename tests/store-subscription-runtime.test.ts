@@ -148,3 +148,10 @@ test('cart routes only eligible monthly subscriptions to the existing merchant p
   assert.match(cart, /!isQuotingSubscription;/);
   assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
 });
+
+test('subscription checkout stays disabled while authoritative quote is in flight', () => {
+  const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
+  assert.match(cart, /disabled=\{isSubmitting \|\| isQuotingSubscription \|\| \(hasSubscriptionCartItem && !canStartLegacyMonthlySubscription\)\}/);
+  assert.match(cart, /if \(isQuotingSubscription\) \{/);
+  assert.match(cart, /'Aguardando cotação\.\.\.'/);
+});
