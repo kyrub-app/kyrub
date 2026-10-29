@@ -216,3 +216,20 @@ test('unified subscription checkout authenticates and resolves persisted officia
   assert.match(route, /PRODUCT_NOT_SUBSCRIPTION/);
   assert.match(client, /catalog\.subscription\.checkout/);
 });
+
+
+test('unified catalog checkout selects server-authoritative official plan billing', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+  assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
+});
