@@ -5,6 +5,7 @@ import {
   type SubscriptionContractOffer,
 } from '../../shared/subscriptionContractOffers.js';
 import { parseProductSaleModality } from '../../shared/productSaleModality.js';
+import { validateSubscriptionContractPaymentTerms, type SubscriptionContractPaymentTerms } from '../../shared/subscriptionContractPaymentTerms.js';
 
 /**
  * Store-neutral checkout pricing boundary. Callers must supply a persisted,
@@ -16,6 +17,7 @@ export const resolveSubscriptionContractQuote = (input: {
   authoritativeMonthlyPriceMinor: number;
   persistedOffers: unknown;
   selectedMonths: ContractTermMonths;
+  paymentTerms?: SubscriptionContractPaymentTerms;
 }): SubscriptionContractOffer => {
   const modality = parseProductSaleModality(input.persistedSaleModality);
   if (!modality || modality.mode !== 'subscription' || !modality.subscription ||
@@ -27,9 +29,13 @@ export const resolveSubscriptionContractQuote = (input: {
   if (!offers) throw new Error('INVALID_PERSISTED_SUBSCRIPTION_OFFERS');
   const selected = offers.find(offer => offer.months === input.selectedMonths);
   if (!selected) throw new Error('SUBSCRIPTION_TERM_NOT_OFFERED');
-  return calculateSubscriptionContractOffer(
+  const quote = calculateSubscriptionContractOffer(
     input.authoritativeMonthlyPriceMinor,
     selected.months,
     selected.discountPercent
   );
+  if (input.paymentTerms !== undefined) {
+    validateSubscriptionContractPaymentTerms(quote, input.paymentTerms);
+  }
+  return quote;
 };
