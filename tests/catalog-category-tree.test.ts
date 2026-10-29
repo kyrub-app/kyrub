@@ -6,6 +6,7 @@ import {
   deriveCatalogCategoryPaths,
   MAX_CATALOG_CATEGORY_LEVELS,
   parseCatalogCategoryPaths,
+  planCanonicalCategoryProductUpdates,
   renameCatalogCategoryTree,
 } from '../src/utils/catalogCategoryTree';
 
@@ -166,4 +167,37 @@ describe('catalog category tree', () => {
     assert.equal(parsed[0]?.path, 'A > B > C > D > E > F');
     assert.equal(parsed[0]?.name, 'F');
   });
+  test('canonical update plan touches only changed category fields', () => {
+    const original = [
+      product('a', 'Alimentação > Restaurante', [{ path: 'Alimentação > Restaurante', name: 'Restaurante', image: 'a.jpg' }]),
+      product('b', 'Alimentação > Pizzaria'),
+    ];
+    const renamed = renameCatalogCategoryTree(
+      original,
+      deriveCatalogCategoryPaths(original),
+      'Alimentação > Restaurante',
+      'Bistrô'
+    );
+    const changes = planCanonicalCategoryProductUpdates(original, renamed.products);
+    assert.deepEqual(changes, [{
+      id: 'a',
+      category: 'Alimentação > Bistrô',
+      categoryCollections: [{ path: 'Alimentação > Bistrô', name: 'Bistrô', image: 'a.jpg' }],
+    }]);
+    assert.equal(original[0]?.price, 10);
+    assert.equal(original[0]?.stock, 5);
+  });
+
+  test('canonical update plan rejects missing or duplicate products', () => {
+    const original = [product('a', 'A > B'), product('b', 'A > C')];
+    assert.throws(
+      () => planCanonicalCategoryProductUpdates(original, [original[0]!]),
+      /lista de produtos mudou/
+    );
+    assert.throws(
+      () => planCanonicalCategoryProductUpdates(original, [original[0]!, original[0]!]),
+      /duplicado ou ausente/
+    );
+  });
+
 });
