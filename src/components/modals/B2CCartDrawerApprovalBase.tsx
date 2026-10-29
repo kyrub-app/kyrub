@@ -174,7 +174,8 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     cart[0].product.saleModality?.mode === 'subscription' &&
     cart[0].quantity === 1 &&
     cart[0].product.contractDiscounts === undefined &&
-    subscriptionMonths === 1;
+    subscriptionMonths === 1 &&
+    !isQuotingSubscription;
 
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
