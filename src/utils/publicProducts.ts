@@ -71,6 +71,17 @@ export interface PublicProductCreateRequest {
   reason?: string;
 }
 
+/** Hide offers that cannot yet be confirmed against a mapped canonical catalog. */
+export const suppressUnverifiedContractDiscounts = (
+  products: PublicProduct[],
+  canonicalStoreId: string,
+  source: CanonicalReadDecision['source']
+): PublicProduct[] =>
+  canonicalStoreId && source !== 'canonical'
+    ? products.map(product => product.contractDiscounts === undefined
+      ? product : { ...product, contractDiscounts: undefined })
+    : products;
+
 export interface PreferredPublicProductsResult {
   products: PublicProduct[];
   decision: CanonicalReadDecision;
@@ -488,10 +499,7 @@ export const subscribeToPreferredPublicProducts = (
     // catalog is waiting, unavailable or divergent. The payment quote reads only
     // the canonical product, so the legacy storefront cannot promise its terms.
     const selectedProducts = decision.source === 'canonical' ? canonicalProducts : legacyProducts;
-    const products = canonicalStoreId && decision.source !== 'canonical'
-      ? selectedProducts.map(product => product.contractDiscounts === undefined
-        ? product : { ...product, contractDiscounts: undefined })
-      : selectedProducts;
+    const products = suppressUnverifiedContractDiscounts(selectedProducts, canonicalStoreId, decision.source);
     onResult({
       products,
       decision,
