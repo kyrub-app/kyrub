@@ -482,6 +482,58 @@ export const persistCanonicalCategoryProductUpdates = async (
   return updates.length;
 };
 
+/** Canonical category tree is stored with its store, including empty folders. */
+export const persistCanonicalCategoryTree = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  previousProducts: PublicProduct[],
+  nextProducts: PublicProduct[],
+  nextPaths: ProductCategoryCollection[]
+): Promise<number> => {
+  const updates = planCanonicalCategoryProductUpdates(previousProducts, nextProducts);
+  if (updates.length > 100) {
+    throw new Error('A categoria contém produtos demais para uma alteração atômica.');
+  }
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) throw new Error('Loja canônica inválida.');
+  const storeRef = doc(db, 'stores', storeId);
+  const references = updates.map(update => doc(db, 'stores', storeId, 'products', update.id));
+  const originals = new Map(previousProducts.map(product => [product.id, product]));
+  await runTransaction(db, async transaction => {
+    const store = await transaction.get(storeRef);
+    const snapshots = [];
+    for (const reference of references) snapshots.push(await transaction.get(reference));
+    if (!store.exists() || store.data().ownerId !== user.uid || store.data().migrationStatus !== 'canonical') {
+      throw new Error('A loja não está habilitada para edição canônica.');
+    }
+    const currentPaths = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
+    const canonicalPaths = parseCatalogCategoryPaths(nextPaths);
+    // Ensure a stale client cannot silently overwrite another category edit.
+    if (canonicalPaths.length > 500) throw new Error('Limite de pastas da loja excedido.');
+    updates.forEach((update, index) => {
+      const snapshot = snapshots[index];
+      const original = originals.get(update.id);
+      if (!snapshot?.exists() || !original || snapshot.data().category !== original.category ||
+        JSON.stringify(parseCatalogCategoryPaths(snapshot.data().categoryCollections)) !==
+          JSON.stringify(parseCatalogCategoryPaths(original.categoryCollections)) ||
+        snapshot.data().publicationStatus === 'archived') {
+        throw new Error('O produto foi alterado durante a edição da categoria.');
+      }
+      transaction.update(references[index], {
+        category: update.category,
+        categoryCollections: update.categoryCollections,
+        updatedAt: serverTimestamp(),
+        updatedByUserId: user.uid,
+        updatedByRole: 'owner',
+      });
+    });
+    if (JSON.stringify(currentPaths) !== JSON.stringify(canonicalPaths)) {
+      transaction.update(storeRef, { catalogCategoryPaths: canonicalPaths, updatedAt: serverTimestamp() });
+    }
+  });
+  return updates.length;
+};
+
 export const reconcileCatalogCategoryPaths = async (
   user: Pick<User, 'uid'>
 ): Promise<ProductCategoryCollection[]> => {
