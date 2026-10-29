@@ -58,6 +58,13 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(webhook.includes('SUBSCRIPTION_IDENTITY_CONFLICT'));
   });
 
+  it('rejects a provider preapproval already linked to another owner during webhook recovery', () => {
+    const webhook = billing.split('export const handlePaidPlanProviderWebhook')[1];
+    assert.ok(webhook.includes("where('providerSubscriptionId', '==', providerSubscriptionId).limit(2).get()"));
+    assert.ok(webhook.includes('linked.docs.some(doc => doc.id !== ownerId)'));
+    assert.ok(webhook.includes('SUBSCRIPTION_IDENTITY_CONFLICT'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
