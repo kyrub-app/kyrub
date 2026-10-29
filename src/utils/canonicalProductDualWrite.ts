@@ -171,6 +171,12 @@ export const buildCanonicalProductMirrorData = (
   if (!saleModality) {
     throw new Error(`A forma de venda de “${product.name}” é inválida.`);
   }
+  const contractDiscounts = product.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+  if (product.contractDiscounts !== undefined &&
+      (!contractDiscounts || saleModality.mode !== 'subscription')) {
+    throw new Error(`Os períodos de contratação de “${product.name}” são inválidos.`);
+  }
 
   return {
     id: product.id,
@@ -185,7 +191,7 @@ export const buildCanonicalProductMirrorData = (
     isService: product.isService === true,
     storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
     saleModality,
-    ...(product.contractDiscounts !== undefined ? { contractDiscounts: parseSubscriptionContractDiscounts(product.contractDiscounts) ?? undefined } : {}),
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     publicationStatus: 'published',
     createdByUserId: actorUserId,
     createdByRole: migratedByRole,
