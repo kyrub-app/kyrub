@@ -335,7 +335,10 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
-        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan));
+        response.status(409).json({
+          error: 'Contrate os planos pagos pelo produto da Loja Oficial. A integracao comercial esta em atualizacao.',
+          code: 'OFFICIAL_STORE_BILLING_MIGRATION_PENDING',
+        });
         return;
       }
       case 'store.subscription.reconcile': {
