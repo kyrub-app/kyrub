@@ -514,6 +514,10 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
     }
     // Search by payer, then match the exact external reference locally.
     const search = await mpRequest(`/preapproval/search?payer_email=${encodeURIComponent(payerEmail)}&limit=100`);
+    const paging = record(search.paging);
+    if (Number(paging.total) > 100) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_PAGINATION', 'Pesquisa de assinaturas incompleta; conciliacao manual necessaria.');
+    }
     const matches = (Array.isArray(search.results) ? search.results : [])
       .map(item => record(item))
       .filter(item => clean(item.external_reference) === reference);
