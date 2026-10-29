@@ -101,6 +101,9 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /resolvePersistedProductCheckoutRoute/);
     assert.match(billing, /OFFICIAL_PLAN_PRODUCT_MISMATCH/);
     assert.match(billing, /monthlyPriceBRL: price/);
+    assert.match(billing, /productData\?\.publicationStatus !== 'published'/);
+    assert.match(billing, /productData\?\.contractDiscounts !== undefined/);
+    assert.match(billing, /OFFICIAL_PLAN_PRODUCT_CHANGED/);
     assert.match(billing, /officialProductId/);
     assert.match(billing, /officialStoreId: official\.canonicalStoreId/);
     assert.match(billing, /payerEmail: user\.email/);
