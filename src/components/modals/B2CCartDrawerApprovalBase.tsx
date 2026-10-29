@@ -169,6 +169,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     ? parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)?.map(offer => offer.months) ?? [1]
     : [1];
 
+  const hasSubscriptionCartItem = cart.some(item => item.product.saleModality?.mode === 'subscription');
+  const canStartLegacyMonthlySubscription = cart.length === 1 &&
+    cart[0].product.saleModality?.mode === 'subscription' &&
+    cart[0].quantity === 1 &&
+    cart[0].product.contractDiscounts === undefined &&
+    subscriptionMonths === 1;
+
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
       return {
@@ -550,7 +557,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       </p>
                     )}
                     <p className="mt-2 text-amber-300">
-                      {cart[0].product.contractDiscounts === undefined && subscriptionMonths === 1
+                      {canStartLegacyMonthlySubscription
                         ? 'Assinatura mensal recorrente: o pagamento será iniciado pelo Mercado Pago e a ativação depende da confirmação.'
                         : 'A contratação de planos com prazo ou desconto ainda não está disponível neste carrinho.'}
                     </p>
@@ -858,11 +865,15 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-5 backdrop-blur-sm">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || (hasSubscriptionCartItem && !canStartLegacyMonthlySubscription)}
                   className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {isSubmitting
+                  {hasSubscriptionCartItem && !canStartLegacyMonthlySubscription
+                    ? 'Checkout contratual indisponível'
+                    : hasSubscriptionCartItem
+                      ? isSubmitting ? 'Iniciando assinatura...' : 'Assinar mensalmente'
+                    : isSubmitting
                     ? fulfillmentType === 'dine_in'
                       ? 'Enviando pedido...'
                       : 'Preparando pagamento...'
