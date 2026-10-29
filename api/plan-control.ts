@@ -382,6 +382,8 @@ export default async function handler(
           });
           return;
         }
+        // Authenticate before privileged product and plan mapping reads.
+        await authenticateConsultantRequest(authorization);
         const route = await resolvePersistedProductCheckoutRoute({
           sellerStoreReference: body.storeId,
           productId: body.productId,
