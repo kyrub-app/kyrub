@@ -233,3 +233,11 @@ test('unified catalog checkout selects server-authoritative official plan billin
   assert.match(handler, /Object\.keys\(body\)\.some/);
   assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
 });
+
+
+test('unified catalog subscription route rejects merchant term offers before any provider checkout', () => {
+  const route = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(route, /MERCHANT_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(route, /input\.allowMerchantSubscription &&\s*parsedModality\.mode === 'subscription' && data\.contractDiscounts !== undefined/);
+  assert.ok(route.indexOf('MERCHANT_CONTRACT_CHECKOUT_REQUIRED') < route.indexOf('return resolveCheckoutBillingRoute('));
+});
