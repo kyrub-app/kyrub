@@ -499,6 +499,11 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
   if (!subscription && snapshot.data()?.checkoutReservationStatus === 'pending') {
+    const reference = clean(snapshot.data()?.billingReference);
+    if (!reference) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem referencia de cobranca para conciliacao.');
+    }
+    // Do not release the reservation merely because the provider is unreachable.
     throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
   }
   if (!subscription) return { billing: loadPaidPlanBillingAvailability(), subscription: null };
