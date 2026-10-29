@@ -166,3 +166,19 @@ test('unified canonical subscription checkout routes official plans to platform 
   assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.match(client, /post\('catalog\.subscription\.checkout'/);
 });
+
+
+test('unified catalog checkout rejects contract terms before routing to either billing account', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /body\.selectedMonths !== undefined/);
+  assert.match(handler, /body\.paymentTerms !== undefined/);
+  assert.match(handler, /body\.contractDiscounts !== undefined/);
+  assert.match(handler, /body\.installments !== undefined/);
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
+  assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('createOwnPaidPlanCheckout'));
+  assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('createAuthorizedStoreSubscription'));
+});
