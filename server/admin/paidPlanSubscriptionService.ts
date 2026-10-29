@@ -659,7 +659,12 @@ export const handlePaidPlanProviderWebhook = async (input: {
   if (matches.size > 1) {
     throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'A assinatura do provedor está vinculada a mais de uma loja.');
   }
-  if (matches.empty) return { accepted: true };
+  if (matches.empty) {
+    // The checkout reservation can precede the provider ID write. The owner
+    // reconciliation path recovers that link by external_reference later.
+    console.warn('[Kyrub Plans] Webhook received before subscription linkage; reconciliation required.', providerSubscriptionId);
+    return { accepted: true };
+  }
   const ownerId = matches.docs[0].id;
   const subscription = parseStoredSubscription(ownerId, matches.docs[0].data() as Record<string, unknown>);
   if (!subscription) return { accepted: true };
