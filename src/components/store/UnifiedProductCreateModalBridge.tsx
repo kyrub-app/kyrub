@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { Product } from '../../types';
-import { auth } from '../../utils/firebase';
+import { auth, db } from '../../utils/firebase';
+import { doc, getDoc } from 'firebase/firestore';
 import {
   OPEN_PRODUCT_CREATE_MODAL_EVENT,
   type ProductCreateModalDetail,
