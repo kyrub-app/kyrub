@@ -18,6 +18,7 @@ import {
   reconcileOwnPaidPlanSubscription,
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
+import { assignOfficialPlanProduct } from '../server/admin/officialPlanProductManagement.js';
 import {
   grantComplimentaryPlanWithLifecycle,
   reconcileStoreEntitlementFromAuthorization,
@@ -230,6 +231,27 @@ export default async function handler(
         response.status(200).json(
           await designateOfficialStore(authorization, request.body)
         );
+        return;
+      }
+      case 'admin.official-plan-product.assign': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (typeof body.productId !== 'string' ||
+            (body.planId !== 'free' && body.planId !== 'pro' && body.planId !== 'business')) {
+          response.status(400).json({
+            error: 'Informe um produto e um plano oficial válido.',
+            code: 'INVALID_OFFICIAL_PLAN_PRODUCT',
+          });
+          return;
+        }
+        await assignOfficialPlanProduct({
+          authorization,
+          productId: body.productId,
+          planId: body.planId,
+        });
+        response.status(200).json({ ok: true });
         return;
       }
       case 'admin.plan.publish': {
