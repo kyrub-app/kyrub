@@ -104,6 +104,9 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /productData\?\.publicationStatus !== 'published'/);
     assert.match(billing, /productData\?\.contractDiscounts !== undefined/);
     assert.match(billing, /OFFICIAL_PLAN_PRODUCT_CHANGED/);
+    assert.match(billing, /const latestOffer = await selectedPlan\(targetPlan, officialProductId\)/);
+    assert.match(billing, /OFFICIAL_PLAN_PRICE_CHANGED/);
+    assert.ok(billing.indexOf('const latestOffer = await selectedPlan') < billing.indexOf("mpRequest('/preapproval',"));
     assert.match(billing, /officialProductId/);
     assert.match(billing, /officialStoreId: official\.canonicalStoreId/);
     assert.match(billing, /payerEmail: user\.email/);
