@@ -875,7 +875,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {hasSubscriptionCartItem && !canStartLegacyMonthlySubscription
+                  {hasSubscriptionCartItem && isQuotingSubscription
+                    ? 'Aguardando cotação...'
+                    : hasSubscriptionCartItem && !canStartLegacyMonthlySubscription
                     ? 'Checkout contratual indisponível'
                     : hasSubscriptionCartItem
                       ? isSubmitting ? 'Iniciando assinatura...' : 'Assinar mensalmente'
