@@ -4,6 +4,7 @@ import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authorizeOperationsHealth } from './operationsHealthRouter.js';
 import { getOfficialStoreIdentity } from './officialStoreService.js';
+import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
 import { PlanManagementError } from './planManagementService.js';
 
 const ROOT = 'kyrub_admin/control_plane/official_plan_products';
@@ -26,6 +27,13 @@ export const assignOfficialPlanProduct = async (input: {
   if (!official?.canonicalStoreId) {
     throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Defina a Loja Oficial antes de vincular planos.');
   }
+  const catalog = await loadPublicActivePlanCatalog();
+  const activePlan = catalog.plans.find(entry => entry.planId === input.planId);
+  if (!activePlan || (input.planId === 'free'
+    ? activePlan.monthlyPriceBRL !== 0
+    : activePlan.source !== 'control_plane' || activePlan.monthlyPriceBRL <= 0)) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED', 'Preço oficial não autorizado para este plano.');
+  }
   const productRef = adminDb.doc(`stores/${official.canonicalStoreId}/products/${input.productId}`);
   const mappingRef = adminDb.doc(`${ROOT}/${input.productId}`);
   await adminDb.runTransaction(async transaction => {
@@ -36,7 +44,9 @@ export const assignOfficialPlanProduct = async (input: {
     const data = product.data() ?? {};
     const modality = parseProductSaleModality(data.saleModality);
     if (!product.exists || data.publicationStatus !== 'published' ||
-        data.platformPlanId !== undefined ||
+        data.platformPlanId !== undefined || data.kyrubPlanId !== undefined ||
+        typeof data.price !== 'number' || !Number.isFinite(data.price) ||
+        Math.round(data.price * 100) !== Math.round(activePlan.monthlyPriceBRL * 100) ||
         !modality || modality.mode !== 'subscription' ||
         modality.subscription?.billingInterval.unit !== 'month' ||
         modality.subscription.billingInterval.count !== 1 ||
