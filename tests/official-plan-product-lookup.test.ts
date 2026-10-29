@@ -61,7 +61,7 @@ describe('unified catalog subscription checkout', () => {
     assert.match(handler, /route\.kind === 'free-plan'/);
     assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
     assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
-    assert.match(handler, /body\.selectedMonths !== undefined \|\| body\.paymentTerms !== undefined/);
+    assert.match(handler, /Object\\.keys\\(body\\)\\.some\\(key => key !== 'storeId' && key !== 'productId'\\)/);
     assert.match(client, /post\('catalog\.subscription\.checkout'/);
     assert.match(cart, /createCatalogSubscriptionCheckout\(/);
   });
