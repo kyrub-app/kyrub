@@ -16,6 +16,11 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.match(billing, /OFFICIAL_PLAN_PRICE_CHANGED/);
   });
 
+  it('does not expose a stale subscription during a pending checkout reservation', () => {
+    assert.match(billing, /subscription: snapshot\.data\(\)\?\.checkoutReservationStatus === 'pending'/);
+    assert.match(billing, /\? null\s*: parseStoredSubscription/);
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
