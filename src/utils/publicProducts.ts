@@ -609,7 +609,8 @@ export const subscribeToPublicProducts = (
 export const subscribeToPreferredPublicProducts = (
   legacyStoreId: string,
   onResult: (result: PreferredPublicProductsResult) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  options: { includeUnpublished?: boolean } = {}
 ): Unsubscribe => {
   const normalizedStoreId = legacyStoreId.trim();
   if (!normalizedStoreId) {
@@ -674,10 +675,12 @@ export const subscribeToPreferredPublicProducts = (
 
     publish();
     unsubscribeCanonical = onSnapshot(
-      query(
-        collection(db, `stores/${canonicalStoreId}/products`),
-        where('publicationStatus', '==', 'published')
-      ),
+      options.includeUnpublished
+        ? collection(db, `stores/${canonicalStoreId}/products`)
+        : query(
+            collection(db, `stores/${canonicalStoreId}/products`),
+            where('publicationStatus', '==', 'published')
+          ),
       snapshot => {
         if (generation !== canonicalSubscriptionGeneration) return;
         canonicalProducts = snapshot.docs.flatMap(document => {
