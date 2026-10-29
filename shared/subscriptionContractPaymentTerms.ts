@@ -1,8 +1,7 @@
 import type { SubscriptionContractOffer } from './subscriptionContractOffers.js';
 
 /**
- * A prepaid term is NOT a recurring monthly payment. Provider installments
- * are also independent of contract duration. Keep these dimensions separate.
+ * A prepaid term is NOT a recurring monthly payment. Prepaid contracts are charged once, in full, without installments.
  */
 export type SubscriptionContractPaymentTerms =
   | { collectionMode: 'prepaid'; installments: number }
@@ -14,8 +13,7 @@ export const validateSubscriptionContractPaymentTerms = (
 ): void => {
   if (!payment || typeof payment !== 'object') throw new Error('INVALID_CONTRACT_PAYMENT_TERMS');
   if (payment.collectionMode === 'prepaid') {
-    if (!Number.isSafeInteger(payment.installments) ||
-        payment.installments < 1 || payment.installments > 12) {
+    if (payment.installments !== 1) {
       throw new Error('INVALID_CONTRACT_INSTALLMENTS');
     }
     if ('billingIntervalMonths' in payment && payment.billingIntervalMonths !== undefined) {
