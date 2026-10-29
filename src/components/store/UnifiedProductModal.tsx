@@ -365,6 +365,13 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeCatalog = subscribeToPreferredPublicProducts(
         user.uid,
         result => {
+          // A canonical subscription reports an empty waiting result before
+          // the first snapshot. Do not treat that as an empty real catalog.
+          if (result.decision.reason === 'waiting') return;
+          if (result.decision.reason === 'unavailable') {
+            console.warn('Catálogo canônico indisponível; mantendo a última hierarquia confirmada.');
+            return;
+          }
           latestCatalogProducts = result.products;
           catalogLoaded = true;
           setCatalogProducts(result.products);
