@@ -110,6 +110,8 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /adminDb\.runTransaction\(async transaction/);
     assert.match(billing, /SUBSCRIPTION_CHECKOUT_IN_PROGRESS/);
     assert.match(billing, /checkoutReservationStatus: 'completed'/);
+    assert.match(billing, /SUBSCRIPTION_RESERVATION_CONFLICT/);
+    assert.match(billing, /reservation\.data\(\)\?\.billingReference !== billingReference/);
     assert.ok(billing.indexOf('const latestOffer = await selectedPlan') < billing.indexOf("mpRequest('/preapproval',"));
     assert.match(billing, /officialProductId/);
     assert.match(billing, /officialStoreId: official\.canonicalStoreId/);
