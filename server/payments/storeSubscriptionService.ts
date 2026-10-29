@@ -713,6 +713,16 @@ export const createAuthorizedStoreSubscription = async (
   }
   const store = await resolveCanonicalStore(payload.storeId);
   const product = await loadPublishedSubscriptionProduct(store.canonicalStoreId, payload.productId);
+  // A published contract offer must not be charged as an unqualified legacy
+  // recurring preapproval. Until term-aware collection is implemented, reject
+  // even callers that omit contract fields from their request.
+  const persistedProduct = await adminDb.doc(
+    `stores/${store.canonicalStoreId}/products/${product.id}`
+  ).get();
+  if (persistedProduct.data()?.contractDiscounts !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+      'Este produto utiliza ofertas contratuais. Use o checkout de contratos quando disponível.');
+  }
   const recipient = await resolveCommercialRecipientAuthority({
     context: 'store_subscription',
     canonicalStoreId: store.canonicalStoreId,
