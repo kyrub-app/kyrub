@@ -507,7 +507,19 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
     if (!reference) {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem referencia de cobranca para conciliacao.');
     }
-    // Do not release the reservation merely because the provider is unreachable.
+    const payerEmail = clean(snapshot.data()?.reservedPayerEmail);
+    if (!payerEmail) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem pagador para conciliacao.');
+    }
+    // Search by payer, then match the exact external reference locally.
+    const search = await mpRequest(`/preapproval/search?payer_email=${encodeURIComponent(payerEmail)}&limit=100`);
+    const matches = (Array.isArray(search.results) ? search.results : [])
+      .map(item => record(item))
+      .filter(item => clean(item.external_reference) === reference);
+    if (matches.length > 1) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_CONFLICT', 'Mais de uma assinatura encontrada para a mesma referencia.');
+    }
+    // A missing result is not proof of absence: keep the reservation locked.
     throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
   }
   if (!subscription) return { billing: loadPaidPlanBillingAvailability(), subscription: null };
