@@ -191,6 +191,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [catalogPaths, setCatalogPaths] = useState<ProductCategoryCollection[]>([]);
   const [canonicalCategoryStoreId, setCanonicalCategoryStoreId] = useState('');
   const [canonicalCategoriesLoading, setCanonicalCategoriesLoading] = useState(false);
+  const [canonicalCategoriesError, setCanonicalCategoriesError] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
   const [image, setImage] = useState('');
   const [imageFileName, setImageFileName] = useState('');
@@ -401,6 +402,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
             canonicalStoredPaths = [];
             setCanonicalCategoryStoreId('');
             setCanonicalCategoriesLoading(Boolean(nextStoreId));
+            setCanonicalCategoriesError('');
             if (nextStoreId) {
               unsubscribeCanonicalCategories = onSnapshot(doc(db, 'stores', nextStoreId), snapshot => {
                 if (activeCanonicalStoreId !== nextStoreId) return;
@@ -412,14 +414,23 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                   setCanonicalCategoryStoreId('');
                   void migrateLegacyCatalogCategoryPaths(user, nextStoreId).catch(error => {
                     console.warn('Não foi possível importar as pastas antigas para o catálogo canônico.', error);
+                    if (activeCanonicalStoreId === nextStoreId) {
+                      setCanonicalCategoriesError('Não foi possível migrar as pastas antigas. Atualize a página ou contate o suporte.');
+                    }
                   });
                   return;
                 }
                 canonicalPathsLoaded = true;
                 setCanonicalCategoriesLoading(false);
+                setCanonicalCategoriesError('');
                 setCanonicalCategoryStoreId(nextStoreId);
                 publishCatalogPaths();
-              }, error => console.warn('Não foi possível carregar as pastas canônicas.', error));
+              }, error => {
+                console.warn('Não foi possível carregar as pastas canônicas.', error);
+                if (activeCanonicalStoreId === nextStoreId) {
+                  setCanonicalCategoriesError('Não foi possível carregar as categorias da loja. Atualize a página.');
+                }
+              });
             }
           }
           latestCatalogProducts = result.products;
