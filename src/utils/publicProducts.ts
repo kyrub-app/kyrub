@@ -482,7 +482,10 @@ export const persistProductForStore = async (
     ? tenant.data()!.canonicalStoreId.trim() : '';
   if (mappedStoreId) {
     const store = await getDoc(doc(db, 'stores', mappedStoreId));
-    if (store.exists() && store.data().migrationStatus === 'canonical') {
+    if (!store.exists()) {
+      throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
+    }
+    if (store.data().migrationStatus === 'canonical') {
       await persistCanonicalPublicProduct(user, mappedStoreId, product);
       return 'canonical';
     }
