@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
+import { quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
+import type { SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
   listMarketplacePromotions,
@@ -120,6 +122,8 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
+  const [subscriptionQuote, setSubscriptionQuote] = useState<SubscriptionContractOffer | null>(null);
+  const [isQuotingSubscription, setIsQuotingSubscription] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<MarketplaceCouponQuote | null>(null);
   const [couponError, setCouponError] = useState('');
@@ -465,6 +469,38 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   </span>
                 </div>
 
+                {cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription' && (
+                  <div className="rounded-2xl border border-slate-700 p-3 text-xs text-slate-200">
+                    <p className="font-bold">Assinatura mensal</p>
+                    <p className="mt-1 text-slate-400">Consulte o valor oficial antes de contratar. Esta consulta não gera cobrança.</p>
+                    <button
+                      type="button"
+                      disabled={isQuotingSubscription}
+                      className="mt-3 rounded-xl border border-slate-600 px-3 py-2 disabled:opacity-50"
+                      onClick={() => {
+                        setSubscriptionQuote(null);
+                        setFormError('');
+                        setIsQuotingSubscription(true);
+                        void quoteMerchantSubscriptionContract({
+                          storeId: visitingStore.id,
+                          productId: cart[0].product.id,
+                          selectedMonths: 1,
+                          paymentTerms: { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null },
+                        }).then(result => setSubscriptionQuote(result.quote))
+                          .catch(error => setFormError(error instanceof Error ? error.message : 'Cotação indisponível.'))
+                          .finally(() => setIsQuotingSubscription(false));
+                      }}
+                    >
+                      {isQuotingSubscription ? 'Consultando...' : 'Consultar preço oficial'}
+                    </button>
+                    {subscriptionQuote && (
+                      <p className="mt-2 font-semibold">
+                        Valor mensal confirmado: {currencyFormatter.format(subscriptionQuote.totalMinor / 100)}
+                      </p>
+                    )}
+                    <p className="mt-2 text-amber-300">A contratação permanece indisponível neste carrinho.</p>
+                  </div>
+                )}
                 {cart.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 py-12 text-center">
                     <ShoppingCart className="mx-auto h-9 w-9 text-slate-700" />
