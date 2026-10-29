@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import {
   collection,
   doc,
+  deleteField,
   getDocs,
   onSnapshot,
   serverTimestamp,
@@ -371,6 +372,7 @@ export const syncLegacyProductsToCanonical = async (
         isService: next.isService,
         storePointsPerUnit: next.storePointsPerUnit,
         saleModality: next.saleModality,
+        contractDiscounts: next.contractDiscounts ?? deleteField(),
         publicationStatus: 'published',
         updatedByUserId: user.uid,
         updatedByRole: 'owner',
