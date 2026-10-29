@@ -138,14 +138,14 @@ test('official Kyrub plan mapping cannot be billed through the merchant preappro
 
 test('cart routes eligible monthly subscriptions through the canonical platform-or-merchant gateway', () => {
   const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
-  assert.match(cart, /createCatalogSubscriptionCheckout\\(/);
-  assert.match(cart, /cart\\.length !== 1 \\|\\| subscriptions\\[0\\]\\.quantity !== 1/);
-  assert.match(cart, /subscriptions\\[0\\]\\.product\\.contractDiscounts !== undefined/);
+  assert.match(cart, /createCatalogSubscriptionCheckout\(/);
+  assert.match(cart, /cart\.length !== 1 \|\| subscriptions\[0\]\.quantity !== 1/);
+  assert.match(cart, /subscriptions\[0\]\.product\.contractDiscounts !== undefined/);
   assert.match(cart, /subscriptionMonths !== 1/);
   assert.match(cart, /hasSubscriptionCartItem && !canStartLegacyMonthlySubscription/);
-  assert.match(cart, /window\\.location\\.assign\\(checkoutUrl\\.toString\\(\\)\\)/);
-  assert.match(gateway, /case 'catalog\\.subscription\\.checkout'/);
-  assert.match(gateway, /route\\.kind === 'platform-plan'/);
-  assert.match(gateway, /createOwnPaidPlanCheckout\\(authorization, route\\.plan\\)/);
-  assert.match(gateway, /createAuthorizedStoreSubscription\\(authorization, body\\)/);
+  assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
+  assert.match(gateway, /case 'catalog\.subscription\.checkout'/);
+  assert.match(gateway, /route\.kind === 'platform-plan'/);
+  assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
 });
