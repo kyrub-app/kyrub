@@ -501,8 +501,16 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   };
   await adminDb.runTransaction(async transaction => {
     const reservation = await transaction.get(reservationRef);
-    if (reservation.data()?.billingReference !== billingReference ||
-        reservation.data()?.checkoutReservationStatus !== 'pending') {
+    if (reservation.data()?.billingReference !== billingReference) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
+    }
+    // A verified webhook can complete this same reservation before the
+    // original checkout request finishes its Mercado Pago POST.
+    if (reservation.data()?.checkoutReservationStatus === 'completed' &&
+        clean(reservation.data()?.providerSubscriptionId) === providerSubscriptionId) {
+      return;
+    }
+    if (reservation.data()?.checkoutReservationStatus !== 'pending') {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
     }
     transaction.set(reservationRef, {
