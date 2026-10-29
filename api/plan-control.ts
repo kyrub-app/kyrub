@@ -459,9 +459,32 @@ export default async function handler(
         });
     }
   } catch (error) {
-    if (operation === 'merchant.subscription.quote' && error instanceof OfficialPlanCheckoutRouteError) {
-      response.status(409).json({ error: error.message, code: error.code });
-      return;
+    if (operation === 'merchant.subscription.quote') {
+      if (error instanceof OfficialPlanCheckoutRouteError) {
+        const status = error.code === 'PRODUCT_NOT_FOUND' ? 404
+          : error.code === 'INVALID_PRODUCT_ID' ? 400 : 409;
+        response.status(status).json({ error: error.message, code: error.code });
+        return;
+      }
+      // Quote validation is pure and read-only. Return a client error for
+      // known invalid selections instead of misreporting them as server faults.
+      const validationCodes = new Set([
+        'INVALID_SUBSCRIPTION_PRODUCT_FOR_CONTRACT',
+        'INVALID_PERSISTED_SUBSCRIPTION_OFFERS',
+        'SUBSCRIPTION_TERM_NOT_OFFERED',
+        'INVALID_SUBSCRIPTION_CONTRACT_OFFER',
+        'INVALID_SUBSCRIPTION_CONTRACT_TERMS',
+        'MISSING_MONTHLY_BASELINE',
+        'DUPLICATE_SUBSCRIPTION_CONTRACT_TERM',
+        'UNSUPPORTED_RECURRING_CONTRACT_TERM',
+      ]);
+      if (error instanceof Error && validationCodes.has(error.message)) {
+        response.status(409).json({
+          error: 'As condições solicitadas não estão disponíveis para este produto.',
+          code: error.message,
+        });
+        return;
+      }
     }
     const mapped = operation.startsWith('merchant.subscription.benefit')
       ? mapStoreSubscriptionBenefitError(error)
