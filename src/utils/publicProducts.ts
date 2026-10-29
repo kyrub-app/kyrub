@@ -1,6 +1,8 @@
 import {
   collection,
   doc,
+  getDoc,
+  setDoc,
   onSnapshot,
   query,
   runTransaction,
@@ -376,6 +378,75 @@ export const publicProductCollectionsEquivalent = (
       .sort((left, right) => left.id.localeCompare(right.id));
   return JSON.stringify(normalize(legacyProducts)) ===
     JSON.stringify(normalize(canonicalProducts));
+};
+
+/**
+ * Canonical-only editor write. The caller must select the canonical store;
+ * never infer it from the legacy user ID or write a tenant mirror.
+ */
+export const persistCanonicalPublicProduct = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  product: PublicProduct
+): Promise<void> => {
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) {
+    throw new Error('Selecione uma loja canônica independente do usuário.');
+  }
+  const storeSnapshot = await getDoc(doc(db, 'stores', storeId));
+  const store = storeSnapshot.data();
+  if (!storeSnapshot.exists() || store?.ownerId !== user.uid ||
+      store?.migrationStatus !== 'canonical') {
+    throw new Error('A loja ainda não está habilitada para gravação canônica.');
+  }
+  if (product.storeId !== user.uid || product.supplierId !== user.uid) {
+    throw new Error('O produto não pertence à loja autenticada.');
+  }
+  const saleModality = parseProductSaleModality(product.saleModality);
+  const discounts = product.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+  if (!saleModality || (product.contractDiscounts !== undefined &&
+      (!discounts || saleModality.mode !== 'subscription'))) {
+    throw new Error('Modalidade ou períodos de contratação inválidos.');
+  }
+  const reference = doc(db, 'stores', storeId, 'products', product.id);
+  const existing = await getDoc(reference);
+  if (existing.exists()) {
+    throw new Error('Este produto já existe. A edição canônica exige preservar os metadados originais.');
+  }
+  await setDoc(reference, {
+    id: product.id,
+    storeId,
+    supplierId: storeId,
+    name: product.name.trim(),
+    description: product.description.trim(),
+    price: product.price,
+    image: product.image.trim(),
+    stock: product.isService ? 0 : product.stock,
+    category: product.category.trim(),
+    categoryCollections: parseProductCategoryCollections(product.categoryCollections),
+    optionGroups: optionGroupsWithQuickNotes(product.optionGroups, product.quickNotes),
+    quickNotes: parseProductQuickNotes(product.quickNotes),
+    isService: product.isService === true,
+    isComplimentary: product.isComplimentary === true,
+    storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+    saleModality,
+    ...(discounts ? { contractDiscounts: discounts } : {}),
+    publicationStatus: 'published',
+    createdByUserId: user.uid,
+    createdByRole: 'owner',
+    updatedByUserId: user.uid,
+    updatedByRole: 'owner',
+    legacyStoreId: '',
+    legacyProductId: '',
+    legacySupplierId: '',
+    legacyUpdatedAt: '',
+    migratedFromPath: '',
+    archivedAt: '',
+    migration: { mode: 'canonical', migratedByUserId: '', migratedByRole: '' },
+    createdAt: serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  });
 };
 
 export const persistPublicProduct = async (
