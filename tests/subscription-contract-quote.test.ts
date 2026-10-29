@@ -28,8 +28,11 @@ describe('persisted contract checkout quote', () => {
     assert.throws(() => resolveSubscriptionContractQuote({
       ...base, paymentTerms: { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null },
     }), /UNSUPPORTED_RECURRING_CONTRACT_TERM/);
-    assert.equal(resolveSubscriptionContractQuote({
+    assert.throws(() => resolveSubscriptionContractQuote({
       ...base, paymentTerms: { collectionMode: 'prepaid', installments: 6 },
+    }), /INVALID_CONTRACT_INSTALLMENTS/);
+    assert.equal(resolveSubscriptionContractQuote({
+      ...base, paymentTerms: { collectionMode: 'prepaid', installments: 1 },
     }).totalMinor, 67200);
   });
   it('preserves legacy monthly-only products without granting longer terms', () => {
