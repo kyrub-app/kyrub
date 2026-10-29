@@ -109,3 +109,18 @@ describe('authoritative official plan price guard', () => {
     assert.match(source, /activePlan\.monthlyPriceBRL !== 0/);
   });
 });
+
+
+describe('admin mapping does not trust owner-editable product plan tags', () => {
+  const management = readFileSync(new URL('../server/admin/officialPlanProductManagement.ts', import.meta.url), 'utf8');
+  it('rejects both old and new product-level plan tags', () => {
+    assert.match(management, /data\.platformPlanId !== undefined/);
+    assert.match(management, /data\.kyrubPlanId !== undefined/);
+  });
+  it('requires a catalog-authorized amount at assignment time', () => {
+    assert.match(management, /loadPublicActivePlanCatalog\(\)/);
+    assert.match(management, /activePlan\.source !== 'control_plane'/);
+    assert.match(management, /OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED/);
+    assert.match(management, /Math\.round\(data\.price \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  });
+});
