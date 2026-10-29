@@ -381,7 +381,8 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           setCatalogProducts(result.products);
           publishCatalogPaths();
         },
-        error => console.warn('Não foi possível atualizar o catálogo de produtos.', error)
+        error => console.warn('Não foi possível atualizar o catálogo de produtos.', error),
+        { includeUnpublished: true }
       );
 
       unsubscribeInventory = onSnapshot(
