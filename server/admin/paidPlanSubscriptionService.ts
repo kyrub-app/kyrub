@@ -498,6 +498,9 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
   const ownerId = safeOwnerId(user.uid);
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
+  if (!subscription && snapshot.data()?.checkoutReservationStatus === 'pending') {
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
+  }
   if (!subscription) return { billing: loadPaidPlanBillingAvailability(), subscription: null };
   const provider = await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`) as MpPreapproval;
   await persistProviderState(ownerId, provider, subscription);
