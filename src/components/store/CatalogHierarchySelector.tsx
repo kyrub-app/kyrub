@@ -433,7 +433,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => void handleCreate(tierIndex)}
-                    disabled={!newName.trim() || Boolean(busyPath)}
+                    disabled={disabled || !newName.trim() || Boolean(busyPath)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500 text-slate-950 disabled:opacity-40"
                     aria-label={`Salvar ${tierLabel.toLowerCase()}`}
                   >
@@ -442,7 +442,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => setCreatingTier(null)}
-                    disabled={Boolean(busyPath)}
+                    disabled={disabled || Boolean(busyPath)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400"
                     aria-label="Cancelar criação"
                   >
@@ -470,7 +470,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => void handleRename(tierIndex, selectedPath)}
-                    disabled={!editingName.trim() || isBusy}
+                    disabled={disabled || !editingName.trim() || isBusy}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500 text-slate-950 disabled:opacity-40"
                     aria-label="Salvar novo nome"
                   >
@@ -479,7 +479,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => setEditingPath('')}
-                    disabled={isBusy}
+                    disabled={disabled || isBusy}
                     className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400"
                     aria-label="Cancelar edição"
                   >
@@ -497,7 +497,7 @@ export function CatalogHierarchySelector({
                     <button
                       type="button"
                       onClick={() => setDeletingPath('')}
-                      disabled={isBusy}
+                      disabled={disabled || isBusy}
                       className="min-h-9 rounded-lg border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-40"
                     >
                       Cancelar
@@ -505,7 +505,7 @@ export function CatalogHierarchySelector({
                     <button
                       type="button"
                       onClick={() => void handleDelete(tierIndex, selectedPath)}
-                      disabled={isBusy}
+                      disabled={disabled || isBusy}
                       className="min-h-9 rounded-lg bg-red-500 px-3 text-[8px] font-black uppercase text-white disabled:opacity-40"
                     >
                       Excluir nível
