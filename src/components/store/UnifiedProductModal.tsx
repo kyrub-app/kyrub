@@ -403,9 +403,14 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 if (activeCanonicalStoreId !== nextStoreId) return;
                 canonicalStoredPaths = parseCatalogCategoryPaths(snapshot.data()?.catalogCategoryPaths);
                 if (snapshot.exists() && snapshot.data()?.catalogCategoryPaths === undefined) {
+                  // Keep editing disabled until the initial folder import has
+                  // completed, otherwise an empty tree could overwrite it.
+                  canonicalPathsLoaded = false;
+                  setCanonicalCategoryStoreId('');
                   void migrateLegacyCatalogCategoryPaths(user, nextStoreId).catch(error => {
                     console.warn('Não foi possível importar as pastas antigas para o catálogo canônico.', error);
                   });
+                  return;
                 }
                 canonicalPathsLoaded = true;
                 setCanonicalCategoryStoreId(nextStoreId);
