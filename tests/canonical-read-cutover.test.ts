@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canEnableCanonicalReadDomain,
   chooseCanonicalReadSource,
+  choosePreferredProductReadSource,
   parseCanonicalReadConfig,
 } from '../src/utils/canonicalReadCutover';
 import {
@@ -221,5 +222,40 @@ test('payment comparison detects method and allocation differences', () => {
   assert.equal(
     tablePaymentCollectionsEquivalent([payment], [{ ...payment, method: 'cash' }]),
     false
+  );
+});
+
+test('product read waits for mapped store status rather than showing legacy data', () => {
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', false, false, false, 'waiting', false),
+    { source: 'canonical', reason: 'waiting' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', false, false, true, 'available', false),
+    { source: 'canonical', reason: 'waiting' }
+  );
+});
+
+test('canonical product cutover never falls back on loading, failure or divergence', () => {
+  for (const state of ['waiting', 'unavailable', 'available'] as const) {
+    assert.deepEqual(
+      choosePreferredProductReadSource('store-1', true, true, true, state, false),
+      { source: 'canonical', reason: state === 'available' ? 'canonical' : state }
+    );
+  }
+});
+
+test('pre-cutover product reads still require canonical equivalence', () => {
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', true, false, true, 'available', false),
+    { source: 'legacy', reason: 'divergent' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', true, false, true, 'available', true),
+    { source: 'canonical', reason: 'canonical' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('', true, false, false, 'waiting', false),
+    { source: 'legacy', reason: 'disabled' }
   );
 });
