@@ -1,8 +1,7 @@
 import {
   collection,
   doc,
-  getDoc,
-  setDoc,
+  deleteField,
   onSnapshot,
   query,
   runTransaction,
@@ -384,6 +383,10 @@ export const publicProductCollectionsEquivalent = (
  * Canonical-only editor write. The caller must select the canonical store;
  * never infer it from the legacy user ID or write a tenant mirror.
  */
+/**
+ * Write a product only to the canonical catalog. Read store and product inside
+ * the same transaction to avoid a stale migration-status or create race.
+ */
 export const persistCanonicalPublicProduct = async (
   user: Pick<User, 'uid'>,
   canonicalStoreId: string,
@@ -392,12 +395,6 @@ export const persistCanonicalPublicProduct = async (
   const storeId = canonicalStoreId.trim();
   if (!storeId || storeId === user.uid) {
     throw new Error('Selecione uma loja canônica independente do usuário.');
-  }
-  const storeSnapshot = await getDoc(doc(db, 'stores', storeId));
-  const store = storeSnapshot.data();
-  if (!storeSnapshot.exists() || store?.ownerId !== user.uid ||
-      store?.migrationStatus !== 'canonical') {
-    throw new Error('A loja ainda não está habilitada para gravação canônica.');
   }
   if (product.storeId !== user.uid || product.supplierId !== user.uid) {
     throw new Error('O produto não pertence à loja autenticada.');
@@ -409,43 +406,62 @@ export const persistCanonicalPublicProduct = async (
       (!discounts || saleModality.mode !== 'subscription'))) {
     throw new Error('Modalidade ou períodos de contratação inválidos.');
   }
+  const storeReference = doc(db, 'stores', storeId);
   const reference = doc(db, 'stores', storeId, 'products', product.id);
-  const existing = await getDoc(reference);
-  if (existing.exists()) {
-    throw new Error('Este produto já existe. A edição canônica exige preservar os metadados originais.');
-  }
-  await setDoc(reference, {
-    id: product.id,
-    storeId,
-    supplierId: storeId,
-    name: product.name.trim(),
-    description: product.description.trim(),
-    price: product.price,
-    image: product.image.trim(),
-    stock: product.isService ? 0 : product.stock,
-    category: product.category.trim(),
-    categoryCollections: parseProductCategoryCollections(product.categoryCollections),
-    optionGroups: optionGroupsWithQuickNotes(product.optionGroups, product.quickNotes),
-    quickNotes: parseProductQuickNotes(product.quickNotes),
-    isService: product.isService === true,
-    isComplimentary: product.isComplimentary === true,
-    storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
-    saleModality,
-    ...(discounts ? { contractDiscounts: discounts } : {}),
-    publicationStatus: 'published',
-    createdByUserId: user.uid,
-    createdByRole: 'owner',
-    updatedByUserId: user.uid,
-    updatedByRole: 'owner',
-    legacyStoreId: '',
-    legacyProductId: '',
-    legacySupplierId: '',
-    legacyUpdatedAt: '',
-    migratedFromPath: '',
-    archivedAt: '',
-    migration: { mode: 'canonical', migratedByUserId: '', migratedByRole: '' },
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
+  await runTransaction(db, async transaction => {
+    const storeSnapshot = await transaction.get(storeReference);
+    const existing = await transaction.get(reference);
+    const store = storeSnapshot.data();
+    if (!storeSnapshot.exists() || store?.ownerId !== user.uid ||
+        store?.migrationStatus !== 'canonical') {
+      throw new Error('A loja ainda não está habilitada para gravação canônica.');
+    }
+    const payload = {
+      name: product.name.trim(),
+      description: product.description.trim(),
+      price: product.price,
+      image: product.image.trim(),
+      stock: product.isService ? 0 : product.stock,
+      category: product.category.trim(),
+      categoryCollections: parseProductCategoryCollections(product.categoryCollections),
+      optionGroups: optionGroupsWithQuickNotes(product.optionGroups, product.quickNotes),
+      quickNotes: parseProductQuickNotes(product.quickNotes),
+      isService: product.isService === true,
+      isComplimentary: product.isComplimentary === true,
+      storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+      saleModality,
+      contractDiscounts: discounts ?? deleteField(),
+      updatedByUserId: user.uid,
+      updatedByRole: 'owner',
+      updatedAt: serverTimestamp(),
+    };
+    if (existing.exists()) {
+      const current = existing.data();
+      if (current.storeId !== storeId || current.supplierId !== storeId ||
+          current.id !== product.id || current.publicationStatus === 'archived') {
+        throw new Error('O produto existente não pode ser alterado por este editor.');
+      }
+      transaction.update(reference, payload);
+      return;
+    }
+    transaction.set(reference, {
+      ...payload,
+      contractDiscounts: discounts ?? [],
+      id: product.id,
+      storeId,
+      supplierId: storeId,
+      publicationStatus: 'published',
+      createdByUserId: user.uid,
+      createdByRole: 'owner',
+      legacyStoreId: '',
+      legacyProductId: '',
+      legacySupplierId: '',
+      legacyUpdatedAt: '',
+      migratedFromPath: '',
+      archivedAt: '',
+      migration: { mode: 'canonical', migratedByUserId: '', migratedByRole: '' },
+      createdAt: serverTimestamp(),
+    });
   });
 };
 
