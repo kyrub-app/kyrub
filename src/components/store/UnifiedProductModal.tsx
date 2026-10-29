@@ -28,6 +28,7 @@ import {
 import { auth, db } from '../../utils/firebase';
 import {
   joinCatalogCategoryPath,
+  migrateLegacyCatalogCategoryPaths,
   mergeCatalogCategoryPaths,
   parseCatalogCategoryPaths,
   splitCatalogCategoryPath,
@@ -401,6 +402,11 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
               unsubscribeCanonicalCategories = onSnapshot(doc(db, 'stores', nextStoreId), snapshot => {
                 if (activeCanonicalStoreId !== nextStoreId) return;
                 canonicalStoredPaths = parseCatalogCategoryPaths(snapshot.data()?.catalogCategoryPaths);
+                if (snapshot.exists() && snapshot.data()?.catalogCategoryPaths === undefined) {
+                  void migrateLegacyCatalogCategoryPaths(user, nextStoreId).catch(error => {
+                    console.warn('Não foi possível importar as pastas antigas para o catálogo canônico.', error);
+                  });
+                }
                 canonicalPathsLoaded = true;
                 setCanonicalCategoryStoreId(nextStoreId);
                 publishCatalogPaths();
