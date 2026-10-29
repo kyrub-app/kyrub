@@ -21,6 +21,13 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.match(billing, /\? null\s*: parseStoredSubscription/);
   });
 
+  it('checks complete provider details before recovering a reserved subscription', () => {
+    const recovery = billing.split('export const reconcileOwnPaidPlanSubscription')[1];
+    assert.ok(recovery.includes('const recurring = record(provider.auto_recurring)'));
+    assert.ok(!recovery.includes('const recurring = record(candidate.auto_recurring)'));
+    assert.ok(recovery.includes('SUBSCRIPTION_RECONCILIATION_MISMATCH'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
