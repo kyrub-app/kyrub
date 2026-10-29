@@ -34,6 +34,12 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(billing.includes('A reserva desta contratacao foi alterada.'));
   });
 
+  it('returns the persisted subscription after a webhook-first checkout completion', () => {
+    assert.ok(billing.includes('const completed = await reservationRef.get()'));
+    assert.ok(billing.includes('persisted?.providerSubscriptionId !== providerSubscriptionId'));
+    assert.ok(billing.includes('subscription: persisted'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
