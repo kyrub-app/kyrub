@@ -359,6 +359,10 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
+  const officialProductId = typeof rawProductId === 'string' ? rawProductId.trim() : '';
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(officialProductId)) {
+    throw new PlanManagementError(409, 'OFFICIAL_PRODUCT_REQUIRED', 'Selecione o produto de assinatura na Loja Oficial.');
+  }
   const config = requireBillingConfig();
   if (!clean(user.email) || user.emailVerified === false) {
     throw new PlanManagementError(409, 'BILLING_EMAIL_REQUIRED', 'Sua conta precisa ter um e-mail válido para iniciar a assinatura.');
