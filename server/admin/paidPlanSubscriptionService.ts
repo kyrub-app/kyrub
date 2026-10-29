@@ -414,6 +414,22 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRICE_CHANGED', 'O preco do plano foi alterado. Revise a oferta antes de contratar.');
   }
   const billingReference = randomUUID().replaceAll('-', '_');
+  const reservationRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(reservationRef);
+    const current = snapshot.data() ?? {};
+    if (current.checkoutReservationStatus === 'pending' ||
+        (current.providerSubscriptionId && current.providerStatus !== 'cancelled')) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_CHECKOUT_IN_PROGRESS', 'Ja existe uma contratacao em andamento para esta loja.');
+    }
+    transaction.set(reservationRef, {
+      checkoutReservationStatus: 'pending',
+      billingReference,
+      officialProductId,
+      officialStoreId: official.canonicalStoreId,
+      checkoutReservedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
     headers: { 'X-Idempotency-Key': billingReference },
