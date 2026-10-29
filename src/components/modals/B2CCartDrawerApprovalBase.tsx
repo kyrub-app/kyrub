@@ -19,7 +19,7 @@ import {
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
 import { quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
-import { CONTRACT_TERM_MONTHS, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
+import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
   listMarketplacePromotions,
@@ -157,6 +157,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   );
   const discountTotal = couponQuote?.discountTotal ?? 0;
   const checkoutTotal = couponQuote?.total ?? subtotal;
+  const availableContractTerms = cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription'
+    ? parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)?.map(offer => offer.months) ?? [1]
+    : [1];
 
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
@@ -478,7 +481,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     <select id="subscription-contract-months" value={subscriptionMonths}
                       className="mt-1 rounded-lg border border-slate-600 bg-slate-900 p-2 text-white"
                       onChange={event => { subscriptionQuoteRequest.current += 1; setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); setIsQuotingSubscription(false); }}>
-                      {CONTRACT_TERM_MONTHS.map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
+                      {CONTRACT_TERM_MONTHS.filter(months => availableContractTerms.includes(months)).map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
                     </select>
                     <p className="mt-1 text-slate-400">Consulte o valor oficial antes de contratar. Esta consulta não gera cobrança.</p>
                     <button
@@ -486,6 +489,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       disabled={isQuotingSubscription}
                       className="mt-3 rounded-xl border border-slate-600 px-3 py-2 disabled:opacity-50"
                       onClick={() => {
+                        if (!availableContractTerms.includes(subscriptionMonths)) {
+                          setFormError('O prazo selecionado não está disponível para este produto. Selecione outro prazo.');
+                          return;
+                        }
                         const requestId = ++subscriptionQuoteRequest.current;
                         setSubscriptionQuote(null);
                         setFormError('');
