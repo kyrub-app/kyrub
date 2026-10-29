@@ -17,7 +17,7 @@ export const resolveSubscriptionContractQuote = (input: {
   authoritativeMonthlyPriceMinor: number;
   persistedOffers: unknown;
   selectedMonths: ContractTermMonths;
-  paymentTerms?: SubscriptionContractPaymentTerms;
+  paymentTerms: SubscriptionContractPaymentTerms;
 }): SubscriptionContractOffer => {
   const modality = parseProductSaleModality(input.persistedSaleModality);
   if (!modality || modality.mode !== 'subscription' || !modality.subscription ||
@@ -34,8 +34,6 @@ export const resolveSubscriptionContractQuote = (input: {
     selected.months,
     selected.discountPercent
   );
-  if (input.paymentTerms !== undefined) {
-    validateSubscriptionContractPaymentTerms(quote, input.paymentTerms);
-  }
+  validateSubscriptionContractPaymentTerms(quote, input.paymentTerms);
   return quote;
 };
