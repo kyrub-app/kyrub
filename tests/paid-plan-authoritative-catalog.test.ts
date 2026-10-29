@@ -13,6 +13,9 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
   it('rejects compiled fallback prices for real paid plan checkout', () => {
     assert.match(billing, /entry\.source !== 'control_plane'/);
     assert.match(billing, /PLAN_NOT_BILLABLE/);
+    assert.match(billing, /Number\.isFinite\(entry\.monthlyPriceBRL\)/);
+    assert.match(billing, /Number\.isSafeInteger\(Math\.round\(entry\.monthlyPriceBRL \* 100\)\)/);
+    assert.match(billing, /Math\.abs\(entry\.monthlyPriceBRL \* 100 - Math\.round\(entry\.monthlyPriceBRL \* 100\)\)/);
   });
 
   it('retains compiled fallback for public plan display only', () => {
