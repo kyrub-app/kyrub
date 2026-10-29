@@ -471,7 +471,13 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     activatedAt: null,
     cancelledAt: null,
   };
-  await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
+  await adminDb.runTransaction(async transaction => {
+    const reservation = await transaction.get(reservationRef);
+    if (reservation.data()?.billingReference !== billingReference ||
+        reservation.data()?.checkoutReservationStatus !== 'pending') {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
+    }
+    transaction.set(reservationRef, {
     ...subscription,
     billingReference,
     checkoutReservationStatus: 'completed',
@@ -482,6 +488,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     providerPaymentStatusDetail: null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    });
   });
   return { checkoutUrl, subscription };
 };
