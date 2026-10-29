@@ -519,6 +519,17 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
     if (matches.length > 1) {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_CONFLICT', 'Mais de uma assinatura encontrada para a mesma referencia.');
     }
+    if (matches.length === 1) {
+      const candidate = matches[0];
+      const recurring = record(candidate.auto_recurring);
+      const amount = Number(recurring.transaction_amount);
+      if (!clean(candidate.id) || !Number.isFinite(amount) ||
+          Math.round(amount * 100) !== snapshot.data()?.reservedAmountMinor ||
+          clean(recurring.currency_id) !== snapshot.data()?.reservedCurrency ||
+          recurring.frequency !== 1 || recurring.frequency_type !== 'months') {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Assinatura encontrada com dados diferentes da reserva.');
+      }
+    }
     // A missing result is not proof of absence: keep the reservation locked.
     throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
   }
