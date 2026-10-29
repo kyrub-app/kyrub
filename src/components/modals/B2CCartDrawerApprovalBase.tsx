@@ -142,7 +142,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     [cart]
   );
   const cartFingerprint = useMemo(
-    () => cart.map(item => `${item.product.id}:${item.quantity}`).sort().join('|'),
+    () => cart.map(item => JSON.stringify([item.product.id, item.quantity, item.product.price, item.product.saleModality, item.product.contractDiscounts])).sort().join('|'),
     [cart]
   );
   const cartProductIds = useMemo(
