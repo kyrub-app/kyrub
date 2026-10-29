@@ -561,6 +561,8 @@ export const migrateLegacyCatalogCategoryPaths = async (
     }
     const existing = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
     if (store.data().catalogCategoryPaths !== undefined) return existing;
+    // A legacy folder tree can include outdated paths. Import only metadata;
+    // canonical product categories remain the source of truth for item placement.
     const legacy = parseCatalogCategoryPaths(tenant.data().catalogCategoryPaths);
     transaction.update(storeRef, {
       catalogCategoryPaths: legacy,
