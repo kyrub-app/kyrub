@@ -408,6 +408,11 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }
   }
 
+  // Revalidate the persisted offer immediately before creating the provider charge.
+  const latestOffer = await selectedPlan(targetPlan, officialProductId);
+  if (Math.round(latestOffer.monthlyPriceBRL * 100) !== Math.round(plan.monthlyPriceBRL * 100)) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRICE_CHANGED', 'O preco do plano foi alterado. Revise a oferta antes de contratar.');
+  }
   const billingReference = randomUUID().replaceAll('-', '_');
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
