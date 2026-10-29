@@ -324,7 +324,12 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
 
       let latestStoredPaths: ProductCategoryCollection[] = [];
       let latestCatalogProducts: PublicProduct[] = [];
+      let tenantPathsLoaded = false;
+      let catalogLoaded = false;
       const publishCatalogPaths = (): void => {
+        // Wait for both independent subscriptions before replacing the
+        // hierarchy; a first empty snapshot is not a complete catalog.
+        if (!tenantPathsLoaded || !catalogLoaded) return;
         setCatalogPaths(
           mergeCatalogCategoryPaths(latestStoredPaths, latestCatalogProducts)
         );
@@ -337,6 +342,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           // The tenant still owns the category hierarchy and preparation
           // stations, but the product list comes from the preferred catalog.
           latestStoredPaths = parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths);
+          tenantPathsLoaded = true;
           publishCatalogPaths();
           if (!stationDirty) {
             const stations = readProductPreparationStationsFromTenant(tenantData);
@@ -360,6 +366,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         user.uid,
         result => {
           latestCatalogProducts = result.products;
+          catalogLoaded = true;
           setCatalogProducts(result.products);
           publishCatalogPaths();
         },
