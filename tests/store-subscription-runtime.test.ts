@@ -42,6 +42,18 @@ test('merchant subscription checkout trusts canonical catalog and merchant recip
   assert.match(client, /productId: input\.productId\.trim\(\)/);
 });
 
+test('contract quote uses authenticated existing gateway and persisted merchant catalog without charging', () => {
+  assert.match(gateway, /case 'merchant\\.subscription\\.quote'/);
+  assert.match(gateway, /await authenticateConsultantRequest\\(authorization\\)/);
+  assert.match(gateway, /await quotePersistedMerchantSubscription\\(/);
+  assert.match(client, /post\\('merchant\\.subscription\\.quote'/);
+  const quote = readFileSync('server/payments/persistedMerchantSubscriptionQuote.ts', 'utf8');
+  assert.match(quote, /requirePublishedTenant: true/);
+  assert.match(quote, /authoritativeMonthlyPriceMinor: Math\\.round\\(price \\* 100\\)/);
+  assert.match(quote, /persistedOffers: data\\.contractDiscounts/);
+  assert.doesNotMatch(quote, /mercadoPagoStoreRequest|preapproval|createPayment/);
+});
+
 test('recurring state is driven by the newest provider invoice and exposes payment due separately from active', () => {
   assert.match(billingContract, /'payment_due'/);
   assert.match(service, /authorized_payments\/search\?preapproval_id=/);
