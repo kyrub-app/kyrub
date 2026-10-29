@@ -42,8 +42,8 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
 
   it('allows concurrent early webhooks for the same preapproval without rewriting the reservation', () => {
     const webhook = billing.split('export const handlePaidPlanProviderWebhook')[1];
-    assert.ok(webhook.includes("latest.data()?.checkoutReservationStatus === 'completed'"));
-    assert.ok(webhook.includes('clean(latest.data()?.providerSubscriptionId) === providerSubscriptionId'));
+    assert.ok(webhook.includes('decideReservationCompletion(reference, providerSubscriptionId, latest.data() ?? {})'));
+    assert.ok(webhook.includes("completion === 'already-completed'"));
     assert.ok(webhook.includes('await persistProviderState(ownerId, provider, recovered)'));
   });
 
