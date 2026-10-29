@@ -444,10 +444,11 @@ export const persistCanonicalPublicProduct = async (
       transaction.update(reference, payload);
       return;
     }
+    const { contractDiscounts: _updateOnlyDiscounts, ...createPayload } = payload;
     transaction.set(reference, {
-      ...payload,
-      // Firestore rules forbid contractDiscounts on one-time products.
-      ...(discounts ? { contractDiscounts: discounts } : { contractDiscounts: deleteField() }),
+      ...createPayload,
+      // A new one-time product must omit the optional field entirely.
+      ...(discounts ? { contractDiscounts: discounts } : {}),
       id: product.id,
       storeId,
       supplierId: storeId,
