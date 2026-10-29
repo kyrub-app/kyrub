@@ -320,6 +320,12 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     // blocked until their server-side collection and activation exist.
     const subscriptions = cart.filter(item => item.product.saleModality?.mode === 'subscription');
     if (subscriptions.length) {
+      // A stale or pending quote must never be interpreted as authorization to
+      // charge different contractual terms. The server remains authoritative.
+      if (isQuotingSubscription) {
+        setFormError('Aguarde a conclusão da cotação antes de iniciar a contratação.');
+        return;
+      }
       if (cart.length !== 1 || subscriptions[0].quantity !== 1 ||
           subscriptions[0].product.contractDiscounts !== undefined ||
           subscriptionMonths !== 1) {
@@ -865,7 +871,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-5 backdrop-blur-sm">
                 <button
                   type="submit"
-                  disabled={isSubmitting || (hasSubscriptionCartItem && !canStartLegacyMonthlySubscription)}
+                  disabled={isSubmitting || isQuotingSubscription || (hasSubscriptionCartItem && !canStartLegacyMonthlySubscription)}
                   className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
