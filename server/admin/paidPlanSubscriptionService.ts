@@ -389,6 +389,10 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
   const plan = await selectedPlan(targetPlan, officialProductId);
+  const official = await getOfficialStoreIdentity();
+  if (!official?.canonicalStoreId) {
+    throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Loja Oficial nao configurada.');
+  }
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
@@ -445,6 +449,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     ...subscription,
     billingReference,
     officialProductId,
+    officialStoreId: official.canonicalStoreId,
     payerEmail: user.email,
     providerPaymentStatus: 'pending_confirmation',
     providerPaymentStatusDetail: null,
