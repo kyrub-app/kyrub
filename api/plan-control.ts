@@ -383,7 +383,7 @@ export default async function handler(
           allowMerchantSubscription: true,
         });
         if (route.kind === 'platform-plan') {
-          const checkout = await createOwnPaidPlanCheckout(authorization, route.plan);
+          const checkout = await createOwnPaidPlanCheckout(authorization, route.plan, body.productId);
           response.status(201).json(checkout);
           return;
         }
