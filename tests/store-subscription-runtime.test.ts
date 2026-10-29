@@ -124,3 +124,24 @@ test('subscription quote gateway validates input before consulting canonical cat
   assert.match(handler, /INVALID_SUBSCRIPTION_QUOTE_REQUEST/);
   assert.ok(handler.indexOf('INVALID_SUBSCRIPTION_QUOTE_REQUEST') < handler.indexOf('await quotePersistedMerchantSubscription'));
 });
+
+
+test('official Kyrub plan mapping cannot be billed through the merchant preapproval endpoint', () => {
+  assert.match(service, /kyrub_admin\/control_plane\/official_plan_products\/\$\{product\.id\}/);
+  assert.match(service, /OFFICIAL_PLAN_REQUIRES_PLATFORM_CHECKOUT/);
+  const guard = service.indexOf('if (officialPlanMapping.exists)');
+  const recipient = service.indexOf("context: 'store_subscription'", guard);
+  const provider = service.indexOf("'/preapproval'", guard);
+  assert.ok(guard >= 0 && recipient > guard && provider > recipient,
+    'Privileged official-plan check must run before merchant recipient and provider creation');
+});
+
+test('cart routes only eligible monthly subscriptions to the existing merchant preapproval', () => {
+  const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
+  assert.match(cart, /createMerchantSubscriptionCheckout\(/);
+  assert.match(cart, /cart\.length !== 1 \|\| subscriptions\[0\]\.quantity !== 1/);
+  assert.match(cart, /subscriptions\[0\]\.product\.contractDiscounts !== undefined/);
+  assert.match(cart, /subscriptionMonths !== 1/);
+  assert.match(cart, /hasSubscriptionCartItem && !canStartLegacyMonthlySubscription/);
+  assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
+});
