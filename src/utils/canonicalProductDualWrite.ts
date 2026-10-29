@@ -4,6 +4,7 @@ import {
   doc,
   deleteField,
   getDocs,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   writeBatch,
@@ -21,7 +22,7 @@ import {
   activateOperationalDualWrite,
   resolveCanonicalStoreForLegacyTenant,
 } from './operationalDualWrite';
-import type { CanonicalStoreRecord } from './storeDirectory';
+import { parseCanonicalStore, type CanonicalStoreRecord } from './storeDirectory';
 import type { StoreRole } from './storeSecurity';
 import {
   parseProductSaleModality,
@@ -343,6 +344,15 @@ export const syncLegacyProductsToCanonical = async (
   legacyProducts: PublicProduct[]
 ): Promise<CanonicalProductSyncStats> => {
   assertMigrationContext(user, canonicalStore, canonicalStore.legacyTenantId);
+  // The listener can outlive a migration-status change. Re-read the store
+  // before every batch so a stale dual_write snapshot cannot overwrite
+  // products after another session switches the store to canonical.
+  const currentStoreSnapshot = await getDoc(doc(db, 'stores', canonicalStore.id));
+  const currentStore = parseCanonicalStore(currentStoreSnapshot.data());
+  if (!currentStore || currentStore.migrationStatus === 'canonical') {
+    throw new Error('A migração legada foi interrompida: a loja está ausente ou já utiliza o catálogo canônico.');
+  }
+  assertMigrationContext(user, currentStore, canonicalStore.legacyTenantId);
   const products = selectLegacyPublicProductsForStore(
     legacyProducts,
     canonicalStore.legacyTenantId
