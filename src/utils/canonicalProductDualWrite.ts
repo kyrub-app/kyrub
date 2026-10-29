@@ -26,6 +26,7 @@ import {
   type ProductSaleModality,
 } from '../../shared/productSaleModality';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
+import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers';
 
 export type CanonicalProductPublicationStatus =
   | 'draft'
@@ -46,6 +47,7 @@ export interface CanonicalProductMirrorData {
   isService: boolean;
   storePointsPerUnit: number;
   saleModality: ProductSaleModality;
+  contractDiscounts?: PublicProduct['contractDiscounts'];
   publicationStatus: CanonicalProductPublicationStatus;
   createdByUserId: string;
   createdByRole: StoreRole;
@@ -182,6 +184,7 @@ export const buildCanonicalProductMirrorData = (
     isService: product.isService === true,
     storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
     saleModality,
+    ...(product.contractDiscounts !== undefined ? { contractDiscounts: parseSubscriptionContractDiscounts(product.contractDiscounts) ?? undefined } : {}),
     publicationStatus: 'published',
     createdByUserId: actorUserId,
     createdByRole: migratedByRole,
@@ -216,6 +219,7 @@ const comparableProductFields = (
   isService: value.isService === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(value.storePointsPerUnit),
   saleModality: parseProductSaleModality(value.saleModality),
+  contractDiscounts: value.contractDiscounts === undefined ? null : parseSubscriptionContractDiscounts(value.contractDiscounts),
   publicationStatus: cleanString(value.publicationStatus),
   legacyUpdatedAt: cleanString(value.legacyUpdatedAt),
   archivedAt: cleanString(value.archivedAt),
