@@ -382,7 +382,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   }
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
-  const plan = await selectedPlan(targetPlan);
+  const plan = await selectedPlan(targetPlan, officialProductId);
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
