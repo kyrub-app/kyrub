@@ -312,3 +312,21 @@ test('unified catalog checkout authenticates and routes official plans without m
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
 });
+
+
+test('unified catalog subscription checkout authenticates, resolves privileged billing route, and never charges Free', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /await resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf('FREE_PLAN_CHECKOUT_NOT_REQUIRED') < handler.indexOf('createAuthorizedStoreSubscription(authorization, body)'));
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+});
