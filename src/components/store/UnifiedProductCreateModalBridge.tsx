@@ -53,7 +53,10 @@ export function UnifiedProductCreateModalBridge() {
         ? tenant.data()!.canonicalStoreId.trim() : '';
       if (mappedId) {
         const store = await getDoc(doc(db, 'stores', mappedId));
-        if (store.exists() && store.data().migrationStatus === 'canonical') {
+        if (!store.exists()) {
+          throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
+        }
+        if (store.data().migrationStatus === 'canonical') {
           await persistCanonicalPublicProduct(currentUser, mappedId, product as PublicProduct);
           setIsOpen(false);
           return;
