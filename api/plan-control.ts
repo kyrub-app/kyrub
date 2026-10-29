@@ -477,6 +477,8 @@ export default async function handler(
         'MISSING_MONTHLY_BASELINE',
         'DUPLICATE_SUBSCRIPTION_CONTRACT_TERM',
         'UNSUPPORTED_RECURRING_CONTRACT_TERM',
+        'INVALID_CONTRACT_PAYMENT_TERMS',
+        'INVALID_CONTRACT_INSTALLMENTS',
       ]);
       if (error instanceof Error && validationCodes.has(error.message)) {
         response.status(409).json({
