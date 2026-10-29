@@ -735,8 +735,16 @@ export const handlePaidPlanProviderWebhook = async (input: {
     };
     await adminDb.runTransaction(async transaction => {
       const latest = await transaction.get(reservation.ref);
-      if (latest.data()?.billingReference !== reference ||
-          latest.data()?.checkoutReservationStatus !== 'pending') {
+      if (latest.data()?.billingReference !== reference) {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
+      }
+      // Repeated webhooks can race to recover the same preapproval. The
+      // already-completed matching reservation is safe to reconcile again.
+      if (latest.data()?.checkoutReservationStatus === 'completed' &&
+          clean(latest.data()?.providerSubscriptionId) === providerSubscriptionId) {
+        return;
+      }
+      if (latest.data()?.checkoutReservationStatus !== 'pending') {
         throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
       }
       transaction.set(reservation.ref, {
