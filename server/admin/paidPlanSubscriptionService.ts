@@ -585,6 +585,7 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
           updatedAt: FieldValue.serverTimestamp(),
         }, { merge: true });
       });
+      await persistProviderState(ownerId, provider, recovered);
       return loadOwnPlanSubscriptionState(authorization);
     }
     // A missing result is not proof of absence: keep the reservation locked.
