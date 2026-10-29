@@ -75,3 +75,15 @@ it('official plan checkout refuses storefront price differing from control-plane
   assert.ok(source.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH') < source.indexOf('return resolveCheckoutBillingRoute'),
     'Price mismatch must block checkout before recipient routing');
 });
+
+
+it('monthly catalog checkout fails closed on unknown contract and payment fields', () => {
+  const gateway = readFileSync('api/plan-control.ts', 'utf8');
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some\(key => key !== 'storeId' && key !== 'productId'\)/);
+  assert.ok(handler.indexOf('Object.keys(body)') < handler.indexOf('resolvePersistedProductCheckoutRoute'),
+    'Unknown contract terms must be rejected before billing route resolution');
+});
