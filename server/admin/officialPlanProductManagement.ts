@@ -47,6 +47,9 @@ export const assignOfficialPlanProduct = async (input: {
         mapping.data()?.planId !== input.planId)) {
       throw new PlanManagementError(409, 'OFFICIAL_PLAN_MAPPING_CONFLICT', 'Vínculo existente pertence a outra loja ou a outro plano.');
     }
+    if (mapping.exists && mapping.data()?.status !== 'active') {
+      throw new PlanManagementError(409, 'OFFICIAL_PLAN_MAPPING_INACTIVE', 'Vínculo inativo exige revisão administrativa antes de reativar.');
+    }
     transaction.set(mappingRef, {
       schemaVersion: 1,
       productId: input.productId,
