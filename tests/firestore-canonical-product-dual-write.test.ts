@@ -185,6 +185,31 @@ test('owner can publish a canonical subscription with contract offers and custom
   }));
 });
 
+test('manager can create a direct canonical subscription offer without legacy provenance', async () => {
+  const manager = environment.authenticatedContext('manager-a').firestore();
+  const reference = doc(manager, 'stores', STORE_ID, 'products', 'product-manager-a');
+  await assertSucceeds(setDoc(reference, {
+    ...directManagerProduct(),
+    isService: true,
+    stock: 0,
+    publicationStatus: 'published',
+    saleModality: {
+      schemaVersion: 1,
+      mode: 'subscription',
+      subscription: {
+        schemaVersion: 1,
+        billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+        autoRenew: true,
+      },
+    },
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    categoryCollections: [],
+    optionGroups: [],
+    quickNotes: [],
+  }));
+});
+
 test('rejects contract discounts without subscription modality', async () => {
   const owner = environment.authenticatedContext('owner-a').firestore();
   await assertFails(setDoc(doc(owner, 'stores', STORE_ID, 'products', 'product-a'), {
