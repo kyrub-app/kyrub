@@ -704,6 +704,13 @@ export const createAuthorizedStoreSubscription = async (
     fail(409, 'STORE_SUBSCRIPTION_EMAIL_UNVERIFIED', 'Confirme seu e-mail antes de iniciar uma assinatura.');
   }
 
+  // This legacy provider endpoint creates an auto-recurring preapproval only.
+  // Fixed-term prepaid contracts must use their own explicitly supported collection flow.
+  if (payload.selectedMonths !== undefined || payload.paymentTerms !== undefined ||
+      payload.contractDiscounts !== undefined || payload.installments !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+      'Prazos contratuais e pagamentos antecipados não são aceitos neste checkout recorrente.');
+  }
   const store = await resolveCanonicalStore(payload.storeId);
   const product = await loadPublishedSubscriptionProduct(store.canonicalStoreId, payload.productId);
   const recipient = await resolveCommercialRecipientAuthority({
