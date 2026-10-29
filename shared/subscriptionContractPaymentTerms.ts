@@ -13,11 +13,11 @@ export const validateSubscriptionContractPaymentTerms = (
 ): void => {
   if (!payment || typeof payment !== 'object') throw new Error('INVALID_CONTRACT_PAYMENT_TERMS');
   if (payment.collectionMode === 'prepaid') {
-    if (payment.installments !== 1) {
-      throw new Error('INVALID_CONTRACT_INSTALLMENTS');
-    }
     if ('billingIntervalMonths' in payment && payment.billingIntervalMonths !== undefined) {
       throw new Error('INVALID_CONTRACT_PAYMENT_TERMS');
+    }
+    if (payment.installments !== 1) {
+      throw new Error('INVALID_CONTRACT_INSTALLMENTS');
     }
     return;
   }
