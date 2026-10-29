@@ -118,7 +118,7 @@ test('rejects malformed contract offers instead of silently publishing without d
 test('preserves product catalog fields required for canonical storefront parity', () => {
   const product = legacyProduct({
     isComplimentary: true,
-    categoryCollections: [{ id: 'collection-a', name: 'Coleção A' }] as PublicProduct['categoryCollections'],
+    categoryCollections: [{ path: 'colecao-a', name: 'Coleção A', image: '' }] as PublicProduct['categoryCollections'],
     quickNotes: ['Sem embalagem'],
   });
   const mirrored = buildCanonicalProductMirrorData(product, 'store-independent-a', 'owner-a');
