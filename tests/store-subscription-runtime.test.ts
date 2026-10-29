@@ -149,3 +149,21 @@ test('cart routes eligible monthly subscriptions through the canonical platform-
   assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
   assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
 });
+
+
+test('unified subscription checkout authenticates and resolves persisted official routing before payment', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some\(/);
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /await resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('await resolvePersistedProductCheckoutRoute'));
+});
