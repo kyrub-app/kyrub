@@ -38,3 +38,26 @@ it('official plan contract offers cannot silently fall back to monthly-only chec
   assert.match(source, /planId !== null && data\.contractDiscounts !== undefined/);
   assert.match(source, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
 });
+
+
+describe('unified catalog subscription checkout', () => {
+  const gateway = readFileSync('api/plan-control.ts', 'utf8');
+  const client = readFileSync('src/utils/storeSubscription.ts', 'utf8');
+  const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
+
+  it('routes canonical official plans to platform billing and merchant subscriptions to OAuth billing', () => {
+    const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+    const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+    assert.ok(start >= 0 && end > start);
+    const handler = gateway.slice(start, end);
+    assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+    assert.match(handler, /route\.kind === 'platform-plan'/);
+    assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+    assert.match(handler, /route\.kind === 'free-plan'/);
+    assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+    assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+    assert.match(handler, /body\.selectedMonths !== undefined \|\| body\.paymentTerms !== undefined/);
+    assert.match(client, /post\('catalog\.subscription\.checkout'/);
+    assert.match(cart, /createCatalogSubscriptionCheckout\(/);
+  });
+});
