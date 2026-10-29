@@ -43,8 +43,9 @@ export const assignOfficialPlanProduct = async (input: {
         modality.subscription.benefit.kind !== 'access') {
       throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_NOT_ELIGIBLE', 'Produto oficial não elegível para assinatura mensal.');
     }
-    if (mapping.exists && mapping.data()?.canonicalStoreId !== official.canonicalStoreId) {
-      throw new PlanManagementError(409, 'OFFICIAL_PLAN_MAPPING_CONFLICT', 'Vínculo pertence a outra loja.');
+    if (mapping.exists && (mapping.data()?.canonicalStoreId !== official.canonicalStoreId ||
+        mapping.data()?.planId !== input.planId)) {
+      throw new PlanManagementError(409, 'OFFICIAL_PLAN_MAPPING_CONFLICT', 'Vínculo existente pertence a outra loja ou a outro plano.');
     }
     transaction.set(mappingRef, {
       schemaVersion: 1,
