@@ -17,6 +17,7 @@ import {
 export const resolvePersistedProductCheckoutRoute = async (input: {
   sellerStoreReference: string;
   productId: string;
+  allowMerchantSubscription?: boolean;
 }): Promise<CheckoutBillingRoute> => {
   const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(productId)) {
@@ -107,7 +108,7 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   if (!parsedModality) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_SALE_MODALITY', 'Forma de venda do produto inválida.');
   }
-  if (planId === null && parsedModality.mode === 'subscription') {
+  if (planId === null && parsedModality.mode === 'subscription' && !input.allowMerchantSubscription) {
     throw new OfficialPlanCheckoutRouteError(
       'MERCHANT_SUBSCRIPTION_CHECKOUT_REQUIRED',
       'Assinaturas de lojistas exigem o checkout de contratos.'
