@@ -526,7 +526,16 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     updatedAt: FieldValue.serverTimestamp(),
     });
   });
-  return { checkoutUrl, subscription };
+  // A webhook may have already confirmed payment while the checkout request
+  // was finishing. Return the persisted state instead of a stale local copy.
+  const completed = await reservationRef.get();
+  const persisted = parseStoredSubscription(ownerId, completed.data() as Record<string, unknown>);
+  if (completed.data()?.billingReference !== billingReference ||
+      completed.data()?.checkoutReservationStatus !== 'completed' ||
+      persisted?.providerSubscriptionId !== providerSubscriptionId) {
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A contratacao foi alterada antes da resposta do checkout.');
+  }
+  return { checkoutUrl: persisted.checkoutUrl || checkoutUrl, subscription: persisted };
 };
 
 export const reconcileOwnPaidPlanSubscription = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
