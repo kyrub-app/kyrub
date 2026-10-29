@@ -328,7 +328,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           const tenantData = snapshot.data();
           // The tenant still owns the category hierarchy and preparation
           // stations, but the product list comes from the preferred catalog.
-          setCatalogPaths(previous =>
+          setCatalogPaths(
             mergeCatalogCategoryPaths(
               parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths),
               catalogProducts
