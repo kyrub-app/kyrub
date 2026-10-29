@@ -297,6 +297,11 @@ const deactivateSubscriptionEntitlement = async (
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
+    const currentSubscription = await transaction.get(subscriptionRef);
+    if (currentSubscription.data()?.checkoutReservationStatus === 'pending' ||
+        clean(currentSubscription.data()?.providerSubscriptionId) !== providerSubscriptionId) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura alterada antes da revogacao do plano.');
+    }
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
     const owns = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
