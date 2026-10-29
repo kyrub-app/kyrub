@@ -190,6 +190,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [hierarchySegments, setHierarchySegments] = useState<string[]>([]);
   const [catalogPaths, setCatalogPaths] = useState<ProductCategoryCollection[]>([]);
   const [canonicalCategoryStoreId, setCanonicalCategoryStoreId] = useState('');
+  const [canonicalCategoriesLoading, setCanonicalCategoriesLoading] = useState(false);
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
   const [image, setImage] = useState('');
   const [imageFileName, setImageFileName] = useState('');
@@ -325,6 +326,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeCatalog = () => undefined;
       unsubscribeCanonicalCategories = () => undefined;
       setCanonicalCategoryStoreId('');
+      setCanonicalCategoriesLoading(false);
       unsubscribeInventory = () => undefined;
       if (!user) return;
 
@@ -398,6 +400,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
             canonicalPathsLoaded = !nextStoreId;
             canonicalStoredPaths = [];
             setCanonicalCategoryStoreId('');
+            setCanonicalCategoriesLoading(Boolean(nextStoreId));
             if (nextStoreId) {
               unsubscribeCanonicalCategories = onSnapshot(doc(db, 'stores', nextStoreId), snapshot => {
                 if (activeCanonicalStoreId !== nextStoreId) return;
@@ -413,6 +416,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                   return;
                 }
                 canonicalPathsLoaded = true;
+                setCanonicalCategoriesLoading(false);
                 setCanonicalCategoryStoreId(nextStoreId);
                 publishCatalogPaths();
               }, error => console.warn('Não foi possível carregar as pastas canônicas.', error));
@@ -769,7 +773,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                   setCatalogPaths(nextPaths);
                   if (nextProducts) setCatalogProducts(nextProducts);
                 }}
-                disabled={isSaving}
+                disabled={isSaving || canonicalCategoriesLoading}
               />
 
               <section
