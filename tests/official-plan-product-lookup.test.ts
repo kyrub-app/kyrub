@@ -125,7 +125,7 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /reservedCurrency: 'BRL'/);
     assert.match(billing, /reservedPayerEmail: user\.email/);
     assert.match(billing, /snapshot\.data\(\)\?\.billingReference/);
-    assert.match(billing, /reservation\.data\(\)\?\.billingReference !== billingReference/);
+    assert.match(billing, /decideReservationCompletion\(billingReference, providerSubscriptionId, reservation\.data\(\) \?\? \{\}\)/);
     assert.ok(billing.indexOf('const latestOffer = await selectedPlan') < billing.indexOf("mpRequest('/preapproval',"));
     assert.match(billing, /officialProductId/);
     assert.match(billing, /officialStoreId: official\.canonicalStoreId/);
