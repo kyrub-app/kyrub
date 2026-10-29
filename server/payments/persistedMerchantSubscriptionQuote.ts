@@ -20,6 +20,10 @@ export const quotePersistedMerchantSubscription = async (input: {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(productId)) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_ID', 'Produto inválido.');
   }
+  if (typeof input.sellerStoreReference !== 'string' ||
+      !input.sellerStoreReference.trim()) {
+    throw new OfficialPlanCheckoutRouteError('INVALID_STORE_REFERENCE', 'Loja inválida.');
+  }
   const seller = await resolveCanonicalStoreIdentity(input.sellerStoreReference, {
     requirePublishedTenant: true,
   });
