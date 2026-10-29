@@ -615,6 +615,8 @@ export const subscribeToPreferredPublicProducts = (
   let canonicalEnabled = false;
   let canonicalCutover = false;
   let latestCanonicalReadPreference = false;
+  let canonicalSubscriptionGeneration = 0;
+  let storeSubscriptionGeneration = 0;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
   let unsubscribeStore: Unsubscribe = () => undefined;
 
@@ -646,6 +648,7 @@ export const subscribeToPreferredPublicProducts = (
   };
 
   const restartCanonicalSubscription = (): void => {
+    const generation = ++canonicalSubscriptionGeneration;
     unsubscribeCanonical();
     unsubscribeCanonical = () => undefined;
     canonicalProducts = [];
@@ -663,6 +666,7 @@ export const subscribeToPreferredPublicProducts = (
         where('publicationStatus', '==', 'published')
       ),
       snapshot => {
+        if (generation !== canonicalSubscriptionGeneration) return;
         canonicalProducts = snapshot.docs.flatMap(document => {
           const parsed = parseCanonicalPublicProduct(
             document,
@@ -674,6 +678,7 @@ export const subscribeToPreferredPublicProducts = (
         publish();
       },
       error => {
+        if (generation !== canonicalSubscriptionGeneration) return;
         canonicalProducts = [];
         canonicalState = 'unavailable';
         publish();
@@ -694,10 +699,12 @@ export const subscribeToPreferredPublicProducts = (
       latestCanonicalReadPreference = config.preferences.products;
       canonicalEnabled = latestCanonicalReadPreference || (canonicalCutover && canonicalStoreId === previousStoreId);
       if (canonicalStoreId !== previousStoreId) {
+        const storeGeneration = ++storeSubscriptionGeneration;
         unsubscribeStore();
         canonicalCutover = false;
         unsubscribeStore = canonicalStoreId
           ? onSnapshot(doc(db, 'stores', canonicalStoreId), storeSnapshot => {
+              if (storeGeneration !== storeSubscriptionGeneration) return;
               const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
               const changed = canonicalCutover !== cutover;
               canonicalCutover = cutover;
@@ -710,7 +717,9 @@ export const subscribeToPreferredPublicProducts = (
               } else if (changed) {
                 publish();
               }
-            }, error => onError?.(error))
+            }, error => {
+              if (storeGeneration === storeSubscriptionGeneration) onError?.(error);
+            })
           : () => undefined;
       }
 
@@ -733,6 +742,8 @@ export const subscribeToPreferredPublicProducts = (
   );
 
   return () => {
+    ++canonicalSubscriptionGeneration;
+    ++storeSubscriptionGeneration;
     unsubscribeTenant();
     unsubscribeCanonical();
     unsubscribeStore();
