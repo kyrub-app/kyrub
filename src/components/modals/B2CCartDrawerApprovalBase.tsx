@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
-import { createMerchantSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
+import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
 import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
@@ -335,7 +335,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       }
       setIsSubmitting(true);
       try {
-        const result = await createMerchantSubscriptionCheckout({
+        const result = await createCatalogSubscriptionCheckout({
           storeId: visitingStore.id,
           productId: subscriptions[0].product.id,
         });
