@@ -77,8 +77,17 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
     // not the storefront product price. Reject mismatches before payment.
     const catalog = await loadPublicActivePlanCatalog();
     const activePlan = catalog.plans.find(entry => entry.planId === planId);
+    // Paid plans must use a published Control Plane price, never the compiled
+    // display fallback. Free must remain free in both catalog and storefront.
+    if (planId === 'free' ? (!activePlan || activePlan.monthlyPriceBRL !== 0) :
+        (!activePlan || activePlan.source !== 'control_plane' || activePlan.monthlyPriceBRL <= 0)) {
+      throw new OfficialPlanCheckoutRouteError(
+        'OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED',
+        'O plano não possui preço autorizado para contratação.'
+      );
+    }
     const productPrice = data.price;
-    if (!activePlan || typeof productPrice !== 'number' ||
+    if (typeof productPrice !== 'number' ||
         !Number.isFinite(productPrice) || productPrice < 0 ||
         !Number.isSafeInteger(Math.round(productPrice * 100)) ||
         Math.abs(productPrice * 100 - Math.round(productPrice * 100)) > 1e-7 ||
