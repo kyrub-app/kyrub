@@ -31,3 +31,10 @@ describe('official plan product management gateway', () => {
     assert.match(management, /transaction\.set\(mappingRef/);
   });
 });
+
+
+test('official plan contract offers cannot silently fall back to monthly-only checkout', () => {
+  const source = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(source, /planId !== null && data\.contractDiscounts !== undefined/);
+  assert.match(source, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+});
