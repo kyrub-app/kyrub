@@ -131,6 +131,25 @@ test('preserves product catalog fields required for canonical storefront parity'
   } as unknown as Record<string, unknown>, mirrored), true);
 });
 
+test('detects customization and collection drift before canonical cutover', () => {
+  const expected = buildCanonicalProductMirrorData(legacyProduct({
+    categoryCollections: [{ path: 'colecao-a', name: 'Coleção A', image: '' }],
+    quickNotes: ['Sem embalagem'],
+    isComplimentary: true,
+  }), 'store-independent-a', 'owner-a');
+  assert.equal(canonicalProductNeedsUpdate(expected as unknown as Record<string, unknown>, expected), false);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, categoryCollections: [],
+  }, expected), true);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, quickNotes: [],
+    optionGroups: [],
+  }, expected), true);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, isComplimentary: false,
+  }, expected), true);
+});
+
 test('services are mirrored with zero stock', () => {
   const mirrored = buildCanonicalProductMirrorData(
     legacyProduct({ isService: true, stock: 12 }),
