@@ -392,7 +392,9 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   return {
     billing: loadPaidPlanBillingAvailability(),
-    subscription: parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined),
+    subscription: snapshot.data()?.checkoutReservationStatus === 'pending'
+      ? null
+      : parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined),
   };
 };
 
