@@ -613,15 +613,21 @@ export const subscribeToPreferredPublicProducts = (
   let canonicalState: 'waiting' | 'available' | 'unavailable' = 'waiting';
   let canonicalStoreId = '';
   let canonicalEnabled = false;
+  let canonicalCutover = false;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
+  let unsubscribeStore: Unsubscribe = () => undefined;
 
   const publish = (): void => {
-    const decision = chooseCanonicalReadSource(
-      canonicalEnabled,
-      canonicalStoreId,
-      canonicalState,
-      publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
-    );
+    // After cutover the legacy array is no longer authoritative. New canonical
+    // products intentionally diverge from it and must not trigger a fallback.
+    const decision = canonicalCutover
+      ? { source: 'canonical' as const, reason: 'canonical' as const }
+      : chooseCanonicalReadSource(
+        canonicalEnabled,
+        canonicalStoreId,
+        canonicalState,
+        publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
+      );
     recordCanonicalReadDecision(normalizedStoreId, 'products', decision);
     // Do not advertise unverified multi-month offers while a mapped canonical
     // catalog is waiting, unavailable or divergent. The payment quote reads only
@@ -681,6 +687,23 @@ export const subscribeToPreferredPublicProducts = (
       const config = parseCanonicalReadConfig(data);
       canonicalStoreId = config.canonicalStoreId;
       canonicalEnabled = config.preferences.products;
+      if (canonicalStoreId !== previousStoreId) {
+        unsubscribeStore();
+        canonicalCutover = false;
+        unsubscribeStore = canonicalStoreId
+          ? onSnapshot(doc(db, 'stores', canonicalStoreId), storeSnapshot => {
+              const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
+              const changed = canonicalCutover !== cutover;
+              canonicalCutover = cutover;
+              if (cutover && !canonicalEnabled) {
+                canonicalEnabled = true;
+                restartCanonicalSubscription();
+              } else if (changed) {
+                publish();
+              }
+            }, error => onError?.(error))
+          : () => undefined;
+      }
 
       if (
         canonicalStoreId !== previousStoreId ||
@@ -703,5 +726,6 @@ export const subscribeToPreferredPublicProducts = (
   return () => {
     unsubscribeTenant();
     unsubscribeCanonical();
+    unsubscribeStore();
   };
 };
