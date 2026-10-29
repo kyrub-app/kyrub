@@ -45,6 +45,9 @@ export const quotePersistedMerchantSubscription = async (input: {
   if (mapping.exists) {
     throw new OfficialPlanCheckoutRouteError('OFFICIAL_PLAN_REQUIRES_PLATFORM_QUOTE', 'Use a cotação oficial do plano.');
   }
+  // A canonical product is the only source of payable contract terms.
+  // A legacy storefront may still display newer offers while its migration
+  // is pending; do not silently quote an older canonical catalog.
   const price = data.price;
   if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 ||
       !Number.isSafeInteger(Math.round(price * 100)) ||
