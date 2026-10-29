@@ -5,6 +5,7 @@ import {
   deleteCatalogCategoryTreePath,
   deriveCatalogCategoryPaths,
   MAX_CATALOG_CATEGORY_LEVELS,
+  mergeCatalogCategoryPaths,
   parseCatalogCategoryPaths,
   planCanonicalCategoryProductUpdates,
   renameCatalogCategoryTree,
@@ -167,6 +168,14 @@ describe('catalog category tree', () => {
     assert.equal(parsed[0]?.path, 'A > B > C > D > E > F');
     assert.equal(parsed[0]?.name, 'F');
   });
+  test('preserves empty folder metadata while deriving occupied canonical paths', () => {
+    const empty = { path: 'Alimentação > Bebidas', name: 'Bebidas', image: 'bebidas.jpg' };
+    const occupied = product('pizza', 'Alimentação > Pizzaria');
+    const paths = mergeCatalogCategoryPaths([empty], [occupied]);
+    assert.ok(paths.some(path => path.path === empty.path && path.image === empty.image));
+    assert.ok(paths.some(path => path.path === occupied.category));
+  });
+
   test('canonical update plan touches only changed category fields', () => {
     const original = [
       product('a', 'Alimentação > Restaurante', [{ path: 'Alimentação > Restaurante', name: 'Restaurante', image: 'a.jpg' }]),
