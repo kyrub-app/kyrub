@@ -15,7 +15,7 @@ export const quotePersistedMerchantSubscription = async (input: {
   productId: string;
   selectedMonths: ContractTermMonths;
   paymentTerms: SubscriptionContractPaymentTerms;
-}): Promise<SubscriptionContractOffer> => {
+}): Promise<{ quote: SubscriptionContractOffer; paymentTerms: SubscriptionContractPaymentTerms }> => {
   const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(productId)) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_ID', 'Produto inválido.');
@@ -47,11 +47,12 @@ export const quotePersistedMerchantSubscription = async (input: {
       Math.abs(price * 100 - Math.round(price * 100)) > 1e-7) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PERSISTED_PRODUCT_PRICE', 'Preço do produto inválido.');
   }
-  return resolveSubscriptionContractQuote({
+  const quote = resolveSubscriptionContractQuote({
     persistedSaleModality: data.saleModality,
     authoritativeMonthlyPriceMinor: Math.round(price * 100),
     persistedOffers: data.contractDiscounts,
     selectedMonths: input.selectedMonths,
     paymentTerms: input.paymentTerms,
   });
+  return { quote, paymentTerms: input.paymentTerms };
 };
