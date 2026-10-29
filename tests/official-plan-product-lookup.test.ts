@@ -10,6 +10,11 @@ describe('official plan product lookup boundaries', () => {
     assert.match(source, /mappingData\.planId/);
     assert.doesNotMatch(source, /input\.platformPlanId/);
   });
+  it('rejects fixed-term offers before monthly platform checkout can ignore their discounts', () => {
+    assert.match(source, /data\.contractDiscounts !== undefined/);
+    assert.match(source, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+    assert.ok(source.indexOf('OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED') < source.indexOf('loadPublicActivePlanCatalog()'));
+  });
   it('checks subscription modality and official store identity before platform routing', () => {
     assert.match(source, /parseProductSaleModality/);
     assert.match(source, /getOfficialStoreIdentity/);
