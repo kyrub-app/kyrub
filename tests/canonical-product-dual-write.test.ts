@@ -100,6 +100,21 @@ test('canonical sync update writes and removes contract discounts', () => {
   assert.match(source, /contractDiscounts: value\.contractDiscounts === undefined/);
 });
 
+test('rejects malformed contract offers instead of silently publishing without discounts', () => {
+  const saleModality = buildSubscriptionSaleModality({
+    billingUnit: 'month',
+    benefitKind: 'recurring_delivery',
+    unitsPerCycle: 1,
+  });
+  assert.throws(() => buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [{ months: 6, discountPercent: 10 }],
+  }), 'store-independent-a', 'owner-a'), /períodos de contratação/);
+  assert.throws(() => buildCanonicalProductMirrorData(legacyProduct({
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+  }), 'store-independent-a', 'owner-a'), /períodos de contratação/);
+});
+
 test('services are mirrored with zero stock', () => {
   const mirrored = buildCanonicalProductMirrorData(
     legacyProduct({ isService: true, stock: 12 }),
