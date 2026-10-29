@@ -169,30 +169,26 @@ test('unified subscription checkout authenticates and resolves persisted officia
 });
 
 
-test('unified checkout fails closed on official contract discounts, price mismatch and non-subscription products', () => {
+test('unified checkout rejects invalid official prices, contract offers and non-subscription products', () => {
   const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
   assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
-  assert.match(lookup, /data\.contractDiscounts !== undefined/);
-  assert.match(lookup, /OFFICIAL_PLAN_PRICE_MISMATCH/);
-  assert.match(lookup, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  assert.match(lookup, /data\\.contractDiscounts !== undefined/);
+  assert.match(lookup, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(lookup, /planId === 'free' \\? productPrice !== 0 : productPrice <= 0/);
   assert.match(lookup, /PRODUCT_NOT_SUBSCRIPTION/);
-  assert.match(lookup, /parsedModality\.mode !== 'subscription'/);
-  const priceGuard = lookup.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH');
-  const route = lookup.indexOf('return resolveCheckoutBillingRoute');
-  assert.ok(priceGuard >= 0 && route > priceGuard, 'Price validation must precede billing routing');
+  assert.match(lookup, /parsedModality\\.mode !== 'subscription'/);
+  assert.ok(lookup.indexOf('INVALID_OFFICIAL_PLAN_PRICE') < lookup.indexOf('return resolveCheckoutBillingRoute'));
 });
 
 
-test('official plan billing uses control-plane price and cannot silently charge a different storefront amount', () => {
+test('official plan billing uses the published storefront price, with governance-owned identity mapping', () => {
   const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
-  const guard = lookup.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH');
-  const route = lookup.indexOf('return resolveCheckoutBillingRoute');
-  assert.ok(guard >= 0 && route > guard);
-  assert.match(lookup, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
-  assert.match(lookup, /mappingData\.canonicalStoreId !== seller\.canonicalStoreId/);
-  assert.match(lookup, /mappingData\.status !== 'active'/);
-  assert.match(lookup, /data\.contractDiscounts !== undefined/);
+  assert.match(lookup, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(lookup, /mappingData\\.canonicalStoreId !== seller\\.canonicalStoreId/);
+  assert.match(lookup, /mappingData\\.status !== 'active'/);
+  assert.match(lookup, /data\\.contractDiscounts !== undefined/);
   assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.doesNotMatch(lookup, /OFFICIAL_PLAN_PRICE_MISMATCH/);
 });
 
 
@@ -212,7 +208,7 @@ test('unified subscription checkout authenticates and resolves persisted officia
   assert.match(handler, /route\.kind === 'free-plan'/);
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.match(route, /official_plan_products\/\$\{productId\}/);
-  assert.match(route, /OFFICIAL_PLAN_PRICE_MISMATCH/);
+  assert.match(route, /INVALID_OFFICIAL_PLAN_PRICE/);
   assert.match(route, /PRODUCT_NOT_SUBSCRIPTION/);
   assert.match(client, /catalog\.subscription\.checkout/);
 });
