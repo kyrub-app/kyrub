@@ -230,8 +230,8 @@ const loadPublishedSubscriptionProduct = async (
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_PUBLISHED', 'O produto não está publicado.');
   }
   const name = clean(data.name);
-  const price = Number(data.price);
-  const priceMinor = price * 100;
+  const price = data.price;
+  const priceMinor = typeof price === 'number' ? price * 100 : NaN;
   const amountMinor = Number.isFinite(priceMinor) && Number.isSafeInteger(Math.round(priceMinor)) &&
     Math.abs(priceMinor - Math.round(priceMinor)) <= 1e-7
     ? Math.round(priceMinor) : 0;
