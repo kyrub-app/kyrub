@@ -337,9 +337,19 @@ export default async function handler(
           return;
         }
         await authenticateConsultantRequest(authorization);
+        if (typeof body.storeId !== 'string' || typeof body.productId !== 'string' ||
+            ![1, 3, 6, 12].includes(body.selectedMonths as number) ||
+            !body.paymentTerms || typeof body.paymentTerms !== 'object' ||
+            Array.isArray(body.paymentTerms)) {
+          response.status(400).json({
+            error: 'Informe loja, produto, prazo e condições de pagamento válidos.',
+            code: 'INVALID_SUBSCRIPTION_QUOTE_REQUEST',
+          });
+          return;
+        }
         const quote = await quotePersistedMerchantSubscription({
-          sellerStoreReference: String(body.storeId ?? ''),
-          productId: String(body.productId ?? ''),
+          sellerStoreReference: body.storeId,
+          productId: body.productId,
           selectedMonths: body.selectedMonths as 1 | 3 | 6 | 12,
           paymentTerms: body.paymentTerms as Parameters<typeof quotePersistedMerchantSubscription>[0]['paymentTerms'],
         });
