@@ -104,3 +104,10 @@ test('merchant subscription runtime does not add another Vercel serverless funct
   assert.ok(functions.includes('api/plan-control.ts'));
   assert.ok(functions.includes('api/action-execute.ts'));
 });
+
+test('legacy recurring checkout refuses persisted contract offers even when client omits terms', () => {
+  const service = readFileSync('server/payments/storeSubscriptionService.ts', 'utf8');
+  assert.match(service, /persistedProduct\.data\(\)\?\.contractDiscounts !== undefined/);
+  assert.match(service, /STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(service, /payload\.selectedMonths !== undefined/);
+});
