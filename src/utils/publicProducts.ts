@@ -2,6 +2,7 @@ import {
   collection,
   doc,
   deleteField,
+  getDoc,
   onSnapshot,
   query,
   runTransaction,
@@ -465,6 +466,29 @@ export const persistCanonicalPublicProduct = async (
       createdAt: serverTimestamp(),
     });
   });
+};
+
+/**
+ * Editor entry point: choose one catalog, never write both.
+ * The tenant mapping is a discovery hint; the canonical writer independently
+ * verifies ownership and cutover status in its Firestore transaction.
+ */
+export const persistProductForStore = async (
+  user: Pick<User, 'uid' | 'email'>,
+  product: PublicProduct
+): Promise<'canonical' | 'legacy'> => {
+  const tenant = await getDoc(doc(db, 'tenants', user.uid));
+  const mappedStoreId = typeof tenant.data()?.canonicalStoreId === 'string'
+    ? tenant.data()!.canonicalStoreId.trim() : '';
+  if (mappedStoreId) {
+    const store = await getDoc(doc(db, 'stores', mappedStoreId));
+    if (store.exists() && store.data().migrationStatus === 'canonical') {
+      await persistCanonicalPublicProduct(user, mappedStoreId, product);
+      return 'canonical';
+    }
+  }
+  await persistPublicProduct(user, product);
+  return 'legacy';
 };
 
 export const persistPublicProduct = async (
