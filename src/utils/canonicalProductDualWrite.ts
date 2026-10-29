@@ -304,11 +304,16 @@ export const getCanonicalProductIdsToArchive = (
 const commitOperations = async (
   operations: Array<(batch: WriteBatch) => void>
 ): Promise<void> => {
-  for (let index = 0; index < operations.length; index += 400) {
-    const batch = writeBatch(db);
-    operations.slice(index, index + 400).forEach(operation => operation(batch));
-    await batch.commit();
+  // A multi-batch migration could leave a partially synchronized catalog
+  // after a later batch fails. Fail closed until an explicit resumable
+  // migration with reconciliation is available.
+  if (operations.length > 400) {
+    throw new Error('A migração exige mais de 400 alterações; divida e reconcilie o catálogo antes de publicar.');
   }
+  if (operations.length === 0) return;
+  const batch = writeBatch(db);
+  operations.forEach(operation => operation(batch));
+  await batch.commit();
 };
 
 const assertMigrationContext = (
