@@ -19,7 +19,7 @@ import {
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
 import { quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
-import type { SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
+import { CONTRACT_TERM_MONTHS, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
   listMarketplacePromotions,
@@ -123,6 +123,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [formError, setFormError] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
   const [subscriptionQuote, setSubscriptionQuote] = useState<SubscriptionContractOffer | null>(null);
+  const [subscriptionMonths, setSubscriptionMonths] = useState<ContractTermMonths>(1);
   const [isQuotingSubscription, setIsQuotingSubscription] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<MarketplaceCouponQuote | null>(null);
@@ -471,7 +472,13 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
 
                 {cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription' && (
                   <div className="rounded-2xl border border-slate-700 p-3 text-xs text-slate-200">
-                    <p className="font-bold">Assinatura mensal</p>
+                    <p className="font-bold">Prazo da assinatura</p>
+                    <label className="mt-2 block text-slate-400" htmlFor="subscription-contract-months">Duração contratual</label>
+                    <select id="subscription-contract-months" value={subscriptionMonths}
+                      className="mt-1 rounded-lg border border-slate-600 bg-slate-900 p-2 text-white"
+                      onChange={event => { setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); }}>
+                      {CONTRACT_TERM_MONTHS.map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
+                    </select>
                     <p className="mt-1 text-slate-400">Consulte o valor oficial antes de contratar. Esta consulta não gera cobrança.</p>
                     <button
                       type="button"
@@ -484,8 +491,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                         void quoteMerchantSubscriptionContract({
                           storeId: visitingStore.id,
                           productId: cart[0].product.id,
-                          selectedMonths: 1,
-                          paymentTerms: { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null },
+                          selectedMonths: subscriptionMonths,
+                          paymentTerms: subscriptionMonths === 1
+                            ? { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null }
+                            : { collectionMode: 'prepaid', installments: 1 },
                         }).then(result => setSubscriptionQuote(result.quote))
                           .catch(error => setFormError(error instanceof Error ? error.message : 'Cotação indisponível.'))
                           .finally(() => setIsQuotingSubscription(false));
@@ -495,7 +504,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     </button>
                     {subscriptionQuote && (
                       <p className="mt-2 font-semibold">
-                        Valor mensal confirmado: {currencyFormatter.format(subscriptionQuote.totalMinor / 100)}
+                        Total do contrato confirmado: {currencyFormatter.format(subscriptionQuote.totalMinor / 100)}
+                        {' · '}Desconto: {subscriptionQuote.discountPercent}%
+                        {' · '}Equivalente mensal: {currencyFormatter.format(subscriptionQuote.monthlyEquivalentMinor / 100)}
                       </p>
                     )}
                     <p className="mt-2 text-amber-300">A contratação permanece indisponível neste carrinho.</p>
