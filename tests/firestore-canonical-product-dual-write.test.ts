@@ -238,6 +238,31 @@ test('canonical cutover blocks legacy mirror creation and updates but keeps dire
     updatedByRole: 'owner',
     updatedAt: serverTimestamp(),
   }));
+  // Cutover must not make previously migrated products read-only.
+  await assertSucceeds(updateDoc(existingReference, {
+    price: 24,
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-a'),
+    {
+      name: 'Produto migrado editado pelo gerente',
+      updatedByUserId: 'manager-a',
+      updatedByRole: 'manager',
+      updatedAt: serverTimestamp(),
+    }
+  ));
+  await assertFails(updateDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-a'),
+    {
+      legacyUpdatedAt: '2026-07-22T11:00:00.000Z',
+      updatedByUserId: 'manager-a',
+      updatedByRole: 'manager',
+      updatedAt: serverTimestamp(),
+    }
+  ));
   await assertSucceeds(setDoc(
     doc(manager, 'stores', STORE_ID, 'products', 'product-manager-a'),
     directManagerProduct()
