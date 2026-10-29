@@ -744,9 +744,12 @@ export const subscribeToPreferredPublicProducts = (
       }
     },
     error => {
+      // A tenant listener failure must not re-enable legacy reads after
+      // cutover or expose a stale legacy catalog.
       legacyProducts = [];
-      canonicalEnabled = false;
-      canonicalState = 'unavailable';
+      if (!canonicalCutover) {
+        canonicalEnabled = false;
+      }
       publish();
       onError?.(error);
     }
