@@ -113,6 +113,9 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /SUBSCRIPTION_RESERVATION_CONFLICT/);
     assert.match(billing, /SUBSCRIPTION_RECONCILIATION_REQUIRED/);
     assert.match(billing, /SUBSCRIPTION_RESERVATION_INVALID/);
+    assert.match(billing, /preapproval\/search\?payer_email=/);
+    assert.match(billing, /SUBSCRIPTION_RECONCILIATION_CONFLICT/);
+    assert.match(billing, /SUBSCRIPTION_RECONCILIATION_MISMATCH/);
     assert.match(billing, /reservedPlan: targetPlan/);
     assert.match(billing, /reservedAmountMinor: Math\.round\(plan\.monthlyPriceBRL \* 100\)/);
     assert.match(billing, /reservedCurrency: 'BRL'/);
