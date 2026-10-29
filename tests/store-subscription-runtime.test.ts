@@ -182,3 +182,19 @@ test('unified catalog checkout rejects contract terms before routing to either b
   assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('createOwnPaidPlanCheckout'));
   assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('createAuthorizedStoreSubscription'));
 });
+
+
+test('unified catalog checkout routes official paid plans to platform billing and merchant subscriptions to OAuth', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.ok(handler.indexOf('SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
+});
