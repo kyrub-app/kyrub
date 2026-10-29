@@ -398,6 +398,9 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Loja Oficial nao configurada.');
   }
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
+  if (existingSnapshot.data()?.checkoutReservationStatus === 'pending') {
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'Existe uma cobranca pendente de conciliacao. Conclua a verificacao antes de iniciar outra.');
+  }
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
     const provider = await mpRequest(`/preapproval/${encodeURIComponent(existing.providerSubscriptionId)}`) as MpPreapproval;
@@ -503,7 +506,7 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
   const ownerId = safeOwnerId(user.uid);
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
-  if (!subscription && snapshot.data()?.checkoutReservationStatus === 'pending') {
+  if (snapshot.data()?.checkoutReservationStatus === 'pending') {
     const reference = clean(snapshot.data()?.billingReference);
     if (!reference) {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem referencia de cobranca para conciliacao.');
