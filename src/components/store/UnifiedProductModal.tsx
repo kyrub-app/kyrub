@@ -771,6 +771,11 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 disabled={isSaving}
               />
 
+              {canonicalCategoriesError && (
+                <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-200">
+                  {canonicalCategoriesError}
+                </p>
+              )}
               <CatalogHierarchySelector
                 keywords={keywords}
                 canonicalStoreId={canonicalCategoryStoreId}
