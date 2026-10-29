@@ -6,6 +6,7 @@ import {
   buildPublicProduct,
   parsePublicProducts,
   parseProductCategoryCollections,
+  publicProductCollectionsEquivalent,
 } from '../src/utils/publicProducts';
 
 describe('public marketplace products', () => {
@@ -59,6 +60,26 @@ describe('public marketplace products', () => {
     assert.deepEqual(product.saleModality, saleModality);
     const [parsed] = parsePublicProducts([product]);
     assert.deepEqual(parsed?.saleModality, saleModality);
+  });
+
+  test('contract offers survive catalog parsing and trigger canonical mismatch detection', () => {
+    const saleModality = buildSubscriptionSaleModality({
+      billingUnit: 'month', benefitKind: 'access',
+    });
+    const product = buildPublicProduct({ uid: 'user-a' }, {
+      name: 'Serviço contratado', description: '', price: '70',
+      stock: '', category: 'Serviços', image: '', isService: true,
+      saleModality,
+      contractDiscounts: [
+        { months: 1, discountPercent: 0 },
+        { months: 6, discountPercent: 10 },
+      ],
+    }, 1_700_000_000_011);
+    const [parsed] = parsePublicProducts([product]);
+    assert.deepEqual(parsed?.contractDiscounts, product.contractDiscounts);
+    assert.equal(publicProductCollectionsEquivalent([product], [parsed]), true);
+    const altered = { ...parsed, contractDiscounts: [{ months: 1 as const, discountPercent: 0 }] };
+    assert.equal(publicProductCollectionsEquivalent([product], [altered]), false);
   });
 
   test('keeps store points on the same canonical product round trip', () => {
