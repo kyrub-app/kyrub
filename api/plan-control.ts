@@ -372,16 +372,6 @@ export default async function handler(
           });
           return;
         }
-        // This endpoint is monthly-only. Never silently discard a selected
-        // contract term or payment condition and charge a different offer.
-        if (body.selectedMonths !== undefined || body.paymentTerms !== undefined ||
-            body.contractDiscounts !== undefined || body.installments !== undefined) {
-          response.status(409).json({
-            error: 'Este checkout aceita apenas a assinatura mensal padrão. Utilize o checkout contratual para prazos e condições especiais.',
-            code: 'SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
-          });
-          return;
-        }
         // Authenticate before privileged product and plan mapping reads.
         await authenticateConsultantRequest(authorization);
         const route = await resolvePersistedProductCheckoutRoute({
