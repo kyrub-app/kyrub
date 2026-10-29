@@ -677,9 +677,62 @@ export const handlePaidPlanProviderWebhook = async (input: {
     throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'A assinatura do provedor está vinculada a mais de uma loja.');
   }
   if (matches.empty) {
-    // The checkout reservation can precede the provider ID write. The owner
-    // reconciliation path recovers that link by external_reference later.
-    console.warn('[Kyrub Plans] Webhook received before subscription linkage; reconciliation required.', providerSubscriptionId);
+    // A signed webhook may arrive after Mercado Pago creates the preapproval
+    // but before our checkout request writes the provider ID.
+    const provider = await mpRequest(`/preapproval/${encodeURIComponent(providerSubscriptionId)}`) as MpPreapproval & Record<string, unknown>;
+    const reference = clean(provider.external_reference);
+    if (!reference || clean(provider.id) !== providerSubscriptionId) return { accepted: true };
+    const reservations = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+      .where('billingReference', '==', reference).limit(2).get();
+    if (reservations.size > 1) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Referencia de cobranca vinculada a mais de uma loja.');
+    }
+    if (reservations.empty) return { accepted: true };
+    const reservation = reservations.docs[0];
+    const data = reservation.data();
+    if (data.checkoutReservationStatus !== 'pending') return { accepted: true };
+    const recurring = record(provider.auto_recurring);
+    const amount = Number(recurring.transaction_amount);
+    if (clean(provider.payer_email).toLowerCase() !== clean(data.reservedPayerEmail).toLowerCase() ||
+        !Number.isFinite(amount) || Math.round(amount * 100) !== data.reservedAmountMinor ||
+        clean(recurring.currency_id) !== data.reservedCurrency ||
+        recurring.frequency !== 1 || recurring.frequency_type !== 'months' ||
+        !Number.isSafeInteger(data.reservedPlanVersion) || data.reservedPlanVersion <= 0) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Notificacao de assinatura diverge da reserva.');
+    }
+    const checkoutUrl = clean(provider.init_point);
+    if (!checkoutUrl) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout.');
+    }
+    const ownerId = reservation.id;
+    const now = new Date().toISOString();
+    const recovered: KyrubPlanSubscriptionSnapshot = {
+      schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
+      storeId: ownerId, ownerId, plan: paidPlan(data.reservedPlan),
+      planVersion: data.reservedPlanVersion as number,
+      provider: PROVIDER, providerSubscriptionId,
+      providerStatus: providerStatus(provider.status),
+      amountMinor: data.reservedAmountMinor as number,
+      currency: 'BRL', checkoutUrl, createdAt: now, updatedAt: now,
+      activatedAt: null, cancelledAt: null,
+    };
+    await adminDb.runTransaction(async transaction => {
+      const latest = await transaction.get(reservation.ref);
+      if (latest.data()?.billingReference !== reference ||
+          latest.data()?.checkoutReservationStatus !== 'pending') {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
+      }
+      transaction.set(reservation.ref, {
+        ...recovered, billingReference: reference,
+        checkoutReservationStatus: 'completed',
+        officialProductId: latest.data()?.officialProductId,
+        officialStoreId: latest.data()?.officialStoreId,
+        payerEmail: clean(data.reservedPayerEmail),
+        providerPaymentStatus: 'pending_confirmation',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+    await persistProviderState(ownerId, provider, recovered);
     return { accepted: true };
   }
   const ownerId = matches.docs[0].id;
