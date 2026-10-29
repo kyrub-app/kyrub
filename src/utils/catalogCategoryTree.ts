@@ -381,6 +381,44 @@ export const deleteCatalogCategoryTreePath = (
   };
 };
 
+/**
+ * Compute only the canonical product changes required by a category operation.
+ * Existing commercial and migration fields remain untouched by the writer.
+ * The plan is pure so it can be verified before any Firestore writes.
+ */
+export const planCanonicalCategoryProductUpdates = (
+  previous: PublicProduct[],
+  next: PublicProduct[]
+): Array<{
+  id: string;
+  category: string;
+  categoryCollections: ProductCategoryCollection[];
+}> => {
+  const originalById = new Map(previous.map(product => [product.id, product]));
+  if (originalById.size !== previous.length || next.length !== previous.length) {
+    throw new Error('A lista de produtos mudou durante a edição da categoria.');
+  }
+  const seen = new Set<string>();
+  const updates = next.flatMap(product => {
+    const original = originalById.get(product.id);
+    if (!original || seen.has(product.id)) {
+      throw new Error('Produto duplicado ou ausente durante a edição da categoria.');
+    }
+    seen.add(product.id);
+    if (
+      original.category === product.category &&
+      JSON.stringify(original.categoryCollections ?? []) ===
+        JSON.stringify(product.categoryCollections ?? [])
+    ) return [];
+    return [{
+      id: product.id,
+      category: product.category,
+      categoryCollections: product.categoryCollections ?? [],
+    }];
+  });
+  return updates;
+};
+
 export const reconcileCatalogCategoryPaths = async (
   user: Pick<User, 'uid'>
 ): Promise<ProductCategoryCollection[]> => {
