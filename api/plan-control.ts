@@ -46,6 +46,10 @@ import {
   reconcileAuthorizedStoreSubscribersIntoCrm,
 } from '../server/payments/storeSubscriberRegistryService.js';
 
+import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
+import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
+import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
+
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 type RequestLike = {
@@ -327,6 +331,22 @@ export default async function handler(
         response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
         return;
       }
+      case 'merchant.subscription.quote': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        await authenticateConsultantRequest(authorization);
+        const quote = await quotePersistedMerchantSubscription({
+          sellerStoreReference: String(body.storeId ?? ''),
+          productId: String(body.productId ?? ''),
+          selectedMonths: body.selectedMonths as 1 | 3 | 6 | 12,
+          paymentTerms: body.paymentTerms as Parameters<typeof quotePersistedMerchantSubscription>[0]['paymentTerms'],
+        });
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(quote);
+        return;
+      }
       case 'merchant.subscription.checkout': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -439,6 +459,10 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'merchant.subscription.quote' && error instanceof OfficialPlanCheckoutRouteError) {
+      response.status(409).json({ error: error.message, code: error.code });
+      return;
+    }
     const mapped = operation.startsWith('merchant.subscription.benefit')
       ? mapStoreSubscriptionBenefitError(error)
       : operation.startsWith('merchant.subscribers')
