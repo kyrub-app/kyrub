@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import {
   Check,
@@ -124,6 +124,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [checkoutNotice, setCheckoutNotice] = useState('');
   const [subscriptionQuote, setSubscriptionQuote] = useState<SubscriptionContractOffer | null>(null);
   const [subscriptionMonths, setSubscriptionMonths] = useState<ContractTermMonths>(1);
+  const subscriptionQuoteRequest = useRef(0);
   const [isQuotingSubscription, setIsQuotingSubscription] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<MarketplaceCouponQuote | null>(null);
@@ -476,7 +477,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     <label className="mt-2 block text-slate-400" htmlFor="subscription-contract-months">Duração contratual</label>
                     <select id="subscription-contract-months" value={subscriptionMonths}
                       className="mt-1 rounded-lg border border-slate-600 bg-slate-900 p-2 text-white"
-                      onChange={event => { setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); }}>
+                      onChange={event => { subscriptionQuoteRequest.current += 1; setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); setIsQuotingSubscription(false); }}>
                       {CONTRACT_TERM_MONTHS.map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
                     </select>
                     <p className="mt-1 text-slate-400">Consulte o valor oficial antes de contratar. Esta consulta não gera cobrança.</p>
@@ -485,6 +486,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       disabled={isQuotingSubscription}
                       className="mt-3 rounded-xl border border-slate-600 px-3 py-2 disabled:opacity-50"
                       onClick={() => {
+                        const requestId = ++subscriptionQuoteRequest.current;
                         setSubscriptionQuote(null);
                         setFormError('');
                         setIsQuotingSubscription(true);
@@ -495,9 +497,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                           paymentTerms: subscriptionMonths === 1
                             ? { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null }
                             : { collectionMode: 'prepaid', installments: 1 },
-                        }).then(result => setSubscriptionQuote(result.quote))
-                          .catch(error => setFormError(error instanceof Error ? error.message : 'Cotação indisponível.'))
-                          .finally(() => setIsQuotingSubscription(false));
+                        }).then(result => { if (requestId === subscriptionQuoteRequest.current) setSubscriptionQuote(result.quote); })
+                          .catch(error => { if (requestId === subscriptionQuoteRequest.current) setFormError(error instanceof Error ? error.message : 'Cotação indisponível.'); })
+                          .finally(() => { if (requestId === subscriptionQuoteRequest.current) setIsQuotingSubscription(false); });
                       }}
                     >
                       {isQuotingSubscription ? 'Consultando...' : 'Consultar preço oficial'}
