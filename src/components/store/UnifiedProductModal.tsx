@@ -322,21 +322,22 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeInventory = () => undefined;
       if (!user) return;
 
+      let latestStoredPaths: ProductCategoryCollection[] = [];
+      let latestCatalogProducts: PublicProduct[] = [];
+      const publishCatalogPaths = (): void => {
+        setCatalogPaths(
+          mergeCatalogCategoryPaths(latestStoredPaths, latestCatalogProducts)
+        );
+      };
+
       unsubscribeTenant = onSnapshot(
         doc(db, 'tenants', user.uid),
         snapshot => {
           const tenantData = snapshot.data();
           // The tenant still owns the category hierarchy and preparation
           // stations, but the product list comes from the preferred catalog.
-          setCatalogPaths(
-            mergeCatalogCategoryPaths(
-              parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths),
-              catalogProducts.filter((item): item is PublicProduct =>
-                typeof (item as PublicProduct).storeId === 'string' &&
-                typeof (item as PublicProduct).updatedAt === 'string'
-              )
-            )
-          );
+          latestStoredPaths = parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths);
+          publishCatalogPaths();
           if (!stationDirty) {
             const stations = readProductPreparationStationsFromTenant(tenantData);
             const nextStation = product?.id
@@ -358,10 +359,9 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeCatalog = subscribeToPreferredPublicProducts(
         user.uid,
         result => {
+          latestCatalogProducts = result.products;
           setCatalogProducts(result.products);
-          setCatalogPaths(previous =>
-            mergeCatalogCategoryPaths(previous, result.products)
-          );
+          publishCatalogPaths();
         },
         error => console.warn('Não foi possível atualizar o catálogo de produtos.', error)
       );
