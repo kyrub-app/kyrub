@@ -89,7 +89,7 @@ it('monthly catalog checkout fails closed on unknown contract and payment fields
 });
 
 
-test('unified subscription route rejects ordinary merchandise before payment routing', () => {
+it('unified subscription route rejects ordinary merchandise before payment routing', () => {
   const source = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
   assert.match(source, /input\.allowMerchantSubscription && parsedModality\.mode !== 'subscription'/);
   assert.match(source, /PRODUCT_NOT_SUBSCRIPTION/);
