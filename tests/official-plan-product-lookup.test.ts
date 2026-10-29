@@ -13,7 +13,7 @@ describe('official plan product lookup boundaries', () => {
   it('rejects fixed-term offers before monthly platform checkout can ignore their discounts', () => {
     assert.match(source, /data\.contractDiscounts !== undefined/);
     assert.match(source, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
-    assert.ok(source.indexOf('OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED') < source.indexOf('loadPublicActivePlanCatalog()'));
+    assert.ok(source.indexOf('OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED') < source.indexOf('const productPrice = data.price'));
   });
   it('checks subscription modality and official store identity before platform routing', () => {
     assert.match(source, /parseProductSaleModality/);
@@ -57,7 +57,7 @@ describe('unified catalog subscription checkout', () => {
     const handler = gateway.slice(start, end);
     assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
     assert.match(handler, /route\.kind === 'platform-plan'/);
-    assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+    assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
     assert.match(handler, /route\.kind === 'free-plan'/);
     assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
     assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
@@ -68,14 +68,11 @@ describe('unified catalog subscription checkout', () => {
 });
 
 
-it('official plan checkout refuses storefront price differing from control-plane billing', () => {
-  assert.match(source, /loadPublicActivePlanCatalog\(\)/);
-  assert.match(source, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
-  assert.match(source, /OFFICIAL_PLAN_PRICE_MISMATCH/);
-  assert.ok(source.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH') < source.indexOf('return resolveCheckoutBillingRoute'),
-    'Price mismatch must block checkout before recipient routing');
+it('official plan checkout validates the storefront price rather than governance price', () => {
+  assert.doesNotMatch(source, /loadPublicActivePlanCatalog/);
+  assert.match(source, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(source, /planId === 'free' \? productPrice !== 0 : productPrice <= 0/);
 });
-
 
 it('monthly catalog checkout fails closed on unknown contract and payment fields', () => {
   const gateway = readFileSync('api/plan-control.ts', 'utf8');
@@ -98,18 +95,15 @@ it('unified subscription route rejects ordinary merchandise before payment routi
 });
 
 
-describe('authoritative official plan price guard', () => {
-  it('requires an active control-plane price for Pro and Business', () => {
-    assert.match(source, /activePlan\.source !== 'control_plane'/);
-    assert.match(source, /activePlan\.monthlyPriceBRL <= 0/);
-    assert.match(source, /OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED/);
-  });
-  it('rejects charging the Free plan', () => {
-    assert.match(source, /planId === 'free'/);
-    assert.match(source, /activePlan\.monthlyPriceBRL !== 0/);
+describe('official storefront billing authority', () => {
+  const billing = readFileSync(new URL('../server/admin/paidPlanSubscriptionService.ts', import.meta.url), 'utf8');
+  it('uses mapped official product and persisted store price for provider charge', () => {
+    assert.match(billing, /resolvePersistedProductCheckoutRoute/);
+    assert.match(billing, /OFFICIAL_PLAN_PRODUCT_MISMATCH/);
+    assert.match(billing, /monthlyPriceBRL: price/);
+    assert.match(billing, /officialProductId/);
   });
 });
-
 
 describe('admin mapping does not trust owner-editable product plan tags', () => {
   const management = readFileSync(new URL('../server/admin/officialPlanProductManagement.ts', import.meta.url), 'utf8');
