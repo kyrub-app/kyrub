@@ -138,7 +138,7 @@ test('official Kyrub plan mapping cannot be billed through the merchant preappro
 
 test('cart routes only eligible monthly subscriptions to the existing merchant preapproval', () => {
   const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
-  assert.match(cart, /createMerchantSubscriptionCheckout\(/);
+  assert.match(cart, /createCatalogSubscriptionCheckout\(/);
   assert.match(cart, /cart\.length !== 1 \|\| subscriptions\[0\]\.quantity !== 1/);
   assert.match(cart, /subscriptions\[0\]\.product\.contractDiscounts !== undefined/);
   assert.match(cart, /subscriptionMonths !== 1/);
@@ -154,4 +154,15 @@ test('subscription checkout stays disabled while authoritative quote is in fligh
   assert.match(cart, /disabled=\{isSubmitting \|\| isQuotingSubscription \|\| \(hasSubscriptionCartItem && !canStartLegacyMonthlySubscription\)\}/);
   assert.match(cart, /if \(isQuotingSubscription\) \{/);
   assert.match(cart, /'Aguardando cotação\.\.\.'/);
+});
+
+
+test('unified canonical subscription checkout routes official plans to platform billing', () => {
+  assert.match(gateway, /case 'catalog\.subscription\.checkout'/);
+  assert.match(gateway, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(gateway, /route\.kind === 'platform-plan'/);
+  assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(gateway, /route\.kind === 'free-plan'/);
+  assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.match(client, /post\('catalog\.subscription\.checkout'/);
 });
