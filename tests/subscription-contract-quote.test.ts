@@ -32,6 +32,23 @@ describe('persisted contract checkout quote', () => {
       ...base, paymentTerms: { collectionMode: 'prepaid', installments: 6 },
     }).totalMinor, 67200);
   });
+  it('preserves legacy monthly-only products without granting longer terms', () => {
+    const base = {
+      persistedSaleModality: modality,
+      authoritativeMonthlyPriceMinor: 7000,
+      persistedOffers: undefined,
+      paymentTerms: { collectionMode: 'recurring' as const, billingIntervalMonths: 1 as const, installments: null },
+    };
+    assert.deepEqual(resolveSubscriptionContractQuote({ ...base, selectedMonths: 1 }), {
+      months: 1, discountPercent: 0, totalMinor: 7000, monthlyEquivalentMinor: 7000,
+    });
+    assert.throws(() => resolveSubscriptionContractQuote({
+      ...base, selectedMonths: 12,
+    }), /SUBSCRIPTION_TERM_NOT_OFFERED/);
+    assert.throws(() => resolveSubscriptionContractQuote({
+      ...base, persistedOffers: null, selectedMonths: 1,
+    }), /INVALID_PERSISTED_SUBSCRIPTION_OFFERS/);
+  });
   it('rejects one-time product modality', () => {
     assert.throws(() => resolveSubscriptionContractQuote({
       persistedSaleModality: { schemaVersion: 1, mode: 'one_time', subscription: null },
