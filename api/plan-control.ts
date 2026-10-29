@@ -385,6 +385,7 @@ export default async function handler(
         const route = await resolvePersistedProductCheckoutRoute({
           sellerStoreReference: body.storeId,
           productId: body.productId,
+          allowMerchantSubscription: true,
         });
         if (route.kind === 'platform-plan') {
           const checkout = await createOwnPaidPlanCheckout(authorization, route.plan);
