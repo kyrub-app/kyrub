@@ -491,7 +491,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       onChange={event => { subscriptionQuoteRequest.current += 1; setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); setIsQuotingSubscription(false); }}>
                       {CONTRACT_TERM_MONTHS.filter(months => availableContractTerms.includes(months)).map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
                     </select>
-                    <p className="mt-1 text-slate-400">Consulte o valor oficial antes de contratar. Esta consulta não gera cobrança.</p>
+                    <p className="mt-1 text-slate-400">Os prazos exibidos são sugestões da vitrine. Somente a cotação validada no catálogo oficial confirma disponibilidade, preço e desconto. Esta consulta não gera cobrança.</p>
                     <button
                       type="button"
                       disabled={isQuotingSubscription}
