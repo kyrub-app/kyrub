@@ -63,8 +63,7 @@ describe('unified catalog subscription checkout', () => {
 });
 
 
-test('official plan checkout refuses storefront price differing from control-plane billing', () => {
-  const source = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+it('official plan checkout refuses storefront price differing from control-plane billing', () => {
   assert.match(source, /loadPublicActivePlanCatalog\(\)/);
   assert.match(source, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
   assert.match(source, /OFFICIAL_PLAN_PRICE_MISMATCH/);
