@@ -478,6 +478,16 @@ export const persistPublicProduct = async (
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     const currentData = snapshot.data() as Record<string, unknown> | undefined;
+    // A canonical store must never be edited through the legacy tenant array.
+    // The mapping is read from the same tenant snapshot used for this write.
+    const mappedCanonicalStoreId = typeof currentData?.canonicalStoreId === 'string'
+      ? currentData.canonicalStoreId.trim() : '';
+    if (mappedCanonicalStoreId) {
+      const mappedStore = await transaction.get(doc(db, 'stores', mappedCanonicalStoreId));
+      if (mappedStore.exists() && mappedStore.data().migrationStatus === 'canonical') {
+        throw new Error('A loja já utiliza o catálogo canônico. Atualize o produto pelo editor canônico.');
+      }
+    }
     const existingProducts = parsePublicProducts(currentData?.publicProducts);
     const quickNotes = parseProductQuickNotes(product.quickNotes);
     const optionGroups = optionGroupsWithQuickNotes(
