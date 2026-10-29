@@ -157,6 +157,14 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   );
   const discountTotal = couponQuote?.discountTotal ?? 0;
   const checkoutTotal = couponQuote?.total ?? subtotal;
+  // A quote belongs to one specific cart and store. Never display it after either changes.
+  useEffect(() => {
+    subscriptionQuoteRequest.current += 1;
+    setSubscriptionQuote(null);
+    setSubscriptionMonths(1);
+    setIsQuotingSubscription(false);
+  }, [cartFingerprint, visitingStore?.id, isOpen]);
+
   const availableContractTerms = cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription'
     ? parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)?.map(offer => offer.months) ?? [1]
     : [1];
