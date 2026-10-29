@@ -530,6 +530,50 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
         throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Assinatura encontrada com dados diferentes da reserva.');
       }
     }
+    if (matches.length === 1) {
+      const candidate = matches[0];
+      const provider = await mpRequest(`/preapproval/${encodeURIComponent(clean(candidate.id))}`) as MpPreapproval & Record<string, unknown>;
+      const recurring = record(provider.auto_recurring);
+      const amount = Number(recurring.transaction_amount);
+      if (clean(provider.external_reference) !== reference ||
+          clean(provider.payer_email).toLowerCase() !== payerEmail.toLowerCase() ||
+          !Number.isFinite(amount) || Math.round(amount * 100) !== snapshot.data()?.reservedAmountMinor ||
+          clean(recurring.currency_id) !== snapshot.data()?.reservedCurrency ||
+          recurring.frequency !== 1 || recurring.frequency_type !== 'months') {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Detalhes da assinatura divergem da reserva.');
+      }
+      const checkoutUrl = clean(provider.init_point);
+      if (!checkoutUrl) throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout para recuperacao.');
+      const now = new Date().toISOString();
+      const recovered: KyrubPlanSubscriptionSnapshot = {
+        schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
+        storeId: ownerId, ownerId,
+        plan: snapshot.data()?.reservedPlan === 'business' ? 'business' : 'pro',
+        planVersion: clean(snapshot.data()?.planVersion) || 'recovered',
+        provider: PROVIDER,
+        providerSubscriptionId: clean(provider.id),
+        providerStatus: providerStatus(provider.status),
+        amountMinor: snapshot.data()?.reservedAmountMinor as number,
+        currency: 'BRL', checkoutUrl, createdAt: now, updatedAt: now,
+        activatedAt: null, cancelledAt: null,
+      };
+      await adminDb.runTransaction(async transaction => {
+        const latest = await transaction.get(snapshot.ref);
+        if (latest.data()?.billingReference !== reference || latest.data()?.checkoutReservationStatus !== 'pending') {
+          throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva foi alterada durante a conciliacao.');
+        }
+        transaction.set(snapshot.ref, {
+          ...recovered, billingReference: reference,
+          checkoutReservationStatus: 'completed',
+          officialProductId: latest.data()?.officialProductId,
+          officialStoreId: latest.data()?.officialStoreId,
+          payerEmail,
+          providerPaymentStatus: 'pending_confirmation',
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+      return loadOwnPlanSubscriptionState(authorization);
+    }
     // A missing result is not proof of absence: keep the reservation locked.
     throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
   }
