@@ -484,9 +484,16 @@ export const subscribeToPreferredPublicProducts = (
       publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
     );
     recordCanonicalReadDecision(normalizedStoreId, 'products', decision);
+    // Do not advertise unverified multi-month offers while a mapped canonical
+    // catalog is waiting, unavailable or divergent. The payment quote reads only
+    // the canonical product, so the legacy storefront cannot promise its terms.
+    const selectedProducts = decision.source === 'canonical' ? canonicalProducts : legacyProducts;
+    const products = canonicalStoreId && decision.source !== 'canonical'
+      ? selectedProducts.map(product => product.contractDiscounts === undefined
+        ? product : { ...product, contractDiscounts: undefined })
+      : selectedProducts;
     onResult({
-      products:
-        decision.source === 'canonical' ? canonicalProducts : legacyProducts,
+      products,
       decision,
       canonicalStoreId,
     });
