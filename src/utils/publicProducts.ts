@@ -340,8 +340,10 @@ const parseCanonicalPublicProduct = (
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
+    // Canonical edits advance updatedAt without changing the legacy migration
+    // watermark. Always expose the canonical revision to the editor/storefront.
     updatedAt:
-      cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
+      timestampToIso(value.updatedAt) || cleanString(value.legacyUpdatedAt),
   };
 };
 
