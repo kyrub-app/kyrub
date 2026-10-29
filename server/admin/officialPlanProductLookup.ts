@@ -84,9 +84,6 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
         'INVALID_OFFICIAL_PLAN_PRICE', 'Preço comercial inválido no produto da Loja Oficial.'
       );
     }
-    if (planId !== 'free') {
-      throw new OfficialPlanCheckoutRouteError('OFFICIAL_STORE_BILLING_MIGRATION_PENDING', 'A cobranca aguarda integracao com o preco da Loja Oficial.');
-    }
     const modality = parseProductSaleModality(data.saleModality);
     if (!modality || modality.mode !== 'subscription' ||
         modality.subscription?.billingInterval.unit !== 'month' ||
