@@ -34,7 +34,7 @@ import {
 } from '../../utils/catalogCategoryTree';
 import {
   buildPublicProduct,
-  parsePublicProducts,
+  subscribeToPreferredPublicProducts,
   type PublicProduct,
 } from '../../utils/publicProducts';
 import { parseProductQuickNotes } from '../../utils/productCustomization';
@@ -311,11 +311,14 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
     if (!isOpen) return;
 
     let unsubscribeTenant = () => undefined;
+    let unsubscribeCatalog = () => undefined;
     let unsubscribeInventory = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeTenant();
+      unsubscribeCatalog();
       unsubscribeInventory();
       unsubscribeTenant = () => undefined;
+      unsubscribeCatalog = () => undefined;
       unsubscribeInventory = () => undefined;
       if (!user) return;
 
@@ -323,13 +326,12 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         doc(db, 'tenants', user.uid),
         snapshot => {
           const tenantData = snapshot.data();
-          const cloudProducts = parsePublicProducts(tenantData?.publicProducts);
-          const nextProducts = cloudProducts.length > 0 ? cloudProducts : products;
-          setCatalogProducts(nextProducts);
-          setCatalogPaths(
+          // The tenant still owns the category hierarchy and preparation
+          // stations, but the product list comes from the preferred catalog.
+          setCatalogPaths(previous =>
             mergeCatalogCategoryPaths(
               parseCatalogCategoryPaths(tenantData?.catalogCategoryPaths),
-              cloudProducts
+              catalogProducts
             )
           );
           if (!stationDirty) {
@@ -348,6 +350,17 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
             'A estação atual não pôde ser confirmada. Uma nova escolha será validada ao salvar.'
           );
         }
+      );
+
+      unsubscribeCatalog = subscribeToPreferredPublicProducts(
+        user.uid,
+        result => {
+          setCatalogProducts(result.products);
+          setCatalogPaths(previous =>
+            mergeCatalogCategoryPaths(previous, result.products)
+          );
+        },
+        error => console.warn('Não foi possível atualizar o catálogo de produtos.', error)
       );
 
       unsubscribeInventory = onSnapshot(
@@ -383,6 +396,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
     return () => {
       unsubscribeAuth();
       unsubscribeTenant();
+      unsubscribeCatalog();
       unsubscribeInventory();
     };
   }, [
