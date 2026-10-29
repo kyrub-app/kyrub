@@ -40,6 +40,13 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(billing.includes('subscription: persisted'));
   });
 
+  it('allows concurrent early webhooks for the same preapproval without rewriting the reservation', () => {
+    const webhook = billing.split('export const handlePaidPlanProviderWebhook')[1];
+    assert.ok(webhook.includes("latest.data()?.checkoutReservationStatus === 'completed'"));
+    assert.ok(webhook.includes('clean(latest.data()?.providerSubscriptionId) === providerSubscriptionId'));
+    assert.ok(webhook.includes('await persistProviderState(ownerId, provider, recovered)'));
+  });
+
   it('retains compiled fallback for public plan display only', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
