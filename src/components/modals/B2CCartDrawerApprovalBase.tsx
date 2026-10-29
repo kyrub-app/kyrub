@@ -549,7 +549,11 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                         {' · '}Equivalente mensal: {currencyFormatter.format(subscriptionQuote.monthlyEquivalentMinor / 100)}
                       </p>
                     )}
-                    <p className="mt-2 text-amber-300">A contratação permanece indisponível neste carrinho.</p>
+                    <p className="mt-2 text-amber-300">
+                      {cart[0].product.contractDiscounts === undefined && subscriptionMonths === 1
+                        ? 'Assinatura mensal recorrente: o pagamento será iniciado pelo Mercado Pago e a ativação depende da confirmação.'
+                        : 'A contratação de planos com prazo ou desconto ainda não está disponível neste carrinho.'}
+                    </p>
                   </div>
                 )}
                 {cart.length === 0 ? (
