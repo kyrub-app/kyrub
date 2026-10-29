@@ -410,6 +410,14 @@ export default async function handler(
           });
           return;
         }
+        if (Object.keys(body).some(key => !['storeId', 'productId', 'selectedMonths', 'paymentTerms'].includes(key)) ||
+            Object.keys(body.paymentTerms).some(key => !['collectionMode', 'installments'].includes(key))) {
+          response.status(400).json({
+            error: 'A cotação não aceita preços, descontos ou parâmetros de cobrança enviados pelo navegador.',
+            code: 'UNEXPECTED_SUBSCRIPTION_QUOTE_FIELDS',
+          });
+          return;
+        }
         const quote = await quotePersistedMerchantSubscription({
           sellerStoreReference: body.storeId,
           productId: body.productId,
