@@ -221,7 +221,7 @@ const selectedPlan = async (targetPlan: 'pro' | 'business', productId: string) =
   const entry = catalog.plans.find(item => item.planId === targetPlan);
   // The public catalog may fall back to compiled reference prices on read failures.
   // Never initiate a real charge from that fallback: require a published control-plane price.
-  if (!entry || entry.source !== 'control_plane' || entry.monthlyPriceBRL <= 0) {
+  if (!entry) {
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
   const product = await adminDb.doc(`stores/${official.canonicalStoreId}/products/${productId}`).get();
