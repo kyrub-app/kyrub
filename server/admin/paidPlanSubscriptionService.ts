@@ -205,7 +205,18 @@ const assertSubscriptionCanReplaceEntitlement = async (ownerId: string): Promise
   }
 };
 
-const selectedPlan = async (targetPlan: 'pro' | 'business') => {
+const selectedPlan = async (targetPlan: 'pro' | 'business', productId: string) => {
+  const official = await getOfficialStoreIdentity();
+  if (!official?.canonicalStoreId) {
+    throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Loja Oficial nao configurada.');
+  }
+  const route = await resolvePersistedProductCheckoutRoute({
+    sellerStoreReference: official.canonicalStoreId,
+    productId,
+  });
+  if (route.kind !== 'platform-plan' || route.plan !== targetPlan) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_MISMATCH', 'Produto nao corresponde ao plano contratado.');
+  }
   const catalog = await loadPublicActivePlanCatalog();
   const entry = catalog.plans.find(item => item.planId === targetPlan);
   // The public catalog may fall back to compiled reference prices on read failures.
