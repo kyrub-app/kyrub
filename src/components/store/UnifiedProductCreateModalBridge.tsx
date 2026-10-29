@@ -7,7 +7,7 @@ import {
 } from '../../utils/productModalEvents';
 import {
   PUBLIC_PRODUCT_CREATE_EVENT,
-  persistProductForStore,
+  persistCanonicalPublicProduct,
   type PublicProduct,
   type PublicProductCreateRequest,
 } from '../../utils/publicProducts';
@@ -47,10 +47,16 @@ export function UnifiedProductCreateModalBridge() {
       }
       // The canonical writer is authoritative. Do not dispatch the legacy
       // create event after a successful canonical write.
-      const savedTo = await persistProductForStore(currentUser, product as PublicProduct);
-      if (savedTo === 'canonical') {
-        setIsOpen(false);
-        return;
+      const tenant = await getDoc(doc(db, 'tenants', currentUser.uid));
+      const mappedId = typeof tenant.data()?.canonicalStoreId === 'string'
+        ? tenant.data()!.canonicalStoreId.trim() : '';
+      if (mappedId) {
+        const store = await getDoc(doc(db, 'stores', mappedId));
+        if (store.exists() && store.data().migrationStatus === 'canonical') {
+          await persistCanonicalPublicProduct(currentUser, mappedId, product as PublicProduct);
+          setIsOpen(false);
+          return;
+        }
       }
       window.dispatchEvent(
         new CustomEvent<PublicProductCreateRequest>(PUBLIC_PRODUCT_CREATE_EVENT, {
