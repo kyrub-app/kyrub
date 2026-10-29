@@ -237,8 +237,8 @@
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && (
-          canonicalProductMigrationCreateIsValid(storeId, productId)
-          || canonicalProductDirectCreateIsValid(storeId)
+          canonicalProductDirectCreateIsValid(storeId)
+          || canonicalProductMigrationCreateIsValid(storeId, productId)
         );
 
       allow update: if isSignedIn()
