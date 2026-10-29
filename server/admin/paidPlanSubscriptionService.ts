@@ -224,7 +224,14 @@ const selectedPlan = async (targetPlan: 'pro' | 'business', productId: string) =
   if (!entry || entry.source !== 'control_plane' || entry.monthlyPriceBRL <= 0) {
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
-  return entry;
+  const product = await adminDb.doc(`stores/${official.canonicalStoreId}/products/${productId}`).get();
+  const price = product.data()?.price;
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 ||
+      !Number.isSafeInteger(Math.round(price * 100)) ||
+      Math.abs(price * 100 - Math.round(price * 100)) > 1e-7) {
+    throw new PlanManagementError(409, 'INVALID_OFFICIAL_PLAN_PRICE', 'Preco comercial invalido.');
+  }
+  return { ...entry, monthlyPriceBRL: price };
 };
 
 const activateSubscriptionEntitlement = async (ownerId: string, subscription: KyrubPlanSubscriptionSnapshot): Promise<void> => {
