@@ -355,7 +355,7 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   };
 };
 
-export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown): Promise<KyrubPlanCheckoutResult> => {
+export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, rawProductId?: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
