@@ -550,6 +550,11 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
           recurring.frequency !== 1 || recurring.frequency_type !== 'months') {
         throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Detalhes da assinatura divergem da reserva.');
       }
+      const alreadyLinked = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+        .where('providerSubscriptionId', '==', clean(provider.id)).limit(2).get();
+      if (alreadyLinked.docs.some(doc => doc.id !== ownerId)) {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura ja vinculada a outra loja.');
+      }
       const checkoutUrl = clean(provider.init_point);
       if (!checkoutUrl) throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout para recuperacao.');
       const now = new Date().toISOString();
