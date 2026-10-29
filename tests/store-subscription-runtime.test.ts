@@ -27,6 +27,9 @@ test('merchant subscription checkout trusts canonical catalog and merchant recip
   assert.match(service, /Math\.abs\(priceMinor - Math\.round\(priceMinor\)\) <= 1e-7/);
   assert.match(service, /Number\.isSafeInteger\(Math\.round\(priceMinor\)\)/);
   assert.match(service, /STORE_SUBSCRIPTION_PLATFORM_PLAN_REQUIRES_OFFICIAL_CHECKOUT/);
+  assert.match(service, /typeof price === 'number'/);
+  assert.match(service, /STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(service, /payload\.selectedMonths !== undefined \|\| payload\.paymentTerms !== undefined/);
   assert.match(service, /context: 'store_subscription'/);
   assert.match(service, /recipientKind !== 'merchant_store'/);
   assert.match(service, /recipient\.credentialScopeId/);
