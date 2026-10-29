@@ -117,10 +117,10 @@ describe('admin mapping does not trust owner-editable product plan tags', () => 
     assert.match(management, /data\.platformPlanId !== undefined/);
     assert.match(management, /data\.kyrubPlanId !== undefined/);
   });
-  it('requires a catalog-authorized amount at assignment time', () => {
-    assert.match(management, /loadPublicActivePlanCatalog\(\)/);
-    assert.match(management, /activePlan\.source !== 'control_plane'/);
-    assert.match(management, /OFFICIAL_PLAN_PRICE_NOT_AUTHORIZED/);
-    assert.match(management, /Math\.round\(data\.price \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  it('uses the Official Store product price rather than the governance catalog at assignment', () => {
+    assert.doesNotMatch(management, /loadPublicActivePlanCatalog/);
+    assert.match(management, /data\.price < 0/);
+    assert.match(management, /input\.planId === 'free' \? data\.price !== 0 : data\.price <= 0/);
+    assert.match(management, /Number\.isSafeInteger\(Math\.round\(data\.price \* 100\)\)/);
   });
 });
