@@ -50,6 +50,7 @@ import {
 import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
 import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
+import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -351,6 +352,34 @@ export default async function handler(
           return;
         }
         response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
+        return;
+      }
+      case 'catalog.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (typeof body.storeId !== 'string' || typeof body.productId !== 'string') {
+          response.status(400).json({ error: 'Informe loja e produto válidos.', code: 'INVALID_SUBSCRIPTION_CHECKOUT_REQUEST' });
+          return;
+        }
+        const route = await resolvePersistedProductCheckoutRoute({
+          sellerStoreReference: body.storeId,
+          productId: body.productId,
+        });
+        if (route.kind === 'platform-plan') {
+          const checkout = await createOwnPaidPlanCheckout(authorization, route.plan);
+          response.status(201).json(checkout);
+          return;
+        }
+        if (route.kind === 'free-plan') {
+          response.status(409).json({
+            error: 'O plano Free não exige pagamento. Utilize o fluxo gratuito de adesão.',
+            code: 'FREE_PLAN_CHECKOUT_NOT_REQUIRED',
+          });
+          return;
+        }
+        response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
         return;
       }
       case 'merchant.subscription.quote': {
