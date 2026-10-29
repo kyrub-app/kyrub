@@ -217,6 +217,15 @@ const loadPublishedSubscriptionProduct = async (
     fail(404, 'STORE_SUBSCRIPTION_PRODUCT_NOT_FOUND', 'O produto não está disponível.');
   }
   const data = snapshot.data() as Record<string, unknown>;
+  // Official Kyrub plans must use platform billing, never the merchant OAuth account.
+  // A mapping in any state blocks fallback to merchant recurring billing.
+  const officialMapping = await adminDb.doc(
+    `kyrub_admin/control_plane/official_plan_products/${productId}`
+  ).get();
+  if (officialMapping.exists || data.platformPlanId !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_PLATFORM_PLAN_REQUIRES_OFFICIAL_CHECKOUT',
+      'Planos Kyrub exigem o checkout da plataforma.');
+  }
   if (clean(data.publicationStatus) !== 'published') {
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_PUBLISHED', 'O produto não está publicado.');
   }
