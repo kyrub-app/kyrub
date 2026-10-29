@@ -317,7 +317,9 @@ const parseCanonicalPublicProduct = (
     stock === null ||
     stock < 0 ||
     saleModality === null ||
-    (!includeUnpublished && cleanString(value.publicationStatus) !== 'published')
+    (includeUnpublished
+      ? !['published', 'paused', 'draft'].includes(cleanString(value.publicationStatus))
+      : cleanString(value.publicationStatus) !== 'published')
   ) {
     return null;
   }
