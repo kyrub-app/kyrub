@@ -118,7 +118,7 @@ describe('official storefront billing authority', () => {
     assert.match(billing, /SUBSCRIPTION_RECONCILIATION_MISMATCH/);
     assert.match(billing, /SUBSCRIPTION_RECONCILIATION_PAGINATION/);
     assert.match(billing, /reservedPlanVersion: plan\.version/);
-    assert.match(billing, /planVersion: scalar\(snapshot\.data\(\)\?\.reservedPlanVersion\)/);
+    assert.match(billing, /planVersion: snapshot\.data\(\)\?\.reservedPlanVersion as number/);
     assert.match(billing, /checkoutReservationStatus: 'completed'/);
     assert.match(billing, /reservedPlan: targetPlan/);
     assert.match(billing, /reservedAmountMinor: Math\.round\(plan\.monthlyPriceBRL \* 100\)/);
