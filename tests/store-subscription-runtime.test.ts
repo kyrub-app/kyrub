@@ -167,3 +167,17 @@ test('unified subscription checkout authenticates and resolves persisted officia
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('await resolvePersistedProductCheckoutRoute'));
 });
+
+
+test('unified checkout fails closed on official contract discounts, price mismatch and non-subscription products', () => {
+  const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(lookup, /data\.contractDiscounts !== undefined/);
+  assert.match(lookup, /OFFICIAL_PLAN_PRICE_MISMATCH/);
+  assert.match(lookup, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  assert.match(lookup, /PRODUCT_NOT_SUBSCRIPTION/);
+  assert.match(lookup, /parsedModality\.mode !== 'subscription'/);
+  const priceGuard = lookup.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH');
+  const route = lookup.indexOf('return resolveCheckoutBillingRoute');
+  assert.ok(priceGuard >= 0 && route > priceGuard, 'Price validation must precede billing routing');
+});
