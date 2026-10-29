@@ -61,3 +61,13 @@ describe('unified catalog subscription checkout', () => {
     assert.match(cart, /createCatalogSubscriptionCheckout\(/);
   });
 });
+
+
+test('official plan checkout refuses storefront price differing from control-plane billing', () => {
+  const source = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(source, /loadPublicActivePlanCatalog\(\)/);
+  assert.match(source, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  assert.match(source, /OFFICIAL_PLAN_PRICE_MISMATCH/);
+  assert.ok(source.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH') < source.indexOf('return resolveCheckoutBillingRoute'),
+    'Price mismatch must block checkout before recipient routing');
+});
