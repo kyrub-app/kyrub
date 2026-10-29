@@ -536,7 +536,7 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
       }
     }
     if (matches.length === 1) {
-      if (!scalar(snapshot.data()?.reservedPlanVersion)) {
+      if (!Number.isSafeInteger(snapshot.data()?.reservedPlanVersion) || Number(snapshot.data()?.reservedPlanVersion) <= 0) {
         throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem versao do plano para conciliacao.');
       }
       const candidate = matches[0];
@@ -562,7 +562,7 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
         schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
         storeId: ownerId, ownerId,
         plan: paidPlan(snapshot.data()?.reservedPlan),
-        planVersion: scalar(snapshot.data()?.reservedPlanVersion),
+        planVersion: snapshot.data()?.reservedPlanVersion as number,
         provider: PROVIDER,
         providerSubscriptionId: clean(provider.id),
         providerStatus: providerStatus(provider.status),
