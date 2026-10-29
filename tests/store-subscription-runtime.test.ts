@@ -181,3 +181,16 @@ test('unified checkout fails closed on official contract discounts, price mismat
   const route = lookup.indexOf('return resolveCheckoutBillingRoute');
   assert.ok(priceGuard >= 0 && route > priceGuard, 'Price validation must precede billing routing');
 });
+
+
+test('official plan billing uses control-plane price and cannot silently charge a different storefront amount', () => {
+  const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  const guard = lookup.indexOf('OFFICIAL_PLAN_PRICE_MISMATCH');
+  const route = lookup.indexOf('return resolveCheckoutBillingRoute');
+  assert.ok(guard >= 0 && route > guard);
+  assert.match(lookup, /Math\.round\(productPrice \* 100\) !== Math\.round\(activePlan\.monthlyPriceBRL \* 100\)/);
+  assert.match(lookup, /mappingData\.canonicalStoreId !== seller\.canonicalStoreId/);
+  assert.match(lookup, /mappingData\.status !== 'active'/);
+  assert.match(lookup, /data\.contractDiscounts !== undefined/);
+  assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+});
