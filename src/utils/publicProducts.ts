@@ -614,6 +614,7 @@ export const subscribeToPreferredPublicProducts = (
   let canonicalStoreId = '';
   let canonicalEnabled = false;
   let canonicalCutover = false;
+  let latestCanonicalReadPreference = false;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
   let unsubscribeStore: Unsubscribe = () => undefined;
 
@@ -690,7 +691,8 @@ export const subscribeToPreferredPublicProducts = (
       legacyProducts = parsePublicProducts(data?.publicProducts);
       const config = parseCanonicalReadConfig(data);
       canonicalStoreId = config.canonicalStoreId;
-      canonicalEnabled = config.preferences.products || (canonicalCutover && canonicalStoreId === previousStoreId);
+      latestCanonicalReadPreference = config.preferences.products;
+      canonicalEnabled = latestCanonicalReadPreference || (canonicalCutover && canonicalStoreId === previousStoreId);
       if (canonicalStoreId !== previousStoreId) {
         unsubscribeStore();
         canonicalCutover = false;
@@ -699,7 +701,9 @@ export const subscribeToPreferredPublicProducts = (
               const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
               const changed = canonicalCutover !== cutover;
               canonicalCutover = cutover;
-              const shouldEnable = cutover || config.preferences.products;
+              // Read the latest tenant preference, not the value captured
+              // when this store listener was originally installed.
+              const shouldEnable = cutover || latestCanonicalReadPreference;
               if (canonicalEnabled !== shouldEnable) {
                 canonicalEnabled = shouldEnable;
                 restartCanonicalSubscription();
