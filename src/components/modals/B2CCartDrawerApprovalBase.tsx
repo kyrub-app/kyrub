@@ -18,7 +18,7 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
-import { quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
+import { createMerchantSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
 import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
@@ -307,10 +307,33 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
       return;
     }
 
-    // Do not send subscription products through one-time merchant checkout.
-    // Contract pricing and entitlement activation require a server-verified route.
-    if (cart.some(item => item.product.saleModality?.mode === 'subscription')) {
-      setFormError('Assinaturas ainda não estão disponíveis neste checkout. Nenhuma cobrança foi iniciada.');
+    // Never mix recurring subscriptions with ordinary one-time orders.
+    // Only a single legacy monthly offer without contract discounts may use
+    // the existing provider preapproval endpoint. All fixed-term offers remain
+    // blocked until their server-side collection and activation exist.
+    const subscriptions = cart.filter(item => item.product.saleModality?.mode === 'subscription');
+    if (subscriptions.length) {
+      if (cart.length !== 1 || subscriptions[0].quantity !== 1 ||
+          subscriptions[0].product.contractDiscounts !== undefined ||
+          subscriptionMonths !== 1) {
+        setFormError('Contratos com prazo ou desconto ainda exigem o checkout contratual. Nenhuma cobrança foi iniciada.');
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const result = await createMerchantSubscriptionCheckout({
+          storeId: visitingStore.id,
+          productId: subscriptions[0].product.id,
+        });
+        const checkoutUrl = new URL(result.checkoutUrl);
+        if (checkoutUrl.protocol !== 'https:') throw new Error('Endereço de pagamento inválido.');
+        setCheckoutNotice('Assinatura mensal iniciada. A ativação depende da confirmação do pagamento.');
+        window.location.assign(checkoutUrl.toString());
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Não foi possível iniciar a assinatura.');
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
 
