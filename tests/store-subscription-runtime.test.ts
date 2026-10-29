@@ -136,7 +136,7 @@ test('official Kyrub plan mapping cannot be billed through the merchant preappro
     'Privileged official-plan check must run before merchant recipient and provider creation');
 });
 
-test('cart routes only eligible monthly subscriptions to the existing merchant preapproval', () => {
+test('cart routes only eligible monthly subscriptions through canonical server recipient selection', () => {
   const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
   assert.match(cart, /createCatalogSubscriptionCheckout\(/);
   assert.match(cart, /cart\.length !== 1 \|\| subscriptions\[0\]\.quantity !== 1/);
