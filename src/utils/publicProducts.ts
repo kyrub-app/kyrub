@@ -615,6 +615,7 @@ export const subscribeToPreferredPublicProducts = (
   let canonicalEnabled = false;
   let canonicalCutover = false;
   let latestCanonicalReadPreference = false;
+  let storeStatusResolved = false;
   let canonicalSubscriptionGeneration = 0;
   let storeSubscriptionGeneration = 0;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
@@ -623,7 +624,11 @@ export const subscribeToPreferredPublicProducts = (
   const publish = (): void => {
     // After cutover the legacy array is no longer authoritative. New canonical
     // products intentionally diverge from it and must not trigger a fallback.
-    const decision = canonicalCutover
+    // Until the mapped store status is known, do not publish legacy data:
+    // this may already be a canonical-only store.
+    const decision = canonicalStoreId && !storeStatusResolved
+      ? { source: 'canonical' as const, reason: 'waiting' as const }
+      : canonicalCutover
       ? {
           source: 'canonical' as const,
           reason: (canonicalState === 'available' ? 'canonical' : canonicalState) as 'canonical' | 'waiting' | 'unavailable',
@@ -702,12 +707,14 @@ export const subscribeToPreferredPublicProducts = (
         const storeGeneration = ++storeSubscriptionGeneration;
         unsubscribeStore();
         canonicalCutover = false;
+        storeStatusResolved = !canonicalStoreId;
         unsubscribeStore = canonicalStoreId
           ? onSnapshot(doc(db, 'stores', canonicalStoreId), storeSnapshot => {
               if (storeGeneration !== storeSubscriptionGeneration) return;
               const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
-              const changed = canonicalCutover !== cutover;
+              const changed = canonicalCutover !== cutover || !storeStatusResolved;
               canonicalCutover = cutover;
+              storeStatusResolved = true;
               // Read the latest tenant preference, not the value captured
               // when this store listener was originally installed.
               const shouldEnable = cutover || latestCanonicalReadPreference;
@@ -718,7 +725,11 @@ export const subscribeToPreferredPublicProducts = (
                 publish();
               }
             }, error => {
-              if (storeGeneration === storeSubscriptionGeneration) onError?.(error);
+              if (storeGeneration !== storeSubscriptionGeneration) return;
+              // Unknown store status is not evidence that legacy reads are safe.
+              storeStatusResolved = false;
+              publish();
+              onError?.(error);
             })
           : () => undefined;
       }
