@@ -450,6 +450,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       unsubscribeAuth();
       unsubscribeTenant();
       unsubscribeCatalog();
+      unsubscribeCanonicalCategories();
       unsubscribeInventory();
     };
   }, [
