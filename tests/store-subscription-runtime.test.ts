@@ -231,3 +231,19 @@ test('canonical catalog checkout routes official paid plans to platform billing 
   assert.ok(handler.indexOf("route.kind === 'free-plan'") < handler.indexOf('createAuthorizedStoreSubscription(authorization, body)'));
   assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
 });
+
+
+test('unified catalog checkout routes official plans before merchant checkout and rejects contract overrides', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /body\.selectedMonths !== undefined \|\| body\.paymentTerms !== undefined/);
+  assert.match(handler, /body\.contractDiscounts !== undefined \|\| body\.installments !== undefined/);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf("route.kind === 'platform-plan'") < handler.indexOf('createAuthorizedStoreSubscription'));
+});
