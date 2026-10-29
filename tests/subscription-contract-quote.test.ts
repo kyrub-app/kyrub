@@ -22,6 +22,15 @@ describe('persisted contract checkout quote', () => {
       selectedMonths: 12,
     }), /INVALID_PERSISTED/);
   });
+  it('does not allow annual discounted terms through monthly recurring billing', () => {
+    const base = { persistedSaleModality: modality, authoritativeMonthlyPriceMinor: 7000, persistedOffers: offers, selectedMonths: 12 as const };
+    assert.throws(() => resolveSubscriptionContractQuote({
+      ...base, paymentTerms: { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null },
+    }), /UNSUPPORTED_RECURRING_CONTRACT_TERM/);
+    assert.equal(resolveSubscriptionContractQuote({
+      ...base, paymentTerms: { collectionMode: 'prepaid', installments: 6 },
+    }).totalMinor, 67200);
+  });
   it('rejects one-time product modality', () => {
     assert.throws(() => resolveSubscriptionContractQuote({
       persistedSaleModality: { schemaVersion: 1, mode: 'one_time', subscription: null },
