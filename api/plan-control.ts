@@ -363,6 +363,16 @@ export default async function handler(
           response.status(400).json({ error: 'Informe loja e produto válidos.', code: 'INVALID_SUBSCRIPTION_CHECKOUT_REQUEST' });
           return;
         }
+        // This endpoint is monthly-only. Never silently discard a selected
+        // contract term or payment condition and charge a different offer.
+        if (body.selectedMonths !== undefined || body.paymentTerms !== undefined ||
+            body.contractDiscounts !== undefined || body.installments !== undefined) {
+          response.status(409).json({
+            error: 'Este checkout aceita apenas a assinatura mensal padrão. Utilize o checkout contratual para prazos e condições especiais.',
+            code: 'SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+          });
+          return;
+        }
         const route = await resolvePersistedProductCheckoutRoute({
           sellerStoreReference: body.storeId,
           productId: body.productId,
