@@ -464,6 +464,8 @@ export const persistCanonicalCategoryProductUpdates = async (
         !snapshot?.exists() ||
         !original ||
         snapshot.data().category !== original.category ||
+        JSON.stringify(snapshot.data().categoryCollections ?? []) !==
+          JSON.stringify(original.categoryCollections ?? []) ||
         snapshot.data().publicationStatus === 'archived'
       ) {
         throw new Error('O produto foi alterado durante a edição da categoria.');
