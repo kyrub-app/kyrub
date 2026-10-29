@@ -146,7 +146,7 @@ test('cart routes eligible monthly subscriptions through the canonical platform-
   assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
   assert.match(gateway, /case 'catalog\.subscription\.checkout'/);
   assert.match(gateway, /route\.kind === 'platform-plan'/);
-  assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
   assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
 });
 
@@ -162,7 +162,7 @@ test('unified subscription checkout authenticates and resolves persisted officia
   assert.match(handler, /await resolvePersistedProductCheckoutRoute\(/);
   assert.match(handler, /allowMerchantSubscription: true/);
   assert.match(handler, /route\.kind === 'platform-plan'/);
-  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
   assert.match(handler, /route\.kind === 'free-plan'/);
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('await resolvePersistedProductCheckoutRoute'));
@@ -208,7 +208,7 @@ test('unified subscription checkout authenticates and resolves persisted officia
   assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
   assert.match(handler, /allowMerchantSubscription: true/);
   assert.match(handler, /route\.kind === 'platform-plan'/);
-  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
   assert.match(handler, /route\.kind === 'free-plan'/);
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.match(route, /official_plan_products\/\$\{productId\}/);
@@ -226,7 +226,7 @@ test('unified catalog checkout selects server-authoritative official plan billin
   assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
   assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
   assert.match(handler, /route\.kind === 'platform-plan'/);
-  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan\)/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
   assert.match(handler, /route\.kind === 'free-plan'/);
   assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
