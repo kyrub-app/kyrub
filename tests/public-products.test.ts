@@ -7,9 +7,31 @@ import {
   parsePublicProducts,
   parseProductCategoryCollections,
   publicProductCollectionsEquivalent,
+  suppressUnverifiedContractDiscounts,
 } from '../src/utils/publicProducts';
 
 describe('public marketplace products', () => {
+  test('hides unconfirmed contract discounts only for mapped canonical fallbacks', () => {
+    const saleModality = buildSubscriptionSaleModality({
+      billingUnit: 'month',
+      benefitKind: 'recurring_delivery',
+      unitsPerCycle: 1,
+    });
+    const product = buildPublicProduct({ uid: 'owner-a' }, {
+      name: 'Assinatura', description: '', price: '100', stock: '',
+      category: 'Serviços', image: '', isService: true, saleModality,
+      contractDiscounts: [
+        { months: 1, discountPercent: 0 },
+        { months: 6, discountPercent: 10 },
+      ],
+    }, 1700000000000);
+    const legacyFallback = suppressUnverifiedContractDiscounts([product], 'store-a', 'legacy');
+    assert.equal(legacyFallback[0].contractDiscounts, undefined);
+    assert.equal(product.contractDiscounts?.length, 2);
+    assert.deepEqual(suppressUnverifiedContractDiscounts([product], 'store-a', 'canonical')[0].contractDiscounts, product.contractDiscounts);
+    assert.deepEqual(suppressUnverifiedContractDiscounts([product], '', 'legacy')[0].contractDiscounts, product.contractDiscounts);
+  });
+
   test('builds a product only from user-provided values', () => {
     const product = buildPublicProduct(
       { uid: 'user-a' },
