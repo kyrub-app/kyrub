@@ -280,7 +280,8 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
 
 const parseCanonicalPublicProduct = (
   snapshot: QueryDocumentSnapshot<DocumentData>,
-  legacyStoreId: string
+  legacyStoreId: string,
+  includeUnpublished = false
 ): PublicProduct | null => {
   const value = snapshot.data() as Record<string, unknown>;
   const id = cleanString(value.id) || snapshot.id;
@@ -316,7 +317,7 @@ const parseCanonicalPublicProduct = (
     stock === null ||
     stock < 0 ||
     saleModality === null ||
-    cleanString(value.publicationStatus) !== 'published'
+    (!includeUnpublished && cleanString(value.publicationStatus) !== 'published')
   ) {
     return null;
   }
@@ -686,7 +687,8 @@ export const subscribeToPreferredPublicProducts = (
         canonicalProducts = snapshot.docs.flatMap(document => {
           const parsed = parseCanonicalPublicProduct(
             document,
-            normalizedStoreId
+            normalizedStoreId,
+            options.includeUnpublished === true
           );
           return parsed ? [parsed] : [];
         });
