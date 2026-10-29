@@ -64,6 +64,12 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   if (mapping.exists && planId === null) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Plano oficial não identificado.');
   }
+  if (planId !== null && data.contractDiscounts !== undefined) {
+    throw new OfficialPlanCheckoutRouteError(
+      'OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED',
+      'Este plano possui ofertas por prazo e exige o checkout contratual.'
+    );
+  }
   if (planId !== null) {
     const modality = parseProductSaleModality(data.saleModality);
     if (!modality || modality.mode !== 'subscription' ||
