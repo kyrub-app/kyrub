@@ -36,6 +36,7 @@ describe('persisted contract checkout quote', () => {
     assert.throws(() => resolveSubscriptionContractQuote({
       persistedSaleModality: { schemaVersion: 1, mode: 'one_time', subscription: null },
       authoritativeMonthlyPriceMinor: 7000, persistedOffers: offers, selectedMonths: 12,
+      paymentTerms: { collectionMode: 'prepaid', installments: 1 },
     }), /INVALID_SUBSCRIPTION_PRODUCT/);
   });
 });
