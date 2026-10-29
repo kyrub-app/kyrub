@@ -363,6 +363,15 @@ export default async function handler(
           response.status(400).json({ error: 'Informe loja e produto válidos.', code: 'INVALID_SUBSCRIPTION_CHECKOUT_REQUEST' });
           return;
         }
+        // Fail closed on unknown checkout fields. A renamed contract-term or
+        // payment-option key must not be silently ignored and charged monthly.
+        if (Object.keys(body).some(key => key !== 'storeId' && key !== 'productId')) {
+          response.status(409).json({
+            error: 'Este checkout aceita somente loja e produto. Condições contratuais exigem o checkout específico.',
+            code: 'SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+          });
+          return;
+        }
         // This endpoint is monthly-only. Never silently discard a selected
         // contract term or payment condition and charge a different offer.
         if (body.selectedMonths !== undefined || body.paymentTerms !== undefined ||
