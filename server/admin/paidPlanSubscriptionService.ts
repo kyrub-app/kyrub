@@ -1,3 +1,4 @@
+import { decideReservationCompletion } from './planReservationDecision.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { KyrubCommercialPlanId } from '../../shared/kyrubCommercialPlans.js';
@@ -501,16 +502,9 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   };
   await adminDb.runTransaction(async transaction => {
     const reservation = await transaction.get(reservationRef);
-    if (reservation.data()?.billingReference !== billingReference) {
-      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
-    }
-    // A verified webhook can complete this same reservation before the
-    // original checkout request finishes its Mercado Pago POST.
-    if (reservation.data()?.checkoutReservationStatus === 'completed' &&
-        clean(reservation.data()?.providerSubscriptionId) === providerSubscriptionId) {
-      return;
-    }
-    if (reservation.data()?.checkoutReservationStatus !== 'pending') {
+    const completion = decideReservationCompletion(billingReference, providerSubscriptionId, reservation.data() ?? {});
+    if (completion === 'already-completed') return;
+    if (completion === 'conflict') {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
     }
     transaction.set(reservationRef, {
@@ -742,16 +736,9 @@ export const handlePaidPlanProviderWebhook = async (input: {
     };
     await adminDb.runTransaction(async transaction => {
       const latest = await transaction.get(reservation.ref);
-      if (latest.data()?.billingReference !== reference) {
-        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
-      }
-      // Repeated webhooks can race to recover the same preapproval. The
-      // already-completed matching reservation is safe to reconcile again.
-      if (latest.data()?.checkoutReservationStatus === 'completed' &&
-          clean(latest.data()?.providerSubscriptionId) === providerSubscriptionId) {
-        return;
-      }
-      if (latest.data()?.checkoutReservationStatus !== 'pending') {
+      const completion = decideReservationCompletion(reference, providerSubscriptionId, latest.data() ?? {});
+      if (completion === 'already-completed') return;
+      if (completion === 'conflict') {
         throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
       }
       transaction.set(reservation.ref, {
