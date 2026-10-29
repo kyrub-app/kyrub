@@ -93,6 +93,13 @@ test('mirrors contract discounts and detects changes requiring canonical resync'
   assert.equal(canonicalProductNeedsUpdate(initial as unknown as Record<string, unknown>, revised), true);
 });
 
+test('canonical sync update writes and removes contract discounts', () => {
+  const fs = require('node:fs') as typeof import('node:fs');
+  const source = fs.readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
+  assert.match(source, /contractDiscounts: next\.contractDiscounts \?\? deleteField\(\)/);
+  assert.match(source, /contractDiscounts: value\.contractDiscounts === undefined/);
+});
+
 test('services are mirrored with zero stock', () => {
   const mirrored = buildCanonicalProductMirrorData(
     legacyProduct({ isService: true, stock: 12 }),
