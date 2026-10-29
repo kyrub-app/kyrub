@@ -416,6 +416,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
   const billingReference = randomUUID().replaceAll('-', '_');
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
+    headers: { 'X-Idempotency-Key': billingReference },
     body: JSON.stringify({
       reason: `Kyrub ${targetPlan === 'business' ? 'Business' : 'Pro'}`,
       external_reference: billingReference,
