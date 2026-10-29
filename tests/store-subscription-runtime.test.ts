@@ -247,3 +247,15 @@ test('unified catalog checkout routes official plans before merchant checkout an
   assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
   assert.ok(handler.indexOf("route.kind === 'platform-plan'") < handler.indexOf('createAuthorizedStoreSubscription'));
 });
+
+
+test('unified catalog checkout explicitly permits merchant subscriptions without relaxing ordinary checkout', () => {
+  const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(lookup, /allowMerchantSubscription\?: boolean/);
+  assert.match(lookup, /parsedModality\.mode === 'subscription' && !input\.allowMerchantSubscription/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+});
