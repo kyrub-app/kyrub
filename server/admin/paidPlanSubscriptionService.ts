@@ -545,16 +545,10 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
     if (matches.length > 1) {
       throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_CONFLICT', 'Mais de uma assinatura encontrada para a mesma referencia.');
     }
-    if (matches.length === 1) {
-      const candidate = matches[0];
-      const recurring = record(candidate.auto_recurring);
-      const amount = Number(recurring.transaction_amount);
-      if (!clean(candidate.id) || !Number.isFinite(amount) ||
-          Math.round(amount * 100) !== snapshot.data()?.reservedAmountMinor ||
-          clean(recurring.currency_id) !== snapshot.data()?.reservedCurrency ||
-          recurring.frequency !== 1 || recurring.frequency_type !== 'months') {
-        throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Assinatura encontrada com dados diferentes da reserva.');
-      }
+    // Search responses may omit recurring terms. Validate those fields against
+    // the full preapproval detail below, not the abbreviated search result.
+    if (matches.length === 1 && !clean(matches[0].id)) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura encontrada sem identificador do provedor.');
     }
     if (matches.length === 1) {
       if (!Number.isSafeInteger(snapshot.data()?.reservedPlanVersion) || Number(snapshot.data()?.reservedPlanVersion) <= 0) {
