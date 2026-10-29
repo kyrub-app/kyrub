@@ -87,3 +87,12 @@ it('monthly catalog checkout fails closed on unknown contract and payment fields
   assert.ok(handler.indexOf('Object.keys(body)') < handler.indexOf('resolvePersistedProductCheckoutRoute'),
     'Unknown contract terms must be rejected before billing route resolution');
 });
+
+
+test('unified subscription route rejects ordinary merchandise before payment routing', () => {
+  const source = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(source, /input\.allowMerchantSubscription && parsedModality\.mode !== 'subscription'/);
+  assert.match(source, /PRODUCT_NOT_SUBSCRIPTION/);
+  assert.ok(source.indexOf('PRODUCT_NOT_SUBSCRIPTION') < source.indexOf('return resolveCheckoutBillingRoute'),
+    'Ordinary merchandise must be rejected before a subscription billing recipient is chosen');
+});
