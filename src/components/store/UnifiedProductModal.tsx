@@ -326,12 +326,16 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       let latestCatalogProducts: PublicProduct[] = [];
       let tenantPathsLoaded = false;
       let catalogLoaded = false;
+      let canonicalCatalogActive = false;
       const publishCatalogPaths = (): void => {
         // Wait for both independent subscriptions before replacing the
         // hierarchy; a first empty snapshot is not a complete catalog.
         if (!tenantPathsLoaded || !catalogLoaded) return;
         setCatalogPaths(
-          mergeCatalogCategoryPaths(latestStoredPaths, latestCatalogProducts)
+          mergeCatalogCategoryPaths(
+            canonicalCatalogActive ? [] : latestStoredPaths,
+            latestCatalogProducts
+          )
         );
       };
 
@@ -376,6 +380,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
             // remains a valid fallback and must still update the editor.
             return;
           }
+          canonicalCatalogActive = result.decision.source === 'canonical';
           latestCatalogProducts = result.products;
           catalogLoaded = true;
           setCatalogProducts(result.products);
