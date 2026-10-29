@@ -422,7 +422,12 @@ export const persistPublicProduct = async (
     const nextProducts = [
       normalizedProduct,
       ...existingProducts.filter(item => item.id !== product.id),
-    ].slice(0, 200);
+    ];
+    // Never silently drop existing products during the legacy-to-canonical transition.
+    // An oversized legacy catalog requires an explicit migration, not truncation.
+    if (nextProducts.length > 200) {
+      throw new Error('O catálogo antigo excede o limite seguro de 200 produtos. Migre os itens antes de continuar.');
+    }
 
     transaction.set(
       tenantReference,
