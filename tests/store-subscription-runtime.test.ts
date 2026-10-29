@@ -111,3 +111,16 @@ test('legacy recurring checkout refuses persisted contract offers even when clie
   assert.match(service, /STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
   assert.match(service, /payload\.selectedMonths !== undefined/);
 });
+
+test('subscription quote gateway validates input before consulting canonical catalog', () => {
+  const gateway = readFileSync('api/plan-control.ts', 'utf8');
+  const start = gateway.indexOf("case 'merchant.subscription.quote'");
+  const end = gateway.indexOf("case 'merchant.subscription.checkout'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /typeof body\.storeId !== 'string'/);
+  assert.match(handler, /typeof body\.productId !== 'string'/);
+  assert.match(handler, /\[1, 3, 6, 12\]\.includes/);
+  assert.match(handler, /INVALID_SUBSCRIPTION_QUOTE_REQUEST/);
+  assert.ok(handler.indexOf('INVALID_SUBSCRIPTION_QUOTE_REQUEST') < handler.indexOf('await quotePersistedMerchantSubscription'));
+});
