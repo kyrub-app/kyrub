@@ -380,3 +380,32 @@ test('manager creates canonical drafts and edits products without rewriting lega
     )
   );
 });
+
+test('owner updates category fields after canonical cutover without touching legacy metadata', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const reference = doc(owner, 'stores', STORE_ID, 'products', 'product-a');
+  await assertSucceeds(setDoc(reference, mirroredProduct()));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'stores', STORE_ID), {
+      migrationStatus: 'canonical',
+    });
+  });
+  await assertSucceeds(updateDoc(reference, {
+    category: 'Alimentação > Bistrô',
+    categoryCollections: [
+      { path: 'Alimentação > Bistrô', name: 'Bistrô', image: '' },
+    ],
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  const updated = await getDoc(reference);
+  if (!updated.exists()) throw new Error('Produto não encontrado.');
+  const data = updated.data();
+  if (data.category !== 'Alimentação > Bistrô') {
+    throw new Error('A categoria canônica não foi atualizada.');
+  }
+  if (data.legacyUpdatedAt !== mirroredProduct().legacyUpdatedAt) {
+    throw new Error('O marcador legado foi modificado.');
+  }
+});
