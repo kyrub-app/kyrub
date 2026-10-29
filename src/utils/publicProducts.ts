@@ -621,7 +621,10 @@ export const subscribeToPreferredPublicProducts = (
     // After cutover the legacy array is no longer authoritative. New canonical
     // products intentionally diverge from it and must not trigger a fallback.
     const decision = canonicalCutover
-      ? { source: 'canonical' as const, reason: 'canonical' as const }
+      ? {
+          source: 'canonical' as const,
+          reason: (canonicalState === 'available' ? 'canonical' : canonicalState) as 'canonical' | 'waiting' | 'unavailable',
+        }
       : chooseCanonicalReadSource(
         canonicalEnabled,
         canonicalStoreId,
@@ -670,6 +673,7 @@ export const subscribeToPreferredPublicProducts = (
         publish();
       },
       error => {
+        canonicalProducts = [];
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -686,7 +690,7 @@ export const subscribeToPreferredPublicProducts = (
       legacyProducts = parsePublicProducts(data?.publicProducts);
       const config = parseCanonicalReadConfig(data);
       canonicalStoreId = config.canonicalStoreId;
-      canonicalEnabled = config.preferences.products;
+      canonicalEnabled = config.preferences.products || (canonicalCutover && canonicalStoreId === previousStoreId);
       if (canonicalStoreId !== previousStoreId) {
         unsubscribeStore();
         canonicalCutover = false;
@@ -695,8 +699,9 @@ export const subscribeToPreferredPublicProducts = (
               const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
               const changed = canonicalCutover !== cutover;
               canonicalCutover = cutover;
-              if (cutover && !canonicalEnabled) {
-                canonicalEnabled = true;
+              const shouldEnable = cutover || config.preferences.products;
+              if (canonicalEnabled !== shouldEnable) {
+                canonicalEnabled = shouldEnable;
                 restartCanonicalSubscription();
               } else if (changed) {
                 publish();
