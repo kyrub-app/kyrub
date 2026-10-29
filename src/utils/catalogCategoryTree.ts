@@ -491,6 +491,17 @@ export const reconcileCatalogCategoryPaths = async (
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) return [];
 
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists()) {
+        throw new Error('Não foi possível conferir a loja canônica antes de reconciliar categorias.');
+      }
+      if (canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A reconciliação legada de categorias está desativada após a migração canônica.');
+      }
+    }
+
     const products = parsePublicProducts(snapshot.data().publicProducts);
     const storedPaths = parseCatalogCategoryPaths(
       snapshot.data().catalogCategoryPaths
