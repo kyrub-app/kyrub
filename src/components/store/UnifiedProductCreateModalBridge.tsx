@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { Product } from '../../types';
-import { auth, db } from '../../utils/firebase';
-import { doc, getDoc } from 'firebase/firestore';
+import { auth } from '../../utils/firebase';
 import {
   OPEN_PRODUCT_CREATE_MODAL_EVENT,
   type ProductCreateModalDetail,
@@ -9,6 +8,7 @@ import {
 import {
   PUBLIC_PRODUCT_CREATE_EVENT,
   persistCanonicalPublicProduct,
+  resolveCanonicalProductWriteStore,
   type PublicProduct,
   type PublicProductCreateRequest,
 } from '../../utils/publicProducts';
@@ -48,19 +48,11 @@ export function UnifiedProductCreateModalBridge() {
       }
       // The canonical writer is authoritative. Do not dispatch the legacy
       // create event after a successful canonical write.
-      const tenant = await getDoc(doc(db, 'tenants', currentUser.uid));
-      const mappedId = typeof tenant.data()?.canonicalStoreId === 'string'
-        ? tenant.data()!.canonicalStoreId.trim() : '';
-      if (mappedId) {
-        const store = await getDoc(doc(db, 'stores', mappedId));
-        if (!store.exists()) {
-          throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
-        }
-        if (store.data().migrationStatus === 'canonical') {
-          await persistCanonicalPublicProduct(currentUser, mappedId, product as PublicProduct);
-          setIsOpen(false);
-          return;
-        }
+      const canonicalStoreId = await resolveCanonicalProductWriteStore(currentUser);
+      if (canonicalStoreId) {
+        await persistCanonicalPublicProduct(currentUser, canonicalStoreId, product as PublicProduct);
+        setIsOpen(false);
+        return;
       }
       window.dispatchEvent(
         new CustomEvent<PublicProductCreateRequest>(PUBLIC_PRODUCT_CREATE_EVENT, {
