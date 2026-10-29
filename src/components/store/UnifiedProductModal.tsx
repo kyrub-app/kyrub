@@ -188,6 +188,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [categoryRoot, setCategoryRoot] = useState('');
   const [hierarchySegments, setHierarchySegments] = useState<string[]>([]);
   const [catalogPaths, setCatalogPaths] = useState<ProductCategoryCollection[]>([]);
+  const [canonicalCategoryStoreId, setCanonicalCategoryStoreId] = useState('');
   const [catalogProducts, setCatalogProducts] = useState<Product[]>(products);
   const [image, setImage] = useState('');
   const [imageFileName, setImageFileName] = useState('');
@@ -312,13 +313,17 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
 
     let unsubscribeTenant = () => undefined;
     let unsubscribeCatalog = () => undefined;
+    let unsubscribeCanonicalCategories = () => undefined;
     let unsubscribeInventory = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeTenant();
       unsubscribeCatalog();
+      unsubscribeCanonicalCategories();
       unsubscribeInventory();
       unsubscribeTenant = () => undefined;
       unsubscribeCatalog = () => undefined;
+      unsubscribeCanonicalCategories = () => undefined;
+      setCanonicalCategoryStoreId('');
       unsubscribeInventory = () => undefined;
       if (!user) return;
 
@@ -327,13 +332,16 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       let tenantPathsLoaded = false;
       let catalogLoaded = false;
       let canonicalCatalogActive = false;
+      let activeCanonicalStoreId = '';
+      let canonicalPathsLoaded = false;
+      let canonicalStoredPaths: ProductCategoryCollection[] = [];
       const publishCatalogPaths = (): void => {
         // Wait for both independent subscriptions before replacing the
         // hierarchy; a first empty snapshot is not a complete catalog.
-        if (!tenantPathsLoaded || !catalogLoaded) return;
+        if (!tenantPathsLoaded || !catalogLoaded || (canonicalCatalogActive && !canonicalPathsLoaded)) return;
         setCatalogPaths(
           mergeCatalogCategoryPaths(
-            canonicalCatalogActive ? [] : latestStoredPaths,
+            canonicalCatalogActive ? canonicalStoredPaths : latestStoredPaths,
             latestCatalogProducts
           )
         );
@@ -381,6 +389,24 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
             return;
           }
           canonicalCatalogActive = result.decision.source === 'canonical';
+          const nextStoreId = canonicalCatalogActive ? result.canonicalStoreId : '';
+          if (nextStoreId !== activeCanonicalStoreId) {
+            activeCanonicalStoreId = nextStoreId;
+            unsubscribeCanonicalCategories();
+            unsubscribeCanonicalCategories = () => undefined;
+            canonicalPathsLoaded = !nextStoreId;
+            canonicalStoredPaths = [];
+            setCanonicalCategoryStoreId('');
+            if (nextStoreId) {
+              unsubscribeCanonicalCategories = onSnapshot(doc(db, 'stores', nextStoreId), snapshot => {
+                if (activeCanonicalStoreId !== nextStoreId) return;
+                canonicalStoredPaths = parseCatalogCategoryPaths(snapshot.data()?.catalogCategoryPaths);
+                canonicalPathsLoaded = true;
+                setCanonicalCategoryStoreId(nextStoreId);
+                publishCatalogPaths();
+              }, error => console.warn('Não foi possível carregar as pastas canônicas.', error));
+            }
+          }
           latestCatalogProducts = result.products;
           catalogLoaded = true;
           setCatalogProducts(result.products);
@@ -720,6 +746,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
 
               <CatalogHierarchySelector
                 keywords={keywords}
+                canonicalStoreId={canonicalCategoryStoreId}
                 categoryRoot={categoryRoot}
                 onCategoryRootChange={setCategoryRoot}
                 selectedSegments={hierarchySegments}
