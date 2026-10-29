@@ -65,6 +65,34 @@ test('mirrors subscription terms without adding payment ownership to the product
   assert.equal('merchantAccountId' in mirrored.saleModality, false);
 });
 
+test('mirrors contract discounts and detects changes requiring canonical resync', () => {
+  const saleModality = buildSubscriptionSaleModality({
+    billingUnit: 'month',
+    benefitKind: 'recurring_delivery',
+    unitsPerCycle: 1,
+  });
+  const initial = buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 10 },
+    ],
+  }), 'store-independent-a', 'owner-a');
+  assert.deepEqual(initial.contractDiscounts, [
+    { months: 1, discountPercent: 0 },
+    { months: 6, discountPercent: 10 },
+  ]);
+  assert.equal(canonicalProductNeedsUpdate(initial as unknown as Record<string, unknown>, initial), false);
+  const revised = buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 15 },
+    ],
+  }), 'store-independent-a', 'owner-a');
+  assert.equal(canonicalProductNeedsUpdate(initial as unknown as Record<string, unknown>, revised), true);
+});
+
 test('services are mirrored with zero stock', () => {
   const mirrored = buildCanonicalProductMirrorData(
     legacyProduct({ isService: true, stock: 12 }),
