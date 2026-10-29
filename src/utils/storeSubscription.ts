@@ -35,6 +35,16 @@ const post = async <T>(operation: string, body: Record<string, unknown>): Promis
     body: JSON.stringify(body),
   }));
 
+/** Unified canonical product checkout: the server chooses platform or merchant billing. */
+export const createCatalogSubscriptionCheckout = async (input: {
+  storeId: string;
+  productId: string;
+}): Promise<{ checkoutUrl: string }> =>
+  post('catalog.subscription.checkout', {
+    storeId: input.storeId.trim(),
+    productId: input.productId.trim(),
+  });
+
 export const createMerchantSubscriptionCheckout = async (input: {
   storeId: string;
   productId: string;
