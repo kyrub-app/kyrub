@@ -25,7 +25,12 @@ export const resolveSubscriptionContractQuote = (input: {
       modality.subscription.billingInterval.count !== 1) {
     throw new Error('INVALID_SUBSCRIPTION_PRODUCT_FOR_CONTRACT');
   }
-  const offers = parseSubscriptionContractDiscounts(input.persistedOffers);
+  // Legacy monthly subscriptions predate contract offers. Preserve their
+  // monthly baseline without inventing multi-month discounts. Malformed
+  // explicitly persisted offers remain invalid and must never fall back.
+  const offers = input.persistedOffers === undefined
+    ? [{ months: 1 as const, discountPercent: 0 }]
+    : parseSubscriptionContractDiscounts(input.persistedOffers);
   if (!offers) throw new Error('INVALID_PERSISTED_SUBSCRIPTION_OFFERS');
   const selected = offers.find(offer => offer.months === input.selectedMonths);
   if (!selected) throw new Error('SUBSCRIPTION_TERM_NOT_OFFERED');
