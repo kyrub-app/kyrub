@@ -102,6 +102,14 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   if (!parsedModality) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PRODUCT_SALE_MODALITY', 'Forma de venda do produto inválida.');
   }
+  // The unified subscription endpoint must not accept ordinary merchandise.
+  // Otherwise a non-subscription product could be routed to recurring billing.
+  if (planId === null && input.allowMerchantSubscription && parsedModality.mode !== 'subscription') {
+    throw new OfficialPlanCheckoutRouteError(
+      'PRODUCT_NOT_SUBSCRIPTION',
+      'Este produto não é uma assinatura. Utilize o checkout normal da loja.'
+    );
+  }
   if (planId === null && parsedModality.mode === 'subscription' && !input.allowMerchantSubscription) {
     throw new OfficialPlanCheckoutRouteError(
       'MERCHANT_SUBSCRIPTION_CHECKOUT_REQUIRED',
