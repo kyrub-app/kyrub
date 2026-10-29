@@ -115,6 +115,22 @@ test('rejects malformed contract offers instead of silently publishing without d
   }), 'store-independent-a', 'owner-a'), /períodos de contratação/);
 });
 
+test('preserves product catalog fields required for canonical storefront parity', () => {
+  const product = legacyProduct({
+    isComplimentary: true,
+    categoryCollections: [{ id: 'collection-a', name: 'Coleção A' }] as PublicProduct['categoryCollections'],
+    quickNotes: ['Sem embalagem'],
+  });
+  const mirrored = buildCanonicalProductMirrorData(product, 'store-independent-a', 'owner-a');
+  assert.equal(mirrored.isComplimentary, true);
+  assert.deepEqual(mirrored.categoryCollections, product.categoryCollections);
+  assert.deepEqual(mirrored.quickNotes, ['Sem embalagem']);
+  assert.ok(Array.isArray(mirrored.optionGroups));
+  assert.equal(canonicalProductNeedsUpdate({
+    ...mirrored, isComplimentary: false,
+  } as unknown as Record<string, unknown>, mirrored), true);
+});
+
 test('services are mirrored with zero stock', () => {
   const mirrored = buildCanonicalProductMirrorData(
     legacyProduct({ isService: true, stock: 12 }),
