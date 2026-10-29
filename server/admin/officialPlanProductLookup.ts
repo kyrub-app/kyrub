@@ -69,12 +69,6 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   if (planId !== null && data.contractDiscounts !== undefined) {
     throw new OfficialPlanCheckoutRouteError(
       'OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED',
-      'Este plano possui ofertas por prazo e exige o checkout contratual.'
-    );
-  }
-  if (planId !== null && data.contractDiscounts !== undefined) {
-    throw new OfficialPlanCheckoutRouteError(
-      'OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED',
       'Este plano possui condições contratuais. O checkout mensal não pode ignorar seus prazos e descontos.'
     );
   }
