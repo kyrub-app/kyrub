@@ -14,6 +14,17 @@ describe('contract term versus provider billing cadence', () => {
       { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null },
     ), /UNSUPPORTED_RECURRING/);
   });
+  it('rejects extra payment keys and arrays supplied by untrusted clients', () => {
+    const monthly = calculateSubscriptionContractOffer(7000, 1, 0);
+    assert.throws(() => validateSubscriptionContractPaymentTerms(monthly, {
+      collectionMode: 'recurring', billingIntervalMonths: 1, installments: null, amountMinor: 1,
+    } as never), /INVALID_CONTRACT_PAYMENT_TERMS/);
+    assert.throws(() => validateSubscriptionContractPaymentTerms(monthly, {
+      collectionMode: 'prepaid', installments: 1, chargeLater: true,
+    } as never), /INVALID_CONTRACT_PAYMENT_TERMS/);
+    assert.throws(() => validateSubscriptionContractPaymentTerms(monthly, [] as never),
+      /INVALID_CONTRACT_PAYMENT_TERMS/);
+  });
   it('requires prepaid annual terms to be charged in full once', () => {
     const annual = calculateSubscriptionContractOffer(7000, 12, 20);
     assert.doesNotThrow(() => validateSubscriptionContractPaymentTerms(annual, {
