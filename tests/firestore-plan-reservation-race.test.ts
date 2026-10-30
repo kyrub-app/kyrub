@@ -17,10 +17,13 @@ before(async () => {
 after(async () => { await environment?.cleanup(); });
 beforeEach(async () => { await environment.clearFirestore(); });
 
-const complete = async (reference: string, providerId: string) =>
-  environment.withSecurityRulesDisabled(async context => {
+const complete = async (reference: string, providerId: string) => {
+  // withSecurityRulesDisabled resolves void, so capture the transaction result
+  // explicitly rather than returning its callback's result.
+  let outcome: ReturnType<typeof decideReservationCompletion> | undefined;
+  await environment.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
-    return runTransaction(db, async transaction => {
+    outcome = await runTransaction(db, async transaction => {
       const ref = doc(db, path);
       const snapshot = await transaction.get(ref);
       const decision = decideReservationCompletion(reference, providerId, snapshot.data() ?? {});
@@ -31,6 +34,9 @@ const complete = async (reference: string, providerId: string) =>
       return decision;
     });
   });
+  if (!outcome) throw new Error('transaction did not return a completion decision');
+  return outcome;
+};
 
 test('Firestore emulator retries concurrent matching webhook and checkout completions', async () => {
   await environment.withSecurityRulesDisabled(context => setDoc(doc(context.firestore(), path), {
