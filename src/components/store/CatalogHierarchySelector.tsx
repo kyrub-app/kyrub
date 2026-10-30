@@ -11,6 +11,9 @@ import { useMemo, useState } from 'react';
 import type { Product, ProductCategoryCollection } from '../../types';
 import {
   deleteCatalogCategoryPath,
+  deleteCatalogCategoryTreePath,
+  persistCanonicalCategoryTree,
+  renameCatalogCategoryTree,
   joinCatalogCategoryPath,
   normalizeCatalogCategoryValue,
   renameCatalogCategoryPath,
@@ -19,6 +22,7 @@ import {
 import {
   CATALOG_HIERARCHY_TIERS,
   createCatalogHierarchyPath,
+  addCatalogHierarchyTreePath,
   getDirectCatalogHierarchyChildren,
   MAX_CATALOG_HIERARCHY_CHILDREN,
 } from '../../utils/catalogHierarchy';
@@ -27,6 +31,7 @@ import type { PublicProduct } from '../../utils/publicProducts';
 
 interface CatalogHierarchySelectorProps {
   keywords: string[];
+  canonicalStoreId?: string;
   categoryRoot: string;
   onCategoryRootChange: (value: string) => void;
   selectedSegments: string[];
@@ -66,6 +71,7 @@ const uniqueRoots = (keywords: string[], currentRoot: string): string[] => {
 
 export function CatalogHierarchySelector({
   keywords,
+  canonicalStoreId = '',
   categoryRoot,
   onCategoryRootChange,
   selectedSegments,
@@ -119,11 +125,12 @@ export function CatalogHierarchySelector({
     setBusyPath(`${parentPath}::new`);
     setError('');
     try {
-      const nextPaths = await createCatalogHierarchyPath(
-        user,
-        parentPath,
-        cleanName
-      );
+      const nextPaths = canonicalStoreId
+        ? addCatalogHierarchyTreePath(paths, parentPath, cleanName)
+        : await createCatalogHierarchyPath(user, parentPath, cleanName);
+      if (canonicalStoreId) {
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], products as PublicProduct[], nextPaths, paths);
+      }
       onCatalogDataChange(nextPaths);
       updateTierSelection(tierIndex, cleanName.slice(0, 40));
     } catch (createError) {
@@ -156,7 +163,12 @@ export function CatalogHierarchySelector({
     setBusyPath(path);
     setError('');
     try {
-      const result = await renameCatalogCategoryPath(user, path, cleanName);
+      const result = canonicalStoreId
+        ? renameCatalogCategoryTree(products as PublicProduct[], paths, path, cleanName)
+        : await renameCatalogCategoryPath(user, path, cleanName);
+      if (canonicalStoreId) {
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths, paths);
+      }
       onCatalogDataChange(result.paths, result.products);
       const currentPath = joinCatalogCategoryPath([
         categoryRoot,
@@ -193,7 +205,12 @@ export function CatalogHierarchySelector({
     setBusyPath(path);
     setError('');
     try {
-      const result = await deleteCatalogCategoryPath(user, path);
+      const result = canonicalStoreId
+        ? deleteCatalogCategoryTreePath(products as PublicProduct[], paths, path)
+        : await deleteCatalogCategoryPath(user, path);
+      if (canonicalStoreId) {
+        await persistCanonicalCategoryTree(user, canonicalStoreId, products as PublicProduct[], result.products, result.paths, paths);
+      }
       onCatalogDataChange(result.paths, result.products);
       onSelectedSegmentsChange(selectedSegments.slice(0, tierIndex));
       setDeletingPath('');
@@ -416,7 +433,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => void handleCreate(tierIndex)}
-                    disabled={!newName.trim() || Boolean(busyPath)}
+                    disabled={disabled || !newName.trim() || Boolean(busyPath)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500 text-slate-950 disabled:opacity-40"
                     aria-label={`Salvar ${tierLabel.toLowerCase()}`}
                   >
@@ -425,7 +442,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => setCreatingTier(null)}
-                    disabled={Boolean(busyPath)}
+                    disabled={disabled || Boolean(busyPath)}
                     className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400"
                     aria-label="Cancelar criação"
                   >
@@ -453,7 +470,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => void handleRename(tierIndex, selectedPath)}
-                    disabled={!editingName.trim() || isBusy}
+                    disabled={disabled || !editingName.trim() || isBusy}
                     className="flex h-9 w-9 items-center justify-center rounded-lg bg-teal-500 text-slate-950 disabled:opacity-40"
                     aria-label="Salvar novo nome"
                   >
@@ -462,7 +479,7 @@ export function CatalogHierarchySelector({
                   <button
                     type="button"
                     onClick={() => setEditingPath('')}
-                    disabled={isBusy}
+                    disabled={disabled || isBusy}
                     className="flex h-9 w-9 items-center justify-center rounded-lg border border-slate-700 bg-slate-900 text-slate-400"
                     aria-label="Cancelar edição"
                   >
@@ -480,7 +497,7 @@ export function CatalogHierarchySelector({
                     <button
                       type="button"
                       onClick={() => setDeletingPath('')}
-                      disabled={isBusy}
+                      disabled={disabled || isBusy}
                       className="min-h-9 rounded-lg border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-300 disabled:opacity-40"
                     >
                       Cancelar
@@ -488,7 +505,7 @@ export function CatalogHierarchySelector({
                     <button
                       type="button"
                       onClick={() => void handleDelete(tierIndex, selectedPath)}
-                      disabled={isBusy}
+                      disabled={disabled || isBusy}
                       className="min-h-9 rounded-lg bg-red-500 px-3 text-[8px] font-black uppercase text-white disabled:opacity-40"
                     >
                       Excluir nível
