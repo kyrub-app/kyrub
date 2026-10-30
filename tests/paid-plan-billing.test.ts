@@ -91,7 +91,8 @@ test('plan-control owns state, checkout, reconcile and cancel without adding a s
 
 test('Plan Center separates provider authorization from payment-confirmed activation', () => {
   assert.match(planCenter, /loadPlanBillingAvailability/);
-  assert.match(planCenter, /createPaidPlanCheckout/);
+  assert.doesNotMatch(planCenter, /createPaidPlanCheckout|startSubscription/);
+  assert.match(planCenter, /exclusivamente pelo produto da Loja Oficial/);
   assert.match(planCenter, /reconcilePaidPlanSubscription/);
   assert.match(planCenter, /cancelPaidPlanSubscription/);
   assert.doesNotMatch(planCenter, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
