@@ -6,6 +6,7 @@ import test from 'node:test';
 const service = readFileSync('server/admin/paidPlanSubscriptionService.ts', 'utf8');
 const gateway = readFileSync('api/plan-control.ts', 'utf8');
 const sharedGateway = readFileSync('api/action-execute.ts', 'utf8');
+const merchantSubscriptions = readFileSync('server/payments/storeSubscriptionService.ts', 'utf8');
 const client = readFileSync('src/utils/planSubscription.ts', 'utf8');
 const planCenter = readFileSync('src/components/plans/PlanCenterApp.tsx', 'utf8');
 
@@ -118,4 +119,15 @@ test('paid plan checkout fails closed when platform billing secrets or notificat
   assert.match(service, /available: Boolean\(accessToken\(\) && webhookSecret\(\) && webhookUrl\(\)\)/);
   assert.match(service, /if \(!token \|\| !webhookSecret\(\) \|\| !notificationUrl\)/);
   assert.match(service, /PLAN_BILLING_NOT_CONFIGURED/);
+});
+
+
+test('merchant subscription notifications use a dedicated operation and never the official plan billing operation', () => {
+  assert.match(merchantSubscriptions, /KYRUB_STORE_SUBSCRIPTION_WEBHOOK_URL/);
+  assert.match(merchantSubscriptions, /url\.searchParams\.set\('op', 'merchant\.subscription\.webhook'\)/);
+  assert.match(merchantSubscriptions, /\/api\/plan-control\?op=merchant\.subscription\.webhook/);
+  assert.match(gateway, /operation === 'merchant\.subscription\.webhook'/);
+  assert.match(gateway, /processStoreSubscriptionMercadoPagoWebhook/);
+  assert.match(merchantSubscriptions, /STORE_SUBSCRIPTION_WEBHOOK_ACCOUNT_MISMATCH/);
+  assert.match(merchantSubscriptions, /STORE_SUBSCRIPTION_WEBHOOK_ROUTE_MISMATCH/);
 });
