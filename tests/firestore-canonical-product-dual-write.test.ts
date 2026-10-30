@@ -154,6 +154,130 @@ test('owner mirrors a legacy product and signed-in customers read published prod
   );
 });
 
+test('owner can publish a canonical subscription with contract offers and customization', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const reference = doc(owner, 'stores', STORE_ID, 'products', 'subscription-a');
+  await assertSucceeds(setDoc(reference, {
+    ...mirroredProduct(),
+    id: 'subscription-a',
+    legacyProductId: 'subscription-a',
+    migratedFromPath: 'tenants/owner-a#publicProducts/subscription-a',
+    isService: true,
+    stock: 0,
+    saleModality: {
+      schemaVersion: 1,
+      mode: 'subscription',
+      subscription: {
+        schemaVersion: 1,
+        billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+        autoRenew: true,
+      },
+    },
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 10 },
+    ],
+    categoryCollections: [{ path: 'assinaturas', name: 'Assinaturas', image: '' }],
+    optionGroups: [],
+    quickNotes: [],
+    isComplimentary: false,
+  }));
+});
+
+test('manager can create a direct canonical subscription offer without legacy provenance', async () => {
+  const manager = environment.authenticatedContext('manager-a').firestore();
+  const reference = doc(manager, 'stores', STORE_ID, 'products', 'product-manager-a');
+  await assertSucceeds(setDoc(reference, {
+    ...directManagerProduct(),
+    isService: true,
+    stock: 0,
+    publicationStatus: 'published',
+    saleModality: {
+      schemaVersion: 1,
+      mode: 'subscription',
+      subscription: {
+        schemaVersion: 1,
+        billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+        autoRenew: true,
+      },
+    },
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    categoryCollections: [],
+    optionGroups: [],
+    quickNotes: [],
+  }));
+});
+
+test('canonical cutover blocks legacy mirror creation and updates but keeps direct editing', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const manager = environment.authenticatedContext('manager-a').firestore();
+  const existingReference = doc(owner, 'stores', STORE_ID, 'products', 'product-a');
+
+  await assertSucceeds(setDoc(existingReference, mirroredProduct()));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'stores', STORE_ID), {
+      migrationStatus: 'canonical',
+    });
+  });
+
+  await assertFails(setDoc(
+    doc(owner, 'stores', STORE_ID, 'products', 'product-b'),
+    {
+      ...mirroredProduct(),
+      id: 'product-b',
+      legacyProductId: 'product-b',
+      migratedFromPath: 'tenants/owner-a#publicProducts/product-b',
+    }
+  ));
+  await assertFails(updateDoc(existingReference, {
+    price: 23,
+    legacyUpdatedAt: '2026-07-22T10:05:00.000Z',
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  // Cutover must not make previously migrated products read-only.
+  await assertSucceeds(updateDoc(existingReference, {
+    price: 24,
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-a'),
+    {
+      name: 'Produto migrado editado pelo gerente',
+      updatedByUserId: 'manager-a',
+      updatedByRole: 'manager',
+      updatedAt: serverTimestamp(),
+    }
+  ));
+  await assertFails(updateDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-a'),
+    {
+      legacyUpdatedAt: '2026-07-22T11:00:00.000Z',
+      updatedByUserId: 'manager-a',
+      updatedByRole: 'manager',
+      updatedAt: serverTimestamp(),
+    }
+  ));
+  await assertSucceeds(setDoc(
+    doc(manager, 'stores', STORE_ID, 'products', 'product-manager-a'),
+    directManagerProduct()
+  ));
+});
+
+test('rejects contract discounts without subscription modality', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  await assertFails(setDoc(doc(owner, 'stores', STORE_ID, 'products', 'product-a'), {
+    ...mirroredProduct(),
+    saleModality: { schemaVersion: 1, mode: 'one_time', subscription: null },
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+  }));
+});
+
 test('outsiders cannot create or alter canonical products', async () => {
   const stranger = environment.authenticatedContext('stranger-a').firestore();
   const owner = environment.authenticatedContext('owner-a').firestore();
@@ -255,4 +379,33 @@ test('manager creates canonical drafts and edits products without rewriting lega
       }
     )
   );
+});
+
+test('owner updates category fields after canonical cutover without touching legacy metadata', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  const reference = doc(owner, 'stores', STORE_ID, 'products', 'product-a');
+  await assertSucceeds(setDoc(reference, mirroredProduct()));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'stores', STORE_ID), {
+      migrationStatus: 'canonical',
+    });
+  });
+  await assertSucceeds(updateDoc(reference, {
+    category: 'Alimentação > Bistrô',
+    categoryCollections: [
+      { path: 'Alimentação > Bistrô', name: 'Bistrô', image: '' },
+    ],
+    updatedByUserId: 'owner-a',
+    updatedByRole: 'owner',
+    updatedAt: serverTimestamp(),
+  }));
+  const updated = await getDoc(reference);
+  if (!updated.exists()) throw new Error('Produto não encontrado.');
+  const data = updated.data();
+  if (data.category !== 'Alimentação > Bistrô') {
+    throw new Error('A categoria canônica não foi atualizada.');
+  }
+  if (data.legacyUpdatedAt !== mirroredProduct().legacyUpdatedAt) {
+    throw new Error('O marcador legado foi modificado.');
+  }
 });

@@ -90,6 +90,32 @@ export const chooseCanonicalReadSource = (
   return { source: 'canonical', reason: 'canonical' };
 };
 
+/**
+ * Product reads must never fall back to legacy while the mapped store's
+ * migration status is unknown, or after canonical cutover.
+ */
+export const choosePreferredProductReadSource = (
+  canonicalStoreId: string,
+  storeStatusResolved: boolean,
+  canonicalCutover: boolean,
+  canonicalEnabled: boolean,
+  canonicalState: 'waiting' | 'available' | 'unavailable',
+  equivalent: boolean
+): CanonicalReadDecision => {
+  if (canonicalStoreId && !storeStatusResolved) {
+    return { source: 'canonical', reason: 'waiting' };
+  }
+  if (canonicalCutover) {
+    return {
+      source: 'canonical',
+      reason: canonicalState === 'available' ? 'canonical' : canonicalState,
+    };
+  }
+  return chooseCanonicalReadSource(
+    canonicalEnabled, canonicalStoreId, canonicalState, equivalent
+  );
+};
+
 export const subscribeToCanonicalReadConfig = (
   legacyStoreId: string,
   onConfig: (config: CanonicalReadConfig) => void,

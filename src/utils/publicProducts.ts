@@ -1,6 +1,8 @@
 import {
   collection,
   doc,
+  deleteField,
+  getDoc,
   onSnapshot,
   query,
   runTransaction,
@@ -21,10 +23,14 @@ import {
   parseProductSaleModality,
   type ProductSaleModality,
 } from '../../shared/productSaleModality';
+import {
+  parseSubscriptionContractDiscounts,
+  type ContractTermMonths,
+} from '../../shared/subscriptionContractOffers';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
 import { db } from './firebase';
 import {
-  chooseCanonicalReadSource,
+  choosePreferredProductReadSource,
   parseCanonicalReadConfig,
   recordCanonicalReadDecision,
   type CanonicalReadDecision,
@@ -41,6 +47,7 @@ export const PUBLIC_PRODUCT_CREATE_EVENT = 'kyrub-public-product-create';
 export type PublicProduct = Product & {
   storeId: string;
   updatedAt: string;
+  contractDiscounts?: { months: ContractTermMonths; discountPercent: number }[];
 };
 
 export interface PublicProductDraft {
@@ -54,6 +61,7 @@ export interface PublicProductDraft {
   isComplimentary?: boolean;
   storePointsPerUnit?: number;
   saleModality?: ProductSaleModality;
+  contractDiscounts?: { months: ContractTermMonths; discountPercent: number }[];
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
   quickNotes?: string[];
@@ -64,6 +72,17 @@ export interface PublicProductCreateRequest {
   accepted: boolean;
   reason?: string;
 }
+
+/** Hide offers that cannot yet be confirmed against a mapped canonical catalog. */
+export const suppressUnverifiedContractDiscounts = (
+  products: PublicProduct[],
+  canonicalStoreId: string,
+  source: CanonicalReadDecision['source']
+): PublicProduct[] =>
+  canonicalStoreId && source !== 'canonical'
+    ? products.map(product => product.contractDiscounts === undefined
+      ? product : { ...product, contractDiscounts: undefined })
+    : products;
 
 export interface PreferredPublicProductsResult {
   products: PublicProduct[];
@@ -131,6 +150,12 @@ export const buildPublicProduct = (
     : Number.parseInt(draft.stock || '0', 10);
   const storePointsPerUnit = normalizeStorePointsPerUnit(draft.storePointsPerUnit);
   const saleModality = parseProductSaleModality(draft.saleModality);
+  const contractDiscounts = draft.contractDiscounts === undefined
+    ? undefined
+    : parseSubscriptionContractDiscounts(draft.contractDiscounts);
+  if (draft.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) {
+    throw new Error('Períodos de contratação inválidos.');
+  }
   const categoryCollections = parseProductCategoryCollections(
     draft.categoryCollections
   );
@@ -174,6 +199,7 @@ export const buildPublicProduct = (
     isComplimentary,
     storePointsPerUnit,
     saleModality,
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -196,6 +222,9 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
     const price = finiteNumber(product.price);
     const stock = finiteNumber(product.stock);
     const saleModality = parseProductSaleModality(product.saleModality);
+    const contractDiscounts = product.contractDiscounts === undefined
+      ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+    if (product.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) return [];
     let storePointsPerUnit = 0;
     try {
       storePointsPerUnit = normalizeStorePointsPerUnit(product.storePointsPerUnit);
@@ -240,6 +269,7 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
       isComplimentary: product.isComplimentary === true,
       storePointsPerUnit,
       saleModality,
+      ...(contractDiscounts ? { contractDiscounts } : {}),
       ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
       ...(optionGroups.length > 0 ? { optionGroups } : {}),
       ...(quickNotes.length > 0 ? { quickNotes } : {}),
@@ -248,9 +278,20 @@ export const parsePublicProducts = (value: unknown): PublicProduct[] => {
   });
 };
 
+export const isCanonicalProductVisibleForCatalog = (
+  publicationStatus: unknown,
+  includeUnpublished = false
+): boolean => {
+  const status = cleanString(publicationStatus);
+  return includeUnpublished
+    ? status === 'published' || status === 'paused' || status === 'draft'
+    : status === 'published';
+};
+
 const parseCanonicalPublicProduct = (
   snapshot: QueryDocumentSnapshot<DocumentData>,
-  legacyStoreId: string
+  legacyStoreId: string,
+  includeUnpublished = false
 ): PublicProduct | null => {
   const value = snapshot.data() as Record<string, unknown>;
   const id = cleanString(value.id) || snapshot.id;
@@ -259,6 +300,9 @@ const parseCanonicalPublicProduct = (
   const price = finiteNumber(value.price);
   const stock = finiteNumber(value.stock);
   const saleModality = parseProductSaleModality(value.saleModality);
+  const contractDiscounts = value.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(value.contractDiscounts);
+  if (value.contractDiscounts !== undefined && (!contractDiscounts || saleModality?.mode !== 'subscription')) return null;
   let storePointsPerUnit = 0;
   try {
     storePointsPerUnit = normalizeStorePointsPerUnit(value.storePointsPerUnit);
@@ -283,7 +327,7 @@ const parseCanonicalPublicProduct = (
     stock === null ||
     stock < 0 ||
     saleModality === null ||
-    cleanString(value.publicationStatus) !== 'published'
+    !isCanonicalProductVisibleForCatalog(value.publicationStatus, includeUnpublished)
   ) {
     return null;
   }
@@ -302,11 +346,14 @@ const parseCanonicalPublicProduct = (
     isComplimentary: value.isComplimentary === true,
     storePointsPerUnit,
     saleModality,
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     ...(categoryCollections.length > 0 ? { categoryCollections } : {}),
     ...(optionGroups.length > 0 ? { optionGroups } : {}),
     ...(quickNotes.length > 0 ? { quickNotes } : {}),
+    // Canonical edits advance updatedAt without changing the legacy migration
+    // watermark. Always expose the canonical revision to the editor/storefront.
     updatedAt:
-      cleanString(value.legacyUpdatedAt) || timestampToIso(value.updatedAt),
+      timestampToIso(value.updatedAt) || cleanString(value.legacyUpdatedAt),
   };
 };
 
@@ -330,6 +377,7 @@ const comparableProduct = (product: PublicProduct) => ({
   isComplimentary: product.isComplimentary === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
   saleModality: parseProductSaleModality(product.saleModality),
+  contractDiscounts: product.contractDiscounts ?? null,
 });
 
 export const publicProductCollectionsEquivalent = (
@@ -345,6 +393,130 @@ export const publicProductCollectionsEquivalent = (
     JSON.stringify(normalize(canonicalProducts));
 };
 
+/**
+ * Canonical-only editor write. The caller must select the canonical store;
+ * never infer it from the legacy user ID or write a tenant mirror.
+ */
+/**
+ * Write a product only to the canonical catalog. Read store and product inside
+ * the same transaction to avoid a stale migration-status or create race.
+ */
+export const persistCanonicalPublicProduct = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  product: PublicProduct
+): Promise<void> => {
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) {
+    throw new Error('Selecione uma loja canônica independente do usuário.');
+  }
+  if (product.storeId !== user.uid || product.supplierId !== user.uid) {
+    throw new Error('O produto não pertence à loja autenticada.');
+  }
+  const saleModality = parseProductSaleModality(product.saleModality);
+  const discounts = product.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+  if (!saleModality || (product.contractDiscounts !== undefined &&
+      (!discounts || saleModality.mode !== 'subscription'))) {
+    throw new Error('Modalidade ou períodos de contratação inválidos.');
+  }
+  const storeReference = doc(db, 'stores', storeId);
+  const reference = doc(db, 'stores', storeId, 'products', product.id);
+  await runTransaction(db, async transaction => {
+    const storeSnapshot = await transaction.get(storeReference);
+    const existing = await transaction.get(reference);
+    const store = storeSnapshot.data();
+    if (!storeSnapshot.exists() || store?.ownerId !== user.uid ||
+        store?.migrationStatus !== 'canonical') {
+      throw new Error('A loja ainda não está habilitada para gravação canônica.');
+    }
+    const payload = {
+      name: product.name.trim(),
+      description: product.description.trim(),
+      price: product.price,
+      image: product.image.trim(),
+      stock: product.isService ? 0 : product.stock,
+      category: product.category.trim(),
+      categoryCollections: parseProductCategoryCollections(product.categoryCollections),
+      optionGroups: optionGroupsWithQuickNotes(product.optionGroups, product.quickNotes),
+      quickNotes: parseProductQuickNotes(product.quickNotes),
+      isService: product.isService === true,
+      isComplimentary: product.isComplimentary === true,
+      storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
+      saleModality,
+      contractDiscounts: discounts ?? deleteField(),
+      updatedByUserId: user.uid,
+      updatedByRole: 'owner',
+      updatedAt: serverTimestamp(),
+    };
+    if (existing.exists()) {
+      const current = existing.data();
+      if (current.storeId !== storeId || current.supplierId !== storeId ||
+          current.id !== product.id || current.publicationStatus === 'archived') {
+        throw new Error('O produto existente não pode ser alterado por este editor.');
+      }
+      transaction.update(reference, payload);
+      return;
+    }
+    const { contractDiscounts: _updateOnlyDiscounts, ...createPayload } = payload;
+    transaction.set(reference, {
+      ...createPayload,
+      // A new one-time product must omit the optional field entirely.
+      ...(discounts ? { contractDiscounts: discounts } : {}),
+      id: product.id,
+      storeId,
+      supplierId: storeId,
+      publicationStatus: 'published',
+      createdByUserId: user.uid,
+      createdByRole: 'owner',
+      legacyStoreId: '',
+      legacyProductId: '',
+      legacySupplierId: '',
+      legacyUpdatedAt: '',
+      migratedFromPath: '',
+      archivedAt: '',
+      migration: { mode: 'canonical', migratedByUserId: '', migratedByRole: '' },
+      createdAt: serverTimestamp(),
+    });
+  });
+};
+
+/**
+ * Editor entry point: choose one catalog, never write both.
+ * The tenant mapping is a discovery hint; the canonical writer independently
+ * verifies ownership and cutover status in its Firestore transaction.
+ */
+/**
+ * Resolve the authoritative product catalog before choosing a write path.
+ * A mapped but missing store is an error, never permission to write legacy.
+ */
+export const resolveCanonicalProductWriteStore = async (
+  user: Pick<User, 'uid'>
+): Promise<string | null> => {
+  const tenant = await getDoc(doc(db, 'tenants', user.uid));
+  const mappedStoreId = typeof tenant.data()?.canonicalStoreId === 'string'
+    ? tenant.data()!.canonicalStoreId.trim() : '';
+  if (!mappedStoreId) return null;
+  const store = await getDoc(doc(db, 'stores', mappedStoreId));
+  if (!store.exists()) {
+    throw new Error('O vínculo com a loja canônica não foi encontrado. Nenhum produto foi alterado.');
+  }
+  return store.data().migrationStatus === 'canonical' ? mappedStoreId : null;
+};
+
+export const persistProductForStore = async (
+  user: Pick<User, 'uid' | 'email'>,
+  product: PublicProduct
+): Promise<'canonical' | 'legacy'> => {
+  const canonicalStoreId = await resolveCanonicalProductWriteStore(user);
+  if (canonicalStoreId) {
+    await persistCanonicalPublicProduct(user, canonicalStoreId, product);
+    return 'canonical';
+  }
+  await persistPublicProduct(user, product);
+  return 'legacy';
+};
+
 export const persistPublicProduct = async (
   user: Pick<User, 'uid' | 'email'>,
   product: PublicProduct
@@ -358,6 +530,16 @@ export const persistPublicProduct = async (
   await runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     const currentData = snapshot.data() as Record<string, unknown> | undefined;
+    // A canonical store must never be edited through the legacy tenant array.
+    // The mapping is read from the same tenant snapshot used for this write.
+    const mappedCanonicalStoreId = typeof currentData?.canonicalStoreId === 'string'
+      ? currentData.canonicalStoreId.trim() : '';
+    if (mappedCanonicalStoreId) {
+      const mappedStore = await transaction.get(doc(db, 'stores', mappedCanonicalStoreId));
+      if (mappedStore.exists() && mappedStore.data().migrationStatus === 'canonical') {
+        throw new Error('A loja já utiliza o catálogo canônico. Atualize o produto pelo editor canônico.');
+      }
+    }
     const existingProducts = parsePublicProducts(currentData?.publicProducts);
     const quickNotes = parseProductQuickNotes(product.quickNotes);
     const optionGroups = optionGroupsWithQuickNotes(
@@ -368,6 +550,11 @@ export const persistPublicProduct = async (
     if (!saleModality) {
       throw new Error('A forma de venda do item é inválida.');
     }
+    const contractDiscounts = product.contractDiscounts === undefined
+      ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+    if (product.contractDiscounts !== undefined && (!contractDiscounts || saleModality.mode !== 'subscription')) {
+      throw new Error('Períodos de contratação inválidos.');
+    }
     const normalizedProduct: PublicProduct = {
       ...product,
       storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
@@ -375,10 +562,21 @@ export const persistPublicProduct = async (
       quickNotes,
       optionGroups,
     };
+    // Do not retain stale offers if a subscription is converted to a one-time sale.
+    if (contractDiscounts) {
+      normalizedProduct.contractDiscounts = contractDiscounts;
+    } else {
+      delete normalizedProduct.contractDiscounts;
+    }
     const nextProducts = [
       normalizedProduct,
       ...existingProducts.filter(item => item.id !== product.id),
-    ].slice(0, 200);
+    ];
+    // Never silently drop existing products during the legacy-to-canonical transition.
+    // An oversized legacy catalog requires an explicit migration, not truncation.
+    if (nextProducts.length > 200) {
+      throw new Error('O catálogo antigo excede o limite seguro de 200 produtos. Migre os itens antes de continuar.');
+    }
 
     transaction.set(
       tenantReference,
@@ -424,7 +622,8 @@ export const subscribeToPublicProducts = (
 export const subscribeToPreferredPublicProducts = (
   legacyStoreId: string,
   onResult: (result: PreferredPublicProductsResult) => void,
-  onError?: (error: Error) => void
+  onError?: (error: Error) => void,
+  options: { includeUnpublished?: boolean } = {}
 ): Unsubscribe => {
   const normalizedStoreId = legacyStoreId.trim();
   if (!normalizedStoreId) {
@@ -441,25 +640,42 @@ export const subscribeToPreferredPublicProducts = (
   let canonicalState: 'waiting' | 'available' | 'unavailable' = 'waiting';
   let canonicalStoreId = '';
   let canonicalEnabled = false;
+  let canonicalCutover = false;
+  let latestCanonicalReadPreference = false;
+  let storeStatusResolved = false;
+  let canonicalSubscriptionGeneration = 0;
+  let storeSubscriptionGeneration = 0;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
+  let unsubscribeStore: Unsubscribe = () => undefined;
 
   const publish = (): void => {
-    const decision = chooseCanonicalReadSource(
-      canonicalEnabled,
+    // After cutover the legacy array is no longer authoritative. New canonical
+    // products intentionally diverge from it and must not trigger a fallback.
+    // Until the mapped store status is known, do not publish legacy data:
+    // this may already be a canonical-only store.
+    const decision = choosePreferredProductReadSource(
       canonicalStoreId,
+      storeStatusResolved,
+      canonicalCutover,
+      canonicalEnabled,
       canonicalState,
       publicProductCollectionsEquivalent(legacyProducts, canonicalProducts)
     );
     recordCanonicalReadDecision(normalizedStoreId, 'products', decision);
+    // Do not advertise unverified multi-month offers while a mapped canonical
+    // catalog is waiting, unavailable or divergent. The payment quote reads only
+    // the canonical product, so the legacy storefront cannot promise its terms.
+    const selectedProducts = decision.source === 'canonical' ? canonicalProducts : legacyProducts;
+    const products = suppressUnverifiedContractDiscounts(selectedProducts, canonicalStoreId, decision.source);
     onResult({
-      products:
-        decision.source === 'canonical' ? canonicalProducts : legacyProducts,
+      products,
       decision,
       canonicalStoreId,
     });
   };
 
   const restartCanonicalSubscription = (): void => {
+    const generation = ++canonicalSubscriptionGeneration;
     unsubscribeCanonical();
     unsubscribeCanonical = () => undefined;
     canonicalProducts = [];
@@ -472,15 +688,19 @@ export const subscribeToPreferredPublicProducts = (
 
     publish();
     unsubscribeCanonical = onSnapshot(
-      query(
-        collection(db, `stores/${canonicalStoreId}/products`),
-        where('publicationStatus', '==', 'published')
-      ),
+      options.includeUnpublished
+        ? collection(db, `stores/${canonicalStoreId}/products`)
+        : query(
+            collection(db, `stores/${canonicalStoreId}/products`),
+            where('publicationStatus', '==', 'published')
+          ),
       snapshot => {
+        if (generation !== canonicalSubscriptionGeneration) return;
         canonicalProducts = snapshot.docs.flatMap(document => {
           const parsed = parseCanonicalPublicProduct(
             document,
-            normalizedStoreId
+            normalizedStoreId,
+            options.includeUnpublished === true
           );
           return parsed ? [parsed] : [];
         });
@@ -488,6 +708,8 @@ export const subscribeToPreferredPublicProducts = (
         publish();
       },
       error => {
+        if (generation !== canonicalSubscriptionGeneration) return;
+        canonicalProducts = [];
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -504,7 +726,38 @@ export const subscribeToPreferredPublicProducts = (
       legacyProducts = parsePublicProducts(data?.publicProducts);
       const config = parseCanonicalReadConfig(data);
       canonicalStoreId = config.canonicalStoreId;
-      canonicalEnabled = config.preferences.products;
+      latestCanonicalReadPreference = config.preferences.products;
+      canonicalEnabled = latestCanonicalReadPreference || (canonicalCutover && canonicalStoreId === previousStoreId);
+      if (canonicalStoreId !== previousStoreId) {
+        const storeGeneration = ++storeSubscriptionGeneration;
+        unsubscribeStore();
+        canonicalCutover = false;
+        storeStatusResolved = !canonicalStoreId;
+        unsubscribeStore = canonicalStoreId
+          ? onSnapshot(doc(db, 'stores', canonicalStoreId), storeSnapshot => {
+              if (storeGeneration !== storeSubscriptionGeneration) return;
+              const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
+              const changed = canonicalCutover !== cutover || !storeStatusResolved;
+              canonicalCutover = cutover;
+              storeStatusResolved = true;
+              // Read the latest tenant preference, not the value captured
+              // when this store listener was originally installed.
+              const shouldEnable = cutover || latestCanonicalReadPreference;
+              if (canonicalEnabled !== shouldEnable) {
+                canonicalEnabled = shouldEnable;
+                restartCanonicalSubscription();
+              } else if (changed) {
+                publish();
+              }
+            }, error => {
+              if (storeGeneration !== storeSubscriptionGeneration) return;
+              // Unknown store status is not evidence that legacy reads are safe.
+              storeStatusResolved = false;
+              publish();
+              onError?.(error);
+            })
+          : () => undefined;
+      }
 
       if (
         canonicalStoreId !== previousStoreId ||
@@ -516,16 +769,22 @@ export const subscribeToPreferredPublicProducts = (
       }
     },
     error => {
+      // A tenant listener failure must not re-enable legacy reads after
+      // cutover or expose a stale legacy catalog.
       legacyProducts = [];
-      canonicalEnabled = false;
-      canonicalState = 'unavailable';
+      if (!canonicalCutover) {
+        canonicalEnabled = false;
+      }
       publish();
       onError?.(error);
     }
   );
 
   return () => {
+    ++canonicalSubscriptionGeneration;
+    ++storeSubscriptionGeneration;
     unsubscribeTenant();
     unsubscribeCanonical();
+    unsubscribeStore();
   };
 };
