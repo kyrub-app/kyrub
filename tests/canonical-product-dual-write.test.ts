@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { buildSubscriptionSaleModality } from '../shared/productSaleModality';
 import {
@@ -63,6 +64,90 @@ test('mirrors subscription terms without adding payment ownership to the product
   assert.deepEqual(mirrored.saleModality, saleModality);
   assert.equal('provider' in mirrored.saleModality, false);
   assert.equal('merchantAccountId' in mirrored.saleModality, false);
+});
+
+test('mirrors contract discounts and detects changes requiring canonical resync', () => {
+  const saleModality = buildSubscriptionSaleModality({
+    billingUnit: 'month',
+    benefitKind: 'recurring_delivery',
+    unitsPerCycle: 1,
+  });
+  const initial = buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 10 },
+    ],
+  }), 'store-independent-a', 'owner-a');
+  assert.deepEqual(initial.contractDiscounts, [
+    { months: 1, discountPercent: 0 },
+    { months: 6, discountPercent: 10 },
+  ]);
+  assert.equal(canonicalProductNeedsUpdate(initial as unknown as Record<string, unknown>, initial), false);
+  const revised = buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [
+      { months: 1, discountPercent: 0 },
+      { months: 6, discountPercent: 15 },
+    ],
+  }), 'store-independent-a', 'owner-a');
+  assert.equal(canonicalProductNeedsUpdate(initial as unknown as Record<string, unknown>, revised), true);
+});
+
+test('canonical sync update writes and removes contract discounts', () => {
+  const source = readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
+  assert.match(source, /contractDiscounts: next\.contractDiscounts \?\? deleteField\(\)/);
+  assert.match(source, /contractDiscounts: value\.contractDiscounts === undefined/);
+});
+
+test('rejects malformed contract offers instead of silently publishing without discounts', () => {
+  const saleModality = buildSubscriptionSaleModality({
+    billingUnit: 'month',
+    benefitKind: 'recurring_delivery',
+    unitsPerCycle: 1,
+  });
+  assert.throws(() => buildCanonicalProductMirrorData(legacyProduct({
+    saleModality,
+    contractDiscounts: [{ months: 6, discountPercent: 10 }],
+  }), 'store-independent-a', 'owner-a'), /períodos de contratação/);
+  assert.throws(() => buildCanonicalProductMirrorData(legacyProduct({
+    contractDiscounts: [{ months: 1, discountPercent: 0 }],
+  }), 'store-independent-a', 'owner-a'), /períodos de contratação/);
+});
+
+test('preserves product catalog fields required for canonical storefront parity', () => {
+  const product = legacyProduct({
+    isComplimentary: true,
+    categoryCollections: [{ path: 'colecao-a', name: 'Coleção A', image: '' }] as PublicProduct['categoryCollections'],
+    quickNotes: ['Sem embalagem'],
+  });
+  const mirrored = buildCanonicalProductMirrorData(product, 'store-independent-a', 'owner-a');
+  assert.equal(mirrored.isComplimentary, true);
+  assert.deepEqual(mirrored.categoryCollections, product.categoryCollections);
+  assert.deepEqual(mirrored.quickNotes, ['Sem embalagem']);
+  assert.ok(Array.isArray(mirrored.optionGroups));
+  assert.equal(canonicalProductNeedsUpdate({
+    ...mirrored, isComplimentary: false,
+  } as unknown as Record<string, unknown>, mirrored), true);
+});
+
+test('detects customization and collection drift before canonical cutover', () => {
+  const expected = buildCanonicalProductMirrorData(legacyProduct({
+    categoryCollections: [{ path: 'colecao-a', name: 'Coleção A', image: '' }],
+    quickNotes: ['Sem embalagem'],
+    isComplimentary: true,
+  }), 'store-independent-a', 'owner-a');
+  assert.equal(canonicalProductNeedsUpdate(expected as unknown as Record<string, unknown>, expected), false);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, categoryCollections: [],
+  }, expected), true);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, quickNotes: [],
+    optionGroups: [],
+  }, expected), true);
+  assert.equal(canonicalProductNeedsUpdate({
+    ...expected, isComplimentary: false,
+  }, expected), true);
 });
 
 test('services are mirrored with zero stock', () => {
