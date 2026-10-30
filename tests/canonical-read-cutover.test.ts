@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   canEnableCanonicalReadDomain,
   chooseCanonicalReadSource,
+  choosePreferredProductReadSource,
   parseCanonicalReadConfig,
 } from '../src/utils/canonicalReadCutover';
 import {
@@ -10,6 +11,7 @@ import {
   type CustomerOrder,
 } from '../src/utils/customerOrders';
 import {
+  isCanonicalProductVisibleForCatalog,
   publicProductCollectionsEquivalent,
   type PublicProduct,
 } from '../src/utils/publicProducts';
@@ -222,4 +224,52 @@ test('payment comparison detects method and allocation differences', () => {
     tablePaymentCollectionsEquivalent([payment], [{ ...payment, method: 'cash' }]),
     false
   );
+});
+
+test('product read waits for mapped store status rather than showing legacy data', () => {
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', false, false, false, 'waiting', false),
+    { source: 'canonical', reason: 'waiting' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', false, false, true, 'available', false),
+    { source: 'canonical', reason: 'waiting' }
+  );
+});
+
+test('canonical product cutover never falls back on loading, failure or divergence', () => {
+  for (const state of ['waiting', 'unavailable', 'available'] as const) {
+    assert.deepEqual(
+      choosePreferredProductReadSource('store-1', true, true, true, state, false),
+      { source: 'canonical', reason: state === 'available' ? 'canonical' : state }
+    );
+  }
+});
+
+test('pre-cutover product reads still require canonical equivalence', () => {
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', true, false, true, 'available', false),
+    { source: 'legacy', reason: 'divergent' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('store-1', true, false, true, 'available', true),
+    { source: 'canonical', reason: 'canonical' }
+  );
+  assert.deepEqual(
+    choosePreferredProductReadSource('', true, false, false, 'waiting', false),
+    { source: 'legacy', reason: 'disabled' }
+  );
+});
+
+
+test('canonical storefront and editor enforce distinct publication visibility', () => {
+  assert.equal(isCanonicalProductVisibleForCatalog('published'), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('paused'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('draft'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('archived'), false);
+  assert.equal(isCanonicalProductVisibleForCatalog('published', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('paused', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('draft', true), true);
+  assert.equal(isCanonicalProductVisibleForCatalog('archived', true), false);
+  assert.equal(isCanonicalProductVisibleForCatalog(undefined, true), false);
 });
