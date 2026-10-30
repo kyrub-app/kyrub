@@ -18,6 +18,7 @@ import {
   reconcileOwnPaidPlanSubscription,
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
+import { assignOfficialPlanProduct } from '../server/admin/officialPlanProductManagement.js';
 import {
   grantComplimentaryPlanWithLifecycle,
   reconcileStoreEntitlementFromAuthorization,
@@ -45,6 +46,11 @@ import {
   mapStoreSubscriberRegistryError,
   reconcileAuthorizedStoreSubscribersIntoCrm,
 } from '../server/payments/storeSubscriberRegistryService.js';
+
+import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
+import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
+import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
+import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
@@ -228,6 +234,27 @@ export default async function handler(
         );
         return;
       }
+      case 'admin.official-plan-product.assign': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (typeof body.productId !== 'string' ||
+            (body.planId !== 'free' && body.planId !== 'pro' && body.planId !== 'business')) {
+          response.status(400).json({
+            error: 'Informe um produto e um plano oficial válido.',
+            code: 'INVALID_OFFICIAL_PLAN_PRODUCT',
+          });
+          return;
+        }
+        await assignOfficialPlanProduct({
+          authorization,
+          productId: body.productId,
+          planId: body.planId,
+        });
+        response.status(200).json({ ok: true });
+        return;
+      }
       case 'admin.plan.publish': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -308,7 +335,10 @@ export default async function handler(
           methodNotAllowed(response);
           return;
         }
-        response.status(201).json(await createOwnPaidPlanCheckout(authorization, body.plan));
+        response.status(409).json({
+          error: 'Contrate os planos pagos pelo produto da Loja Oficial. A integracao comercial esta em atualizacao.',
+          code: 'OFFICIAL_STORE_BILLING_MIGRATION_PENDING',
+        });
         return;
       }
       case 'store.subscription.reconcile': {
@@ -325,6 +355,89 @@ export default async function handler(
           return;
         }
         response.status(200).json(await cancelOwnPaidPlanSubscription(authorization));
+        return;
+      }
+      case 'catalog.subscription.checkout': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (typeof body.storeId !== 'string' || typeof body.productId !== 'string') {
+          response.status(400).json({ error: 'Informe loja e produto válidos.', code: 'INVALID_SUBSCRIPTION_CHECKOUT_REQUEST' });
+          return;
+        }
+        // Fail closed on unknown checkout fields. A renamed contract-term or
+        // payment-option key must not be silently ignored and charged monthly.
+        if (Object.keys(body).some(key => key !== 'storeId' && key !== 'productId')) {
+          response.status(409).json({
+            error: 'Este checkout aceita somente loja e produto. Condições contratuais exigem o checkout específico.',
+            code: 'SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+          });
+          return;
+        }
+        // Authenticate before privileged product and plan mapping reads.
+        await authenticateConsultantRequest(authorization);
+        const route = await resolvePersistedProductCheckoutRoute({
+          sellerStoreReference: body.storeId,
+          productId: body.productId,
+          allowMerchantSubscription: true,
+        });
+        if (route.kind === 'platform-plan') {
+          const checkout = await createOwnPaidPlanCheckout(authorization, route.plan, body.productId);
+          response.status(201).json(checkout);
+          return;
+        }
+        if (route.kind === 'free-plan') {
+          response.status(409).json({
+            error: 'O plano Free não exige pagamento. Utilize o fluxo gratuito de adesão.',
+            code: 'FREE_PLAN_CHECKOUT_NOT_REQUIRED',
+          });
+          return;
+        }
+        response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
+        return;
+      }
+      case 'merchant.subscription.quote': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        // Reject unknown contract fields instead of silently ignoring a
+        // browser-supplied price, recipient, discount or renamed payment key.
+        if (Object.keys(body).some(key => !['storeId', 'productId', 'selectedMonths', 'paymentTerms'].includes(key))) {
+          response.status(400).json({
+            error: 'A cotação aceita somente loja, produto, prazo e condições de pagamento.',
+            code: 'INVALID_SUBSCRIPTION_QUOTE_REQUEST',
+          });
+          return;
+        }
+        await authenticateConsultantRequest(authorization);
+        if (typeof body.storeId !== 'string' || typeof body.productId !== 'string' ||
+            ![1, 3, 6, 12].includes(body.selectedMonths as number) ||
+            !body.paymentTerms || typeof body.paymentTerms !== 'object' ||
+            Array.isArray(body.paymentTerms)) {
+          response.status(400).json({
+            error: 'Informe loja, produto, prazo e condições de pagamento válidos.',
+            code: 'INVALID_SUBSCRIPTION_QUOTE_REQUEST',
+          });
+          return;
+        }
+        if (Object.keys(body).some(key => !['storeId', 'productId', 'selectedMonths', 'paymentTerms'].includes(key)) ||
+            Object.keys(body.paymentTerms).some(key => !['collectionMode', 'installments', 'billingIntervalMonths'].includes(key))) {
+          response.status(400).json({
+            error: 'A cotação não aceita preços, descontos ou parâmetros de cobrança enviados pelo navegador.',
+            code: 'UNEXPECTED_SUBSCRIPTION_QUOTE_FIELDS',
+          });
+          return;
+        }
+        const quote = await quotePersistedMerchantSubscription({
+          sellerStoreReference: body.storeId,
+          productId: body.productId,
+          selectedMonths: body.selectedMonths as 1 | 3 | 6 | 12,
+          paymentTerms: body.paymentTerms as Parameters<typeof quotePersistedMerchantSubscription>[0]['paymentTerms'],
+        });
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(quote);
         return;
       }
       case 'merchant.subscription.checkout': {
@@ -439,6 +552,35 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'merchant.subscription.quote') {
+      if (error instanceof OfficialPlanCheckoutRouteError) {
+        const status = error.code === 'PRODUCT_NOT_FOUND' ? 404
+          : error.code === 'INVALID_PRODUCT_ID' ? 400 : 409;
+        response.status(status).json({ error: error.message, code: error.code });
+        return;
+      }
+      // Quote validation is pure and read-only. Return a client error for
+      // known invalid selections instead of misreporting them as server faults.
+      const validationCodes = new Set([
+        'INVALID_SUBSCRIPTION_PRODUCT_FOR_CONTRACT',
+        'INVALID_PERSISTED_SUBSCRIPTION_OFFERS',
+        'SUBSCRIPTION_TERM_NOT_OFFERED',
+        'INVALID_SUBSCRIPTION_CONTRACT_OFFER',
+        'INVALID_SUBSCRIPTION_CONTRACT_TERMS',
+        'MISSING_MONTHLY_BASELINE',
+        'DUPLICATE_SUBSCRIPTION_CONTRACT_TERM',
+        'UNSUPPORTED_RECURRING_CONTRACT_TERM',
+        'INVALID_CONTRACT_PAYMENT_TERMS',
+        'INVALID_CONTRACT_INSTALLMENTS',
+      ]);
+      if (error instanceof Error && validationCodes.has(error.message)) {
+        response.status(409).json({
+          error: 'As condições solicitadas não estão disponíveis para este produto.',
+          code: error.message,
+        });
+        return;
+      }
+    }
     const mapped = operation.startsWith('merchant.subscription.benefit')
       ? mapStoreSubscriptionBenefitError(error)
       : operation.startsWith('merchant.subscribers')
