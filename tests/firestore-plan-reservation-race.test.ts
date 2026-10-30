@@ -45,8 +45,12 @@ test('Firestore emulator retries concurrent matching webhook and checkout comple
   const results = await Promise.all(Array.from({ length: 8 }, () => complete('ref-a', 'mp-a')));
   assert.equal(results.filter(value => value === 'write').length, 1);
   assert.equal(results.filter(value => value === 'already-completed').length, 7);
-  const saved = await environment.withSecurityRulesDisabled(context => getDoc(doc(context.firestore(), path)));
-  assert.equal(saved.data()?.providerSubscriptionId, 'mp-a');
+  let savedProviderId: string | undefined;
+  await environment.withSecurityRulesDisabled(async context => {
+    const snapshot = await getDoc(doc(context.firestore(), path));
+    savedProviderId = snapshot.data()?.providerSubscriptionId;
+  });
+  assert.equal(savedProviderId, 'mp-a');
 });
 
 test('Firestore emulator prevents a conflicting provider from overwriting a completed reservation', async () => {
@@ -55,6 +59,10 @@ test('Firestore emulator prevents a conflicting provider from overwriting a comp
   }));
   const results = await Promise.all([complete('ref-a', 'mp-a'), complete('ref-a', 'mp-b')]);
   assert.deepEqual(results.sort(), ['conflict', 'write']);
-  const saved = await environment.withSecurityRulesDisabled(context => getDoc(doc(context.firestore(), path)));
-  assert.ok(['mp-a', 'mp-b'].includes(saved.data()?.providerSubscriptionId));
+  let savedProviderId: string | undefined;
+  await environment.withSecurityRulesDisabled(async context => {
+    const snapshot = await getDoc(doc(context.firestore(), path));
+    savedProviderId = snapshot.data()?.providerSubscriptionId;
+  });
+  assert.ok(['mp-a', 'mp-b'].includes(savedProviderId ?? ''));
 });
