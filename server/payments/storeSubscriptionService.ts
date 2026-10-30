@@ -217,12 +217,24 @@ const loadPublishedSubscriptionProduct = async (
     fail(404, 'STORE_SUBSCRIPTION_PRODUCT_NOT_FOUND', 'O produto não está disponível.');
   }
   const data = snapshot.data() as Record<string, unknown>;
+  // Official Kyrub plans must use platform billing, never the merchant OAuth account.
+  // A mapping in any state blocks fallback to merchant recurring billing.
+  const officialMapping = await adminDb.doc(
+    `kyrub_admin/control_plane/official_plan_products/${productId}`
+  ).get();
+  if (officialMapping.exists || data.platformPlanId !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_PLATFORM_PLAN_REQUIRES_OFFICIAL_CHECKOUT',
+      'Planos Kyrub exigem o checkout da plataforma.');
+  }
   if (clean(data.publicationStatus) !== 'published') {
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_PUBLISHED', 'O produto não está publicado.');
   }
   const name = clean(data.name);
-  const price = Number(data.price);
-  const amountMinor = Number.isFinite(price) ? Math.round(price * 100) : 0;
+  const price = data.price;
+  const priceMinor = typeof price === 'number' ? price * 100 : NaN;
+  const amountMinor = Number.isFinite(priceMinor) && Number.isSafeInteger(Math.round(priceMinor)) &&
+    Math.abs(priceMinor - Math.round(priceMinor)) <= 1e-7
+    ? Math.round(priceMinor) : 0;
   const saleModality = parseProductSaleModality(data.saleModality);
   if (!name || amountMinor <= 0) {
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_BILLABLE', 'A assinatura não possui um valor recorrente válido.');
@@ -692,8 +704,35 @@ export const createAuthorizedStoreSubscription = async (
     fail(409, 'STORE_SUBSCRIPTION_EMAIL_UNVERIFIED', 'Confirme seu e-mail antes de iniciar uma assinatura.');
   }
 
+  // This legacy provider endpoint creates an auto-recurring preapproval only.
+  // Fixed-term prepaid contracts must use their own explicitly supported collection flow.
+  if (payload.selectedMonths !== undefined || payload.paymentTerms !== undefined ||
+      payload.contractDiscounts !== undefined || payload.installments !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+      'Prazos contratuais e pagamentos antecipados não são aceitos neste checkout recorrente.');
+  }
   const store = await resolveCanonicalStore(payload.storeId);
   const product = await loadPublishedSubscriptionProduct(store.canonicalStoreId, payload.productId);
+  // A published contract offer must not be charged as an unqualified legacy
+  // recurring preapproval. Until term-aware collection is implemented, reject
+  // even callers that omit contract fields from their request.
+  const persistedProduct = await adminDb.doc(
+    `stores/${store.canonicalStoreId}/products/${product.id}`
+  ).get();
+  if (persistedProduct.data()?.contractDiscounts !== undefined) {
+    fail(409, 'STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED',
+      'Este produto utiliza ofertas contratuais. Use o checkout de contratos quando disponível.');
+  }
+  // Official Kyrub plans must never be sold through a merchant's recurring
+  // preapproval, even when a client omits a platform-plan tag from the cart.
+  // The privileged mapping, not owner-editable product metadata, is authoritative.
+  const officialPlanMapping = await adminDb.doc(
+    `kyrub_admin/control_plane/official_plan_products/${product.id}`
+  ).get();
+  if (officialPlanMapping.exists) {
+    fail(409, 'OFFICIAL_PLAN_REQUIRES_PLATFORM_CHECKOUT',
+      'Planos oficiais Kyrub devem ser contratados pelo checkout da plataforma.');
+  }
   const recipient = await resolveCommercialRecipientAuthority({
     context: 'store_subscription',
     canonicalStoreId: store.canonicalStoreId,
