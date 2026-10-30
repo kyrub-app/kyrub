@@ -1,11 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { Product } from '../../types';
+import { auth } from '../../utils/firebase';
 import {
   OPEN_PRODUCT_CREATE_MODAL_EVENT,
   type ProductCreateModalDetail,
 } from '../../utils/productModalEvents';
 import {
   PUBLIC_PRODUCT_CREATE_EVENT,
+  persistCanonicalPublicProduct,
+  resolveCanonicalProductWriteStore,
   type PublicProduct,
   type PublicProductCreateRequest,
 } from '../../utils/publicProducts';
@@ -39,6 +42,18 @@ export function UnifiedProductCreateModalBridge() {
 
     setSaving(true);
     try {
+      const currentUser = auth.currentUser;
+      if (!currentUser) {
+        throw new Error('Faça login para cadastrar um produto.');
+      }
+      // The canonical writer is authoritative. Do not dispatch the legacy
+      // create event after a successful canonical write.
+      const canonicalStoreId = await resolveCanonicalProductWriteStore(currentUser);
+      if (canonicalStoreId) {
+        await persistCanonicalPublicProduct(currentUser, canonicalStoreId, product as PublicProduct);
+        setIsOpen(false);
+        return;
+      }
       window.dispatchEvent(
         new CustomEvent<PublicProductCreateRequest>(PUBLIC_PRODUCT_CREATE_EVENT, {
           detail: request,

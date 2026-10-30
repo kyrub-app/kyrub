@@ -24,7 +24,12 @@ const collectApiFunctions = (directory: string): string[] =>
 test('merchant subscription checkout trusts canonical catalog and merchant recipient authority, not browser pricing', () => {
   assert.match(service, /stores\/\$\{storeId\}\/products\/\$\{productId\}/);
   assert.match(service, /parseProductSaleModality\(data\.saleModality\)/);
-  assert.match(service, /Math\.round\(price \* 100\)/);
+  assert.match(service, /Math\.abs\(priceMinor - Math\.round\(priceMinor\)\) <= 1e-7/);
+  assert.match(service, /Number\.isSafeInteger\(Math\.round\(priceMinor\)\)/);
+  assert.match(service, /STORE_SUBSCRIPTION_PLATFORM_PLAN_REQUIRES_OFFICIAL_CHECKOUT/);
+  assert.match(service, /typeof price === 'number'/);
+  assert.match(service, /STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(service, /payload\.selectedMonths !== undefined \|\| payload\.paymentTerms !== undefined/);
   assert.match(service, /context: 'store_subscription'/);
   assert.match(service, /recipientKind !== 'merchant_store'/);
   assert.match(service, /recipient\.credentialScopeId/);
@@ -35,6 +40,18 @@ test('merchant subscription checkout trusts canonical catalog and merchant recip
   assert.doesNotMatch(client, /amountMinor|transaction_amount|currency_id|frequency_type|credentialScopeId|externalAccountId|provider:/);
   assert.match(client, /storeId: input\.storeId\.trim\(\)/);
   assert.match(client, /productId: input\.productId\.trim\(\)/);
+});
+
+test('contract quote uses authenticated existing gateway and persisted merchant catalog without charging', () => {
+  assert.match(gateway, /case 'merchant\.subscription\.quote'/);
+  assert.match(gateway, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(gateway, /await quotePersistedMerchantSubscription\(/);
+  assert.match(client, /post\('merchant\.subscription\.quote'/);
+  const quote = readFileSync('server/payments/persistedMerchantSubscriptionQuote.ts', 'utf8');
+  assert.match(quote, /requirePublishedTenant: true/);
+  assert.match(quote, /authoritativeMonthlyPriceMinor: Math\.round\(price \* 100\)/);
+  assert.match(quote, /persistedOffers: data\.contractDiscounts/);
+  assert.doesNotMatch(quote, /mercadoPagoStoreRequest|preapproval|createPayment/);
 });
 
 test('recurring state is driven by the newest provider invoice and exposes payment due separately from active', () => {
@@ -86,4 +103,148 @@ test('merchant subscription runtime does not add another Vercel serverless funct
   assert.ok(functions.length <= 11, `Expected at most 11 API functions, found ${functions.length}`);
   assert.ok(functions.includes('api/plan-control.ts'));
   assert.ok(functions.includes('api/action-execute.ts'));
+});
+
+test('legacy recurring checkout refuses persisted contract offers even when client omits terms', () => {
+  const service = readFileSync('server/payments/storeSubscriptionService.ts', 'utf8');
+  assert.match(service, /persistedProduct\.data\(\)\?\.contractDiscounts !== undefined/);
+  assert.match(service, /STORE_SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(service, /payload\.selectedMonths !== undefined/);
+});
+
+test('subscription quote gateway validates input before consulting canonical catalog', () => {
+  const gateway = readFileSync('api/plan-control.ts', 'utf8');
+  const start = gateway.indexOf("case 'merchant.subscription.quote'");
+  const end = gateway.indexOf("case 'merchant.subscription.checkout'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /typeof body\.storeId !== 'string'/);
+  assert.match(handler, /typeof body\.productId !== 'string'/);
+  assert.match(handler, /\[1, 3, 6, 12\]\.includes/);
+  assert.match(handler, /INVALID_SUBSCRIPTION_QUOTE_REQUEST/);
+  assert.ok(handler.indexOf('INVALID_SUBSCRIPTION_QUOTE_REQUEST') < handler.indexOf('await quotePersistedMerchantSubscription'));
+});
+
+
+test('official Kyrub plan mapping cannot be billed through the merchant preapproval endpoint', () => {
+  assert.match(service, /kyrub_admin\/control_plane\/official_plan_products\/\$\{product\.id\}/);
+  assert.match(service, /OFFICIAL_PLAN_REQUIRES_PLATFORM_CHECKOUT/);
+  const guard = service.indexOf('if (officialPlanMapping.exists)');
+  const recipient = service.indexOf("context: 'store_subscription'", guard);
+  const provider = service.indexOf("'/preapproval'", guard);
+  assert.ok(guard >= 0 && recipient > guard && provider > recipient,
+    'Privileged official-plan check must run before merchant recipient and provider creation');
+});
+
+test('cart routes eligible monthly subscriptions through the canonical platform-or-merchant gateway', () => {
+  const cart = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
+  assert.match(cart, /createCatalogSubscriptionCheckout\(/);
+  assert.match(cart, /cart\.length !== 1 \|\| subscriptions\[0\]\.quantity !== 1/);
+  assert.match(cart, /subscriptions\[0\]\.product\.contractDiscounts !== undefined/);
+  assert.match(cart, /subscriptionMonths !== 1/);
+  assert.match(cart, /hasSubscriptionCartItem && !canStartLegacyMonthlySubscription/);
+  assert.match(cart, /window\.location\.assign\(checkoutUrl\.toString\(\)\)/);
+  assert.match(gateway, /case 'catalog\.subscription\.checkout'/);
+  assert.match(gateway, /route\.kind === 'platform-plan'/);
+  assert.match(gateway, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
+  assert.match(gateway, /createAuthorizedStoreSubscription\(authorization, body\)/);
+});
+
+
+test('unified subscription checkout authenticates and resolves persisted official routing before payment', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some\(/);
+  assert.match(handler, /SUBSCRIPTION_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /await resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('await resolvePersistedProductCheckoutRoute'));
+});
+
+
+test('unified checkout rejects invalid official prices, contract offers and non-subscription products', () => {
+  const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(lookup, /data\.contractDiscounts !== undefined/);
+  assert.match(lookup, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(lookup, /planId === 'free' \? productPrice !== 0 : productPrice <= 0/);
+  assert.match(lookup, /PRODUCT_NOT_SUBSCRIPTION/);
+  assert.match(lookup, /parsedModality\.mode !== 'subscription'/);
+  assert.ok(lookup.indexOf('INVALID_OFFICIAL_PLAN_PRICE') < lookup.indexOf('return resolveCheckoutBillingRoute'));
+});
+
+
+test('official plan billing uses the published storefront price, with governance-owned identity mapping', () => {
+  const lookup = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(lookup, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(lookup, /mappingData\.canonicalStoreId !== seller\.canonicalStoreId/);
+  assert.match(lookup, /mappingData\.status !== 'active'/);
+  assert.match(lookup, /data\.contractDiscounts !== undefined/);
+  assert.match(lookup, /OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.doesNotMatch(lookup, /OFFICIAL_PLAN_PRICE_MISMATCH/);
+});
+
+
+test('unified subscription checkout authenticates and resolves persisted official plan mapping before billing', () => {
+  const route = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(gateway, /case 'catalog\.subscription\.checkout'/);
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some\(key => key !== 'storeId' && key !== 'productId'\)/);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /allowMerchantSubscription: true/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.match(route, /official_plan_products\/\$\{productId\}/);
+  assert.match(route, /INVALID_OFFICIAL_PLAN_PRICE/);
+  assert.match(route, /PRODUCT_NOT_SUBSCRIPTION/);
+  assert.match(client, /catalog\.subscription\.checkout/);
+});
+
+
+test('unified catalog checkout selects server-authoritative official plan billing', () => {
+  const start = gateway.indexOf("case 'catalog.subscription.checkout'");
+  const end = gateway.indexOf("case 'merchant.subscription.quote'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /await authenticateConsultantRequest\(authorization\)/);
+  assert.match(handler, /resolvePersistedProductCheckoutRoute\(/);
+  assert.match(handler, /route\.kind === 'platform-plan'/);
+  assert.match(handler, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
+  assert.match(handler, /route\.kind === 'free-plan'/);
+  assert.match(handler, /FREE_PLAN_CHECKOUT_NOT_REQUIRED/);
+  assert.match(handler, /createAuthorizedStoreSubscription\(authorization, body\)/);
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+  assert.ok(handler.indexOf('await authenticateConsultantRequest') < handler.indexOf('resolvePersistedProductCheckoutRoute'));
+});
+
+
+test('unified catalog subscription route rejects merchant term offers before any provider checkout', () => {
+  const route = readFileSync('server/admin/officialPlanProductLookup.ts', 'utf8');
+  assert.match(route, /MERCHANT_CONTRACT_CHECKOUT_REQUIRED/);
+  assert.match(route, /input\.allowMerchantSubscription &&\s*parsedModality\.mode === 'subscription' && data\.contractDiscounts !== undefined/);
+  assert.ok(route.indexOf('MERCHANT_CONTRACT_CHECKOUT_REQUIRED') < route.indexOf('return resolveCheckoutBillingRoute('));
+});
+
+
+test('merchant contract quote rejects unrecognized payment and pricing fields', () => {
+  const start = gateway.indexOf("case 'merchant.subscription.quote'");
+  const end = gateway.indexOf("case 'merchant.subscription.checkout'", start);
+  assert.ok(start >= 0 && end > start);
+  const handler = gateway.slice(start, end);
+  assert.match(handler, /Object\.keys\(body\)\.some/);
+  assert.match(handler, /\['storeId', 'productId', 'selectedMonths', 'paymentTerms'\]/);
+  assert.ok(handler.indexOf('Object.keys(body).some') < handler.indexOf('await quotePersistedMerchantSubscription'));
 });

@@ -53,6 +53,11 @@
           'category',
           'isService',
           'isComplimentary',
+          'categoryCollections',
+          'optionGroups',
+          'quickNotes',
+          'saleModality',
+          'contractDiscounts',
           'storePointsPerUnit',
           'publicationStatus',
           'createdByUserId',
@@ -94,6 +99,30 @@
         && (
           !incoming().keys().hasAny(['actionExecutionId'])
           || incoming().actionExecutionId is string
+        )
+        && (
+          !incoming().keys().hasAny(['categoryCollections'])
+          || incoming().categoryCollections is list
+        )
+        && (
+          !incoming().keys().hasAny(['optionGroups'])
+          || incoming().optionGroups is list
+        )
+        && (
+          !incoming().keys().hasAny(['quickNotes'])
+          || incoming().quickNotes is list
+        )
+        && (
+          !incoming().keys().hasAny(['saleModality'])
+          || incoming().saleModality is map
+        )
+        && (
+          !incoming().keys().hasAny(['contractDiscounts'])
+          || (
+            incoming().contractDiscounts is list
+            && incoming().keys().hasAny(['saleModality'])
+            && incoming().saleModality.mode == 'subscription'
+          )
         )
         && incoming().id == productId
         && incoming().storeId == storeId
@@ -160,6 +189,20 @@
         && incoming().updatedByRole == storeSecCurrentRole(storeId);
     }
 
+    // Legacy mirror writes must stop at the security boundary after cutover,
+    // including when a client cached the previous migration status.
+    function canonicalProductLegacyMirrorWriteIsAllowed(storeId) {
+      return incoming().migration.mode != 'dual_write'
+        || get(/databases/$(database)/documents/stores/$(storeId)).data.migrationStatus != 'canonical'
+        // Migrated products retain their provenance after cutover. An editor
+        // may update their commercial fields, but a stale legacy mirror cannot
+        // advance the legacy synchronization watermark.
+        || (
+          resource != null
+          && incoming().legacyUpdatedAt == existing().legacyUpdatedAt
+        );
+    }
+
     function canonicalProductIdentityIsImmutable() {
       return incoming().id == existing().id
         && incoming().storeId == existing().storeId
@@ -208,13 +251,17 @@
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && (
-          canonicalProductMigrationCreateIsValid(storeId, productId)
-          || canonicalProductDirectCreateIsValid(storeId)
+          canonicalProductDirectCreateIsValid(storeId)
+          || (
+            canonicalProductLegacyMirrorWriteIsAllowed(storeId)
+            && canonicalProductMigrationCreateIsValid(storeId, productId)
+          )
         );
 
       allow update: if isSignedIn()
         && canonicalProductEditor(storeId)
         && canonicalProductIdentityIsImmutable()
+        && canonicalProductLegacyMirrorWriteIsAllowed(storeId)
         && canonicalProductServerProvenanceIsImmutable()
         && canonicalProductFieldsAreValid(storeId, productId)
         && incoming().updatedByUserId == request.auth.uid

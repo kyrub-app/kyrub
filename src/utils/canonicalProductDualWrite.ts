@@ -2,7 +2,9 @@ import type { User } from 'firebase/auth';
 import {
   collection,
   doc,
+  deleteField,
   getDocs,
+  getDoc,
   onSnapshot,
   serverTimestamp,
   writeBatch,
@@ -13,19 +15,22 @@ import {
 import { db } from './firebase';
 import {
   parsePublicProducts,
+  parseProductCategoryCollections,
   type PublicProduct,
 } from './publicProducts';
 import {
   activateOperationalDualWrite,
   resolveCanonicalStoreForLegacyTenant,
 } from './operationalDualWrite';
-import type { CanonicalStoreRecord } from './storeDirectory';
+import { parseCanonicalStore, type CanonicalStoreRecord } from './storeDirectory';
 import type { StoreRole } from './storeSecurity';
 import {
   parseProductSaleModality,
   type ProductSaleModality,
 } from '../../shared/productSaleModality';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints';
+import { parseProductOptionGroups, parseProductQuickNotes, quickNotesToOptionGroup, QUICK_NOTES_OPTION_GROUP_ID } from './productCustomization';
+import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers';
 
 export type CanonicalProductPublicationStatus =
   | 'draft'
@@ -43,9 +48,14 @@ export interface CanonicalProductMirrorData {
   image: string;
   stock: number;
   category: string;
+  categoryCollections: PublicProduct['categoryCollections'];
+  optionGroups: PublicProduct['optionGroups'];
+  quickNotes: PublicProduct['quickNotes'];
+  isComplimentary: boolean;
   isService: boolean;
   storePointsPerUnit: number;
   saleModality: ProductSaleModality;
+  contractDiscounts?: PublicProduct['contractDiscounts'];
   publicationStatus: CanonicalProductPublicationStatus;
   createdByUserId: string;
   createdByRole: StoreRole;
@@ -80,6 +90,12 @@ export interface CanonicalProductDualWriteCallbacks {
 
 const cleanString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
+
+const normalizedOptionGroups = (groups: unknown, notes: unknown) => {
+  const base = parseProductOptionGroups(groups).filter(group => group.id !== QUICK_NOTES_OPTION_GROUP_ID);
+  const quick = quickNotesToOptionGroup(notes);
+  return quick ? [...base, quick] : base;
+};
 
 const finiteNumber = (value: unknown): number | null =>
   typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -168,6 +184,12 @@ export const buildCanonicalProductMirrorData = (
   if (!saleModality) {
     throw new Error(`A forma de venda de “${product.name}” é inválida.`);
   }
+  const contractDiscounts = product.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(product.contractDiscounts);
+  if (product.contractDiscounts !== undefined &&
+      (!contractDiscounts || saleModality.mode !== 'subscription')) {
+    throw new Error(`Os períodos de contratação de “${product.name}” são inválidos.`);
+  }
 
   return {
     id: product.id,
@@ -179,9 +201,14 @@ export const buildCanonicalProductMirrorData = (
     image: product.image.trim(),
     stock: product.isService ? 0 : product.stock,
     category: product.category.trim(),
+    categoryCollections: parseProductCategoryCollections(product.categoryCollections),
+    optionGroups: normalizedOptionGroups(product.optionGroups, product.quickNotes),
+    quickNotes: parseProductQuickNotes(product.quickNotes),
+    isComplimentary: product.isComplimentary === true,
     isService: product.isService === true,
     storePointsPerUnit: normalizeStorePointsPerUnit(product.storePointsPerUnit),
     saleModality,
+    ...(contractDiscounts ? { contractDiscounts } : {}),
     publicationStatus: 'published',
     createdByUserId: actorUserId,
     createdByRole: migratedByRole,
@@ -213,9 +240,14 @@ const comparableProductFields = (
   image: cleanString(value.image),
   stock: finiteNumber(value.stock),
   category: cleanString(value.category),
+  categoryCollections: parseProductCategoryCollections(value.categoryCollections),
+  optionGroups: normalizedOptionGroups(value.optionGroups, value.quickNotes),
+  quickNotes: parseProductQuickNotes(value.quickNotes),
+  isComplimentary: value.isComplimentary === true,
   isService: value.isService === true,
   storePointsPerUnit: normalizeStorePointsPerUnit(value.storePointsPerUnit),
   saleModality: parseProductSaleModality(value.saleModality),
+  contractDiscounts: value.contractDiscounts === undefined ? null : parseSubscriptionContractDiscounts(value.contractDiscounts),
   publicationStatus: cleanString(value.publicationStatus),
   legacyUpdatedAt: cleanString(value.legacyUpdatedAt),
   archivedAt: cleanString(value.archivedAt),
@@ -273,11 +305,16 @@ export const getCanonicalProductIdsToArchive = (
 const commitOperations = async (
   operations: Array<(batch: WriteBatch) => void>
 ): Promise<void> => {
-  for (let index = 0; index < operations.length; index += 400) {
-    const batch = writeBatch(db);
-    operations.slice(index, index + 400).forEach(operation => operation(batch));
-    await batch.commit();
+  // A multi-batch migration could leave a partially synchronized catalog
+  // after a later batch fails. Fail closed until an explicit resumable
+  // migration with reconciliation is available.
+  if (operations.length > 400) {
+    throw new Error('A migração exige mais de 400 alterações; divida e reconcilie o catálogo antes de publicar.');
   }
+  if (operations.length === 0) return;
+  const batch = writeBatch(db);
+  operations.forEach(operation => operation(batch));
+  await batch.commit();
 };
 
 const assertMigrationContext = (
@@ -285,6 +322,11 @@ const assertMigrationContext = (
   canonicalStore: CanonicalStoreRecord,
   legacyStoreId: string
 ): void => {
+  // Once the store has cut over, legacy snapshots must never overwrite
+  // or archive products maintained directly in the canonical catalog.
+  if (canonicalStore.migrationStatus === 'canonical') {
+    throw new Error('A loja já usa o catálogo canônico; a sincronização legada está desativada.');
+  }
   if (canonicalStore.ownerId !== user.uid) {
     throw new Error('A loja canônica não pertence ao usuário autenticado.');
   }
@@ -302,6 +344,15 @@ export const syncLegacyProductsToCanonical = async (
   legacyProducts: PublicProduct[]
 ): Promise<CanonicalProductSyncStats> => {
   assertMigrationContext(user, canonicalStore, canonicalStore.legacyTenantId);
+  // The listener can outlive a migration-status change. Re-read the store
+  // before every batch so a stale dual_write snapshot cannot overwrite
+  // products after another session switches the store to canonical.
+  const currentStoreSnapshot = await getDoc(doc(db, 'stores', canonicalStore.id));
+  const currentStore = parseCanonicalStore(currentStoreSnapshot.data());
+  if (!currentStore || currentStore.migrationStatus === 'canonical') {
+    throw new Error('A migração legada foi interrompida: a loja está ausente ou já utiliza o catálogo canônico.');
+  }
+  assertMigrationContext(user, currentStore, canonicalStore.legacyTenantId);
   const products = selectLegacyPublicProductsForStore(
     legacyProducts,
     canonicalStore.legacyTenantId
@@ -364,9 +415,14 @@ export const syncLegacyProductsToCanonical = async (
         image: next.image,
         stock: next.stock,
         category: next.category,
+        categoryCollections: next.categoryCollections,
+        optionGroups: next.optionGroups,
+        quickNotes: next.quickNotes,
+        isComplimentary: next.isComplimentary,
         isService: next.isService,
         storePointsPerUnit: next.storePointsPerUnit,
         saleModality: next.saleModality,
+        contractDiscounts: next.contractDiscounts ?? deleteField(),
         publicationStatus: 'published',
         updatedByUserId: user.uid,
         updatedByRole: 'owner',
@@ -415,6 +471,13 @@ export const subscribeToCanonicalProductDualWrite = async (
   );
   if (!canonicalStore) {
     callbacks.onUnavailable?.();
+    return () => undefined;
+  }
+
+  // A canonical store must not install a legacy tenant listener. Otherwise
+  // future tenant snapshots would attempt a prohibited reverse migration.
+  if (canonicalStore.migrationStatus === 'canonical') {
+    callbacks.onReady?.(canonicalStore);
     return () => undefined;
   }
 

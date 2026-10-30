@@ -381,6 +381,197 @@ export const deleteCatalogCategoryTreePath = (
   };
 };
 
+/**
+ * Compute only the canonical product changes required by a category operation.
+ * Existing commercial and migration fields remain untouched by the writer.
+ * The plan is pure so it can be verified before any Firestore writes.
+ */
+export const planCanonicalCategoryProductUpdates = (
+  previous: PublicProduct[],
+  next: PublicProduct[]
+): Array<{
+  id: string;
+  category: string;
+  categoryCollections: ProductCategoryCollection[];
+}> => {
+  const originalById = new Map(previous.map(product => [product.id, product]));
+  if (originalById.size !== previous.length || next.length !== previous.length) {
+    throw new Error('A lista de produtos mudou durante a edição da categoria.');
+  }
+  const seen = new Set<string>();
+  const updates = next.flatMap(product => {
+    const original = originalById.get(product.id);
+    if (!original || seen.has(product.id)) {
+      throw new Error('Produto duplicado ou ausente durante a edição da categoria.');
+    }
+    seen.add(product.id);
+    if (
+      original.category === product.category &&
+      JSON.stringify(original.categoryCollections ?? []) ===
+        JSON.stringify(product.categoryCollections ?? [])
+    ) return [];
+    return [{
+      id: product.id,
+      category: product.category,
+      categoryCollections: product.categoryCollections ?? [],
+    }];
+  });
+  return updates;
+};
+
+/**
+ * Apply a prevalidated category plan to the canonical catalog only.
+ * Recheck the cutover and each source category in one transaction; a concurrent
+ * edit fails closed instead of silently overwriting newer product categories.
+ * The bounded operation deliberately does not fall back to tenant.publicProducts.
+ */
+export const persistCanonicalCategoryProductUpdates = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  previous: PublicProduct[],
+  next: PublicProduct[]
+): Promise<number> => {
+  const updates = planCanonicalCategoryProductUpdates(previous, next);
+  if (updates.length > 100) {
+    throw new Error('A categoria contém produtos demais para uma alteração atômica.');
+  }
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) {
+    throw new Error('Loja canônica inválida.');
+  }
+  const originalById = new Map(previous.map(product => [product.id, product]));
+  const storeReference = doc(db, 'stores', storeId);
+  const references = updates.map(update =>
+    doc(db, 'stores', storeId, 'products', update.id)
+  );
+  await runTransaction(db, async transaction => {
+    const storeSnapshot = await transaction.get(storeReference);
+    const snapshots = [];
+    for (const reference of references) {
+      snapshots.push(await transaction.get(reference));
+    }
+    if (
+      !storeSnapshot.exists() ||
+      storeSnapshot.data().ownerId !== user.uid ||
+      storeSnapshot.data().migrationStatus !== 'canonical'
+    ) {
+      throw new Error('A loja não está habilitada para edição canônica.');
+    }
+    updates.forEach((update, index) => {
+      const snapshot = snapshots[index];
+      const original = originalById.get(update.id);
+      if (
+        !snapshot?.exists() ||
+        !original ||
+        snapshot.data().category !== original.category ||
+        JSON.stringify(parseCatalogCategoryPaths(snapshot.data().categoryCollections)) !==
+          JSON.stringify(parseCatalogCategoryPaths(original.categoryCollections)) ||
+        snapshot.data().publicationStatus === 'archived'
+      ) {
+        throw new Error('O produto foi alterado durante a edição da categoria.');
+      }
+      transaction.update(references[index], {
+        category: update.category,
+        categoryCollections: update.categoryCollections,
+        updatedAt: serverTimestamp(),
+        updatedByUserId: user.uid,
+        updatedByRole: 'owner',
+      });
+    });
+  });
+  return updates.length;
+};
+
+/** Canonical category tree is stored with its store, including empty folders. */
+export const persistCanonicalCategoryTree = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string,
+  previousProducts: PublicProduct[],
+  nextProducts: PublicProduct[],
+  nextPaths: ProductCategoryCollection[],
+  expectedPaths: ProductCategoryCollection[]
+): Promise<number> => {
+  const updates = planCanonicalCategoryProductUpdates(previousProducts, nextProducts);
+  if (updates.length > 100) {
+    throw new Error('A categoria contém produtos demais para uma alteração atômica.');
+  }
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) throw new Error('Loja canônica inválida.');
+  const storeRef = doc(db, 'stores', storeId);
+  const references = updates.map(update => doc(db, 'stores', storeId, 'products', update.id));
+  const originals = new Map(previousProducts.map(product => [product.id, product]));
+  await runTransaction(db, async transaction => {
+    const store = await transaction.get(storeRef);
+    const snapshots = [];
+    for (const reference of references) snapshots.push(await transaction.get(reference));
+    if (!store.exists() || store.data().ownerId !== user.uid || store.data().migrationStatus !== 'canonical') {
+      throw new Error('A loja não está habilitada para edição canônica.');
+    }
+    const currentPaths = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
+    if (JSON.stringify(currentPaths) !== JSON.stringify(parseCatalogCategoryPaths(expectedPaths))) {
+      throw new Error('As pastas foram alteradas por outra sessão. Atualize o catálogo e tente novamente.');
+    }
+    const canonicalPaths = parseCatalogCategoryPaths(nextPaths);
+    // Ensure a stale client cannot silently overwrite another category edit.
+    if (canonicalPaths.length > 500) throw new Error('Limite de pastas da loja excedido.');
+    updates.forEach((update, index) => {
+      const snapshot = snapshots[index];
+      const original = originals.get(update.id);
+      if (!snapshot?.exists() || !original || snapshot.data().category !== original.category ||
+        JSON.stringify(parseCatalogCategoryPaths(snapshot.data().categoryCollections)) !==
+          JSON.stringify(parseCatalogCategoryPaths(original.categoryCollections)) ||
+        snapshot.data().publicationStatus === 'archived') {
+        throw new Error('O produto foi alterado durante a edição da categoria.');
+      }
+      transaction.update(references[index], {
+        category: update.category,
+        categoryCollections: update.categoryCollections,
+        updatedAt: serverTimestamp(),
+        updatedByUserId: user.uid,
+        updatedByRole: 'owner',
+      });
+    });
+    if (JSON.stringify(currentPaths) !== JSON.stringify(canonicalPaths)) {
+      transaction.update(storeRef, { catalogCategoryPaths: canonicalPaths, updatedAt: serverTimestamp() });
+    }
+  });
+  return updates.length;
+};
+
+/**
+ * One-time, idempotent import of legacy empty folders into the canonical store.
+ * This does not mutate tenant data or rewrite canonical products. A concurrent
+ * canonical edit is never overwritten: an existing canonical tree wins.
+ */
+export const migrateLegacyCatalogCategoryPaths = async (
+  user: Pick<User, 'uid'>,
+  canonicalStoreId: string
+): Promise<ProductCategoryCollection[]> => {
+  const storeId = canonicalStoreId.trim();
+  if (!storeId || storeId === user.uid) throw new Error('Loja canônica inválida.');
+  const tenantRef = doc(db, 'tenants', user.uid);
+  const storeRef = doc(db, 'stores', storeId);
+  return runTransaction(db, async transaction => {
+    const tenant = await transaction.get(tenantRef);
+    const store = await transaction.get(storeRef);
+    if (!tenant.exists() || !store.exists() ||
+      cleanString(tenant.data().canonicalStoreId) !== storeId ||
+      store.data().ownerId !== user.uid || store.data().migrationStatus !== 'canonical') {
+      throw new Error('Não foi possível verificar o vínculo da loja canônica.');
+    }
+    const existing = parseCatalogCategoryPaths(store.data().catalogCategoryPaths);
+    if (store.data().catalogCategoryPaths !== undefined) return existing;
+    // A legacy folder tree can include outdated paths. Import only metadata;
+    // canonical product categories remain the source of truth for item placement.
+    const legacy = parseCatalogCategoryPaths(tenant.data().catalogCategoryPaths);
+    transaction.update(storeRef, {
+      catalogCategoryPaths: legacy,
+      updatedAt: serverTimestamp(),
+    });
+    return legacy;
+  });
+};
+
 export const reconcileCatalogCategoryPaths = async (
   user: Pick<User, 'uid'>
 ): Promise<ProductCategoryCollection[]> => {
@@ -389,6 +580,17 @@ export const reconcileCatalogCategoryPaths = async (
   return runTransaction(db, async transaction => {
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) return [];
+
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists()) {
+        throw new Error('Não foi possível conferir a loja canônica antes de reconciliar categorias.');
+      }
+      if (canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A reconciliação legada de categorias está desativada após a migração canônica.');
+      }
+    }
 
     const products = parsePublicProducts(snapshot.data().publicProducts);
     const storedPaths = parseCatalogCategoryPaths(
@@ -423,6 +625,13 @@ export const renameCatalogCategoryPath = async (
     if (!snapshot.exists()) {
       throw new Error('A loja não foi encontrada para editar esta pasta.');
     }
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists() || canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A alteração da categoria foi bloqueada: a loja canônica está indisponível ou já concluiu a migração.');
+      }
+    }
 
     const result = renameCatalogCategoryTree(
       parsePublicProducts(snapshot.data().publicProducts),
@@ -455,6 +664,13 @@ export const deleteCatalogCategoryPath = async (
     const snapshot = await transaction.get(tenantReference);
     if (!snapshot.exists()) {
       throw new Error('A loja não foi encontrada para excluir esta pasta.');
+    }
+    const canonicalStoreId = cleanString(snapshot.data().canonicalStoreId);
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists() || canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A alteração da categoria foi bloqueada: a loja canônica está indisponível ou já concluiu a migração.');
+      }
     }
 
     const result = deleteCatalogCategoryTreePath(
