@@ -5,6 +5,7 @@ import test from 'node:test';
 
 const service = readFileSync('server/admin/paidPlanSubscriptionService.ts', 'utf8');
 const gateway = readFileSync('api/plan-control.ts', 'utf8');
+const sharedGateway = readFileSync('api/action-execute.ts', 'utf8');
 const client = readFileSync('src/utils/planSubscription.ts', 'utf8');
 const planCenter = readFileSync('src/components/plans/PlanCenterApp.tsx', 'utf8');
 
@@ -100,4 +101,21 @@ test('Plan Center separates provider authorization from payment-confirmed activa
   assert.match(planCenter, /aguardando pagamento creditado/);
   assert.match(planCenter, /providerStatus === 'authorized' && !subscription\.activatedAt/);
   assert.match(planCenter, /pagamento aprovado e creditado diretamente com o Mercado Pago/);
+});
+
+
+test('shared Mercado Pago webhook dispatches subscription events to the existing signed plan handler', () => {
+  const section = sharedGateway.slice(sharedGateway.indexOf("if (transport === 'mercado-pago-webhook')"), sharedGateway.indexOf("if (transport === 'storefront-availability')"));
+  assert.match(section, /subscription_preapproval/);
+  assert.match(section, /subscription_authorized_payment/);
+  assert.match(section, /handlePaidPlanProviderWebhook/);
+  assert.match(section, /signature: request\.headers\['x-signature'\]/);
+  assert.match(section, /requestId: request\.headers\['x-request-id'\]/);
+  assert.match(section, /processMercadoPagoWebhook/);
+});
+
+test('paid plan checkout fails closed when platform billing secrets or notification URL are absent', () => {
+  assert.match(service, /available: Boolean\(accessToken\(\) && webhookSecret\(\) && webhookUrl\(\)\)/);
+  assert.match(service, /if \(!token \|\| !webhookSecret\(\) \|\| !notificationUrl\)/);
+  assert.match(service, /PLAN_BILLING_NOT_CONFIGURED/);
 });
