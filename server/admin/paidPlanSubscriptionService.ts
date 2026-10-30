@@ -1,3 +1,4 @@
+import { decideReservationCompletion } from './planReservationDecision.js';
 import { createHmac, randomUUID, timingSafeEqual } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { KyrubCommercialPlanId } from '../../shared/kyrubCommercialPlans.js';
@@ -13,6 +14,8 @@ import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { PlanManagementError } from './planManagementService.js';
 import { loadPublicActivePlanCatalog } from './publicPlanCatalogService.js';
+import { getOfficialStoreIdentity } from './officialStoreService.js';
+import { resolvePersistedProductCheckoutRoute } from './officialPlanProductLookup.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const SUBSCRIPTION_COLLECTION = `${ROOT}/store_subscriptions`;
@@ -203,15 +206,36 @@ const assertSubscriptionCanReplaceEntitlement = async (ownerId: string): Promise
   }
 };
 
-const selectedPlan = async (targetPlan: 'pro' | 'business') => {
+const selectedPlan = async (targetPlan: 'pro' | 'business', productId: string) => {
+  const official = await getOfficialStoreIdentity();
+  if (!official?.canonicalStoreId) {
+    throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Loja Oficial nao configurada.');
+  }
+  const route = await resolvePersistedProductCheckoutRoute({
+    sellerStoreReference: official.canonicalStoreId,
+    productId,
+  });
+  if (route.kind !== 'platform-plan' || route.plan !== targetPlan) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_MISMATCH', 'Produto nao corresponde ao plano contratado.');
+  }
   const catalog = await loadPublicActivePlanCatalog();
   const entry = catalog.plans.find(item => item.planId === targetPlan);
-  // The public catalog may fall back to compiled reference prices on read failures.
-  // Never initiate a real charge from that fallback: require a published control-plane price.
-  if (!entry || entry.source !== 'control_plane' || entry.monthlyPriceBRL <= 0) {
+  // Governance catalog supplies entitlement version and limits, not the commercial charge.
+  if (!entry) {
     throw new PlanManagementError(409, 'PLAN_NOT_BILLABLE', 'Este plano não possui preço mensal ativo para contratação.');
   }
-  return entry;
+  const product = await adminDb.doc(`stores/${official.canonicalStoreId}/products/${productId}`).get();
+  const productData = product.data();
+  if (!product.exists || productData?.publicationStatus !== 'published' || productData?.contractDiscounts !== undefined) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRODUCT_CHANGED', 'Produto oficial indisponivel ou com condicoes contratuais.');
+  }
+  const price = productData.price;
+  if (typeof price !== 'number' || !Number.isFinite(price) || price <= 0 ||
+      !Number.isSafeInteger(Math.round(price * 100)) ||
+      Math.abs(price * 100 - Math.round(price * 100)) > 1e-7) {
+    throw new PlanManagementError(409, 'INVALID_OFFICIAL_PLAN_PRICE', 'Preco comercial invalido.');
+  }
+  return { ...entry, monthlyPriceBRL: price };
 };
 
 const activateSubscriptionEntitlement = async (ownerId: string, subscription: KyrubPlanSubscriptionSnapshot): Promise<void> => {
@@ -219,6 +243,11 @@ const activateSubscriptionEntitlement = async (ownerId: string, subscription: Ky
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
+    const currentSubscription = await transaction.get(subscriptionRef);
+    if (currentSubscription.data()?.checkoutReservationStatus === 'pending' ||
+        clean(currentSubscription.data()?.providerSubscriptionId) !== subscription.providerSubscriptionId) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura alterada antes da ativacao do plano.');
+    }
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
     const alreadyActive = data.status === 'active' && data.source === 'subscription' &&
@@ -269,6 +298,11 @@ const deactivateSubscriptionEntitlement = async (
   const entitlementRef = adminDb.doc(`${ENTITLEMENT_COLLECTION}/${ownerId}`);
   const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
   await adminDb.runTransaction(async transaction => {
+    const currentSubscription = await transaction.get(subscriptionRef);
+    if (currentSubscription.data()?.checkoutReservationStatus === 'pending' ||
+        clean(currentSubscription.data()?.providerSubscriptionId) !== providerSubscriptionId) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura alterada antes da revogacao do plano.');
+    }
     const existing = await transaction.get(entitlementRef);
     const data = existing.exists ? existing.data() as Record<string, unknown> : {};
     const owns = data.source === 'subscription' && clean(data.providerSubscriptionId) === providerSubscriptionId;
@@ -312,7 +346,14 @@ const persistProviderState = async (
   const paymentEvidence = status === 'authorized'
     ? await loadApprovedSubscriptionPayment(fallback)
     : null;
-  await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
+  const subscriptionRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const current = await transaction.get(subscriptionRef);
+    if (current.data()?.checkoutReservationStatus === 'pending' ||
+        clean(current.data()?.providerSubscriptionId) !== fallback.providerSubscriptionId) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura alterada durante a conciliacao; nenhuma atualizacao foi aplicada.');
+    }
+    transaction.set(subscriptionRef, {
     providerStatus: status,
     checkoutUrl: clean(provider.init_point) || fallback.checkoutUrl,
     ...(status === 'authorized'
@@ -330,7 +371,8 @@ const persistProviderState = async (
           }
       : {}),
     updatedAt: FieldValue.serverTimestamp(),
-  }, { merge: true });
+    }, { merge: true });
+  });
   const next: KyrubPlanSubscriptionSnapshot = {
     ...fallback,
     providerStatus: status,
@@ -351,22 +393,35 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   return {
     billing: loadPaidPlanBillingAvailability(),
-    subscription: parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined),
+    subscription: snapshot.data()?.checkoutReservationStatus === 'pending'
+      ? null
+      : parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined),
   };
 };
 
-export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown): Promise<KyrubPlanCheckoutResult> => {
+export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, rawProductId?: unknown): Promise<KyrubPlanCheckoutResult> => {
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
+  const officialProductId = typeof rawProductId === 'string' ? rawProductId.trim() : '';
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(officialProductId)) {
+    throw new PlanManagementError(409, 'OFFICIAL_PRODUCT_REQUIRED', 'Selecione o produto de assinatura na Loja Oficial.');
+  }
   const config = requireBillingConfig();
   if (!clean(user.email) || user.emailVerified === false) {
     throw new PlanManagementError(409, 'BILLING_EMAIL_REQUIRED', 'Sua conta precisa ter um e-mail válido para iniciar a assinatura.');
   }
   await assertStoreExists(ownerId);
   await assertSubscriptionCanReplaceEntitlement(ownerId);
-  const plan = await selectedPlan(targetPlan);
+  const plan = await selectedPlan(targetPlan, officialProductId);
+  const official = await getOfficialStoreIdentity();
+  if (!official?.canonicalStoreId) {
+    throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Loja Oficial nao configurada.');
+  }
   const existingSnapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
+  if (existingSnapshot.data()?.checkoutReservationStatus === 'pending') {
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'Existe uma cobranca pendente de conciliacao. Conclua a verificacao antes de iniciar outra.');
+  }
   const existing = parseStoredSubscription(ownerId, existingSnapshot.exists ? existingSnapshot.data() as Record<string, unknown> : undefined);
   if (existing && existing.providerStatus !== 'cancelled') {
     const provider = await mpRequest(`/preapproval/${encodeURIComponent(existing.providerSubscriptionId)}`) as MpPreapproval;
@@ -377,9 +432,36 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     }
   }
 
+  // Revalidate the persisted offer immediately before creating the provider charge.
+  const latestOffer = await selectedPlan(targetPlan, officialProductId);
+  if (Math.round(latestOffer.monthlyPriceBRL * 100) !== Math.round(plan.monthlyPriceBRL * 100)) {
+    throw new PlanManagementError(409, 'OFFICIAL_PLAN_PRICE_CHANGED', 'O preco do plano foi alterado. Revise a oferta antes de contratar.');
+  }
   const billingReference = randomUUID().replaceAll('-', '_');
+  const reservationRef = adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`);
+  await adminDb.runTransaction(async transaction => {
+    const snapshot = await transaction.get(reservationRef);
+    const current = snapshot.data() ?? {};
+    if (current.checkoutReservationStatus === 'pending' ||
+        (current.providerSubscriptionId && current.providerStatus !== 'cancelled')) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_CHECKOUT_IN_PROGRESS', 'Ja existe uma contratacao em andamento para esta loja.');
+    }
+    transaction.set(reservationRef, {
+      checkoutReservationStatus: 'pending',
+      billingReference,
+      reservedPlan: targetPlan,
+      reservedPlanVersion: plan.version,
+      reservedAmountMinor: Math.round(plan.monthlyPriceBRL * 100),
+      reservedCurrency: 'BRL',
+      reservedPayerEmail: user.email,
+      officialProductId,
+      officialStoreId: official.canonicalStoreId,
+      checkoutReservedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
   const provider = await mpRequest('/preapproval', {
     method: 'POST',
+    headers: { 'X-Idempotency-Key': billingReference },
     body: JSON.stringify({
       reason: `Kyrub ${targetPlan === 'business' ? 'Business' : 'Pro'}`,
       external_reference: billingReference,
@@ -418,16 +500,36 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     activatedAt: null,
     cancelledAt: null,
   };
-  await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).set({
+  await adminDb.runTransaction(async transaction => {
+    const reservation = await transaction.get(reservationRef);
+    const completion = decideReservationCompletion(billingReference, providerSubscriptionId, reservation.data() ?? {});
+    if (completion === 'already-completed') return;
+    if (completion === 'conflict') {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva desta contratacao foi alterada.');
+    }
+    transaction.set(reservationRef, {
     ...subscription,
     billingReference,
+    checkoutReservationStatus: 'completed',
+    officialProductId,
+    officialStoreId: official.canonicalStoreId,
     payerEmail: user.email,
     providerPaymentStatus: 'pending_confirmation',
     providerPaymentStatusDetail: null,
     createdAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
+    });
   });
-  return { checkoutUrl, subscription };
+  // A webhook may have already confirmed payment while the checkout request
+  // was finishing. Return the persisted state instead of a stale local copy.
+  const completed = await reservationRef.get();
+  const persisted = parseStoredSubscription(ownerId, completed.data() as Record<string, unknown>);
+  if (completed.data()?.billingReference !== billingReference ||
+      completed.data()?.checkoutReservationStatus !== 'completed' ||
+      persisted?.providerSubscriptionId !== providerSubscriptionId) {
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A contratacao foi alterada antes da resposta do checkout.');
+  }
+  return { checkoutUrl: persisted.checkoutUrl || checkoutUrl, subscription: persisted };
 };
 
 export const reconcileOwnPaidPlanSubscription = async (authorization: string): Promise<KyrubPlanSubscriptionState> => {
@@ -435,6 +537,88 @@ export const reconcileOwnPaidPlanSubscription = async (authorization: string): P
   const ownerId = safeOwnerId(user.uid);
   const snapshot = await adminDb.doc(`${SUBSCRIPTION_COLLECTION}/${ownerId}`).get();
   const subscription = parseStoredSubscription(ownerId, snapshot.exists ? snapshot.data() as Record<string, unknown> : undefined);
+  if (snapshot.data()?.checkoutReservationStatus === 'pending') {
+    const reference = clean(snapshot.data()?.billingReference);
+    if (!reference) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem referencia de cobranca para conciliacao.');
+    }
+    const payerEmail = clean(snapshot.data()?.reservedPayerEmail);
+    if (!payerEmail) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem pagador para conciliacao.');
+    }
+    // Search by payer, then match the exact external reference locally.
+    const search = await mpRequest(`/preapproval/search?payer_email=${encodeURIComponent(payerEmail)}&limit=100`);
+    const paging = record(search.paging);
+    if (Number(paging.total) > 100) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_PAGINATION', 'Pesquisa de assinaturas incompleta; conciliacao manual necessaria.');
+    }
+    const matches = (Array.isArray(search.results) ? search.results : [])
+      .map(item => record(item))
+      .filter(item => clean(item.external_reference) === reference);
+    if (matches.length > 1) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_CONFLICT', 'Mais de uma assinatura encontrada para a mesma referencia.');
+    }
+    // Search responses may omit recurring terms. Validate those fields against
+    // the full preapproval detail below, not the abbreviated search result.
+    if (matches.length === 1 && !clean(matches[0].id)) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura encontrada sem identificador do provedor.');
+    }
+    if (matches.length === 1) {
+      if (!Number.isSafeInteger(snapshot.data()?.reservedPlanVersion) || Number(snapshot.data()?.reservedPlanVersion) <= 0) {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_INVALID', 'Reserva sem versao do plano para conciliacao.');
+      }
+      const candidate = matches[0];
+      const provider = await mpRequest(`/preapproval/${encodeURIComponent(clean(candidate.id))}`) as MpPreapproval & Record<string, unknown>;
+      const recurring = record(provider.auto_recurring);
+      const amount = Number(recurring.transaction_amount);
+      if (clean(provider.external_reference) !== reference ||
+          clean(provider.payer_email).toLowerCase() !== payerEmail.toLowerCase() ||
+          !Number.isFinite(amount) || Math.round(amount * 100) !== snapshot.data()?.reservedAmountMinor ||
+          clean(recurring.currency_id) !== snapshot.data()?.reservedCurrency ||
+          recurring.frequency !== 1 || recurring.frequency_type !== 'months') {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Detalhes da assinatura divergem da reserva.');
+      }
+      const alreadyLinked = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+        .where('providerSubscriptionId', '==', clean(provider.id)).limit(2).get();
+      if (alreadyLinked.docs.some(doc => doc.id !== ownerId)) {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura ja vinculada a outra loja.');
+      }
+      const checkoutUrl = clean(provider.init_point);
+      if (!checkoutUrl) throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout para recuperacao.');
+      const now = new Date().toISOString();
+      const recovered: KyrubPlanSubscriptionSnapshot = {
+        schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
+        storeId: ownerId, ownerId,
+        plan: paidPlan(snapshot.data()?.reservedPlan),
+        planVersion: snapshot.data()?.reservedPlanVersion as number,
+        provider: PROVIDER,
+        providerSubscriptionId: clean(provider.id),
+        providerStatus: providerStatus(provider.status),
+        amountMinor: snapshot.data()?.reservedAmountMinor as number,
+        currency: 'BRL', checkoutUrl, createdAt: now, updatedAt: now,
+        activatedAt: null, cancelledAt: null,
+      };
+      await adminDb.runTransaction(async transaction => {
+        const latest = await transaction.get(snapshot.ref);
+        if (latest.data()?.billingReference !== reference || latest.data()?.checkoutReservationStatus !== 'pending') {
+          throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'A reserva foi alterada durante a conciliacao.');
+        }
+        transaction.set(snapshot.ref, {
+          ...recovered, billingReference: reference,
+          checkoutReservationStatus: 'completed',
+          officialProductId: latest.data()?.officialProductId,
+          officialStoreId: latest.data()?.officialStoreId,
+          payerEmail,
+          providerPaymentStatus: 'pending_confirmation',
+          updatedAt: FieldValue.serverTimestamp(),
+        }, { merge: true });
+      });
+      await persistProviderState(ownerId, provider, recovered);
+      return loadOwnPlanSubscriptionState(authorization);
+    }
+    // A missing result is not proof of absence: keep the reservation locked.
+    throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_REQUIRED', 'A contratacao aguarda conciliacao com o Mercado Pago. Nenhuma nova cobranca deve ser iniciada.');
+  }
   if (!subscription) return { billing: loadPaidPlanBillingAvailability(), subscription: null };
   const provider = await mpRequest(`/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`) as MpPreapproval;
   await persistProviderState(ownerId, provider, subscription);
@@ -503,7 +687,73 @@ export const handlePaidPlanProviderWebhook = async (input: {
   if (matches.size > 1) {
     throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'A assinatura do provedor está vinculada a mais de uma loja.');
   }
-  if (matches.empty) return { accepted: true };
+  if (matches.empty) {
+    // A signed webhook may arrive after Mercado Pago creates the preapproval
+    // but before our checkout request writes the provider ID.
+    const provider = await mpRequest(`/preapproval/${encodeURIComponent(providerSubscriptionId)}`) as MpPreapproval & Record<string, unknown>;
+    const reference = clean(provider.external_reference);
+    if (!reference || clean(provider.id) !== providerSubscriptionId) return { accepted: true };
+    const reservations = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+      .where('billingReference', '==', reference).limit(2).get();
+    if (reservations.size > 1) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Referencia de cobranca vinculada a mais de uma loja.');
+    }
+    if (reservations.empty) return { accepted: true };
+    const reservation = reservations.docs[0];
+    const data = reservation.data();
+    if (data.checkoutReservationStatus !== 'pending') return { accepted: true };
+    const recurring = record(provider.auto_recurring);
+    const amount = Number(recurring.transaction_amount);
+    if (clean(provider.payer_email).toLowerCase() !== clean(data.reservedPayerEmail).toLowerCase() ||
+        !Number.isFinite(amount) || Math.round(amount * 100) !== data.reservedAmountMinor ||
+        clean(recurring.currency_id) !== data.reservedCurrency ||
+        recurring.frequency !== 1 || recurring.frequency_type !== 'months' ||
+        !Number.isSafeInteger(data.reservedPlanVersion) || data.reservedPlanVersion <= 0) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_MISMATCH', 'Notificacao de assinatura diverge da reserva.');
+    }
+    const checkoutUrl = clean(provider.init_point);
+    if (!checkoutUrl) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_RECONCILIATION_INCOMPLETE', 'Assinatura sem URL de checkout.');
+    }
+    const ownerId = reservation.id;
+    // Do not recover a provider preapproval already owned by another store.
+    // This mirrors the authenticated reconciliation identity check.
+    const linked = await adminDb.collection(SUBSCRIPTION_COLLECTION)
+      .where('providerSubscriptionId', '==', providerSubscriptionId).limit(2).get();
+    if (linked.docs.some(doc => doc.id !== ownerId)) {
+      throw new PlanManagementError(409, 'SUBSCRIPTION_IDENTITY_CONFLICT', 'Assinatura ja vinculada a outra loja.');
+    }
+    const now = new Date().toISOString();
+    const recovered: KyrubPlanSubscriptionSnapshot = {
+      schemaVersion: KYRUB_PLAN_BILLING_SCHEMA_VERSION,
+      storeId: ownerId, ownerId, plan: paidPlan(data.reservedPlan),
+      planVersion: data.reservedPlanVersion as number,
+      provider: PROVIDER, providerSubscriptionId,
+      providerStatus: providerStatus(provider.status),
+      amountMinor: data.reservedAmountMinor as number,
+      currency: 'BRL', checkoutUrl, createdAt: now, updatedAt: now,
+      activatedAt: null, cancelledAt: null,
+    };
+    await adminDb.runTransaction(async transaction => {
+      const latest = await transaction.get(reservation.ref);
+      const completion = decideReservationCompletion(reference, providerSubscriptionId, latest.data() ?? {});
+      if (completion === 'already-completed') return;
+      if (completion === 'conflict') {
+        throw new PlanManagementError(409, 'SUBSCRIPTION_RESERVATION_CONFLICT', 'Reserva alterada durante recuperacao do webhook.');
+      }
+      transaction.set(reservation.ref, {
+        ...recovered, billingReference: reference,
+        checkoutReservationStatus: 'completed',
+        officialProductId: latest.data()?.officialProductId,
+        officialStoreId: latest.data()?.officialStoreId,
+        payerEmail: clean(data.reservedPayerEmail),
+        providerPaymentStatus: 'pending_confirmation',
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    });
+    await persistProviderState(ownerId, provider, recovered);
+    return { accepted: true };
+  }
   const ownerId = matches.docs[0].id;
   const subscription = parseStoredSubscription(ownerId, matches.docs[0].data() as Record<string, unknown>);
   if (!subscription) return { accepted: true };
