@@ -94,7 +94,6 @@ const catalogLabel = (limit: number | null): string =>
     ? 'Catálogo comercialmente ilimitado*'
     : `Até ${limit.toLocaleString('pt-BR')} produtos ou serviços ativos`;
 
-const planRank = (plan: KyrubCommercialPlanId): number => planOrder.indexOf(plan);
 
 const subscriptionLabel = (state: KyrubPlanSubscriptionState | null): string => {
   const subscription = state?.subscription;
