@@ -6,9 +6,32 @@ import {
   buildPublicProduct,
   parsePublicProducts,
   parseProductCategoryCollections,
+  publicProductCollectionsEquivalent,
+  suppressUnverifiedContractDiscounts,
 } from '../src/utils/publicProducts';
 
 describe('public marketplace products', () => {
+  test('hides unconfirmed contract discounts only for mapped canonical fallbacks', () => {
+    const saleModality = buildSubscriptionSaleModality({
+      billingUnit: 'month',
+      benefitKind: 'recurring_delivery',
+      unitsPerCycle: 1,
+    });
+    const product = buildPublicProduct({ uid: 'owner-a' }, {
+      name: 'Assinatura', description: '', price: '100', stock: '',
+      category: 'Serviços', image: '', isService: true, saleModality,
+      contractDiscounts: [
+        { months: 1, discountPercent: 0 },
+        { months: 6, discountPercent: 10 },
+      ],
+    }, 1700000000000);
+    const legacyFallback = suppressUnverifiedContractDiscounts([product], 'store-a', 'legacy');
+    assert.equal(legacyFallback[0].contractDiscounts, undefined);
+    assert.equal(product.contractDiscounts?.length, 2);
+    assert.deepEqual(suppressUnverifiedContractDiscounts([product], 'store-a', 'canonical')[0].contractDiscounts, product.contractDiscounts);
+    assert.deepEqual(suppressUnverifiedContractDiscounts([product], '', 'legacy')[0].contractDiscounts, product.contractDiscounts);
+  });
+
   test('builds a product only from user-provided values', () => {
     const product = buildPublicProduct(
       { uid: 'user-a' },
@@ -59,6 +82,26 @@ describe('public marketplace products', () => {
     assert.deepEqual(product.saleModality, saleModality);
     const [parsed] = parsePublicProducts([product]);
     assert.deepEqual(parsed?.saleModality, saleModality);
+  });
+
+  test('contract offers survive catalog parsing and trigger canonical mismatch detection', () => {
+    const saleModality = buildSubscriptionSaleModality({
+      billingUnit: 'month', benefitKind: 'access',
+    });
+    const product = buildPublicProduct({ uid: 'user-a' }, {
+      name: 'Serviço contratado', description: '', price: '70',
+      stock: '', category: 'Serviços', image: '', isService: true,
+      saleModality,
+      contractDiscounts: [
+        { months: 1, discountPercent: 0 },
+        { months: 6, discountPercent: 10 },
+      ],
+    }, 1_700_000_000_011);
+    const [parsed] = parsePublicProducts([product]);
+    assert.deepEqual(parsed?.contractDiscounts, product.contractDiscounts);
+    assert.equal(publicProductCollectionsEquivalent([product], [parsed]), true);
+    const altered = { ...parsed, contractDiscounts: [{ months: 1 as const, discountPercent: 0 }] };
+    assert.equal(publicProductCollectionsEquivalent([product], [altered]), false);
   });
 
   test('keeps store points on the same canonical product round trip', () => {
