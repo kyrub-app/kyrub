@@ -132,6 +132,17 @@ export const createCatalogHierarchyPath = async (
       throw new Error('A loja não foi encontrada para criar este nível.');
     }
 
+    const canonicalStoreId =
+      typeof snapshot.data().canonicalStoreId === 'string'
+        ? snapshot.data().canonicalStoreId.trim()
+        : '';
+    if (canonicalStoreId) {
+      const canonicalSnapshot = await transaction.get(doc(db, 'stores', canonicalStoreId));
+      if (!canonicalSnapshot.exists() || canonicalSnapshot.data().migrationStatus === 'canonical') {
+        throw new Error('A criação da categoria foi bloqueada: a loja canônica está indisponível ou já concluiu a migração.');
+      }
+    }
+
     const products = parsePublicProducts(snapshot.data().publicProducts);
     const currentPaths = mergeCatalogCategoryPaths(
       parseCatalogCategoryPaths(snapshot.data().catalogCategoryPaths),
