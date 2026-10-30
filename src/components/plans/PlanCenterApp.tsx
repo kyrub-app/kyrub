@@ -36,7 +36,6 @@ import {
 import { auth, db } from '../../utils/firebase';
 import {
   cancelPaidPlanSubscription,
-  createPaidPlanCheckout,
   loadOwnPlanSubscriptionState,
   loadPlanBillingAvailability,
   reconcilePaidPlanSubscription,
@@ -95,7 +94,6 @@ const catalogLabel = (limit: number | null): string =>
     ? 'Catálogo comercialmente ilimitado*'
     : `Até ${limit.toLocaleString('pt-BR')} produtos ou serviços ativos`;
 
-const planRank = (plan: KyrubCommercialPlanId): number => planOrder.indexOf(plan);
 
 const subscriptionLabel = (state: KyrubPlanSubscriptionState | null): string => {
   const subscription = state?.subscription;
@@ -216,25 +214,6 @@ export function PlanCenterApp() {
     setError('');
   };
 
-  const startSubscription = async (targetPlan: 'pro' | 'business') => {
-    if (!user) {
-      setError('Entre com sua conta Kyrub antes de contratar um plano.');
-      return;
-    }
-    if (subscriptionBusy) return;
-    setSubscriptionBusy(true);
-    setMessage('');
-    setError('');
-    try {
-      const result = await createPaidPlanCheckout(targetPlan);
-      setSubscriptionState({ billing: { available: true, provider: 'mercado_pago' }, subscription: result.subscription });
-      window.location.assign(result.checkoutUrl);
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível iniciar a assinatura.');
-      setSubscriptionBusy(false);
-    }
-  };
-
   const resumeSubscription = () => {
     const url = subscriptionState?.subscription?.checkoutUrl;
     if (url) window.location.assign(url);
@@ -349,7 +328,6 @@ export function PlanCenterApp() {
         <section className="grid gap-4 md:grid-cols-3">
           {plans.map(plan => {
             const isCurrent = currentPlan === plan.id;
-            const isUpgrade = currentPlan ? planRank(plan.id) > planRank(currentPlan) : false;
             const subscription = subscriptionState?.subscription;
             const hasLiveSubscription = subscription && subscription.providerStatus !== 'cancelled';
             const samePendingPlan = subscription?.plan === plan.id && subscription.providerStatus === 'pending';
@@ -379,7 +357,7 @@ export function PlanCenterApp() {
                   ) : hasLiveSubscription ? (
                     <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">Cancele a assinatura atual para trocar</div>
                   ) : billingAvailable ? (
-                    <button type="button" onClick={() => void startSubscription(plan.id as 'pro' | 'business')} disabled={!user || subscriptionBusy} className="min-h-11 w-full rounded-2xl bg-violet-500 px-4 text-sm font-black text-white disabled:opacity-50">{subscriptionBusy ? 'Preparando checkout…' : isUpgrade ? `Contratar ${plan.name}` : `Alterar para ${plan.name}`}</button>
+                    <div className="min-h-11 rounded-2xl border border-violet-500/30 bg-violet-500/10 px-4 py-3 text-center text-xs font-bold text-violet-200">Contrate {plan.name} exclusivamente pelo produto da Loja Oficial no Marketplace Kyrub.</div>
                   ) : (
                     <div className="min-h-11 rounded-2xl border border-slate-700 px-4 py-3 text-center text-xs font-bold text-slate-400">Cobrança ainda não habilitada</div>
                   )}
