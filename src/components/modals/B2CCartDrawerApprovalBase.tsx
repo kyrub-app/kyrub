@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type React from 'react';
 import {
   Check,
@@ -18,6 +18,8 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
+import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
+import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
   listMarketplacePromotions,
@@ -120,6 +122,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
   const [checkoutNotice, setCheckoutNotice] = useState('');
+  const [subscriptionQuote, setSubscriptionQuote] = useState<SubscriptionContractOffer | null>(null);
+  const [subscriptionMonths, setSubscriptionMonths] = useState<ContractTermMonths>(1);
+  const subscriptionQuoteRequest = useRef(0);
+  const [isQuotingSubscription, setIsQuotingSubscription] = useState(false);
   const [couponCode, setCouponCode] = useState('');
   const [couponQuote, setCouponQuote] = useState<MarketplaceCouponQuote | null>(null);
   const [couponError, setCouponError] = useState('');
@@ -136,7 +142,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     [cart]
   );
   const cartFingerprint = useMemo(
-    () => cart.map(item => `${item.product.id}:${item.quantity}`).sort().join('|'),
+    () => cart.map(item => JSON.stringify([item.product.id, item.quantity, item.product.price, item.product.saleModality, item.product.contractDiscounts])).sort().join('|'),
     [cart]
   );
   const cartProductIds = useMemo(
@@ -151,6 +157,25 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
   );
   const discountTotal = couponQuote?.discountTotal ?? 0;
   const checkoutTotal = couponQuote?.total ?? subtotal;
+  // A quote belongs to one specific cart and store. Never display it after either changes.
+  useEffect(() => {
+    subscriptionQuoteRequest.current += 1;
+    setSubscriptionQuote(null);
+    setSubscriptionMonths(1);
+    setIsQuotingSubscription(false);
+  }, [cartFingerprint, visitingStore?.id, isOpen]);
+
+  const availableContractTerms = cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription'
+    ? parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)?.map(offer => offer.months) ?? [1]
+    : [1];
+
+  const hasSubscriptionCartItem = cart.some(item => item.product.saleModality?.mode === 'subscription');
+  const canStartLegacyMonthlySubscription = cart.length === 1 &&
+    cart[0].product.saleModality?.mode === 'subscription' &&
+    cart[0].quantity === 1 &&
+    cart[0].product.contractDiscounts === undefined &&
+    subscriptionMonths === 1 &&
+    !isQuotingSubscription;
 
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
@@ -287,6 +312,42 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     const user = auth.currentUser;
     if (!user) {
       setFormError('Faça login novamente para enviar o pedido.');
+      return;
+    }
+
+    // Never mix recurring subscriptions with ordinary one-time orders.
+    // Only a single legacy monthly offer without contract discounts may use
+    // the existing provider preapproval endpoint. All fixed-term offers remain
+    // blocked until their server-side collection and activation exist.
+    const subscriptions = cart.filter(item => item.product.saleModality?.mode === 'subscription');
+    if (subscriptions.length) {
+      // A stale or pending quote must never be interpreted as authorization to
+      // charge different contractual terms. The server remains authoritative.
+      if (isQuotingSubscription) {
+        setFormError('Aguarde a conclusão da cotação antes de iniciar a contratação.');
+        return;
+      }
+      if (cart.length !== 1 || subscriptions[0].quantity !== 1 ||
+          subscriptions[0].product.contractDiscounts !== undefined ||
+          subscriptionMonths !== 1) {
+        setFormError('Contratos com prazo ou desconto ainda exigem o checkout contratual. Nenhuma cobrança foi iniciada.');
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const result = await createCatalogSubscriptionCheckout({
+          storeId: visitingStore.id,
+          productId: subscriptions[0].product.id,
+        });
+        const checkoutUrl = new URL(result.checkoutUrl);
+        if (checkoutUrl.protocol !== 'https:') throw new Error('Endereço de pagamento inválido.');
+        setCheckoutNotice('Assinatura mensal iniciada. A ativação depende da confirmação do pagamento.');
+        window.location.assign(checkoutUrl.toString());
+      } catch (error) {
+        setFormError(error instanceof Error ? error.message : 'Não foi possível iniciar a assinatura.');
+      } finally {
+        setIsSubmitting(false);
+      }
       return;
     }
 
@@ -458,6 +519,57 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   </span>
                 </div>
 
+                {cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription' && (
+                  <div className="rounded-2xl border border-slate-700 p-3 text-xs text-slate-200">
+                    <p className="font-bold">Prazo da assinatura</p>
+                    <label className="mt-2 block text-slate-400" htmlFor="subscription-contract-months">Duração contratual</label>
+                    <select id="subscription-contract-months" value={subscriptionMonths}
+                      className="mt-1 rounded-lg border border-slate-600 bg-slate-900 p-2 text-white"
+                      onChange={event => { subscriptionQuoteRequest.current += 1; setSubscriptionMonths(Number(event.target.value) as ContractTermMonths); setSubscriptionQuote(null); setIsQuotingSubscription(false); }}>
+                      {CONTRACT_TERM_MONTHS.filter(months => availableContractTerms.includes(months)).map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
+                    </select>
+                    <p className="mt-1 text-slate-400">Os prazos exibidos são sugestões da vitrine. Somente a cotação validada no catálogo oficial confirma disponibilidade, preço e desconto. Esta consulta não gera cobrança.</p>
+                    <button
+                      type="button"
+                      disabled={isQuotingSubscription}
+                      className="mt-3 rounded-xl border border-slate-600 px-3 py-2 disabled:opacity-50"
+                      onClick={() => {
+                        if (!availableContractTerms.includes(subscriptionMonths)) {
+                          setFormError('O prazo selecionado não está disponível para este produto. Selecione outro prazo.');
+                          return;
+                        }
+                        const requestId = ++subscriptionQuoteRequest.current;
+                        setSubscriptionQuote(null);
+                        setFormError('');
+                        setIsQuotingSubscription(true);
+                        void quoteMerchantSubscriptionContract({
+                          storeId: visitingStore.id,
+                          productId: cart[0].product.id,
+                          selectedMonths: subscriptionMonths,
+                          paymentTerms: subscriptionMonths === 1
+                            ? { collectionMode: 'recurring', billingIntervalMonths: 1, installments: null }
+                            : { collectionMode: 'prepaid', installments: 1 },
+                        }).then(result => { if (requestId === subscriptionQuoteRequest.current) setSubscriptionQuote(result.quote); })
+                          .catch(error => { if (requestId === subscriptionQuoteRequest.current) setFormError(error instanceof Error ? error.message : 'Cotação indisponível.'); })
+                          .finally(() => { if (requestId === subscriptionQuoteRequest.current) setIsQuotingSubscription(false); });
+                      }}
+                    >
+                      {isQuotingSubscription ? 'Consultando...' : 'Consultar preço oficial'}
+                    </button>
+                    {subscriptionQuote && (
+                      <p className="mt-2 font-semibold">
+                        Total do contrato confirmado: {currencyFormatter.format(subscriptionQuote.totalMinor / 100)}
+                        {' · '}Desconto: {subscriptionQuote.discountPercent}%
+                        {' · '}Equivalente mensal: {currencyFormatter.format(subscriptionQuote.monthlyEquivalentMinor / 100)}
+                      </p>
+                    )}
+                    <p className="mt-2 text-amber-300">
+                      {canStartLegacyMonthlySubscription
+                        ? 'Assinatura mensal recorrente: o pagamento será iniciado pelo Mercado Pago e a ativação depende da confirmação.'
+                        : 'A contratação de planos com prazo ou desconto ainda não está disponível neste carrinho.'}
+                    </p>
+                  </div>
+                )}
                 {cart.length === 0 ? (
                   <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 py-12 text-center">
                     <ShoppingCart className="mx-auto h-9 w-9 text-slate-700" />
@@ -760,11 +872,17 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-5 backdrop-blur-sm">
                 <button
                   type="submit"
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || isQuotingSubscription || (hasSubscriptionCartItem && !canStartLegacyMonthlySubscription)}
                   className="w-full rounded-xl py-3 text-xs font-black uppercase tracking-wider text-white shadow-lg disabled:cursor-not-allowed disabled:opacity-50"
                   style={{ backgroundColor: accentColor }}
                 >
-                  {isSubmitting
+                  {hasSubscriptionCartItem && isQuotingSubscription
+                    ? 'Aguardando cotação...'
+                    : hasSubscriptionCartItem && !canStartLegacyMonthlySubscription
+                    ? 'Checkout contratual indisponível'
+                    : hasSubscriptionCartItem
+                      ? isSubmitting ? 'Iniciando assinatura...' : 'Assinar mensalmente'
+                    : isSubmitting
                     ? fulfillmentType === 'dine_in'
                       ? 'Enviando pedido...'
                       : 'Preparando pagamento...'

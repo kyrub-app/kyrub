@@ -1,5 +1,6 @@
 import type { GeoPoint, Timestamp } from 'firebase/firestore';
 import type { ProductSaleModality } from '../../shared/productSaleModality';
+import type { ContractTermMonths } from '../../shared/subscriptionContractOffers';
 
 export interface ProductCategoryCollection {
   path: string;
@@ -42,6 +43,7 @@ export interface Product {
   isComplimentary?: boolean;
   storePointsPerUnit?: number;
   saleModality?: ProductSaleModality;
+  contractDiscounts?: { months: ContractTermMonths; discountPercent: number }[];
   category: string;
   categoryCollections?: ProductCategoryCollection[];
   optionGroups?: ProductOptionGroup[];
