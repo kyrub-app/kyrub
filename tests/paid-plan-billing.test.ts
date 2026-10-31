@@ -124,6 +124,9 @@ test('paid plan checkout fails closed when platform billing secrets or notificat
 
 test('merchant subscription notifications use a dedicated operation and never the official plan billing operation', () => {
   assert.match(merchantSubscriptions, /KYRUB_STORE_SUBSCRIPTION_WEBHOOK_URL/);
+  assert.match(merchantSubscriptions, /url\.pathname = '\/api\/plan-control'/);
+  assert.match(merchantSubscriptions, /url\.search = ''/);
+  assert.match(merchantSubscriptions, /url\.protocol !== 'https:'/);
   assert.match(merchantSubscriptions, /url\.searchParams\.set\('op', 'merchant\.subscription\.webhook'\)/);
   assert.match(merchantSubscriptions, /\/api\/plan-control\?op=merchant\.subscription\.webhook/);
   assert.match(gateway, /operation === 'merchant\.subscription\.webhook'/);
