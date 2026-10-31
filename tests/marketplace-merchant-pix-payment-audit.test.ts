@@ -26,6 +26,9 @@ test('production and local audit routes require super admin and allow GET only',
   assert.match(server, /authorizeIntegrationReadiness\(request\.get\('authorization'\) \?\? ''\)/);
   const card = read('src/components/admin/AdminMercadoPagoMigrationInventoryCard.tsx');
   assert.match(card, /Conferir pedidos e Pix \(somente leitura\)/);
-  assert.match(card, /snapshot\.items\.length === 1/);
+  assert.match(card, /snapshot\.items\.filter\(item => item\.canonicalStoreId && item\.readiness !== 'identity_review'\)/);
+  assert.match(card, /runAudit\(item\.canonicalStoreId\)/);
+  assert.match(card, /auditStoreId === item\.canonicalStoreId/);
+  assert.doesNotMatch(card, /snapshot\.items\.length === 1/);
   assert.doesNotMatch(card, /method: 'POST'/);
 });
