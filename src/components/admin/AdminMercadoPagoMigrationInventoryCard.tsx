@@ -138,9 +138,11 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
   const [audit, setAudit] = useState<AuditSummary | null>(null);
   const [auditError, setAuditError] = useState('');
   const [auditBusy, setAuditBusy] = useState(false);
+  const [auditStoreId, setAuditStoreId] = useState('');
   const runAudit = async (storeId: string): Promise<void> => {
     setAuditBusy(true);
     setAudit(null);
+    setAuditStoreId(storeId);
     try { setAudit(await loadAudit(user, storeId)); setAuditError(''); }
     catch (reason) { setAuditError(reason instanceof Error ? reason.message : 'Não foi possível consultar os pagamentos.'); }
     finally { setAuditBusy(false); }
@@ -150,6 +152,9 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
     setBusy(true);
     try {
       setSnapshot(await load(user));
+      setAudit(null);
+      setAuditStoreId('');
+      setAuditError('');
       setError('');
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Falha ao consultar inventário.');
@@ -191,13 +196,13 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
           <span className="text-[10px] text-slate-300">{labels[item.readiness]}</span>
         </div>)}
       </div>
-      {snapshot.complete && snapshot.items.length === 1 && snapshot.items[0].canonicalStoreId && <>
-        <button type="button" disabled={auditBusy} onClick={() => void runAudit(snapshot.items[0].canonicalStoreId)}
-          className="mt-3 rounded-xl border border-sky-500/40 px-3 py-2 text-xs font-bold text-sky-200 disabled:opacity-40">
-          {auditBusy ? 'Conferindo registros…' : 'Conferir pedidos e Pix (somente leitura)'}
+      {snapshot.complete && snapshot.items.filter(item => item.canonicalStoreId && item.readiness !== 'identity_review').map(item => <div key={item.tenantId} className="mt-3">
+        <button type="button" disabled={auditBusy} onClick={() => void runAudit(item.canonicalStoreId)}
+          className="rounded-xl border border-sky-500/40 px-3 py-2 text-xs font-bold text-sky-200 disabled:opacity-40">
+          {auditBusy && auditStoreId === item.canonicalStoreId ? 'Conferindo registros…' : `Conferir pedidos e Pix de ${item.storeName || 'loja sem nome'} (somente leitura)`}
         </button>
-        {auditError && <p role="alert" className="mt-2 text-xs text-amber-200">{auditError}</p>}
-        {audit && <div className="mt-3 space-y-1 rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
+        {auditStoreId === item.canonicalStoreId && auditError && <p role="alert" className="mt-2 text-xs text-amber-200">{auditError}</p>}
+        {auditStoreId === item.canonicalStoreId && audit && <div className="mt-3 space-y-1 rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
           <strong className="block text-slate-100">Conferência financeira por loja {audit.complete ? '' : '— leitura parcial'}</strong>
           {(['orders', 'intents', 'payments'] as const).map(kind => <p key={kind}>
             {kind === 'orders' ? 'Pedidos' : kind === 'intents' ? 'Intenções' : 'Pagamentos'}: {audit[kind].scanned} registros analisados;
@@ -205,7 +210,7 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
           </p>)}
           <p className="text-amber-200">{audit.warning}</p>
         </div>}
-      </>}
+      </div>)}
       <p className="mt-3 text-[10px] leading-relaxed text-amber-200">
         Próximo gate: validar atividade de vendas, cobranças em aberto e beneficiário no Mercado Pago. Este inventário NÃO autoriza merge, Pix ou migração automática.
       </p>
