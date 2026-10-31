@@ -141,13 +141,13 @@ export function KyrubTab(props: KyrubTabProps) {
       // Published offer images are read independently of the store-source rollout flag.
       const offersQuery = query(
         collection(db, getMarketplaceListingsCollectionPath()),
-        where('publicationStatus', '==', 'published'),
-        where('listingType', '==', 'offer')
+        where('publicationStatus', '==', 'published')
       );
       unsubscribeOffers = onSnapshot(
         offersQuery,
         snapshot => setPublishedOffers(
-          snapshot.docs.map(doc => doc.data() as MarketplaceOfferListingDocument)
+          snapshot.docs.map(doc => doc.data() as MarketplaceListingDocument)
+            .filter((listing): listing is MarketplaceOfferListingDocument => listing.listingType === 'offer')
         ),
         error => {
           console.warn('Published marketplace offer images are unavailable.', error);
