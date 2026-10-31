@@ -44,7 +44,7 @@ const canonicalListingToStore = (
   address: listing.address,
   contact: '',
   keywords: [...listing.keywords],
-  offerImages: [],
+  offerImages: [listing.banner, listing.logo].filter((image): image is string => Boolean(image?.trim())),
   status: listing.status,
   lat: listing.geoPosition?.latitude,
   lng: listing.geoPosition?.longitude,
@@ -76,7 +76,7 @@ const tenantListingToStore = (
     keywords: Array.isArray(data.keywords)
       ? data.keywords.filter((keyword): keyword is string => typeof keyword === 'string')
       : [],
-    offerImages: [],
+    offerImages: [data.banner, data.logo].filter((image): image is string => typeof image === 'string' && Boolean(image.trim())),
     status:
       data.status === 'open' || data.status === 'delayed' || data.status === 'closed'
         ? data.status
