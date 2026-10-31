@@ -714,7 +714,7 @@ export function KyrubTab({
               return (
                 <article
                   key={store.id}
-                  className="group relative flex h-[156px] flex-col justify-between overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
+                  className="group relative flex h-[220px] flex-col justify-between overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-xl transition-all hover:border-slate-700"
                 >
                   <StoreOfferCarousel images={store.offerImages} />
 
