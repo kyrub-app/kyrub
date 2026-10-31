@@ -15,6 +15,7 @@ import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
 import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import type {
   MarketplaceListingDocument,
+  MarketplaceOfferListingDocument,
   MarketplaceStoreListingDocument,
   Store,
 } from '../../types';
@@ -95,6 +96,7 @@ const tenantListingToStore = (
 
 export function KyrubTab(props: KyrubTabProps) {
   const [canonicalStores, setCanonicalStores] = useState<Store[]>([]);
+  const [publishedOffers, setPublishedOffers] = useState<MarketplaceOfferListingDocument[]>([]);
   const [fallbackStores, setFallbackStores] = useState<Store[]>([]);
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('none');
   const [discoverySignals, setDiscoverySignals] = useState<MarketplaceStoreDiscoverySignal[]>([]);
@@ -112,6 +114,7 @@ export function KyrubTab(props: KyrubTabProps) {
       unsubscribeCanonical();
       unsubscribeFallback();
       setCanonicalStores([]);
+      setPublishedOffers([]);
       setFallbackStores([]);
       if (!user) return;
 
@@ -123,18 +126,14 @@ export function KyrubTab(props: KyrubTabProps) {
         unsubscribeCanonical = onSnapshot(
           canonicalQuery,
           snapshot => {
-            setCanonicalStores(
-              snapshot.docs.flatMap(snapshotDocument => {
-                const listing = snapshotDocument.data() as MarketplaceListingDocument;
-                return listing.listingType === 'store'
-                  ? [canonicalListingToStore(listing)]
-                  : [];
-              })
-            );
+            const listings = snapshot.docs.map(doc => doc.data() as MarketplaceListingDocument);
+            setCanonicalStores(listings.filter((listing): listing is MarketplaceStoreListingDocument => listing.listingType === 'store').map(canonicalListingToStore));
+            setPublishedOffers(listings.filter((listing): listing is MarketplaceOfferListingDocument => listing.listingType === 'offer'));
           },
           error => {
             console.warn('Canonical marketplace listings are unavailable.', error);
             setCanonicalStores([]);
+            setPublishedOffers([]);
           }
         );
       }
@@ -170,11 +169,20 @@ export function KyrubTab(props: KyrubTabProps) {
   }, []);
 
   const allPublishedStores = useMemo(() => {
+    const imagesByStore = new Map<string, string[]>();
+    for (const offer of publishedOffers) {
+      const images = imagesByStore.get(offer.storeId) ?? [];
+      images.push(...offer.imageUrls.filter(url => typeof url === 'string' && url.trim()));
+      imagesByStore.set(offer.storeId, images);
+    }
     const storesById = new Map<string, Store>();
     for (const store of fallbackStores) storesById.set(store.id, store);
     for (const store of canonicalStores) storesById.set(store.id, store);
-    return Array.from(storesById.values());
-  }, [canonicalStores, fallbackStores]);
+    return Array.from(storesById.values()).map(store => ({
+      ...store,
+      offerImages: Array.from(new Set([...(imagesByStore.get(store.id) ?? []).slice(0, 6), ...(store.offerImages ?? [])])),
+    }));
+  }, [canonicalStores, fallbackStores, publishedOffers]);
 
   useEffect(() => {
     let cancelled = false;
