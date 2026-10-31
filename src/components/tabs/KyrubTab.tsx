@@ -109,9 +109,11 @@ export function KyrubTab(props: KyrubTabProps) {
 
   useEffect(() => {
     let unsubscribeCanonical = () => undefined;
+    let unsubscribeOffers = () => undefined;
     let unsubscribeFallback = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeCanonical();
+      unsubscribeOffers();
       unsubscribeFallback();
       setCanonicalStores([]);
       setPublishedOffers([]);
@@ -128,15 +130,30 @@ export function KyrubTab(props: KyrubTabProps) {
           snapshot => {
             const listings = snapshot.docs.map(doc => doc.data() as MarketplaceListingDocument);
             setCanonicalStores(listings.filter((listing): listing is MarketplaceStoreListingDocument => listing.listingType === 'store').map(canonicalListingToStore));
-            setPublishedOffers(listings.filter((listing): listing is MarketplaceOfferListingDocument => listing.listingType === 'offer'));
           },
           error => {
             console.warn('Canonical marketplace listings are unavailable.', error);
             setCanonicalStores([]);
-            setPublishedOffers([]);
           }
         );
       }
+
+      // Published offer images are read independently of the store-source rollout flag.
+      const offersQuery = query(
+        collection(db, getMarketplaceListingsCollectionPath()),
+        where('publicationStatus', '==', 'published'),
+        where('listingType', '==', 'offer')
+      );
+      unsubscribeOffers = onSnapshot(
+        offersQuery,
+        snapshot => setPublishedOffers(
+          snapshot.docs.map(doc => doc.data() as MarketplaceOfferListingDocument)
+        ),
+        error => {
+          console.warn('Published marketplace offer images are unavailable.', error);
+          setPublishedOffers([]);
+        }
+      );
 
       const fallbackQuery = query(
         collection(db, 'tenants'),
@@ -164,6 +181,7 @@ export function KyrubTab(props: KyrubTabProps) {
     return () => {
       unsubscribeAuth();
       unsubscribeCanonical();
+      unsubscribeOffers();
       unsubscribeFallback();
     };
   }, []);
