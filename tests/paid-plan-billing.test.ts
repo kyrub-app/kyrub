@@ -115,6 +115,21 @@ test('shared Mercado Pago webhook dispatches subscription events to the existing
   assert.match(section, /processMercadoPagoWebhook/);
 });
 
+test('shared Mercado Pago webhook rejects invalid subscription requests before payment dispatch', () => {
+  const start = sharedGateway.indexOf("if (transport === 'mercado-pago-webhook')");
+  const end = sharedGateway.indexOf("if (transport === 'storefront-availability')", start);
+  assert.ok(start >= 0 && end > start);
+  const section = sharedGateway.slice(start, end);
+  const subscription = section.indexOf("eventType === 'subscription_preapproval'");
+  const ordinaryPayment = section.indexOf("processMercadoPagoWebhook");
+  assert.ok(subscription >= 0 && ordinaryPayment > subscription);
+  assert.match(section, /method !== 'POST'/);
+  assert.match(section, /SUBSCRIPTION_ID_REQUIRED/);
+  assert.match(section, /signature: request\.headers\['x-signature'\]/);
+  assert.match(section, /requestId: request\.headers\['x-request-id'\]/);
+  assert.match(section, /mapPlanManagementError/);
+});
+
 test('paid plan checkout fails closed when platform billing secrets or notification URL are absent', () => {
   assert.match(service, /available: Boolean\(accessToken\(\) && webhookSecret\(\) && webhookUrl\(\)\)/);
   assert.match(service, /if \(!token \|\| !webhookSecret\(\) \|\| !notificationUrl\)/);
