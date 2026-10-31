@@ -160,6 +160,12 @@ const providerWebhookUrl = (): string => {
   if (planWebhook) {
     try {
       const url = new URL(planWebhook);
+      // Never inherit the platform webhook's handler path: a shared dispatcher
+      // can route subscription events to platform billing even with an op query.
+      if (url.protocol !== 'https:') throw new Error('HTTPS webhook required');
+      url.pathname = '/api/plan-control';
+      url.search = '';
+      url.hash = '';
       url.searchParams.set('op', 'merchant.subscription.webhook');
       return url.toString();
     } catch {
