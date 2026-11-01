@@ -78,6 +78,7 @@ import { LandingView } from './components/LandingView';
 import { StaffViewport } from './components/StaffViewport';
 import { subscribeToUserStoreAccess, type StoreAccessRecord } from './utils/storeDirectory';
 import { canStoreRoleAccessErpMenuItem } from './components/MobileErpMenu';
+import { requestErpManagementNavigation } from './utils/erpManagementNavigation';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
@@ -1496,6 +1497,20 @@ if (newMomentPublishToPraca) {
                     <StoreIcon className="w-3.5 h-3.5" />
                     <span>Loja</span>
                   </button>
+                  )}
+
+                  {/* Desktop access to the existing canonical product-management runtime. */}
+                  {canStoreRoleAccessErpMenuItem(erpAccessRole, 'produtos') && (
+                    <button
+                      type="button"
+                      onClick={() => requestErpManagementNavigation('produtos')}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-black uppercase tracking-wider transition-all cursor-pointer shrink-0 text-slate-400 hover:text-slate-200 hover:bg-slate-800/40"
+                      title="Gerenciar produtos da loja"
+                      data-kyrub-desktop-management-item="produtos"
+                    >
+                      <Package className="w-3.5 h-3.5" />
+                      <span>Produtos</span>
+                    </button>
                   )}
 
                   {/* Restantes abas de navegação */}
