@@ -494,7 +494,14 @@ export const subscribeToUserStoreAccess = (
       );
       void publish();
     },
-    error => onError?.(error)
+    error => {
+      // A failed collection-group lookup must not revoke separately verified
+      // ownership. Staff memberships remain unavailable (fail closed), while
+      // the independent owned-store listener can still grant owner access.
+      console.warn('Store membership lookup failed:', error);
+      memberships = new Map();
+      void publish();
+    }
   );
 
   return () => {
