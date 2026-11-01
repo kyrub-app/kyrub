@@ -5,6 +5,8 @@ import {
   calculateExpectedCash,
   getCashDirection,
   movementRequiresReason,
+  parseCashMovement,
+  parseCashSession,
 } from '../src/utils/canonicalCash';
 import {
   getStoreCashMovementsCollectionPath,
@@ -48,4 +50,20 @@ test('cash paths remain scoped to a single canonical store and session', () => {
     getStoreCashMovementsCollectionPath('store-a', 'session-a'),
     'stores/store-a/cashSessions/session-a/movements'
   );
+});
+
+
+test('shared cash session preserves opener and individual movement actor identities', () => {
+  const session = parseCashSession({ id: 'session-01', storeId: 'store-a', status: 'open', operatorUserId: 'ana', operatorRole: 'cashier', operatorName: 'Ana', openingAmount: 100, expectedAmount: 100, countedAmount: 0, difference: 0 });
+  assert.ok(session);
+  const movement = (id: string, actor: string) => parseCashMovement({ id, storeId: 'store-a', sessionId: session.id, type: 'sale', direction: 'in', amount: 25, actorUserId: actor, actorRole: 'cashier', actorName: actor, source: 'payment', paymentId: 'pay-' + id });
+  const first = movement('m1', 'ana');
+  const second = movement('m2', 'bruno');
+  assert.ok(first);
+  assert.ok(second);
+  assert.equal(session.operatorUserId, 'ana');
+  assert.equal(first.sessionId, second.sessionId);
+  assert.equal(first.actorUserId, 'ana');
+  assert.equal(second.actorUserId, 'bruno');
+  assert.notEqual(first.paymentId, second.paymentId);
 });
