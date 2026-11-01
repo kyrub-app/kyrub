@@ -119,7 +119,6 @@ export function ProfileConnectedCardsPolishBridge() {
   const [groups, setGroups] = useState<ContactGroup[]>([]);
   const [menuTarget, setMenuTarget] = useState<CardTarget | null>(null);
   const [groupTarget, setGroupTarget] = useState<CardTarget | null>(null);
-  const [removeTarget, setRemoveTarget] = useState<CardTarget | null>(null);
   const [reportTarget, setReportTarget] = useState<CardTarget | null>(null);
   const [profileTarget, setProfileTarget] = useState<CardTarget | null>(null);
   const [statusTarget, setStatusTarget] = useState<CardTarget | null>(null);
@@ -373,17 +372,6 @@ export function ProfileConnectedCardsPolishBridge() {
     window.setTimeout(() => setNotice(''), 3200);
   };
 
-  const removeConnection = () => {
-    if (!removeTarget) return;
-    const button = removeTarget.menuButton;
-    button.dataset.profileConnectedBypass = 'true';
-    setRemoveTarget(null);
-    window.setTimeout(() => {
-      button.click();
-      delete button.dataset.profileConnectedBypass;
-    }, 0);
-  };
-
   const toggleGroup = async (group: ContactGroup) => {
     const user = auth.currentUser;
     const friendId = groupTarget?.friendId;
@@ -606,7 +594,7 @@ export function ProfileConnectedCardsPolishBridge() {
                 <button
                   type="button"
                   onClick={() => {
-                    setRemoveTarget(menuTarget);
+                    window.dispatchEvent(new CustomEvent('kyrub:profile-contact-remove', { detail: { friendId: menuTarget.friendId } }));
                     setMenuTarget(null);
                   }}
                   className="flex w-full items-center gap-3 rounded-2xl border border-red-500/20 bg-red-500/10 p-3 text-left text-red-200"
@@ -789,38 +777,6 @@ export function ProfileConnectedCardsPolishBridge() {
                     {statusTarget.status.content}
                   </p>
                 )}
-              </div>
-            </section>
-          </div>,
-          document.body
-        )}
-
-      {removeTarget &&
-        createPortal(
-          <div className="fixed inset-0 z-[193] flex items-center justify-center bg-slate-950/95 p-4 backdrop-blur-md">
-            <section className="w-full max-w-sm rounded-3xl border border-red-500/25 bg-slate-950 p-5">
-              <UserMinus className="h-6 w-6 text-red-300" />
-              <h3 className="mt-4 text-base font-black text-white">
-                Remover esta conexão?
-              </h3>
-              <p className="mt-2 text-[10px] leading-relaxed text-slate-500">
-                {removeTarget.name} deixará de aparecer entre seus conectados.
-              </p>
-              <div className="mt-5 grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setRemoveTarget(null)}
-                  className="h-11 rounded-xl border border-slate-800 bg-slate-900 text-[9px] font-black uppercase text-slate-400"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="button"
-                  onClick={removeConnection}
-                  className="h-11 rounded-xl bg-red-500 text-[9px] font-black uppercase text-white"
-                >
-                  Remover
-                </button>
               </div>
             </section>
           </div>,
