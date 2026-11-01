@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { readFileSync } from 'node:fs';
 import {
   STORE_ROLE_DISCOUNT_LIMITS,
   STORE_ROLE_LABELS,
@@ -116,4 +117,14 @@ test('builds canonical paths from an independent store id', () => {
     getStoreAuditLogsCollectionPath('store-a'),
     'stores/store-a/auditLogs'
   );
+});
+
+
+test('full RH, CRM and Financeiro navigation are reserved for management', () => {
+  const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
+  assert.match(menu, /if \(itemId === 'rh'\) return role === 'manager'/);
+  assert.match(menu, /if \(itemId === 'crm'\) return role === 'manager'/);
+  assert.match(menu, /if \(itemId === 'financeiro'\) return role === 'manager'/);
+  assert.match(menu, /if \(itemId === 'vendas'\) return hasStorePermission\(role, 'reports.read'\)/);
+  assert.doesNotMatch(menu, /if \(itemId === 'financeiro'\).*payments.read_own/);
 });
