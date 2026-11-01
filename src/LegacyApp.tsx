@@ -616,7 +616,9 @@ export default function App() {
 
   // The private ERP store is owned by the authenticated Firebase user.
   const selectedStaffAccess = staffAccesses.find(access => access.store.id === selectedStaffStoreId) ?? null;
-  const erpAccessRole = selectedStaffAccess?.role ?? 'owner';
+  // Staff routes must never infer ownership when membership is unresolved.
+  const onStaffRoute = currentPath === '/staff' || currentPath.endsWith('/staff');
+  const erpAccessRole = selectedStaffAccess?.role ?? (onStaffRoute ? undefined : authenticatedUserId && auth.currentUser?.uid === authenticatedUserId ? 'owner' : undefined);
   const activeRetailerId = selectedStaffAccess?.store.legacyTenantId || authenticatedUserId;
 
   const activeStore = useMemo<Store>(() => {
