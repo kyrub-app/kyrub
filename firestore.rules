@@ -81,6 +81,13 @@ service cloud.firestore {
       match /favorites/{favoriteId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
+      // Salvos e Seleções pessoais: nenhum outro usuário pode ler ou editar.
+      match /savedItems/{savedItemId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
+      match /selections/{selectionId} {
+        allow read, write: if isSignedIn() && request.auth.uid == userId;
+      }
       match /skills/{skillId} {
         allow read, write: if isSignedIn() && request.auth.uid == userId;
       }
