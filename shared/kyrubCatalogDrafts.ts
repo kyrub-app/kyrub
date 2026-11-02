@@ -1,3 +1,4 @@
+import type { ProductSaleModality } from './productSaleModality.js';
 export const KYRUB_CATALOG_DRAFT_SCHEMA_VERSION = 1 as const;
 
 export type KyrubCatalogDraftStatus = 'draft' | 'published' | 'discarded';
@@ -49,6 +50,7 @@ export type KyrubCatalogDraftProductInput = {
   image?: string;
   isService?: boolean;
   isComplimentary?: boolean;
+  saleModality?: ProductSaleModality;
 };
 
 export type KyrubCatalogDraftSource = {
