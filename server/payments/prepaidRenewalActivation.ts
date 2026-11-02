@@ -60,7 +60,9 @@ export const loadAcceptedPrepaidRenewal = async (input: {
   const data = doc.data() as Record<string, unknown>;
   const proposal = data.proposal as SubscriptionRenewalProposal | undefined;
   const acceptance = data.acceptance as Parameters<typeof acceptSubscriptionRenewalProposal>[1] | undefined;
-  if (!proposal || !acceptance || proposal.storeId !== input.storeId ||
+  if (!proposal || !acceptance || data.status !== 'accepted' ||
+      typeof data.acceptedBy !== 'string' || data.acceptedBy !== input.authenticatedBuyerId ||
+      proposal.storeId !== input.storeId ||
       proposal.customerId !== input.authenticatedBuyerId ||
       acceptance.customerId !== input.authenticatedBuyerId ||
       acceptance.storeId !== input.storeId) {
