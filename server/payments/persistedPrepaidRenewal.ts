@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   resolveRenewalPaymentReplay,
-  snapshotAcceptedPrepaidRenewal,
+  type snapshotAcceptedPrepaidRenewal,
 } from '../../shared/subscriptionContractRenewal.js';
 
 type RenewalSnapshot = ReturnType<typeof snapshotAcceptedPrepaidRenewal>;
@@ -24,6 +24,15 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
     ![3, 6, 12].includes(renewal.months)) {
     throw new Error('INVALID_RENEWAL_PERSISTENCE_INPUT');
   }
+  if (renewal.contractId === renewal.previousContractId ||
+      !Number.isSafeInteger(renewal.monthlyBasePriceMinor) ||
+      renewal.monthlyBasePriceMinor <= 0 ||
+      !Number.isFinite(Date.parse(renewal.acceptedAt)) ||
+      !Number.isFinite(Date.parse(renewal.startsAt)) ||
+      !Number.isFinite(Date.parse(renewal.expiresAt)) ||
+      Date.parse(renewal.expiresAt) <= Date.parse(renewal.startsAt)) {
+    throw new Error('INVALID_RENEWAL_PERSISTENCE_INPUT');
+  }
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
   const paymentRef = adminDb.doc(`prepaidRenewalPaymentBindings/${paymentKey(renewal.providerPaymentId)}`);
   return adminDb.runTransaction(async tx => {
@@ -39,6 +48,9 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
     const existingPaymentContract = boundContract ? await tx.get(boundContract) : null;
     if (paymentDoc.exists && !existingPaymentContract?.exists) {
       throw new Error('RENEWAL_PAYMENT_BINDING_CORRUPT');
+    }
+    if (existingPaymentContract && paymentDoc.get('storeId') !== renewal.storeId) {
+      throw new Error('RENEWAL_PAYMENT_ALREADY_USED');
     }
     const verdict = resolveRenewalPaymentReplay(
       renewal,
