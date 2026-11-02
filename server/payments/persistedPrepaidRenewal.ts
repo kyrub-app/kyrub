@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   resolveRenewalPaymentReplay,
-  type snapshotAcceptedPrepaidRenewal,
+  snapshotAcceptedPrepaidRenewal,
 } from '../../shared/subscriptionContractRenewal.js';
 
 type RenewalSnapshot = ReturnType<typeof snapshotAcceptedPrepaidRenewal>;
@@ -30,9 +30,12 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
     const [contractDoc, paymentDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef),
     ]);
-    const boundContract = paymentDoc.exists
-      ? adminDb.doc(String(paymentDoc.get('contractPath') || ''))
-      : null;
+    const boundPath = paymentDoc.exists ? paymentDoc.get('contractPath') : null;
+    if (paymentDoc.exists && (typeof boundPath !== 'string' ||
+        !/^stores\/[^/]+\/prepaidSubscriptionContracts\/[^/]+$/.test(boundPath))) {
+      throw new Error('RENEWAL_PAYMENT_BINDING_CORRUPT');
+    }
+    const boundContract = typeof boundPath === 'string' ? adminDb.doc(boundPath) : null;
     const existingPaymentContract = boundContract ? await tx.get(boundContract) : null;
     if (paymentDoc.exists && !existingPaymentContract?.exists) {
       throw new Error('RENEWAL_PAYMENT_BINDING_CORRUPT');
