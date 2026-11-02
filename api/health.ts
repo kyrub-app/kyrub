@@ -109,7 +109,8 @@ export default async function handler(
       response.status(200).json({
         schemaVersion: 1,
         unit: 'kyrub_xp',
-        total: kyrubXpTotal(entries),
+        status: entries.length === 0 ? 'no_entries' : 'available',
+        total: entries.length === 0 ? null : kyrubXpTotal(entries),
         generatedAt: new Date().toISOString(),
       });
     } catch (error) {
