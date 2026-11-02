@@ -12,6 +12,7 @@ import { auth } from '../../utils/firebase';
 import { requestProductCreateModal } from '../../utils/productModalEvents';
 import {
   deleteKyrubCatalogDraft,
+  createKyrubMonthlySubscriptionDraft,
   KYRUB_CATALOG_PRODUCT_CHANGED_EVENT,
   listKyrubCatalogDrafts,
   setKyrubCatalogProductPublished,
@@ -133,6 +134,39 @@ export function ProductInventoryWorkspace({
   const [draftDeleteBusyId, setDraftDeleteBusyId] = useState('');
   const [editingDraftProduct, setEditingDraftProduct] = useState<Product | null>(null);
   const [publicationError, setPublicationError] = useState('');
+  const [monthlyDraftOpen, setMonthlyDraftOpen] = useState(false);
+  const [monthlyDraftName, setMonthlyDraftName] = useState('');
+  const [monthlyDraftPrice, setMonthlyDraftPrice] = useState('');
+  const [monthlyDraftBusy, setMonthlyDraftBusy] = useState(false);
+  const [monthlyDraftError, setMonthlyDraftError] = useState('');
+
+  const saveMonthlyDraft = async (): Promise<void> => {
+    const user = auth.currentUser;
+    const price = Number(monthlyDraftPrice.replace(',', '.'));
+    if (!user || !monthlyDraftName.trim() || !Number.isFinite(price) || price <= 0) {
+      setMonthlyDraftError('Informe o nome e um valor mensal positivo.');
+      return;
+    }
+    setMonthlyDraftBusy(true);
+    setMonthlyDraftError('');
+    try {
+      await createKyrubMonthlySubscriptionDraft(user, {
+        name: monthlyDraftName.trim(),
+        description: 'Assinatura mensal com renovação automática e acesso contínuo.',
+        category: 'Planos e Assinaturas',
+        price,
+      });
+      await loadUnpublishedProducts();
+      setMonthlyDraftOpen(false);
+      setMonthlyDraftName('');
+      setMonthlyDraftPrice('');
+      setPublicationFilter('unpublished');
+    } catch (error) {
+      setMonthlyDraftError(error instanceof Error ? error.message : 'Falha ao salvar rascunho.');
+    } finally {
+      setMonthlyDraftBusy(false);
+    }
+  };
 
   const loadUnpublishedProducts = useCallback(async (): Promise<void> => {
     const user = auth.currentUser;
@@ -329,6 +363,13 @@ export function ProductInventoryWorkspace({
               {visibleProducts.length} de {inventoryItems.length} item(ns) exibido(s)
             </p>
           </div>
+          <button
+            type="button"
+            onClick={() => setMonthlyDraftOpen(true)}
+            className="min-h-10 rounded-xl border border-orange-500/45 px-3 text-[9px] font-black uppercase text-orange-300"
+          >
+            Rascunho de assinatura
+          </button>
           <button
             type="button"
             onClick={() => requestProductCreateModal(products, keywords)}
@@ -577,6 +618,21 @@ export function ProductInventoryWorkspace({
         )}
       </section>
 
+      {monthlyDraftOpen && (
+        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-slate-950/90 p-4">
+          <section role="dialog" aria-modal="true" aria-label="Criar rascunho de assinatura" className="w-full max-w-md space-y-4 rounded-2xl border border-slate-700 bg-slate-900 p-5">
+            <h3 className="font-bold text-white">Nova assinatura mensal — rascunho</h3>
+            <p className="text-xs text-slate-400">Categoria: Planos e Assinaturas. Renovação automática e acesso contínuo. O item não será publicado.</p>
+            <input aria-label="Nome do plano" placeholder="Nome do plano" value={monthlyDraftName} onChange={e => setMonthlyDraftName(e.target.value)} className="w-full rounded-lg bg-slate-950 p-3 text-white" />
+            <input aria-label="Valor mensal em reais" type="number" min="0.01" step="0.01" placeholder="Valor mensal (R$)" value={monthlyDraftPrice} onChange={e => setMonthlyDraftPrice(e.target.value)} className="w-full rounded-lg bg-slate-950 p-3 text-white" />
+            {monthlyDraftError && <p role="alert" className="text-xs text-red-300">{monthlyDraftError}</p>}
+            <div className="flex justify-end gap-3">
+              <button type="button" disabled={monthlyDraftBusy} onClick={() => setMonthlyDraftOpen(false)}>Cancelar</button>
+              <button type="button" disabled={monthlyDraftBusy} onClick={() => void saveMonthlyDraft()} className="rounded-lg bg-orange-500 px-4 py-2 font-bold text-slate-950">Salvar rascunho</button>
+            </div>
+          </section>
+        </div>
+      )}
       <ProductEditorModal
         product={editingDraftProduct}
         products={products}

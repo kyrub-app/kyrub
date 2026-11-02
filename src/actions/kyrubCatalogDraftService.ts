@@ -207,3 +207,19 @@ export const deleteKyrubCatalogDraft = async (
     deleted: true,
   });
 };
+
+/** Creates a canonical monthly access subscription in draft state; never publishes it. */
+export const createKyrubMonthlySubscriptionDraft = async (
+  user: User,
+  input: { name: string; description: string; category: string; price: number }
+): Promise<string> => {
+  const body = await authenticatedPost(user,
+    { operation: 'create_monthly_subscription_draft', ...input },
+    'Não foi possível salvar o rascunho da assinatura.');
+  if (!isRecord(body) || typeof body.productId !== 'string' ||
+      body.publicationStatus !== 'draft') {
+    throw new Error('O Kyrub não confirmou a criação do rascunho.');
+  }
+  dispatchCatalogProductChanged(body.productId, { publicationStatus: 'draft' });
+  return body.productId;
+};

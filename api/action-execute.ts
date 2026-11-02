@@ -637,6 +637,8 @@ export default async function handler(
     const { mapKyrubActionExecutionError } = actionService;
     const {
       executeAuthorizedKyrubCatalogDraft,
+      createAuthorizedKyrubMonthlySubscriptionDraft,
+      isKyrubMonthlySubscriptionDraftCreateRequest,
       isKyrubCatalogDraftExecutionRequest,
       isKyrubCatalogDraftListRequest,
       isKyrubCatalogProductPublicationRequest,
@@ -710,6 +712,7 @@ export default async function handler(
     if (
       isKyrubCatalogImportExecutionRequest(request.body) ||
       isKyrubCatalogDraftListRequest(request.body) ||
+      isKyrubMonthlySubscriptionDraftCreateRequest(request.body) ||
       isKyrubCatalogDraftExecutionRequest(request.body) ||
       isKyrubCatalogProductUpdateRequest(request.body) ||
       isKyrubCatalogProductPublicationRequest(request.body)
@@ -723,6 +726,12 @@ export default async function handler(
         request.body
       );
       response.status(200).json(imported);
+      return;
+    }
+
+    if (isKyrubMonthlySubscriptionDraftCreateRequest(request.body)) {
+      const draft = await createAuthorizedKyrubMonthlySubscriptionDraft(authorization, request.body);
+      response.status(200).json(draft);
       return;
     }
 
