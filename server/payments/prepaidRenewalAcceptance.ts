@@ -39,7 +39,9 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
       if (data.acceptedBy === input.authenticatedBuyerId &&
           previous?.customerId === input.authenticatedBuyerId &&
           previous?.storeId === input.storeId &&
-          previous?.acceptedTotalMinor === input.acceptedTotalMinor) return 'already_accepted';
+          previous?.acceptedTotalMinor === input.acceptedTotalMinor &&
+          data.acceptedAt === (data.acceptance as { acceptedAt?: string } | undefined)?.acceptedAt &&
+          Number.isFinite(Date.parse(String(data.acceptedAt)))) return 'already_accepted';
       throw new Error('RENEWAL_ALREADY_ACCEPTED');
     }
     if (data.status !== 'awaiting_acceptance') throw new Error('RENEWAL_NOT_OPEN');
