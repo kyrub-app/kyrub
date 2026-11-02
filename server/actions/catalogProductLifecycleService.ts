@@ -8,6 +8,7 @@ import type {
   KyrubCatalogDraftProductInput,
 } from '../../shared/kyrubCatalogDrafts.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
 import {
@@ -412,7 +413,20 @@ export const updateAuthorizedKyrubCatalogProduct = async (
     }
     publicationStatus = currentStatus;
 
+    const requestedModality = requestRecord(body.product).saleModality;
+    const modality = requestedModality === undefined
+      ? parseProductSaleModality(canonical.saleModality)
+      : parseProductSaleModality(requestedModality);
+    if (!modality || (requestedModality !== undefined && modality.mode !== 'subscription' &&
+        parseProductSaleModality(canonical.saleModality)?.mode === 'subscription')) {
+      throw new KyrubActionExecutionError(
+        409, 'INVALID_PRODUCT_SALE_MODALITY',
+        'A modalidade de assinatura do produto precisa ser preservada.'
+      );
+    }
+
     const canonicalPatch = {
+      saleModality: modality,
       name: cleanText(product.name, 120),
       description: cleanText(product.description, 2_000),
       price: product.isComplimentary === true

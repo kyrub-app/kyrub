@@ -122,6 +122,7 @@ export const updateKyrubCatalogProduct = async (
         category: product.category,
         isService: product.isService === true,
         isComplimentary: product.isComplimentary === true,
+        saleModality: product.saleModality,
       },
     },
     'Não foi possível salvar as alterações do produto.'
