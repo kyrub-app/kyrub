@@ -363,8 +363,12 @@ export function KyrubTab(props: KyrubTabProps) {
       }))
       .then(async response => {
         if (!response.ok) throw new Error('XP_UNAVAILABLE');
-        const data = await response.json() as { total?: unknown; unit?: unknown };
-        if (data.unit !== 'kyrub_xp' || !Number.isSafeInteger(data.total) || (data.total as number) < 0) {
+        const data = await response.json() as { total?: unknown; unit?: unknown; status?: unknown };
+        if (data.unit !== 'kyrub_xp') {
+          throw new Error('XP_INVALID');
+        }
+        if (data.status === 'no_entries' && data.total === null) return null;
+        if (data.status !== 'available' || !Number.isSafeInteger(data.total) || (data.total as number) < 0) {
           throw new Error('XP_INVALID');
         }
         return data.total as number;
