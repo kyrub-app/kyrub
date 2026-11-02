@@ -537,7 +537,7 @@ export function ProductInventoryWorkspace({
                       onClick={event => event.stopPropagation()}
                     >
                       <span className="text-[9px] font-black uppercase tracking-wide text-slate-400">
-                        Publicado
+                        {item.published ? 'Publicado' : 'Não publicado'}
                       </span>
                       <input
                         type="checkbox"
