@@ -36,6 +36,9 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
       ![3, 6, 12].includes(previous.months)) {
     throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   }
+  const successorRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalSuccessors/${input.previousContractId}`);
+  const successor = await successorRef.get();
+  if (successor.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
   const proposal = createSubscriptionRenewalProposal(
     previous, input.currentMonthlyPriceMinor, input.discountPercent
   );
@@ -48,7 +51,8 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     `stores/${input.storeId}/prepaidRenewalProposals/${proposalId}`
   );
   await adminDb.runTransaction(async tx => {
-    const existing = await tx.get(proposalRef);
+    const [existing, alreadyRenewed] = await Promise.all([tx.get(proposalRef), tx.get(successorRef)]);
+    if (alreadyRenewed.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
     if (existing.exists) {
       const data = existing.data();
       if (JSON.stringify(data?.proposal) !== JSON.stringify(proposal) ||
