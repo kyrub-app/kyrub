@@ -67,3 +67,17 @@ export const acceptSubscriptionRenewalProposal = (
   }
   return { ...proposal, status: 'accepted' as const, acceptedAt: acceptance.acceptedAt };
 };
+
+/** Only a provider-confirmed full payment can fulfill an accepted prepaid renewal. */
+export const confirmPrepaidRenewalPayment = (
+  accepted: ReturnType<typeof acceptSubscriptionRenewalProposal>,
+  payment: { providerPaymentId: string; status: string; amountMinor: number; verifiedByProvider: boolean }
+) => {
+  if (accepted.status !== 'accepted' || accepted.months === 1 ||
+      !payment.verifiedByProvider || payment.status !== 'approved' ||
+      !payment.providerPaymentId || !Number.isSafeInteger(payment.amountMinor) ||
+      payment.amountMinor !== accepted.totalDueMinor) {
+    throw new Error('RENEWAL_PAYMENT_NOT_CONFIRMED');
+  }
+  return { ...accepted, status: 'paid' as const, providerPaymentId: payment.providerPaymentId };
+};
