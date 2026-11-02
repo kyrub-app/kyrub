@@ -20,6 +20,10 @@ export const recordVerifiedPrepaidRenewal = async (input: {
   if (!input.payment.verifiedByProvider || input.payment.status !== 'approved') {
     throw new Error('RENEWAL_PAYMENT_NOT_CONFIRMED');
   }
+  if (!Number.isFinite(Date.parse(input.payment.occurredAt)) ||
+      !input.payment.occurredAt.endsWith('Z')) {
+    throw new Error('INVALID_RENEWAL_PAYMENT_TIMESTAMP');
+  }
   const accepted = acceptSubscriptionRenewalProposal(input.proposal, input.acceptance);
   const paid = confirmPrepaidRenewalPayment(accepted, {
     providerPaymentId: input.payment.id,
