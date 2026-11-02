@@ -7,6 +7,8 @@ import {
 } from '../../shared/subscriptionContractRenewal.js';
 import { persistVerifiedPrepaidRenewal } from './persistedPrepaidRenewal.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { verifyPrepaidRenewalMercadoPagoPayment } from './prepaidRenewalPaymentVerification.js';
+import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 
 /**
  * Server-only composition boundary. Inputs MUST originate from an authenticated,
@@ -84,4 +86,40 @@ export const recordStoredVerifiedPrepaidRenewal = async (input: {
 }) => {
   const stored = await loadAcceptedPrepaidRenewal(input);
   return recordVerifiedPrepaidRenewal({ ...stored, payment: input.payment, newContractId: input.newContractId });
+};
+
+/** Server boundary: use stored offer, authenticated buyer and provider-verified payment. */
+export const recordPrepaidRenewalWithVerifiedSources = async (input: {
+  authorization: string | null | undefined;
+  storeId: string;
+  proposalId: string;
+  paymentId: string;
+  newContractId: string;
+}) => {
+  const buyer = await authenticateConsultantRequest(input.authorization);
+  const stored = await loadAcceptedPrepaidRenewal({
+    storeId: input.storeId,
+    proposalId: input.proposalId,
+    authenticatedBuyerId: buyer.uid,
+  });
+  const proposalRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalProposals/${input.proposalId}`);
+  const proposalDoc = await proposalRef.get();
+  if (!proposalDoc.exists) throw new Error('RENEWAL_PROPOSAL_NOT_FOUND');
+  const data = proposalDoc.data() as Record<string, unknown>;
+  const sellerCredentialScopeId = data.sellerCredentialScopeId;
+  const paymentExternalReference = data.paymentExternalReference;
+  if (typeof sellerCredentialScopeId !== 'string' ||
+      typeof paymentExternalReference !== 'string' ||
+      !sellerCredentialScopeId || !paymentExternalReference) {
+    throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
+  }
+  const payment = await verifyPrepaidRenewalMercadoPagoPayment({
+    sellerCredentialScopeId,
+    paymentId: input.paymentId,
+    expectedExternalReference: paymentExternalReference,
+    expectedAmountMinor: stored.proposal.totalDueMinor,
+  });
+  return recordVerifiedPrepaidRenewal({
+    ...stored, payment, newContractId: input.newContractId,
+  });
 };
