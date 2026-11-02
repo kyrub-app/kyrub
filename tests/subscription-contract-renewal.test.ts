@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptSubscriptionRenewalProposal, createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
+import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
 
 const contract = {
   contractId: 'contract-1', customerId: 'customer-1', productId: 'business', storeId: 'store-1',
@@ -41,4 +41,17 @@ test('rejects acceptance from another store even for the same customer and amoun
     customerId: 'customer-1', storeId: 'another-store', acceptedTotalMinor: 480000,
     acceptedAt: '2028-01-01T00:00:00Z',
   }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+});
+
+test('prepaid renewal cannot be fulfilled before verified full payment', () => {
+  const proposal = createSubscriptionRenewalProposal(contract, 40000);
+  const accepted = acceptSubscriptionRenewalProposal(proposal, {
+    customerId: 'customer-1', storeId: 'store-1', acceptedTotalMinor: 480000,
+    acceptedAt: '2028-01-01T00:00:00Z',
+  });
+  const valid = { providerPaymentId: 'payment-1', status: 'approved', amountMinor: 480000, verifiedByProvider: true };
+  assert.throws(() => confirmPrepaidRenewalPayment(accepted, { ...valid, verifiedByProvider: false }), /RENEWAL_PAYMENT_NOT_CONFIRMED/);
+  assert.throws(() => confirmPrepaidRenewalPayment(accepted, { ...valid, status: 'pending' }), /RENEWAL_PAYMENT_NOT_CONFIRMED/);
+  assert.throws(() => confirmPrepaidRenewalPayment(accepted, { ...valid, amountMinor: 215892 }), /RENEWAL_PAYMENT_NOT_CONFIRMED/);
+  assert.equal(confirmPrepaidRenewalPayment(accepted, valid).status, 'paid');
 });
