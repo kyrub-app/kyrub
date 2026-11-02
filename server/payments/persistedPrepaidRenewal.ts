@@ -35,9 +35,10 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
   }
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
   const paymentRef = adminDb.doc(`prepaidRenewalPaymentBindings/${paymentKey(renewal.providerPaymentId)}`);
+  const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   return adminDb.runTransaction(async tx => {
-    const [contractDoc, paymentDoc] = await Promise.all([
-      tx.get(contractRef), tx.get(paymentRef),
+    const [contractDoc, paymentDoc, predecessorDoc] = await Promise.all([
+      tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef),
     ]);
     const boundPath = paymentDoc.exists ? paymentDoc.get('contractPath') : null;
     if (paymentDoc.exists && (typeof boundPath !== 'string' ||
@@ -57,8 +58,20 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
       existingPaymentContract?.data() as RenewalSnapshot | undefined ?? null,
       contractDoc.data() as RenewalSnapshot | undefined ?? null
     );
-    if (verdict === 'already_recorded') return verdict;
+    if (predecessorDoc.exists && (predecessorDoc.get('contractId') !== renewal.contractId ||
+        predecessorDoc.get('providerPaymentId') !== renewal.providerPaymentId)) {
+      throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
+    }
+    if (verdict === 'already_recorded') {
+      if (!predecessorDoc.exists) throw new Error('RENEWAL_PREDECESSOR_BINDING_MISSING');
+      return verdict;
+    }
+    if (predecessorDoc.exists) throw new Error('RENEWAL_PREDECESSOR_BINDING_CONFLICT');
     tx.create(contractRef, renewal);
+    tx.create(predecessorRef, {
+      contractId: renewal.contractId,
+      providerPaymentId: renewal.providerPaymentId,
+    });
     tx.create(paymentRef, {
       contractPath: contractRef.path,
       storeId: renewal.storeId,
