@@ -80,6 +80,50 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'selos-kairubi-balance') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    const authorization = headerValue(request.headers.authorization ?? request.headers.Authorization);
+    const token = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+    if (!token) {
+      response.status(401).json({ error: 'AUTH_REQUIRED' });
+      return;
+    }
+    try {
+      const [{ verifyFirebaseIdToken }, { adminDb }, gamification] = await Promise.all([
+        import('../server/ai/consultantAuth.js'),
+        import('../server/firebaseAdmin.js'),
+        import('../shared/gamification.js'),
+      ]);
+      const actor = await verifyFirebaseIdToken(token);
+      const snapshot = await adminDb.collection(`users/${actor.uid}/rewardLedger`).get();
+      const entries = snapshot.docs.map(document => {
+        const entry = document.data() as gamification.KyrubRewardLedgerEntry;
+        if (entry.userId !== actor.uid || entry.id !== document.id) throw new Error('REWARD_LEDGER_SCOPE_INVALID');
+        return gamification.assertKyrubRewardLedgerEntry(entry);
+      });
+      response.status(200).json({
+        schemaVersion: 1,
+        unit: 'selos_kairubi',
+        balance: gamification.kyrubKCoinBalance(entries),
+        generatedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (/AUTH|TOKEN|ID_TOKEN/i.test(message)) {
+        response.status(401).json({ error: 'AUTH_INVALID' });
+      } else {
+        console.error('[selos-kairubi-balance]', message);
+        response.status(503).json({ error: 'BALANCE_UNAVAILABLE' });
+      }
+    }
+    return;
+  }
+
   if (transport === 'mcp') {
     await handleKyrubMcpRequest(request, response);
     return;
