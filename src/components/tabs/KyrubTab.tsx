@@ -425,14 +425,17 @@ export function KyrubTab(props: KyrubTabProps) {
               <div className="mt-3 max-h-[min(55dvh,36rem)] overflow-y-auto overscroll-contain pr-1" role="region" aria-label="Lista rolável dos meus clubes" tabIndex={0}>
                 <div className="grid gap-3">
                 {clubSummaries.map(({ storeId, summary }) => (
-                  <article key={storeId} className="rounded-xl border border-slate-700 p-4">
+                  <button type="button" key={storeId} onClick={() => {
+                    const store = allPublishedStores.find(item => item.id === storeId);
+                    if (store) props.setVisitingStore(store);
+                  }} className="w-full rounded-xl border border-slate-700 p-4 text-left transition hover:border-slate-500 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-amber-400" aria-label={`Abrir vitrine de ${allPublishedStores.find(store => store.id === storeId)?.name ?? 'loja'}`}>
                     <div className="flex items-start justify-between gap-3">
                       <h4 className="text-sm font-bold">{allPublishedStores.find(store => store.id === storeId)?.name ?? 'Loja'}</h4>
                       <span className="text-xs text-slate-400">Pontos próprios</span>
                     </div>
                     <p className="mt-2 text-lg font-bold">{summary.points.balance.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-400">pontos</span></p>
-                    <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis</p>
-                  </article>
+                    <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis · Toque para visitar a vitrine</p>
+                  </button>
                 ))}
                 </div>
               </div>
