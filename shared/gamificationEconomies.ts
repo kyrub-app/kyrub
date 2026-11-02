@@ -1,8 +1,7 @@
 export type KyrubEconomyKind =
   | 'k_coin'
   | 'kyrub_xp'
-  | 'store_loyalty_points'
-  | 'kyrubia_credits';
+  | 'store_loyalty_points';
 
 export type KyrubEconomyFundingAuthority =
   | 'kyrub'
@@ -40,13 +39,6 @@ export const KYRUB_ECONOMIES: Readonly<Record<KyrubEconomyKind, KyrubEconomyDesc
     purchasableWithMoney: false,
     convertibleToKCoin: false,
     fundingAuthorities: ['store'],
-  },
-  kyrubia_credits: {
-    kind: 'kyrubia_credits',
-    monetaryBalance: false,
-    purchasableWithMoney: true,
-    convertibleToKCoin: false,
-    fundingAuthorities: ['user_purchase'],
   },
 };
 
