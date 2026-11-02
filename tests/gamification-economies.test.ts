@@ -12,9 +12,8 @@ test('K-Coins are earned reward units, not money and not purchased balance', () 
   assert.equal(isKCoinFinancialBalance(), false);
 });
 
-test('Kyrubia Credits are a distinct purchased AI economy', () => {
-  assert.equal(KYRUB_ECONOMIES.kyrubia_credits.purchasableWithMoney, true);
-  assert.equal(KYRUB_ECONOMIES.kyrubia_credits.convertibleToKCoin, false);
+test('obsolete Kyrubia AI credits are not an active reward economy', () => {
+  assert.equal(Object.hasOwn(KYRUB_ECONOMIES, 'kyrubia_credits'), false);
 });
 
 test('XP and Store Points cannot automatically convert into K-Coins', () => {
