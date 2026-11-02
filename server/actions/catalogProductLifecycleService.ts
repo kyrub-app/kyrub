@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { FieldValue, type Timestamp } from 'firebase-admin/firestore';
 import type {
   KyrubActionExecutionResult,
@@ -297,6 +298,46 @@ export const executeAuthorizedKyrubCatalogDraft = async (
   });
 
   return result;
+};
+
+// Dedicated, owner-authenticated creation path. Never writes a published item or a legacy publicProducts entry.
+export const isKyrubMonthlySubscriptionDraftCreateRequest = (value: unknown): boolean =>
+  Boolean(value && typeof value === 'object' && !Array.isArray(value) &&
+    (value as Record<string, unknown>).operation === 'create_monthly_subscription_draft');
+
+export const createAuthorizedKyrubMonthlySubscriptionDraft = async (
+  authorization: string,
+  rawRequest: unknown
+): Promise<{ productId: string; publicationStatus: 'draft' }> => {
+  const actor = await verifyActor(authorization);
+  const body = requestRecord(rawRequest);
+  const name = cleanText(body.name, 120);
+  const description = cleanText(body.description, 2_000);
+  const category = cleanText(body.category, 120);
+  const price = finiteNonNegative(body.price);
+  if (!name || !category || price === null || price <= 0) {
+    throw new KyrubActionExecutionError(400, 'INVALID_SUBSCRIPTION_DRAFT',
+      'Informe nome, categoria e valor mensal positivo.');
+  }
+  const { canonicalStoreId } = await privateStoreForActor(actor.uid);
+  const productId = `draft_${randomUUID().replace(/-/g, '')}`;
+  const product = {
+    name, description, category, price, stock: 0, isService: true,
+    saleModality: {
+      schemaVersion: 1 as const,
+      mode: 'subscription' as const,
+      subscription: {
+        schemaVersion: 1 as const,
+        billingInterval: { unit: 'month' as const, count: 1 },
+        benefit: { kind: 'access' as const, unitsPerCycle: null },
+        autoRenew: true as const,
+      },
+    },
+  };
+  await adminDb.doc(`stores/${canonicalStoreId}/products/${productId}`).create(
+    canonicalProductData(actor.uid, canonicalStoreId, productId, product, 'manual_draft')
+  );
+  return { productId, publicationStatus: 'draft' };
 };
 
 export const listAuthorizedKyrubCatalogDrafts = async (
