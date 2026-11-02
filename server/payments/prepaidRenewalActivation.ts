@@ -65,7 +65,9 @@ export const loadAcceptedPrepaidRenewal = async (input: {
       proposal.storeId !== input.storeId ||
       proposal.customerId !== input.authenticatedBuyerId ||
       acceptance.customerId !== input.authenticatedBuyerId ||
-      acceptance.storeId !== input.storeId) {
+      acceptance.storeId !== input.storeId ||
+      data.acceptedAt !== acceptance.acceptedAt ||
+      !Number.isSafeInteger(proposal.totalDueMinor) || proposal.totalDueMinor <= 0) {
     throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
   }
   acceptSubscriptionRenewalProposal(proposal, acceptance);
