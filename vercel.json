@@ -27,6 +27,10 @@
       "destination": "/api/health?transport=selos-kairubi-balance"
     },
     {
+      "source": "/api/kairubi-xp",
+      "destination": "/api/health?transport=kairubi-xp-total"
+    },
+    {
       "source": "/api/action-execute",
       "has": [
         {
