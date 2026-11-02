@@ -81,3 +81,31 @@ export const confirmPrepaidRenewalPayment = (
   }
   return { ...accepted, status: 'paid' as const, providerPaymentId: payment.providerPaymentId };
 };
+
+/** Snapshot to persist atomically with the accepted proposal, never from mutable catalog fields. */
+export const snapshotAcceptedPrepaidRenewal = (
+  paid: ReturnType<typeof confirmPrepaidRenewalPayment>,
+  input: { newContractId: string; startsAt: string; expiresAt: string }
+): AcceptedSubscriptionContract & { providerPaymentId: string; previousContractId: string } => {
+  const start = Date.parse(input.startsAt);
+  const end = Date.parse(input.expiresAt);
+  if (!input.newContractId || input.newContractId === paid.previousContractId ||
+      !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    throw new Error('INVALID_RENEWAL_CONTRACT_DATES');
+  }
+  return {
+    contractId: input.newContractId,
+    previousContractId: paid.previousContractId,
+    customerId: paid.customerId,
+    productId: paid.productId,
+    storeId: paid.storeId,
+    months: paid.months,
+    monthlyBasePriceMinor: paid.currentMonthlyPriceMinor,
+    discountPercent: paid.discountPercent,
+    totalPaidMinor: paid.totalDueMinor,
+    acceptedAt: paid.acceptedAt,
+    startsAt: input.startsAt,
+    expiresAt: input.expiresAt,
+    providerPaymentId: paid.providerPaymentId,
+  };
+};
