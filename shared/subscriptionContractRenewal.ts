@@ -1,0 +1,64 @@
+import { calculateSubscriptionContractOffer, type ContractTermMonths } from './subscriptionContractOffers.js';
+
+/** An accepted quote is a historical snapshot, never recalculated from the catalog. */
+export interface AcceptedSubscriptionContract {
+  contractId: string;
+  customerId: string;
+  productId: string;
+  months: ContractTermMonths;
+  monthlyBasePriceMinor: number;
+  discountPercent: number;
+  totalPaidMinor: number;
+  acceptedAt: string;
+  expiresAt: string;
+}
+
+export interface SubscriptionRenewalProposal {
+  previousContractId: string;
+  customerId: string;
+  productId: string;
+  months: ContractTermMonths;
+  currentMonthlyPriceMinor: number;
+  discountPercent: number;
+  totalDueMinor: number;
+  status: 'awaiting_acceptance';
+}
+
+export const createSubscriptionRenewalProposal = (
+  contract: AcceptedSubscriptionContract,
+  currentMonthlyPriceMinor: number,
+  renewalDiscountPercent = 0
+): SubscriptionRenewalProposal => {
+  if (!contract.contractId || !contract.customerId || !contract.productId ||
+      !Number.isSafeInteger(contract.totalPaidMinor) || contract.totalPaidMinor < 0 ||
+      !Number.isFinite(Date.parse(contract.expiresAt))) {
+    throw new Error('INVALID_EXISTING_CONTRACT');
+  }
+  const offer = calculateSubscriptionContractOffer(
+    currentMonthlyPriceMinor, contract.months, renewalDiscountPercent
+  );
+  return {
+    previousContractId: contract.contractId,
+    customerId: contract.customerId,
+    productId: contract.productId,
+    months: contract.months,
+    currentMonthlyPriceMinor,
+    discountPercent: renewalDiscountPercent,
+    totalDueMinor: offer.totalMinor,
+    status: 'awaiting_acceptance',
+  };
+};
+
+/** A renewal cannot be paid or activated without a separately recorded acceptance. */
+export const acceptSubscriptionRenewalProposal = (
+  proposal: SubscriptionRenewalProposal,
+  acceptance: { customerId: string; acceptedTotalMinor: number; acceptedAt: string }
+) => {
+  if (proposal.status !== 'awaiting_acceptance' ||
+      acceptance.customerId !== proposal.customerId ||
+      acceptance.acceptedTotalMinor !== proposal.totalDueMinor ||
+      !Number.isFinite(Date.parse(acceptance.acceptedAt))) {
+    throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
+  }
+  return { ...proposal, status: 'accepted' as const, acceptedAt: acceptance.acceptedAt };
+};
