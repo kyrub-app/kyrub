@@ -23,6 +23,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/selos-kairubi",
+      "destination": "/api/health?transport=selos-kairubi-balance"
+    },
+    {
       "source": "/api/action-execute",
       "has": [
         {
