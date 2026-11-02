@@ -69,3 +69,15 @@ export const loadAcceptedPrepaidRenewal = async (input: {
   acceptSubscriptionRenewalProposal(proposal, acceptance);
   return { proposal, acceptance };
 };
+
+/** Entry point for authenticated server handlers after provider-side verification. */
+export const recordStoredVerifiedPrepaidRenewal = async (input: {
+  storeId: string;
+  proposalId: string;
+  authenticatedBuyerId: string;
+  payment: Parameters<typeof recordVerifiedPrepaidRenewal>[0]['payment'];
+  newContractId: string;
+}) => {
+  const stored = await loadAcceptedPrepaidRenewal(input);
+  return recordVerifiedPrepaidRenewal({ ...stored, payment: input.payment, newContractId: input.newContractId });
+};
