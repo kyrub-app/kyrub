@@ -19,6 +19,7 @@ import type {
   KyrubCatalogDraftSourceKind,
 } from '../../shared/kyrubCatalogDrafts.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { KyrubActionExecutionError } from './actionExecutionService.js';
 import { evaluateKyrubActionPolicy } from './kyrubiaPolicyEngine.js';
@@ -160,6 +161,13 @@ const normalizeProduct = (value: unknown): KyrubCatalogDraftProductInput => {
     throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_DRAFT', 'O indicador de cortesia do rascunho é inválido.');
   }
 
+  if (candidate.saleModality !== undefined) {
+    const modality = parseProductSaleModality(candidate.saleModality);
+    if (!modality) {
+      throw new KyrubActionExecutionError(400, 'INVALID_PRODUCT_DRAFT', 'Modalidade de venda inválida.');
+    }
+    product.saleModality = modality;
+  }
   if (description !== undefined) product.description = description;
   if (category !== undefined) product.category = category;
   if (image !== undefined) product.image = image;
