@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
+import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal, snapshotAcceptedPrepaidRenewal } from '../shared/subscriptionContractRenewal.js';
 
 const contract = {
   contractId: 'contract-1', customerId: 'customer-1', productId: 'business', storeId: 'store-1',
@@ -54,4 +54,25 @@ test('prepaid renewal cannot be fulfilled before verified full payment', () => {
   assert.throws(() => confirmPrepaidRenewalPayment(accepted, { ...valid, status: 'pending' }), /RENEWAL_PAYMENT_NOT_CONFIRMED/);
   assert.throws(() => confirmPrepaidRenewalPayment(accepted, { ...valid, amountMinor: 215892 }), /RENEWAL_PAYMENT_NOT_CONFIRMED/);
   assert.equal(confirmPrepaidRenewalPayment(accepted, valid).status, 'paid');
+});
+
+test('paid renewal snapshots current accepted price without mutating historical contract', () => {
+  const proposal = createSubscriptionRenewalProposal(contract, 40000);
+  const accepted = acceptSubscriptionRenewalProposal(proposal, {
+    customerId: 'customer-1', storeId: 'store-1', acceptedTotalMinor: 480000,
+    acceptedAt: '2028-01-01T00:00:00Z',
+  });
+  const paid = confirmPrepaidRenewalPayment(accepted, {
+    providerPaymentId: 'payment-2', status: 'approved', amountMinor: 480000, verifiedByProvider: true,
+  });
+  const renewed = snapshotAcceptedPrepaidRenewal(paid, {
+    newContractId: 'contract-2', startsAt: '2028-01-01T00:00:00Z', expiresAt: '2029-01-01T00:00:00Z',
+  });
+  assert.equal(renewed.totalPaidMinor, 480000);
+  assert.equal(renewed.monthlyBasePriceMinor, 40000);
+  assert.equal(renewed.previousContractId, 'contract-1');
+  assert.equal(contract.totalPaidMinor, 215892);
+  assert.throws(() => snapshotAcceptedPrepaidRenewal(paid, {
+    newContractId: 'contract-1', startsAt: '2028-01-01T00:00:00Z', expiresAt: '2029-01-01T00:00:00Z',
+  }), /INVALID_RENEWAL_CONTRACT_DATES/);
 });
