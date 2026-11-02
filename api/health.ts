@@ -102,7 +102,7 @@ export default async function handler(
       const actor = await verifyFirebaseIdToken(token);
       const snapshot = await adminDb.collection(`users/${actor.uid}/rewardLedger`).get();
       const entries = snapshot.docs.map(document => {
-        const entry = document.data() as gamification.KyrubRewardLedgerEntry;
+        const entry = document.data() as import('../shared/gamification.js').KyrubRewardLedgerEntry;
         if (entry.userId !== actor.uid || entry.id !== document.id) throw new Error('REWARD_LEDGER_SCOPE_INVALID');
         return gamification.assertKyrubRewardLedgerEntry(entry);
       });
