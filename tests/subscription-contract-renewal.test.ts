@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal, snapshotAcceptedPrepaidRenewal } from '../shared/subscriptionContractRenewal.js';
+import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal, snapshotAcceptedPrepaidRenewal, resolveRenewalPaymentReplay } from '../shared/subscriptionContractRenewal.js';
 
 const contract = {
   contractId: 'contract-1', customerId: 'customer-1', productId: 'business', storeId: 'store-1',
@@ -75,4 +75,22 @@ test('paid renewal snapshots current accepted price without mutating historical 
   assert.throws(() => snapshotAcceptedPrepaidRenewal(paid, {
     newContractId: 'contract-1', startsAt: '2028-01-01T00:00:00Z', expiresAt: '2029-01-01T00:00:00Z',
   }), /INVALID_RENEWAL_CONTRACT_DATES/);
+});
+
+test('replayed payment is idempotent and cannot fund another renewal', () => {
+  const proposal = createSubscriptionRenewalProposal(contract, 40000);
+  const accepted = acceptSubscriptionRenewalProposal(proposal, {
+    customerId: 'customer-1', storeId: 'store-1', acceptedTotalMinor: 480000,
+    acceptedAt: '2028-01-01T00:00:00Z',
+  });
+  const paid = confirmPrepaidRenewalPayment(accepted, {
+    providerPaymentId: 'payment-2', status: 'approved', amountMinor: 480000, verifiedByProvider: true,
+  });
+  const snapshot = snapshotAcceptedPrepaidRenewal(paid, {
+    newContractId: 'contract-2', startsAt: '2028-01-01T00:00:00Z', expiresAt: '2029-01-01T00:00:00Z',
+  });
+  assert.equal(resolveRenewalPaymentReplay(snapshot, null, null), 'create');
+  assert.equal(resolveRenewalPaymentReplay(snapshot, snapshot, snapshot), 'already_recorded');
+  assert.throws(() => resolveRenewalPaymentReplay({ ...snapshot, contractId: 'contract-3' }, snapshot, null), /RENEWAL_PAYMENT_ALREADY_USED/);
+  assert.throws(() => resolveRenewalPaymentReplay(snapshot, null, snapshot), /RENEWAL_CONTRACT_ALREADY_EXISTS/);
 });
