@@ -45,6 +45,7 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
       input.currentMonthlyPriceMinor, input.discountPercent])
   ).digest('hex');
   const paymentExternalReference = `kyrub:prepaid-renewal:${input.storeId}:${proposalId}`;
+  if (paymentExternalReference.length > 180) throw new Error('RENEWAL_CHECKOUT_REFERENCE_TOO_LONG');
   const proposalRef = adminDb.doc(
     `stores/${input.storeId}/prepaidRenewalProposals/${proposalId}`
   );
@@ -56,7 +57,8 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     if (alreadyRenewed.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
     if (existing.exists) {
       const data = existing.data();
-      if (JSON.stringify(data?.proposal) !== JSON.stringify(proposal) ||
+      if (data?.status !== 'awaiting_acceptance' ||
+          JSON.stringify(data?.proposal) !== JSON.stringify(proposal) ||
           data?.sellerCredentialScopeId !== input.storeId ||
           data?.paymentExternalReference !== paymentExternalReference) {
         throw new Error('RENEWAL_PROPOSAL_CONFLICT');
