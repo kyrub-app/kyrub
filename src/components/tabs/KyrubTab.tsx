@@ -21,6 +21,8 @@ import type {
 } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { loadMarketplaceDiscovery } from '../../utils/marketplaceDiscovery';
+import { loadStoreRelationshipForCurrentUser } from '../../utils/storeRelationship';
+import type { StoreRelationshipSummary } from '../../../shared/storeRelationship';
 import { getMarketplaceListingsCollectionPath } from '../../utils/marketplacePaths';
 import type { MarketplaceStoreDiscoverySignal } from '../../../shared/marketplaceDiscovery';
 
@@ -101,6 +103,9 @@ export function KyrubTab(props: KyrubTabProps) {
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('none');
   const [discoverySignals, setDiscoverySignals] = useState<MarketplaceStoreDiscoverySignal[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [clubSummaries, setClubSummaries] = useState<Array<{ storeId: string; summary: StoreRelationshipSummary }>>([]);
+  const [clubsLoading, setClubsLoading] = useState(false);
+  const [clubsError, setClubsError] = useState(false);
   const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
@@ -268,6 +273,34 @@ export function KyrubTab(props: KyrubTabProps) {
     setDiscoveryFilter(current => (current === next ? 'none' : next));
   };
 
+  const purchasedStoreIds = useMemo(() => {
+    const ids = new Set(props.orders.map(order => order.storeId));
+    return allPublishedStores.filter(store => ids.has(store.id)).slice(0, 8).map(store => store.id);
+  }, [allPublishedStores, props.orders]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setClubSummaries([]);
+    setClubsError(false);
+    if (props.socialSubTab !== 'lojas' || props.ofertasFilter !== 'cliente' || purchasedStoreIds.length === 0) {
+      setClubsLoading(false);
+      return;
+    }
+    setClubsLoading(true);
+    void Promise.allSettled(purchasedStoreIds.map(storeId => loadStoreRelationshipForCurrentUser(storeId)))
+      .then(results => {
+        if (cancelled) return;
+        setClubSummaries(results.flatMap((result, index) =>
+          result.status === 'fulfilled' ? [{ storeId: purchasedStoreIds[index], summary: result.value }] : []
+        ));
+        setClubsError(results.some(result => result.status === 'rejected'));
+      })
+      .finally(() => {
+        if (!cancelled) setClubsLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [props.socialSubTab, props.ofertasFilter, purchasedStoreIds]);
+
   const isConnectedContactsActive =
     props.socialSubTab === 'usuarios' && props.pracaFilter === 'conectados';
   const isPublicFeedActive =
@@ -313,6 +346,27 @@ export function KyrubTab(props: KyrubTabProps) {
             {discoveryLoading ? 'Personalizando…' : 'Para você'}
           </button>
         </div>
+      )}
+
+      {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
+        <section aria-label="Meus pontos dos clubes" className="mb-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-slate-100">
+          <h2 className="font-bold">Pontos do Clube</h2>
+          <p className="mt-1 text-xs text-slate-400">Saldo e benefícios por estabelecimento, sem misturar com os Selos Kairubi.</p>
+          {clubsLoading && <p className="mt-3 text-sm" role="status">Consultando seus clubes…</p>}
+          {clubsError && <p className="mt-3 text-xs text-amber-300" role="status">Não foi possível consultar todos os relacionamentos.</p>}
+          {!clubsLoading && purchasedStoreIds.length === 0 && <p className="mt-3 text-sm text-slate-400">Suas lojas com compras aparecerão aqui.</p>}
+          {clubSummaries.length > 0 && (
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              {clubSummaries.map(({ storeId, summary }) => (
+                <article key={storeId} className="rounded-xl border border-slate-700 p-3">
+                  <h3 className="text-sm font-semibold">{allPublishedStores.find(store => store.id === storeId)?.name ?? 'Loja'}</h3>
+                  <p className="mt-1 text-lg font-bold">{summary.points.balance.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-400">pontos</span></p>
+                  <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis</p>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
       )}
 
       <LegacyKyrubTab
