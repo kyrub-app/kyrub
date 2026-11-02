@@ -5,6 +5,7 @@ export interface AcceptedSubscriptionContract {
   contractId: string;
   customerId: string;
   productId: string;
+  storeId: string;
   months: ContractTermMonths;
   monthlyBasePriceMinor: number;
   discountPercent: number;
@@ -18,6 +19,8 @@ export interface SubscriptionRenewalProposal {
   customerId: string;
   productId: string;
   months: ContractTermMonths;
+  /** Proposal is bound to the seller and cannot be accepted in another tenant. */
+  storeId: string;
   currentMonthlyPriceMinor: number;
   discountPercent: number;
   totalDueMinor: number;
@@ -29,7 +32,7 @@ export const createSubscriptionRenewalProposal = (
   currentMonthlyPriceMinor: number,
   renewalDiscountPercent = 0
 ): SubscriptionRenewalProposal => {
-  if (!contract.contractId || !contract.customerId || !contract.productId ||
+  if (!contract.contractId || !contract.customerId || !contract.productId || !contract.storeId ||
       !Number.isSafeInteger(contract.totalPaidMinor) || contract.totalPaidMinor < 0 ||
       !Number.isFinite(Date.parse(contract.expiresAt))) {
     throw new Error('INVALID_EXISTING_CONTRACT');
@@ -41,6 +44,7 @@ export const createSubscriptionRenewalProposal = (
     previousContractId: contract.contractId,
     customerId: contract.customerId,
     productId: contract.productId,
+    storeId: contract.storeId,
     months: contract.months,
     currentMonthlyPriceMinor,
     discountPercent: renewalDiscountPercent,
@@ -52,10 +56,11 @@ export const createSubscriptionRenewalProposal = (
 /** A renewal cannot be paid or activated without a separately recorded acceptance. */
 export const acceptSubscriptionRenewalProposal = (
   proposal: SubscriptionRenewalProposal,
-  acceptance: { customerId: string; acceptedTotalMinor: number; acceptedAt: string }
+  acceptance: { customerId: string; storeId: string; acceptedTotalMinor: number; acceptedAt: string }
 ) => {
   if (proposal.status !== 'awaiting_acceptance' ||
       acceptance.customerId !== proposal.customerId ||
+      acceptance.storeId !== proposal.storeId ||
       acceptance.acceptedTotalMinor !== proposal.totalDueMinor ||
       !Number.isFinite(Date.parse(acceptance.acceptedAt))) {
     throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
