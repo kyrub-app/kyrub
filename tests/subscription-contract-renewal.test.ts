@@ -91,6 +91,8 @@ test('replayed payment is idempotent and cannot fund another renewal', () => {
   });
   assert.equal(resolveRenewalPaymentReplay(snapshot, null, null), 'create');
   assert.equal(resolveRenewalPaymentReplay(snapshot, snapshot, snapshot), 'already_recorded');
+  assert.throws(() => resolveRenewalPaymentReplay({ ...snapshot, expiresAt: '2030-01-01T00:00:00Z' }, snapshot, snapshot), /RENEWAL_PAYMENT_ALREADY_USED/);
+  assert.throws(() => resolveRenewalPaymentReplay({ ...snapshot, discountPercent: 10 }, snapshot, snapshot), /RENEWAL_PAYMENT_ALREADY_USED/);
   assert.throws(() => resolveRenewalPaymentReplay({ ...snapshot, contractId: 'contract-3' }, snapshot, null), /RENEWAL_PAYMENT_ALREADY_USED/);
   assert.throws(() => resolveRenewalPaymentReplay(snapshot, null, snapshot), /RENEWAL_CONTRACT_ALREADY_EXISTS/);
 });
