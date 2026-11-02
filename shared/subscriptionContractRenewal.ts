@@ -138,18 +138,3 @@ export const resolveRenewalPaymentReplay = (
   return 'create';
 };
 
-/** The payment timestamp and term determine the new prepaid validity window. */
-export const createPaidRenewalLifecycle = async (
-  paid: ReturnType<typeof confirmPrepaidRenewalPayment>,
-  paymentOccurredAt: string
-) => {
-  const { activatePrepaidContractAfterVerifiedPayment } = await import('../server/payments/prepaidSubscriptionContractLifecycle.js');
-  if (![3, 6, 12].includes(paid.months)) throw new Error('INVALID_PREPAID_RENEWAL_TERM');
-  return activatePrepaidContractAfterVerifiedPayment({
-    state: 'pending_payment', months: paid.months, amountMinor: paid.totalDueMinor,
-    providerPaymentId: '', paymentConfirmedAt: '', startsAt: '', expiresAt: '',
-  }, {
-    id: paid.providerPaymentId, status: 'approved', amountMinor: paid.totalDueMinor,
-    occurredAt: paymentOccurredAt, verifiedByProvider: true,
-  });
-};
