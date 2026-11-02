@@ -17,6 +17,9 @@ export const recordVerifiedPrepaidRenewal = async (input: {
   payment: { id: string; status: string; amountMinor: number; occurredAt: string; verifiedByProvider: boolean };
   newContractId: string;
 }) => {
+  if (!input.payment.verifiedByProvider || input.payment.status !== 'approved') {
+    throw new Error('RENEWAL_PAYMENT_NOT_CONFIRMED');
+  }
   const accepted = acceptSubscriptionRenewalProposal(input.proposal, input.acceptance);
   const paid = confirmPrepaidRenewalPayment(accepted, {
     providerPaymentId: input.payment.id,
