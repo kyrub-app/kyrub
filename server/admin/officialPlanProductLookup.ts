@@ -62,6 +62,19 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   )) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Vínculo oficial do plano inválido.');
   }
+  // Until an administrator assigns the platform plan, never route a monthly
+  // access subscription sold by the Official Store to merchant billing.
+  // Ordinary physical products and other merchants remain unaffected.
+  const saleModality = parseProductSaleModality(data.saleModality);
+  if (!mapping.exists &&
+      official?.canonicalStoreId === seller.canonicalStoreId &&
+      saleModality?.mode === 'subscription' &&
+      saleModality.subscription?.benefit.kind === 'access') {
+    throw new OfficialPlanCheckoutRouteError(
+      'OFFICIAL_ACCESS_SUBSCRIPTION_MAPPING_REQUIRED',
+      'Esta assinatura da Loja Oficial ainda não possui vínculo administrativo.'
+    );
+  }
   const planId = (mapping.exists ? rawPlan : null) as KyrubCommercialPlanId | null;
   if (mapping.exists && planId === null) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Plano oficial não identificado.');
