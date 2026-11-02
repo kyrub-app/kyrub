@@ -23,6 +23,7 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
     throw new Error('INVALID_RENEWAL_IDENTITY');
   }
   const reference = adminDb.doc(`stores/${input.storeId}/prepaidRenewalProposals/${input.proposalId}`);
+  const predecessorPath = `stores/${input.storeId}/prepaidRenewalSuccessors/`;
   return adminDb.runTransaction(async tx => {
     const snapshot = await tx.get(reference);
     if (!snapshot.exists) throw new Error('RENEWAL_PROPOSAL_NOT_FOUND');
@@ -35,6 +36,9 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
         input.acceptedTotalMinor <= 0) {
       throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
     }
+    if (!safeId(proposal.previousContractId)) throw new Error('INVALID_RENEWAL_PREDECESSOR');
+    const successor = await tx.get(adminDb.doc(predecessorPath + proposal.previousContractId));
+    if (successor.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
     if (data.status === 'accepted') {
       const previous = data.acceptance as { customerId?: string; storeId?: string; acceptedTotalMinor?: number } | undefined;
       if (data.acceptedBy === input.authenticatedBuyerId &&
