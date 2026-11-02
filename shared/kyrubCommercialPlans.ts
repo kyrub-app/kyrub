@@ -6,6 +6,7 @@ export type KyrubCommercialPlanReference = {
   monthlyPriceBRL: number;
   activeCatalogLimit: number | null;
   catalogLimitLabel: string;
+  /** @deprecated Legacy V1 data; not a consumption allowance for native Kyrubia operations. */
   kyrubiaIntelligenceCredits: number;
   marketplaceOriginatedSaleCommissionPercent: number;
   positioning: string;
@@ -118,10 +119,11 @@ export const describeKyrubCommercialPlansForAi = (): string => {
 
   return [
     'Referência comercial V1 dos planos Kyrub:',
-    `Free: ${formatKyrubPlanMonthlyPrice(free.monthlyPriceBRL)}/mês; ${free.catalogLimitLabel}; ${free.kyrubiaIntelligenceCredits} Créditos Kyrubia Inteligência/mês; comissão de referência de ${free.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
-    `Pro: ${formatKyrubPlanMonthlyPrice(pro.monthlyPriceBRL)}/mês; ${pro.catalogLimitLabel}; ${pro.kyrubiaIntelligenceCredits} Créditos Kyrubia Inteligência/mês; comissão de referência de ${pro.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
-    `Business: ${formatKyrubPlanMonthlyPrice(business.monthlyPriceBRL)}/mês; ${business.catalogLimitLabel}; ${business.kyrubiaIntelligenceCredits} Créditos Kyrubia Inteligência/mês; comissão de referência de ${business.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub; ${business.positioning}.`,
-    'Operações locais/determinísticas da Kyrubia não consomem Créditos Kyrubia Inteligência.',
+    `Free: ${formatKyrubPlanMonthlyPrice(free.monthlyPriceBRL)}/mês; ${free.catalogLimitLabel}; comissão de referência de ${free.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
+    `Pro: ${formatKyrubPlanMonthlyPrice(pro.monthlyPriceBRL)}/mês; ${pro.catalogLimitLabel}; comissão de referência de ${pro.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
+    `Business: ${formatKyrubPlanMonthlyPrice(business.monthlyPriceBRL)}/mês; ${business.catalogLimitLabel}; comissão de referência de ${business.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub; ${business.positioning}.`,
+    'Operações locais e determinísticas da Kyrubia não possuem franquia mensal de créditos de IA.',
+    'Respostas generativas podem utilizar uma LLM externa conectada pelo usuário, conforme condições do provedor.',
     'Faturamento total não é trava automática de plano. A Kyrubia recomenda o menor plano suficiente.',
     'A contratação/checkout de Pro e Business ainda não está conectada ao fluxo executável do Kyrub.',
     KYRUB_COMMERCIAL_PLAN_REFERENCE_NOTICE,

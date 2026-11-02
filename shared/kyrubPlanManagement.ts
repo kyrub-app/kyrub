@@ -42,8 +42,8 @@ export const KYRUB_PLAN_FEATURES: readonly KyrubPlanFeatureDefinition[] = [
   {
     id: 'kyrubia_intelligence',
     label: 'Kyrubia Inteligência',
-    description: 'Capacidades generativas e analíticas sujeitas à franquia mensal.',
-    enforcement: 'credit_limit',
+    description: 'Acesso a recursos de inteligência generativa por provedor externo conectado, sem franquia Kyrub de créditos de IA.',
+    enforcement: 'capability',
   },
   {
     id: 'team',
@@ -81,6 +81,7 @@ export type KyrubPlanVersion = {
   status: KyrubPlanVersionStatus;
   monthlyPriceBRL: number;
   activeCatalogLimit: number | null;
+  /** @deprecated Mantido apenas para compatibilidade com versões legadas do plano. */
   kyrubiaIntelligenceCredits: number;
   marketplaceOriginatedSaleCommissionPercent: number;
   features: KyrubPlanFeatureStates;
