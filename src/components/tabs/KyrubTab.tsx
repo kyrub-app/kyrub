@@ -386,32 +386,56 @@ export function KyrubTab(props: KyrubTabProps) {
       )}
 
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
-        <section aria-label="Meus pontos dos clubes" className="mb-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-slate-100">
-          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
-            <h2 className="font-bold text-amber-200">Selos Kairubi</h2>
-            {selosLoading && <p className="mt-1 text-sm text-slate-400" role="status">Consultando saldo…</p>}
-            {selosError && <p className="mt-1 text-sm text-amber-300" role="status">Saldo temporariamente indisponível.</p>}
-            {!selosLoading && !selosError && selosBalance !== null && (
-              <p className="mt-1 text-2xl font-black">{selosBalance.toLocaleString('pt-BR')} <span className="text-sm font-normal">selos</span></p>
-            )}
-            <p className="mt-1 text-xs text-slate-400">Recompensas do ecossistema Kyrub. Separadas dos pontos de cada loja.</p>
-          </div>
-          <h2 className="font-bold">Pontos do Clube</h2>
-          <p className="mt-1 text-xs text-slate-400">Saldo e benefícios por estabelecimento, sem misturar com os Selos Kairubi.</p>
-          {clubsLoading && <p className="mt-3 text-sm" role="status">Consultando seus clubes…</p>}
-          {clubsError && <p className="mt-3 text-xs text-amber-300" role="status">Não foi possível consultar todos os relacionamentos.</p>}
-          {!clubsLoading && purchasedStoreIds.length === 0 && <p className="mt-3 text-sm text-slate-400">Suas lojas com compras aparecerão aqui.</p>}
-          {clubSummaries.length > 0 && (
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              {clubSummaries.map(({ storeId, summary }) => (
-                <article key={storeId} className="rounded-xl border border-slate-700 p-3">
-                  <h3 className="text-sm font-semibold">{allPublishedStores.find(store => store.id === storeId)?.name ?? 'Loja'}</h3>
-                  <p className="mt-1 text-lg font-bold">{summary.points.balance.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-400">pontos</span></p>
-                  <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis</p>
-                </article>
-              ))}
+        <section aria-label="Recompensas" className="mb-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100">
+          <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <h3 className="text-sm text-slate-300">Selos Kairubi</h3>
+              <p className="mt-3 text-2xl font-bold" aria-live="polite">
+                {selosLoading ? '…' : selosError || selosBalance === null ? '—' : selosBalance.toLocaleString('pt-BR')}
+              </p>
+              <p className="mt-2 text-xs text-slate-400">Saldo global</p>
+              {selosError && <p className="mt-2 text-xs text-amber-300" role="status">Saldo indisponível</p>}
             </div>
-          )}
+            <div className="rounded-2xl bg-slate-800 p-4">
+              <h3 className="text-sm text-slate-300">Experiência</h3>
+              <p className="mt-3 text-2xl font-bold">— XP</p>
+              <p className="mt-2 text-xs text-slate-400">Nível e conquistas</p>
+              <p className="mt-1 text-xs text-slate-500">Consulta de XP ainda não integrada</p>
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-slate-800 pt-5">
+            <h3 className="text-lg font-bold">Desafios e conquistas</h3>
+            <div className="mt-3 rounded-2xl bg-slate-800 p-4 text-sm text-slate-300">
+              Campanhas, objetivos, progresso e recompensas disponíveis.
+              <p className="mt-2 text-xs text-slate-400">Desafios personalizados ainda não conectados nesta tela.</p>
+            </div>
+          </div>
+
+          <div className="mt-5 border-t border-slate-800 pt-5">
+            <h3 className="text-lg font-bold">Meus clubes</h3>
+            <p className="mt-1 text-xs text-slate-400">Pontos próprios, benefícios e vouchers de cada estabelecimento.</p>
+            {clubsLoading && <p className="mt-3 text-sm" role="status">Consultando seus clubes…</p>}
+            {clubsError && <p className="mt-3 text-xs text-amber-300" role="status">Não foi possível consultar todos os relacionamentos.</p>}
+            {!clubsLoading && purchasedStoreIds.length === 0 && (
+              <p className="mt-3 text-sm text-slate-400">Clubes com histórico de compras aparecerão aqui. Outros vínculos ainda precisam ser integrados.</p>
+            )}
+            {clubSummaries.length > 0 && (
+              <div className="mt-3 grid gap-3">
+                {clubSummaries.map(({ storeId, summary }) => (
+                  <article key={storeId} className="rounded-xl border border-slate-700 p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <h4 className="text-sm font-bold">{allPublishedStores.find(store => store.id === storeId)?.name ?? 'Loja'}</h4>
+                      <span className="text-xs text-slate-400">Pontos próprios</span>
+                    </div>
+                    <p className="mt-2 text-lg font-bold">{summary.points.balance.toLocaleString('pt-BR')} <span className="text-xs font-normal text-slate-400">pontos</span></p>
+                    <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis</p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </div>
         </section>
       )}
 
