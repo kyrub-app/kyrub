@@ -1,0 +1,62 @@
+import { adminDb } from '../firebaseAdmin.js';
+import {
+  acceptSubscriptionRenewalProposal,
+  type SubscriptionRenewalProposal,
+} from '../../shared/subscriptionContractRenewal.js';
+
+const safeId = (value: string): boolean =>
+  typeof value === 'string' && value.length > 0 && value.length <= 180 && !value.includes('/');
+
+/**
+ * Internal server-only acceptance recorder. Caller must establish the buyer
+ * identity from a verified auth token; never accept it from request JSON.
+ * The proposal must already be persisted by a trusted seller-side operation.
+ */
+export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
+  storeId: string;
+  proposalId: string;
+  authenticatedBuyerId: string;
+  acceptedTotalMinor: number;
+}): Promise<'accepted' | 'already_accepted'> => {
+  if (![input.storeId, input.proposalId, input.authenticatedBuyerId].every(safeId)) {
+    throw new Error('INVALID_RENEWAL_IDENTITY');
+  }
+  const reference = adminDb.doc(`stores/${input.storeId}/prepaidRenewalProposals/${input.proposalId}`);
+  return adminDb.runTransaction(async tx => {
+    const snapshot = await tx.get(reference);
+    if (!snapshot.exists) throw new Error('RENEWAL_PROPOSAL_NOT_FOUND');
+    const data = snapshot.data() as Record<string, unknown>;
+    const proposal = data.proposal as SubscriptionRenewalProposal | undefined;
+    if (!proposal || proposal.storeId !== input.storeId ||
+        proposal.customerId !== input.authenticatedBuyerId ||
+        ![3, 6, 12].includes(proposal.months) ||
+        !Number.isSafeInteger(input.acceptedTotalMinor) ||
+        input.acceptedTotalMinor <= 0) {
+      throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
+    }
+    if (data.status === 'accepted') {
+      const previous = data.acceptance as { customerId?: string; storeId?: string; acceptedTotalMinor?: number } | undefined;
+      if (data.acceptedBy === input.authenticatedBuyerId &&
+          previous?.customerId === input.authenticatedBuyerId &&
+          previous?.storeId === input.storeId &&
+          previous?.acceptedTotalMinor === input.acceptedTotalMinor) return 'already_accepted';
+      throw new Error('RENEWAL_ALREADY_ACCEPTED');
+    }
+    if (data.status !== 'awaiting_acceptance') throw new Error('RENEWAL_NOT_OPEN');
+    const acceptedAt = new Date().toISOString();
+    const acceptance = {
+      customerId: input.authenticatedBuyerId,
+      storeId: input.storeId,
+      acceptedTotalMinor: input.acceptedTotalMinor,
+      acceptedAt,
+    };
+    acceptSubscriptionRenewalProposal(proposal, acceptance);
+    tx.update(reference, {
+      status: 'accepted',
+      acceptedBy: input.authenticatedBuyerId,
+      acceptedAt,
+      acceptance,
+    });
+    return 'accepted';
+  });
+};
