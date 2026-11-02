@@ -106,6 +106,9 @@ export function KyrubTab(props: KyrubTabProps) {
   const [clubSummaries, setClubSummaries] = useState<Array<{ storeId: string; summary: StoreRelationshipSummary }>>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState(false);
+  const [selosBalance, setSelosBalance] = useState<number | null>(null);
+  const [selosLoading, setSelosLoading] = useState(false);
+  const [selosError, setSelosError] = useState(false);
   const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
@@ -301,6 +304,40 @@ export function KyrubTab(props: KyrubTabProps) {
     return () => { cancelled = true; };
   }, [props.socialSubTab, props.ofertasFilter, purchasedStoreIds]);
 
+  useEffect(() => {
+    let cancelled = false;
+    setSelosBalance(null);
+    setSelosError(false);
+    if (props.socialSubTab !== 'lojas' || props.ofertasFilter !== 'cliente') {
+      setSelosLoading(false);
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      setSelosLoading(false);
+      setSelosError(true);
+      return;
+    }
+    setSelosLoading(true);
+    void user.getIdToken()
+      .then(token => fetch('/api/selos-kairubi', {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      }))
+      .then(async response => {
+        if (!response.ok) throw new Error('SELOS_BALANCE_UNAVAILABLE');
+        const data = await response.json() as { balance?: unknown; unit?: unknown };
+        if (data.unit !== 'selos_kairubi' || !Number.isSafeInteger(data.balance) || (data.balance as number) < 0) {
+          throw new Error('SELOS_BALANCE_INVALID');
+        }
+        return data.balance as number;
+      })
+      .then(balance => { if (!cancelled) setSelosBalance(balance); })
+      .catch(() => { if (!cancelled) setSelosError(true); })
+      .finally(() => { if (!cancelled) setSelosLoading(false); });
+    return () => { cancelled = true; };
+  }, [props.socialSubTab, props.ofertasFilter]);
+
   const isConnectedContactsActive =
     props.socialSubTab === 'usuarios' && props.pracaFilter === 'conectados';
   const isPublicFeedActive =
@@ -350,6 +387,15 @@ export function KyrubTab(props: KyrubTabProps) {
 
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
         <section aria-label="Meus pontos dos clubes" className="mb-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-slate-100">
+          <div className="mb-4 rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+            <h2 className="font-bold text-amber-200">Selos Kairubi</h2>
+            {selosLoading && <p className="mt-1 text-sm text-slate-400" role="status">Consultando saldo…</p>}
+            {selosError && <p className="mt-1 text-sm text-amber-300" role="status">Saldo temporariamente indisponível.</p>}
+            {!selosLoading && !selosError && selosBalance !== null && (
+              <p className="mt-1 text-2xl font-black">{selosBalance.toLocaleString('pt-BR')} <span className="text-sm font-normal">selos</span></p>
+            )}
+            <p className="mt-1 text-xs text-slate-400">Recompensas do ecossistema Kyrub. Separadas dos pontos de cada loja.</p>
+          </div>
           <h2 className="font-bold">Pontos do Clube</h2>
           <p className="mt-1 text-xs text-slate-400">Saldo e benefícios por estabelecimento, sem misturar com os Selos Kairubi.</p>
           {clubsLoading && <p className="mt-3 text-sm" role="status">Consultando seus clubes…</p>}
