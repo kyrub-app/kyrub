@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import {
   acceptSubscriptionRenewalProposal,
   type SubscriptionRenewalProposal,
@@ -60,5 +61,21 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
       acceptance,
     });
     return 'accepted';
+  });
+};
+
+/** Authenticated boundary: derive buyer identity only from verified Firebase token. */
+export const acceptPrepaidRenewalWithFirebaseAuth = async (input: {
+  authorization: string | null | undefined;
+  storeId: string;
+  proposalId: string;
+  acceptedTotalMinor: number;
+}) => {
+  const user = await authenticateConsultantRequest(input.authorization);
+  return persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId: input.storeId,
+    proposalId: input.proposalId,
+    acceptedTotalMinor: input.acceptedTotalMinor,
+    authenticatedBuyerId: user.uid,
   });
 };
