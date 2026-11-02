@@ -674,7 +674,7 @@ export function KyrubTab({
             {[
               { id: 'novas', label: 'Novas' },
               { id: 'favoritas', label: 'Favoritas' },
-              { id: 'cliente', label: 'Cliente' },
+              { id: 'cliente', label: 'Recompensas' },
             ].map(filter => (
               <button
                 type="button"
