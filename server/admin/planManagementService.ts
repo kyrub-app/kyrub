@@ -266,7 +266,8 @@ export type PublishPlanVersionInput = {
   planId: KyrubCommercialPlanId;
   monthlyPriceBRL: number;
   activeCatalogLimit: number | null;
-  kyrubiaIntelligenceCredits: number;
+  /** @deprecated Optional legacy field; native Kyrubia operations have no AI-credit allowance. */
+  kyrubiaIntelligenceCredits?: number;
   marketplaceOriginatedSaleCommissionPercent: number;
   features: KyrubPlanFeatureStates;
 };
@@ -277,7 +278,10 @@ const normalizePlanInput = (raw: unknown): PublishPlanVersionInput => {
   const monthlyPrice = numberValue(input.monthlyPriceBRL);
   const rawCatalogLimit = input.activeCatalogLimit;
   const catalogLimit = rawCatalogLimit === null ? null : integerValue(rawCatalogLimit);
-  const credits = integerValue(input.kyrubiaIntelligenceCredits);
+  // Preserve legacy catalog data for older readers; no credit quota is required to publish a plan.
+  const credits = input.kyrubiaIntelligenceCredits === undefined
+    ? undefined
+    : integerValue(input.kyrubiaIntelligenceCredits);
   const commission = numberValue(input.marketplaceOriginatedSaleCommissionPercent);
 
   if (monthlyPrice === null || monthlyPrice < 0 || monthlyPrice > 1_000_000) {
@@ -296,8 +300,8 @@ const normalizePlanInput = (raw: unknown): PublishPlanVersionInput => {
   if (catalogLimit !== null && (catalogLimit < 0 || catalogLimit > 1_000_000)) {
     throw new PlanManagementError(400, 'INVALID_CATALOG_LIMIT', 'Informe um limite de catálogo válido.');
   }
-  if (credits === null || credits < 0 || credits > 100_000_000) {
-    throw new PlanManagementError(400, 'INVALID_CREDIT_LIMIT', 'Informe uma franquia válida de Créditos Kyrubia.');
+  if (credits === null || (credits !== undefined && (credits < 0 || credits > 100_000_000))) {
+    throw new PlanManagementError(400, 'INVALID_LEGACY_CREDIT_VALUE', 'Valor legado de créditos inválido.');
   }
   if (commission === null || commission < 0 || commission > 100) {
     throw new PlanManagementError(400, 'INVALID_COMMISSION', 'Informe uma comissão entre 0 e 100%.');
@@ -342,7 +346,11 @@ export const publishPlanVersion = async (
       status: 'active',
       monthlyPriceBRL: input.monthlyPriceBRL,
       activeCatalogLimit: input.activeCatalogLimit,
-      kyrubiaIntelligenceCredits: input.kyrubiaIntelligenceCredits,
+      kyrubiaIntelligenceCredits: input.kyrubiaIntelligenceCredits
+        ?? (catalogSnapshot.exists
+          ? integerValue(asRecord(catalogSnapshot.data()?.definition).kyrubiaIntelligenceCredits)
+          : null)
+        ?? fallback.kyrubiaIntelligenceCredits,
       marketplaceOriginatedSaleCommissionPercent:
         input.marketplaceOriginatedSaleCommissionPercent,
       features: input.features,
