@@ -42,7 +42,7 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   );
   const proposalId = createHash('sha256').update(
     JSON.stringify([input.storeId, input.previousContractId,
-      input.currentMonthlyPriceMinor, input.discountPercent])
+      input.currentMonthlyPriceMinor, input.discountPercent, previous.expiresAt])
   ).digest('hex');
   const paymentExternalReference = `kyrub:prepaid-renewal:${input.storeId}:${proposalId}`;
   if (paymentExternalReference.length > 180) throw new Error('RENEWAL_CHECKOUT_REFERENCE_TOO_LONG');
