@@ -37,6 +37,9 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   }
   const successorRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalSuccessors/${input.previousContractId}`);
+  if (!Number.isSafeInteger(input.discountPercent) || input.discountPercent < 0 || input.discountPercent > 100) {
+    throw new Error('INVALID_RENEWAL_DISCOUNT');
+  }
   const proposal = createSubscriptionRenewalProposal(
     previous, input.currentMonthlyPriceMinor, input.discountPercent
   );
