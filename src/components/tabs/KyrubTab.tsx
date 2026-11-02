@@ -278,7 +278,7 @@ export function KyrubTab(props: KyrubTabProps) {
 
   const purchasedStoreIds = useMemo(() => {
     const ids = new Set(props.orders.map(order => order.storeId));
-    return allPublishedStores.filter(store => ids.has(store.id)).slice(0, 8).map(store => store.id);
+    return allPublishedStores.filter(store => ids.has(store.id)).map(store => store.id);
   }, [allPublishedStores, props.orders]);
 
   useEffect(() => {
@@ -422,7 +422,8 @@ export function KyrubTab(props: KyrubTabProps) {
               <p className="mt-3 text-sm text-slate-400">Clubes com histórico de compras aparecerão aqui. Outros vínculos ainda precisam ser integrados.</p>
             )}
             {clubSummaries.length > 0 && (
-              <div className="mt-3 grid gap-3">
+              <div className="mt-3 max-h-[min(55dvh,36rem)] overflow-y-auto overscroll-contain pr-1" role="region" aria-label="Lista rolável dos meus clubes" tabIndex={0}>
+                <div className="grid gap-3">
                 {clubSummaries.map(({ storeId, summary }) => (
                   <article key={storeId} className="rounded-xl border border-slate-700 p-4">
                     <div className="flex items-start justify-between gap-3">
@@ -433,6 +434,7 @@ export function KyrubTab(props: KyrubTabProps) {
                     <p className="text-xs text-slate-400">{summary.vouchers.filter(voucher => voucher.status === 'available').length} vouchers disponíveis</p>
                   </article>
                 ))}
+                </div>
               </div>
             )}
           </div>
