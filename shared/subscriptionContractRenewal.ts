@@ -86,7 +86,7 @@ export const confirmPrepaidRenewalPayment = (
 export const snapshotAcceptedPrepaidRenewal = (
   paid: ReturnType<typeof confirmPrepaidRenewalPayment>,
   input: { newContractId: string; startsAt: string; expiresAt: string }
-): AcceptedSubscriptionContract & { providerPaymentId: string; previousContractId: string } => {
+): AcceptedSubscriptionContract & { providerPaymentId: string; previousContractId: string; startsAt: string } => {
   const start = Date.parse(input.startsAt);
   const end = Date.parse(input.expiresAt);
   if (!input.newContractId || input.newContractId === paid.previousContractId ||
