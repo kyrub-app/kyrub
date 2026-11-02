@@ -110,7 +110,8 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
   const paymentExternalReference = data.paymentExternalReference;
   if (typeof sellerCredentialScopeId !== 'string' ||
       typeof paymentExternalReference !== 'string' ||
-      !sellerCredentialScopeId || !paymentExternalReference) {
+      sellerCredentialScopeId !== input.storeId ||
+      paymentExternalReference !== `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
   const payment = await verifyPrepaidRenewalMercadoPagoPayment({
