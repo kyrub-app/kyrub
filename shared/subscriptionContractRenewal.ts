@@ -123,7 +123,13 @@ export const resolveRenewalPaymentReplay = (
         existingByPayment.productId === incoming.productId &&
         existingByPayment.totalPaidMinor === incoming.totalPaidMinor &&
         existingByPayment.providerPaymentId === incoming.providerPaymentId &&
-        existingByPayment.previousContractId === incoming.previousContractId) {
+        existingByPayment.previousContractId === incoming.previousContractId &&
+        existingByPayment.months === incoming.months &&
+        existingByPayment.monthlyBasePriceMinor === incoming.monthlyBasePriceMinor &&
+        existingByPayment.discountPercent === incoming.discountPercent &&
+        existingByPayment.acceptedAt === incoming.acceptedAt &&
+        existingByPayment.startsAt === incoming.startsAt &&
+        existingByPayment.expiresAt === incoming.expiresAt) {
       return 'already_recorded';
     }
     throw new Error('RENEWAL_PAYMENT_ALREADY_USED');
