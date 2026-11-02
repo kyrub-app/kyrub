@@ -109,3 +109,25 @@ export const snapshotAcceptedPrepaidRenewal = (
     providerPaymentId: paid.providerPaymentId,
   };
 };
+
+/** Pure guard for transactional persistence: a provider payment funds one renewal only. */
+export const resolveRenewalPaymentReplay = (
+  incoming: ReturnType<typeof snapshotAcceptedPrepaidRenewal>,
+  existingByPayment: ReturnType<typeof snapshotAcceptedPrepaidRenewal> | null,
+  existingByContract: ReturnType<typeof snapshotAcceptedPrepaidRenewal> | null
+): 'create' | 'already_recorded' => {
+  if (existingByPayment) {
+    if (existingByPayment.contractId === incoming.contractId &&
+        existingByPayment.storeId === incoming.storeId &&
+        existingByPayment.customerId === incoming.customerId &&
+        existingByPayment.productId === incoming.productId &&
+        existingByPayment.totalPaidMinor === incoming.totalPaidMinor &&
+        existingByPayment.providerPaymentId === incoming.providerPaymentId &&
+        existingByPayment.previousContractId === incoming.previousContractId) {
+      return 'already_recorded';
+    }
+    throw new Error('RENEWAL_PAYMENT_ALREADY_USED');
+  }
+  if (existingByContract) throw new Error('RENEWAL_CONTRACT_ALREADY_EXISTS');
+  return 'create';
+};
