@@ -593,3 +593,42 @@ test('seller-scoped rejected claim cannot mark an outcome or contact provider', 
   }), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
   assert.deepEqual(calls, ['reserve', 'claim']);
 });
+
+test('invalid creation response marks unknown and never binds or retries', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    sellerScopedRequest: async () => {
+      calls.push('POST');
+      return { ...response, collector_id: 999999 };
+    },
+  }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.deepEqual(calls, ['reserve', 'claim', 'POST', 'unknown']);
+});
+
+test('invalid existing-payment GET never changes creation execution state', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    sellerScopedRequest: async (_scope, path, init) => {
+      calls.push(`${init.method} ${path}`);
+      return { ...response, collector_id: 999999 };
+    },
+  }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.deepEqual(calls, ['reserve', 'GET /v1/payments/123456']);
+});
