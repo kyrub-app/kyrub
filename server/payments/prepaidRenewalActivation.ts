@@ -92,6 +92,7 @@ export const loadAcceptedPrepaidRenewal = async (input: {
   const proposal = data.proposal as SubscriptionRenewalProposal | undefined;
   const acceptance = data.acceptance as Parameters<typeof acceptSubscriptionRenewalProposal>[1] | undefined;
   if (!proposal || !acceptance || data.status !== 'accepted' ||
+      data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||
       ![3, 6, 12].includes(proposal.months) ||
       typeof proposal.previousContractId !== 'string' || !safe(proposal.previousContractId) ||
       typeof data.acceptedBy !== 'string' || data.acceptedBy !== input.authenticatedBuyerId ||
