@@ -1,3 +1,5 @@
+import { mapPrepaidRenewalHttpError } from './prepaidRenewalHttpErrors.js';
+
 /**
  * Isolated HTTP boundary for prepaid renewal reconciliation.
  * Dependencies are injected so route behavior can be tested without Firebase or Mercado Pago.
@@ -42,12 +44,19 @@ export const handlePrepaidRenewalReconciliation = async (
     });
     return;
   }
-  const status = await reconcile({
-    authorization: request.authorization,
-    storeId: body.storeId,
-    proposalId: body.proposalId,
-    paymentId: body.paymentId,
-  });
-  response.setHeader('cache-control', 'no-store, max-age=0');
-  response.status(200).json({ status });
+  try {
+    const status = await reconcile({
+      authorization: request.authorization,
+      storeId: body.storeId,
+      proposalId: body.proposalId,
+      paymentId: body.paymentId,
+    });
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    response.status(200).json({ status });
+  } catch (error) {
+    const mapped = mapPrepaidRenewalHttpError(error);
+    if (!mapped) throw error;
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    response.status(mapped.status).json(mapped.body);
+  }
 };
