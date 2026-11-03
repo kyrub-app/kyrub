@@ -91,17 +91,15 @@ test('Firestore: overlapping term cannot consume provider payment', async () => 
   ).get()).exists, false);
 });
 
-test('Firestore: delayed renewal start cannot create a gap in prepaid coverage', async () => {
-  const storeId = 'renew-emulator-gap';
-  await seed(storeId, 'original-gap');
-  const next = renewal(storeId, 'original-gap', 'mp-emulator-gap-1');
-  next.startsAt = '2028-02-01T00:00:00.000Z';
+test('Firestore: expired prepaid contract may restart after its original expiry', async () => {
+  const storeId = 'renew-emulator-expired';
+  await seed(storeId, 'original-expired');
+  const next = renewal(storeId, 'original-expired', 'mp-emulator-expired-1');
+  next.acceptedAt = '2028-02-01T00:00:00.000Z';
+  next.startsAt = '2028-02-02T00:00:00.000Z';
   next.expiresAt = addMonthsUtc(next.startsAt, 12);
-  await assert.rejects(persistVerifiedPrepaidRenewal(next), /INVALID_RENEWAL_CONTRACT_PERIOD/);
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'created');
   assert.equal((await adminDb.doc(
     `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
-  ).get()).exists, false);
-  assert.equal((await adminDb.doc(
-    `stores/${storeId}/prepaidRenewalSuccessors/original-gap`
-  ).get()).exists, false);
+  ).get()).get('startsAt'), next.startsAt);
 });
