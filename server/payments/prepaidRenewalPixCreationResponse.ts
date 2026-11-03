@@ -24,6 +24,9 @@ export const validatePrepaidRenewalPixCreationResponse = (input: {
   let body: Record<string, unknown>;
   try { body = JSON.parse(request.init.body); }
   catch { throw new Error('RENEWAL_PIX_CREATION_RESPONSE_MISMATCH'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('RENEWAL_PIX_CREATION_RESPONSE_MISMATCH');
+  }
   const result = response as Record<string, unknown>;
   const metadata = body.metadata as Record<string, unknown> | undefined;
   const id = String(result.id ?? '');
