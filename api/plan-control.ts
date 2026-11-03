@@ -50,6 +50,7 @@ import {
 import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
 import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
 import { acceptPrepaidRenewalWithFirebaseAuth } from '../server/payments/prepaidRenewalAcceptance.js';
+import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
@@ -396,6 +397,30 @@ export default async function handler(
           return;
         }
         response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
+        return;
+      }
+      case 'merchant.prepaid-renewal.propose': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (Object.keys(body).some(key => !['storeId', 'previousContractId'].includes(key)) ||
+            typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.previousContractId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.previousContractId)) {
+          response.status(400).json({
+            error: 'Informe a loja e o contrato anterior. Valores são obtidos do catálogo.',
+            code: 'INVALID_RENEWAL_PROPOSAL_REQUEST',
+          });
+          return;
+        }
+        const proposal = await createOwnerAuthorizedPrepaidRenewalProposal({
+          authorization,
+          storeId: body.storeId,
+          previousContractId: body.previousContractId,
+        });
+        response.status(201).json(proposal);
         return;
       }
       case 'merchant.prepaid-renewal.accept': {
