@@ -119,3 +119,39 @@ test('isolated executor rejects a fetched payment with a different ID', async ()
   }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
   assert.equal(bound, false);
 });
+
+test('concurrent isolated executions preserve one provider ID and immutable binding', async () => {
+  const provider = new Map<string, typeof response>();
+  let boundId: string | undefined;
+  let providerCreates = 0;
+  let successfulBindings = 0;
+  const execute = () => executeIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request, expectedCollectorId: '7654321',
+    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: boundId } }),
+    createPayment: async value => {
+      const key = value.init.headers['X-Idempotency-Key'];
+      const existing = provider.get(key);
+      if (existing) return existing;
+      providerCreates++;
+      provider.set(key, response);
+      return response;
+    },
+    fetchPayment: async id => {
+      assert.equal(id, '123456');
+      return response;
+    },
+    bindPayment: async id => {
+      if (boundId && boundId !== id) throw new Error('IMMUTABLE_BINDING_CONFLICT');
+      const action = boundId ? 'already_bound' as const : 'bound' as const;
+      boundId = id;
+      successfulBindings++;
+      return action;
+    },
+  });
+  const results = await Promise.all(Array.from({ length: 8 }, execute));
+  assert.equal(providerCreates, 1);
+  assert.equal(provider.size, 1);
+  assert.equal(boundId, '123456');
+  assert.equal(successfulBindings, 8);
+  assert.ok(results.every(result => result.paymentId === '123456'));
+});
