@@ -59,8 +59,9 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       const acceptance = data?.acceptance;
       if (!proposal || !acceptance || data?.status !== 'accepted' ||
           data.acceptedBy !== renewal.customerId ||
-          data.sellerCredentialScopeId !== (verifiedSellerCredentialScopeId ?? renewal.storeId) &&
-            data.sellerCredentialScopeId !== renewal.storeId ||
+          (data.sellerCredentialScopeId !== renewal.storeId &&
+           (verifiedSellerCredentialScopeId === undefined ||
+            data.sellerCredentialScopeId !== verifiedSellerCredentialScopeId)) ||
           data.paymentExternalReference !== `kyrub:prepaid-renewal:${renewal.storeId}:${acceptedProposalId}` ||
           data.acceptedAt !== renewal.acceptedAt ||
           data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||
