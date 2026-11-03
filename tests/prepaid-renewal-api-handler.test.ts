@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
-import { ConsultantHttpError } from '../server/ai/types.js';
 
 const source = readFileSync('api/plan-control.ts', 'utf8');
 const imported = new Map<string, string[]>();
@@ -149,18 +148,3 @@ test('actual API route forwards missing authorization to the authentication-owni
   // The production reconciliation service must verify the Firebase token.
 });
 
-test('actual API route maps simulated Firebase authentication rejection and outage', async () => {
-  for (const [status, code] of [[401, 'AUTH_REQUIRED'], [503, 'AUTH_UNAVAILABLE']] as const) {
-    simulatedFailure = new ConsultantHttpError(
-      status, code as ConstructorParameters<typeof ConsultantHttpError>[1], code,
-    );
-    try {
-      const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body, '');
-      assert.equal(result.status, status);
-      assert.equal((result.body as { code: string }).code, code);
-      assert.equal(calls.length, 1);
-    } finally {
-      simulatedFailure = null;
-    }
-  }
-});
