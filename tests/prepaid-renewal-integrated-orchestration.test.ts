@@ -276,6 +276,6 @@ test('authenticated renewal checkout preparation blocks wrong buyer and tampered
   reset(); data = { ...data, sellerCredentialScopeId: 'other-store' };
   await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
     authorization: 'Bearer valid', storeId, proposalId,
-  }), /RENEWAL_CHECKOUT_BINDING_MISSING/);
+  }), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
   assert.deepEqual(calls, ['auth', 'load', 'get']);
 });
