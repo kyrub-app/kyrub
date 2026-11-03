@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import {
   createSubscriptionRenewalProposal,
   type AcceptedSubscriptionContract,
@@ -33,6 +34,12 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   const productRef = adminDb.doc(`stores/${input.storeId}/products/${previous.productId}`);
   const productDoc = await productRef.get();
   if (!productDoc.exists) throw new Error('RENEWAL_PRODUCT_NOT_FOUND');
+  const modality = parseProductSaleModality(productDoc.get('saleModality'));
+  if (modality?.mode !== 'subscription' ||
+      modality.subscription?.billingInterval.unit !== 'month' ||
+      modality.subscription.billingInterval.count !== 1) {
+    throw new Error('RENEWAL_PRODUCT_NOT_MONTHLY_SUBSCRIPTION');
+  }
   if (previous.storeId !== input.storeId ||
       previous.contractId !== input.previousContractId ||
       !safeId(previous.customerId) || !safeId(previous.productId) ||
