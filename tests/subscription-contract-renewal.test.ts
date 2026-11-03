@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import { acceptSubscriptionRenewalProposal, confirmPrepaidRenewalPayment, createSubscriptionRenewalProposal, snapshotAcceptedPrepaidRenewal, resolveRenewalPaymentReplay } from '../shared/subscriptionContractRenewal.js';
 
@@ -117,4 +118,24 @@ test('renewal supports percentage discounts to two decimal places', () => {
   const proposal = createSubscriptionRenewalProposal(contract, 40000, 12.25);
   assert.equal(proposal.discountPercent, 12.25);
   assert.equal(proposal.totalDueMinor, 421200);
+});
+
+test('reconciliation API restricts request fields and delegates provider verification server-side', () => {
+  const source = readFileSync('api/plan-control.ts', 'utf8');
+  const start = source.indexOf("case 'merchant.prepaid-renewal.reconcile':");
+  const end = source.indexOf("case 'merchant.subscription.quote':", start);
+  assert.ok(start >= 0 && end > start);
+  const route = source.slice(start, end);
+  assert.match(route, /method !== 'POST'/);
+  assert.match(route, /\['storeId', 'proposalId', 'paymentId'\]/);
+  assert.match(route, /recordPrepaidRenewalWithVerifiedSources/);
+  assert.match(route, /authorization,/);
+  assert.doesNotMatch(route, /transaction_amount|collector_id|accessToken|acceptedTotalMinor/);
+});
+
+test('reconciliation API maps provider mismatch to HTTP 422', () => {
+  const source = readFileSync('api/plan-control.ts', 'utf8');
+  assert.match(source, /code === 'RENEWAL_PROVIDER_PAYMENT_MISMATCH'/);
+  assert.match(source, /code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' \? 422/);
+  assert.match(source, /status === 422 \? 'O pagamento não foi confirmado/);
 });
