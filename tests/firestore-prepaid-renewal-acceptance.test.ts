@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
@@ -41,6 +42,11 @@ test('Firestore: only the contract buyer can accept, and acceptance is idempoten
     storeId, proposalId, authenticatedBuyerId: customerId,
     acceptedTotalMinor: proposal.totalDueMinor,
   }), 'accepted');
+  const acceptedDocument = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalProposals/${proposalId}`
+  ).get();
+  assert.equal(acceptedDocument.get('acceptedProposalDigest'),
+    createHash('sha256').update(JSON.stringify(proposal)).digest('hex'));
   assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
     storeId, proposalId, authenticatedBuyerId: customerId,
     acceptedTotalMinor: proposal.totalDueMinor,
