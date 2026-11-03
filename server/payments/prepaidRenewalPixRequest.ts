@@ -51,3 +51,21 @@ export const buildPrepaidRenewalPixRequest = (input: {
     },
   };
 };
+
+
+/**
+ * Read-only retry gate. A payment executor must retrieve the originally
+ * persisted attempt and compare its exact request before making any POST.
+ * A matching idempotency key alone does not prove that the payload is stable.
+ */
+export const assertSamePrepaidRenewalPixAttempt = (
+  original: ReturnType<typeof buildPrepaidRenewalPixRequest>,
+  retry: ReturnType<typeof buildPrepaidRenewalPixRequest>,
+): void => {
+  if (original.path !== retry.path ||
+      original.init.method !== retry.init.method ||
+      original.init.headers['X-Idempotency-Key'] !== retry.init.headers['X-Idempotency-Key'] ||
+      original.init.body !== retry.init.body) {
+    throw new Error('RENEWAL_PIX_ATTEMPT_PAYLOAD_CHANGED');
+  }
+};
