@@ -175,7 +175,24 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
     expectedExternalReference: paymentExternalReference,
     expectedAmountMinor: stored.proposal.totalDueMinor,
   });
+  // A provider lookup is asynchronous: the accepted offer could change
+  // while the payment is being verified. Re-read before recording a contract.
+  const latest = await loadAcceptedPrepaidRenewal({
+    storeId: input.storeId,
+    proposalId: input.proposalId,
+    authenticatedBuyerId: buyer.uid,
+  });
+  if (JSON.stringify(latest.proposal) !== JSON.stringify(stored.proposal) ||
+      JSON.stringify(latest.acceptance) !== JSON.stringify(stored.acceptance)) {
+    throw new Error('RENEWAL_ACCEPTANCE_CHANGED');
+  }
+  const latestDoc = await proposalRef.get();
+  const latestData = latestDoc.data() as Record<string, unknown> | undefined;
+  if (!latestData || latestData.sellerCredentialScopeId !== sellerCredentialScopeId ||
+      latestData.paymentExternalReference !== paymentExternalReference) {
+    throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
+  }
   return recordVerifiedPrepaidRenewal({
-    ...stored, payment, newContractId,
+    ...latest, payment, newContractId,
   });
 };
