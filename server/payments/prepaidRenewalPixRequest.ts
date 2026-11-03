@@ -11,6 +11,7 @@ export const buildPrepaidRenewalPixRequest = (input: {
   acceptedTotalMinor: number;
   proposalTotalMinor: number;
   sellerCredentialScopeId: string;
+  verifiedSellerCredentialScopeId?: string;
   paymentExternalReference: string;
   payerEmail: string;
   expiresAt: string;
@@ -18,7 +19,7 @@ export const buildPrepaidRenewalPixRequest = (input: {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
       !/^[a-f0-9]{64}$/.test(input.proposalId) ||
       !input.acceptedBuyerId || input.acceptedBuyerId !== input.authenticatedBuyerId ||
-      input.sellerCredentialScopeId !== input.storeId ||
+      input.sellerCredentialScopeId !== (input.verifiedSellerCredentialScopeId ?? input.storeId) ||
       input.paymentExternalReference !==
         `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}` ||
       !Number.isSafeInteger(input.acceptedTotalMinor) ||
