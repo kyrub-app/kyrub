@@ -131,7 +131,7 @@ test('integrated renewal: wrong buyer cannot reach payment provider', async () =
 
 test('integrated renewal: altered checkout binding blocks provider lookup', async () => {
   reset(); data = { ...data, sellerCredentialScopeId: 'other-store' };
-  await assert.rejects(recordPrepaidRenewalWithVerifiedSources(request), /RENEWAL_CHECKOUT_BINDING_MISSING/);
+  await assert.rejects(recordPrepaidRenewalWithVerifiedSources(request), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
   assert.deepEqual(calls, ['auth', 'get', 'get']);
 });
 
