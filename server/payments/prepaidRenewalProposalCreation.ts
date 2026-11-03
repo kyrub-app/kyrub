@@ -63,12 +63,19 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   }
   // Until a trusted pricing adapter is wired, refuse prices that disagree
   // with the persisted product. Discounts still require seller authorization.
-  const storedPrice = productDoc.get('priceMinor');
-  if (!Number.isSafeInteger(storedPrice) || storedPrice <= 0 ||
-      storedPrice !== input.currentMonthlyPriceMinor) {
+  // Same canonical product fields and cent conversion as the merchant
+  // subscription quote: price (BRL) and contractDiscounts. Do not introduce
+  // a competing priceMinor / subscriptionContractOffers catalog.
+  const storedPrice = productDoc.get('price');
+  const rawMinor = typeof storedPrice === 'number' && Number.isFinite(storedPrice)
+    ? storedPrice * 100 : NaN;
+  const priceMinor = Math.round(rawMinor);
+  if (!Number.isSafeInteger(priceMinor) || priceMinor <= 0 ||
+      Math.abs(rawMinor - priceMinor) > 1e-7 ||
+      priceMinor !== input.currentMonthlyPriceMinor) {
     throw new Error('RENEWAL_PRICE_NOT_VERIFIED');
   }
-  const persistedOffers = parseSubscriptionContractDiscounts(productDoc.get('subscriptionContractOffers'));
+  const persistedOffers = parseSubscriptionContractDiscounts(productDoc.get('contractDiscounts'));
   if (!persistedOffers?.some(offer =>
     offer.months === previous.months && offer.discountPercent === input.discountPercent
   )) {
