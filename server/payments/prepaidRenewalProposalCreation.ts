@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import { parseProductSaleModality } from '../../shared/productSaleModality.js';
+import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers.js';
 import {
   createSubscriptionRenewalProposal,
   type AcceptedSubscriptionContract,
@@ -56,6 +57,12 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   if (!Number.isSafeInteger(storedPrice) || storedPrice <= 0 ||
       storedPrice !== input.currentMonthlyPriceMinor) {
     throw new Error('RENEWAL_PRICE_NOT_VERIFIED');
+  }
+  const persistedOffers = parseSubscriptionContractDiscounts(productDoc.get('subscriptionContractOffers'));
+  if (!persistedOffers?.some(offer =>
+    offer.months === previous.months && offer.discountPercent === input.discountPercent
+  )) {
+    throw new Error('RENEWAL_OFFER_NOT_AUTHORIZED');
   }
   const proposal = createSubscriptionRenewalProposal(
     previous, input.currentMonthlyPriceMinor, input.discountPercent
