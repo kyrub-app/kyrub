@@ -56,7 +56,9 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
     }
     // Defense in depth: reject overlapping terms or a duration that does not
     // match the fully prepaid renewal. The predecessor is read transactionally.
-    if (Date.parse(renewal.startsAt) < Date.parse(originalContractDoc.get('expiresAt')) ||
+    // Renewals extend the preceding prepaid term exactly; permitting a later
+    // start would silently discard already purchased continuity.
+    if (Date.parse(renewal.startsAt) !== Date.parse(originalContractDoc.get('expiresAt')) ||
         addMonthsUtc(renewal.startsAt, renewal.months) !== renewal.expiresAt) {
       throw new Error('INVALID_RENEWAL_CONTRACT_PERIOD');
     }
