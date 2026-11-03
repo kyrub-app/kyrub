@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
+import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
 import { createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
 import { persistAuthenticatedPrepaidRenewalAcceptance } from '../server/payments/prepaidRenewalAcceptance.js';
 import { loadAcceptedPrepaidRenewal, recordVerifiedPrepaidRenewal, recordStoredVerifiedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
@@ -273,4 +274,61 @@ test('Firestore integrated: persisted buyer acceptance becomes exactly one succe
   const binding = createHash('sha256').update('mercado_pago:' + paymentId).digest('hex');
   assert.equal((await adminDb.doc(`prepaidRenewalPaymentBindings/${binding}`).get())
     .get('contractId'), input.newContractId);
+});
+
+test('Firestore HTTP boundary: verified isolated payment creates one successor and replays safely', async () => {
+  const proposalId = createHash('sha256').update('http-emulator-' + Date.now()).digest('hex');
+  const proposal = await seed(proposalId);
+  await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${proposal.previousContractId}`).set({
+    contractId: proposal.previousContractId, storeId, customerId,
+    productId: proposal.productId, months: proposal.months,
+    totalPaidMinor: 30000, expiresAt: '2027-01-01T00:00:00.000Z',
+  });
+  await persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  });
+  const stored = await loadAcceptedPrepaidRenewal({ storeId, proposalId, authenticatedBuyerId: customerId });
+  const paymentId = String(Date.now()) + '42';
+  const contractId = 'http-successor-' + proposalId;
+  let verifiedCalls = 0;
+  const reconcile = async (input: { authorization: string; storeId: string; proposalId: string; paymentId: string }) => {
+    if (input.authorization !== 'Bearer isolated-buyer') throw new Error('AUTH_REQUIRED');
+    assert.equal(input.storeId, storeId);
+    assert.equal(input.proposalId, proposalId);
+    assert.equal(input.paymentId, paymentId);
+    verifiedCalls++;
+    return recordStoredVerifiedPrepaidRenewal({
+      storeId, proposalId, authenticatedBuyerId: customerId,
+      newContractId: contractId,
+      payment: {
+        id: paymentId, status: 'approved', amountMinor: proposal.totalDueMinor,
+        occurredAt: new Date(Date.parse(stored.acceptance.acceptedAt) + 60000).toISOString(),
+        verifiedByProvider: true,
+      },
+    });
+  };
+  const invoke = async (authorization: string, body: Record<string, unknown>) => {
+    const result: { code: number; body: unknown } = { code: 0, body: null };
+    const response = {
+      setHeader(_name: string, _value: string) {},
+      status(code: number) { result.code = code; return this; },
+      json(value: unknown) { result.body = value; },
+    };
+    await handlePrepaidRenewalReconciliation({ method: 'POST', authorization, body }, response, reconcile);
+    return result;
+  };
+  const body = { storeId, proposalId, paymentId };
+  const invalid = await invoke('Bearer isolated-buyer', { ...body, amountMinor: 1 });
+  assert.equal(invalid.code, 400);
+  assert.equal(verifiedCalls, 0);
+  const created = await invoke('Bearer isolated-buyer', body);
+  assert.equal(created.code, 200);
+  assert.deepEqual(created.body, { status: 'created' });
+  const replay = await invoke('Bearer isolated-buyer', body);
+  assert.deepEqual(replay.body, { status: 'already_recorded' });
+  assert.equal(verifiedCalls, 2);
+  const saved = await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${contractId}`).get();
+  assert.equal(saved.exists, true);
+  assert.equal(saved.get('providerPaymentId'), paymentId);
 });
