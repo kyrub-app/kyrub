@@ -42,6 +42,11 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
       modality.subscription.billingInterval.count !== 1) {
     throw new Error('RENEWAL_PRODUCT_NOT_MONTHLY_SUBSCRIPTION');
   }
+  if (!safeId(previous.customerId) || !safeId(previous.contractId) ||
+      !Number.isFinite(Date.parse(previous.expiresAt)) ||
+      !Number.isSafeInteger(previous.totalPaidMinor) || previous.totalPaidMinor <= 0) {
+    throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
+  }
   if (previous.storeId !== input.storeId ||
       previous.contractId !== input.previousContractId ||
       !safeId(previous.customerId) || !safeId(previous.productId) ||
