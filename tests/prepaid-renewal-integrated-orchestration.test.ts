@@ -26,6 +26,7 @@ const makeData = () => ({
 let data: Record<string, unknown> = makeData();
 let authenticatedUid = buyerId;
 let paymentFailure = false;
+let reservationMissing = false;
 let providerApprovedAt = '2026-11-01T11:00:00.000Z';
 let providerSideEffect: (() => void) | null = null;
 const calls: string[] = [];
@@ -89,7 +90,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
     if (name === 'get') {
       const path = String(value);
       if (path.endsWith('/prepaidRenewalPixAttempts/' + proposalId)) return {
-        exists: true, data: () => ({
+        exists: !reservationMissing, data: () => ({
           storeId, proposalId, status: 'reserved',
           idempotencyKey: `prepaid-renewal-${proposalId}`,
           requestDigest: 'b'.repeat(64),
@@ -122,7 +123,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
   };
 const request = { authorization: 'Bearer valid', storeId, proposalId, paymentId: '12345' };
 const reset = () => {
-  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerApprovedAt = '2026-11-01T11:00:00.000Z'; providerSideEffect = null;
+  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; reservationMissing = false; providerApprovedAt = '2026-11-01T11:00:00.000Z'; providerSideEffect = null;
 };
 
 test('integrated renewal: unauthenticated request never reaches Firestore or payment provider', async () => {
@@ -154,6 +155,18 @@ test('integrated renewal: verified payment reaches successor persistence only af
   const result = await recordPrepaidRenewalWithVerifiedSources(request);
   assert.equal(result, 'created');
   assert.deepEqual(calls, ['auth', 'get', 'get', 'provider', 'get', 'get', 'get', 'get', 'persist']);
+});
+
+test('integrated renewal: verified payment without a Pix reservation never persists', async () => {
+  reset();
+  reservationMissing = true;
+  await assert.rejects(
+    recordPrepaidRenewalWithVerifiedSources(request),
+    /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/,
+  );
+  assert.equal(calls.includes('provider'), true);
+  assert.equal(calls.includes('persist'), false);
+  assert.equal(persistedInputs.length, 0);
 });
 
 test('integrated renewal: acceptance changed during provider lookup never persists', async () => {
