@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { reservePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
+import { bindVerifiedPrepaidRenewalPixCreation } from '../server/payments/prepaidRenewalPixVerifiedCreationBinding.js';
 import { bindCreatedPrepaidRenewalPixPaymentId } from '../server/payments/prepaidRenewalPixPaymentIdBinding.js';
 import { buildPrepaidRenewalPixRequest } from '../server/payments/prepaidRenewalPixRequest.js';
 
@@ -132,4 +133,32 @@ test('Firestore emulator: concurrent distinct provider IDs cannot replace the fi
     `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
   ).get();
   assert.equal(attempt.get('providerPaymentId'), ids[winnerIndex]);
+});
+
+test('Firestore emulator: validated provider creation response binds once and rejects forged seller', async () => {
+  const storeId = 'renew-pix-emulator-verified-creation';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const body = JSON.parse(request.init.body) as Record<string, unknown>;
+  const response = {
+    id: 321654, status: 'pending', payment_method_id: 'pix',
+    currency_id: 'BRL', collector_id: 987654,
+    transaction_amount: body.transaction_amount,
+    external_reference: body.external_reference,
+  };
+  const bind = (trustedProviderResponse: unknown) =>
+    bindVerifiedPrepaidRenewalPixCreation({
+      storeId, proposalId, expectedCollectorId: '987654',
+      request, trustedProviderResponse,
+    });
+  await assert.rejects(bind({ ...response, collector_id: 123 }),
+    /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('providerPaymentId'), undefined);
+  assert.deepEqual(await bind(response), { paymentId: '321654', action: 'bound' });
+  assert.deepEqual(await bind(response), { paymentId: '321654', action: 'already_bound' });
+  await assert.rejects(bind({ ...response, id: 321655 }),
+    /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
+  assert.equal((await ref.get()).get('providerPaymentId'), '321654');
 });
