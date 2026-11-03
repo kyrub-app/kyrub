@@ -34,6 +34,7 @@ export const createSubscriptionRenewalProposal = (
 ): SubscriptionRenewalProposal => {
   if (!contract.contractId || !contract.customerId || !contract.productId || !contract.storeId ||
       !Number.isSafeInteger(contract.totalPaidMinor) || contract.totalPaidMinor < 0 ||
+      typeof contract.expiresAt !== 'string' ||
       !Number.isFinite(Date.parse(contract.expiresAt))) {
     throw new Error('INVALID_EXISTING_CONTRACT');
   }
