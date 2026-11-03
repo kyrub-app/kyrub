@@ -2,7 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { build } from 'esbuild';
-import { ConsultantHttpError } from '../server/ai/types.js';
 
 const source = readFileSync('api/plan-control.ts', 'utf8');
 const imported = new Map<string, string[]>();
@@ -11,8 +10,10 @@ for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'/g))
 }
 
 const calls: Array<{ name: string; input: unknown }> = [];
+let simulatedFailure: Error | null = null;
 const mock = (name: string, input: unknown) => {
   calls.push({ name, input });
+  if (simulatedFailure) throw simulatedFailure;
   if (name === 'recordPrepaidRenewalWithVerifiedSources') return 'created';
   if (name === 'createOwnerAuthorizedPrepaidRenewalProposal') return { proposalId: 'mock-proposal' };
   if (name === 'acceptPrepaidRenewalWithFirebaseAuth') return 'accepted';
@@ -101,4 +102,36 @@ test('actual API route validates owner proposal and buyer acceptance fields', as
   assert.equal(accepted.status, 200);
   assert.deepEqual(accepted.body, { status: 'accepted' });
   assert.equal(calls[0].name, 'acceptPrepaidRenewalWithFirebaseAuth');
+});
+
+test('actual API route maps simulated payment and contract errors without leaking a success response', async () => {
+  for (const [code, expected] of [
+    ['RENEWAL_PAYMENT_NOT_CONFIRMED', 422],
+    ['RENEWAL_PROVIDER_PAYMENT_MISMATCH', 422],
+    ['RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED', 422],
+    ['RENEWAL_SELLER_NOT_AUTHORIZED', 403],
+    ['RENEWAL_ACCEPTANCE_CHANGED', 409],
+    ['RENEWAL_PROPOSAL_NOT_FOUND', 404],
+  ] as const) {
+    simulatedFailure = new Error(code);
+    try {
+      const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body);
+      assert.equal(result.status, expected, code);
+      assert.equal((result.body as { code: string }).code, code);
+      assert.equal(calls.length, 1);
+    } finally {
+      simulatedFailure = null;
+    }
+  }
+});
+
+test('actual API route maps simulated invalid renewal input to 400', async () => {
+  simulatedFailure = new Error('INVALID_RENEWAL_IDENTITY');
+  try {
+    const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body);
+    assert.equal(result.status, 400);
+    assert.equal((result.body as { code: string }).code, 'INVALID_RENEWAL_IDENTITY');
+  } finally {
+    simulatedFailure = null;
+  }
 });
