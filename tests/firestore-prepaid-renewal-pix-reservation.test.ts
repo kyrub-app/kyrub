@@ -226,3 +226,23 @@ test('Firestore emulator: legacy Pix attempt without gate state cannot initiate 
   }), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
   assert.equal((await ref.get()).get('executionState'), undefined);
 });
+
+test('Firestore emulator: already-bound legacy attempt permits GET-only recovery', async () => {
+  const { claimPrepaidRenewalPixExecution } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-legacy-bound-gate';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  await ref.update({
+    executionState: (await import('firebase-admin/firestore')).FieldValue.delete(),
+    providerPaymentId: '987654',
+  });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  assert.equal(await claimPrepaidRenewalPixExecution({
+    storeId, proposalId, expectedRequestDigest,
+  }), 'fetch_bound');
+  assert.equal((await ref.get()).get('executionState'), undefined);
+  assert.equal((await ref.get()).get('providerPaymentId'), '987654');
+});
