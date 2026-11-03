@@ -12,6 +12,7 @@ const valid = () => ({
   attempt: {
     storeId: 'store-a', proposalId, status: 'reserved' as const,
     idempotencyKey: `prepaid-renewal-${proposalId}`,
+    providerPaymentId: '123456',
     requestDigest: 'b'.repeat(64), expiresAt,
   },
 });
@@ -27,6 +28,8 @@ test('missing reservation or wrong store, proposal, amount, expiry rejects', () 
     { attempt: { ...valid().attempt, expiresAt: '2026-11-03T12:31:00.000Z' } },
     { paymentApprovedAt: '2026-11-03T11:59:00.000Z' },
     { paymentId: 'not-a-provider-id' },
+    { attempt: { ...valid().attempt, providerPaymentId: undefined } },
+    { attempt: { ...valid().attempt, providerPaymentId: '987654' } },
   ]) {
     assert.throws(() => assertVerifiedPrepaidRenewalPixAttempt({
       ...valid(), ...change,
