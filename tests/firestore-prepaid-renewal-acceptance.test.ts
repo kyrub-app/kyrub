@@ -118,3 +118,49 @@ test('Firestore: payment approved before buyer acceptance cannot activate a rene
     `stores/${storeId}/prepaidSubscriptionContracts/contract-preapproval-rejected`
   ).get()).exists, false);
 });
+
+test('Firestore: verified early renewal preserves remaining prepaid coverage', async () => {
+  const proposalId = 'early-period';
+  const proposal = await seed(proposalId);
+  const predecessorId = proposal.previousContractId;
+  await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${predecessorId}`).set({
+    contractId: predecessorId, storeId, customerId,
+    productId: proposal.productId, months: proposal.months,
+    totalPaidMinor: 30000, expiresAt: '2027-01-01T00:00:00.000Z',
+  });
+  const result = await recordVerifiedPrepaidRenewal({
+    proposal,
+    acceptance: { storeId, customerId, acceptedTotalMinor: proposal.totalDueMinor,
+      acceptedAt: '2026-11-02T12:00:00.000Z' },
+    payment: { id: '900000000001', status: 'approved', amountMinor: proposal.totalDueMinor,
+      occurredAt: '2026-11-02T12:01:00.000Z', verifiedByProvider: true },
+    newContractId: 'contract-early-period',
+  });
+  assert.equal(result, 'created');
+  const saved = await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/contract-early-period`).get();
+  assert.equal(saved.get('startsAt'), '2027-01-01T00:00:00.000Z');
+  assert.equal(saved.get('expiresAt'), '2027-04-01T00:00:00.000Z');
+});
+
+test('Firestore: verified renewal after expiry starts at payment approval', async () => {
+  const proposalId = 'expired-period';
+  const proposal = await seed(proposalId);
+  const predecessorId = proposal.previousContractId;
+  await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${predecessorId}`).set({
+    contractId: predecessorId, storeId, customerId,
+    productId: proposal.productId, months: proposal.months,
+    totalPaidMinor: 30000, expiresAt: '2026-10-01T00:00:00.000Z',
+  });
+  const result = await recordVerifiedPrepaidRenewal({
+    proposal,
+    acceptance: { storeId, customerId, acceptedTotalMinor: proposal.totalDueMinor,
+      acceptedAt: '2026-11-02T12:00:00.000Z' },
+    payment: { id: '900000000002', status: 'approved', amountMinor: proposal.totalDueMinor,
+      occurredAt: '2026-11-02T12:01:00.000Z', verifiedByProvider: true },
+    newContractId: 'contract-expired-period',
+  });
+  assert.equal(result, 'created');
+  const saved = await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/contract-expired-period`).get();
+  assert.equal(saved.get('startsAt'), '2026-11-02T12:01:00.000Z');
+  assert.equal(saved.get('expiresAt'), '2027-02-02T12:01:00.000Z');
+});
