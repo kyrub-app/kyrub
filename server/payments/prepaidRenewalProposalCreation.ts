@@ -105,12 +105,12 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
       tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef), tx.get(productRef),
       tx.get(adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${previous.productId}`)),
     ]);
-    if (currentOfficialMapping.exists || currentProduct.get('platformPlanId') != null) {
-      throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
-    }
     if (!currentProduct.exists || currentProduct.get('publicationStatus') !== 'published' ||
         JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
       throw new Error('RENEWAL_PRODUCT_CHANGED');
+    }
+    if (currentOfficialMapping.exists || currentProduct.get('platformPlanId') != null) {
+      throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
     }
     if (!currentPrevious.exists || JSON.stringify(currentPrevious.data()) !== JSON.stringify(previousDoc.data())) {
       throw new Error('RENEWAL_PREVIOUS_CONTRACT_CHANGED');
