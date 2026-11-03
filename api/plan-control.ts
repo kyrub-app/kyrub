@@ -608,6 +608,26 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'merchant.prepaid-renewal.propose' ||
+        operation === 'merchant.prepaid-renewal.accept') {
+      const code = error instanceof Error ? error.message : '';
+      const status = code === 'RENEWAL_SELLER_NOT_AUTHORIZED' ? 403
+        : code === 'RENEWAL_PROPOSAL_NOT_FOUND' ||
+          code === 'RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND' ||
+          code === 'RENEWAL_PRODUCT_NOT_FOUND' ? 404
+        : code.startsWith('INVALID_RENEWAL_') ? 400
+        : code.startsWith('RENEWAL_') ? 409 : 0;
+      if (status) {
+        response.status(status).json({
+          error: status === 403 ? 'A operação exige o proprietário da loja.'
+            : status === 404 ? 'A proposta, contrato ou produto não foi encontrado.'
+            : status === 400 ? 'Os dados da renovação são inválidos.'
+            : 'Esta renovação não está disponível nas condições atuais.',
+          code,
+        });
+        return;
+      }
+    }
     if (operation === 'merchant.subscription.quote') {
       if (error instanceof OfficialPlanCheckoutRouteError) {
         const status = error.code === 'PRODUCT_NOT_FOUND' ? 404
