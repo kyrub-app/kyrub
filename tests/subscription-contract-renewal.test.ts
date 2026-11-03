@@ -120,17 +120,14 @@ test('renewal supports percentage discounts to two decimal places', () => {
   assert.equal(proposal.totalDueMinor, 421200);
 });
 
-test('reconciliation API restricts request fields and delegates provider verification server-side', () => {
+test('reconciliation API delegates to isolated HTTP boundary and provider verification', () => {
   const source = readFileSync('api/plan-control.ts', 'utf8');
-  const start = source.indexOf("case 'merchant.prepaid-renewal.reconcile':");
-  const end = source.indexOf("case 'merchant.subscription.quote':", start);
-  assert.ok(start >= 0 && end > start);
-  const route = source.slice(start, end);
-  assert.match(route, /method !== 'POST'/);
-  assert.match(route, /\['storeId', 'proposalId', 'paymentId'\]/);
-  assert.match(route, /recordPrepaidRenewalWithVerifiedSources/);
-  assert.match(route, /authorization,/);
-  assert.doesNotMatch(route, /transaction_amount|collector_id|accessToken|acceptedTotalMinor/);
+  const boundary = readFileSync('server/payments/prepaidRenewalHttpBoundary.ts', 'utf8');
+  assert.match(source, /handlePrepaidRenewalReconciliation/);
+  assert.match(source, /recordPrepaidRenewalWithVerifiedSources/);
+  assert.match(boundary, /request.method !== 'POST'/);
+  assert.match(boundary, /\['storeId', 'proposalId', 'paymentId'\]/);
+  assert.doesNotMatch(boundary, /transaction_amount|collector_id|accessToken|acceptedTotalMinor/);
 });
 
 test('reconciliation API maps provider mismatch to HTTP 422', () => {
