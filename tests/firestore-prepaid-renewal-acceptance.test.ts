@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
 import { persistAuthenticatedPrepaidRenewalAcceptance } from '../server/payments/prepaidRenewalAcceptance.js';
-import { loadAcceptedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
+import { loadAcceptedPrepaidRenewal, recordVerifiedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   throw new Error('RENEWAL_ACCEPTANCE_TEST_REQUIRES_FIRESTORE_EMULATOR');
@@ -95,4 +95,26 @@ test('Firestore: corrupted acceptance chronology cannot be replayed as valid', a
   await assert.rejects(loadAcceptedPrepaidRenewal({
     storeId, proposalId, authenticatedBuyerId: customerId,
   }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+});
+
+test('Firestore: payment approved before buyer acceptance cannot activate a renewal', async () => {
+  const proposalId = 'payment-before-acceptance';
+  const proposal = await seed(proposalId);
+  const acceptance = {
+    customerId, storeId, acceptedTotalMinor: proposal.totalDueMinor,
+    acceptedAt: '2026-11-02T12:00:00.000Z',
+  };
+  await assert.rejects(recordVerifiedPrepaidRenewal({
+    proposal, acceptance,
+    payment: {
+      id: '123456789', status: 'approved',
+      amountMinor: proposal.totalDueMinor,
+      occurredAt: '2026-11-02T11:59:59.000Z',
+      verifiedByProvider: true,
+    },
+    newContractId: 'contract-preapproval-rejected',
+  }), /RENEWAL_PAYMENT_PRECEDES_ACCEPTANCE/);
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/contract-preapproval-rejected`
+  ).get()).exists, false);
 });
