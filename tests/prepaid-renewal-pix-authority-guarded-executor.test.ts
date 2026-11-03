@@ -355,3 +355,34 @@ test('composed executor recovers expired bound payment through GET without a new
   assert.deepEqual(result, { paymentId: '123456', binding: 'already_bound' });
   assert.deepEqual(calls, ['reserve', 'owner-a:GET:/v1/payments/123456', 'bind:123456']);
 });
+
+test('composed executor retries provider timeout with identical Pix key and payload', async () => {
+  const calls: Array<{ method: string; path: string; body: string | undefined; key: string | undefined }> = [];
+  let attempts = 0;
+  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt }),
+    sellerScopedRequest: async (_scope, path, init) => {
+      const headers = init.headers as Record<string, string>;
+      calls.push({ method: init.method ?? '', path, body: init.body as string | undefined,
+        key: headers['X-Idempotency-Key'] });
+      attempts++;
+      if (attempts === 1) throw new Error('SIMULATED_TIMEOUT_AFTER_POST');
+      return response;
+    },
+    bindPayment: async id => {
+      assert.equal(attempts, 2);
+      assert.equal(id, '123456');
+      return 'bound';
+    },
+  });
+  await assert.rejects(execute(), /SIMULATED_TIMEOUT_AFTER_POST/);
+  assert.deepEqual(await execute(), { paymentId: '123456', binding: 'bound' });
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], calls[1]);
+  assert.equal(calls[0].method, 'POST');
+  assert.equal(calls[0].key, `prepaid-renewal-${proposalId}`);
+  assert.equal(calls[0].body, request.init.body);
+});
