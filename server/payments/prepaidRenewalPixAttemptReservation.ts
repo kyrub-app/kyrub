@@ -73,7 +73,7 @@ export const reservePrepaidRenewalPixAttempt = async (input: {
       existing: attemptSnapshot.exists
         ? attemptSnapshot.data() as PrepaidRenewalPixAttempt : null,
     });
-    if (result.action === 'create') tx.create(attemptRef, result.attempt);
+    if (result.action === 'create') tx.create(attemptRef, { ...result.attempt, executionState: 'idle' });
     return result;
   });
 };
