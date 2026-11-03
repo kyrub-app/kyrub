@@ -72,5 +72,16 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
   if (decision.action === 'fetch_existing' && paymentId !== decision.paymentId) {
     throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
   }
-  return { paymentId, binding: await input.bindPayment(paymentId) };
+  try {
+    return { paymentId, binding: await input.bindPayment(paymentId) };
+  } catch (error) {
+    // A successful provider POST followed by a failed Firestore binding is
+    // ambiguous: the payment may exist without a locally persisted ID.
+    // Never retry the POST. A bound GET path must not mutate this state.
+    if (decision.action !== 'fetch_existing' && input.markOutcomeUnknown) {
+      try { await input.markOutcomeUnknown(); }
+      catch { throw new Error('RENEWAL_PIX_OUTCOME_MARK_FAILED', { cause: error }); }
+    }
+    throw error;
+  }
 };
