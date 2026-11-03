@@ -15,7 +15,9 @@ const paymentKey = (value: string): string =>
 /**
  * Internal persistence boundary. Caller MUST authenticate buyer, verify payment
  * directly with the provider and validate proposal acceptance before calling.
- * No public API or checkout route invokes this helper yet.
+ * The authenticated reconciliation API reaches this helper only through
+ * provider verification and accepted-proposal validation. The Firestore
+ * transaction enforces payment uniqueness and predecessor successor locking.
  */
 export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
   Promise<'created' | 'already_recorded'> => {
