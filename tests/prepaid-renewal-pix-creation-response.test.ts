@@ -63,3 +63,17 @@ test('rejects provider metadata inconsistent with the accepted store and proposa
     },
   }), '123456');
 });
+
+for (const invalidBody of ['null', '[]', '"invalid"', '123', 'true']) {
+  test(`Pix creation response rejects malformed request JSON ${invalidBody}`, () => {
+    const malformedRequest = {
+      ...request,
+      init: { ...request.init, body: invalidBody },
+    };
+    assert.throws(() => validatePrepaidRenewalPixCreationResponse({
+      request: malformedRequest, response,
+      expectedStoreId: storeId, expectedProposalId: proposalId,
+      expectedCollectorId: '7654321',
+    }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  });
+}
