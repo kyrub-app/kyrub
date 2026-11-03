@@ -40,6 +40,11 @@ export const validatePrepaidRenewalPixCreationResponse = (input: {
       result.currency_id !== 'BRL' ||
       String(result.collector_id ?? '') !== expectedCollectorId ||
       result.external_reference !== body.external_reference ||
+      (result.metadata != null && (
+        typeof result.metadata !== 'object' ||
+        (result.metadata as Record<string, unknown>).kyrub_store_id !== expectedStoreId ||
+        (result.metadata as Record<string, unknown>).kyrub_prepaid_renewal_proposal_id !== expectedProposalId
+      )) ||
       !Number.isSafeInteger(Math.round(cents)) ||
       Math.abs(cents - Math.round(cents)) > 1e-6 ||
       cents !== Number(body.transaction_amount) * 100) {
