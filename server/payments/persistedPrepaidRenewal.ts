@@ -19,7 +19,7 @@ const paymentKey = (value: string): string =>
  * provider verification and accepted-proposal validation. The Firestore
  * transaction enforces payment uniqueness and predecessor successor locking.
  */
-export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string):
+export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string, verifiedSellerCredentialScopeId?: string):
   Promise<'created' | 'already_recorded'> => {
   if (![renewal.storeId, renewal.contractId, renewal.previousContractId,
     renewal.customerId, renewal.productId, renewal.providerPaymentId].every(safeId) ||
@@ -39,6 +39,9 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   if (acceptedProposalId !== undefined && !/^[a-f0-9]{64}$/.test(acceptedProposalId)) {
     throw new Error('INVALID_RENEWAL_PROPOSAL_ID');
   }
+  if (verifiedSellerCredentialScopeId !== undefined && !safeId(verifiedSellerCredentialScopeId)) {
+    throw new Error('INVALID_RENEWAL_SELLER_SCOPE');
+  }
   const acceptedProposalRef = acceptedProposalId
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalProposals/${acceptedProposalId}`) : null;
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
@@ -56,7 +59,8 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       const acceptance = data?.acceptance;
       if (!proposal || !acceptance || data?.status !== 'accepted' ||
           data.acceptedBy !== renewal.customerId ||
-          data.sellerCredentialScopeId !== renewal.storeId ||
+          data.sellerCredentialScopeId !== (verifiedSellerCredentialScopeId ?? renewal.storeId) &&
+            data.sellerCredentialScopeId !== renewal.storeId ||
           data.paymentExternalReference !== `kyrub:prepaid-renewal:${renewal.storeId}:${acceptedProposalId}` ||
           data.acceptedAt !== renewal.acceptedAt ||
           data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||
