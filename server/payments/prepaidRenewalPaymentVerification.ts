@@ -33,7 +33,7 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
   // OAuth identifies the expected merchant, but the payment itself must also
   // confirm that merchant as collector; a token scope alone is insufficient.
   const sellerToken = await getValidMercadoPagoStoreAccessToken(input.sellerCredentialScopeId);
-  const expectedCollectorId = sellerToken.externalAccountId;
+  const expectedCollectorId = String(sellerToken.externalAccountId ?? '');
   if (!/^\d+$/.test(expectedCollectorId)) {
     throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
   }
