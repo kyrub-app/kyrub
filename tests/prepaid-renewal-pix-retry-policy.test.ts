@@ -143,3 +143,27 @@ test('isolated recovery rejects changed payload before a provider retry', () => 
     storeId, proposalId, request: alteredRequest, persistedAttempt: attempt,
   }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
 });
+
+test('isolated provider simulation: concurrent recovery attempts share one payment', async () => {
+  const payments = new Map<string, { id: string; body: string }>();
+  let sequence = 0;
+  const post = async (key: string, body: string) => {
+    await Promise.resolve();
+    const prior = payments.get(key);
+    if (prior && prior.body !== body) throw new Error('PROVIDER_IDEMPOTENCY_CONFLICT');
+    if (prior) return prior;
+    const created = { id: String(++sequence), body };
+    payments.set(key, created);
+    return created;
+  };
+  const decisions = Array.from({ length: 8 }, () =>
+    decidePrepaidRenewalPixRecovery({
+      storeId, proposalId, request, persistedAttempt: attempt,
+    }));
+  assert.ok(decisions.every(decision => decision.action === 'retry_same_request'));
+  const results = await Promise.all(decisions.map(() =>
+    post(request.init.headers['X-Idempotency-Key'], request.init.body)));
+  assert.equal(payments.size, 1);
+  assert.equal(sequence, 1);
+  assert.ok(results.every(result => result.id === '1'));
+});
