@@ -164,3 +164,30 @@ test('Firestore: verified renewal after expiry starts at payment approval', asyn
   assert.equal(saved.get('startsAt'), '2026-11-02T12:01:00.000Z');
   assert.equal(saved.get('expiresAt'), '2027-02-02T12:01:00.000Z');
 });
+
+test('Firestore: replay of verified renewal preserves the original contract', async () => {
+  const proposalId = 'replay-period';
+  const proposal = await seed(proposalId);
+  const predecessorId = proposal.previousContractId;
+  await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${predecessorId}`).set({
+    contractId: predecessorId, storeId, customerId,
+    productId: proposal.productId, months: proposal.months,
+    totalPaidMinor: 30000, expiresAt: '2027-01-01T00:00:00.000Z',
+  });
+  const input = {
+    proposal,
+    acceptance: { storeId, customerId, acceptedTotalMinor: proposal.totalDueMinor,
+      acceptedAt: '2026-11-02T12:00:00.000Z' },
+    payment: { id: '900000000003', status: 'approved', amountMinor: proposal.totalDueMinor,
+      occurredAt: '2026-11-02T12:01:00.000Z', verifiedByProvider: true },
+    newContractId: 'contract-replay-period',
+  };
+  assert.equal(await recordVerifiedPrepaidRenewal(input), 'created');
+  const ref = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${input.newContractId}`);
+  const original = (await ref.get()).data();
+  assert.equal(await recordVerifiedPrepaidRenewal(input), 'already_recorded');
+  assert.deepEqual((await ref.get()).data(), original);
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalSuccessors/${predecessorId}`
+  ).get()).get('contractId'), input.newContractId);
+});
