@@ -19,7 +19,7 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
   expectedExternalReference: string;
   expectedAmountMinor: number;
 }) => {
-  if (!/^\d{1,32}$/.test(input.paymentId) ||
+  if (typeof input.paymentId !== 'string' || !/^\d{1,32}$/.test(input.paymentId) ||
       typeof input.sellerCredentialScopeId !== 'string' ||
       !input.sellerCredentialScopeId || input.sellerCredentialScopeId.length > 180 ||
       input.sellerCredentialScopeId.includes('/') ||
