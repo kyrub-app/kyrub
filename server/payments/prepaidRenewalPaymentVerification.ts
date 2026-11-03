@@ -29,14 +29,18 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
     input.sellerCredentialScopeId, `/v1/payments/${input.paymentId}`
   );
   const amount = payment.transaction_amount;
-  const amountMinor = typeof amount === 'number' && Number.isFinite(amount)
-    ? Math.round(amount * 100) : NaN;
+  const rawMinor = typeof amount === 'number' && Number.isFinite(amount)
+    ? amount * 100 : NaN;
+  const amountMinor = Number.isSafeInteger(Math.round(rawMinor)) &&
+    Math.abs(rawMinor - Math.round(rawMinor)) < 1e-6
+    ? Math.round(rawMinor) : NaN;
   if (String(payment.id) !== input.paymentId ||
       payment.status !== 'approved' ||
       payment.currency_id !== 'BRL' ||
       payment.external_reference !== input.expectedExternalReference ||
       amountMinor !== input.expectedAmountMinor ||
       typeof payment.date_approved !== 'string' ||
+      !/^\\d{4}-\\d{2}-\\d{2}T/.test(payment.date_approved) ||
       !Number.isFinite(Date.parse(payment.date_approved))) {
     throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH');
   }
