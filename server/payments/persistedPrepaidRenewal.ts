@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { assertVerifiedPrepaidRenewalPixAttempt } from './prepaidRenewalPixPaymentBinding.js';
+import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
 import {
   resolveRenewalPaymentReplay,
@@ -19,7 +21,7 @@ const paymentKey = (value: string): string =>
  * provider verification and accepted-proposal validation. The Firestore
  * transaction enforces payment uniqueness and predecessor successor locking.
  */
-export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string, verifiedSellerCredentialScopeId?: string):
+export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string, verifiedSellerCredentialScopeId?: string, verifiedPixPaymentApprovedAt?: string):
   Promise<'created' | 'already_recorded'> => {
   if (![renewal.storeId, renewal.contractId, renewal.previousContractId,
     renewal.customerId, renewal.productId, renewal.providerPaymentId].every(safeId) ||
@@ -42,6 +44,11 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   if (verifiedSellerCredentialScopeId !== undefined && !safeId(verifiedSellerCredentialScopeId)) {
     throw new Error('INVALID_RENEWAL_SELLER_SCOPE');
   }
+  if (verifiedPixPaymentApprovedAt !== undefined && (!acceptedProposalId || !Number.isFinite(Date.parse(verifiedPixPaymentApprovedAt)))) {
+    throw new Error('INVALID_RENEWAL_PIX_BINDING_INPUT');
+  }
+  const pixAttemptRef = verifiedPixPaymentApprovedAt && acceptedProposalId
+    ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalPixAttempts/${acceptedProposalId}`) : null;
   const acceptedProposalRef = acceptedProposalId
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalProposals/${acceptedProposalId}`) : null;
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
@@ -49,9 +56,10 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   const originalContractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.previousContractId}`);
   return adminDb.runTransaction(async tx => {
-    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc] = await Promise.all([
+    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef), tx.get(originalContractRef),
       acceptedProposalRef ? tx.get(acceptedProposalRef) : Promise.resolve(null),
+      pixAttemptRef ? tx.get(pixAttemptRef) : Promise.resolve(null),
     ]);
     if (acceptedProposalRef) {
       const data = acceptedProposalDoc?.data();
@@ -77,6 +85,19 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
           acceptance.acceptedAt !== renewal.acceptedAt) {
         throw new Error('RENEWAL_ACCEPTANCE_CHANGED');
       }
+    }
+    if (pixAttemptRef) {
+      assertVerifiedPrepaidRenewalPixAttempt({
+        storeId: renewal.storeId,
+        proposalId: acceptedProposalId!,
+        acceptedAt: renewal.acceptedAt,
+        acceptedTotalMinor: renewal.totalPaidMinor,
+        paymentId: renewal.providerPaymentId,
+        paymentApprovedAt: verifiedPixPaymentApprovedAt!,
+        verifiedPaymentAmountMinor: renewal.totalPaidMinor,
+        attempt: pixAttemptDoc?.exists
+          ? pixAttemptDoc.data() as PrepaidRenewalPixAttempt : null,
+      });
     }
     if (!originalContractDoc.exists ||
         originalContractDoc.get('storeId') !== renewal.storeId ||
