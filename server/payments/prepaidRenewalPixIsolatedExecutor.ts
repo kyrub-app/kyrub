@@ -19,6 +19,8 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
   createPayment: (request: PixRequest) => Promise<unknown>;
   fetchPayment: (paymentId: string) => Promise<unknown>;
   bindPayment: (paymentId: string) => Promise<'bound' | 'already_bound'>;
+  /** Optional internal gate; when provided, claim before an unbound provider POST. */
+  claimExecution?: () => Promise<'claimed' | 'fetch_bound'>;
 }): Promise<{ paymentId: string; binding: 'bound' | 'already_bound' }> => {
   const reserved = await input.reserve();
   const decision = decidePrepaidRenewalPixRecovery({
@@ -27,6 +29,12 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
     request: input.request,
     persistedAttempt: reserved.attempt,
   });
+  if (decision.action !== 'fetch_existing' && input.claimExecution) {
+    const claim = await input.claimExecution();
+    if (claim !== 'claimed') {
+      throw new Error('RENEWAL_PIX_EXECUTION_GATE_CONFLICT');
+    }
+  }
   const response = decision.action === 'fetch_existing'
     ? await input.fetchPayment(decision.paymentId!)
     : await input.createPayment(input.request);
