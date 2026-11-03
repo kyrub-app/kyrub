@@ -410,8 +410,8 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
   assert.equal((await contractRef.get()).exists, false);
   assert.equal((await paymentRef.get()).exists, false);
   await attemptRef.update({ providerPaymentId: paymentId });
-  assert.equal(await persist(), 'created');
-  assert.equal(await persist(), 'already_recorded');
+  const concurrent = await Promise.all([persist(), persist()]);
+  assert.deepEqual(concurrent.sort(), ['already_recorded', 'created']);
   assert.equal((await contractRef.get()).exists, true);
   assert.equal((await paymentRef.get()).get('providerPaymentId'), paymentId);
 });
