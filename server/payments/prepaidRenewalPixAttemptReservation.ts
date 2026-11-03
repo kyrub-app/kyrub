@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   decidePrepaidRenewalPixAttempt,
@@ -44,7 +45,10 @@ export const reservePrepaidRenewalPixAttempt = async (input: {
     }
     const acceptance = proposal.acceptance as Record<string, unknown> | undefined;
     const embeddedProposal = proposal.proposal as Record<string, unknown> | undefined;
-    if (acceptance?.customerId !== proposal.acceptedBy ||
+    if (typeof proposal.acceptedProposalDigest !== 'string' ||
+        proposal.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(embeddedProposal)).digest('hex') ||
+        proposal.acceptedAt !== acceptance?.acceptedAt ||
+        acceptance?.customerId !== proposal.acceptedBy ||
         acceptance?.storeId !== storeId ||
         embeddedProposal?.storeId !== storeId ||
         embeddedProposal?.customerId !== proposal.acceptedBy ||
@@ -68,5 +72,23 @@ export const reservePrepaidRenewalPixAttempt = async (input: {
     });
     if (result.action === 'create') tx.create(attemptRef, result.attempt);
     return result;
+  });
+};
+
+/**
+ * Authenticated entrypoint. The caller supplies only a bearer token and
+ * proposal locator, never a seller token, amount, buyer identity or Pix body.
+ * Still internal-only: no HTTP route or Mercado Pago execution is exposed.
+ */
+export const reserveAuthenticatedPrepaidRenewalPixAttempt = async (input: {
+  authorization: string | null | undefined;
+  storeId: string;
+  proposalId: string;
+}) => {
+  const { prepareAuthenticatedPrepaidRenewalPix } =
+    await import('./prepaidRenewalCheckoutPreparation.js');
+  const request = await prepareAuthenticatedPrepaidRenewalPix(input);
+  return reservePrepaidRenewalPixAttempt({
+    storeId: input.storeId, proposalId: input.proposalId, request,
   });
 };
