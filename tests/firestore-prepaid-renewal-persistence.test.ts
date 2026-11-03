@@ -127,3 +127,25 @@ test('Firestore: concurrent distinct payments cannot create two successors for o
   ).get()));
   assert.equal(contracts.filter(doc => doc.exists).length, 1);
 });
+
+test('Firestore: competing renewals do not consume the losing payment', async () => {
+  const storeId = 'renew-emulator-loser-payment';
+  await seed(storeId, 'original-loser');
+  const winner = renewal(storeId, 'original-loser', 'mp-emulator-winner-1');
+  const loser = {
+    ...renewal(storeId, 'original-loser', 'mp-emulator-loser-2'),
+    contractId: 'renewed-original-loser-second',
+  };
+  assert.equal(await persistVerifiedPrepaidRenewal(winner), 'created');
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(loser),
+    /RENEWAL_PREDECESSOR_ALREADY_RENEWED/,
+  );
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${loser.contractId}`
+  ).get()).exists, false);
+  // A rejected payment remains unbound, and cannot accidentally be treated
+  // as a successful second renewal during subsequent reconciliation.
+  const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
+  assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === loser.providerPaymentId), false);
+});
