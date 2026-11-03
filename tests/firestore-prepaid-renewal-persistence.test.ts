@@ -210,3 +210,26 @@ test('Firestore: valid accepted proposal is checked and renewed atomically', asy
     `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
   ).get()).exists, true);
 });
+
+test('Firestore: simultaneous cross-store attempts cannot consume one payment twice', async () => {
+  const firstStore = 'renew-emulator-race-store-a';
+  const secondStore = 'renew-emulator-race-store-b';
+  await Promise.all([
+    seed(firstStore, 'original-race-a'),
+    seed(secondStore, 'original-race-b'),
+  ]);
+  const paymentId = 'mp-emulator-race-cross-store-1';
+  const first = renewal(firstStore, 'original-race-a', paymentId);
+  const second = renewal(secondStore, 'original-race-b', paymentId);
+  const outcomes = await Promise.allSettled([
+    persistVerifiedPrepaidRenewal(first),
+    persistVerifiedPrepaidRenewal(second),
+  ]);
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+  const [firstContract, secondContract] = await Promise.all([
+    adminDb.doc(`stores/${firstStore}/prepaidSubscriptionContracts/${first.contractId}`).get(),
+    adminDb.doc(`stores/${secondStore}/prepaidSubscriptionContracts/${second.contractId}`).get(),
+  ]);
+  assert.equal(Number(firstContract.exists) + Number(secondContract.exists), 1);
+});
