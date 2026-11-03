@@ -14,12 +14,15 @@ export const assertVerifiedPrepaidRenewalPixAttempt = (input: {
   paymentId: string;
   paymentApprovedAt: string;
   verifiedPaymentAmountMinor: number;
-  attempt: PrepaidRenewalPixAttempt | null;
+  attempt: (PrepaidRenewalPixAttempt & { providerPaymentId?: string }) | null;
 }): void => {
   const { storeId, proposalId, attempt } = input;
   if (!attempt ||
       attempt.storeId !== storeId || attempt.proposalId !== proposalId ||
       attempt.status !== 'reserved' ||
+      // The future isolated payment executor must atomically persist the ID
+      // returned by Mercado Pago. A mere reservation is not proof of payment.
+      attempt.providerPaymentId !== input.paymentId ||
       attempt.idempotencyKey !== `prepaid-renewal-${proposalId}` ||
       !/^[a-f0-9]{64}$/.test(attempt.requestDigest) ||
       !/^\d{1,32}$/.test(input.paymentId) ||
