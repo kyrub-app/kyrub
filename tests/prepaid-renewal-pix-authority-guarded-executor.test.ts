@@ -172,3 +172,33 @@ test('executor plus scoped transport refuses forged collector before binding', a
   assert.deepEqual(network, ['/v1/payments']);
   assert.deepEqual(calls, ['reserve']);
 });
+
+test('bound attempt uses seller-scoped GET and never issues a second POST', async () => {
+  const network: string[] = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (scope, path, init) => {
+      assert.equal(scope, 'owner-a');
+      network.push(`${init.method} ${path}`);
+      return response;
+    },
+  });
+  const { calls, execute } = run({
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    createPayment: adapter.createPayment,
+    fetchPayment: adapter.fetchPayment,
+    bindPayment: async id => {
+      calls.push('bind');
+      assert.equal(id, '123456');
+      return 'already_bound' as const;
+    },
+  });
+  assert.deepEqual(await execute(), { paymentId: '123456', binding: 'already_bound' });
+  assert.deepEqual(network, ['GET /v1/payments/123456']);
+  assert.deepEqual(calls, ['reserve', 'bind']);
+});
