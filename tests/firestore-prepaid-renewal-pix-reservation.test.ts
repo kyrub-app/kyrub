@@ -109,3 +109,27 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
     /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/,
   );
 });
+
+test('Firestore emulator: concurrent distinct provider IDs cannot replace the first binding', async () => {
+  const storeId = 'renew-pix-emulator-binding-race';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const ids = ['100001', '100002'];
+  const outcomes = await Promise.allSettled(ids.map(paymentId =>
+    bindCreatedPrepaidRenewalPixPaymentId({
+      storeId, proposalId, paymentId, expectedRequestDigest,
+    })
+  ));
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+  const winnerIndex = outcomes.findIndex(result => result.status === 'fulfilled');
+  const loser = outcomes.find(result => result.status === 'rejected');
+  assert.match(String(loser?.status === 'rejected' ? loser.reason : ''),
+    /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('providerPaymentId'), ids[winnerIndex]);
+});
