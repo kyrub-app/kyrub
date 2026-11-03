@@ -93,6 +93,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
         exists: !reservationMissing, data: () => ({
           storeId, proposalId, status: 'reserved',
           idempotencyKey: `prepaid-renewal-${proposalId}`,
+          providerPaymentId: '12345',
           requestDigest: 'b'.repeat(64),
           expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString(),
         }),
