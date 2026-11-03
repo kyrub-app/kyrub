@@ -1,0 +1,76 @@
+import assert from 'node:assert/strict';
+import { test } from 'node:test';
+import { adminDb } from '../server/firebaseAdmin.js';
+import { createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
+import { persistAuthenticatedPrepaidRenewalAcceptance } from '../server/payments/prepaidRenewalAcceptance.js';
+import { loadAcceptedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
+
+if (!process.env.FIRESTORE_EMULATOR_HOST) {
+  throw new Error('RENEWAL_ACCEPTANCE_TEST_REQUIRES_FIRESTORE_EMULATOR');
+}
+process.env.FIREBASE_PROJECT_ID = 'kyrub-security-test';
+
+const storeId = 'renew-acceptance-emulator';
+const customerId = 'renew-acceptance-customer';
+const proposalFor = (previousContractId: string) => createSubscriptionRenewalProposal({
+  contractId: previousContractId,
+  storeId, customerId, productId: 'product-subscription', months: 3,
+  monthlyBasePriceMinor: 10000, discountPercent: 0, totalPaidMinor: 30000,
+  acceptedAt: '2026-01-01T00:00:00.000Z',
+  expiresAt: '2027-01-01T00:00:00.000Z',
+}, 12000);
+
+const seed = async (proposalId: string, createdAt = '2026-11-01T00:00:00.000Z') => {
+  const proposal = proposalFor('previous-' + proposalId);
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'awaiting_acceptance', proposal, createdAt,
+    sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+  });
+  return proposal;
+};
+
+test('Firestore: only the contract buyer can accept, and acceptance is idempotent', async () => {
+  const proposalId = 'buyer-replay';
+  const proposal = await seed(proposalId);
+  await assert.rejects(persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: 'another-customer',
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+  assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), 'accepted');
+  assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), 'already_accepted');
+  const stored = await loadAcceptedPrepaidRenewal({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+  });
+  assert.equal(stored.proposal.totalDueMinor, proposal.totalDueMinor);
+  await assert.rejects(loadAcceptedPrepaidRenewal({
+    storeId, proposalId, authenticatedBuyerId: 'another-customer',
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+});
+
+test('Firestore: mismatched total never records acceptance', async () => {
+  const proposalId = 'wrong-amount';
+  const proposal = await seed(proposalId);
+  await assert.rejects(persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor - 1,
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalProposals/${proposalId}`
+  ).get()).get('status'), 'awaiting_acceptance');
+});
+
+test('Firestore: acceptance cannot precede persisted proposal creation', async () => {
+  const proposalId = 'future-proposal';
+  const proposal = await seed(proposalId, '2099-01-01T00:00:00.000Z');
+  await assert.rejects(persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), /RENEWAL_ACCEPTANCE_PRECEDES_PROPOSAL/);
+});
