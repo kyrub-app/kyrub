@@ -21,6 +21,7 @@ export const executeScopedIsolatedPrepaidRenewalPix = async (input: {
   reserve: () => Promise<{ attempt: PrepaidRenewalPixAttempt }>;
   bindPayment: (paymentId: string) => Promise<'bound' | 'already_bound'>;
   claimExecution?: () => Promise<'claimed' | 'fetch_bound'>;
+  markOutcomeUnknown?: () => Promise<void>;
   sellerScopedRequest: (credentialScopeId: string, path: string, init: RequestInit) => Promise<unknown>;
 }) => {
   const transport = createAuthorityCheckedPrepaidRenewalPixTransport(input);
