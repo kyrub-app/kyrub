@@ -51,6 +51,7 @@ import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
 import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
 import { acceptPrepaidRenewalWithFirebaseAuth } from '../server/payments/prepaidRenewalAcceptance.js';
 import { recordPrepaidRenewalWithVerifiedSources } from '../server/payments/prepaidRenewalActivation.js';
+import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
 import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
@@ -455,33 +456,11 @@ export default async function handler(
         return;
       }
       case 'merchant.prepaid-renewal.reconcile': {
-        if (method !== 'POST') {
-          methodNotAllowed(response);
-          return;
-        }
-        // Reconciliation does not initiate a charge. The provider payment is
-        // fetched server-side and must match the accepted stored proposal.
-        if (Object.keys(body).some(key => !['storeId', 'proposalId', 'paymentId'].includes(key)) ||
-            typeof body.storeId !== 'string' ||
-            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
-            typeof body.proposalId !== 'string' ||
-            !/^[a-f0-9]{64}$/.test(body.proposalId) ||
-            typeof body.paymentId !== 'string' ||
-            !/^\d{1,32}$/.test(body.paymentId)) {
-          response.status(400).json({
-            error: 'Informe loja, proposta aceita e identificador do pagamento.',
-            code: 'INVALID_RENEWAL_RECONCILIATION_REQUEST',
-          });
-          return;
-        }
-        const status = await recordPrepaidRenewalWithVerifiedSources({
-          authorization,
-          storeId: body.storeId,
-          proposalId: body.proposalId,
-          paymentId: body.paymentId,
-        });
-        response.setHeader('cache-control', 'no-store, max-age=0');
-        response.status(200).json({ status });
+        await handlePrepaidRenewalReconciliation(
+          { method, body, authorization },
+          response,
+          recordPrepaidRenewalWithVerifiedSources,
+        );
         return;
       }
       case 'merchant.subscription.quote': {
