@@ -63,7 +63,7 @@ export const loadAcceptedPrepaidRenewal = async (input: {
   const proposal = data.proposal as SubscriptionRenewalProposal | undefined;
   const acceptance = data.acceptance as Parameters<typeof acceptSubscriptionRenewalProposal>[1] | undefined;
   if (!proposal || !acceptance || data.status !== 'accepted' ||
-      !['3','6','12'].includes(String(proposal.months)) ||
+      ![3, 6, 12].includes(proposal.months) ||
       typeof proposal.previousContractId !== 'string' || !safe(proposal.previousContractId) ||
       typeof data.acceptedBy !== 'string' || data.acceptedBy !== input.authenticatedBuyerId ||
       proposal.storeId !== input.storeId ||
@@ -71,7 +71,10 @@ export const loadAcceptedPrepaidRenewal = async (input: {
       acceptance.customerId !== input.authenticatedBuyerId ||
       acceptance.storeId !== input.storeId ||
       data.acceptedAt !== acceptance.acceptedAt ||
-      !Number.isSafeInteger(proposal.totalDueMinor) || proposal.totalDueMinor <= 0) {
+      !Number.isSafeInteger(proposal.totalDueMinor) || proposal.totalDueMinor <= 0 ||
+      acceptance.acceptedTotalMinor !== proposal.totalDueMinor ||
+      typeof acceptance.acceptedAt !== 'string' ||
+      !Number.isFinite(Date.parse(acceptance.acceptedAt))) {
     throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
   }
   acceptSubscriptionRenewalProposal(proposal, acceptance);
