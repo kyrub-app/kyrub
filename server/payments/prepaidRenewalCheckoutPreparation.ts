@@ -32,7 +32,8 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
       data.acceptedBy !== buyer.uid ||
       JSON.stringify(data.proposal) !== JSON.stringify(proposal) ||
       JSON.stringify(data.acceptance) !== JSON.stringify(acceptance) ||
-      data.sellerCredentialScopeId !== input.storeId ||
+      (typeof data.sellerCredentialScopeId !== 'string' ||
+       !data.sellerCredentialScopeId || data.sellerCredentialScopeId.includes('/')) ||
       data.paymentExternalReference !==
         `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
