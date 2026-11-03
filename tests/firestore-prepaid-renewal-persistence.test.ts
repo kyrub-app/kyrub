@@ -103,3 +103,27 @@ test('Firestore: expired prepaid contract may restart after its original expiry'
     `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
   ).get()).get('startsAt'), next.startsAt);
 });
+
+test('Firestore: concurrent distinct payments cannot create two successors for one contract', async () => {
+  const storeId = 'renew-emulator-competing-payments';
+  await seed(storeId, 'original-competing');
+  const first = renewal(storeId, 'original-competing', 'mp-emulator-competing-1');
+  const second = {
+    ...renewal(storeId, 'original-competing', 'mp-emulator-competing-2'),
+    contractId: 'renewed-original-competing-second',
+  };
+  const outcomes = await Promise.allSettled([
+    persistVerifiedPrepaidRenewal(first),
+    persistVerifiedPrepaidRenewal(second),
+  ]);
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(result => result.status === 'rejected').length, 1);
+  const successor = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalSuccessors/original-competing`
+  ).get();
+  assert.ok([first.contractId, second.contractId].includes(successor.get('contractId')));
+  const contracts = await Promise.all([first, second].map(item => adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${item.contractId}`
+  ).get()));
+  assert.equal(contracts.filter(doc => doc.exists).length, 1);
+});
