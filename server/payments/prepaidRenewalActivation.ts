@@ -152,6 +152,14 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
   const proposalDoc = await proposalRef.get();
   if (!proposalDoc.exists) throw new Error('RENEWAL_PROPOSAL_NOT_FOUND');
   const data = proposalDoc.data() as Record<string, unknown>;
+  // Recheck the accepted snapshot immediately before consulting the provider.
+  // Never reconcile against a proposal that was replaced or reopened.
+  if (data.status !== 'accepted' ||
+      data.acceptedBy !== buyer.uid ||
+      JSON.stringify(data.proposal) !== JSON.stringify(stored.proposal) ||
+      JSON.stringify(data.acceptance) !== JSON.stringify(stored.acceptance)) {
+    throw new Error('RENEWAL_ACCEPTANCE_CHANGED');
+  }
   const sellerCredentialScopeId = data.sellerCredentialScopeId;
   const paymentExternalReference = data.paymentExternalReference;
   if (typeof sellerCredentialScopeId !== 'string' ||
