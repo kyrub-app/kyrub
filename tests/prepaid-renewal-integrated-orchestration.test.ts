@@ -26,6 +26,7 @@ const makeData = () => ({
 let data: Record<string, unknown> = makeData();
 let authenticatedUid = buyerId;
 let paymentFailure = false;
+let providerSideEffect: (() => void) | null = null;
 const calls: string[] = [];
 
 const bundled = await build({
@@ -83,6 +84,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
     }
     if (name === 'provider') {
       if (paymentFailure) throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH');
+      providerSideEffect?.();
       const input = value as Record<string, unknown>;
       assert.equal(input.sellerCredentialScopeId, storeId);
       assert.equal(input.expectedExternalReference, reference);
@@ -97,7 +99,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
   };
 const request = { authorization: 'Bearer valid', storeId, proposalId, paymentId: '12345' };
 const reset = () => {
-  calls.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false;
+  calls.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerSideEffect = null;
 };
 
 test('integrated renewal: unauthenticated request never reaches Firestore or payment provider', async () => {
@@ -129,4 +131,20 @@ test('integrated renewal: verified payment reaches successor persistence only af
   const result = await recordPrepaidRenewalWithVerifiedSources(request);
   assert.equal(result, 'created');
   assert.deepEqual(calls, ['auth', 'get', 'get', 'provider', 'get', 'get', 'get', 'persist']);
+});
+
+test('integrated renewal: acceptance changed during provider lookup never persists', async () => {
+  reset();
+  providerSideEffect = () => {
+    data = { ...data, acceptance: { ...acceptance, acceptedAt: '2026-11-01T10:30:00.000Z' } };
+  };
+  await assert.rejects(recordPrepaidRenewalWithVerifiedSources(request), /RENEWAL_ACCEPTANCE_REQUIRED|RENEWAL_ACCEPTANCE_CHANGED/);
+  assert.equal(calls.includes('persist'), false);
+});
+
+test('integrated renewal: checkout binding changed during provider lookup never persists', async () => {
+  reset();
+  providerSideEffect = () => { data = { ...data, paymentExternalReference: 'replaced-reference' }; };
+  await assert.rejects(recordPrepaidRenewalWithVerifiedSources(request), /RENEWAL_CHECKOUT_BINDING_MISSING/);
+  assert.equal(calls.includes('persist'), false);
 });
