@@ -19,7 +19,7 @@ const paymentKey = (value: string): string =>
  * provider verification and accepted-proposal validation. The Firestore
  * transaction enforces payment uniqueness and predecessor successor locking.
  */
-export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
+export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string):
   Promise<'created' | 'already_recorded'> => {
   if (![renewal.storeId, renewal.contractId, renewal.previousContractId,
     renewal.customerId, renewal.productId, renewal.providerPaymentId].every(safeId) ||
@@ -36,14 +36,41 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
       Date.parse(renewal.expiresAt) <= Date.parse(renewal.startsAt)) {
     throw new Error('INVALID_RENEWAL_PERSISTENCE_INPUT');
   }
+  if (acceptedProposalId !== undefined && !/^[a-f0-9]{64}$/.test(acceptedProposalId)) {
+    throw new Error('INVALID_RENEWAL_PROPOSAL_ID');
+  }
+  const acceptedProposalRef = acceptedProposalId
+    ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalProposals/${acceptedProposalId}`) : null;
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
   const paymentRef = adminDb.doc(`prepaidRenewalPaymentBindings/${paymentKey(renewal.providerPaymentId)}`);
   const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   const originalContractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.previousContractId}`);
   return adminDb.runTransaction(async tx => {
-    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc] = await Promise.all([
+    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef), tx.get(originalContractRef),
+      acceptedProposalRef ? tx.get(acceptedProposalRef) : Promise.resolve(null),
     ]);
+    if (acceptedProposalRef) {
+      const data = acceptedProposalDoc?.data();
+      const proposal = data?.proposal;
+      const acceptance = data?.acceptance;
+      if (!proposal || !acceptance || data?.status !== 'accepted' ||
+          data.acceptedBy !== renewal.customerId ||
+          data.acceptedAt !== renewal.acceptedAt ||
+          data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||
+          proposal.storeId !== renewal.storeId ||
+          proposal.customerId !== renewal.customerId ||
+          proposal.previousContractId !== renewal.previousContractId ||
+          proposal.productId !== renewal.productId ||
+          proposal.months !== renewal.months ||
+          proposal.totalDueMinor !== renewal.totalPaidMinor ||
+          acceptance.customerId !== renewal.customerId ||
+          acceptance.storeId !== renewal.storeId ||
+          acceptance.acceptedTotalMinor !== renewal.totalPaidMinor ||
+          acceptance.acceptedAt !== renewal.acceptedAt) {
+        throw new Error('RENEWAL_ACCEPTANCE_CHANGED');
+      }
+    }
     if (!originalContractDoc.exists ||
         originalContractDoc.get('storeId') !== renewal.storeId ||
         originalContractDoc.get('contractId') !== renewal.previousContractId ||
