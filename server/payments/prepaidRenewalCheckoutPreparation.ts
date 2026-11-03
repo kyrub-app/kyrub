@@ -2,6 +2,8 @@ import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { loadAcceptedPrepaidRenewal } from './prepaidRenewalActivation.js';
 import { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
+import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
 
 /**
  * Read-only authenticated checkout preparation. Does not contact Mercado Pago
@@ -35,6 +37,14 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
         `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
+  const authority = await resolveCommercialRecipientAuthority({
+    context: 'store_subscription', canonicalStoreId: input.storeId,
+  });
+  const recipient = resolvePrepaidRenewalRecipientBinding({
+    storeId: input.storeId,
+    storedSellerCredentialScopeId: data.sellerCredentialScopeId,
+    authority,
+  });
   return buildPrepaidRenewalPixRequest({
     storeId: input.storeId,
     proposalId: input.proposalId,
@@ -42,7 +52,8 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
     authenticatedBuyerId: buyer.uid,
     acceptedTotalMinor: acceptance.acceptedTotalMinor,
     proposalTotalMinor: proposal.totalDueMinor,
-    sellerCredentialScopeId: data.sellerCredentialScopeId as string,
+    sellerCredentialScopeId: recipient.credentialScopeId,
+    verifiedSellerCredentialScopeId: recipient.credentialScopeId,
     paymentExternalReference: data.paymentExternalReference as string,
     payerEmail: buyer.email,
     expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
