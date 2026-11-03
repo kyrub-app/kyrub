@@ -104,9 +104,8 @@ export const loadAcceptedPrepaidRenewal = async (input: {
       typeof data.createdAt !== 'string' ||
       !Number.isFinite(Date.parse(data.createdAt)) ||
       typeof acceptance.acceptedAt !== 'string' ||
-      Date.parse(acceptance.acceptedAt) < Date.parse(data.createdAt) ||
-      typeof acceptance.acceptedAt !== 'string' ||
-      !Number.isFinite(Date.parse(acceptance.acceptedAt))) {
+      !Number.isFinite(Date.parse(acceptance.acceptedAt)) ||
+      Date.parse(acceptance.acceptedAt) < Date.parse(data.createdAt)) {
     throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
   }
   acceptSubscriptionRenewalProposal(proposal, acceptance);
