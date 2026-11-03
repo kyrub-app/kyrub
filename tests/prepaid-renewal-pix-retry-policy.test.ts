@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { decidePrepaidRenewalPixRecovery } from '../server/payments/prepaidRenewalPixRetryPolicy.js';
+import { decidePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttempt.js';
 
 const storeId = 'store-a';
 const proposalId = 'b'.repeat(64);
@@ -90,3 +91,15 @@ test('null JSON body fails with controlled conflict rather than a runtime TypeEr
     },
   }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
 });
+
+for (const invalidBody of ['null', '[]', '"invalid"', '123', 'true']) {
+  test(`Pix attempt reservation rejects non-object JSON ${invalidBody} with controlled error`, () => {
+    const malformedRequest = {
+      ...request,
+      init: { ...request.init, body: invalidBody },
+    };
+    assert.throws(() => decidePrepaidRenewalPixAttempt({
+      storeId, proposalId, request: malformedRequest, existing: null,
+    }), /RENEWAL_PIX_ATTEMPT_INVALID/);
+  });
+}
