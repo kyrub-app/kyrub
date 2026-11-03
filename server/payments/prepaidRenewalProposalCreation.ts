@@ -102,7 +102,8 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     const [existing, alreadyRenewed, currentPrevious, currentProduct] = await Promise.all([
       tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef), tx.get(productRef),
     ]);
-    if (!currentProduct.exists || JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
+    if (!currentProduct.exists || currentProduct.get('publicationStatus') !== 'published' ||
+        JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
       throw new Error('RENEWAL_PRODUCT_CHANGED');
     }
     if (!currentPrevious.exists || JSON.stringify(currentPrevious.data()) !== JSON.stringify(previousDoc.data())) {
