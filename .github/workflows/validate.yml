@@ -64,6 +64,7 @@ jobs:
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts
           tests/order-approval-routing.test.ts
+          tests/prepaid-renewal-api-handler.test.ts
           tests/prepaid-renewal-http-boundary.test.ts
           tests/subscription-contract-renewal.test.ts
           tests/marketplace-payment-expiry-contract.test.ts
