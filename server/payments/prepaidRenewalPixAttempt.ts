@@ -66,7 +66,9 @@ export const decidePrepaidRenewalPixAttempt = (input: {
       existing.status !== 'reserved') {
     throw new Error('RENEWAL_PIX_ATTEMPT_CONFLICT');
   }
-  if (Date.parse(existing.expiresAt) <= Date.now()) {
+  if (Date.parse(existing.expiresAt) <= Date.now() &&
+      (existing.providerPaymentId === undefined ||
+       !/^\\d{1,32}$/.test(existing.providerPaymentId))) {
     throw new Error('RENEWAL_PIX_ATTEMPT_EXPIRED');
   }
   return { action: 'reuse', attempt: existing };
