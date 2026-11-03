@@ -32,6 +32,8 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
     if (!proposal || proposal.storeId !== input.storeId ||
         proposal.customerId !== input.authenticatedBuyerId ||
         ![3, 6, 12].includes(proposal.months) ||
+        proposal.totalDueMinor !== input.acceptedTotalMinor ||
+        !Number.isSafeInteger(proposal.totalDueMinor) ||
         !Number.isSafeInteger(input.acceptedTotalMinor) ||
         input.acceptedTotalMinor <= 0) {
       throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
