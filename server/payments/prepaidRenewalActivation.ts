@@ -20,6 +20,7 @@ export const recordVerifiedPrepaidRenewal = async (input: {
   acceptance: Parameters<typeof acceptSubscriptionRenewalProposal>[1];
   payment: { id: string; status: string; amountMinor: number; occurredAt: string; verifiedByProvider: boolean };
   newContractId: string;
+  acceptedProposalId?: string;
 }) => {
   if (!input.payment.verifiedByProvider || input.payment.status !== 'approved') {
     throw new Error('RENEWAL_PAYMENT_NOT_CONFIRMED');
@@ -72,7 +73,7 @@ export const recordVerifiedPrepaidRenewal = async (input: {
     startsAt: period.startsAt,
     expiresAt: period.expiresAt,
   });
-  return persistVerifiedPrepaidRenewal(snapshot);
+  return persistVerifiedPrepaidRenewal(snapshot, input.acceptedProposalId);
 };
 
 /** Load a stored renewal quote and acceptance; never trust a browser-supplied quote. */
@@ -193,6 +194,6 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
   return recordVerifiedPrepaidRenewal({
-    ...latest, payment, newContractId,
+    ...latest, payment, newContractId, acceptedProposalId: input.proposalId,
   });
 };
