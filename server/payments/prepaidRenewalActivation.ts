@@ -12,6 +12,8 @@ import { verifyPrepaidRenewalMercadoPagoPayment } from './prepaidRenewalPaymentV
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
+import { assertVerifiedPrepaidRenewalPixAttempt } from './prepaidRenewalPixPaymentBinding.js';
+import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 
 /**
  * Server-only composition boundary. Inputs MUST originate from an authenticated,
@@ -187,6 +189,22 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
     paymentId: input.paymentId,
     expectedExternalReference: paymentExternalReference,
     expectedAmountMinor: stored.proposal.totalDueMinor,
+  });
+  // Require an actual proposal-scoped Pix reservation before reconciliation.
+  // Provider verification above is read-only; no payment is created here.
+  const attemptSnapshot = await adminDb.doc(
+    `stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`
+  ).get();
+  assertVerifiedPrepaidRenewalPixAttempt({
+    storeId: input.storeId,
+    proposalId: input.proposalId,
+    acceptedAt: stored.acceptance.acceptedAt,
+    acceptedTotalMinor: stored.proposal.totalDueMinor,
+    paymentId: payment.id,
+    paymentApprovedAt: payment.occurredAt,
+    verifiedPaymentAmountMinor: payment.amountMinor,
+    attempt: attemptSnapshot.exists
+      ? attemptSnapshot.data() as PrepaidRenewalPixAttempt : null,
   });
   // A provider lookup is asynchronous: the accepted offer could change
   // while the payment is being verified. Re-read before recording a contract.
