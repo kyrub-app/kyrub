@@ -45,7 +45,12 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
         originalContractDoc.get('storeId') !== renewal.storeId ||
         originalContractDoc.get('contractId') !== renewal.previousContractId ||
         originalContractDoc.get('customerId') !== renewal.customerId ||
-        originalContractDoc.get('productId') !== renewal.productId) {
+        originalContractDoc.get('productId') !== renewal.productId ||
+        originalContractDoc.get('months') !== renewal.months ||
+        typeof originalContractDoc.get('expiresAt') !== 'string' ||
+        !Number.isFinite(Date.parse(originalContractDoc.get('expiresAt'))) ||
+        !Number.isSafeInteger(originalContractDoc.get('totalPaidMinor')) ||
+        originalContractDoc.get('totalPaidMinor') <= 0) {
       throw new Error('RENEWAL_PREDECESSOR_CONTRACT_MISMATCH');
     }
     const boundPath = paymentDoc.exists ? paymentDoc.get('contractPath') : null;
