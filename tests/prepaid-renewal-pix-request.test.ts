@@ -71,3 +71,38 @@ test('accepted renewal timestamp yields stable Pix expiry across retries', () =>
   assert.throws(() => prepaidRenewalPixExpiryFromAcceptance(acceptedAt, Date.parse('2026-11-03T11:59:00.000Z')), /RENEWAL_PIX_ACCEPTANCE_WINDOW_EXPIRED/);
   assert.throws(() => prepaidRenewalPixExpiryFromAcceptance('invalid'), /RENEWAL_PIX_ACCEPTANCE_TIMESTAMP_INVALID/);
 });
+
+import { decidePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttempt.js';
+
+test('proposal-scoped Pix attempt reserves once and reuses identical payload', () => {
+  const request = buildPrepaidRenewalPixRequest(valid());
+  const first = decidePrepaidRenewalPixAttempt({
+    storeId: 'store-a', proposalId, request, existing: null,
+  });
+  assert.equal(first.action, 'create');
+  const retry = decidePrepaidRenewalPixAttempt({
+    storeId: 'store-a', proposalId, request, existing: first.attempt,
+  });
+  assert.equal(retry.action, 'reuse');
+  assert.deepEqual(retry.attempt, first.attempt);
+});
+
+test('proposal-scoped Pix attempt rejects changed expiry, store and digest', () => {
+  const request = buildPrepaidRenewalPixRequest(valid());
+  const first = decidePrepaidRenewalPixAttempt({
+    storeId: 'store-a', proposalId, request, existing: null,
+  });
+  const changed = buildPrepaidRenewalPixRequest({
+    ...valid(), expiresAt: '2099-11-03T12:30:00.000Z',
+  });
+  assert.throws(() => decidePrepaidRenewalPixAttempt({
+    storeId: 'store-a', proposalId, request: changed, existing: first.attempt,
+  }), /RENEWAL_PIX_ATTEMPT_CONFLICT/);
+  assert.throws(() => decidePrepaidRenewalPixAttempt({
+    storeId: 'other-store', proposalId, request, existing: first.attempt,
+  }), /RENEWAL_PIX_ATTEMPT_INVALID/);
+  assert.throws(() => decidePrepaidRenewalPixAttempt({
+    storeId: 'store-a', proposalId, request,
+    existing: { ...first.attempt, requestDigest: '0'.repeat(64) },
+  }), /RENEWAL_PIX_ATTEMPT_CONFLICT/);
+});
