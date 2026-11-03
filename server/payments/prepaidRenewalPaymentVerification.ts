@@ -1,8 +1,10 @@
-import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
+import { getValidMercadoPagoStoreAccessToken, mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 
 type MercadoPagoPayment = {
   id?: unknown;
   status?: unknown;
+  status_detail?: unknown;
+  collector_id?: unknown;
   transaction_amount?: unknown;
   date_approved?: unknown;
   currency_id?: unknown;
@@ -28,6 +30,13 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
       !Number.isSafeInteger(input.expectedAmountMinor) || input.expectedAmountMinor <= 0) {
     throw new Error('INVALID_RENEWAL_PAYMENT_LOOKUP');
   }
+  // OAuth identifies the expected merchant, but the payment itself must also
+  // confirm that merchant as collector; a token scope alone is insufficient.
+  const sellerToken = await getValidMercadoPagoStoreAccessToken(input.sellerCredentialScopeId);
+  const expectedCollectorId = sellerToken.externalAccountId;
+  if (!/^\d+$/.test(expectedCollectorId)) {
+    throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
+  }
   const payment = await mercadoPagoStoreRequest<MercadoPagoPayment>(
     input.sellerCredentialScopeId, `/v1/payments/${input.paymentId}`
   );
@@ -39,6 +48,10 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
     ? Math.round(rawMinor) : NaN;
   if (String(payment.id) !== input.paymentId ||
       payment.status !== 'approved' ||
+      payment.status_detail !== 'accredited' ||
+      (typeof payment.collector_id !== 'number' && typeof payment.collector_id !== 'string') ||
+      !/^\d+$/.test(String(payment.collector_id)) ||
+      String(payment.collector_id) !== expectedCollectorId ||
       payment.currency_id !== 'BRL' ||
       payment.external_reference !== input.expectedExternalReference ||
       amountMinor !== input.expectedAmountMinor ||
