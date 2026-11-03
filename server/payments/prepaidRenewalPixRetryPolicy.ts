@@ -28,6 +28,9 @@ export const decidePrepaidRenewalPixRecovery = (input: {
   let body: Record<string, unknown>;
   try { body = JSON.parse(request.init.body); }
   catch { throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
+  }
   const metadata = body.metadata as Record<string, unknown> | undefined;
   if (metadata?.kyrub_store_id !== storeId ||
       metadata?.kyrub_prepaid_renewal_proposal_id !== proposalId ||
