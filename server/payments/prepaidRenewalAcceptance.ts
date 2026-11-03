@@ -39,6 +39,9 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
       throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
     }
     if (!safeId(proposal.previousContractId)) throw new Error('INVALID_RENEWAL_PREDECESSOR');
+    if (typeof data.createdAt !== 'string' || !Number.isFinite(Date.parse(data.createdAt))) {
+      throw new Error('RENEWAL_PROPOSAL_TIMESTAMP_INVALID');
+    }
     if (data.status === 'accepted') {
       const previous = data.acceptance as { customerId?: string; storeId?: string; acceptedTotalMinor?: number } | undefined;
       if (data.acceptedBy === input.authenticatedBuyerId &&
@@ -53,6 +56,9 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
     const successor = await tx.get(adminDb.doc(predecessorPath + proposal.previousContractId));
     if (successor.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
     const acceptedAt = new Date().toISOString();
+    if (Date.parse(acceptedAt) < Date.parse(data.createdAt)) {
+      throw new Error('RENEWAL_ACCEPTANCE_PRECEDES_PROPOSAL');
+    }
     const acceptance = {
       customerId: input.authenticatedBuyerId,
       storeId: input.storeId,
