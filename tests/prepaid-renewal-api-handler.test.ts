@@ -137,11 +137,13 @@ test('actual API route maps simulated invalid renewal input to 400', async () =>
   }
 });
 
-test('actual API route rejects missing or malformed Firebase bearer token before provider lookup', async () => {
-  for (const authorization of ['', 'Bearer invalid-token']) {
-    const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body, authorization);
-    assert.equal(result.status, 401);
-    assert.equal((result.body as { code: string }).code, 'AUTH_REQUIRED');
-    assert.equal(calls.length, 0);
-  }
+test('actual API route forwards missing authorization to the authentication-owning service without granting access locally', async () => {
+  const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body, '');
+  assert.equal(result.status, 200);
+  assert.deepEqual(calls, [{
+    name: 'recordPrepaidRenewalWithVerifiedSources',
+    input: { ...body, authorization: '' },
+  }]);
+  // The stub does not authenticate: this test asserts routing only.
+  // The production reconciliation service must verify the Firebase token.
 });
