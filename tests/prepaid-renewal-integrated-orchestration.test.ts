@@ -156,7 +156,7 @@ test('integrated renewal: server-generated successor ID is deterministic for pay
   await recordPrepaidRenewalWithVerifiedSources(request);
   assert.equal(persistedInputs.length, 2);
   const first = persistedInputs[0][0] as { contractId: string };
-  const second = persistedInputs[1][0] as { newContractId: string };
+  const second = persistedInputs[1][0] as { contractId: string };
   assert.equal(first.contractId, second.contractId);
   assert.match(first.contractId, /^renewal-[a-f0-9]{64}$/);
   assert.equal(persistedInputs[0][1], proposalId);
