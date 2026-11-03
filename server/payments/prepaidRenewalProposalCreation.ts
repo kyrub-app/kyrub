@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
+import { resolveCanonicalStoreIdentity } from '../identity/canonicalStoreIdentityService.js';
 import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers.js';
 import {
@@ -34,6 +36,8 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   const previous = previousDoc.data() as AcceptedSubscriptionContract;
   if (!safeId(previous.productId)) throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   const productRef = adminDb.doc(`stores/${input.storeId}/products/${previous.productId}`);
+  const platformPlanMapping = await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${previous.productId}`).get();
+  if (platformPlanMapping.exists) throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
   const productDoc = await productRef.get();
   if (!productDoc.exists) throw new Error('RENEWAL_PRODUCT_NOT_FOUND');
   const modality = parseProductSaleModality(productDoc.get('saleModality'));
@@ -124,4 +128,52 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     });
   });
   return { proposalId, paymentExternalReference };
+};
+
+/**
+ * Authenticated seller-owned proposal entry point. The browser supplies no
+ * price, discount or customer ID. This does not initiate a payment.
+ * Staff roles can be added only after a separately audited permission check.
+ */
+export const createOwnerAuthorizedPrepaidRenewalProposal = async (input: {
+  authorization: string | null | undefined;
+  storeId: string;
+  previousContractId: string;
+}): Promise<{ proposalId: string; paymentExternalReference: string }> => {
+  if (!safeId(input.storeId) || !safeId(input.previousContractId)) {
+    throw new Error('INVALID_RENEWAL_PROPOSAL_INPUT');
+  }
+  const actor = await authenticateConsultantRequest(input.authorization);
+  const store = await resolveCanonicalStoreIdentity(input.storeId, { requirePublishedTenant: true });
+  if (store.canonicalStoreId !== input.storeId || store.ownerUserId !== actor.uid) {
+    throw new Error('RENEWAL_SELLER_NOT_AUTHORIZED');
+  }
+  const previous = await adminDb.doc(
+    `stores/${input.storeId}/prepaidSubscriptionContracts/${input.previousContractId}`
+  ).get();
+  if (!previous.exists) throw new Error('RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND');
+  const productId = previous.get('productId');
+  if (!safeId(productId)) throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
+  const product = await adminDb.doc(`stores/${input.storeId}/products/${productId}`).get();
+  if (!product.exists || product.get('publicationStatus') !== 'published') {
+    throw new Error('RENEWAL_PRODUCT_NOT_PUBLISHED');
+  }
+  const rawPrice = product.get('price');
+  const rawMinor = typeof rawPrice === 'number' && Number.isFinite(rawPrice)
+    ? rawPrice * 100 : NaN;
+  const monthlyMinor = Math.round(rawMinor);
+  if (!Number.isSafeInteger(monthlyMinor) || monthlyMinor <= 0 ||
+      Math.abs(rawMinor - monthlyMinor) > 1e-7) {
+    throw new Error('RENEWAL_PRICE_NOT_VERIFIED');
+  }
+  const offers = parseSubscriptionContractDiscounts(product.get('contractDiscounts'));
+  const months = previous.get('months');
+  const selected = offers?.find(offer => offer.months === months);
+  if (!selected) throw new Error('RENEWAL_OFFER_NOT_AUTHORIZED');
+  return createPersistedPrepaidRenewalProposal({
+    storeId: input.storeId,
+    previousContractId: input.previousContractId,
+    currentMonthlyPriceMinor: monthlyMinor,
+    discountPercent: selected.discountPercent,
+  });
 };
