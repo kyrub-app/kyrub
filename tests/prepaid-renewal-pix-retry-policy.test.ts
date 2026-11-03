@@ -67,3 +67,12 @@ test('expired unbound attempts fail closed, but existing bound payment remains r
     persistedAttempt: { ...persistedAttempt, providerPaymentId: '12345' },
   }), { action: 'fetch_existing', paymentId: '12345' });
 });
+
+test('recovery rejects malformed proposal locator even when its persisted digest matches', () => {
+  assert.throws(() => decidePrepaidRenewalPixRecovery({
+    storeId,
+    proposalId: 'invalid-proposal',
+    request,
+    persistedAttempt: { ...attempt, proposalId: 'invalid-proposal' },
+  }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
+});
