@@ -42,3 +42,24 @@ test('rejects mismatched seller, reference, amount, method and currency', () => 
     { status: 'rejected' },
   ]) assert.throws(() => verify(changes), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
 });
+
+test('rejects provider metadata inconsistent with the accepted store and proposal', () => {
+  assert.throws(() => verify({
+    metadata: {
+      kyrub_store_id: 'other-store',
+      kyrub_prepaid_renewal_proposal_id: proposalId,
+    },
+  }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.throws(() => verify({
+    metadata: {
+      kyrub_store_id: storeId,
+      kyrub_prepaid_renewal_proposal_id: 'other-proposal',
+    },
+  }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.equal(verify({
+    metadata: {
+      kyrub_store_id: storeId,
+      kyrub_prepaid_renewal_proposal_id: proposalId,
+    },
+  }), '123456');
+});
