@@ -386,3 +386,28 @@ test('composed executor retries provider timeout with identical Pix key and payl
   assert.equal(calls[0].key, `prepaid-renewal-${proposalId}`);
   assert.equal(calls[0].body, request.init.body);
 });
+
+test('concurrent bound recoveries only GET the same payment and never POST', async () => {
+  const calls: string[] = [];
+  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
+    sellerScopedRequest: async (_scope, path, init) => {
+      calls.push(`${init.method} ${path}`);
+      assert.equal(init.method, 'GET');
+      assert.equal(path, '/v1/payments/123456');
+      return response;
+    },
+    bindPayment: async id => {
+      assert.equal(id, '123456');
+      return 'already_bound';
+    },
+  });
+  const results = await Promise.all([execute(), execute(), execute()]);
+  assert.deepEqual(results, Array.from({ length: 3 }, () => ({
+    paymentId: '123456', binding: 'already_bound',
+  })));
+  assert.deepEqual(calls, Array.from({ length: 3 }, () => 'GET /v1/payments/123456'));
+});
