@@ -647,6 +647,9 @@ export default async function handler(
         : code === 'RENEWAL_PROPOSAL_NOT_FOUND' ||
           code === 'RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND' ||
           code === 'RENEWAL_PRODUCT_NOT_FOUND' ? 404
+        : code === 'RENEWAL_PROVIDER_PAYMENT_MISMATCH' ||
+          code === 'RENEWAL_PAYMENT_NOT_CONFIRMED' ||
+          code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' ? 422
         : code.startsWith('INVALID_RENEWAL_') ? 400
         : code.startsWith('RENEWAL_') ? 409 : 0;
       if (status) {
@@ -654,6 +657,7 @@ export default async function handler(
           error: status === 403 ? 'A operação exige o proprietário da loja.'
             : status === 404 ? 'A proposta, contrato ou produto não foi encontrado.'
             : status === 400 ? 'Os dados da renovação são inválidos.'
+            : status === 422 ? 'O pagamento não foi confirmado para esta renovação.'
             : 'Esta renovação não está disponível nas condições atuais.',
           code,
         });
