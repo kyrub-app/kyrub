@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import {
@@ -43,6 +44,9 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
       throw new Error('RENEWAL_PROPOSAL_TIMESTAMP_INVALID');
     }
     if (data.status === 'accepted') {
+      if (data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex')) {
+        throw new Error('RENEWAL_ALREADY_ACCEPTED');
+      }
       const previous = data.acceptance as { customerId?: string; storeId?: string; acceptedTotalMinor?: number } | undefined;
       if (data.acceptedBy === input.authenticatedBuyerId &&
           previous?.customerId === input.authenticatedBuyerId &&
@@ -73,6 +77,7 @@ export const persistAuthenticatedPrepaidRenewalAcceptance = async (input: {
       acceptedBy: input.authenticatedBuyerId,
       acceptedAt,
       acceptance,
+      acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
     });
     return 'accepted';
   });
