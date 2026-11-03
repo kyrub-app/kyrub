@@ -34,6 +34,9 @@ export const decidePrepaidRenewalPixAttempt = (input: {
   let body: Record<string, unknown>;
   try { body = JSON.parse(request.init.body); }
   catch { throw new Error('RENEWAL_PIX_ATTEMPT_INVALID'); }
+  if (!body || typeof body !== 'object' || Array.isArray(body)) {
+    throw new Error('RENEWAL_PIX_ATTEMPT_INVALID');
+  }
   const metadata = body.metadata as Record<string, unknown> | undefined;
   const expectedReference = `kyrub:prepaid-renewal:${storeId}:${proposalId}`;
   const idempotencyKey = `prepaid-renewal-${proposalId}`;
