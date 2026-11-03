@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
 import { createHash } from 'node:crypto';
+import { decidePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttempt.js';
 
 const proposalId = 'a'.repeat(64);
 const storeId = 'store-a';
@@ -135,3 +136,23 @@ for (const invalidBody of ['null', '[]', '"unexpected"', '123', 'true']) {
     assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, before);
   });
 }
+
+test('expired bound Pix reservation remains recoverable but unbound attempt cannot retry', () => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  const body = JSON.parse(request.init.body);
+  body.date_of_expiration = expired;
+  const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
+  const existing = {
+    storeId, proposalId, status: 'reserved' as const,
+    idempotencyKey: `prepaid-renewal-${proposalId}`,
+    requestDigest: createHash('sha256').update(expiredRequest.init.body).digest('hex'),
+    expiresAt: expired, providerPaymentId: '123456',
+  };
+  assert.equal(decidePrepaidRenewalPixAttempt({
+    storeId, proposalId, request: expiredRequest, existing,
+  }).action, 'reuse');
+  assert.throws(() => decidePrepaidRenewalPixAttempt({
+    storeId, proposalId, request: expiredRequest,
+    existing: { ...existing, providerPaymentId: undefined },
+  }), /RENEWAL_PIX_ATTEMPT_EXPIRED/);
+});
