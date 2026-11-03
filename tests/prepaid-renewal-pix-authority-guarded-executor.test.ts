@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { executeScopedIsolatedPrepaidRenewalPix } from '../server/payments/prepaidRenewalPixScopedExecution.js';
 import { createAuthorityCheckedPrepaidRenewalPixTransport } from '../server/payments/prepaidRenewalPixScopedTransportAdapter.js';
 import { executeAuthorityGuardedIsolatedPrepaidRenewalPix } from '../server/payments/prepaidRenewalPixAuthorityGuardedExecutor.js';
 
@@ -244,4 +245,36 @@ test('existing payment with mismatched ID is never rebound', async () => {
   await assert.rejects(execute(), /RENEWAL_PIX_RECOVERY_CONFLICT/);
   assert.deepEqual(network, ['GET /v1/payments/123456']);
   assert.deepEqual(calls, ['reserve']);
+});
+
+test('composed scoped executor shares merchant authority across create and binding', async () => {
+  const calls: string[] = [];
+  const result = await executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    sellerScopedRequest: async (scope, path, init) => {
+      calls.push(`${scope}:${init.method}:${path}`);
+      return response;
+    },
+    bindPayment: async id => {
+      calls.push('bind:' + id);
+      return 'bound';
+    },
+  });
+  assert.deepEqual(result, { paymentId: '123456', binding: 'bound' });
+  assert.deepEqual(calls, ['reserve', 'owner-a:POST:/v1/payments', 'bind:123456']);
+});
+test('composed scoped executor rejects mismatched OAuth before reservation or network', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'other-owner',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    sellerScopedRequest: async () => { calls.push('network'); return response; },
+    bindPayment: async () => { calls.push('bind'); return 'bound'; },
+  }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+  assert.deepEqual(calls, []);
 });
