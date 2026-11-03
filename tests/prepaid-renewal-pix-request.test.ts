@@ -40,3 +40,20 @@ test('renewal Pix request rejects buyer, merchant, amount, reference and expiry 
       /INVALID_PREPAID_RENEWAL_PIX_BINDING/, JSON.stringify(change));
   }
 });
+
+test('renewal Pix payload is deterministic for the same persisted payment attempt', () => {
+  const first = buildPrepaidRenewalPixRequest(valid());
+  const retry = buildPrepaidRenewalPixRequest(valid());
+  assert.deepEqual(retry, first);
+});
+
+test('renewal Pix retry with a changed expiry must not be submitted under the same idempotency key', () => {
+  const first = buildPrepaidRenewalPixRequest(valid());
+  const later = buildPrepaidRenewalPixRequest({
+    ...valid(), expiresAt: '2099-11-03T12:30:00.000Z',
+  });
+  assert.equal(first.init.headers['X-Idempotency-Key'], later.init.headers['X-Idempotency-Key']);
+  assert.notEqual(first.init.body, later.init.body);
+  // The executor must persist and reuse one exact payload for an attempt;
+  // this test records the unsafe scenario until that execution gate exists.
+});
