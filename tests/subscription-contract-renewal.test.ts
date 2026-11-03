@@ -103,3 +103,18 @@ test('renewal rejects unsupported discounts and invalid term metadata', () => {
   assert.throws(() => createSubscriptionRenewalProposal(contract, 40000, 12.345), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
   assert.throws(() => createSubscriptionRenewalProposal({ ...contract, months: 2 as 12 }, 40000), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
 });
+
+test('renewal refuses malformed historical expiry values', () => {
+  for (const expiresAt of [null, 0, {}, 'not-a-date']) {
+    assert.throws(
+      () => createSubscriptionRenewalProposal({ ...contract, expiresAt: expiresAt as string }, 40000),
+      /INVALID_EXISTING_CONTRACT/,
+    );
+  }
+});
+
+test('renewal supports percentage discounts to two decimal places', () => {
+  const proposal = createSubscriptionRenewalProposal(contract, 40000, 12.25);
+  assert.equal(proposal.discountPercent, 12.25);
+  assert.equal(proposal.totalDueMinor, 421200);
+});
