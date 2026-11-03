@@ -32,6 +32,7 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   const previousDoc = await previousRef.get();
   if (!previousDoc.exists) throw new Error('RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND');
   const previous = previousDoc.data() as AcceptedSubscriptionContract;
+  if (!safeId(previous.productId)) throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   const productRef = adminDb.doc(`stores/${input.storeId}/products/${previous.productId}`);
   const productDoc = await productRef.get();
   if (!productDoc.exists) throw new Error('RENEWAL_PRODUCT_NOT_FOUND');
@@ -48,7 +49,9 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   }
   const successorRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalSuccessors/${input.previousContractId}`);
-  if (!Number.isSafeInteger(input.discountPercent) || input.discountPercent < 0 || input.discountPercent > 100) {
+  if (typeof input.discountPercent !== 'number' || !Number.isFinite(input.discountPercent) ||
+      input.discountPercent < 0 || input.discountPercent > 100 ||
+      Math.abs(Math.round(input.discountPercent * 100) - input.discountPercent * 100) > 1e-8) {
     throw new Error('INVALID_RENEWAL_DISCOUNT');
   }
   // Until a trusted pricing adapter is wired, refuse prices that disagree
