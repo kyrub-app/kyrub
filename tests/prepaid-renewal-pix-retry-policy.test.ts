@@ -103,3 +103,43 @@ for (const invalidBody of ['null', '[]', '"invalid"', '123', 'true']) {
     }), /RENEWAL_PIX_ATTEMPT_INVALID/);
   });
 }
+
+test('isolated provider simulation: lost response reuses the original Pix payment', async () => {
+  const providerPayments = new Map<string, { id: string; body: string }>();
+  let postCalls = 0;
+  const fakeProviderPost = async (key: string, body: string, loseResponse = false) => {
+    postCalls++;
+    const existing = providerPayments.get(key);
+    if (existing && existing.body !== body) throw new Error('PROVIDER_IDEMPOTENCY_CONFLICT');
+    const payment = existing ?? { id: '987654321', body };
+    providerPayments.set(key, payment);
+    if (loseResponse) throw new Error('SIMULATED_CONNECTION_LOST');
+    return payment;
+  };
+  const key = request.init.headers['X-Idempotency-Key'];
+  await assert.rejects(fakeProviderPost(key, request.init.body, true), /SIMULATED_CONNECTION_LOST/);
+  assert.equal(providerPayments.size, 1);
+  const decision = decidePrepaidRenewalPixRecovery({
+    storeId, proposalId, request, persistedAttempt: attempt,
+  });
+  assert.equal(decision.action, 'retry_same_request');
+  const recovered = await fakeProviderPost(key, request.init.body);
+  assert.equal(recovered.id, '987654321');
+  assert.equal(postCalls, 2);
+  assert.equal(providerPayments.size, 1);
+  const boundDecision = decidePrepaidRenewalPixRecovery({
+    storeId, proposalId, request,
+    persistedAttempt: { ...attempt, providerPaymentId: recovered.id },
+  });
+  assert.deepEqual(boundDecision, { action: 'fetch_existing', paymentId: recovered.id });
+  assert.equal(providerPayments.size, 1);
+});
+
+test('isolated recovery rejects changed payload before a provider retry', () => {
+  const alteredRequest = {
+    ...request, init: { ...request.init, body: request.init.body.replace('store-a', 'store-z') },
+  };
+  assert.throws(() => decidePrepaidRenewalPixRecovery({
+    storeId, proposalId, request: alteredRequest, persistedAttempt: attempt,
+  }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
+});
