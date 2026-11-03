@@ -37,10 +37,23 @@ const bundled = await build({
   plugins: [{
     name: 'isolate-renewal-boundaries',
     setup(plugin) {
-      plugin.onResolve({ filter: /firebaseAdmin\.js$|prepaidRenewalPaymentVerification\.js$|consultantAuth\.js$|persistedPrepaidRenewal\.js$/ }, args =>
+      plugin.onResolve({ filter: /firebaseAdmin\.js$|prepaidRenewalPaymentVerification\.js$|consultantAuth\.js$|persistedPrepaidRenewal\.js$|commercialRecipientAuthorityService\.js$|prepaidRenewalRecipientBinding\.js$/ }, args =>
         ({ path: args.path, namespace: 'renewal-isolated' }));
       plugin.onLoad({ filter: /.*/, namespace: 'renewal-isolated' }, args => {
         let contents = '';
+        if (args.path.endsWith('commercialRecipientAuthorityService.js')) contents = `
+          export const resolveCommercialRecipientAuthority = async () => ({
+            context: 'store_subscription', recipientKind: 'merchant_store',
+            credentialAuthority: 'store_oauth_vault', canonicalStoreId: 'store-a',
+            ownerUserId: 'owner-a', credentialScopeId: 'owner-a', externalAccountId: '12345',
+          });
+        `;
+        if (args.path.endsWith('prepaidRenewalRecipientBinding.js')) contents = `
+          export const resolvePrepaidRenewalRecipientBinding = input => {
+            if (input.storedSellerCredentialScopeId !== 'store-a') throw new Error('RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+            return { credentialScopeId: 'owner-a', externalAccountId: '12345' };
+          };
+        `;
         if (args.path.endsWith('firebaseAdmin.js')) contents = `
           export const adminDb = { doc: path => ({
             get: async () => globalThis.__renewalIntegratedMock('get', path),
@@ -88,7 +101,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
       if (paymentFailure) throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH');
       providerSideEffect?.();
       const input = value as Record<string, unknown>;
-      assert.equal(input.sellerCredentialScopeId, storeId);
+      assert.equal(input.sellerCredentialScopeId, 'owner-a');
       assert.equal(input.expectedExternalReference, reference);
       assert.equal(input.expectedAmountMinor, proposal.totalDueMinor);
       return {
