@@ -8,6 +8,7 @@ type MercadoPagoPayment = {
   transaction_amount?: unknown;
   date_approved?: unknown;
   currency_id?: unknown;
+  payment_method_id?: unknown;
   external_reference?: unknown;
 };
 
@@ -53,6 +54,7 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
       !/^\d+$/.test(String(payment.collector_id)) ||
       String(payment.collector_id) !== expectedCollectorId ||
       payment.currency_id !== 'BRL' ||
+      payment.payment_method_id !== 'pix' ||
       payment.external_reference !== input.expectedExternalReference ||
       amountMinor !== input.expectedAmountMinor ||
       typeof payment.date_approved !== 'string' ||
