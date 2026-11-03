@@ -269,3 +269,35 @@ test('Firestore: transaction rejects mismatched checkout binding without writing
   const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
   assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
 });
+
+test('Firestore: transaction rejects another seller credential scope', async () => {
+  const storeId = 'renew-emulator-invalid-seller-scope';
+  const previousContractId = 'original-invalid-seller';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, 'mp-emulator-invalid-seller-1');
+  const proposalId = 'd'.repeat(64);
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted',
+    acceptedBy: next.customerId,
+    acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: 'different-seller',
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+    proposal, acceptance,
+  });
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(next, proposalId),
+    /RENEWAL_ACCEPTANCE_CHANGED/,
+  );
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
+  ).get()).exists, false);
+});
