@@ -30,6 +30,9 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   const previousDoc = await previousRef.get();
   if (!previousDoc.exists) throw new Error('RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND');
   const previous = previousDoc.data() as AcceptedSubscriptionContract;
+  const productRef = adminDb.doc(`stores/${input.storeId}/products/${previous.productId}`);
+  const productDoc = await productRef.get();
+  if (!productDoc.exists) throw new Error('RENEWAL_PRODUCT_NOT_FOUND');
   if (previous.storeId !== input.storeId ||
       previous.contractId !== input.previousContractId ||
       !safeId(previous.customerId) || !safeId(previous.productId) ||
@@ -54,7 +57,12 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     `stores/${input.storeId}/prepaidRenewalProposals/${proposalId}`
   );
   await adminDb.runTransaction(async tx => {
-    const [existing, alreadyRenewed, currentPrevious] = await Promise.all([tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef)]);
+    const [existing, alreadyRenewed, currentPrevious, currentProduct] = await Promise.all([
+      tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef), tx.get(productRef),
+    ]);
+    if (!currentProduct.exists || JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
+      throw new Error('RENEWAL_PRODUCT_CHANGED');
+    }
     if (!currentPrevious.exists || JSON.stringify(currentPrevious.data()) !== JSON.stringify(previousDoc.data())) {
       throw new Error('RENEWAL_PREVIOUS_CONTRACT_CHANGED');
     }
