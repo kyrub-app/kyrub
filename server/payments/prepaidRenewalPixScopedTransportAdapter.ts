@@ -35,7 +35,7 @@ export const createAuthorityCheckedPrepaidRenewalPixTransport = (input: {
     },
     fetchPayment: async (paymentId: string): Promise<unknown> => {
       verify();
-      if (!/^\\d{1,32}$/.test(paymentId)) {
+      if (!/^\d{1,32}$/.test(paymentId)) {
         throw new Error('INVALID_RENEWAL_PAYMENT_LOOKUP');
       }
       return input.sellerScopedRequest(input.trustedCredentialScopeId,
