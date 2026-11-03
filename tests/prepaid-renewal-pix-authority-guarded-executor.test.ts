@@ -448,3 +448,24 @@ test('bound recovery rejects wrong currency and amount without rebinding', async
     assert.deepEqual(calls, ['GET /v1/payments/123456']);
   }
 });
+
+test('bound recovery rejects altered external reference and Pix method without rebinding', async () => {
+  for (const forged of [
+    { ...response, external_reference: 'kyrub:prepaid-renewal:other-store:' + proposalId },
+    { ...response, payment_method_id: 'credit_card' },
+  ]) {
+    const calls: string[] = [];
+    await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+      storeId, proposalId, request,
+      trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+      trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+      reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
+      sellerScopedRequest: async (_scope, path, init) => {
+        calls.push(`${init.method} ${path}`);
+        return forged;
+      },
+      bindPayment: async () => { calls.push('bind'); return 'already_bound'; },
+    }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+    assert.deepEqual(calls, ['GET /v1/payments/123456']);
+  }
+});
