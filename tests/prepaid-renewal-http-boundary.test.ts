@@ -70,3 +70,36 @@ test('HTTP: valid request forwards only authenticated reconciliation fields', as
   assert.deepEqual(res.state.body, { status: 'already_recorded' });
   assert.equal(res.state.headers['cache-control'], 'no-store, max-age=0');
 });
+
+test('HTTP: provider and authentication errors propagate without successful response', async () => {
+  for (const code of [
+    'RENEWAL_PAYMENT_NOT_CONFIRMED',
+    'RENEWAL_PROVIDER_PAYMENT_MISMATCH',
+    'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED',
+    'RENEWAL_SELLER_NOT_AUTHORIZED',
+    'RENEWAL_ACCEPTANCE_CHANGED',
+  ]) {
+    const res = response();
+    await assert.rejects(
+      handlePrepaidRenewalReconciliation(
+        { method: 'POST', body: valid, authorization: 'Bearer test-user' },
+        res,
+        async () => { throw new Error(code); },
+      ),
+      new RegExp(code),
+    );
+    assert.equal(res.state.code, 0);
+    assert.equal(res.state.body, null);
+  }
+});
+
+test('HTTP: reconciliation preserves missing authorization for server-side authentication', async () => {
+  const res = response();
+  let received: unknown;
+  await handlePrepaidRenewalReconciliation(
+    { method: 'POST', body: valid, authorization: '' },
+    res,
+    async input => { received = input; return 'created'; },
+  );
+  assert.deepEqual(received, { ...valid, authorization: '' });
+});
