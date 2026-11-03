@@ -415,3 +415,34 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
   assert.equal((await contractRef.get()).exists, true);
   assert.equal((await paymentRef.get()).get('providerPaymentId'), paymentId);
 });
+
+test('Firestore: verified OAuth mismatch cannot use store-ID fallback during atomic renewal', async () => {
+  const storeId = 'renew-emulator-scope-fallback';
+  const previousContractId = 'original-scope-fallback';
+  const proposalId = '1'.repeat(64);
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, 'mp-emulator-scope-fallback-1');
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted', acceptedBy: next.customerId, acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+    proposal, acceptance,
+  });
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(next, proposalId, 'unrelated-oauth-owner'),
+    /RENEWAL_ACCEPTANCE_CHANGED/,
+  );
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
+  ).get()).exists, false);
+  assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, storeId), 'created');
+});
