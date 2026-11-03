@@ -14,6 +14,7 @@ const request = {
     body: JSON.stringify({
       external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
       date_of_expiration: expiresAt,
+      metadata: { kyrub_store_id: storeId, kyrub_prepaid_renewal_proposal_id: proposalId },
     }),
   },
 };
@@ -50,6 +51,7 @@ test('expired unbound attempts fail closed, but existing bound payment remains r
       body: JSON.stringify({
         external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
         date_of_expiration: expired,
+        metadata: { kyrub_store_id: storeId, kyrub_prepaid_renewal_proposal_id: proposalId },
       }),
     },
   };
