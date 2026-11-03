@@ -333,3 +333,37 @@ test('Firestore: transaction rejects contract amount different from buyer accept
     `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
   ).get()).exists, false);
 });
+
+test('Firestore: verified owner OAuth scope permits atomic prepaid renewal', async () => {
+  const storeId = 'renew-emulator-owner-oauth';
+  const previousContractId = 'original-owner-oauth';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, 'mp-emulator-owner-oauth-1');
+  const proposalId = 'f'.repeat(64);
+  const ownerScope = 'owner-user-oauth-1';
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted', acceptedBy: next.customerId, acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: ownerScope,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+    proposal, acceptance,
+  });
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(next, proposalId),
+    /RENEWAL_ACCEPTANCE_CHANGED/,
+  );
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(next, proposalId, 'different-owner-oauth'),
+    /RENEWAL_ACCEPTANCE_CHANGED/,
+  );
+  assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, ownerScope), 'created');
+  assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, ownerScope), 'already_recorded');
+});
