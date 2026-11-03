@@ -68,6 +68,7 @@ jobs:
           tests/prepaid-renewal-http-boundary.test.ts
           tests/prepaid-renewal-mercado-pago-verification.test.ts
           tests/prepaid-renewal-firebase-auth.test.ts
+          tests/prepaid-renewal-integrated-orchestration.test.ts
           tests/subscription-contract-renewal.test.ts
           tests/marketplace-payment-expiry-contract.test.ts
 
