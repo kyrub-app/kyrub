@@ -8,6 +8,8 @@ export type PrepaidRenewalPixAttempt = {
   requestDigest: string;
   expiresAt: string;
   status: 'reserved';
+  /** Immutable Mercado Pago ID, populated only after a validated server-side creation response. */
+  providerPaymentId?: string;
 };
 
 type PixRequest = ReturnType<typeof buildPrepaidRenewalPixRequest>;
