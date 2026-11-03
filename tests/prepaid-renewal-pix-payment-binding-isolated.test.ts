@@ -44,7 +44,7 @@ const bundle = await build({
   plugins: [{
     name: 'isolated-firestore',
     setup(plugin) {
-      plugin.onResolve({ filter: /firebaseAdmin\\.js$/ }, args =>
+      plugin.onResolve({ filter: /firebaseAdmin\.js$/ }, args =>
         ({ path: args.path, namespace: 'isolated-firestore' }));
       plugin.onLoad({ filter: /.*/, namespace: 'isolated-firestore' }, () =>
         ({ contents: 'export const adminDb = globalThis.__isolatedPixBindingDb;', loader: 'js' }));
