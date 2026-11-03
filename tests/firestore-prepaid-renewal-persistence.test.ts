@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { persistVerifiedPrepaidRenewal } from '../server/payments/persistedPrepaidRenewal.js';
@@ -180,4 +181,32 @@ test('Firestore: transactional renewal rejects altered accepted proposal without
   ).get()).exists, false);
   const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
   assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
+});
+
+test('Firestore: valid accepted proposal is checked and renewed atomically', async () => {
+  const storeId = 'renew-emulator-atomic-valid';
+  const previousContractId = 'original-valid';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, 'mp-emulator-valid-atomic-1');
+  const proposalId = 'b'.repeat(64);
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted',
+    acceptedBy: next.customerId,
+    acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    proposal, acceptance,
+  });
+  assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId), 'created');
+  assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId), 'already_recorded');
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
+  ).get()).exists, true);
 });
