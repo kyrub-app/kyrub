@@ -25,7 +25,7 @@ export const validatePrepaidRenewalPixTransportAuthority = (input: {
       request.init.headers['X-Idempotency-Key'] !== `prepaid-renewal-${proposalId}` ||
       !input.trustedCredentialScopeId ||
       input.trustedCredentialScopeId !== input.oauthCredentialScopeId ||
-      !/^\\d+$/.test(input.trustedExternalAccountId) ||
+      !/^\d+$/.test(input.trustedExternalAccountId) ||
       input.trustedExternalAccountId !== input.oauthExternalAccountId) {
     throw new Error('RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH');
   }
