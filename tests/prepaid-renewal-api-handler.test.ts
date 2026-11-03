@@ -11,10 +11,11 @@ for (const match of source.matchAll(/import\s*\{([^}]+)\}\s*from\s*'([^']+)'/g))
 
 const calls: Array<{ name: string; input: unknown }> = [];
 let simulatedFailure: Error | null = null;
+let simulatedReconcileStatus: 'created' | 'already_recorded' = 'created';
 const mock = (name: string, input: unknown) => {
   calls.push({ name, input });
   if (simulatedFailure) throw simulatedFailure;
-  if (name === 'recordPrepaidRenewalWithVerifiedSources') return 'created';
+  if (name === 'recordPrepaidRenewalWithVerifiedSources') return simulatedReconcileStatus;
   if (name === 'createOwnerAuthorizedPrepaidRenewalProposal') return { proposalId: 'mock-proposal' };
   if (name === 'acceptPrepaidRenewalWithFirebaseAuth') return 'accepted';
   throw new Error('UNEXPECTED_MOCK_CALL:' + name);
@@ -148,3 +149,24 @@ test('actual API route forwards missing authorization to the authentication-owni
   // The production reconciliation service must verify the Firebase token.
 });
 
+
+test('actual API route returns idempotent replay status and disables caching', async () => {
+  simulatedReconcileStatus = 'already_recorded';
+  try {
+    const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body);
+    assert.equal(result.status, 200);
+    assert.deepEqual(result.body, { status: 'already_recorded' });
+    assert.equal(result.headers['cache-control'], 'no-store, max-age=0');
+    assert.equal(calls.length, 1);
+  } finally {
+    simulatedReconcileStatus = 'created';
+  }
+});
+
+test('actual API route rejects absent and array request bodies before reconciliation', async () => {
+  for (const invalidBody of [null, [], 'invalid']) {
+    const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', invalidBody);
+    assert.equal(result.status, 400);
+    assert.equal(calls.length, 0);
+  }
+});
