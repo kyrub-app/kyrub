@@ -205,3 +205,24 @@ test('Firestore: altered accepted proposal cannot be loaded for payment reconcil
     storeId, proposalId, authenticatedBuyerId: customerId,
   }), /RENEWAL_ACCEPTANCE_REQUIRED/);
 });
+
+test('Firestore: changed product, term or discount invalidates an accepted renewal', async () => {
+  const mutations = [
+    { label: 'product', patch: { 'proposal.productId': 'another-product' } },
+    { label: 'term', patch: { 'proposal.months': 6 } },
+    { label: 'discount', patch: { 'proposal.discountPercent': 25 } },
+  ];
+  for (const { label, patch } of mutations) {
+    const proposalId = 'tampered-' + label;
+    const proposal = await seed(proposalId);
+    assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
+      storeId, proposalId, authenticatedBuyerId: customerId,
+      acceptedTotalMinor: proposal.totalDueMinor,
+    }), 'accepted');
+    const reference = adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`);
+    await reference.update(patch);
+    await assert.rejects(loadAcceptedPrepaidRenewal({
+      storeId, proposalId, authenticatedBuyerId: customerId,
+    }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+  }
+});
