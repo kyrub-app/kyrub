@@ -26,6 +26,7 @@ const makeData = () => ({
 let data: Record<string, unknown> = makeData();
 let authenticatedUid = buyerId;
 let paymentFailure = false;
+let providerApprovedAt = '2026-11-01T11:00:00.000Z';
 let providerSideEffect: (() => void) | null = null;
 const calls: string[] = [];
 const persistedInputs: unknown[][] = [];
@@ -92,7 +93,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
       assert.equal(input.expectedAmountMinor, proposal.totalDueMinor);
       return {
         id: '12345', status: 'approved', amountMinor: proposal.totalDueMinor,
-        occurredAt: '2026-11-01T11:00:00.000Z', verifiedByProvider: true,
+        occurredAt: providerApprovedAt, verifiedByProvider: true,
       };
     }
     if (name === 'persist') { persistedInputs.push(value as unknown[]); return 'created'; }
@@ -100,7 +101,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
   };
 const request = { authorization: 'Bearer valid', storeId, proposalId, paymentId: '12345' };
 const reset = () => {
-  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerSideEffect = null;
+  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerApprovedAt = '2026-11-01T11:00:00.000Z'; providerSideEffect = null;
 };
 
 test('integrated renewal: unauthenticated request never reaches Firestore or payment provider', async () => {
@@ -161,4 +162,16 @@ test('integrated renewal: server-generated successor ID is deterministic for pay
   assert.match(first.contractId, /^renewal-[a-f0-9]{64}$/);
   assert.equal(persistedInputs[0][1], proposalId);
   assert.equal(persistedInputs[1][1], proposalId);
+});
+
+test('integrated renewal: payment approved before buyer acceptance cannot create successor', async () => {
+  reset();
+  providerApprovedAt = '2026-11-01T09:30:00.000Z';
+  await assert.rejects(
+    recordPrepaidRenewalWithVerifiedSources(request),
+    /RENEWAL_PAYMENT_PRECEDES_ACCEPTANCE/,
+  );
+  assert.equal(calls.includes('provider'), true);
+  assert.equal(calls.includes('persist'), false);
+  assert.equal(persistedInputs.length, 0);
 });
