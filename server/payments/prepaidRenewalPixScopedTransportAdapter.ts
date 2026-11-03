@@ -19,7 +19,7 @@ export const createAuthorityCheckedPrepaidRenewalPixTransport = (input: {
   oauthCredentialScopeId: string;
   trustedExternalAccountId: string;
   oauthExternalAccountId: string;
-  sellerScopedRequest: (credentialScopeId: string, path: string, init: PixRequest['init']) => Promise<unknown>;
+  sellerScopedRequest: (credentialScopeId: string, path: string, init: RequestInit) => Promise<unknown>;
 }) => {
   const verify = () => validatePrepaidRenewalPixTransportAuthority(input);
   return {
@@ -39,7 +39,7 @@ export const createAuthorityCheckedPrepaidRenewalPixTransport = (input: {
         throw new Error('INVALID_RENEWAL_PAYMENT_LOOKUP');
       }
       return input.sellerScopedRequest(input.trustedCredentialScopeId,
-        `/v1/payments/${paymentId}`, { method: 'GET' } as PixRequest['init']);
+        `/v1/payments/${paymentId}`, { method: 'GET' });
     },
   };
 };
