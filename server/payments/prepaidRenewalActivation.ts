@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { activatePrepaidContractAfterVerifiedPayment, calculatePrepaidRenewalPeriod } from './prepaidSubscriptionContractLifecycle.js';
 import {
   acceptSubscriptionRenewalProposal,
@@ -130,8 +131,17 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
   storeId: string;
   proposalId: string;
   paymentId: string;
-  newContractId: string;
 }) => {
+  // The server, not the client, determines the successor contract identity.
+  // Reconciliation of the same verified payment must target the same document.
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
+      !/^[a-f0-9]{64}$/.test(input.proposalId) ||
+      !/^\d{1,32}$/.test(input.paymentId)) {
+    throw new Error('INVALID_RENEWAL_RECONCILIATION_REQUEST');
+  }
+  const newContractId = 'renewal-' + createHash('sha256').update(
+    JSON.stringify([input.storeId, input.proposalId, input.paymentId])
+  ).digest('hex');
   const buyer = await authenticateConsultantRequest(input.authorization);
   const stored = await loadAcceptedPrepaidRenewal({
     storeId: input.storeId,
@@ -157,6 +167,6 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
     expectedAmountMinor: stored.proposal.totalDueMinor,
   });
   return recordVerifiedPrepaidRenewal({
-    ...stored, payment, newContractId: input.newContractId,
+    ...stored, payment, newContractId,
   });
 };
