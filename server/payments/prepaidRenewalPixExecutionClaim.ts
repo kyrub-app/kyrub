@@ -33,7 +33,7 @@ export const claimPrepaidRenewalPixExecution = async (input: {
       expectedStoreId: input.storeId,
       expectedProposalId: input.proposalId,
       expectedRequestDigest: input.expectedRequestDigest,
-      executionState: attempt.executionState ?? 'idle',
+      executionState: attempt.executionState ?? 'outcome_unknown',
       nowMs: Date.now(),
     });
     if (decision === 'fetch_bound') return 'fetch_bound';
