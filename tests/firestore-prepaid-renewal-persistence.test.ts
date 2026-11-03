@@ -367,3 +367,51 @@ test('Firestore: verified owner OAuth scope permits atomic prepaid renewal', asy
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, ownerScope), 'created');
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, ownerScope), 'already_recorded');
 });
+
+test('Firestore: Pix binding is rechecked atomically before creating successor', async () => {
+  const storeId = 'renew-emulator-atomic-pix-binding';
+  const previousContractId = 'original-pix-atomic';
+  const proposalId = 'f'.repeat(64);
+  const paymentId = '123456789';
+  const approvedAt = '2027-01-02T00:10:00.000Z';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, paymentId);
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted', acceptedBy: next.customerId, acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+    proposal, acceptance,
+  });
+  const attemptRef = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  const attempt = {
+    storeId, proposalId, status: 'reserved',
+    idempotencyKey: `prepaid-renewal-${proposalId}`,
+    requestDigest: 'a'.repeat(64),
+    expiresAt: new Date(Date.parse(next.acceptedAt) + 30 * 60_000).toISOString(),
+  };
+  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, storeId, approvedAt);
+  const contractRef = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`);
+  const paymentRef = adminDb.doc('prepaidRenewalPaymentBindings/' +
+    createHash('sha256').update('mercado_pago:' + paymentId).digest('hex'));
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  await attemptRef.set(attempt);
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  await attemptRef.update({ providerPaymentId: '987654321' });
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  assert.equal((await contractRef.get()).exists, false);
+  assert.equal((await paymentRef.get()).exists, false);
+  await attemptRef.update({ providerPaymentId: paymentId });
+  assert.equal(await persist(), 'created');
+  assert.equal(await persist(), 'already_recorded');
+  assert.equal((await contractRef.get()).exists, true);
+  assert.equal((await paymentRef.get()).get('providerPaymentId'), paymentId);
+});
