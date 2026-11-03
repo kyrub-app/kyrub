@@ -209,3 +209,20 @@ test('Firestore emulator: concurrent execution claims allow only one unbound Pix
     storeId, proposalId, expectedRequestDigest: '0'.repeat(64),
   }), /RENEWAL_PIX_EXECUTION_GATE_CONFLICT/);
 });
+
+test('Firestore emulator: legacy Pix attempt without gate state cannot initiate a new POST', async () => {
+  const { claimPrepaidRenewalPixExecution } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-legacy-gate';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('executionState'), 'idle');
+  await ref.update({ executionState: (await import('firebase-admin/firestore')).FieldValue.delete() });
+  await assert.rejects(claimPrepaidRenewalPixExecution({
+    storeId, proposalId,
+    expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex'),
+  }), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  assert.equal((await ref.get()).get('executionState'), undefined);
+});
