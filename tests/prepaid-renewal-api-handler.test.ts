@@ -33,7 +33,8 @@ const bundled = await build({
     setup(plugin) {
       plugin.onResolve({ filter: /^\.\.\/server\// }, args => {
         if (args.path.includes('prepaidRenewalHttpBoundary') ||
-            args.path.includes('prepaidRenewalHttpErrors')) return;
+            args.path.includes('prepaidRenewalHttpErrors') ||
+            args.path.includes('consultantAuth')) return;
         return { path: args.path, namespace: 'isolated-services' };
       });
       plugin.onLoad({ filter: /.*/, namespace: 'isolated-services' }, args => {
@@ -133,5 +134,14 @@ test('actual API route maps simulated invalid renewal input to 400', async () =>
     assert.equal((result.body as { code: string }).code, 'INVALID_RENEWAL_IDENTITY');
   } finally {
     simulatedFailure = null;
+  }
+});
+
+test('actual API route rejects missing or malformed Firebase bearer token before provider lookup', async () => {
+  for (const authorization of ['', 'Bearer invalid-token']) {
+    const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', body, authorization);
+    assert.equal(result.status, 401);
+    assert.equal((result.body as { code: string }).code, 'AUTH_REQUIRED');
+    assert.equal(calls.length, 0);
   }
 });
