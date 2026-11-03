@@ -77,3 +77,45 @@ test('isolated executor fails closed before network on altered reservation diges
   }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
   assert.equal(called, false);
 });
+
+test('isolated executor recovers a lost response using the same provider payment', async () => {
+  const payments = new Map<string, typeof response>();
+  let posts = 0;
+  let boundPaymentId: string | undefined;
+  const run = () => executeIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request, expectedCollectorId: '7654321',
+    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: boundPaymentId } }),
+    createPayment: async value => {
+      posts++;
+      const key = value.init.headers['X-Idempotency-Key'];
+      const prior = payments.get(key);
+      if (prior) return prior;
+      payments.set(key, response);
+      throw new Error('SIMULATED_LOST_RESPONSE');
+    },
+    fetchPayment: async () => response,
+    bindPayment: async id => { boundPaymentId = id; return 'bound'; },
+  });
+  await assert.rejects(run(), /SIMULATED_LOST_RESPONSE/);
+  assert.equal(payments.size, 1);
+  assert.equal(boundPaymentId, undefined);
+  const recovered = await run();
+  assert.equal(recovered.paymentId, '123456');
+  assert.equal(boundPaymentId, '123456');
+  assert.equal(posts, 2);
+  assert.equal(payments.size, 1);
+  const afterBinding = await run();
+  assert.equal(afterBinding.paymentId, '123456');
+  assert.equal(posts, 2);
+});
+test('isolated executor rejects a fetched payment with a different ID', async () => {
+  let bound = false;
+  await assert.rejects(executeIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request, expectedCollectorId: '7654321',
+    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
+    createPayment: async () => { throw new Error('UNEXPECTED_POST'); },
+    fetchPayment: async () => ({ ...response, id: 654321 }),
+    bindPayment: async () => { bound = true; return 'already_bound'; },
+  }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
+  assert.equal(bound, false);
+});
