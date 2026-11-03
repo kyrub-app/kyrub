@@ -74,3 +74,25 @@ test('Firestore: acceptance cannot precede persisted proposal creation', async (
     acceptedTotalMinor: proposal.totalDueMinor,
   }), /RENEWAL_ACCEPTANCE_PRECEDES_PROPOSAL/);
 });
+
+test('Firestore: corrupted acceptance chronology cannot be replayed as valid', async () => {
+  const proposalId = 'corrupt-replay';
+  const proposal = await seed(proposalId);
+  const reference = adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`);
+  const acceptedAt = '2026-10-31T00:00:00.000Z';
+  await reference.update({
+    status: 'accepted',
+    acceptedBy: customerId,
+    acceptedAt,
+    acceptance: {
+      customerId, storeId, acceptedTotalMinor: proposal.totalDueMinor, acceptedAt,
+    },
+  });
+  await assert.rejects(persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), /RENEWAL_ALREADY_ACCEPTED/);
+  await assert.rejects(loadAcceptedPrepaidRenewal({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+});
