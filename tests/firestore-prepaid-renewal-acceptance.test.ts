@@ -293,7 +293,7 @@ test('Firestore HTTP boundary: verified isolated payment creates one successor a
   const contractId = 'http-successor-' + proposalId;
   let verifiedCalls = 0;
   const reconcile = async (input: { authorization: string; storeId: string; proposalId: string; paymentId: string }) => {
-    if (input.authorization !== 'Bearer isolated-buyer') throw new Error('AUTH_REQUIRED');
+    if (input.authorization !== 'Bearer isolated-buyer') throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
     assert.equal(input.storeId, storeId);
     assert.equal(input.proposalId, proposalId);
     assert.equal(input.paymentId, paymentId);
@@ -322,6 +322,11 @@ test('Firestore HTTP boundary: verified isolated payment creates one successor a
   const invalid = await invoke('Bearer isolated-buyer', { ...body, amountMinor: 1 });
   assert.equal(invalid.code, 400);
   assert.equal(verifiedCalls, 0);
+  const unauthorized = await invoke('Bearer wrong-buyer', body);
+  assert.equal(unauthorized.code, 409);
+  assert.equal((unauthorized.body as { code: string }).code, 'RENEWAL_ACCEPTANCE_REQUIRED');
+  assert.equal(verifiedCalls, 0);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${contractId}`).get()).exists, false);
   const created = await invoke('Bearer isolated-buyer', body);
   assert.equal(created.code, 200);
   assert.deepEqual(created.body, { status: 'created' });
