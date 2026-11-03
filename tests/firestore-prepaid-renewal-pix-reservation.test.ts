@@ -285,3 +285,66 @@ test('Firestore emulator: locked seller-scoped executor permits only one concurr
   const attemptRef = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
   assert.equal((await attemptRef.get()).get('providerPaymentId'), '123456');
 });
+
+test('Firestore emulator: unknown Pix outcome reconciles once with verified seller payment', async () => {
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const storeId = 'renew-pix-emulator-reconcile';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const locator = { storeId, proposalId, expectedRequestDigest };
+  assert.equal(await claimPrepaidRenewalPixExecution(locator), 'claimed');
+  await markPrepaidRenewalPixExecutionOutcomeUnknown(locator);
+  const body = JSON.parse(request.init.body);
+  const payment = {
+    id: 567890, status: 'pending', payment_method_id: 'pix',
+    currency_id: 'BRL', collector_id: 987654,
+    transaction_amount: body.transaction_amount,
+    external_reference: body.external_reference,
+  };
+  const reconcile = (trustedProviderPayment: unknown, targetStore = storeId) =>
+    reconcileUnknownPrepaidRenewalPixPayment({
+      storeId: targetStore, proposalId, request,
+      expectedCollectorId: '987654', trustedProviderPayment,
+    });
+  await assert.rejects(reconcile({ ...payment, collector_id: 123 }),
+    /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  await assert.rejects(reconcile({ ...payment, transaction_amount: 0 }),
+    /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  await assert.rejects(reconcile(payment, 'other-store'),
+    /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH|RENEWAL_PIX_RECONCILIATION_CONFLICT/);
+  const outcomes = await Promise.all([reconcile(payment), reconcile(payment), reconcile(payment)]);
+  assert.deepEqual(outcomes.sort(), ['already_bound', 'already_bound', 'bound']);
+  await assert.rejects(reconcile({ ...payment, id: 567891 }),
+    /RENEWAL_PIX_RECONCILIATION_CONFLICT/);
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('providerPaymentId'), '567890');
+  assert.equal((await ref.get()).get('executionState'), 'outcome_unknown');
+  assert.equal(await claimPrepaidRenewalPixExecution(locator), 'fetch_bound');
+});
+
+test('Firestore emulator: reconciliation refuses idle attempt and leaves it unchanged', async () => {
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const storeId = 'renew-pix-emulator-reconcile-idle';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const body = JSON.parse(request.init.body);
+  await assert.rejects(reconcileUnknownPrepaidRenewalPixPayment({
+    storeId, proposalId, request, expectedCollectorId: '987654',
+    trustedProviderPayment: {
+      id: 567890, status: 'pending', payment_method_id: 'pix',
+      currency_id: 'BRL', collector_id: 987654,
+      transaction_amount: body.transaction_amount,
+      external_reference: body.external_reference,
+    },
+  }), /RENEWAL_PIX_RECONCILIATION_CONFLICT/);
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('providerPaymentId'), undefined);
+  assert.equal((await ref.get()).get('executionState'), 'idle');
+});
