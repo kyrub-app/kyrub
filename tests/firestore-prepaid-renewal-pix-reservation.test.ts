@@ -246,3 +246,42 @@ test('Firestore emulator: already-bound legacy attempt permits GET-only recovery
   assert.equal((await ref.get()).get('executionState'), undefined);
   assert.equal((await ref.get()).get('providerPaymentId'), '987654');
 });
+
+test('Firestore emulator: locked seller-scoped executor permits only one concurrent Pix POST', async () => {
+  const { executeLockedIsolatedPrepaidRenewalPix } =
+    await import('../server/payments/prepaidRenewalPixLockedExecution.js');
+  const storeId = 'renew-pix-emulator-locked-executor';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  const requestBody = JSON.parse(request.init.body);
+  let postCount = 0;
+  const execute = () => executeLockedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: storeId,
+    oauthCredentialScopeId: storeId,
+    trustedExternalAccountId: '987654',
+    oauthExternalAccountId: '987654',
+    reserve: async () => reservePrepaidRenewalPixAttempt({ storeId, proposalId, request }),
+    bindPayment: async paymentId => bindCreatedPrepaidRenewalPixPaymentId({
+      storeId, proposalId, paymentId,
+      expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex'),
+    }),
+    sellerScopedRequest: async (_scope, path, init) => {
+      assert.equal(path, '/v1/payments');
+      assert.equal(init.method, 'POST');
+      postCount++;
+      return {
+        id: 123456, status: 'pending', payment_method_id: 'pix',
+        currency_id: 'BRL', collector_id: 987654,
+        transaction_amount: requestBody.transaction_amount,
+        external_reference: requestBody.external_reference,
+      };
+    },
+  });
+  const outcomes = await Promise.allSettled([execute(), execute(), execute()]);
+  assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(result => result.status === 'rejected').length, 2);
+  assert.equal(postCount, 1);
+  const attemptRef = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await attemptRef.get()).get('providerPaymentId'), '123456');
+});
