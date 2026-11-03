@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { buildPrepaidRenewalPixRequest } from '../server/payments/prepaidRenewalPixRequest.js';
+import { assertSamePrepaidRenewalPixAttempt, buildPrepaidRenewalPixRequest } from '../server/payments/prepaidRenewalPixRequest.js';
 
 const proposalId = 'a'.repeat(64);
 const valid = () => ({
@@ -45,6 +45,7 @@ test('renewal Pix payload is deterministic for the same persisted payment attemp
   const first = buildPrepaidRenewalPixRequest(valid());
   const retry = buildPrepaidRenewalPixRequest(valid());
   assert.deepEqual(retry, first);
+  assert.doesNotThrow(() => assertSamePrepaidRenewalPixAttempt(first, retry));
 });
 
 test('renewal Pix retry with a changed expiry must not be submitted under the same idempotency key', () => {
@@ -54,6 +55,7 @@ test('renewal Pix retry with a changed expiry must not be submitted under the sa
   });
   assert.equal(first.init.headers['X-Idempotency-Key'], later.init.headers['X-Idempotency-Key']);
   assert.notEqual(first.init.body, later.init.body);
+  assert.throws(() => assertSamePrepaidRenewalPixAttempt(first, later), /RENEWAL_PIX_ATTEMPT_PAYLOAD_CHANGED/);
   // The executor must persist and reuse one exact payload for an attempt;
   // this test records the unsafe scenario until that execution gate exists.
 });
