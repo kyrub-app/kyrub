@@ -195,9 +195,22 @@ const checkoutBundle = await build({
   plugins: [{
     name: 'isolate-renewal-checkout-preparation',
     setup(plugin) {
-      plugin.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|prepaidRenewalActivation\.js$/ },
+      plugin.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|prepaidRenewalActivation\.js$|commercialRecipientAuthorityService\.js$|prepaidRenewalRecipientBinding\.js$/ },
         args => ({ path: args.path, namespace: 'renewal-checkout-isolated' }));
       plugin.onLoad({ filter: /.*/, namespace: 'renewal-checkout-isolated' }, args => {
+        if (args.path.endsWith('commercialRecipientAuthorityService.js')) return {
+          contents: `export const resolveCommercialRecipientAuthority = async () => ({
+            context: 'store_subscription', recipientKind: 'merchant_store',
+            credentialAuthority: 'store_oauth_vault', canonicalStoreId: 'store-a',
+            ownerUserId: 'owner-a', credentialScopeId: 'owner-a', externalAccountId: '12345',
+          });`, loader: 'js',
+        };
+        if (args.path.endsWith('prepaidRenewalRecipientBinding.js')) return {
+          contents: `export const resolvePrepaidRenewalRecipientBinding = input => {
+            if (input.storedSellerCredentialScopeId !== 'store-a') throw new Error('RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+            return { credentialScopeId: 'owner-a', externalAccountId: '12345' };
+          };`, loader: 'js',
+        };
         if (args.path.endsWith('firebaseAdmin.js')) return {
           contents: `export const adminDb = { doc: path => ({ get: async () => globalThis.__renewalIntegratedMock('get', path) }) };`,
           loader: 'js',
