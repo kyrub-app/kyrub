@@ -175,3 +175,81 @@ test('integrated renewal: payment approved before buyer acceptance cannot create
   assert.equal(calls.includes('persist'), false);
   assert.equal(persistedInputs.length, 0);
 });
+
+const checkoutBundle = await build({
+  entryPoints: ['server/payments/prepaidRenewalCheckoutPreparation.ts'],
+  bundle: true, platform: 'node', format: 'esm', write: false,
+  plugins: [{
+    name: 'isolate-renewal-checkout-preparation',
+    setup(plugin) {
+      plugin.onResolve({ filter: /firebaseAdmin\\.js$|consultantAuth\\.js$|prepaidRenewalActivation\\.js$/ },
+        args => ({ path: args.path, namespace: 'renewal-checkout-isolated' }));
+      plugin.onLoad({ filter: /.*/, namespace: 'renewal-checkout-isolated' }, args => {
+        if (args.path.endsWith('firebaseAdmin.js')) return {
+          contents: `export const adminDb = { doc: path => ({ get: async () => globalThis.__renewalIntegratedMock('get', path) }) };`,
+          loader: 'js',
+        };
+        if (args.path.endsWith('consultantAuth.js')) return {
+          contents: `export const authenticateConsultantRequest = async token => {
+            const user = globalThis.__renewalIntegratedMock('auth', token);
+            return { ...user, email: 'buyer@example.com' };
+          };`,
+          loader: 'js',
+        };
+        return {
+          contents: `export const loadAcceptedPrepaidRenewal = async input => {
+            globalThis.__renewalIntegratedMock('load', input);
+            return { proposal: globalThis.__renewalCheckoutProposal, acceptance: globalThis.__renewalCheckoutAcceptance };
+          };`,
+          loader: 'js',
+        };
+      });
+    },
+  }],
+});
+const { prepareAuthenticatedPrepaidRenewalPix } = await import(
+  'data:text/javascript;base64,' + Buffer.from(checkoutBundle.outputFiles[0].text).toString('base64')
+);
+const checkoutGlobals = globalThis as typeof globalThis & {
+  __renewalCheckoutProposal?: unknown;
+  __renewalCheckoutAcceptance?: unknown;
+  __renewalIntegratedMock?: (name: string, value: unknown) => unknown;
+};
+checkoutGlobals.__renewalCheckoutProposal = proposal;
+checkoutGlobals.__renewalCheckoutAcceptance = acceptance;
+const originalRenewalMock = checkoutGlobals.__renewalIntegratedMock!;
+checkoutGlobals.__renewalIntegratedMock = (name, value) => {
+  if (name === 'load') {
+    calls.push('load');
+    const input = value as { authenticatedBuyerId: string };
+    if (input.authenticatedBuyerId !== buyerId) throw new Error('RENEWAL_ACCEPTANCE_REQUIRED');
+    return null;
+  }
+  return originalRenewalMock(name, value);
+};
+
+test('authenticated renewal checkout preparation uses accepted Firestore amount and seller binding', async () => {
+  reset();
+  const result = await prepareAuthenticatedPrepaidRenewalPix({
+    authorization: 'Bearer valid', storeId, proposalId,
+  });
+  const body = JSON.parse(result.init.body);
+  assert.equal(body.external_reference, reference);
+  assert.equal(body.transaction_amount, proposal.totalDueMinor / 100);
+  assert.equal(body.payer.email, 'buyer@example.com');
+  assert.deepEqual(calls, ['auth', 'load', 'get']);
+  assert.equal(calls.includes('provider'), false);
+});
+
+test('authenticated renewal checkout preparation blocks wrong buyer and tampered binding', async () => {
+  reset(); authenticatedUid = 'another-buyer';
+  await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
+    authorization: 'Bearer valid', storeId, proposalId,
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+  assert.deepEqual(calls, ['auth', 'load']);
+  reset(); data = { ...data, sellerCredentialScopeId: 'other-store' };
+  await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
+    authorization: 'Bearer valid', storeId, proposalId,
+  }), /RENEWAL_CHECKOUT_BINDING_MISSING/);
+  assert.deepEqual(calls, ['auth', 'load', 'get']);
+});
