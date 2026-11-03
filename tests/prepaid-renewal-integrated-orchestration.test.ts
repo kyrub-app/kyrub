@@ -242,7 +242,12 @@ const checkoutGlobals = globalThis as typeof globalThis & {
   __renewalIntegratedMock?: (name: string, value: unknown) => unknown;
 };
 checkoutGlobals.__renewalCheckoutProposal = proposal;
-checkoutGlobals.__renewalCheckoutAcceptance = acceptance;
+const freshCheckoutAcceptance = { ...acceptance, acceptedAt: new Date(Date.now() - 60_000).toISOString() };
+checkoutGlobals.__renewalCheckoutAcceptance = freshCheckoutAcceptance;
+const resetCheckout = () => {
+  reset();
+  data = { ...data, acceptance: freshCheckoutAcceptance, acceptedAt: freshCheckoutAcceptance.acceptedAt };
+};
 const originalRenewalMock = checkoutGlobals.__renewalIntegratedMock!;
 checkoutGlobals.__renewalIntegratedMock = (name, value) => {
   if (name === 'load') {
@@ -255,7 +260,7 @@ checkoutGlobals.__renewalIntegratedMock = (name, value) => {
 };
 
 test('authenticated renewal checkout preparation uses accepted Firestore amount and seller binding', async () => {
-  reset();
+  resetCheckout();
   const result = await prepareAuthenticatedPrepaidRenewalPix({
     authorization: 'Bearer valid', storeId, proposalId,
   });
@@ -268,12 +273,12 @@ test('authenticated renewal checkout preparation uses accepted Firestore amount 
 });
 
 test('authenticated renewal checkout preparation blocks wrong buyer and tampered binding', async () => {
-  reset(); authenticatedUid = 'another-buyer';
+  resetCheckout(); authenticatedUid = 'another-buyer';
   await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
     authorization: 'Bearer valid', storeId, proposalId,
   }), /RENEWAL_ACCEPTANCE_REQUIRED/);
   assert.deepEqual(calls, ['auth', 'load']);
-  reset(); data = { ...data, sellerCredentialScopeId: 'other-store' };
+  resetCheckout(); data = { ...data, sellerCredentialScopeId: 'other-store' };
   await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
     authorization: 'Bearer valid', storeId, proposalId,
   }), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
