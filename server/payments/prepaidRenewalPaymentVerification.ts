@@ -40,7 +40,7 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
       payment.external_reference !== input.expectedExternalReference ||
       amountMinor !== input.expectedAmountMinor ||
       typeof payment.date_approved !== 'string' ||
-      !/^\\d{4}-\\d{2}-\\d{2}T/.test(payment.date_approved) ||
+      !/^\d{4}-\d{2}-\d{2}T/.test(payment.date_approved) ||
       !Number.isFinite(Date.parse(payment.date_approved))) {
     throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH');
   }
