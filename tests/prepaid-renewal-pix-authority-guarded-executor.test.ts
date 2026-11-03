@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import test from 'node:test';
+import { createAuthorityCheckedPrepaidRenewalPixTransport } from '../server/payments/prepaidRenewalPixScopedTransportAdapter.js';
 import { executeAuthorityGuardedIsolatedPrepaidRenewalPix } from '../server/payments/prepaidRenewalPixAuthorityGuardedExecutor.js';
 
 const storeId = 'store-a';
@@ -97,4 +98,37 @@ test('previously bound reservation fetches without a second POST', async () => {
   });
   assert.deepEqual(await execute(), { paymentId: '123456', binding: 'already_bound' });
   assert.deepEqual(calls, ['reserve', 'fetch', 'bind']);
+});
+
+test('scoped transport sends exact reserved payload using trusted seller scope', async () => {
+  const calls: Array<{ scope: string; path: string; method: string }> = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (scope, path, init) => {
+      calls.push({ scope, path, method: init.method });
+      return response;
+    },
+  });
+  assert.equal(await adapter.createPayment(request), response);
+  assert.equal(await adapter.fetchPayment('123456'), response);
+  assert.deepEqual(calls, [
+    { scope: 'owner-a', path: '/v1/payments', method: 'POST' },
+    { scope: 'owner-a', path: '/v1/payments/123456', method: 'GET' },
+  ]);
+});
+test('scoped transport rejects modified retry and invalid payment lookup without network', async () => {
+  let calls = 0;
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async () => { calls++; return response; },
+  });
+  await assert.rejects(adapter.createPayment({
+    ...request, init: { ...request.init, body: request.init.body + ' ' },
+  }), /RENEWAL_PIX_ATTEMPT_PAYLOAD_CHANGED/);
+  await assert.rejects(adapter.fetchPayment('../123'), /INVALID_RENEWAL_PAYMENT_LOOKUP/);
+  assert.equal(calls, 0);
 });
