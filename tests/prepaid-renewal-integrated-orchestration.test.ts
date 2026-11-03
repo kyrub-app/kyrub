@@ -27,6 +27,7 @@ let data: Record<string, unknown> = makeData();
 let authenticatedUid = buyerId;
 let paymentFailure = false;
 let reservationMissing = false;
+let boundPaymentId = '12345';
 let providerApprovedAt = '2026-11-01T11:00:00.000Z';
 let providerSideEffect: (() => void) | null = null;
 const calls: string[] = [];
@@ -93,7 +94,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
         exists: !reservationMissing, data: () => ({
           storeId, proposalId, status: 'reserved',
           idempotencyKey: `prepaid-renewal-${proposalId}`,
-          providerPaymentId: '12345',
+          providerPaymentId: boundPaymentId,
           requestDigest: 'b'.repeat(64),
           expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString(),
         }),
@@ -124,7 +125,7 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
   };
 const request = { authorization: 'Bearer valid', storeId, proposalId, paymentId: '12345' };
 const reset = () => {
-  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; reservationMissing = false; providerApprovedAt = '2026-11-01T11:00:00.000Z'; providerSideEffect = null;
+  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; reservationMissing = false; boundPaymentId = '12345'; providerApprovedAt = '2026-11-01T11:00:00.000Z'; providerSideEffect = null;
 };
 
 test('integrated renewal: unauthenticated request never reaches Firestore or payment provider', async () => {
@@ -161,6 +162,18 @@ test('integrated renewal: verified payment reaches successor persistence only af
 test('integrated renewal: verified payment without a Pix reservation never persists', async () => {
   reset();
   reservationMissing = true;
+  await assert.rejects(
+    recordPrepaidRenewalWithVerifiedSources(request),
+    /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/,
+  );
+  assert.equal(calls.includes('provider'), true);
+  assert.equal(calls.includes('persist'), false);
+  assert.equal(persistedInputs.length, 0);
+});
+
+test('integrated renewal: payment not bound to the accepted Pix attempt never creates contract', async () => {
+  reset();
+  boundPaymentId = '99999';
   await assert.rejects(
     recordPrepaidRenewalWithVerifiedSources(request),
     /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/,
