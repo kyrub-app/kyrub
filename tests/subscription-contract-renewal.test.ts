@@ -96,3 +96,10 @@ test('replayed payment is idempotent and cannot fund another renewal', () => {
   assert.throws(() => resolveRenewalPaymentReplay({ ...snapshot, contractId: 'contract-3' }, snapshot, null), /RENEWAL_PAYMENT_ALREADY_USED/);
   assert.throws(() => resolveRenewalPaymentReplay(snapshot, null, snapshot), /RENEWAL_CONTRACT_ALREADY_EXISTS/);
 });
+
+test('renewal rejects unsupported discounts and invalid term metadata', () => {
+  assert.throws(() => createSubscriptionRenewalProposal(contract, 40000, -1), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
+  assert.throws(() => createSubscriptionRenewalProposal(contract, 40000, 101), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
+  assert.throws(() => createSubscriptionRenewalProposal(contract, 40000, 12.345), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
+  assert.throws(() => createSubscriptionRenewalProposal({ ...contract, months: 2 as 12 }, 40000), /INVALID_SUBSCRIPTION_CONTRACT_OFFER/);
+});
