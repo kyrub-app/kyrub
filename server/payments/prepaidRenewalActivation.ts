@@ -190,6 +190,9 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
     expectedExternalReference: paymentExternalReference,
     expectedAmountMinor: stored.proposal.totalDueMinor,
   });
+  if (Date.parse(payment.occurredAt) < Date.parse(stored.acceptance.acceptedAt)) {
+    throw new Error('RENEWAL_PAYMENT_PRECEDES_ACCEPTANCE');
+  }
   // Require an actual proposal-scoped Pix reservation before reconciliation.
   // Provider verification above is read-only; no payment is created here.
   const attemptSnapshot = await adminDb.doc(
