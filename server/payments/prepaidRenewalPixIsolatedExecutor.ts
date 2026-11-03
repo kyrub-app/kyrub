@@ -21,6 +21,8 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
   bindPayment: (paymentId: string) => Promise<'bound' | 'already_bound'>;
   /** Optional internal gate; when provided, claim before an unbound provider POST. */
   claimExecution?: () => Promise<'claimed' | 'fetch_bound'>;
+  /** Persist an ambiguous outcome after provider transport failure; never reset the claim. */
+  markOutcomeUnknown?: () => Promise<void>;
 }): Promise<{ paymentId: string; binding: 'bound' | 'already_bound' }> => {
   const reserved = await input.reserve();
   const decision = decidePrepaidRenewalPixRecovery({
@@ -35,9 +37,20 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
       throw new Error('RENEWAL_PIX_EXECUTION_GATE_CONFLICT');
     }
   }
-  const response = decision.action === 'fetch_existing'
-    ? await input.fetchPayment(decision.paymentId!)
-    : await input.createPayment(input.request);
+  let response: unknown;
+  if (decision.action === 'fetch_existing') {
+    response = await input.fetchPayment(decision.paymentId!);
+  } else {
+    try {
+      response = await input.createPayment(input.request);
+    } catch (error) {
+      if (input.markOutcomeUnknown) {
+        try { await input.markOutcomeUnknown(); }
+        catch { throw new Error('RENEWAL_PIX_OUTCOME_MARK_FAILED', { cause: error }); }
+      }
+      throw error;
+    }
+  }
   const paymentId = validatePrepaidRenewalPixCreationResponse({
     request: input.request,
     response,
