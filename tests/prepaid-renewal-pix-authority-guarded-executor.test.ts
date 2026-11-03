@@ -519,3 +519,43 @@ test('concurrent unbound attempts preserve one provider idempotency key and iden
     });
   }
 });
+
+test('seller-scoped executor claims before POST and blocks a second unbound execution', async () => {
+  const network: string[] = [];
+  let claimed = false;
+  const input = {
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt }),
+    bindPayment: async () => 'bound' as const,
+    claimExecution: async (): Promise<'claimed'> => {
+      if (claimed) throw new Error('RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED');
+      claimed = true;
+      return 'claimed';
+    },
+    sellerScopedRequest: async (_scope: string, path: string, init: RequestInit) => {
+      network.push(`${init.method} ${path}`);
+      return response;
+    },
+  };
+  assert.deepEqual(await executeScopedIsolatedPrepaidRenewalPix(input),
+    { paymentId: '123456', binding: 'bound' });
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix(input),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  assert.deepEqual(network, ['POST /v1/payments']);
+});
+
+test('seller-scoped executor refuses an unexpected fetch-bound claim without POST', async () => {
+  let networkCalls = 0;
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt }),
+    bindPayment: async () => 'bound' as const,
+    claimExecution: async () => 'fetch_bound' as const,
+    sellerScopedRequest: async () => { networkCalls++; return response; },
+  }), /RENEWAL_PIX_EXECUTION_GATE_CONFLICT/);
+  assert.equal(networkCalls, 0);
+});
