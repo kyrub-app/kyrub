@@ -51,13 +51,24 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
       throw error;
     }
   }
-  const paymentId = validatePrepaidRenewalPixCreationResponse({
-    request: input.request,
-    response,
-    expectedStoreId: input.storeId,
-    expectedProposalId: input.proposalId,
-    expectedCollectorId: input.expectedCollectorId,
-  });
+  let paymentId: string;
+  try {
+    paymentId = validatePrepaidRenewalPixCreationResponse({
+      request: input.request,
+      response,
+      expectedStoreId: input.storeId,
+      expectedProposalId: input.proposalId,
+      expectedCollectorId: input.expectedCollectorId,
+    });
+  } catch (error) {
+    // A malformed or mismatched creation response does not prove the POST
+    // failed. Preserve the claim and require reconciliation before retry.
+    if (decision.action !== 'fetch_existing' && input.markOutcomeUnknown) {
+      try { await input.markOutcomeUnknown(); }
+      catch { throw new Error('RENEWAL_PIX_OUTCOME_MARK_FAILED', { cause: error }); }
+    }
+    throw error;
+  }
   if (decision.action === 'fetch_existing' && paymentId !== decision.paymentId) {
     throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
   }
