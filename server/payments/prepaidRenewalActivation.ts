@@ -10,6 +10,8 @@ import { persistVerifiedPrepaidRenewal } from './persistedPrepaidRenewal.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyPrepaidRenewalMercadoPagoPayment } from './prepaidRenewalPaymentVerification.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
+import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
 
 /**
  * Server-only composition boundary. Inputs MUST originate from an authenticated,
@@ -169,12 +171,18 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
   const paymentExternalReference = data.paymentExternalReference;
   if (typeof sellerCredentialScopeId !== 'string' ||
       typeof paymentExternalReference !== 'string' ||
-      sellerCredentialScopeId !== input.storeId ||
+      (!sellerCredentialScopeId || sellerCredentialScopeId.length > 180 || sellerCredentialScopeId.includes('/')) ||
       paymentExternalReference !== `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
+  const authority = await resolveCommercialRecipientAuthority({
+    context: 'store_subscription', canonicalStoreId: input.storeId,
+  });
+  const recipient = resolvePrepaidRenewalRecipientBinding({
+    storeId: input.storeId, storedSellerCredentialScopeId: sellerCredentialScopeId, authority,
+  });
   const payment = await verifyPrepaidRenewalMercadoPagoPayment({
-    sellerCredentialScopeId,
+    sellerCredentialScopeId: recipient.credentialScopeId,
     paymentId: input.paymentId,
     expectedExternalReference: paymentExternalReference,
     expectedAmountMinor: stored.proposal.totalDueMinor,
