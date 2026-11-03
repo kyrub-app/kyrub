@@ -559,3 +559,37 @@ test('seller-scoped executor refuses an unexpected fetch-bound claim without POS
   }), /RENEWAL_PIX_EXECUTION_GATE_CONFLICT/);
   assert.equal(networkCalls, 0);
 });
+
+test('seller-scoped provider timeout marks outcome unknown after a successful claim', async () => {
+  const calls: string[] = [];
+  const input = {
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    sellerScopedRequest: async () => {
+      calls.push('POST');
+      throw new Error('SIMULATED_TIMEOUT');
+    },
+  };
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix(input), /SIMULATED_TIMEOUT/);
+  assert.deepEqual(calls, ['reserve', 'claim', 'POST', 'unknown']);
+});
+
+test('seller-scoped rejected claim cannot mark an outcome or contact provider', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    claimExecution: async () => { calls.push('claim'); throw new Error('RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED'); },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    sellerScopedRequest: async () => { calls.push('POST'); return response; },
+  }), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  assert.deepEqual(calls, ['reserve', 'claim']);
+});
