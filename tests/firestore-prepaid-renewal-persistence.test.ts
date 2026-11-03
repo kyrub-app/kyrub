@@ -202,6 +202,8 @@ test('Firestore: valid accepted proposal is checked and renewed atomically', asy
     acceptedBy: next.customerId,
     acceptedAt: next.acceptedAt,
     acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
     proposal, acceptance,
   });
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId), 'created');
