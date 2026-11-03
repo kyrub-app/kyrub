@@ -49,6 +49,7 @@ import {
 
 import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
 import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
+import { acceptPrepaidRenewalWithFirebaseAuth } from '../server/payments/prepaidRenewalAcceptance.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
@@ -395,6 +396,36 @@ export default async function handler(
           return;
         }
         response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
+        return;
+      }
+      case 'merchant.prepaid-renewal.accept': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        // This endpoint records explicit acceptance only; it never creates
+        // checkout, verifies payments or activates entitlements.
+        if (Object.keys(body).some(key =>
+          !['storeId', 'proposalId', 'acceptedTotalMinor'].includes(key)
+        ) || typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.proposalId !== 'string' ||
+            !/^[a-f0-9]{64}$/.test(body.proposalId) ||
+            !Number.isSafeInteger(body.acceptedTotalMinor) ||
+            (body.acceptedTotalMinor as number) <= 0) {
+          response.status(400).json({
+            error: 'Informe a proposta e o valor integral aceito.',
+            code: 'INVALID_RENEWAL_ACCEPTANCE_REQUEST',
+          });
+          return;
+        }
+        const result = await acceptPrepaidRenewalWithFirebaseAuth({
+          authorization,
+          storeId: body.storeId,
+          proposalId: body.proposalId,
+          acceptedTotalMinor: body.acceptedTotalMinor as number,
+        });
+        response.status(200).json({ status: result });
         return;
       }
       case 'merchant.subscription.quote': {
