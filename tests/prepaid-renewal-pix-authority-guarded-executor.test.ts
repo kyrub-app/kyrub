@@ -469,3 +469,21 @@ test('bound recovery rejects altered external reference and Pix method without r
     assert.deepEqual(calls, ['GET /v1/payments/123456']);
   }
 });
+
+test('bound recovery rejects cancelled or rejected provider status before binding', async () => {
+  for (const status of ['cancelled', 'rejected', 'refunded']) {
+    const calls: string[] = [];
+    await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+      storeId, proposalId, request,
+      trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+      trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+      reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
+      sellerScopedRequest: async (_scope, path, init) => {
+        calls.push(`${init.method} ${path}`);
+        return { ...response, status };
+      },
+      bindPayment: async () => { calls.push('bind'); return 'already_bound'; },
+    }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+    assert.deepEqual(calls, ['GET /v1/payments/123456']);
+  }
+});
