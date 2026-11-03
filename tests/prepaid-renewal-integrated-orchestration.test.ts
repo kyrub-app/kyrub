@@ -182,7 +182,7 @@ const checkoutBundle = await build({
   plugins: [{
     name: 'isolate-renewal-checkout-preparation',
     setup(plugin) {
-      plugin.onResolve({ filter: /firebaseAdmin\\.js$|consultantAuth\\.js$|prepaidRenewalActivation\\.js$/ },
+      plugin.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|prepaidRenewalActivation\.js$/ },
         args => ({ path: args.path, namespace: 'renewal-checkout-isolated' }));
       plugin.onLoad({ filter: /.*/, namespace: 'renewal-checkout-isolated' }, args => {
         if (args.path.endsWith('firebaseAdmin.js')) return {
