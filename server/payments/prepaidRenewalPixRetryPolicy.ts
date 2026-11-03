@@ -20,7 +20,9 @@ export const decidePrepaidRenewalPixRecovery = (input: {
       request.path !== '/v1/payments' || request.init.method !== 'POST' ||
       request.init.headers['X-Idempotency-Key'] !== `prepaid-renewal-${proposalId}` ||
       attempt.idempotencyKey !== `prepaid-renewal-${proposalId}` ||
-      attempt.requestDigest !== createHash('sha256').update(request.init.body).digest('hex')) {
+      attempt.requestDigest !== createHash('sha256').update(request.init.body).digest('hex') ||
+      !/^[a-f0-9]{64}$/.test(proposalId) ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(storeId)) {
     throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
   }
   let body: Record<string, unknown>;
