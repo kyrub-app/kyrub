@@ -202,3 +202,46 @@ test('bound attempt uses seller-scoped GET and never issues a second POST', asyn
   assert.deepEqual(network, ['GET /v1/payments/123456']);
   assert.deepEqual(calls, ['reserve', 'bind']);
 });
+
+test('provider timeout never binds an unverified payment', async () => {
+  const network: string[] = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (_scope, path, init) => {
+      network.push(`${init.method} ${path}`);
+      throw new Error('SIMULATED_PROVIDER_TIMEOUT');
+    },
+  });
+  const { calls, execute } = run({
+    createPayment: adapter.createPayment,
+    fetchPayment: adapter.fetchPayment,
+  });
+  await assert.rejects(execute(), /SIMULATED_PROVIDER_TIMEOUT/);
+  assert.deepEqual(network, ['POST /v1/payments']);
+  assert.deepEqual(calls, ['reserve']);
+});
+test('existing payment with mismatched ID is never rebound', async () => {
+  const network: string[] = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (_scope, path, init) => {
+      network.push(`${init.method} ${path}`);
+      return { ...response, id: 987654 };
+    },
+  });
+  const { calls, execute } = run({
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    createPayment: adapter.createPayment,
+    fetchPayment: adapter.fetchPayment,
+  });
+  await assert.rejects(execute(), /RENEWAL_PIX_RECOVERY_CONFLICT/);
+  assert.deepEqual(network, ['GET /v1/payments/123456']);
+  assert.deepEqual(calls, ['reserve']);
+});
