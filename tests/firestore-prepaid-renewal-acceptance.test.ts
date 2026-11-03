@@ -234,7 +234,7 @@ test('Firestore: changed product, term or discount invalidates an accepted renew
 });
 
 test('Firestore integrated: persisted buyer acceptance becomes exactly one successor after verified payment', async () => {
-  const proposalId = 'integrated-emulator-' + Date.now().toString(36);
+  const proposalId = createHash('sha256').update('integrated-emulator-' + Date.now()).digest('hex');
   const proposal = await seed(proposalId);
   const previousContractId = proposal.previousContractId;
   await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${previousContractId}`).set({
