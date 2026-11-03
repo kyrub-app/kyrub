@@ -28,6 +28,7 @@ let authenticatedUid = buyerId;
 let paymentFailure = false;
 let providerSideEffect: (() => void) | null = null;
 const calls: string[] = [];
+const persistedInputs: unknown[][] = [];
 
 const bundled = await build({
   entryPoints: ['server/payments/prepaidRenewalActivation.ts'],
@@ -94,12 +95,12 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
         occurredAt: '2026-11-01T11:00:00.000Z', verifiedByProvider: true,
       };
     }
-    if (name === 'persist') return 'created';
+    if (name === 'persist') { persistedInputs.push(value as unknown[]); return 'created'; }
     throw new Error('UNEXPECTED_CALL:' + name);
   };
 const request = { authorization: 'Bearer valid', storeId, proposalId, paymentId: '12345' };
 const reset = () => {
-  calls.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerSideEffect = null;
+  calls.length = 0; persistedInputs.length = 0; data = makeData(); authenticatedUid = buyerId; paymentFailure = false; providerSideEffect = null;
 };
 
 test('integrated renewal: unauthenticated request never reaches Firestore or payment provider', async () => {
@@ -147,4 +148,17 @@ test('integrated renewal: checkout binding changed during provider lookup never 
   providerSideEffect = () => { data = { ...data, paymentExternalReference: 'replaced-reference' }; };
   await assert.rejects(recordPrepaidRenewalWithVerifiedSources(request), /RENEWAL_CHECKOUT_BINDING_MISSING/);
   assert.equal(calls.includes('persist'), false);
+});
+
+test('integrated renewal: server-generated successor ID is deterministic for payment replay', async () => {
+  reset();
+  await recordPrepaidRenewalWithVerifiedSources(request);
+  await recordPrepaidRenewalWithVerifiedSources(request);
+  assert.equal(persistedInputs.length, 2);
+  const first = persistedInputs[0][0] as { newContractId: string };
+  const second = persistedInputs[1][0] as { newContractId: string };
+  assert.equal(first.newContractId, second.newContractId);
+  assert.match(first.newContractId, /^renewal-[a-f0-9]{64}$/);
+  assert.equal(persistedInputs[0][1], proposalId);
+  assert.equal(persistedInputs[1][1], proposalId);
 });
