@@ -632,3 +632,39 @@ test('invalid existing-payment GET never changes creation execution state', asyn
   }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
   assert.deepEqual(calls, ['reserve', 'GET /v1/payments/123456']);
 });
+
+test('verified POST with failed Firestore payment binding marks outcome unknown', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    bindPayment: async () => { calls.push('bind'); throw new Error('FIRESTORE_BIND_UNAVAILABLE'); },
+    sellerScopedRequest: async () => { calls.push('POST'); return response; },
+  }), /FIRESTORE_BIND_UNAVAILABLE/);
+  assert.deepEqual(calls, ['reserve', 'claim', 'POST', 'bind', 'unknown']);
+});
+
+test('failed GET recovery binding does not mark POST execution outcome unknown', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => { calls.push('unknown'); },
+    bindPayment: async () => { calls.push('bind'); throw new Error('FIRESTORE_BIND_UNAVAILABLE'); },
+    sellerScopedRequest: async (_scope, path, init) => {
+      calls.push(`${init.method} ${path}`);
+      return response;
+    },
+  }), /FIRESTORE_BIND_UNAVAILABLE/);
+  assert.deepEqual(calls, ['reserve', 'GET /v1/payments/123456', 'bind']);
+});
