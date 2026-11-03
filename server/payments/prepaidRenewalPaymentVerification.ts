@@ -20,7 +20,10 @@ export const verifyPrepaidRenewalMercadoPagoPayment = async (input: {
   expectedAmountMinor: number;
 }) => {
   if (!/^\d{1,32}$/.test(input.paymentId) ||
-      !input.sellerCredentialScopeId || input.sellerCredentialScopeId.includes('/') ||
+      typeof input.sellerCredentialScopeId !== 'string' ||
+      !input.sellerCredentialScopeId || input.sellerCredentialScopeId.length > 180 ||
+      input.sellerCredentialScopeId.includes('/') ||
+      typeof input.expectedExternalReference !== 'string' ||
       !input.expectedExternalReference || input.expectedExternalReference.length > 180 ||
       !Number.isSafeInteger(input.expectedAmountMinor) || input.expectedAmountMinor <= 0) {
     throw new Error('INVALID_RENEWAL_PAYMENT_LOOKUP');
