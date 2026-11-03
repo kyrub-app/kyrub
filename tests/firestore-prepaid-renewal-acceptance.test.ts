@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { createSubscriptionRenewalProposal } from '../shared/subscriptionContractRenewal.js';
 import { persistAuthenticatedPrepaidRenewalAcceptance } from '../server/payments/prepaidRenewalAcceptance.js';
-import { loadAcceptedPrepaidRenewal, recordVerifiedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
+import { loadAcceptedPrepaidRenewal, recordVerifiedPrepaidRenewal, recordStoredVerifiedPrepaidRenewal } from '../server/payments/prepaidRenewalActivation.js';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
   throw new Error('RENEWAL_ACCEPTANCE_TEST_REQUIRES_FIRESTORE_EMULATOR');
@@ -231,4 +231,46 @@ test('Firestore: changed product, term or discount invalidates an accepted renew
       storeId, proposalId, authenticatedBuyerId: customerId,
     }), /RENEWAL_ACCEPTANCE_REQUIRED/);
   }
+});
+
+test('Firestore integrated: persisted buyer acceptance becomes exactly one successor after verified payment', async () => {
+  const proposalId = 'integrated-emulator-' + Date.now().toString(36);
+  const proposal = await seed(proposalId);
+  const previousContractId = proposal.previousContractId;
+  await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${previousContractId}`).set({
+    contractId: previousContractId, storeId, customerId,
+    productId: proposal.productId, months: proposal.months,
+    totalPaidMinor: 30000, expiresAt: '2027-01-01T00:00:00.000Z',
+  });
+  assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), 'accepted');
+  const accepted = await loadAcceptedPrepaidRenewal({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+  });
+  const paymentId = '9900' + Date.now().toString();
+  const payment = {
+    id: paymentId, status: 'approved', amountMinor: proposal.totalDueMinor,
+    occurredAt: new Date(Date.parse(accepted.acceptance.acceptedAt) + 60000).toISOString(),
+    verifiedByProvider: true,
+  };
+  const input = {
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    payment, newContractId: 'integrated-successor-' + proposalId,
+  };
+  assert.equal(await recordStoredVerifiedPrepaidRenewal(input), 'created');
+  assert.equal(await recordStoredVerifiedPrepaidRenewal(input), 'already_recorded');
+  const saved = await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${input.newContractId}`
+  ).get();
+  assert.equal(saved.exists, true);
+  assert.equal(saved.get('providerPaymentId'), paymentId);
+  assert.equal(saved.get('startsAt'), '2027-01-01T00:00:00.000Z');
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalSuccessors/${previousContractId}`
+  ).get()).get('contractId'), input.newContractId);
+  const binding = createHash('sha256').update('mercado_pago:' + paymentId).digest('hex');
+  assert.equal((await adminDb.doc(`prepaidRenewalPaymentBindings/${binding}`).get())
+    .get('contractId'), input.newContractId);
 });
