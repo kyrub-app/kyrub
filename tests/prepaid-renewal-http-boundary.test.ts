@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
+import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
 
 const proposalId = 'a'.repeat(64);
 const valid = { storeId: 'store-a', proposalId, paymentId: '123456' };
@@ -102,4 +103,25 @@ test('HTTP: reconciliation preserves missing authorization for server-side authe
     async input => { received = input; return 'created'; },
   );
   assert.deepEqual(received, { ...valid, authorization: '' });
+});
+
+test('HTTP: financial, authorization and contract errors map to correct status codes', () => {
+  const cases: Array<[string, number]> = [
+    ['RENEWAL_SELLER_NOT_AUTHORIZED', 403],
+    ['RENEWAL_PROPOSAL_NOT_FOUND', 404],
+    ['RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND', 404],
+    ['RENEWAL_PROVIDER_PAYMENT_MISMATCH', 422],
+    ['RENEWAL_PAYMENT_NOT_CONFIRMED', 422],
+    ['RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED', 422],
+    ['INVALID_RENEWAL_PROPOSAL_INPUT', 400],
+    ['RENEWAL_ACCEPTANCE_CHANGED', 409],
+    ['RENEWAL_PAYMENT_ALREADY_USED', 409],
+  ];
+  for (const [code, expected] of cases) {
+    const mapped = mapPrepaidRenewalHttpError(new Error(code));
+    assert.equal(mapped?.status, expected, code);
+    assert.equal(mapped?.body.code, code);
+  }
+  assert.equal(mapPrepaidRenewalHttpError(new Error('UNEXPECTED_ERROR')), null);
+  assert.equal(mapPrepaidRenewalHttpError('RENEWAL_PAYMENT_NOT_CONFIRMED'), null);
 });
