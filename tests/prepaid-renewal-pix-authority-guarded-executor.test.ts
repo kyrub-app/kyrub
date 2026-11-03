@@ -67,3 +67,34 @@ test('forged collector is rejected before binding', async () => {
   await assert.rejects(execute(), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
   assert.deepEqual(calls, ['reserve', 'create']);
 });
+
+test('expired unbound reservation refuses a new provider POST', async () => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  const body = JSON.parse(request.init.body);
+  body.date_of_expiration = expired;
+  const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
+  const expiredAttempt = {
+    ...attempt,
+    expiresAt: expired,
+    requestDigest: createHash('sha256').update(expiredRequest.init.body).digest('hex'),
+  };
+  const { calls, execute } = run({
+    request: expiredRequest,
+    reserve: async () => { calls.push('reserve'); return { attempt: expiredAttempt }; },
+  });
+  await assert.rejects(execute(), /RENEWAL_PIX_RECOVERY_EXPIRED_UNBOUND/);
+  assert.deepEqual(calls, ['reserve']);
+});
+test('previously bound reservation fetches without a second POST', async () => {
+  const { calls, execute } = run({
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    createPayment: async () => { calls.push('create'); throw new Error('DUPLICATE_POST'); },
+    fetchPayment: async id => { calls.push('fetch'); assert.equal(id, '123456'); return response; },
+    bindPayment: async id => { calls.push('bind'); assert.equal(id, '123456'); return 'already_bound' as const; },
+  });
+  assert.deepEqual(await execute(), { paymentId: '123456', binding: 'already_bound' });
+  assert.deepEqual(calls, ['reserve', 'fetch', 'bind']);
+});
