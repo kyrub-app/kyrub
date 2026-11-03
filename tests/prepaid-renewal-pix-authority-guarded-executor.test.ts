@@ -132,3 +132,43 @@ test('scoped transport rejects modified retry and invalid payment lookup without
   await assert.rejects(adapter.fetchPayment('../123'), /INVALID_RENEWAL_PAYMENT_LOOKUP/);
   assert.equal(calls, 0);
 });
+
+test('executor plus scoped transport creates once and binds the verified provider ID', async () => {
+  const network: string[] = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (scope, path, init) => {
+      assert.equal(scope, 'owner-a');
+      network.push(`${init.method} ${path}`);
+      return response;
+    },
+  });
+  const { calls, execute } = run({
+    createPayment: adapter.createPayment,
+    fetchPayment: adapter.fetchPayment,
+  });
+  assert.deepEqual(await execute(), { paymentId: '123456', binding: 'bound' });
+  assert.deepEqual(network, ['POST /v1/payments']);
+  assert.deepEqual(calls, ['reserve', 'bind']);
+});
+test('executor plus scoped transport refuses forged collector before binding', async () => {
+  const network: string[] = [];
+  const adapter = createAuthorityCheckedPrepaidRenewalPixTransport({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    sellerScopedRequest: async (_scope, path) => {
+      network.push(path);
+      return { ...response, collector_id: 999999 };
+    },
+  });
+  const { calls, execute } = run({
+    createPayment: adapter.createPayment,
+    fetchPayment: adapter.fetchPayment,
+  });
+  await assert.rejects(execute(), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.deepEqual(network, ['/v1/payments']);
+  assert.deepEqual(calls, ['reserve']);
+});
