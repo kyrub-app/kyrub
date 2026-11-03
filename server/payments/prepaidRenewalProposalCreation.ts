@@ -37,7 +37,9 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   if (!safeId(previous.productId)) throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   const productRef = adminDb.doc(`stores/${input.storeId}/products/${previous.productId}`);
   const platformPlanMapping = await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${previous.productId}`).get();
-  if (platformPlanMapping.exists) throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
+  if (platformPlanMapping.exists || productDoc.get('platformPlanId') != null) {
+    throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
+  }
   const productDoc = await productRef.get();
   if (!productDoc.exists) throw new Error('RENEWAL_PRODUCT_NOT_FOUND');
   const modality = parseProductSaleModality(productDoc.get('saleModality'));
@@ -99,9 +101,13 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     `stores/${input.storeId}/prepaidRenewalProposals/${proposalId}`
   );
   await adminDb.runTransaction(async tx => {
-    const [existing, alreadyRenewed, currentPrevious, currentProduct] = await Promise.all([
+    const [existing, alreadyRenewed, currentPrevious, currentProduct, currentOfficialMapping] = await Promise.all([
       tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef), tx.get(productRef),
+      tx.get(adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${previous.productId}`)),
     ]);
+    if (currentOfficialMapping.exists || currentProduct.get('platformPlanId') != null) {
+      throw new Error('RENEWAL_OFFICIAL_PLAN_PLATFORM_CHECKOUT_REQUIRED');
+    }
     if (!currentProduct.exists || currentProduct.get('publicationStatus') !== 'published' ||
         JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
       throw new Error('RENEWAL_PRODUCT_CHANGED');
