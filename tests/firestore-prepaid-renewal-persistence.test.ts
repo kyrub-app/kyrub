@@ -149,3 +149,35 @@ test('Firestore: competing renewals do not consume the losing payment', async ()
   const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
   assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === loser.providerPaymentId), false);
 });
+
+test('Firestore: transactional renewal rejects altered accepted proposal without consuming payment', async () => {
+  const storeId = 'renew-emulator-atomic-acceptance';
+  const previousContractId = 'original-atomic';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, 'mp-emulator-atomic-1');
+  const proposalId = 'a'.repeat(64);
+  const proposalRef = adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`);
+  await proposalRef.set({
+    status: 'accepted',
+    acceptedBy: next.customerId,
+    acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: 'invalidated-digest',
+    proposal: {
+      storeId, customerId: next.customerId, previousContractId,
+      productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+    },
+    acceptance: {
+      storeId, customerId: next.customerId,
+      acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+    },
+  });
+  await assert.rejects(
+    persistVerifiedPrepaidRenewal(next, proposalId),
+    /RENEWAL_ACCEPTANCE_CHANGED/,
+  );
+  assert.equal((await adminDb.doc(
+    `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
+  ).get()).exists, false);
+  const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
+  assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
+});
