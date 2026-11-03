@@ -43,6 +43,8 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     throw new Error('RENEWAL_PRODUCT_NOT_MONTHLY_SUBSCRIPTION');
   }
   if (!safeId(previous.customerId) || !safeId(previous.contractId) ||
+      typeof previous.expiresAt !== 'string' ||
+      !/^\d{4}-\d{2}-\d{2}T/.test(previous.expiresAt) ||
       !Number.isFinite(Date.parse(previous.expiresAt)) ||
       !Number.isSafeInteger(previous.totalPaidMinor) || previous.totalPaidMinor <= 0) {
     throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
