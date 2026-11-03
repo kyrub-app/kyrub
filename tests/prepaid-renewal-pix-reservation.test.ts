@@ -91,3 +91,36 @@ test('conflicting concurrent retry cannot mutate the reserved attempt', async ()
   }), /RENEWAL_PIX_ATTEMPT_INVALID/);
   assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
 });
+
+test('reservation rejects a missing accepted proposal without writing an attempt', async () => {
+  const path = `stores/${storeId}/prepaidRenewalProposals/${proposalId}`;
+  const saved = store.get(path);
+  store.delete(path);
+  try {
+    await assert.rejects(reservePrepaidRenewalPixAttempt({
+      storeId, proposalId, request,
+    }), /RENEWAL_PIX_ACCEPTANCE_REQUIRED/);
+  } finally {
+    if (saved) store.set(path, saved);
+  }
+});
+
+test('reservation rejects a tampered accepted proposal digest', async () => {
+  const path = `stores/${storeId}/prepaidRenewalProposals/${proposalId}`;
+  const saved = store.get(path);
+  store.set(path, { ...saved, acceptedProposalDigest: '0'.repeat(64) });
+  try {
+    await assert.rejects(reservePrepaidRenewalPixAttempt({
+      storeId, proposalId, request,
+    }), /RENEWAL_PIX_ACCEPTANCE_REQUIRED/);
+  } finally {
+    if (saved) store.set(path, saved);
+  }
+});
+
+test('reservation rejects cross-store request before writing anything', async () => {
+  await assert.rejects(reservePrepaidRenewalPixAttempt({
+    storeId: 'other-store', proposalId, request,
+  }), /RENEWAL_PIX_ACCEPTANCE_REQUIRED/);
+  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
+});
