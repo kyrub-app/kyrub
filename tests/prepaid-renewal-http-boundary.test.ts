@@ -73,25 +73,24 @@ test('HTTP: valid request forwards only authenticated reconciliation fields', as
   assert.equal(res.state.headers['cache-control'], 'no-store, max-age=0');
 });
 
-test('HTTP: provider and authentication errors propagate without successful response', async () => {
-  for (const code of [
-    'RENEWAL_PAYMENT_NOT_CONFIRMED',
-    'RENEWAL_PROVIDER_PAYMENT_MISMATCH',
-    'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED',
-    'RENEWAL_SELLER_NOT_AUTHORIZED',
-    'RENEWAL_ACCEPTANCE_CHANGED',
-  ]) {
+test('HTTP: simulated provider and buyer failures return expected status and code', async () => {
+  const cases: Array<[string, number]> = [
+    ['RENEWAL_PAYMENT_NOT_CONFIRMED', 422],
+    ['RENEWAL_PROVIDER_PAYMENT_MISMATCH', 422],
+    ['RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED', 422],
+    ['RENEWAL_SELLER_NOT_AUTHORIZED', 403],
+    ['RENEWAL_ACCEPTANCE_CHANGED', 409],
+  ];
+  for (const [code, status] of cases) {
     const res = response();
-    await assert.rejects(
-      handlePrepaidRenewalReconciliation(
-        { method: 'POST', body: valid, authorization: 'Bearer test-user' },
-        res,
-        async () => { throw new Error(code); },
-      ),
-      new RegExp(code),
+    await handlePrepaidRenewalReconciliation(
+      { method: 'POST', body: valid, authorization: 'Bearer test-user' },
+      res,
+      async () => { throw new Error(code); },
     );
-    assert.equal(res.state.code, 0);
-    assert.equal(res.state.body, null);
+    assert.equal(res.state.code, status);
+    assert.deepEqual(res.state.body && (res.state.body as { code: string }).code, code);
+    assert.equal(res.state.headers['cache-control'], 'no-store, max-age=0');
   }
 });
 
@@ -135,4 +134,30 @@ test('HTTP: unauthenticated buyer and unavailable Firebase auth preserve 401/503
     assert.equal(mapped?.status, status);
     assert.equal(mapped?.body.code, code);
   }
+});
+
+test('HTTP: authentication failures return 401/503 without contacting providers', async () => {
+  for (const [status, code] of [[401, 'AUTH_REQUIRED'], [503, 'AUTH_UNAVAILABLE']] as const) {
+    const res = response();
+    await handlePrepaidRenewalReconciliation(
+      { method: 'POST', body: valid, authorization: '' },
+      res,
+      async () => { throw new ConsultantHttpError(status, code, 'Falha na sessão.'); },
+    );
+    assert.equal(res.state.code, status);
+    assert.equal((res.state.body as { code: string }).code, code);
+  }
+});
+
+test('HTTP: unexpected server error is not disguised as a business conflict', async () => {
+  const res = response();
+  await assert.rejects(
+    handlePrepaidRenewalReconciliation(
+      { method: 'POST', body: valid, authorization: 'Bearer test-user' },
+      res,
+      async () => { throw new Error('UNEXPECTED_ERROR'); },
+    ),
+    /UNEXPECTED_ERROR/,
+  );
+  assert.equal(res.state.code, 0);
 });
