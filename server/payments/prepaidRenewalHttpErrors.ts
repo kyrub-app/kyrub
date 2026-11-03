@@ -1,3 +1,5 @@
+import { ConsultantHttpError } from '../ai/types.js';
+
 /**
  * Shared HTTP error mapping for prepaid renewal operations.
  * Pure function: safe to exercise without provider or database access.
@@ -6,6 +8,9 @@ export const mapPrepaidRenewalHttpError = (error: unknown): {
   status: number;
   body: { error: string; code: string };
 } | null => {
+  if (error instanceof ConsultantHttpError) {
+    return { status: error.status, body: { error: error.message, code: error.code } };
+  }
   const code = error instanceof Error ? error.message : '';
   const status = code === 'RENEWAL_SELLER_NOT_AUTHORIZED' ? 403
     : code === 'RENEWAL_PROPOSAL_NOT_FOUND' ||
