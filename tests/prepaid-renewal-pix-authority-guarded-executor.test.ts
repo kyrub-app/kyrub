@@ -324,3 +324,34 @@ test('composed scoped executor refuses expired unbound attempt before provider c
   }), /RENEWAL_PIX_RECOVERY_EXPIRED_UNBOUND/);
   assert.deepEqual(calls, ['reserve']);
 });
+
+test('composed executor recovers expired bound payment through GET without a new charge', async () => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  const body = JSON.parse(request.init.body);
+  body.date_of_expiration = expired;
+  const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
+  const calls: string[] = [];
+  const result = await executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request: expiredRequest,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: {
+        ...attempt, expiresAt: expired, providerPaymentId: '123456',
+        requestDigest: createHash('sha256').update(expiredRequest.init.body).digest('hex'),
+      } };
+    },
+    sellerScopedRequest: async (scope, path, init) => {
+      calls.push(`${scope}:${init.method}:${path}`);
+      assert.equal(init.method, 'GET');
+      return response;
+    },
+    bindPayment: async id => {
+      calls.push('bind:' + id);
+      return 'already_bound';
+    },
+  });
+  assert.deepEqual(result, { paymentId: '123456', binding: 'already_bound' });
+  assert.deepEqual(calls, ['reserve', 'owner-a:GET:/v1/payments/123456', 'bind:123456']);
+});
