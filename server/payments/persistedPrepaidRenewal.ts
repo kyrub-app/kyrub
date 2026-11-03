@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
 import {
   resolveRenewalPaymentReplay,
   type snapshotAcceptedPrepaidRenewal,
@@ -52,6 +53,12 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot):
         !Number.isSafeInteger(originalContractDoc.get('totalPaidMinor')) ||
         originalContractDoc.get('totalPaidMinor') <= 0) {
       throw new Error('RENEWAL_PREDECESSOR_CONTRACT_MISMATCH');
+    }
+    // Defense in depth: reject overlapping terms or a duration that does not
+    // match the fully prepaid renewal. The predecessor is read transactionally.
+    if (Date.parse(renewal.startsAt) < Date.parse(originalContractDoc.get('expiresAt')) ||
+        addMonthsUtc(renewal.startsAt, renewal.months) !== renewal.expiresAt) {
+      throw new Error('INVALID_RENEWAL_CONTRACT_PERIOD');
     }
     const boundPath = paymentDoc.exists ? paymentDoc.get('contractPath') : null;
     if (paymentDoc.exists && (typeof boundPath !== 'string' ||
