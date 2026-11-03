@@ -1,4 +1,4 @@
-import { activatePrepaidContractAfterVerifiedPayment } from './prepaidSubscriptionContractLifecycle.js';
+import { activatePrepaidContractAfterVerifiedPayment, calculatePrepaidRenewalPeriod } from './prepaidSubscriptionContractLifecycle.js';
 import {
   acceptSubscriptionRenewalProposal,
   confirmPrepaidRenewalPayment,
@@ -38,10 +38,33 @@ export const recordVerifiedPrepaidRenewal = async (input: {
     state: 'pending_payment', months: paid.months, amountMinor: paid.totalDueMinor,
     providerPaymentId: '', paymentConfirmedAt: '', startsAt: '', expiresAt: '',
   }, input.payment);
+  // Load the historical expiry from the authoritative store, never from a
+  // browser-supplied quote. An early renewal extends the previous term.
+  const safeId = (value: unknown): value is string =>
+    typeof value === 'string' && value.length > 0 && value.length <= 180 && !value.includes('/');
+  if (!safeId(paid.storeId) || !safeId(paid.previousContractId)) {
+    throw new Error('INVALID_RENEWAL_PREDECESSOR');
+  }
+  const previousDoc = await adminDb.doc(
+    `stores/${paid.storeId}/prepaidSubscriptionContracts/${paid.previousContractId}`
+  ).get();
+  if (!previousDoc.exists || previousDoc.get('storeId') !== paid.storeId ||
+      previousDoc.get('contractId') !== paid.previousContractId ||
+      previousDoc.get('customerId') !== paid.customerId ||
+      previousDoc.get('productId') !== paid.productId ||
+      previousDoc.get('months') !== paid.months) {
+    throw new Error('RENEWAL_PREDECESSOR_CONTRACT_MISMATCH');
+  }
+  const period = calculatePrepaidRenewalPeriod({
+    previousExpiresAt: previousDoc.get('expiresAt'),
+    acceptedAt: input.acceptance.acceptedAt,
+    paymentApprovedAt: lifecycle.paymentConfirmedAt,
+    months: paid.months,
+  });
   const snapshot = snapshotAcceptedPrepaidRenewal(paid, {
     newContractId: input.newContractId,
-    startsAt: lifecycle.startsAt,
-    expiresAt: lifecycle.expiresAt,
+    startsAt: period.startsAt,
+    expiresAt: period.expiresAt,
   });
   return persistVerifiedPrepaidRenewal(snapshot);
 };
