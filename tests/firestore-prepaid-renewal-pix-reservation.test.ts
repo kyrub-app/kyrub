@@ -162,3 +162,20 @@ test('Firestore emulator: validated provider creation response binds once and re
     /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
   assert.equal((await ref.get()).get('providerPaymentId'), '321654');
 });
+
+test('Firestore emulator: concurrent identical provider IDs bind once and remain idempotent', async () => {
+  const storeId = 'renew-pix-emulator-identical-binding-race';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const bind = () => bindCreatedPrepaidRenewalPixPaymentId({
+    storeId, proposalId, paymentId: '200001', expectedRequestDigest,
+  });
+  const results = await Promise.all([bind(), bind(), bind()]);
+  assert.deepEqual(results.sort(), ['already_bound', 'already_bound', 'bound']);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('providerPaymentId'), '200001');
+});
