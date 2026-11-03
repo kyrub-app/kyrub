@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
 import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
+import { ConsultantHttpError } from '../server/ai/types.js';
 
 const proposalId = 'a'.repeat(64);
 const valid = { storeId: 'store-a', proposalId, paymentId: '123456' };
@@ -124,4 +125,14 @@ test('HTTP: financial, authorization and contract errors map to correct status c
   }
   assert.equal(mapPrepaidRenewalHttpError(new Error('UNEXPECTED_ERROR')), null);
   assert.equal(mapPrepaidRenewalHttpError('RENEWAL_PAYMENT_NOT_CONFIRMED'), null);
+});
+
+test('HTTP: unauthenticated buyer and unavailable Firebase auth preserve 401/503', () => {
+  for (const [status, code] of [[401, 'AUTH_REQUIRED'], [503, 'AUTH_UNAVAILABLE']] as const) {
+    const mapped = mapPrepaidRenewalHttpError(
+      new ConsultantHttpError(status, code, 'Falha na validação da sessão.'),
+    );
+    assert.equal(mapped?.status, status);
+    assert.equal(mapped?.body.code, code);
+  }
 });
