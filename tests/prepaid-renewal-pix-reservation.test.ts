@@ -124,3 +124,14 @@ test('reservation rejects cross-store request before writing anything', async ()
   }), /RENEWAL_PIX_ACCEPTANCE_REQUIRED/);
   assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
 });
+
+for (const invalidBody of ['null', '[]', '"unexpected"', '123', 'true']) {
+  test(`transactional Pix reservation rejects non-object JSON ${invalidBody} without writing`, async () => {
+    const before = [...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length;
+    await assert.rejects(reservePrepaidRenewalPixAttempt({
+      storeId, proposalId,
+      request: { ...request, init: { ...request.init, body: invalidBody } },
+    }), /RENEWAL_PIX_ATTEMPT_INVALID/);
+    assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, before);
+  });
+}
