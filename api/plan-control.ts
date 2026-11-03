@@ -52,6 +52,7 @@ import { quotePersistedMerchantSubscription } from '../server/payments/persisted
 import { acceptPrepaidRenewalWithFirebaseAuth } from '../server/payments/prepaidRenewalAcceptance.js';
 import { recordPrepaidRenewalWithVerifiedSources } from '../server/payments/prepaidRenewalActivation.js';
 import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
+import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
 import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
@@ -621,25 +622,9 @@ export default async function handler(
     if (operation === 'merchant.prepaid-renewal.propose' ||
         operation === 'merchant.prepaid-renewal.accept' ||
         operation === 'merchant.prepaid-renewal.reconcile') {
-      const code = error instanceof Error ? error.message : '';
-      const status = code === 'RENEWAL_SELLER_NOT_AUTHORIZED' ? 403
-        : code === 'RENEWAL_PROPOSAL_NOT_FOUND' ||
-          code === 'RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND' ||
-          code === 'RENEWAL_PRODUCT_NOT_FOUND' ? 404
-        : code === 'RENEWAL_PROVIDER_PAYMENT_MISMATCH' ||
-          code === 'RENEWAL_PAYMENT_NOT_CONFIRMED' ||
-          code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' ? 422
-        : code.startsWith('INVALID_RENEWAL_') ? 400
-        : code.startsWith('RENEWAL_') ? 409 : 0;
-      if (status) {
-        response.status(status).json({
-          error: status === 403 ? 'A operação exige o proprietário da loja.'
-            : status === 404 ? 'A proposta, contrato ou produto não foi encontrado.'
-            : status === 400 ? 'Os dados da renovação são inválidos.'
-            : status === 422 ? 'O pagamento não foi confirmado para esta renovação.'
-            : 'Esta renovação não está disponível nas condições atuais.',
-          code,
-        });
+      const mapped = mapPrepaidRenewalHttpError(error);
+      if (mapped) {
+        response.status(mapped.status).json(mapped.body);
         return;
       }
     }
