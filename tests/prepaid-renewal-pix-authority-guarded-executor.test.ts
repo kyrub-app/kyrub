@@ -411,3 +411,19 @@ test('concurrent bound recoveries only GET the same payment and never POST', asy
   })));
   assert.deepEqual(calls, Array.from({ length: 3 }, () => 'GET /v1/payments/123456'));
 });
+
+test('bound recovery rejects forged seller response without changing payment binding', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
+    sellerScopedRequest: async (_scope, path, init) => {
+      calls.push(`${init.method} ${path}`);
+      return { ...response, collector_id: 999999 };
+    },
+    bindPayment: async () => { calls.push('bind'); return 'already_bound'; },
+  }), /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
+  assert.deepEqual(calls, ['GET /v1/payments/123456']);
+});
