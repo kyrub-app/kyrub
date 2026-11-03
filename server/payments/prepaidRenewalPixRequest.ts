@@ -24,7 +24,7 @@ export const buildPrepaidRenewalPixRequest = (input: {
       !Number.isSafeInteger(input.acceptedTotalMinor) ||
       input.acceptedTotalMinor <= 0 ||
       input.acceptedTotalMinor !== input.proposalTotalMinor ||
-      !/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(input.payerEmail) ||
+      !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(input.payerEmail) ||
       typeof input.expiresAt !== 'string' ||
       !Number.isFinite(Date.parse(input.expiresAt)) ||
       Date.parse(input.expiresAt) <= Date.now()) {
