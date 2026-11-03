@@ -179,3 +179,33 @@ test('Firestore emulator: concurrent identical provider IDs bind once and remain
   ).get();
   assert.equal(attempt.get('providerPaymentId'), '200001');
 });
+
+test('Firestore emulator: concurrent execution claims allow only one unbound Pix POST owner', async () => {
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-execution-claim';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const claim = () => claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest });
+  const results = await Promise.allSettled([claim(), claim(), claim()]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected').length, 2);
+  assert.equal(results.find(result => result.status === 'fulfilled')?.value, 'claimed');
+  for (const result of results) {
+    if (result.status === 'rejected') {
+      assert.match(String(result.reason), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+    }
+  }
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('executionState'), 'in_flight');
+  await markPrepaidRenewalPixExecutionOutcomeUnknown({
+    storeId, proposalId, expectedRequestDigest,
+  });
+  assert.equal((await ref.get()).get('executionState'), 'outcome_unknown');
+  await assert.rejects(claim(), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  await assert.rejects(claimPrepaidRenewalPixExecution({
+    storeId, proposalId, expectedRequestDigest: '0'.repeat(64),
+  }), /RENEWAL_PIX_EXECUTION_GATE_CONFLICT/);
+});
