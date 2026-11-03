@@ -1,16 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { build } from 'esbuild';
+import { createHash } from 'node:crypto';
 
 const proposalId = 'a'.repeat(64);
 const storeId = 'store-a';
 const acceptedAt = new Date(Date.now() - 60_000).toISOString();
 const expiry = new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString();
+const embeddedProposal = { customerId: 'buyer-a', storeId, totalDueMinor: 29990 };
 const proposal = {
-  status: 'accepted', acceptedBy: 'buyer-a',
+  status: 'accepted', acceptedBy: 'buyer-a', acceptedAt,
+  acceptedProposalDigest: createHash('sha256').update(JSON.stringify(embeddedProposal)).digest('hex'),
   paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
   acceptance: { customerId: 'buyer-a', storeId, acceptedTotalMinor: 29990, acceptedAt },
-  proposal: { customerId: 'buyer-a', storeId, totalDueMinor: 29990 },
+  proposal: embeddedProposal,
 };
 const store = new Map<string, Record<string, unknown>>([
   [`stores/${storeId}/prepaidRenewalProposals/${proposalId}`, proposal],
