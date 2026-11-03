@@ -132,7 +132,9 @@ test('reconciliation API delegates to isolated HTTP boundary and provider verifi
 
 test('reconciliation API maps provider mismatch to HTTP 422', () => {
   const source = readFileSync('api/plan-control.ts', 'utf8');
-  assert.match(source, /code === 'RENEWAL_PROVIDER_PAYMENT_MISMATCH'/);
-  assert.match(source, /code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' \? 422/);
-  assert.match(source, /status === 422 \? 'O pagamento não foi confirmado/);
+  const mapper = readFileSync('server/payments/prepaidRenewalHttpErrors.ts', 'utf8');
+  assert.match(source, /mapPrepaidRenewalHttpError\(error\)/);
+  assert.match(mapper, /code === 'RENEWAL_PROVIDER_PAYMENT_MISMATCH'/);
+  assert.match(mapper, /code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' \? 422/);
+  assert.match(mapper, /status === 422 \? 'O pagamento não foi confirmado/);
 });
