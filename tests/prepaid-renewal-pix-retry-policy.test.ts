@@ -76,3 +76,17 @@ test('recovery rejects malformed proposal locator even when its persisted digest
     persistedAttempt: { ...attempt, proposalId: 'invalid-proposal' },
   }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
 });
+
+test('null JSON body fails with controlled conflict rather than a runtime TypeError', () => {
+  const nullBodyRequest = {
+    ...request,
+    init: { ...request.init, body: 'null' },
+  };
+  assert.throws(() => decidePrepaidRenewalPixRecovery({
+    storeId, proposalId, request: nullBodyRequest,
+    persistedAttempt: {
+      ...attempt,
+      requestDigest: createHash('sha256').update(nullBodyRequest.init.body).digest('hex'),
+    },
+  }), /RENEWAL_PIX_RECOVERY_CONFLICT/);
+});
