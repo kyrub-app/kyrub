@@ -134,3 +134,35 @@ test('prepaid renewal Pix payload uses accepted proposal reference and rejects t
       /INVALID_PREPAID_RENEWAL_PIX_BINDING/);
   }
 });
+
+test('renewal merchant authority distinguishes canonical store from legacy OAuth owner scope', async () => {
+  const { resolvePrepaidRenewalRecipientBinding } = await import('../server/payments/prepaidRenewalRecipientBinding.js');
+  const authority = {
+    schemaVersion: 1 as const, context: 'store_subscription' as const,
+    recipientKind: 'merchant_store' as const, beneficiaryPrincipalId: 'store:store-a',
+    provider: 'mercado_pago' as const, credentialAuthority: 'store_oauth_vault' as const,
+    credentialScopeId: 'owner-a', canonicalStoreId: 'store-a',
+    ownerUserId: 'owner-a', externalAccountId: '12345',
+    platformFeeMode: 'separate' as const,
+  };
+  assert.deepEqual(resolvePrepaidRenewalRecipientBinding({
+    storeId: 'store-a', storedSellerCredentialScopeId: 'store-a', authority,
+  }), { credentialScopeId: 'owner-a', externalAccountId: '12345' });
+  assert.deepEqual(resolvePrepaidRenewalRecipientBinding({
+    storeId: 'store-a', storedSellerCredentialScopeId: 'owner-a', authority,
+  }), { credentialScopeId: 'owner-a', externalAccountId: '12345' });
+  for (const change of [
+    { canonicalStoreId: 'other-store' },
+    { credentialScopeId: 'other-owner' },
+    { externalAccountId: '' },
+    { context: 'platform_plan_subscription' as const },
+  ]) {
+    assert.throws(() => resolvePrepaidRenewalRecipientBinding({
+      storeId: 'store-a', storedSellerCredentialScopeId: 'store-a',
+      authority: { ...authority, ...change },
+    }), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
+  }
+  assert.throws(() => resolvePrepaidRenewalRecipientBinding({
+    storeId: 'store-a', storedSellerCredentialScopeId: 'attacker-owner', authority,
+  }), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
+});
