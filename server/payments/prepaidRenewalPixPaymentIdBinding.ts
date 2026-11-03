@@ -14,7 +14,7 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
 }): Promise<'bound' | 'already_bound'> => {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
       !/^[a-f0-9]{64}$/.test(input.proposalId) ||
-      !/^\\d{1,32}$/.test(input.paymentId) ||
+      !/^\d{1,32}$/.test(input.paymentId) ||
       !/^[a-f0-9]{64}$/.test(input.expectedRequestDigest)) {
     throw new Error('RENEWAL_PIX_PAYMENT_BINDING_INVALID');
   }
