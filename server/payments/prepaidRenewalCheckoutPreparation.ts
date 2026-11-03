@@ -4,6 +4,7 @@ import { loadAcceptedPrepaidRenewal } from './prepaidRenewalActivation.js';
 import { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
+import { prepaidRenewalPixExpiryFromAcceptance } from './prepaidRenewalPixExpiry.js';
 
 /**
  * Read-only authenticated checkout preparation. Does not contact Mercado Pago
@@ -57,6 +58,6 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
     verifiedSellerCredentialScopeId: recipient.credentialScopeId,
     paymentExternalReference: data.paymentExternalReference as string,
     payerEmail: buyer.email,
-    expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+    expiresAt: prepaidRenewalPixExpiryFromAcceptance(acceptance.acceptedAt),
   });
 };
