@@ -49,7 +49,7 @@ const request = {
 const approved = () => ({
   id: 987654, status: 'approved', status_detail: 'accredited',
   collector_id: 12345, transaction_amount: 299.9,
-  date_approved: '2026-11-01T12:00:00.000Z', currency_id: 'BRL',
+  date_approved: '2026-11-01T12:00:00.000Z', currency_id: 'BRL', payment_method_id: 'pix',
   external_reference: request.expectedExternalReference,
 });
 const reset = () => {
@@ -92,6 +92,8 @@ test('Mercado Pago verification rejects mismatched collector, amount, reference,
     { transaction_amount: 299.91 },
     { external_reference: 'other-reference' },
     { currency_id: 'USD' },
+    { payment_method_id: 'credit_card' },
+    { payment_method_id: undefined },
     { status: 'pending' },
     { status_detail: 'pending_contingency' },
     { id: 123 },
