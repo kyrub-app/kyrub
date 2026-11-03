@@ -50,6 +50,13 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
   if (!Number.isSafeInteger(input.discountPercent) || input.discountPercent < 0 || input.discountPercent > 100) {
     throw new Error('INVALID_RENEWAL_DISCOUNT');
   }
+  // Until a trusted pricing adapter is wired, refuse prices that disagree
+  // with the persisted product. Discounts still require seller authorization.
+  const storedPrice = productDoc.get('priceMinor');
+  if (!Number.isSafeInteger(storedPrice) || storedPrice <= 0 ||
+      storedPrice !== input.currentMonthlyPriceMinor) {
+    throw new Error('RENEWAL_PRICE_NOT_VERIFIED');
+  }
   const proposal = createSubscriptionRenewalProposal(
     previous, input.currentMonthlyPriceMinor, input.discountPercent
   );
