@@ -108,3 +108,29 @@ test('Mercado Pago verification rejects mismatched collector, amount, reference,
     assert.deepEqual(calls.map(call => call.name), ['token', 'payment']);
   }
 });
+
+test('prepaid renewal Pix payload uses accepted proposal reference and rejects tampering', async () => {
+  const { buildPrepaidRenewalPixRequest } = await import('../server/payments/prepaidRenewalPixRequest.js');
+  const proposalId = 'a'.repeat(64);
+  const input = {
+    storeId: 'store-a', proposalId,
+    acceptedBuyerId: 'buyer-a', authenticatedBuyerId: 'buyer-a',
+    acceptedTotalMinor: 29990, proposalTotalMinor: 29990,
+    sellerCredentialScopeId: 'store-a',
+    paymentExternalReference: `kyrub:prepaid-renewal:store-a:${proposalId}`,
+    payerEmail: 'buyer@example.com',
+    expiresAt: '2099-11-03T12:00:00.000Z',
+  };
+  const payload = buildPrepaidRenewalPixRequest(input);
+  const body = JSON.parse(payload.init.body);
+  assert.equal(body.external_reference, input.paymentExternalReference);
+  assert.equal(body.transaction_amount, 299.9);
+  assert.equal(payload.init.headers['X-Idempotency-Key'], `prepaid-renewal-${proposalId}`);
+  for (const change of [
+    { authenticatedBuyerId: 'other' }, { sellerCredentialScopeId: 'other' },
+    { proposalTotalMinor: 1 }, { paymentExternalReference: 'other' },
+  ]) {
+    assert.throws(() => buildPrepaidRenewalPixRequest({ ...input, ...change }),
+      /INVALID_PREPAID_RENEWAL_PIX_BINDING/);
+  }
+});
