@@ -124,7 +124,10 @@ export const recordStoredVerifiedPrepaidRenewal = async (input: {
   newContractId: string;
 }) => {
   const stored = await loadAcceptedPrepaidRenewal(input);
-  return recordVerifiedPrepaidRenewal({ ...stored, payment: input.payment, newContractId: input.newContractId });
+  return recordVerifiedPrepaidRenewal({
+    ...stored, payment: input.payment, newContractId: input.newContractId,
+    acceptedProposalId: input.proposalId,
+  });
 };
 
 /** Server boundary: use stored offer, authenticated buyer and provider-verified payment. */
