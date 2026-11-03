@@ -278,3 +278,49 @@ test('composed scoped executor rejects mismatched OAuth before reservation or ne
   }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
   assert.deepEqual(calls, []);
 });
+
+test('composed scoped executor recovers bound payment through GET only', async () => {
+  const calls: string[] = [];
+  const result = await executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: { ...attempt, providerPaymentId: '123456' } };
+    },
+    sellerScopedRequest: async (scope, path, init) => {
+      calls.push(`${scope}:${init.method}:${path}`);
+      assert.equal(init.method, 'GET');
+      return response;
+    },
+    bindPayment: async id => {
+      calls.push('bind:' + id);
+      return 'already_bound';
+    },
+  });
+  assert.deepEqual(result, { paymentId: '123456', binding: 'already_bound' });
+  assert.deepEqual(calls, ['reserve', 'owner-a:GET:/v1/payments/123456', 'bind:123456']);
+});
+test('composed scoped executor refuses expired unbound attempt before provider call', async () => {
+  const expired = new Date(Date.now() - 60_000).toISOString();
+  const body = JSON.parse(request.init.body);
+  body.date_of_expiration = expired;
+  const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request: expiredRequest,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => {
+      calls.push('reserve');
+      return { attempt: {
+        ...attempt, expiresAt: expired,
+        requestDigest: createHash('sha256').update(expiredRequest.init.body).digest('hex'),
+      } };
+    },
+    sellerScopedRequest: async () => { calls.push('network'); return response; },
+    bindPayment: async () => { calls.push('bind'); return 'bound'; },
+  }), /RENEWAL_PIX_RECOVERY_EXPIRED_UNBOUND/);
+  assert.deepEqual(calls, ['reserve']);
+});
