@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { assertSamePrepaidRenewalPixAttempt, buildPrepaidRenewalPixRequest } from '../server/payments/prepaidRenewalPixRequest.js';
+import { prepaidRenewalPixExpiryFromAcceptance } from '../server/payments/prepaidRenewalPixExpiry.js';
 
 const proposalId = 'a'.repeat(64);
 const valid = () => ({
@@ -58,4 +59,15 @@ test('renewal Pix retry with a changed expiry must not be submitted under the sa
   assert.throws(() => assertSamePrepaidRenewalPixAttempt(first, later), /RENEWAL_PIX_ATTEMPT_PAYLOAD_CHANGED/);
   // The executor must persist and reuse one exact payload for an attempt;
   // this test records the unsafe scenario until that execution gate exists.
+});
+
+test('accepted renewal timestamp yields stable Pix expiry across retries', () => {
+  const acceptedAt = '2026-11-03T12:00:00.000Z';
+  const first = prepaidRenewalPixExpiryFromAcceptance(acceptedAt, Date.parse('2026-11-03T12:01:00.000Z'));
+  const retry = prepaidRenewalPixExpiryFromAcceptance(acceptedAt, Date.parse('2026-11-03T12:20:00.000Z'));
+  assert.equal(first, '2026-11-03T12:30:00.000Z');
+  assert.equal(retry, first);
+  assert.throws(() => prepaidRenewalPixExpiryFromAcceptance(acceptedAt, Date.parse('2026-11-03T12:30:00.000Z')), /RENEWAL_PIX_ACCEPTANCE_WINDOW_EXPIRED/);
+  assert.throws(() => prepaidRenewalPixExpiryFromAcceptance(acceptedAt, Date.parse('2026-11-03T11:59:00.000Z')), /RENEWAL_PIX_ACCEPTANCE_WINDOW_EXPIRED/);
+  assert.throws(() => prepaidRenewalPixExpiryFromAcceptance('invalid'), /RENEWAL_PIX_ACCEPTANCE_TIMESTAMP_INVALID/);
 });
