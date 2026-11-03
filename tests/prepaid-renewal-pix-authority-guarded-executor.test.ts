@@ -487,3 +487,35 @@ test('bound recovery rejects cancelled or rejected provider status before bindin
     assert.deepEqual(calls, ['GET /v1/payments/123456']);
   }
 });
+
+test('concurrent unbound attempts preserve one provider idempotency key and identical body', async () => {
+  const calls: Array<{ scope: string; method: string; path: string; body: string | undefined; key: string | undefined }> = [];
+  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => ({ attempt }),
+    sellerScopedRequest: async (scope, path, init) => {
+      const headers = init.headers as Record<string, string>;
+      calls.push({ scope, method: init.method ?? '', path,
+        body: init.body as string | undefined, key: headers['X-Idempotency-Key'] });
+      await Promise.resolve();
+      return response;
+    },
+    bindPayment: async id => {
+      assert.equal(id, '123456');
+      return 'bound';
+    },
+  });
+  const results = await Promise.all([execute(), execute(), execute()]);
+  assert.deepEqual(results, Array.from({ length: 3 }, () => ({
+    paymentId: '123456', binding: 'bound',
+  })));
+  assert.equal(calls.length, 3);
+  for (const call of calls) {
+    assert.deepEqual(call, {
+      scope: 'owner-a', method: 'POST', path: '/v1/payments',
+      body: request.init.body, key: `prepaid-renewal-${proposalId}`,
+    });
+  }
+});
