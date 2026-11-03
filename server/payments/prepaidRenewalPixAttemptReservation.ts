@@ -60,6 +60,9 @@ export const reservePrepaidRenewalPixAttempt = async (input: {
     let payload: Record<string, unknown>;
     try { payload = JSON.parse(request.init.body); }
     catch { throw new Error('RENEWAL_PIX_ATTEMPT_INVALID'); }
+    if (!payload || typeof payload !== 'object' || Array.isArray(payload)) {
+      throw new Error('RENEWAL_PIX_ATTEMPT_INVALID');
+    }
     if (payload.transaction_amount !== Number(acceptance.acceptedTotalMinor) / 100 ||
         payload.date_of_expiration !==
           new Date(Date.parse(acceptance.acceptedAt) + 30 * 60_000).toISOString()) {
