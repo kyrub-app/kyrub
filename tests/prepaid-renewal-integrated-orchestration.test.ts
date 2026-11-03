@@ -88,6 +88,14 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
     }
     if (name === 'get') {
       const path = String(value);
+      if (path.endsWith('/prepaidRenewalPixAttempts/' + proposalId)) return {
+        exists: true, data: () => ({
+          storeId, proposalId, status: 'reserved',
+          idempotencyKey: `prepaid-renewal-${proposalId}`,
+          requestDigest: 'b'.repeat(64),
+          expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString(),
+        }),
+      };
       if (path.endsWith('/prepaidRenewalProposals/' + proposalId))
         return { exists: true, data: () => data };
       if (path.endsWith('/prepaidSubscriptionContracts/old-contract'))
@@ -145,7 +153,7 @@ test('integrated renewal: verified payment reaches successor persistence only af
   reset();
   const result = await recordPrepaidRenewalWithVerifiedSources(request);
   assert.equal(result, 'created');
-  assert.deepEqual(calls, ['auth', 'get', 'get', 'provider', 'get', 'get', 'get', 'persist']);
+  assert.deepEqual(calls, ['auth', 'get', 'get', 'provider', 'get', 'get', 'get', 'get', 'persist']);
 });
 
 test('integrated renewal: acceptance changed during provider lookup never persists', async () => {
