@@ -191,3 +191,17 @@ test('Firestore: replay of verified renewal preserves the original contract', as
     `stores/${storeId}/prepaidRenewalSuccessors/${predecessorId}`
   ).get()).get('contractId'), input.newContractId);
 });
+
+test('Firestore: altered accepted proposal cannot be loaded for payment reconciliation', async () => {
+  const proposalId = 'tampered-accepted-quote';
+  const proposal = await seed(proposalId);
+  assert.equal(await persistAuthenticatedPrepaidRenewalAcceptance({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+    acceptedTotalMinor: proposal.totalDueMinor,
+  }), 'accepted');
+  const reference = adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`);
+  await reference.update({ 'proposal.totalDueMinor': proposal.totalDueMinor + 1 });
+  await assert.rejects(loadAcceptedPrepaidRenewal({
+    storeId, proposalId, authenticatedBuyerId: customerId,
+  }), /RENEWAL_ACCEPTANCE_REQUIRED/);
+});
