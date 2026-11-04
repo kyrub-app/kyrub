@@ -10,7 +10,7 @@ import { prepaidRenewalPixExpiryFromAcceptance } from './prepaidRenewalPixExpiry
  * Read-only authenticated checkout preparation. Does not contact Mercado Pago
  * or create any payment. The actual payment executor remains a separate gate.
  */
-export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
+export const prepareAuthenticatedPrepaidRenewalPixWithRecipient = async (input: {
   authorization: string | null | undefined;
   storeId: string;
   proposalId: string;
@@ -47,7 +47,7 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
     storedSellerCredentialScopeId: data.sellerCredentialScopeId,
     authority,
   });
-  return buildPrepaidRenewalPixRequest({
+  const request = buildPrepaidRenewalPixRequest({
     storeId: input.storeId,
     proposalId: input.proposalId,
     acceptedBuyerId: acceptance.customerId,
@@ -60,4 +60,9 @@ export const prepareAuthenticatedPrepaidRenewalPix = async (input: {
     payerEmail: buyer.email,
     expiresAt: prepaidRenewalPixExpiryFromAcceptance(acceptance.acceptedAt),
   });
+  return { request, recipient };
 };
+
+/** Backward-compatible read-only request preparation. */
+export const prepareAuthenticatedPrepaidRenewalPix = async (input: Parameters<typeof prepareAuthenticatedPrepaidRenewalPixWithRecipient>[0]) =>
+  (await prepareAuthenticatedPrepaidRenewalPixWithRecipient(input)).request;
