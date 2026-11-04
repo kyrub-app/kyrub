@@ -33,6 +33,15 @@ const response = {
   currency_id: 'BRL', collector_id: 7654321, transaction_amount: 29.9,
   external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
 };
+// Mock execution gate for isolated transport tests; production requires a Firestore transaction.
+const executeScopedWithTestGate = (input:
+  Omit<Parameters<typeof executeScopedIsolatedPrepaidRenewalPix>[0], 'claimExecution' | 'markOutcomeUnknown'> &
+  Partial<Pick<Parameters<typeof executeScopedIsolatedPrepaidRenewalPix>[0], 'claimExecution' | 'markOutcomeUnknown'>>
+) => executeScopedIsolatedPrepaidRenewalPix({
+  claimExecution: async () => 'claimed' as const,
+  markOutcomeUnknown: async () => {},
+  ...input,
+});
 const run = (overrides: Record<string, unknown> = {}) => {
   const calls: string[] = [];
   const input = {
@@ -45,6 +54,8 @@ const run = (overrides: Record<string, unknown> = {}) => {
     createPayment: async () => { calls.push('create'); return response; },
     fetchPayment: async () => { calls.push('fetch'); return response; },
     bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    claimExecution: async () => 'claimed' as const,
+    markOutcomeUnknown: async () => {},
     ...overrides,
   };
   return { calls, execute: () => executeAuthorityGuardedIsolatedPrepaidRenewalPix(input) };
@@ -249,7 +260,7 @@ test('existing payment with mismatched ID is never rebound', async () => {
 
 test('composed scoped executor shares merchant authority across create and binding', async () => {
   const calls: string[] = [];
-  const result = await executeScopedIsolatedPrepaidRenewalPix({
+  const result = await executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -268,7 +279,7 @@ test('composed scoped executor shares merchant authority across create and bindi
 });
 test('composed scoped executor rejects mismatched OAuth before reservation or network', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'other-owner',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -281,7 +292,7 @@ test('composed scoped executor rejects mismatched OAuth before reservation or ne
 
 test('composed scoped executor recovers bound payment through GET only', async () => {
   const calls: string[] = [];
-  const result = await executeScopedIsolatedPrepaidRenewalPix({
+  const result = await executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -308,7 +319,7 @@ test('composed scoped executor refuses expired unbound attempt before provider c
   body.date_of_expiration = expired;
   const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request: expiredRequest,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -331,7 +342,7 @@ test('composed executor recovers expired bound payment through GET without a new
   body.date_of_expiration = expired;
   const expiredRequest = { ...request, init: { ...request.init, body: JSON.stringify(body) } };
   const calls: string[] = [];
-  const result = await executeScopedIsolatedPrepaidRenewalPix({
+  const result = await executeScopedWithTestGate({
     storeId, proposalId, request: expiredRequest,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -359,7 +370,7 @@ test('composed executor recovers expired bound payment through GET without a new
 test('composed executor retries provider timeout with identical Pix key and payload', async () => {
   const calls: Array<{ method: string; path: string; body: string | undefined; key: string | undefined }> = [];
   let attempts = 0;
-  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+  const execute = () => executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -389,7 +400,7 @@ test('composed executor retries provider timeout with identical Pix key and payl
 
 test('concurrent bound recoveries only GET the same payment and never POST', async () => {
   const calls: string[] = [];
-  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+  const execute = () => executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -414,7 +425,7 @@ test('concurrent bound recoveries only GET the same payment and never POST', asy
 
 test('bound recovery rejects forged seller response without changing payment binding', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -434,7 +445,7 @@ test('bound recovery rejects wrong currency and amount without rebinding', async
     { ...response, transaction_amount: 19.9 },
   ]) {
     const calls: string[] = [];
-    await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    await assert.rejects(executeScopedWithTestGate({
       storeId, proposalId, request,
       trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
       trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -455,7 +466,7 @@ test('bound recovery rejects altered external reference and Pix method without r
     { ...response, payment_method_id: 'credit_card' },
   ]) {
     const calls: string[] = [];
-    await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    await assert.rejects(executeScopedWithTestGate({
       storeId, proposalId, request,
       trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
       trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -473,7 +484,7 @@ test('bound recovery rejects altered external reference and Pix method without r
 test('bound recovery rejects cancelled or rejected provider status before binding', async () => {
   for (const status of ['cancelled', 'rejected', 'refunded']) {
     const calls: string[] = [];
-    await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    await assert.rejects(executeScopedWithTestGate({
       storeId, proposalId, request,
       trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
       trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -490,7 +501,7 @@ test('bound recovery rejects cancelled or rejected provider status before bindin
 
 test('concurrent unbound attempts preserve one provider idempotency key and identical body', async () => {
   const calls: Array<{ scope: string; method: string; path: string; body: string | undefined; key: string | undefined }> = [];
-  const execute = () => executeScopedIsolatedPrepaidRenewalPix({
+  const execute = () => executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -539,16 +550,16 @@ test('seller-scoped executor claims before POST and blocks a second unbound exec
       return response;
     },
   };
-  assert.deepEqual(await executeScopedIsolatedPrepaidRenewalPix(input),
+  assert.deepEqual(await executeScopedWithTestGate(input),
     { paymentId: '123456', binding: 'bound' });
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix(input),
+  await assert.rejects(executeScopedWithTestGate(input),
     /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
   assert.deepEqual(network, ['POST /v1/payments']);
 });
 
 test('seller-scoped executor refuses an unexpected fetch-bound claim without POST', async () => {
   let networkCalls = 0;
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -575,13 +586,13 @@ test('seller-scoped provider timeout marks outcome unknown after a successful cl
       throw new Error('SIMULATED_TIMEOUT');
     },
   };
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix(input), /SIMULATED_TIMEOUT/);
+  await assert.rejects(executeScopedWithTestGate(input), /SIMULATED_TIMEOUT/);
   assert.deepEqual(calls, ['reserve', 'claim', 'POST', 'unknown']);
 });
 
 test('seller-scoped rejected claim cannot mark an outcome or contact provider', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -596,7 +607,7 @@ test('seller-scoped rejected claim cannot mark an outcome or contact provider', 
 
 test('invalid creation response marks unknown and never binds or retries', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -614,7 +625,7 @@ test('invalid creation response marks unknown and never binds or retries', async
 
 test('invalid existing-payment GET never changes creation execution state', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -635,7 +646,7 @@ test('invalid existing-payment GET never changes creation execution state', asyn
 
 test('verified POST with failed Firestore payment binding marks outcome unknown', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -650,7 +661,7 @@ test('verified POST with failed Firestore payment binding marks outcome unknown'
 
 test('failed GET recovery binding does not mark POST execution outcome unknown', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
@@ -671,7 +682,7 @@ test('failed GET recovery binding does not mark POST execution outcome unknown',
 
 test('failed persistence of ambiguous POST outcome fails closed without binding', async () => {
   const calls: string[] = [];
-  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+  await assert.rejects(executeScopedWithTestGate({
     storeId, proposalId, request,
     trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
     trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
