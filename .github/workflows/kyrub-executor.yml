@@ -27,18 +27,18 @@ jobs:
       TARGET_BRANCH: feat/subscription-renewal-offer-contract
       MODE: ${{ inputs.mode }}
     steps:
-      - name: Checkout executor configuration
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          ref: main
-          path: executor-config
-          persist-credentials: false
       - name: Checkout audited renewal branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           ref: ${{ env.TARGET_BRANCH }}
           persist-credentials: false
           fetch-depth: 0
+      - name: Checkout executor configuration
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: executor-config
+          persist-credentials: false
       - name: Set up Node 22
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
@@ -54,7 +54,7 @@ jobs:
         run: |
           set -euo pipefail
           npm ci --ignore-scripts
-          npm install --global @openai/codex
+          npm install --global @openai/codex@0.47.0
       - name: Execute bounded mission
         shell: bash
         env:
