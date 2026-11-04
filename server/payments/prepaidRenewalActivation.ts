@@ -228,6 +228,20 @@ export const recordPrepaidRenewalWithVerifiedSources = async (input: {
       latestData.paymentExternalReference !== paymentExternalReference) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
+  // The seller's OAuth binding may change while the provider GET is in flight.
+  // Recheck the current merchant before activating the renewed contract.
+  const finalAuthority = await resolveCommercialRecipientAuthority({
+    context: 'store_subscription', canonicalStoreId: input.storeId,
+  });
+  const finalRecipient = resolvePrepaidRenewalRecipientBinding({
+    storeId: input.storeId,
+    storedSellerCredentialScopeId: sellerCredentialScopeId,
+    authority: finalAuthority,
+  });
+  if (finalRecipient.credentialScopeId !== recipient.credentialScopeId ||
+      finalRecipient.externalAccountId !== recipient.externalAccountId) {
+    throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
+  }
   return recordVerifiedPrepaidRenewal({
     ...latest, payment, newContractId, acceptedProposalId: input.proposalId,
     verifiedSellerCredentialScopeId: recipient.credentialScopeId,
