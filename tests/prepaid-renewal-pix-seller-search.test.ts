@@ -111,3 +111,33 @@ test('seller search rejects malformed reserved body before any provider GET', as
   }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH|RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID/);
   assert.equal(calls, 0);
 });
+
+test('seller search refuses OAuth credential scope mismatch before GET', async () => {
+  let calls = 0;
+  await assert.rejects(search({
+    ...makeInput(async () => { calls++; return {}; }),
+    oauthCredentialScopeId: 'another-store-owner',
+  }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+  assert.equal(calls, 0);
+});
+
+test('seller search cannot adopt a payment collected by another seller', async () => {
+  await assert.rejects(search(makeInput(async (_scope, _path, init) => {
+    assert.equal(init.method, 'GET');
+    return {
+      paging: { total: 1, limit: 50, offset: 0 },
+      results: [{ ...payment, collector_id: 9876543 }],
+    };
+  })), /RENEWAL_PIX_RECONCILIATION_NOT_FOUND_UNRESOLVED/);
+});
+
+test('seller search rejects tampered tenant metadata without provider access', async () => {
+  let calls = 0;
+  const altered = JSON.parse(request.init.body);
+  altered.metadata.kyrub_store_id = 'other-store';
+  await assert.rejects(search({
+    ...makeInput(async () => { calls++; return {}; }),
+    request: { ...request, init: { ...request.init, body: JSON.stringify(altered) } },
+  }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+  assert.equal(calls, 0);
+});
