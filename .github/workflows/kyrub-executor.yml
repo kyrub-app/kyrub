@@ -1,13 +1,6 @@
-name: Kyrub executor — renewal 1064 (pilot)
+name: Kyrub executor — renewal 1064 (read-only pilot)
 on:
   workflow_dispatch:
-    inputs:
-      mode:
-        description: "audit = report only; fix = bounded code edits and draft PR"
-        required: true
-        type: choice
-        options: [audit, fix]
-        default: audit
 
 permissions:
   contents: read
@@ -21,11 +14,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 55
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
     env:
       TARGET_BRANCH: feat/subscription-renewal-offer-contract
-      MODE: ${{ inputs.mode }}
     steps:
       - name: Checkout audited renewal branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
@@ -43,17 +34,10 @@ jobs:
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
-      - name: Prepare isolated work branch
-        if: inputs.mode == 'fix'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git switch -c "agent/renewal-1064-${GITHUB_RUN_ID}"
       - name: Install executor and dependencies
         shell: bash
         run: |
           set -euo pipefail
-          npm ci --ignore-scripts
           npm install --global @openai/codex@0.47.0
       - name: Execute bounded mission
         shell: bash
@@ -63,48 +47,7 @@ jobs:
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}" || { echo "Missing KYRUB_EXECUTOR_OPENAI_API_KEY"; exit 1; }
           mkdir -p executor-results
-          if [ "$MODE" = "audit" ]; then
-            timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
-          else
-            timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
-          fi
-      - name: Check allowed changes
-        if: inputs.mode == 'fix' && success()
-        shell: bash
-        run: |
-          set -euo pipefail
-          git status --porcelain
-          python3 executor-config/.github/kyrub-executor/check-scope.py
-      - name: Run focused verification
-        if: inputs.mode == 'fix'
-        shell: bash
-        run: |
-          set -o pipefail
-          mkdir -p executor-results
-          npm run lint > executor-results/lint.log 2>&1
-          LINT_STATUS=$?
-          node --test --test-concurrency=2 --import tsx tests/*prepaid-renewal*.test.ts > executor-results/tests.log 2>&1
-          TEST_STATUS=$?
-          printf 'lint=%s\nrenewal_tests=%s\n' "$LINT_STATUS" "$TEST_STATUS" > executor-results/checks.txt
-          if [ "$LINT_STATUS" -ne 0 ] || [ "$TEST_STATUS" -ne 0 ]; then exit 1; fi
-      - name: Publish isolated changes
-        if: inputs.mode == 'fix' && success()
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          set -euo pipefail
-          git config user.name "kyrub-executor[bot]"
-          git config user.email "kyrub-executor[bot]@users.noreply.github.com"
-          git add -- server/payments server/integrations src/components src/utils tests api shared
-          if git diff --cached --quiet; then
-            echo "No changes to publish."
-            exit 0
-          fi
-          git commit -m "fix: bounded prepaid renewal integration (executor pilot)"
-          auth_header="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
-          git -c "http.extraheader=AUTHORIZATION: basic $auth_header" push origin "HEAD:refs/heads/agent/renewal-1064-${GITHUB_RUN_ID}"
-          gh pr create --draft --base "$TARGET_BRANCH" --head "agent/renewal-1064-${GITHUB_RUN_ID}" --title "fix: executor pilot for prepaid renewals" --body "Automated bounded work against PR #1064. No merge or production changes. Review code and CI before adoption."
+          timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
       - name: Upload executor report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
