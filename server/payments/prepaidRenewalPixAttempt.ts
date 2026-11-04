@@ -8,6 +8,8 @@ export type PrepaidRenewalPixAttempt = {
   requestDigest: string;
   expiresAt: string;
   status: 'reserved';
+  /** Persisted execution gate; legacy attempts without this field fail closed. */
+  executionState?: 'idle' | 'in_flight' | 'outcome_unknown';
   /** Immutable Mercado Pago ID, populated only after a validated server-side creation response. */
   providerPaymentId?: string;
 };
