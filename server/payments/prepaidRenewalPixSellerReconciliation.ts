@@ -102,5 +102,9 @@ export const reconcileUnknownSellerPrepaidRenewalPixPayment = async (input: {
     request: input.request,
     expectedCollectorId: input.trustedExternalAccountId,
     trustedProviderPayment: verifiedPayment,
+    sellerAuthority: {
+      credentialScopeId: input.trustedCredentialScopeId,
+      externalAccountId: input.trustedExternalAccountId,
+    },
   });
 };
