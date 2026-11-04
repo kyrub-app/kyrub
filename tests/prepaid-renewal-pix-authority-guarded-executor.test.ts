@@ -668,3 +668,24 @@ test('failed GET recovery binding does not mark POST execution outcome unknown',
   }), /FIRESTORE_BIND_UNAVAILABLE/);
   assert.deepEqual(calls, ['reserve', 'GET /v1/payments/123456', 'bind']);
 });
+
+test('failed persistence of ambiguous POST outcome fails closed without binding', async () => {
+  const calls: string[] = [];
+  await assert.rejects(executeScopedIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: 'owner-a', oauthCredentialScopeId: 'owner-a',
+    trustedExternalAccountId: '7654321', oauthExternalAccountId: '7654321',
+    reserve: async () => { calls.push('reserve'); return { attempt }; },
+    claimExecution: async () => { calls.push('claim'); return 'claimed' as const; },
+    markOutcomeUnknown: async () => {
+      calls.push('unknown-failed');
+      throw new Error('FIRESTORE_UNAVAILABLE');
+    },
+    bindPayment: async () => { calls.push('bind'); return 'bound' as const; },
+    sellerScopedRequest: async () => {
+      calls.push('POST');
+      throw new Error('PROVIDER_TIMEOUT');
+    },
+  }), /RENEWAL_PIX_OUTCOME_MARK_FAILED/);
+  assert.deepEqual(calls, ['reserve', 'claim', 'POST', 'unknown-failed']);
+});
