@@ -34,9 +34,13 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
   return adminDb.runTransaction(async tx => {
     // Read the merchant binding in the same transaction as the payment-ID write.
     // This closes the gap between the final external authority check and persistence.
-    const { credentialScopeId, externalAccountId } = input.sellerAuthority;
-    if (!credentialScopeId || !/^\d+$/.test(externalAccountId) ||
-        credentialScopeId !== input.storeId) {
+    const authority = input.sellerAuthority;
+    if (!authority || !/^[a-zA-Z0-9_-]{1,128}$/.test(authority.credentialScopeId) ||
+        !/^\d+$/.test(authority.externalAccountId) ||
+        authority.credentialScopeId !== input.storeId) {
+      throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
+    }
+    const { credentialScopeId, externalAccountId } = authority;
       throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
     }
     const storeRef = adminDb.doc(`stores/${input.storeId}`);
