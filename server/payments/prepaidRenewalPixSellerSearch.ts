@@ -28,6 +28,8 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
   }
   const all: unknown[] = [];
   const limit = 50;
+  let expectedTotal: number | undefined;
+  const seenIds = new Set<string>();
   for (let offset = 0; offset <= 10000; offset += limit) {
     const params = new URLSearchParams({
       external_reference: reference, limit: String(limit),
@@ -53,6 +55,20 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
         offset + page.results.length > (paging.total as number) ||
         (offset + page.results.length < (paging.total as number) && page.results.length !== limit)) {
       throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
+    }
+    if (expectedTotal !== undefined && paging.total !== expectedTotal) {
+      throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
+    }
+    expectedTotal = paging.total as number;
+    for (const result of page.results) {
+      if (!result || typeof result !== 'object' || Array.isArray(result)) {
+        throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID');
+      }
+      const id = String((result as Record<string, unknown>).id ?? '');
+      if (!/^\\d{1,32}$/.test(id) || seenIds.has(id)) {
+        throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
+      }
+      seenIds.add(id);
     }
     all.push(...page.results);
     if (all.length > 100) {
