@@ -899,3 +899,38 @@ test('Firestore emulator: concurrent reconciliation cannot bind conflicting paym
   assert.ok(['890011', '890012'].includes(attempt.get('providerPaymentId')));
   assert.equal(attempt.get('executionState'), 'outcome_unknown');
 });
+
+test('Firestore emulator: concurrent same-ID reconciliation is idempotent and remains locked', async () => {
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-reconcile-same-id';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const locator = { storeId, proposalId, expectedRequestDigest };
+  await claimPrepaidRenewalPixExecution(locator);
+  await markPrepaidRenewalPixExecutionOutcomeUnknown(locator);
+  const body = JSON.parse(request.init.body);
+  const trustedProviderPayment = {
+    id: 890013, status: 'pending', payment_method_id: 'pix',
+    currency_id: 'BRL', collector_id: 987654,
+    transaction_amount: body.transaction_amount,
+    external_reference: body.external_reference,
+  };
+  const reconcile = () => reconcileUnknownPrepaidRenewalPixPayment({
+    storeId, proposalId, request, expectedCollectorId: '987654',
+    trustedProviderPayment,
+  });
+  const results = await Promise.all([reconcile(), reconcile()]);
+  assert.deepEqual(results.sort(), ['already_bound', 'bound']);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('providerPaymentId'), '890013');
+  assert.equal(attempt.get('executionState'), 'outcome_unknown');
+  await assert.rejects(claimPrepaidRenewalPixExecution(locator),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+});
