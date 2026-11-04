@@ -81,6 +81,21 @@ export const reconcileUnknownSellerPrepaidRenewalPixPayment = async (input: {
   if (verifiedId !== paymentId) {
     throw new Error('RENEWAL_PIX_RECONCILIATION_CONFLICT');
   }
+  // Recheck after both provider GETs: merchant OAuth may have rotated during lookup.
+  // Fail closed without binding a payment to a now-different seller.
+  const finalAuthority = await resolveCommercialRecipientAuthority({
+    context: 'store_subscription', canonicalStoreId: input.storeId,
+  });
+  const finalRecipient = resolvePrepaidRenewalRecipientBinding({
+    storeId: input.storeId,
+    storedSellerCredentialScopeId: input.trustedCredentialScopeId,
+    authority: finalAuthority,
+  });
+  assertAuthenticatedPrepaidRenewalPixRecipient({
+    recipient: finalRecipient,
+    trustedCredentialScopeId: input.trustedCredentialScopeId,
+    trustedExternalAccountId: input.trustedExternalAccountId,
+  });
   return reconcileUnknownPrepaidRenewalPixPayment({
     storeId: input.storeId,
     proposalId: input.proposalId,
