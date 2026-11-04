@@ -47,10 +47,8 @@ export const executeIsolatedPrepaidRenewalPix = async (input: {
     try {
       response = await input.createPayment(input.request);
     } catch (error) {
-      {
-        try { await input.markOutcomeUnknown(); }
-        catch { throw new Error('RENEWAL_PIX_OUTCOME_MARK_FAILED', { cause: error }); }
-      }
+      try { await input.markOutcomeUnknown(); }
+      catch { throw new Error('RENEWAL_PIX_OUTCOME_MARK_FAILED', { cause: error }); }
       throw error;
     }
   }
