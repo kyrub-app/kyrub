@@ -64,9 +64,9 @@ jobs:
           test -n "${OPENAI_API_KEY:-}" || { echo "Missing KYRUB_EXECUTOR_OPENAI_API_KEY"; exit 1; }
           mkdir -p executor-results
           if [ "$MODE" = "audit" ]; then
-            codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
+            timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
           else
-            codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
+            timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
           fi
       - name: Check allowed changes
         if: inputs.mode == 'fix' && success()
@@ -102,7 +102,8 @@ jobs:
             exit 0
           fi
           git commit -m "fix: bounded prepaid renewal integration (executor pilot)"
-          git -c http.extraheader="AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)" push origin "HEAD:refs/heads/agent/renewal-1064-${GITHUB_RUN_ID}"
+          auth_header="$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)"
+          git -c "http.extraheader=AUTHORIZATION: basic $auth_header" push origin "HEAD:refs/heads/agent/renewal-1064-${GITHUB_RUN_ID}"
           gh pr create --draft --base "$TARGET_BRANCH" --head "agent/renewal-1064-${GITHUB_RUN_ID}" --title "fix: executor pilot for prepaid renewals" --body "Automated bounded work against PR #1064. No merge or production changes. Review code and CI before adoption."
       - name: Upload executor report
         if: always()
