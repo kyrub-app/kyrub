@@ -567,6 +567,35 @@ test('Firestore emulator: expected collector must match transactional seller acc
   assert.equal(attempt.get('executionState'), 'in_flight');
 });
 
+test('Firestore emulator: legacy primary store with foreign tenant scope cannot bind Pix', async () => {
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const storeId = 'renew-pix-emulator-legacy-foreign-scope';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest });
+  await adminDb.doc(`users/${storeId}/stores/${storeId}`).set({
+    id: storeId, ownerId: storeId, legacyTenantId: 'foreign-tenant',
+  });
+  await adminDb.doc(`stores/${storeId}`).delete();
+  const body = JSON.parse(request.init.body);
+  await assert.rejects(reconcileUnknownPrepaidRenewalPixPayment({
+    storeId, proposalId, request, expectedCollectorId: '987654',
+    sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    trustedProviderPayment: {
+      id: 777786, status: 'pending', payment_method_id: 'pix',
+      currency_id: 'BRL', collector_id: 987654,
+      transaction_amount: body.transaction_amount,
+      external_reference: body.external_reference,
+    },
+  }), /RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED/);
+  const attempt = await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).get();
+  assert.equal(attempt.get('providerPaymentId'), undefined);
+  assert.equal(attempt.get('executionState'), 'in_flight');
+});
+
 test('Firestore emulator: seller GET reconciliation binds payment without POST', async () => {
   const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
     await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
