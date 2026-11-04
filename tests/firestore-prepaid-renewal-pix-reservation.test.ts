@@ -17,6 +17,11 @@ const proposalId = 'b'.repeat(64);
 const acceptedAt = new Date(Date.now() - 60_000).toISOString();
 const expiresAt = new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString();
 const seed = async (storeId: string) => {
+  // Emulator-only merchant identity and OAuth metadata: no token or live credentials.
+  await adminDb.doc(`stores/${storeId}`).set({ ownerId: storeId, legacyTenantId: storeId }, { merge: true });
+  await adminDb.doc(`stores/${storeId}/paymentProviderConnections/mercado_pago`).set({
+    provider: 'mercado_pago', storeId, status: 'connected', externalAccountId: '987654',
+  });
   const embedded = {
     storeId, customerId: 'buyer-emulator', totalDueMinor: 29990,
   };
