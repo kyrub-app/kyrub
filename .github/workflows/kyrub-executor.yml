@@ -69,7 +69,7 @@ jobs:
             codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
           fi
       - name: Check allowed changes
-        if: inputs.mode == 'fix'
+        if: inputs.mode == 'fix' && success()
         shell: bash
         run: |
           set -euo pipefail
