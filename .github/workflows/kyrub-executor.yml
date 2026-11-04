@@ -27,6 +27,12 @@ jobs:
       TARGET_BRANCH: feat/subscription-renewal-offer-contract
       MODE: ${{ inputs.mode }}
     steps:
+      - name: Checkout executor configuration
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          ref: main
+          path: executor-config
+          persist-credentials: false
       - name: Checkout audited renewal branch
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -58,9 +64,9 @@ jobs:
           test -n "${OPENAI_API_KEY:-}" || { echo "Missing KYRUB_EXECUTOR_OPENAI_API_KEY"; exit 1; }
           mkdir -p executor-results
           if [ "$MODE" = "audit" ]; then
-            codex exec --sandbox read-only --output-last-message executor-results/report.md - < .github/kyrub-executor/mission-1064.md
+            codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
           else
-            codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < .github/kyrub-executor/mission-1064.md
+            codex exec --sandbox workspace-write --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
           fi
       - name: Check allowed changes
         if: inputs.mode == 'fix'
@@ -68,7 +74,7 @@ jobs:
         run: |
           set -euo pipefail
           git status --porcelain
-          python3 .github/kyrub-executor/check-scope.py
+          python3 executor-config/.github/kyrub-executor/check-scope.py
       - name: Run focused verification
         if: inputs.mode == 'fix'
         shell: bash
