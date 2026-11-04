@@ -945,3 +945,29 @@ test('Firestore emulator: concurrent same-ID reconciliation is idempotent and re
   // returns 'claimed' again, so a second provider POST remains prohibited.
   assert.equal(await claimPrepaidRenewalPixExecution(locator), 'fetch_bound');
 });
+
+
+test('Firestore emulator: concurrent execution claims authorize exactly one Pix POST', async () => {
+  const storeId = 'renew-pix-emulator-claim-race';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const locator = { storeId, proposalId, expectedRequestDigest };
+  const results = await Promise.allSettled([
+    claimPrepaidRenewalPixExecution(locator),
+    claimPrepaidRenewalPixExecution(locator),
+  ]);
+  const claims = results.filter(result =>
+    result.status === 'fulfilled' && result.value === 'claimed');
+  assert.equal(claims.length, 1);
+  const rejected = results.filter(result => result.status === 'rejected');
+  assert.equal(rejected.length, 1);
+  assert.match(String(rejected[0].status === 'rejected' && rejected[0].reason),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('executionState'), 'in_flight');
+  assert.equal(attempt.get('providerPaymentId'), undefined);
+});
