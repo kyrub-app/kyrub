@@ -3,6 +3,7 @@ import { adminDb } from '../firebaseAdmin.js';
 import type { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.js';
 import { searchUniqueSellerPrepaidRenewalPixPayment } from './prepaidRenewalPixSellerSearch.js';
 import { reconcileUnknownPrepaidRenewalPixPayment } from './prepaidRenewalPixReconciliation.js';
+import { validatePrepaidRenewalPixCreationResponse } from './prepaidRenewalPixCreationResponse.js';
 
 type PixRequest = ReturnType<typeof buildPrepaidRenewalPixRequest>;
 
@@ -44,11 +45,29 @@ export const reconcileUnknownSellerPrepaidRenewalPixPayment = async (input: {
     throw new Error('RENEWAL_PIX_RECONCILIATION_CONFLICT');
   }
   const trustedProviderPayment = await searchUniqueSellerPrepaidRenewalPixPayment(input);
+  const paymentId = validatePrepaidRenewalPixCreationResponse({
+    request: input.request, response: trustedProviderPayment,
+    expectedStoreId: input.storeId, expectedProposalId: input.proposalId,
+    expectedCollectorId: input.trustedExternalAccountId,
+  });
+  // Independently re-read the selected payment with the same seller OAuth scope.
+  // Search results alone must not be treated as authoritative for binding.
+  const verifiedPayment = await input.sellerScopedRequest(
+    input.trustedCredentialScopeId, `/v1/payments/${paymentId}`, { method: 'GET' },
+  );
+  const verifiedId = validatePrepaidRenewalPixCreationResponse({
+    request: input.request, response: verifiedPayment,
+    expectedStoreId: input.storeId, expectedProposalId: input.proposalId,
+    expectedCollectorId: input.trustedExternalAccountId,
+  });
+  if (verifiedId !== paymentId) {
+    throw new Error('RENEWAL_PIX_RECONCILIATION_CONFLICT');
+  }
   return reconcileUnknownPrepaidRenewalPixPayment({
     storeId: input.storeId,
     proposalId: input.proposalId,
     request: input.request,
     expectedCollectorId: input.trustedExternalAccountId,
-    trustedProviderPayment,
+    trustedProviderPayment: verifiedPayment,
   });
 };
