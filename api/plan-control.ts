@@ -54,6 +54,7 @@ import { recordPrepaidRenewalWithVerifiedSources } from '../server/payments/prep
 import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
 import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
 import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
+import { listOwnerPrepaidRenewalContracts } from '../server/payments/prepaidRenewalContractListing.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
@@ -402,6 +403,27 @@ export default async function handler(
         response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
         return;
       }
+      case 'merchant.prepaid-renewal.contracts': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (Object.keys(body).some(key => key !== 'storeId') ||
+            typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId)) {
+          response.status(400).json({
+            error: 'Informe uma loja válida.',
+            code: 'INVALID_RENEWAL_STORE_ID',
+          });
+          return;
+        }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await listOwnerPrepaidRenewalContracts({
+          authorization,
+          storeId: body.storeId,
+        }));
+        return;
+      }
       case 'merchant.prepaid-renewal.propose': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -619,7 +641,8 @@ export default async function handler(
         });
     }
   } catch (error) {
-    if (operation === 'merchant.prepaid-renewal.propose' ||
+    if (operation === 'merchant.prepaid-renewal.contracts' ||
+        operation === 'merchant.prepaid-renewal.propose' ||
         operation === 'merchant.prepaid-renewal.accept' ||
         operation === 'merchant.prepaid-renewal.reconcile') {
       const mapped = mapPrepaidRenewalHttpError(error);
