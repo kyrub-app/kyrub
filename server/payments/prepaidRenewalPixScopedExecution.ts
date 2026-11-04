@@ -20,10 +20,13 @@ export const executeScopedIsolatedPrepaidRenewalPix = async (input: {
   oauthExternalAccountId: string;
   reserve: () => Promise<{ attempt: PrepaidRenewalPixAttempt }>;
   bindPayment: (paymentId: string) => Promise<'bound' | 'already_bound'>;
-  claimExecution?: () => Promise<'claimed' | 'fetch_bound'>;
-  markOutcomeUnknown?: () => Promise<void>;
+  claimExecution: () => Promise<'claimed' | 'fetch_bound'>;
+  markOutcomeUnknown: () => Promise<void>;
   sellerScopedRequest: (credentialScopeId: string, path: string, init: RequestInit) => Promise<unknown>;
 }) => {
+  if (typeof input.claimExecution !== 'function' || typeof input.markOutcomeUnknown !== 'function') {
+    throw new Error('RENEWAL_PIX_EXECUTION_GATE_REQUIRED');
+  }
   const transport = createAuthorityCheckedPrepaidRenewalPixTransport(input);
   return executeAuthorityGuardedIsolatedPrepaidRenewalPix({
     ...input,
