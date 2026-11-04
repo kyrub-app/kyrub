@@ -21,7 +21,7 @@ const paymentKey = (value: string): string =>
  * provider verification and accepted-proposal validation. The Firestore
  * transaction enforces payment uniqueness and predecessor successor locking.
  */
-export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string, verifiedSellerCredentialScopeId?: string, verifiedPixPaymentApprovedAt?: string):
+export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, acceptedProposalId?: string, verifiedSellerCredentialScopeId?: string, verifiedPixPaymentApprovedAt?: string, verifiedSellerExternalAccountId?: string):
   Promise<'created' | 'already_recorded'> => {
   if (![renewal.storeId, renewal.contractId, renewal.previousContractId,
     renewal.customerId, renewal.productId, renewal.providerPaymentId].every(safeId) ||
@@ -47,6 +47,13 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   if (verifiedPixPaymentApprovedAt !== undefined && (!acceptedProposalId || !Number.isFinite(Date.parse(verifiedPixPaymentApprovedAt)))) {
     throw new Error('INVALID_RENEWAL_PIX_BINDING_INPUT');
   }
+  if (verifiedPixPaymentApprovedAt && (!verifiedSellerExternalAccountId || !/^\\d+$/.test(verifiedSellerExternalAccountId) ||
+      verifiedSellerCredentialScopeId !== renewal.storeId)) {
+    throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
+  }
+  const sellerStoreRef = verifiedPixPaymentApprovedAt ? adminDb.doc(`stores/${renewal.storeId}`) : null;
+  const sellerConnectionRef = verifiedPixPaymentApprovedAt
+    ? adminDb.doc(`stores/${renewal.storeId}/paymentProviderConnections/mercado_pago`) : null;
   const pixAttemptRef = verifiedPixPaymentApprovedAt && acceptedProposalId
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalPixAttempts/${acceptedProposalId}`) : null;
   const acceptedProposalRef = acceptedProposalId
@@ -56,11 +63,25 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   const originalContractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.previousContractId}`);
   return adminDb.runTransaction(async tx => {
-    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc] = await Promise.all([
+    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc, sellerStoreDoc, sellerConnectionDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef), tx.get(originalContractRef),
       acceptedProposalRef ? tx.get(acceptedProposalRef) : Promise.resolve(null),
       pixAttemptRef ? tx.get(pixAttemptRef) : Promise.resolve(null),
+      sellerStoreRef ? tx.get(sellerStoreRef) : Promise.resolve(null),
+      sellerConnectionRef ? tx.get(sellerConnectionRef) : Promise.resolve(null),
     ]);
+    if (sellerStoreRef) {
+      const store = sellerStoreDoc?.data();
+      const connection = sellerConnectionDoc?.data();
+      if (!sellerStoreDoc?.exists || store?.ownerId !== renewal.storeId ||
+          (store.legacyTenantId || store.ownerId) !== renewal.storeId ||
+          connection?.provider !== 'mercado_pago' ||
+          connection.storeId !== renewal.storeId ||
+          connection.status !== 'connected' ||
+          connection.externalAccountId !== verifiedSellerExternalAccountId) {
+        throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
+      }
+    }
     if (acceptedProposalRef) {
       const data = acceptedProposalDoc?.data();
       const proposal = data?.proposal;
