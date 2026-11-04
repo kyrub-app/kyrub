@@ -138,3 +138,18 @@ test('reconciliation API maps provider mismatch to HTTP 422', () => {
   assert.match(mapper, /code === 'RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED' \? 422/);
   assert.match(mapper, /status === 422 \? 'O pagamento não foi confirmado/);
 });
+
+test('authenticated Pix reconciliation requires bound attempt at transactional contract persistence', () => {
+  const activation = readFileSync('server/payments/prepaidRenewalActivation.ts', 'utf8');
+  const persistence = readFileSync('server/payments/persistedPrepaidRenewal.ts', 'utf8');
+  const route = readFileSync('api/plan-control.ts', 'utf8');
+  assert.match(route, /recordPrepaidRenewalWithVerifiedSources/);
+  assert.match(activation, /verifyPrepaidRenewalMercadoPagoPayment\(/);
+  assert.match(activation, /assertVerifiedPrepaidRenewalPixAttempt\(/);
+  assert.match(activation, /requireBoundPixAttempt: true/);
+  assert.match(activation, /input\.requireBoundPixAttempt \? input\.payment\.occurredAt : undefined/);
+  assert.match(persistence, /verifiedPixPaymentApprovedAt && acceptedProposalId/);
+  assert.match(persistence, /assertVerifiedPrepaidRenewalPixAttempt\(/);
+  assert.match(persistence, /tx\.create\(contractRef, renewal\)/);
+  assert.match(persistence, /tx\.create\(paymentRef,/);
+});
