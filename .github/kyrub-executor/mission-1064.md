@@ -11,8 +11,7 @@ server/payments/prepaidRenewal*, api/plan-control.ts,
 src/utils/storeSubscription.ts and customer/merchant UI.
 Do not duplicate payment flows or change commercial policy.
 
-For audit mode, produce a detailed report with exact files and evidence.
-For fix mode, implement safe, bounded changes and relevant regression tests.
+This pilot is strictly read-only. Produce a detailed audit report with exact files, evidence, prioritized fixes, test plan and blockers. Do not modify repository files or invoke network-connected business systems.
 Do not call live Mercado Pago, Firebase production, or Vercel production.
 Never deploy, merge, modify production data, send real payments, or read secrets.
 Do not change workflows, AGENTS.md, config/secrets, or unrelated modules.
