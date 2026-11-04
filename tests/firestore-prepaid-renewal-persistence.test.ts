@@ -508,6 +508,15 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   assert.equal((await adminDb.doc(
     `stores/${successStoreId}/prepaidSubscriptionContracts/${successNext.contractId}`
   ).get()).exists, true);
+  // A canonical store changing owner must invalidate the previously verified seller.
+  const canonicalStoreRef = adminDb.doc(`stores/${storeId}`);
+  await canonicalStoreRef.update({
+    ownerId: 'different-oauth-owner', legacyTenantId: 'different-oauth-owner',
+  });
+  await assert.rejects(persist(), /RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED/);
+  await canonicalStoreRef.update({
+    ownerId: credentialScopeId, legacyTenantId: credentialScopeId,
+  });
   await connectionRef.update({ status: 'disconnected' });
   await assert.rejects(persist(), /RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED/);
   await connectionRef.update({ status: 'connected', externalAccountId: '987655' });
