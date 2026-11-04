@@ -58,3 +58,16 @@ test('reconciliation refuses a matching payment on a partial provider search pag
     ...input([]), searchComplete: false,
   }), /SEARCH_INCOMPLETE/);
 });
+
+test('reconciliation rejects unsafe or structured payment and collector IDs', () => {
+  for (const id of [Number.MAX_SAFE_INTEGER + 1, { value: 12345 }, null]) {
+    assert.throws(() => select(input([{ ...payment, id }])), /NOT_FOUND_UNRESOLVED/);
+  }
+  for (const collector_id of [Number.MAX_SAFE_INTEGER + 1, { value: 7654321 }, null]) {
+    assert.throws(() => select(input([{ ...payment, collector_id }])), /NOT_FOUND_UNRESOLVED/);
+  }
+});
+test('reconciliation retains exact long payment IDs as strings', () => {
+  const exact = { ...payment, id: '900719925474099312345' };
+  assert.deepEqual(select(input([exact])), exact);
+});
