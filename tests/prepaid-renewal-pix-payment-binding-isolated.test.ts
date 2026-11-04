@@ -8,7 +8,7 @@ const path = `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`;
 const digest = 'b'.repeat(64);
 const records = new Map<string, Record<string, unknown>>([
   [path, {
-    storeId, proposalId, status: 'reserved',
+    storeId, proposalId, status: 'reserved', executionState: 'in_flight',
     idempotencyKey: `prepaid-renewal-${proposalId}`,
     requestDigest: digest,
   }],
