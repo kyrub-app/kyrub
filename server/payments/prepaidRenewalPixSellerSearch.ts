@@ -65,7 +65,7 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
         throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID');
       }
       const id = String((result as Record<string, unknown>).id ?? '');
-      if (!/^\\d{1,32}$/.test(id) || seenIds.has(id)) {
+      if (!/^\d{1,32}$/.test(id) || seenIds.has(id)) {
         throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
       }
       seenIds.add(id);
