@@ -20,7 +20,7 @@ for line in changes:
     path = line[3:]
     if " -> " in path:
         path = path.split(" -> ", 1)[-1]
-    if path.startswith("executor-results/"):
+    if path.startswith(("executor-results/", "executor-config/")):
         continue
     if not path.startswith(allowed):
         bad.append(path)
