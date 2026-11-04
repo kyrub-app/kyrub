@@ -129,3 +129,16 @@ export const reconcileMerchantPrepaidRenewal = async (input: {
     proposalId: input.proposalId.trim(),
     paymentId: input.paymentId.trim(),
   });
+
+/** Owner-only, read-only contract selector. The API verifies the canonical store owner. */
+export const listMerchantPrepaidRenewalContracts = async (input: {
+  storeId: string;
+}): Promise<{ contracts: Array<{
+  id: string;
+  productId: string;
+  customerId: string;
+  months: number;
+  expiresAt: string;
+}> }> => post('merchant.prepaid-renewal.contracts', {
+  storeId: input.storeId.trim(),
+});
