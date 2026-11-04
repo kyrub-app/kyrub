@@ -170,6 +170,7 @@ test('Firestore emulator: validated provider creation response binds once and re
   const bind = (trustedProviderResponse: unknown) =>
     bindVerifiedPrepaidRenewalPixCreation({
       storeId, proposalId, expectedCollectorId: '987654',
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
       request, trustedProviderResponse,
     });
   await assert.rejects(bind({ ...response, collector_id: 123 }),
