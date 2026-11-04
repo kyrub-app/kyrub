@@ -365,6 +365,35 @@ test('Firestore emulator: reconciliation refuses idle attempt and leaves it unch
   assert.equal((await ref.get()).get('executionState'), 'idle');
 });
 
+test('Firestore emulator: legacy primary store allows guarded Pix binding without top-level store', async () => {
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const storeId = 'renew-pix-emulator-legacy-primary';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest });
+  await adminDb.doc(`users/${storeId}/stores/${storeId}`).set({
+    id: storeId, ownerId: storeId, legacyTenantId: storeId,
+  });
+  await adminDb.doc(`stores/${storeId}`).delete();
+  const body = JSON.parse(request.init.body);
+  const result = await reconcileUnknownPrepaidRenewalPixPayment({
+    storeId, proposalId, request, expectedCollectorId: '987654',
+    sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    trustedProviderPayment: {
+      id: 777779, status: 'pending', payment_method_id: 'pix',
+      currency_id: 'BRL', collector_id: 987654,
+      transaction_amount: body.transaction_amount,
+      external_reference: body.external_reference,
+    },
+  });
+  assert.equal(result, 'bound');
+  const attempt = await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).get();
+  assert.equal(attempt.get('providerPaymentId'), '777779');
+});
+
 test('Firestore emulator: seller GET reconciliation binds payment without POST', async () => {
   const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
     await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
