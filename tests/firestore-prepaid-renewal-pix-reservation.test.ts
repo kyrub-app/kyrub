@@ -5,6 +5,7 @@ import { adminDb } from '../server/firebaseAdmin.js';
 import { reservePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
 import { bindVerifiedPrepaidRenewalPixCreation } from '../server/payments/prepaidRenewalPixVerifiedCreationBinding.js';
 import { bindCreatedPrepaidRenewalPixPaymentId } from '../server/payments/prepaidRenewalPixPaymentIdBinding.js';
+import { claimPrepaidRenewalPixExecution } from '../server/payments/prepaidRenewalPixExecutionClaim.js';
 import { buildPrepaidRenewalPixRequest } from '../server/payments/prepaidRenewalPixRequest.js';
 
 if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -90,6 +91,9 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   await seed(storeId);
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId: '123456', expectedRequestDigest: digest }), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
+  assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   const bind = (paymentId: string, digest = expectedRequestDigest) =>
     bindCreatedPrepaidRenewalPixPaymentId({
@@ -116,6 +120,8 @@ test('Firestore emulator: concurrent distinct provider IDs cannot replace the fi
   await seed(storeId);
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   const ids = ['100001', '100002'];
   const outcomes = await Promise.allSettled(ids.map(paymentId =>
@@ -140,6 +146,8 @@ test('Firestore emulator: validated provider creation response binds once and re
   await seed(storeId);
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
   const body = JSON.parse(request.init.body) as Record<string, unknown>;
   const response = {
     id: 321654, status: 'pending', payment_method_id: 'pix',
@@ -168,6 +176,8 @@ test('Firestore emulator: concurrent identical provider IDs bind once and remain
   await seed(storeId);
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const digest = createHash('sha256').update(request.init.body).digest('hex');
+  assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   const bind = () => bindCreatedPrepaidRenewalPixPaymentId({
     storeId, proposalId, paymentId: '200001', expectedRequestDigest,
