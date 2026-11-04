@@ -421,3 +421,38 @@ test('Firestore emulator: seller reconciliation preflight blocks missing, idle a
     `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
   ).get()).get('providerPaymentId'), undefined);
 });
+
+test('Firestore emulator: failed seller GET reconciliation never unlocks a second Pix POST', async () => {
+  const { reconcileUnknownSellerPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixSellerReconciliation.js');
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-reconcile-failed-get';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const locator = { storeId, proposalId, expectedRequestDigest };
+  await claimPrepaidRenewalPixExecution(locator);
+  await markPrepaidRenewalPixExecutionOutcomeUnknown(locator);
+  let getCount = 0;
+  await assert.rejects(reconcileUnknownSellerPrepaidRenewalPixPayment({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: storeId, oauthCredentialScopeId: storeId,
+    trustedExternalAccountId: '987654', oauthExternalAccountId: '987654',
+    sellerScopedRequest: async (_scope, path, init) => {
+      getCount++;
+      assert.equal(init.method, 'GET');
+      assert.match(path, /^\/v1\/payments\/search\?/);
+      throw new Error('SIMULATED_PROVIDER_TIMEOUT');
+    },
+  }), /SIMULATED_PROVIDER_TIMEOUT/);
+  assert.equal(getCount, 1);
+  await assert.rejects(claimPrepaidRenewalPixExecution(locator),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('executionState'), 'outcome_unknown');
+  assert.equal(attempt.get('providerPaymentId'), undefined);
+});
