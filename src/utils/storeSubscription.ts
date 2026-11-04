@@ -142,3 +142,22 @@ export const listMerchantPrepaidRenewalContracts = async (input: {
 }> }> => post('merchant.prepaid-renewal.contracts', {
   storeId: input.storeId.trim(),
 });
+
+/** Only proposals belonging to the authenticated buyer are returned. */
+export const listMyMerchantPrepaidRenewalProposals = async (input: {
+  storeId: string;
+}): Promise<{ proposals: Array<{
+  id: string;
+  status: 'awaiting_acceptance' | 'accepted';
+  proposal: {
+    storeId: string;
+    productId: string;
+    previousContractId: string;
+    months: 3 | 6 | 12;
+    currentMonthlyPriceMinor: number;
+    discountPercent: number;
+    totalDueMinor: number;
+  };
+}> }> => post('merchant.prepaid-renewal.my-proposals', {
+  storeId: input.storeId.trim(),
+});
