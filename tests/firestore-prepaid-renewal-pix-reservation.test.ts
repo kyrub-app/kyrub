@@ -370,8 +370,15 @@ test('Firestore emulator: seller GET reconciliation binds payment without POST',
     sellerScopedRequest: async (scope, path, init) => {
       assert.equal(scope, storeId);
       assert.equal(init.method, 'GET');
+      calls.push(path);
+      const selected = {
+        id: 777777, status: 'pending', payment_method_id: 'pix',
+        currency_id: 'BRL', collector_id: 987654,
+        transaction_amount: body.transaction_amount,
+        external_reference: body.external_reference,
+      };
+      if (path === '/v1/payments/777777') return selected;
       assert.match(path, /^\/v1\/payments\/search\?/);
-      calls.push(init.method);
       return {
         paging: { total: 1, limit: 50, offset: 0 },
         results: [{
@@ -385,7 +392,8 @@ test('Firestore emulator: seller GET reconciliation binds payment without POST',
   });
   assert.equal(await reconcile(), 'bound');
   assert.equal(await reconcile(), 'already_bound');
-  assert.deepEqual(calls, ['GET', 'GET']);
+  assert.deepEqual(calls.map(path => path.startsWith('/v1/payments/search?') ? 'search' : 'detail'),
+    ['search', 'detail', 'search', 'detail']);
   const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
   assert.equal((await ref.get()).get('providerPaymentId'), '777777');
   assert.equal((await ref.get()).get('executionState'), 'outcome_unknown');
