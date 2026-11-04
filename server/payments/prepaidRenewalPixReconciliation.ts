@@ -41,8 +41,6 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
       throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
     }
     const { credentialScopeId, externalAccountId } = authority;
-      throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
-    }
     const storeRef = adminDb.doc(`stores/${input.storeId}`);
     const primaryRef = adminDb.doc(`users/${input.storeId}/stores/${input.storeId}`);
     const connectionRef = adminDb.doc(
