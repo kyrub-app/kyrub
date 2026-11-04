@@ -22,8 +22,8 @@ export const executeAuthorityGuardedIsolatedPrepaidRenewalPix = async (input: {
   createPayment: (request: PixRequest) => Promise<unknown>;
   fetchPayment: (paymentId: string) => Promise<unknown>;
   bindPayment: (paymentId: string) => Promise<'bound' | 'already_bound'>;
-  claimExecution?: () => Promise<'claimed' | 'fetch_bound'>;
-  markOutcomeUnknown?: () => Promise<void>;
+  claimExecution: () => Promise<'claimed' | 'fetch_bound'>;
+  markOutcomeUnknown: () => Promise<void>;
 }) => {
   validatePrepaidRenewalPixTransportAuthority(input);
   return executeIsolatedPrepaidRenewalPix({
