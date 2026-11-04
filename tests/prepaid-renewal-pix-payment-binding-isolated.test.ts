@@ -7,6 +7,10 @@ const proposalId = 'a'.repeat(64);
 const path = `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`;
 const digest = 'b'.repeat(64);
 const records = new Map<string, Record<string, unknown>>([
+  [`stores/${storeId}`, { ownerId: storeId, legacyTenantId: storeId }],
+  [`stores/${storeId}/paymentProviderConnections/mercado_pago`, {
+    provider: 'mercado_pago', storeId, status: 'connected', externalAccountId: '987654',
+  }],
   [path, {
     storeId, proposalId, status: 'reserved', executionState: 'in_flight',
     idempotencyKey: `prepaid-renewal-${proposalId}`,
@@ -55,7 +59,9 @@ const bundle = await build({
 const source = Buffer.from(bundle.outputFiles[0].text).toString('base64');
 const { bindCreatedPrepaidRenewalPixPaymentId } = await import(`data:text/javascript;base64,${source}`);
 const bind = (paymentId: string, expectedRequestDigest = digest) =>
-  bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId, expectedRequestDigest });
+  bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId, expectedRequestDigest,
+    sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+  });
 
 test('competing payment IDs permit only one immutable Firestore binding', async () => {
   const outcomes = await Promise.allSettled([bind('111'), bind('222')]);
@@ -74,6 +80,7 @@ test('binding rejects altered digest and cross-store without mutation', async ()
   await assert.rejects(bind('333', '0'.repeat(64)), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
   await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({
     storeId: 'other-store', proposalId, paymentId: '333', expectedRequestDigest: digest,
-  }), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
+    sellerAuthority: { credentialScopeId: 'other-store', externalAccountId: '987654' },
+  }), /RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED/);
   assert.deepEqual(records.get(path), before);
 });
