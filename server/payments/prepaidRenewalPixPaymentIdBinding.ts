@@ -30,7 +30,7 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
         attempt.storeId !== input.storeId ||
         attempt.proposalId !== input.proposalId ||
         attempt.status !== 'reserved' ||
-        !['in_flight', 'outcome_unknown'].includes((attempt as PrepaidRenewalPixAttempt & { executionState?: string }).executionState ?? '') ||
+        !['in_flight', 'outcome_unknown'].includes(attempt.executionState ?? '') ||
         attempt.idempotencyKey !== `prepaid-renewal-${input.proposalId}` ||
         attempt.requestDigest !== input.expectedRequestDigest) {
       throw new Error('RENEWAL_PIX_PAYMENT_BINDING_CONFLICT');
