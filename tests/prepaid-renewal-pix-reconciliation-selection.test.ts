@@ -24,7 +24,7 @@ const payment = {
 };
 const input = (providerPayments: unknown) => ({
   request, expectedStoreId: storeId, expectedProposalId: proposalId,
-  expectedCollectorId: '7654321', providerPayments,
+  expectedCollectorId: '7654321', providerPayments, searchComplete: true,
 });
 
 test('reconciliation selects exactly one fully verified seller Pix payment', () => {
@@ -48,4 +48,13 @@ test('reconciliation refuses cross-store and wrong payment method matches', () =
     { ...payment, payment_method_id: 'credit_card' },
     { ...payment, external_reference: 'kyrub:prepaid-renewal:other-store:' + proposalId },
   ])), /NOT_FOUND_UNRESOLVED/);
+});
+
+test('reconciliation refuses a matching payment on a partial provider search page', () => {
+  assert.throws(() => select({
+    ...input([payment]), searchComplete: false,
+  }), /SEARCH_INCOMPLETE/);
+  assert.throws(() => select({
+    ...input([]), searchComplete: false,
+  }), /SEARCH_INCOMPLETE/);
 });
