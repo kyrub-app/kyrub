@@ -38,7 +38,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global @openai/codex@latest
+          npm install --global @openai/codex@0.166.0
           codex --version
       - name: Execute bounded mission
         shell: bash
@@ -66,7 +66,7 @@ jobs:
               print("OpenAI API authentication check failed:", type(exc).__name__)
               raise SystemExit(1)
           PY
-          timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
+          timeout --signal=TERM --kill-after=30s 35m env CODEX_API_KEY="$OPENAI_API_KEY" codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
       - name: Upload executor report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
