@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { prepareAuthenticatedPrepaidRenewalPix } from './prepaidRenewalCheckoutPreparation.js';
+import { prepareAuthenticatedPrepaidRenewalPixWithRecipient } from './prepaidRenewalCheckoutPreparation.js';
 import { reservePrepaidRenewalPixAttempt } from './prepaidRenewalPixAttemptReservation.js';
 import { bindCreatedPrepaidRenewalPixPaymentId } from './prepaidRenewalPixPaymentIdBinding.js';
 import { validatePrepaidRenewalPixTransportAuthority } from './prepaidRenewalPixTransportAuthority.js';
@@ -56,11 +56,15 @@ export const executeAuthenticatedLockedIsolatedPrepaidRenewalPix = async (input:
   oauthExternalAccountId: string;
   sellerScopedRequest: (scope: string, path: string, init: RequestInit) => Promise<unknown>;
 }) => {
-  const request = await prepareAuthenticatedPrepaidRenewalPix({
+  const { request, recipient } = await prepareAuthenticatedPrepaidRenewalPixWithRecipient({
     authorization: input.authorization,
     storeId: input.storeId,
     proposalId: input.proposalId,
   });
+  if (input.trustedCredentialScopeId !== recipient.credentialScopeId ||
+      input.trustedExternalAccountId !== recipient.externalAccountId) {
+    throw new Error('RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH');
+  }
   validatePrepaidRenewalPixTransportAuthority({ ...input, request });
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   return executeLockedIsolatedPrepaidRenewalPix({
