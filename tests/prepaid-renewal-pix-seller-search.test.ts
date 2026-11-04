@@ -89,3 +89,16 @@ test('seller search rejects duplicate provider IDs across pages', async () => {
     };
   })), /SEARCH_INCOMPLETE/);
 });
+
+test('seller search refuses oversized result sets before requesting a second page', async () => {
+  let calls = 0;
+  await assert.rejects(search(makeInput(async (_scope, _path, init) => {
+    calls++;
+    assert.equal(init.method, 'GET');
+    return {
+      paging: { total: 101, limit: 50, offset: 0 },
+      results: Array.from({ length: 50 }, (_, i) => ({ ...payment, id: 90000 + i })),
+    };
+  })), /SEARCH_INCOMPLETE/);
+  assert.equal(calls, 1);
+});
