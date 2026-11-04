@@ -94,3 +94,38 @@ export const quoteMerchantSubscriptionContract = async (input: {
     selectedMonths: input.selectedMonths,
     paymentTerms: input.paymentTerms,
   });
+
+
+/** Prepaid renewal: owner proposes using the authoritative contract and current catalog. */
+export const proposeMerchantPrepaidRenewal = async (input: {
+  storeId: string;
+  previousContractId: string;
+}): Promise<{ proposalId: string; [key: string]: unknown }> =>
+  post('merchant.prepaid-renewal.propose', {
+    storeId: input.storeId.trim(),
+    previousContractId: input.previousContractId.trim(),
+  });
+
+/** Buyer acceptance is authenticated and persisted server-side; no payment is created here. */
+export const acceptMerchantPrepaidRenewal = async (input: {
+  storeId: string;
+  proposalId: string;
+  acceptedTotalMinor: number;
+}): Promise<{ status: string }> =>
+  post('merchant.prepaid-renewal.accept', {
+    storeId: input.storeId.trim(),
+    proposalId: input.proposalId.trim(),
+    acceptedTotalMinor: input.acceptedTotalMinor,
+  });
+
+/** Read-only provider verification and atomic activation; never trust a UI payment status. */
+export const reconcileMerchantPrepaidRenewal = async (input: {
+  storeId: string;
+  proposalId: string;
+  paymentId: string;
+}): Promise<{ status: string; [key: string]: unknown }> =>
+  post('merchant.prepaid-renewal.reconcile', {
+    storeId: input.storeId.trim(),
+    proposalId: input.proposalId.trim(),
+    paymentId: input.paymentId.trim(),
+  });
