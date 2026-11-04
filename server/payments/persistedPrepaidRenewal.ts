@@ -47,7 +47,7 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   if (verifiedPixPaymentApprovedAt !== undefined && (!acceptedProposalId || !Number.isFinite(Date.parse(verifiedPixPaymentApprovedAt)))) {
     throw new Error('INVALID_RENEWAL_PIX_BINDING_INPUT');
   }
-  if (verifiedPixPaymentApprovedAt && (!verifiedSellerExternalAccountId || !/^\\d+$/.test(verifiedSellerExternalAccountId) ||
+  if (verifiedPixPaymentApprovedAt && (!verifiedSellerExternalAccountId || !/^\d+$/.test(verifiedSellerExternalAccountId) ||
       verifiedSellerCredentialScopeId !== renewal.storeId)) {
     throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
   }
