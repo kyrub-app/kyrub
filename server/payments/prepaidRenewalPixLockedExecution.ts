@@ -7,6 +7,8 @@ import type { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.j
 import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 import { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } from './prepaidRenewalPixExecutionClaim.js';
 import { executeScopedIsolatedPrepaidRenewalPix } from './prepaidRenewalPixScopedExecution.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
+import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
 
 type PixRequest = ReturnType<typeof buildPrepaidRenewalPixRequest>;
 
@@ -80,6 +82,26 @@ export const executeAuthenticatedLockedIsolatedPrepaidRenewalPix = async (input:
   return executeLockedIsolatedPrepaidRenewalPix({
     ...input,
     request,
+    // Recheck the current seller binding after the transactional claim and
+    // immediately before any provider POST; a stale OAuth account must fail closed.
+    sellerScopedRequest: async (scope, path, init) => {
+      if (init.method === 'POST') {
+        const currentAuthority = await resolveCommercialRecipientAuthority({
+          context: 'store_subscription', canonicalStoreId: input.storeId,
+        });
+        const currentRecipient = resolvePrepaidRenewalRecipientBinding({
+          storeId: input.storeId,
+          storedSellerCredentialScopeId: recipient.credentialScopeId,
+          authority: currentAuthority,
+        });
+        assertAuthenticatedPrepaidRenewalPixRecipient({
+          recipient: currentRecipient,
+          trustedCredentialScopeId: input.trustedCredentialScopeId,
+          trustedExternalAccountId: input.trustedExternalAccountId,
+        });
+      }
+      return input.sellerScopedRequest(scope, path, init);
+    },
     reserve: () => reservePrepaidRenewalPixAttempt({
       storeId: input.storeId, proposalId: input.proposalId, request,
     }),
