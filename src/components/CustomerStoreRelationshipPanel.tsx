@@ -19,6 +19,7 @@ import type {
   StoreRelationshipVoucherSummary,
 } from '../../shared/storeRelationship';
 import { auth } from '../utils/firebase';
+import { acceptMerchantPrepaidRenewal, listMyMerchantPrepaidRenewalProposals } from '../utils/storeSubscription';
 import { redeemStoreRewardForCurrentUser } from '../utils/storeRewardRedemption';
 import { loadStoreRelationshipForCurrentUser } from '../utils/storeRelationship';
 
@@ -71,6 +72,9 @@ export function CustomerStoreRelationshipPanel({
   const [signedIn, setSignedIn] = useState(Boolean(auth.currentUser));
   const [expanded, setExpanded] = useState(false);
   const [summary, setSummary] = useState<StoreRelationshipSummary | null>(null);
+  const [renewalOffers, setRenewalOffers] = useState<Awaited<ReturnType<typeof listMyMerchantPrepaidRenewalProposals>>['proposals']>([]);
+  const [renewalBusyId, setRenewalBusyId] = useState('');
+  const [renewalError, setRenewalError] = useState('');
   const [loading, setLoading] = useState(false);
   const [busyRewardId, setBusyRewardId] = useState('');
   const [message, setMessage] = useState('');
@@ -111,6 +115,35 @@ export function CustomerStoreRelationshipPanel({
     setError('');
     if (authReady && signedIn) void refresh();
   }, [authReady, signedIn, storeId, refresh]);
+
+  useEffect(() => {
+    let active = true;
+    setRenewalOffers([]);
+    setRenewalError('');
+    if (authReady && signedIn && storeId) {
+      void listMyMerchantPrepaidRenewalProposals({ storeId }).then(result => {
+        if (active) setRenewalOffers(result.proposals);
+      }).catch(error => {
+        if (active) setRenewalError(error instanceof Error ? error.message : 'Não foi possível carregar as propostas.');
+      });
+    }
+    return () => { active = false; };
+  }, [authReady, signedIn, storeId]);
+
+  const acceptRenewal = async (id: string, acceptedTotalMinor: number): Promise<void> => {
+    if (renewalBusyId) return;
+    setRenewalBusyId(id);
+    setRenewalError('');
+    try {
+      await acceptMerchantPrepaidRenewal({ storeId, proposalId: id, acceptedTotalMinor });
+      const result = await listMyMerchantPrepaidRenewalProposals({ storeId });
+      setRenewalOffers(result.proposals);
+    } catch (error) {
+      setRenewalError(error instanceof Error ? error.message : 'Não foi possível registrar seu aceite.');
+    } finally {
+      setRenewalBusyId('');
+    }
+  };
 
   const activeChallenges = useMemo(
     () => summary?.challenges.filter(
@@ -170,6 +203,31 @@ export function CustomerStoreRelationshipPanel({
       className="overflow-hidden rounded-3xl border border-amber-500/20 bg-slate-900 shadow-lg"
       aria-label={`Meu relacionamento com ${storeName || 'esta loja'}`}
     >
+      {renewalOffers.length > 0 && (
+        <div className="m-4 rounded-2xl border border-cyan-500/30 bg-slate-950 p-4" aria-label="Minhas propostas de renovação">
+          <h3 className="text-sm font-bold text-white">Minhas propostas de renovação</h3>
+          <p className="mt-1 text-xs text-slate-400">Confira as condições antes de aceitar. O aceite não gera cobrança nem ativa a renovação.</p>
+          <div className="mt-3 space-y-3">
+            {renewalOffers.map(offer => (
+              <div key={offer.id} className="rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
+                <p>Produto: {offer.proposal.productId}</p>
+                <p>Período: {offer.proposal.months} meses</p>
+                <p>Preço mensal vigente: {currency.format(offer.proposal.currentMonthlyPriceMinor / 100)}</p>
+                <p>Desconto: {offer.proposal.discountPercent}%</p>
+                <p className="mt-1 font-bold text-white">Total da proposta: {currency.format(offer.proposal.totalDueMinor / 100)}</p>
+                {offer.status === 'awaiting_acceptance' ? (
+                  <button type="button" disabled={Boolean(renewalBusyId)}
+                    onClick={() => void acceptRenewal(offer.id, offer.proposal.totalDueMinor)}
+                    className="mt-3 min-h-10 rounded-xl bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">
+                    {renewalBusyId === offer.id ? 'Registrando aceite…' : 'Aceitar condições da renovação'}
+                  </button>
+                ) : <p className="mt-2 text-cyan-300">Condições aceitas. Pagamento ainda não confirmado.</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {renewalError && <p role="alert" className="mx-4 text-xs text-red-300">{renewalError}</p>}
       <div className="p-4 sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="flex min-w-0 items-start gap-3">
