@@ -36,7 +36,7 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
     // This closes the gap between the final external authority check and persistence.
     if (input.sellerAuthority) {
       const { credentialScopeId, externalAccountId } = input.sellerAuthority;
-      if (!credentialScopeId || !/^\\d+$/.test(externalAccountId)) {
+      if (!credentialScopeId || !/^\d+$/.test(externalAccountId)) {
         throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
       }
       const storeRef = adminDb.doc(`stores/${input.storeId}`);
