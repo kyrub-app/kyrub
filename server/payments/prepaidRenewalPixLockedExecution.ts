@@ -106,6 +106,8 @@ export const executeAuthenticatedLockedIsolatedPrepaidRenewalPix = async (input:
     bindPayment: paymentId => bindCreatedPrepaidRenewalPixPaymentId({
       storeId: input.storeId, proposalId: input.proposalId,
       paymentId, expectedRequestDigest,
+      sellerAuthority: { credentialScopeId: input.trustedCredentialScopeId,
+        externalAccountId: input.trustedExternalAccountId },
     }),
   });
 };
