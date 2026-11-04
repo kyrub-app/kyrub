@@ -16,6 +16,7 @@ export const bindVerifiedPrepaidRenewalPixCreation = async (input: {
   storeId: string;
   proposalId: string;
   expectedCollectorId: string;
+  sellerAuthority: { credentialScopeId: string; externalAccountId: string };
   request: ReturnType<typeof buildPrepaidRenewalPixRequest>;
   trustedProviderResponse: unknown;
 }): Promise<{ paymentId: string; action: 'bound' | 'already_bound' }> => {
@@ -33,6 +34,7 @@ export const bindVerifiedPrepaidRenewalPixCreation = async (input: {
     proposalId: input.proposalId,
     paymentId,
     expectedRequestDigest,
+    sellerAuthority: input.sellerAuthority,
   });
   return { paymentId, action };
 };
