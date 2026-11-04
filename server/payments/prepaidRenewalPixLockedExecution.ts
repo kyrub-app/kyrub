@@ -41,6 +41,19 @@ export const executeLockedIsolatedPrepaidRenewalPix = async (input: {
   });
 };
 
+/** Reject a transport identity that differs from the authenticated seller binding. */
+export const assertAuthenticatedPrepaidRenewalPixRecipient = (input: {
+  recipient: { credentialScopeId: string; externalAccountId: string };
+  trustedCredentialScopeId: string;
+  trustedExternalAccountId: string;
+}): void => {
+  if (!input.recipient.credentialScopeId || !input.recipient.externalAccountId ||
+      input.trustedCredentialScopeId !== input.recipient.credentialScopeId ||
+      input.trustedExternalAccountId !== input.recipient.externalAccountId) {
+    throw new Error('RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH');
+  }
+};
+
 /**
  * Internal-only authenticated checkout composition. Caller must independently
  * resolve trusted commercial recipient and OAuth vault identity on the server.
@@ -61,10 +74,7 @@ export const executeAuthenticatedLockedIsolatedPrepaidRenewalPix = async (input:
     storeId: input.storeId,
     proposalId: input.proposalId,
   });
-  if (input.trustedCredentialScopeId !== recipient.credentialScopeId ||
-      input.trustedExternalAccountId !== recipient.externalAccountId) {
-    throw new Error('RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH');
-  }
+  assertAuthenticatedPrepaidRenewalPixRecipient({ ...input, recipient });
   validatePrepaidRenewalPixTransportAuthority({ ...input, request });
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   return executeLockedIsolatedPrepaidRenewalPix({
