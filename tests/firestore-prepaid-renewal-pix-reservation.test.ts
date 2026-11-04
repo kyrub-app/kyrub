@@ -864,3 +864,38 @@ test('Firestore emulator: seller payment detail foreign tenant metadata cannot b
   assert.equal(attempt.get('executionState'), 'outcome_unknown');
   assert.equal(attempt.get('providerPaymentId'), undefined);
 });
+
+test('Firestore emulator: concurrent reconciliation cannot bind conflicting payment IDs', async () => {
+  const { reconcileUnknownPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixReconciliation.js');
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-reconcile-conflicting-ids';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest });
+  await markPrepaidRenewalPixExecutionOutcomeUnknown({ storeId, proposalId, expectedRequestDigest });
+  const body = JSON.parse(request.init.body);
+  const payment = {
+    status: 'pending', payment_method_id: 'pix', currency_id: 'BRL',
+    collector_id: 987654, transaction_amount: body.transaction_amount,
+    external_reference: body.external_reference,
+  };
+  const reconcile = (id: number) => reconcileUnknownPrepaidRenewalPixPayment({
+    storeId, proposalId, request, expectedCollectorId: '987654',
+    trustedProviderPayment: { ...payment, id },
+  });
+  const results = await Promise.allSettled([reconcile(890011), reconcile(890012)]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  assert.equal(results.filter(result => result.status === 'rejected').length, 1);
+  const rejected = results.find(result => result.status === 'rejected');
+  assert.match(String(rejected && rejected.status === 'rejected' && rejected.reason),
+    /RENEWAL_PIX_RECONCILIATION_CONFLICT/);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.ok(['890011', '890012'].includes(attempt.get('providerPaymentId')));
+  assert.equal(attempt.get('executionState'), 'outcome_unknown');
+});
