@@ -65,3 +65,27 @@ test('seller search rejects ambiguous payments without selecting one', async () 
     results: [payment, { ...payment, id: 12346 }],
   }))), /RENEWAL_PIX_RECONCILIATION_AMBIGUOUS/);
 });
+
+test('seller search rejects changing totals between pages', async () => {
+  await assert.rejects(search(makeInput(async (_scope, path) => {
+    const offset = Number(new URL('https://test.invalid' + path).searchParams.get('offset'));
+    return {
+      paging: { total: offset === 0 ? 51 : 52, limit: 50, offset },
+      results: offset === 0
+        ? Array.from({ length: 50 }, (_, i) => ({ ...payment, id: 50000 + i, collector_id: 999 }))
+        : [payment],
+    };
+  })), /SEARCH_INCOMPLETE/);
+});
+
+test('seller search rejects duplicate provider IDs across pages', async () => {
+  await assert.rejects(search(makeInput(async (_scope, path) => {
+    const offset = Number(new URL('https://test.invalid' + path).searchParams.get('offset'));
+    return {
+      paging: { total: 51, limit: 50, offset },
+      results: offset === 0
+        ? Array.from({ length: 50 }, (_, i) => ({ ...payment, id: 50000 + i, collector_id: 999 }))
+        : [{ ...payment, id: 50000 }],
+    };
+  })), /SEARCH_INCOMPLETE/);
+});
