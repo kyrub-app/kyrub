@@ -15,7 +15,12 @@ export const selectUniquePrepaidRenewalPixReconciliationPayment = (input: {
   expectedProposalId: string;
   expectedCollectorId: string;
   providerPayments: unknown;
+  /** Server-verified completion of every provider search page. */
+  searchComplete: boolean;
 }): unknown => {
+  if (input.searchComplete !== true) {
+    throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
+  }
   if (!Array.isArray(input.providerPayments)) {
     throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID');
   }
