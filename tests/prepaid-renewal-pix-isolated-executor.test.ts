@@ -31,11 +31,24 @@ const response = {
   transaction_amount: 299.9,
   external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
 };
+// Isolated test gate: models a single atomic claim without external services.
+const testGate = () => {
+  let claimed = false;
+  return {
+    claimExecution: async (): Promise<'claimed'> => {
+      if (claimed) throw new Error('RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED');
+      claimed = true;
+      return 'claimed';
+    },
+    markOutcomeUnknown: async () => { claimed = true; },
+  };
+};
 test('isolated executor creates and binds a validated provider response', async () => {
   let posts = 0;
   let binds = 0;
   const result = await executeIsolatedPrepaidRenewalPix({
     storeId, proposalId, request, expectedCollectorId: '7654321',
+    ...testGate(),
     reserve: async () => ({ attempt }),
     createPayment: async () => { posts++; return response; },
     fetchPayment: async () => { throw new Error('UNEXPECTED_FETCH'); },
@@ -48,6 +61,7 @@ test('isolated executor creates and binds a validated provider response', async 
 test('isolated executor fetches a previously bound payment without posting', async () => {
   const result = await executeIsolatedPrepaidRenewalPix({
     storeId, proposalId, request, expectedCollectorId: '7654321',
+    ...testGate(),
     reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
     createPayment: async () => { throw new Error('DUPLICATE_POST'); },
     fetchPayment: async id => { assert.equal(id, '123456'); return response; },
@@ -59,6 +73,7 @@ test('isolated executor refuses provider identity mismatch without binding', asy
   let bound = false;
   await assert.rejects(executeIsolatedPrepaidRenewalPix({
     storeId, proposalId, request, expectedCollectorId: '7654321',
+    ...testGate(),
     reserve: async () => ({ attempt }),
     createPayment: async () => ({ ...response, collector_id: 42 }),
     fetchPayment: async () => response,
@@ -70,6 +85,7 @@ test('isolated executor fails closed before network on altered reservation diges
   let called = false;
   await assert.rejects(executeIsolatedPrepaidRenewalPix({
     storeId, proposalId, request, expectedCollectorId: '7654321',
+    ...testGate(),
     reserve: async () => ({ attempt: { ...attempt, requestDigest: '0'.repeat(64) } }),
     createPayment: async () => { called = true; return response; },
     fetchPayment: async () => { called = true; return response; },
@@ -78,40 +94,25 @@ test('isolated executor fails closed before network on altered reservation diges
   assert.equal(called, false);
 });
 
-test('isolated executor recovers a lost response using the same provider payment', async () => {
-  const payments = new Map<string, typeof response>();
+test('isolated executor never repeats POST after a lost provider response', async () => {
   let posts = 0;
-  let boundPaymentId: string | undefined;
-  const run = () => executeIsolatedPrepaidRenewalPix({
-    storeId, proposalId, request, expectedCollectorId: '7654321',
-    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: boundPaymentId } }),
-    createPayment: async value => {
-      posts++;
-      const key = value.init.headers['X-Idempotency-Key'];
-      const prior = payments.get(key);
-      if (prior) return prior;
-      payments.set(key, response);
-      throw new Error('SIMULATED_LOST_RESPONSE');
-    },
-    fetchPayment: async () => response,
-    bindPayment: async id => { boundPaymentId = id; return 'bound'; },
+  const gate = testGate();
+  const execute = () => executeIsolatedPrepaidRenewalPix({
+    storeId, proposalId, request, expectedCollectorId: '7654321', ...gate,
+    reserve: async () => ({ attempt }),
+    createPayment: async () => { posts++; throw new Error('SIMULATED_LOST_RESPONSE'); },
+    fetchPayment: async () => { throw new Error('UNEXPECTED_FETCH'); },
+    bindPayment: async () => 'bound',
   });
-  await assert.rejects(run(), /SIMULATED_LOST_RESPONSE/);
-  assert.equal(payments.size, 1);
-  assert.equal(boundPaymentId, undefined);
-  const recovered = await run();
-  assert.equal(recovered.paymentId, '123456');
-  assert.equal(boundPaymentId, '123456');
-  assert.equal(posts, 2);
-  assert.equal(payments.size, 1);
-  const afterBinding = await run();
-  assert.equal(afterBinding.paymentId, '123456');
-  assert.equal(posts, 2);
+  await assert.rejects(execute(), /SIMULATED_LOST_RESPONSE/);
+  await assert.rejects(execute(), /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  assert.equal(posts, 1);
 });
 test('isolated executor rejects a fetched payment with a different ID', async () => {
   let bound = false;
   await assert.rejects(executeIsolatedPrepaidRenewalPix({
     storeId, proposalId, request, expectedCollectorId: '7654321',
+    ...testGate(),
     reserve: async () => ({ attempt: { ...attempt, providerPaymentId: '123456' } }),
     createPayment: async () => { throw new Error('UNEXPECTED_POST'); },
     fetchPayment: async () => ({ ...response, id: 654321 }),
@@ -120,38 +121,17 @@ test('isolated executor rejects a fetched payment with a different ID', async ()
   assert.equal(bound, false);
 });
 
-test('concurrent isolated executions preserve one provider ID and immutable binding', async () => {
-  const provider = new Map<string, typeof response>();
-  let boundId: string | undefined;
-  let providerCreates = 0;
-  let successfulBindings = 0;
+test('concurrent isolated executions permit only one provider POST', async () => {
+  const gate = testGate();
+  let posts = 0;
   const execute = () => executeIsolatedPrepaidRenewalPix({
-    storeId, proposalId, request, expectedCollectorId: '7654321',
-    reserve: async () => ({ attempt: { ...attempt, providerPaymentId: boundId } }),
-    createPayment: async value => {
-      const key = value.init.headers['X-Idempotency-Key'];
-      const existing = provider.get(key);
-      if (existing) return existing;
-      providerCreates++;
-      provider.set(key, response);
-      return response;
-    },
-    fetchPayment: async id => {
-      assert.equal(id, '123456');
-      return response;
-    },
-    bindPayment: async id => {
-      if (boundId && boundId !== id) throw new Error('IMMUTABLE_BINDING_CONFLICT');
-      const action = boundId ? 'already_bound' as const : 'bound' as const;
-      boundId = id;
-      successfulBindings++;
-      return action;
-    },
+    storeId, proposalId, request, expectedCollectorId: '7654321', ...gate,
+    reserve: async () => ({ attempt }),
+    createPayment: async () => { posts++; return response; },
+    fetchPayment: async () => { throw new Error('UNEXPECTED_FETCH'); },
+    bindPayment: async () => 'bound',
   });
-  const results = await Promise.all(Array.from({ length: 8 }, execute));
-  assert.equal(providerCreates, 1);
-  assert.equal(provider.size, 1);
-  assert.equal(boundId, '123456');
-  assert.equal(successfulBindings, 8);
-  assert.ok(results.every(result => result.paymentId === '123456'));
+  const results = await Promise.allSettled(Array.from({ length: 8 }, execute));
+  assert.equal(results.filter(x => x.status === 'fulfilled').length, 1);
+  assert.equal(posts, 1);
 });
