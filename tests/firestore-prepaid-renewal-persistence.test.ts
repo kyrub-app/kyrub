@@ -398,7 +398,13 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
     requestDigest: 'a'.repeat(64),
     expiresAt: new Date(Date.parse(next.acceptedAt) + 30 * 60_000).toISOString(),
   };
-  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, storeId, approvedAt);
+  await adminDb.doc(`stores/${storeId}`).set({
+    ownerId: storeId, legacyTenantId: storeId,
+  });
+  await adminDb.doc(`stores/${storeId}/paymentProviderConnections/mercado_pago`).set({
+    provider: 'mercado_pago', storeId, status: 'connected', externalAccountId: '987654',
+  });
+  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, storeId, approvedAt, '987654');
   const contractRef = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`);
   const paymentRef = adminDb.doc('prepaidRenewalPaymentBindings/' +
     createHash('sha256').update('mercado_pago:' + paymentId).digest('hex'));
