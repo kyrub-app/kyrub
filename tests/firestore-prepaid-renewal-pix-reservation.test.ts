@@ -97,12 +97,16 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
   const digest = createHash('sha256').update(request.init.body).digest('hex');
-  await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId: '123456', expectedRequestDigest: digest }), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
+  await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId: '123456', expectedRequestDigest: digest 
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    }), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
   assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   const bind = (paymentId: string, digest = expectedRequestDigest) =>
     bindCreatedPrepaidRenewalPixPaymentId({
       storeId, proposalId, paymentId, expectedRequestDigest: digest,
+    
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
     });
   assert.equal(await bind('123456'), 'bound');
   assert.equal(await bind('123456'), 'already_bound');
@@ -115,6 +119,8 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   await assert.rejects(
     bindCreatedPrepaidRenewalPixPaymentId({
       storeId: 'another-store', proposalId, paymentId: '123456', expectedRequestDigest,
+    
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
     }),
     /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/,
   );
@@ -132,6 +138,8 @@ test('Firestore emulator: concurrent distinct provider IDs cannot replace the fi
   const outcomes = await Promise.allSettled(ids.map(paymentId =>
     bindCreatedPrepaidRenewalPixPaymentId({
       storeId, proposalId, paymentId, expectedRequestDigest,
+    
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
     })
   ));
   assert.equal(outcomes.filter(result => result.status === 'fulfilled').length, 1);
@@ -186,7 +194,9 @@ test('Firestore emulator: concurrent identical provider IDs bind once and remain
   const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
   const bind = () => bindCreatedPrepaidRenewalPixPaymentId({
     storeId, proposalId, paymentId: '200001', expectedRequestDigest,
-  });
+  
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    });
   const results = await Promise.all([bind(), bind(), bind()]);
   assert.deepEqual(results.sort(), ['already_bound', 'already_bound', 'bound']);
   const attempt = await adminDb.doc(
@@ -280,6 +290,8 @@ test('Firestore emulator: locked seller-scoped executor permits only one concurr
     bindPayment: async paymentId => bindCreatedPrepaidRenewalPixPaymentId({
       storeId, proposalId, paymentId,
       expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex'),
+    
+      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
     }),
     sellerScopedRequest: async (_scope, path, init) => {
       assert.equal(path, '/v1/payments');
