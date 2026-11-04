@@ -48,12 +48,12 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
     throw new Error('INVALID_RENEWAL_PIX_BINDING_INPUT');
   }
   if (verifiedPixPaymentApprovedAt && (!verifiedSellerExternalAccountId || !/^\d+$/.test(verifiedSellerExternalAccountId) ||
-      verifiedSellerCredentialScopeId !== renewal.storeId)) {
+      !verifiedSellerCredentialScopeId || !safeId(verifiedSellerCredentialScopeId))) {
     throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
   }
   const sellerStoreRef = verifiedPixPaymentApprovedAt ? adminDb.doc(`stores/${renewal.storeId}`) : null;
   const sellerConnectionRef = verifiedPixPaymentApprovedAt
-    ? adminDb.doc(`stores/${renewal.storeId}/paymentProviderConnections/mercado_pago`) : null;
+    ? adminDb.doc(`stores/${verifiedSellerCredentialScopeId}/paymentProviderConnections/mercado_pago`) : null;
   const pixAttemptRef = verifiedPixPaymentApprovedAt && acceptedProposalId
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalPixAttempts/${acceptedProposalId}`) : null;
   const acceptedProposalRef = acceptedProposalId
@@ -73,10 +73,11 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
     if (sellerStoreRef) {
       const store = sellerStoreDoc?.data();
       const connection = sellerConnectionDoc?.data();
-      if (!sellerStoreDoc?.exists || store?.ownerId !== renewal.storeId ||
-          (store.legacyTenantId || store.ownerId) !== renewal.storeId ||
+      if (!sellerStoreDoc?.exists || !safeId(store?.ownerId) ||
+          (store.legacyTenantId || store.ownerId) !== verifiedSellerCredentialScopeId ||
+          store.ownerId !== verifiedSellerCredentialScopeId ||
           connection?.provider !== 'mercado_pago' ||
-          connection.storeId !== renewal.storeId ||
+          connection.storeId !== verifiedSellerCredentialScopeId ||
           connection.status !== 'connected' ||
           connection.externalAccountId !== verifiedSellerExternalAccountId) {
         throw new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
