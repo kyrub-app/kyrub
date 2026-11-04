@@ -153,3 +153,14 @@ test('authenticated Pix reconciliation requires bound attempt at transactional c
   assert.match(persistence, /tx\.create\(contractRef, renewal\)/);
   assert.match(persistence, /tx\.create\(paymentRef,/);
 });
+
+test('Pix contract activation rechecks current seller after provider verification', () => {
+  const source = readFileSync('server/payments/prepaidRenewalActivation.ts', 'utf8');
+  const verification = source.indexOf('const payment = await verifyPrepaidRenewalMercadoPagoPayment(');
+  const finalAuthority = source.indexOf('const finalAuthority = await resolveCommercialRecipientAuthority(', verification);
+  const accountCheck = source.indexOf('finalRecipient.externalAccountId !== recipient.externalAccountId', finalAuthority);
+  const activation = source.indexOf('return recordVerifiedPrepaidRenewal({', finalAuthority);
+  assert.ok(verification >= 0 && finalAuthority > verification);
+  assert.ok(accountCheck > finalAuthority && activation > accountCheck);
+  assert.match(source.slice(accountCheck, activation), /RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED/);
+});
