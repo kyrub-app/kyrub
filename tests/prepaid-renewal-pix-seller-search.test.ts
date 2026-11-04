@@ -102,3 +102,12 @@ test('seller search refuses oversized result sets before requesting a second pag
   })), /SEARCH_INCOMPLETE/);
   assert.equal(calls, 1);
 });
+
+test('seller search rejects malformed reserved body before any provider GET', async () => {
+  let calls = 0;
+  await assert.rejects(search({
+    ...makeInput(async () => { calls++; return {}; }),
+    request: { ...request, init: { ...request.init, body: '{' } },
+  }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH|RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID/);
+  assert.equal(calls, 0);
+});
