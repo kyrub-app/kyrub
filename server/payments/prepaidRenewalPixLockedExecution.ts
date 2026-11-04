@@ -9,6 +9,7 @@ import { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeU
 import { executeScopedIsolatedPrepaidRenewalPix } from './prepaidRenewalPixScopedExecution.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
+import { createPrepaidRenewalPixSellerRecheckingTransport } from './prepaidRenewalPixSellerRecheckingTransport.js';
 
 type PixRequest = ReturnType<typeof buildPrepaidRenewalPixRequest>;
 
@@ -84,24 +85,21 @@ export const executeAuthenticatedLockedIsolatedPrepaidRenewalPix = async (input:
     request,
     // Recheck the current seller binding after the transactional claim and
     // immediately before any provider POST; a stale OAuth account must fail closed.
-    sellerScopedRequest: async (scope, path, init) => {
-      if (init.method === 'POST') {
+    sellerScopedRequest: createPrepaidRenewalPixSellerRecheckingTransport({
+      trustedCredentialScopeId: input.trustedCredentialScopeId,
+      trustedExternalAccountId: input.trustedExternalAccountId,
+      sellerScopedRequest: input.sellerScopedRequest,
+      resolveCurrentRecipient: async () => {
         const currentAuthority = await resolveCommercialRecipientAuthority({
           context: 'store_subscription', canonicalStoreId: input.storeId,
         });
-        const currentRecipient = resolvePrepaidRenewalRecipientBinding({
+        return resolvePrepaidRenewalRecipientBinding({
           storeId: input.storeId,
           storedSellerCredentialScopeId: recipient.credentialScopeId,
           authority: currentAuthority,
         });
-        assertAuthenticatedPrepaidRenewalPixRecipient({
-          recipient: currentRecipient,
-          trustedCredentialScopeId: input.trustedCredentialScopeId,
-          trustedExternalAccountId: input.trustedExternalAccountId,
-        });
-      }
-      return input.sellerScopedRequest(scope, path, init);
-    },
+      },
+    }),
     reserve: () => reservePrepaidRenewalPixAttempt({
       storeId: input.storeId, proposalId: input.proposalId, request,
     }),
