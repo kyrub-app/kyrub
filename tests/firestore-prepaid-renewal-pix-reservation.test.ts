@@ -97,7 +97,7 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   const request = makeRequest(storeId);
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
   const digest = createHash('sha256').update(request.init.body).digest('hex');
-  await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId: '123456', expectedRequestDigest: digest 
+  await assert.rejects(bindCreatedPrepaidRenewalPixPaymentId({ storeId, proposalId, paymentId: '123456', expectedRequestDigest: digest,
       sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
     }), /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/);
   assert.equal(await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest: digest }), 'claimed');
@@ -119,8 +119,7 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   await assert.rejects(
     bindCreatedPrepaidRenewalPixPaymentId({
       storeId: 'another-store', proposalId, paymentId: '123456', expectedRequestDigest,
-    
-      sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+      sellerAuthority: { credentialScopeId: 'another-store', externalAccountId: '987654' },
     }),
     /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/,
   );
