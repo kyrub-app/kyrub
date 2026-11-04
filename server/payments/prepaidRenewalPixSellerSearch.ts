@@ -73,7 +73,10 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
       if (!result || typeof result !== 'object' || Array.isArray(result)) {
         throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID');
       }
-      const id = String((result as Record<string, unknown>).id ?? '');
+      const rawId = (result as Record<string, unknown>).id;
+      const id = typeof rawId === 'string' ||
+        (typeof rawId === 'number' && Number.isSafeInteger(rawId))
+        ? String(rawId) : '';
       if (!/^\d{1,32}$/.test(id) || seenIds.has(id)) {
         throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INCOMPLETE');
       }
