@@ -732,3 +732,47 @@ test('Firestore emulator: seller payment detail amount mismatch cannot bind sear
   assert.equal(attempt.get('executionState'), 'outcome_unknown');
   assert.equal(attempt.get('providerPaymentId'), undefined);
 });
+
+test('Firestore emulator: seller payment detail GET timeout keeps unknown payment locked', async () => {
+  const { reconcileUnknownSellerPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixSellerReconciliation.js');
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const storeId = 'renew-pix-emulator-reconcile-detail-timeout';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  const locator = { storeId, proposalId, expectedRequestDigest };
+  await claimPrepaidRenewalPixExecution(locator);
+  await markPrepaidRenewalPixExecutionOutcomeUnknown(locator);
+  const body = JSON.parse(request.init.body);
+  const payment = {
+    id: 890006, status: 'pending', payment_method_id: 'pix',
+    currency_id: 'BRL', collector_id: 987654,
+    transaction_amount: body.transaction_amount,
+    external_reference: body.external_reference,
+  };
+  const calls: string[] = [];
+  await assert.rejects(reconcileUnknownSellerPrepaidRenewalPixPayment({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: storeId, oauthCredentialScopeId: storeId,
+    trustedExternalAccountId: '987654', oauthExternalAccountId: '987654',
+    sellerScopedRequest: async (_scope, path, init) => {
+      calls.push(path);
+      assert.equal(init.method, 'GET');
+      if (path === '/v1/payments/890006') throw new Error('SELLER_PAYMENT_DETAIL_TIMEOUT');
+      assert.match(path, /^\/v1\/payments\/search\?/);
+      return { paging: { total: 1, offset: 0, limit: 50 }, results: [payment] };
+    },
+  }), /SELLER_PAYMENT_DETAIL_TIMEOUT/);
+  assert.equal(calls.length, 2);
+  assert.equal(calls[1], '/v1/payments/890006');
+  await assert.rejects(claimPrepaidRenewalPixExecution(locator),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  const attempt = await adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  ).get();
+  assert.equal(attempt.get('executionState'), 'outcome_unknown');
+  assert.equal(attempt.get('providerPaymentId'), undefined);
+});
