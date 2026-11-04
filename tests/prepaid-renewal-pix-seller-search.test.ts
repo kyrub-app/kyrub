@@ -141,3 +141,20 @@ test('seller search rejects tampered tenant metadata without provider access', a
   }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
   assert.equal(calls, 0);
 });
+
+test('seller search rejects unsafe numeric IDs and object IDs', async () => {
+  for (const id of [Number.MAX_SAFE_INTEGER + 1, { value: 12345 }, null]) {
+    await assert.rejects(search(makeInput(async () => ({
+      paging: { total: 1, limit: 50, offset: 0 },
+      results: [{ ...payment, id }],
+    }))), /SEARCH_INCOMPLETE/);
+  }
+});
+
+test('seller search accepts exact large numeric IDs represented as strings', async () => {
+  const exact = { ...payment, id: '900719925474099312345' };
+  assert.deepEqual(await search(makeInput(async () => ({
+    paging: { total: 1, limit: 50, offset: 0 },
+    results: [exact],
+  }))), exact);
+});
