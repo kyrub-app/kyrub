@@ -20,7 +20,16 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
   sellerScopedRequest: (scope: string, path: string, init: RequestInit) => Promise<unknown>;
 }): Promise<unknown> => {
   validatePrepaidRenewalPixTransportAuthority(input);
-  const body = JSON.parse(input.request.init.body) as Record<string, unknown>;
+  let body: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(input.request.init.body);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('invalid body');
+    }
+    body = parsed as Record<string, unknown>;
+  } catch {
+    throw new Error('RENEWAL_PIX_RECONCILIATION_SEARCH_INVALID');
+  }
   const reference = body.external_reference;
   if (typeof reference !== 'string' ||
       reference !== `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
