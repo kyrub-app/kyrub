@@ -121,7 +121,7 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
       storeId: 'another-store', proposalId, paymentId: '123456', expectedRequestDigest,
       sellerAuthority: { credentialScopeId: 'another-store', externalAccountId: '987654' },
     }),
-    /RENEWAL_PIX_PAYMENT_BINDING_CONFLICT/,
+    /RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED/,
   );
 });
 
