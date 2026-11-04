@@ -125,6 +125,36 @@ test('Firestore emulator: Pix provider ID binding is immutable and idempotent', 
   );
 });
 
+test('Firestore emulator: creation binding rejects rotated or disconnected seller without persisting Pix ID', async () => {
+  const storeId = 'renew-pix-creation-seller-change';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  assert.equal(await claimPrepaidRenewalPixExecution({
+    storeId, proposalId, expectedRequestDigest,
+  }), 'claimed');
+  const connectionRef = adminDb.doc(
+    `stores/${storeId}/paymentProviderConnections/mercado_pago`
+  );
+  const attemptRef = adminDb.doc(
+    `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`
+  );
+  const bind = () => bindCreatedPrepaidRenewalPixPaymentId({
+    storeId, proposalId, paymentId: '888001', expectedRequestDigest,
+    sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+  });
+  await connectionRef.update({ externalAccountId: '111222' });
+  await assert.rejects(bind(), /RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED/);
+  assert.equal((await attemptRef.get()).get('providerPaymentId'), undefined);
+  await connectionRef.update({ externalAccountId: '987654', status: 'disconnected' });
+  await assert.rejects(bind(), /RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED/);
+  assert.equal((await attemptRef.get()).get('providerPaymentId'), undefined);
+  await connectionRef.update({ status: 'connected' });
+  assert.equal(await bind(), 'bound');
+  assert.equal((await attemptRef.get()).get('providerPaymentId'), '888001');
+});
+
 test('Firestore emulator: concurrent distinct provider IDs cannot replace the first binding', async () => {
   const storeId = 'renew-pix-emulator-binding-race';
   await seed(storeId);
