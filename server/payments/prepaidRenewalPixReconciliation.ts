@@ -16,7 +16,7 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
   request: ReturnType<typeof buildPrepaidRenewalPixRequest>;
   expectedCollectorId: string;
   trustedProviderPayment: unknown;
-  sellerAuthority?: { credentialScopeId: string; externalAccountId: string };
+  sellerAuthority: { credentialScopeId: string; externalAccountId: string };
 }): Promise<'bound' | 'already_bound'> => {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
       !/^[a-f0-9]{64}$/.test(input.proposalId)) {
@@ -34,28 +34,33 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
   return adminDb.runTransaction(async tx => {
     // Read the merchant binding in the same transaction as the payment-ID write.
     // This closes the gap between the final external authority check and persistence.
-    if (input.sellerAuthority) {
-      const { credentialScopeId, externalAccountId } = input.sellerAuthority;
-      if (!credentialScopeId || !/^\d+$/.test(externalAccountId)) {
-        throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
-      }
-      const storeRef = adminDb.doc(`stores/${input.storeId}`);
-      const connectionRef = adminDb.doc(
-        `stores/${credentialScopeId}/paymentProviderConnections/mercado_pago`
-      );
-      const [storeSnapshot, connectionSnapshot] = await Promise.all([
-        tx.get(storeRef), tx.get(connectionRef),
-      ]);
-      const store = storeSnapshot.data();
-      const connection = connectionSnapshot.data();
-      if (!store || store.ownerId !== credentialScopeId ||
-          (store.legacyTenantId || store.ownerId) !== credentialScopeId ||
-          !connection || connection.provider !== 'mercado_pago' ||
-          connection.storeId !== credentialScopeId ||
-          connection.status !== 'connected' ||
-          connection.externalAccountId !== externalAccountId) {
-        throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
-      }
+    const { credentialScopeId, externalAccountId } = input.sellerAuthority;
+    if (!credentialScopeId || !/^\d+$/.test(externalAccountId) ||
+        credentialScopeId !== input.storeId) {
+      throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
+    }
+    const storeRef = adminDb.doc(`stores/${input.storeId}`);
+    const primaryRef = adminDb.doc(`users/${input.storeId}/stores/${input.storeId}`);
+    const connectionRef = adminDb.doc(
+      `stores/${credentialScopeId}/paymentProviderConnections/mercado_pago`
+    );
+    const [storeSnapshot, primarySnapshot, connectionSnapshot] = await Promise.all([
+      tx.get(storeRef), tx.get(primaryRef), tx.get(connectionRef),
+    ]);
+    const store = storeSnapshot.data();
+    const primary = primarySnapshot.data();
+    const storeMatches = store
+      ? store.ownerId === credentialScopeId &&
+        (store.legacyTenantId || store.ownerId) === credentialScopeId
+      : primary?.id === input.storeId &&
+        primary?.ownerId === credentialScopeId &&
+        (!primary.legacyTenantId || primary.legacyTenantId === credentialScopeId);
+    const connection = connectionSnapshot.data();
+    if (!storeMatches || !connection || connection.provider !== 'mercado_pago' ||
+        connection.storeId !== credentialScopeId ||
+        connection.status !== 'connected' ||
+        connection.externalAccountId !== externalAccountId) {
+      throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
     }
     const snapshot = await tx.get(ref);
     const attempt = snapshot.data() as (PrepaidRenewalPixAttempt & { executionState?: string }) | undefined;
