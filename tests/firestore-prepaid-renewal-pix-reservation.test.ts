@@ -348,3 +348,45 @@ test('Firestore emulator: reconciliation refuses idle attempt and leaves it unch
   assert.equal((await ref.get()).get('providerPaymentId'), undefined);
   assert.equal((await ref.get()).get('executionState'), 'idle');
 });
+
+test('Firestore emulator: seller GET reconciliation binds payment without POST', async () => {
+  const { claimPrepaidRenewalPixExecution, markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const { reconcileUnknownSellerPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixSellerReconciliation.js');
+  const storeId = 'renew-pix-emulator-seller-reconcile';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest });
+  await markPrepaidRenewalPixExecutionOutcomeUnknown({ storeId, proposalId, expectedRequestDigest });
+  const body = JSON.parse(request.init.body);
+  const calls: string[] = [];
+  const reconcile = () => reconcileUnknownSellerPrepaidRenewalPixPayment({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: storeId, oauthCredentialScopeId: storeId,
+    trustedExternalAccountId: '987654', oauthExternalAccountId: '987654',
+    sellerScopedRequest: async (scope, path, init) => {
+      assert.equal(scope, storeId);
+      assert.equal(init.method, 'GET');
+      assert.match(path, /^\/v1\/payments\/search\?/);
+      calls.push(init.method);
+      return {
+        paging: { total: 1, limit: 50, offset: 0 },
+        results: [{
+          id: 777777, status: 'pending', payment_method_id: 'pix',
+          currency_id: 'BRL', collector_id: 987654,
+          transaction_amount: body.transaction_amount,
+          external_reference: body.external_reference,
+        }],
+      };
+    },
+  });
+  assert.equal(await reconcile(), 'bound');
+  assert.equal(await reconcile(), 'already_bound');
+  assert.deepEqual(calls, ['GET', 'GET']);
+  const ref = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  assert.equal((await ref.get()).get('providerPaymentId'), '777777');
+  assert.equal((await ref.get()).get('executionState'), 'outcome_unknown');
+});
