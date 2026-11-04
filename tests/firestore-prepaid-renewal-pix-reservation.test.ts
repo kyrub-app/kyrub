@@ -945,3 +945,25 @@ test('Firestore emulator: concurrent same-ID reconciliation is idempotent and re
   // returns 'claimed' again, so a second provider POST remains prohibited.
   assert.equal(await claimPrepaidRenewalPixExecution(locator), 'fetch_bound');
 });
+
+test('Authenticated Pix checkout recipient guard rejects substituted OAuth seller identity', async () => {
+  const { assertAuthenticatedPrepaidRenewalPixRecipient } =
+    await import('../server/payments/prepaidRenewalPixLockedExecution.js');
+  const recipient = { credentialScopeId: 'owner-verified', externalAccountId: '987654' };
+  assert.doesNotThrow(() => assertAuthenticatedPrepaidRenewalPixRecipient({
+    recipient, trustedCredentialScopeId: 'owner-verified', trustedExternalAccountId: '987654',
+  }));
+  for (const identity of [
+    { trustedCredentialScopeId: 'owner-foreign', trustedExternalAccountId: '987654' },
+    { trustedCredentialScopeId: 'owner-verified', trustedExternalAccountId: '123456' },
+    { trustedCredentialScopeId: 'owner-foreign', trustedExternalAccountId: '123456' },
+  ]) {
+    assert.throws(() => assertAuthenticatedPrepaidRenewalPixRecipient({
+      recipient, ...identity,
+    }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+  }
+  assert.throws(() => assertAuthenticatedPrepaidRenewalPixRecipient({
+    recipient: { credentialScopeId: '', externalAccountId: '987654' },
+    trustedCredentialScopeId: '', trustedExternalAccountId: '987654',
+  }), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+});
