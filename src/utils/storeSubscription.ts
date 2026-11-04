@@ -100,7 +100,7 @@ export const quoteMerchantSubscriptionContract = async (input: {
 export const proposeMerchantPrepaidRenewal = async (input: {
   storeId: string;
   previousContractId: string;
-}): Promise<{ proposalId: string; [key: string]: unknown }> =>
+}): Promise<{ proposalId: string; paymentExternalReference: string }> =>
   post('merchant.prepaid-renewal.propose', {
     storeId: input.storeId.trim(),
     previousContractId: input.previousContractId.trim(),
@@ -111,7 +111,7 @@ export const acceptMerchantPrepaidRenewal = async (input: {
   storeId: string;
   proposalId: string;
   acceptedTotalMinor: number;
-}): Promise<{ status: string }> =>
+}): Promise<{ status: 'accepted' | 'already_accepted' }> =>
   post('merchant.prepaid-renewal.accept', {
     storeId: input.storeId.trim(),
     proposalId: input.proposalId.trim(),
@@ -123,7 +123,7 @@ export const reconcileMerchantPrepaidRenewal = async (input: {
   storeId: string;
   proposalId: string;
   paymentId: string;
-}): Promise<{ status: string; [key: string]: unknown }> =>
+}): Promise<{ status: 'created' | 'already_exists' }> =>
   post('merchant.prepaid-renewal.reconcile', {
     storeId: input.storeId.trim(),
     proposalId: input.proposalId.trim(),
