@@ -4,6 +4,9 @@ import type { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.j
 import { searchUniqueSellerPrepaidRenewalPixPayment } from './prepaidRenewalPixSellerSearch.js';
 import { reconcileUnknownPrepaidRenewalPixPayment } from './prepaidRenewalPixReconciliation.js';
 import { validatePrepaidRenewalPixCreationResponse } from './prepaidRenewalPixCreationResponse.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
+import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
+import { assertAuthenticatedPrepaidRenewalPixRecipient } from './prepaidRenewalPixLockedExecution.js';
 
 type PixRequest = ReturnType<typeof buildPrepaidRenewalPixRequest>;
 
@@ -44,6 +47,21 @@ export const reconcileUnknownSellerPrepaidRenewalPixPayment = async (input: {
       !['in_flight', 'outcome_unknown'].includes(attempt.executionState)) {
     throw new Error('RENEWAL_PIX_RECONCILIATION_CONFLICT');
   }
+  // Resolve current merchant authority independently before seller-scoped GET.
+  // A rotated or disconnected seller account must not be silently reused.
+  const currentAuthority = await resolveCommercialRecipientAuthority({
+    context: 'store_subscription', canonicalStoreId: input.storeId,
+  });
+  const currentRecipient = resolvePrepaidRenewalRecipientBinding({
+    storeId: input.storeId,
+    storedSellerCredentialScopeId: input.trustedCredentialScopeId,
+    authority: currentAuthority,
+  });
+  assertAuthenticatedPrepaidRenewalPixRecipient({
+    recipient: currentRecipient,
+    trustedCredentialScopeId: input.trustedCredentialScopeId,
+    trustedExternalAccountId: input.trustedExternalAccountId,
+  });
   const trustedProviderPayment = await searchUniqueSellerPrepaidRenewalPixPayment(input);
   const paymentId = validatePrepaidRenewalPixCreationResponse({
     request: input.request, response: trustedProviderPayment,
