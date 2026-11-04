@@ -48,7 +48,7 @@ export const searchUniqueSellerPrepaidRenewalPixPayment = async (input: {
     if (!paging || typeof paging.total !== 'number' || !Number.isSafeInteger(paging.total) ||
         typeof paging.offset !== 'number' || !Number.isSafeInteger(paging.offset) ||
         typeof paging.limit !== 'number' || !Number.isSafeInteger(paging.limit) ||
-        (paging.total as number) < 0 ||
+        (paging.total as number) < 0 || (paging.total as number) > 100 ||
         paging.offset !== offset || paging.limit !== limit ||
         !Array.isArray(page.results) ||
         page.results.length > limit ||
