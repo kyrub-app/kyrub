@@ -414,6 +414,41 @@ test('Firestore emulator: seller GET reconciliation binds payment without POST',
   assert.equal((await ref.get()).get('executionState'), 'outcome_unknown');
 });
 
+test('Firestore emulator: rotated or disconnected seller prevents reconciliation GET and keeps Pix locked', async () => {
+  const { markPrepaidRenewalPixExecutionOutcomeUnknown } =
+    await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  const { reconcileUnknownSellerPrepaidRenewalPixPayment } =
+    await import('../server/payments/prepaidRenewalPixSellerReconciliation.js');
+  const storeId = 'renew-pix-emulator-seller-rotation';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest });
+  await markPrepaidRenewalPixExecutionOutcomeUnknown({ storeId, proposalId, expectedRequestDigest });
+  let providerCalls = 0;
+  const run = () => reconcileUnknownSellerPrepaidRenewalPixPayment({
+    storeId, proposalId, request,
+    trustedCredentialScopeId: storeId, oauthCredentialScopeId: storeId,
+    trustedExternalAccountId: '987654', oauthExternalAccountId: '987654',
+    sellerScopedRequest: async () => { providerCalls++; throw new Error('UNEXPECTED_PROVIDER_CALL'); },
+  });
+  const connection = adminDb.doc(`stores/${storeId}/paymentProviderConnections/mercado_pago`);
+  await connection.update({ externalAccountId: '123456' });
+  await assert.rejects(run(), /RENEWAL_PIX_TRANSPORT_AUTHORITY_MISMATCH/);
+  assert.equal(providerCalls, 0);
+  await connection.update({ status: 'disconnected', externalAccountId: '' });
+  await assert.rejects(run(), /COMMERCIAL_RECIPIENT_STORE_PAYMENT_NOT_CONNECTED/);
+  assert.equal(providerCalls, 0);
+  const attempt = await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).get();
+  assert.equal(attempt.get('executionState'), 'outcome_unknown');
+  assert.equal(attempt.get('providerPaymentId'), undefined);
+  await assert.rejects(
+    claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest }),
+    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/,
+  );
+});
+
 test('Firestore emulator: seller reconciliation preflight blocks missing, idle and altered attempts before GET', async () => {
   const { reconcileUnknownSellerPrepaidRenewalPixPayment } =
     await import('../server/payments/prepaidRenewalPixSellerReconciliation.js');
