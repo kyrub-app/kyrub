@@ -463,6 +463,51 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   const contractRef = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`);
   const paymentRef = adminDb.doc('prepaidRenewalPaymentBindings/' +
     createHash('sha256').update('mercado_pago:' + paymentId).digest('hex'));
+  // Positive case: a canonical store may differ from its owner's OAuth scope.
+  assert.equal((await adminDb.doc(`stores/${storeId}`).get()).get('ownerId'), credentialScopeId);
+  const successStoreId = 'renew-emulator-distinct-scope-success';
+  const successOwnerId = 'oauth-owner-distinct-scope-success';
+  const successPreviousId = 'original-distinct-scope-success';
+  const successProposalId = '8'.repeat(64);
+  const successPaymentId = '123456791';
+  await seed(successStoreId, successPreviousId);
+  const successNext = renewal(successStoreId, successPreviousId, successPaymentId);
+  const successProposal = {
+    storeId: successStoreId, customerId: successNext.customerId,
+    previousContractId: successPreviousId, productId: successNext.productId,
+    months: successNext.months, totalDueMinor: successNext.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${successStoreId}`).set({
+    ownerId: successOwnerId, legacyTenantId: successOwnerId,
+  });
+  await adminDb.doc(`stores/${successOwnerId}/paymentProviderConnections/mercado_pago`).set({
+    provider: 'mercado_pago', storeId: successOwnerId,
+    status: 'connected', externalAccountId: '987654',
+  });
+  await adminDb.doc(`stores/${successStoreId}/prepaidRenewalProposals/${successProposalId}`).set({
+    status: 'accepted', acceptedBy: successNext.customerId,
+    acceptedAt: successNext.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(successProposal)).digest('hex'),
+    sellerCredentialScopeId: successOwnerId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${successStoreId}:${successProposalId}`,
+    proposal: successProposal,
+    acceptance: {
+      storeId: successStoreId, customerId: successNext.customerId,
+      acceptedAt: successNext.acceptedAt, acceptedTotalMinor: successNext.totalPaidMinor,
+    },
+  });
+  await adminDb.doc(`stores/${successStoreId}/prepaidRenewalPixAttempts/${successProposalId}`).set({
+    storeId: successStoreId, proposalId: successProposalId, status: 'reserved',
+    idempotencyKey: `prepaid-renewal-${successProposalId}`,
+    requestDigest: 'a'.repeat(64), providerPaymentId: successPaymentId,
+    expiresAt: new Date(Date.parse(successNext.acceptedAt) + 30 * 60_000).toISOString(),
+  });
+  assert.equal(await persistVerifiedPrepaidRenewal(
+    successNext, successProposalId, successOwnerId, approvedAt, '987654',
+  ), 'created');
+  assert.equal((await adminDb.doc(
+    `stores/${successStoreId}/prepaidSubscriptionContracts/${successNext.contractId}`
+  ).get()).exists, true);
   await connectionRef.update({ status: 'disconnected' });
   await assert.rejects(persist(), /RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED/);
   await connectionRef.update({ status: 'connected', externalAccountId: '987655' });
