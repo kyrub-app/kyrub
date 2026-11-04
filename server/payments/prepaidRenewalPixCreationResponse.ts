@@ -29,7 +29,10 @@ export const validatePrepaidRenewalPixCreationResponse = (input: {
   }
   const result = response as Record<string, unknown>;
   const metadata = body.metadata as Record<string, unknown> | undefined;
-  const id = String(result.id ?? '');
+  const rawId = result.id;
+  const id = typeof rawId === 'string' ||
+    (typeof rawId === 'number' && Number.isSafeInteger(rawId))
+    ? String(rawId) : '';
   const amount = result.transaction_amount;
   const cents = typeof amount === 'number' ? amount * 100 : NaN;
   if (request.path !== '/v1/payments' || request.init.method !== 'POST' ||
@@ -41,7 +44,9 @@ export const validatePrepaidRenewalPixCreationResponse = (input: {
       !['pending', 'in_process', 'approved'].includes(String(result.status)) ||
       result.payment_method_id !== 'pix' ||
       result.currency_id !== 'BRL' ||
-      String(result.collector_id ?? '') !== expectedCollectorId ||
+      !((typeof result.collector_id === 'string' ||
+          (typeof result.collector_id === 'number' && Number.isSafeInteger(result.collector_id))) &&
+        String(result.collector_id) === expectedCollectorId) ||
       result.external_reference !== body.external_reference ||
       (result.metadata != null && (
         typeof result.metadata !== 'object' ||
