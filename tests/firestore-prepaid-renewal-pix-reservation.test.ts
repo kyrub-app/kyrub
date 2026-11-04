@@ -324,7 +324,7 @@ test('Firestore emulator: unknown Pix outcome reconciles once with verified sell
   const reconcile = (trustedProviderPayment: unknown, targetStore = storeId) =>
     reconcileUnknownPrepaidRenewalPixPayment({
       storeId: targetStore, proposalId, request,
-      expectedCollectorId: '987654', trustedProviderPayment,
+      expectedCollectorId: '987654', trustedProviderPayment, sellerAuthority: { credentialScopeId: targetStore, externalAccountId: '987654' },
     });
   await assert.rejects(reconcile({ ...payment, collector_id: 123 }),
     /RENEWAL_PIX_CREATION_RESPONSE_MISMATCH/);
@@ -351,7 +351,8 @@ test('Firestore emulator: reconciliation refuses idle attempt and leaves it unch
   await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
   const body = JSON.parse(request.init.body);
   await assert.rejects(reconcileUnknownPrepaidRenewalPixPayment({
-    storeId, proposalId, request, expectedCollectorId: '987654',
+    storeId, proposalId, request, sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    expectedCollectorId: '987654',
     trustedProviderPayment: {
       id: 567890, status: 'pending', payment_method_id: 'pix',
       currency_id: 'BRL', collector_id: 987654,
@@ -983,7 +984,8 @@ test('Firestore emulator: concurrent reconciliation cannot bind conflicting paym
     external_reference: body.external_reference,
   };
   const reconcile = (id: number) => reconcileUnknownPrepaidRenewalPixPayment({
-    storeId, proposalId, request, expectedCollectorId: '987654',
+    storeId, proposalId, request, sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    expectedCollectorId: '987654',
     trustedProviderPayment: { ...payment, id },
   });
   const results = await Promise.allSettled([reconcile(890011), reconcile(890012)]);
@@ -1020,7 +1022,8 @@ test('Firestore emulator: concurrent same-ID reconciliation is idempotent and re
     external_reference: body.external_reference,
   };
   const reconcile = () => reconcileUnknownPrepaidRenewalPixPayment({
-    storeId, proposalId, request, expectedCollectorId: '987654',
+    storeId, proposalId, request, sellerAuthority: { credentialScopeId: storeId, externalAccountId: '987654' },
+    expectedCollectorId: '987654',
     trustedProviderPayment,
   });
   const results = await Promise.all([reconcile(), reconcile()]);
