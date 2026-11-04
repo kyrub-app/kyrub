@@ -425,6 +425,7 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
 test('Firestore: disconnected or rotated seller cannot atomically activate Pix renewal', async () => {
   const storeId = 'renew-emulator-seller-rotation';
   const previousContractId = 'original-seller-rotation';
+  const credentialScopeId = 'oauth-owner-seller-rotation';
   const proposalId = '9'.repeat(64);
   const paymentId = '123456790';
   const approvedAt = '2027-01-02T00:10:00.000Z';
@@ -441,16 +442,16 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
     status: 'accepted', acceptedBy: next.customerId, acceptedAt: next.acceptedAt,
     acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
-    sellerCredentialScopeId: storeId,
+    sellerCredentialScopeId: credentialScopeId,
     paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
     proposal, acceptance,
   });
   await adminDb.doc(`stores/${storeId}`).set({
-    ownerId: storeId, legacyTenantId: storeId,
+    ownerId: credentialScopeId, legacyTenantId: credentialScopeId,
   });
-  const connectionRef = adminDb.doc(`stores/${storeId}/paymentProviderConnections/mercado_pago`);
+  const connectionRef = adminDb.doc(`stores/${credentialScopeId}/paymentProviderConnections/mercado_pago`);
   await connectionRef.set({
-    provider: 'mercado_pago', storeId, status: 'connected', externalAccountId: '987654',
+    provider: 'mercado_pago', storeId: credentialScopeId, status: 'connected', externalAccountId: '987654',
   });
   await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).set({
     storeId, proposalId, status: 'reserved',
@@ -458,7 +459,7 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
     requestDigest: 'a'.repeat(64), providerPaymentId: paymentId,
     expiresAt: new Date(Date.parse(next.acceptedAt) + 30 * 60_000).toISOString(),
   });
-  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, storeId, approvedAt, '987654');
+  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, credentialScopeId, approvedAt, '987654');
   const contractRef = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`);
   const paymentRef = adminDb.doc('prepaidRenewalPaymentBindings/' +
     createHash('sha256').update('mercado_pago:' + paymentId).digest('hex'));
