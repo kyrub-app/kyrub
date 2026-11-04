@@ -38,7 +38,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          npm install --global @openai/codex@0.47.0
+          npm install --global @openai/codex@latest
+          codex --version
       - name: Execute bounded mission
         shell: bash
         env:
@@ -47,6 +48,24 @@ jobs:
           set -euo pipefail
           test -n "${OPENAI_API_KEY:-}" || { echo "Missing KYRUB_EXECUTOR_OPENAI_API_KEY"; exit 1; }
           mkdir -p executor-results
+          # Check API-key authentication before starting the expensive agent run.
+          # Do not print the key, response body, or request headers.
+          python3 - <<'PY'
+          import json, os, urllib.error, urllib.request
+          req = urllib.request.Request(
+              "https://api.openai.com/v1/models",
+              headers={"Authorization": "Bearer " + os.environ["OPENAI_API_KEY"]},
+          )
+          try:
+              with urllib.request.urlopen(req, timeout=20) as response:
+                  print("OpenAI API authentication check: HTTP", response.status)
+          except urllib.error.HTTPError as exc:
+              print("OpenAI API authentication check failed: HTTP", exc.code)
+              raise SystemExit(1)
+          except Exception as exc:
+              print("OpenAI API authentication check failed:", type(exc).__name__)
+              raise SystemExit(1)
+          PY
           timeout --signal=TERM --kill-after=30s 35m codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
       - name: Upload executor report
         if: always()
