@@ -11,6 +11,7 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
   proposalId: string;
   paymentId: string;
   expectedRequestDigest: string;
+  sellerAuthority: { credentialScopeId: string; externalAccountId: string };
 }): Promise<'bound' | 'already_bound'> => {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
       !/^[a-f0-9]{64}$/.test(input.proposalId) ||
@@ -18,10 +19,38 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
       !/^[a-f0-9]{64}$/.test(input.expectedRequestDigest)) {
     throw new Error('RENEWAL_PIX_PAYMENT_BINDING_INVALID');
   }
+  const authority = input.sellerAuthority;
+  if (!authority || authority.credentialScopeId !== input.storeId ||
+      !/^\d+$/.test(authority.externalAccountId)) {
+    throw new Error('RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED');
+  }
   const ref = adminDb.doc(
     `stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`
   );
   return adminDb.runTransaction(async tx => {
+    const storeRef = adminDb.doc(`stores/${input.storeId}`);
+    const primaryRef = adminDb.doc(`users/${input.storeId}/stores/${input.storeId}`);
+    const connectionRef = adminDb.doc(
+      `stores/${input.storeId}/paymentProviderConnections/mercado_pago`
+    );
+    const [storeSnapshot, primarySnapshot, connectionSnapshot] = await Promise.all([
+      tx.get(storeRef), tx.get(primaryRef), tx.get(connectionRef),
+    ]);
+    const store = storeSnapshot.data();
+    const primary = primarySnapshot.data();
+    const identityMatches = store
+      ? store.ownerId === input.storeId &&
+        (store.legacyTenantId || store.ownerId) === input.storeId
+      : primary?.id === input.storeId &&
+        primary?.ownerId === input.storeId &&
+        (!primary.legacyTenantId || primary.legacyTenantId === input.storeId);
+    const connection = connectionSnapshot.data();
+    if (!identityMatches || connection?.provider !== 'mercado_pago' ||
+        connection.storeId !== input.storeId ||
+        connection.status !== 'connected' ||
+        connection.externalAccountId !== authority.externalAccountId) {
+      throw new Error('RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED');
+    }
     const snapshot = await tx.get(ref);
     const attempt = snapshot.data() as (PrepaidRenewalPixAttempt & {
       providerPaymentId?: string;
