@@ -931,6 +931,7 @@ test('Firestore emulator: concurrent same-ID reconciliation is idempotent and re
   ).get();
   assert.equal(attempt.get('providerPaymentId'), '890013');
   assert.equal(attempt.get('executionState'), 'outcome_unknown');
-  await assert.rejects(claimPrepaidRenewalPixExecution(locator),
-    /RENEWAL_PIX_EXECUTION_OUTCOME_UNRESOLVED/);
+  // A bound payment is recoverable by GET only; the execution gate never
+  // returns 'claimed' again, so a second provider POST remains prohibited.
+  assert.equal(await claimPrepaidRenewalPixExecution(locator), 'fetch_bound');
 });
