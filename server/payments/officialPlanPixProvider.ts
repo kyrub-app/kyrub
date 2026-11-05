@@ -36,7 +36,7 @@ export const officialPlanPixAccount = async (): Promise<string> => {
     canonicalStoreId: official.canonicalStoreId,
   });
   const storeAccountId = await validateMercadoPagoStoreConnection(authority.credentialScopeId);
-  if (!/^\\d+$/.test(storeAccountId) || storeAccountId !== authority.externalAccountId) {
+  if (!/^[0-9]+$/.test(storeAccountId) || storeAccountId !== authority.externalAccountId) {
     throw new Error('OFFICIAL_PIX_STORE_ACCOUNT_INVALID');
   }
 
