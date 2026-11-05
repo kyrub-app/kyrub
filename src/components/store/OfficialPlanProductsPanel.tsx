@@ -47,7 +47,7 @@ export default function OfficialPlanProductsPanel({ user, storeId }: { user: Use
   const field = 'mt-1 w-full rounded-lg border border-slate-600 bg-slate-950 p-2 text-white';
   return <section className="mt-4 space-y-3 rounded-xl border border-cyan-700 p-4 text-xs" aria-label="Planos oficiais Pro e Business">
     <h5 className="font-bold text-white">Planos oficiais Pro e Business</h5>
-    <p>Cadastre no catálogo um produto de assinatura mensal com benefício de acesso. Defina preço, pontos por compra e descontos por prazo no próprio produto. Aqui você vincula o produto ao plano e configura recompensas globais.</p>
+    <p>Crie ou edite a assinatura em Novo item ou no cadastro do produto desta área. Preço, descontos por prazo e publicação pertencem ao produto. Abaixo, vincule um produto existente ao plano Kyrub e configure suas recompensas globais. Cupons e campanhas de fidelidade ficam em Promocionais.</p>
     <label className="block">Produto existente<select className={field} value={productId} disabled={busy} onChange={event => select(event.target.value)}>
       <option value="">Selecione um produto</option>{products.map(row => <option key={row.id} value={row.id}>{row.name} · {row.publicationStatus}</option>)}
     </select></label>

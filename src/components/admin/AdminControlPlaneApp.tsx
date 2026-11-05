@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
 import { BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Users } from 'lucide-react';
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
@@ -7,6 +7,8 @@ import AdminAccordionSection from './AdminAccordionSection';
 import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
 import AdminModulesWorkspace from './AdminModulesWorkspace';
 import AdminOfficialBillingPreflight from './AdminOfficialBillingPreflight';
+
+const OfficialPlanGovernance = lazy(() => import('../store/OfficialStoreCommercialWorkspace'));
 
 const ROLE_LABELS: Record<AdminRole, string> = { super_admin: 'Super Admin', support: 'Suporte', operations: 'Operações', finance: 'Financeiro', compliance: 'Compliance' };
 const formatMetric = (metric: AdminDashboardMetric): string => metric.state === 'restricted' ? 'Restrito' : metric.state === 'unavailable' || metric.value === null ? 'Indisponível' : metric.value.toLocaleString('pt-BR');
@@ -36,6 +38,7 @@ export default function AdminControlPlaneApp() {
         <div className="mt-4"><div className="mb-3 flex items-center justify-between"><div><h3 className="text-xs font-black uppercase text-white">Indicadores básicos</h3><p className="mt-1 text-[9px] text-slate-500">Contagens reais consultadas no Firestore.</p></div>{metricsLoading && <span className="text-[9px] font-black uppercase text-cyan-400">Atualizando</span>}</div>{metricsError && <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-[10px] text-amber-200">{metricsError}</div>}<div className="grid gap-3 sm:grid-cols-3" aria-busy={metricsLoading}>{metricsLoading && metrics.length === 0 ? [0,1,2].map(item => <MetricSkeleton key={item}/>) : metrics.map(metric => <article key={metric.key} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4"><span className="text-[9px] font-black uppercase text-slate-500">{metric.label}</span><strong className="mt-2 block text-2xl font-black text-white">{formatMetric(metric)}</strong></article>)}</div></div>
       </AdminAccordionSection>
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-official-billing-preflight" title="Validação da cobrança oficial" description="Verificação somente leitura da identidade Mercado Pago dos planos." icon={ShieldCheck}><AdminOfficialBillingPreflight user={user}/></AdminAccordionSection>}
+      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-plan-governance" title="Regras e limites dos planos" description="Versões, capacidades e concessões administrativas. Produtos e preços de venda são gerenciados na Loja Oficial." icon={ShieldCheck}><Suspense fallback={<p>Carregando regras dos planos…</p>}><OfficialPlanGovernance authenticatedUser={user} profile={profile}/></Suspense></AdminAccordionSection>}
       {canReadDirectory && <AdminAccordionSection id="admin-platform-directory" title="Plataforma & Tenants" description="Usuários, lojas, vínculos e infraestrutura administrativa dos tenants." icon={Users} badge="Control Plane"><AdminDirectoryWorkspace authenticatedUser={user} profile={profile}/></AdminAccordionSection>}
       <AdminModulesWorkspace profile={profile} compactRoot />
     </div><section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"/><p className="text-[10px] leading-relaxed text-slate-500">O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Kyrub são executadas na Loja Oficial sem enfraquecer os gates server-side.</p></div></section></main>

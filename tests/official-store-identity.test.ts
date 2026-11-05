@@ -16,8 +16,8 @@ const panel = readFileSync(
   'src/components/store/OfficialStoreIdentityPanel.tsx',
   'utf8'
 );
-const promotions = readFileSync(
-  'src/components/store/PromotionalDirectRuntime.tsx',
+const catalog = readFileSync(
+  'src/components/store/OfficialStoreCatalogPanel.tsx',
   'utf8'
 );
 
@@ -65,9 +65,9 @@ test('browser sends only active store reference and replacement intent, never ca
   assert.match(panel, /não é inferida por cortesia, nome, slug ou e-mail/);
 });
 
-test('Official Store identity lives inside the protected Cairobi Official store workspace', () => {
-  assert.match(promotions, /OfficialStoreIdentityPanel/);
-  assert.match(promotions, /authenticatedUser=\{user\} storeId=\{storeId\}/);
-  assert.match(promotions, /adminProfile\.role === 'super_admin'/);
-  assert.match(promotions, /Cairubi Oficial/);
+test('Official Store identity and plan mappings live inside the protected product catalog', () => {
+  assert.match(catalog, /OfficialStoreIdentityPanel/);
+  assert.match(catalog, /authenticatedUser=\{user\} storeId=\{storeId\}/);
+  assert.match(catalog, /profile\.role === 'super_admin'/);
+  assert.match(catalog, /Loja Oficial — vínculos dos planos Kyrub/);
 });

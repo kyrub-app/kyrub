@@ -19,6 +19,7 @@ import { removePublicProduct } from '../../utils/publicProductMutations';
 import { OperationalDualWriteBridge } from './OperationalDualWriteBridge';
 import { ProductEditorModal } from './ProductEditorModal';
 import { ProductInventoryWorkspace } from './ProductInventoryWorkspace';
+import OfficialStoreCatalogPanel from './OfficialStoreCatalogPanel';
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -225,6 +226,7 @@ export function ProductInventoryDirectRuntime({
           )}
         </label>
 
+        <OfficialStoreCatalogPanel key={activeRetailerId} storeId={activeRetailerId} />
         <ProductInventoryWorkspace
           products={activeRetailerProducts}
           keywords={activeStore.keywords ?? []}

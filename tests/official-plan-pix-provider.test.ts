@@ -1,8 +1,30 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { createHmac } from 'node:crypto';
-import { officialPlanPixAccount, officialPlanPixRequest, verifyOfficialPlanPixSignature } from '../server/payments/officialPlanPixProvider.js';
+import { build } from 'esbuild';
 import { parseOfficialPlanRewards } from '../shared/officialPlanRewards.js';
+
+// The ERP/OAuth identity boundary is simulated; no Firebase or Mercado Pago account is accessed.
+const identity = { official: true, oauthAccount: '42', authorityAccount: '42' };
+(globalThis as any).__officialPixProviderIdentity = identity;
+const bundle = await build({
+  stdin: { contents: "export * from './server/payments/officialPlanPixProvider.ts';", resolveDir: process.cwd() },
+  bundle: true, platform: 'node', format: 'esm', packages: 'external', write: false,
+  plugins: [{ name: 'isolated-official-pix-identity', setup(b) {
+    b.onResolve({ filter: /officialStoreService\.js$|commercialRecipientAuthorityService\.js$|mercadoPagoStoreOauthService\.js$|providerCredentialResolver\.js$/ }, args => ({ path: args.path, namespace: 'identity' }));
+    b.onLoad({ filter: /.*/, namespace: 'identity' }, args => ({ contents: 'const c=globalThis.__officialPixProviderIdentity;' + (
+      args.path.endsWith('officialStoreService.js')
+        ? "export const getOfficialStoreIdentity=async()=>c.official?{canonicalStoreId:'official'}:null;"
+        : args.path.endsWith('commercialRecipientAuthorityService.js')
+          ? "export const resolveCommercialRecipientAuthority=async()=>({credentialScopeId:'official-scope',externalAccountId:c.authorityAccount});"
+          : args.path.endsWith('mercadoPagoStoreOauthService.js')
+            ? "export const validateMercadoPagoStoreConnection=async(scope)=>{if(scope!=='official-scope')throw Error('WRONG_SCOPE');return c.oauthAccount;};"
+            : "export const resolveMercadoPagoAccessToken=async()=>{throw Error('MARKETPLACE_CREDENTIALS_FORBIDDEN')};export const resolveMercadoPagoWebhookSecret=resolveMercadoPagoAccessToken;"
+    ) }));
+  } }],
+});
+const { officialPlanPixAccount, officialPlanPixRequest, verifyOfficialPlanPixSignature } =
+  await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 
 test('platform transport never uses merchant credentials and never logs provider payloads', async () => {
   const originalFetch = globalThis.fetch;
@@ -23,13 +45,30 @@ test('platform transport never uses merchant credentials and never logs provider
     await assert.rejects(officialPlanPixRequest('https://other.example/v1/payments'), /PATH_INVALID/);
     assert.equal(calls.length, 2);
     delete process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID;
-    await assert.rejects(officialPlanPixAccount(), /ACCOUNT_NOT_CONFIGURED/);
-    assert.equal(calls.length, 2);
+    assert.equal(await officialPlanPixAccount(), '42'); // The pin is optional; ERP/OAuth is authoritative.
+    assert.equal(calls.length, 3);
+    identity.oauthAccount = '99';
+    await assert.rejects(officialPlanPixAccount(), /STORE_ACCOUNT_INVALID/);
+    assert.equal(calls.length, 3);
+    identity.authorityAccount = '99';
+    await assert.rejects(officialPlanPixAccount(), /PLATFORM_STORE_ACCOUNT_MISMATCH/);
+    assert.equal(calls.length, 4);
+    identity.oauthAccount = identity.authorityAccount = 'invalid';
+    await assert.rejects(officialPlanPixAccount(), /STORE_ACCOUNT_INVALID/);
+    assert.equal(calls.length, 4);
+    identity.oauthAccount = identity.authorityAccount = '42';
+    identity.official = false;
+    await assert.rejects(officialPlanPixAccount(), /STORE_NOT_CONFIGURED/);
+    assert.equal(calls.length, 4);
+    identity.official = true;
     process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
     delete process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN;
     await assert.rejects(officialPlanPixAccount(), /NOT_CONFIGURED/);
-    assert.equal(calls.length, 2);
-  } finally { globalThis.fetch = originalFetch; process.env = old; }
+    assert.equal(calls.length, 4);
+  } finally {
+    globalThis.fetch = originalFetch; process.env = old;
+    Object.assign(identity, { official: true, oauthAccount: '42', authorityAccount: '42' });
+  }
 });
 
 test('official notification accepts only the platform HMAC secret', () => {
