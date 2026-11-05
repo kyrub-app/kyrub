@@ -57,6 +57,9 @@ export const buildSubscriptionSaleModality = (input: {
   unitsPerCycle?: number | null;
   autoRenew?: boolean;
 }): ProductSaleModality => {
+  if (input.autoRenew !== undefined && typeof input.autoRenew !== 'boolean') {
+    throw new Error('PRODUCT_SUBSCRIPTION_AUTO_RENEW_INVALID');
+  }
   const count = positiveInteger(input.billingIntervalCount ?? 1);
   if (count === null) {
     throw new Error('PRODUCT_SUBSCRIPTION_INTERVAL_INVALID');
@@ -148,7 +151,7 @@ export const parseProductSaleModality = (
     billingIntervalCount: billingCount,
     benefitKind,
     unitsPerCycle,
-    autoRenew: subscriptionRecord.autoRenew as boolean,
+    autoRenew: subscriptionRecord.autoRenew,
   });
 };
 
