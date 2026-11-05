@@ -545,7 +545,7 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   // Global payment bindings intentionally span stores: each independent
   // success fixture must use its own provider payment ID.
   const successPaymentId = '1069000000000526';
-  await seed(successStoreId, successPreviousId);
+  await seedBoundPixPredecessor(successStoreId, successPreviousId);
   const successNext = renewal(successStoreId, successPreviousId, successPaymentId);
   const successProposal = {
     storeId: successStoreId, customerId: successNext.customerId,
