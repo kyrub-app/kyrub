@@ -248,6 +248,10 @@ const loadPublishedSubscriptionProduct = async (
   if (!saleModality || saleModality.mode !== 'subscription' || !saleModality.subscription) {
     fail(409, 'STORE_SUBSCRIPTION_PRODUCT_NOT_RECURRING', 'Este item não é uma assinatura.');
   }
+  if (!saleModality.subscription.autoRenew) {
+    fail(409, 'STORE_SUBSCRIPTION_PREPAID_REQUIRES_ONE_TIME_CHECKOUT',
+      'Contratos antecipados exigem pagamento único, sem cobrança recorrente automática.');
+  }
   return {
     id: productId,
     name,

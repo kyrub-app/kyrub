@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { persistVerifiedPrepaidRenewal } from '../server/payments/persistedPrepaidRenewal.js';
+import { reconcileStoreSubscriptionBenefitCycle } from '../server/payments/storeSubscriptionBenefitService.js';
+import { buildSubscriptionSaleModality } from '../shared/productSaleModality.js';
 import { addMonthsUtc } from '../server/payments/prepaidSubscriptionContractLifecycle.js';
 import { prepaidRenewalPixPredecessorReservationPath } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
 
@@ -619,4 +621,106 @@ test('Firestore: verified OAuth mismatch cannot use store-ID fallback during ato
     `stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`
   ).get()).exists, false);
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, storeId), 'created');
+});
+
+test('Firestore: verified renewal binds a canonical prepaid subscription period atomically', async () => {
+  const storeId = 'renew-emulator-linked-period';
+  const previousContractId = 'original-linked';
+  const subscriptionId = 'subscription-linked';
+  const { customerId, productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: customerId, productId,
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-linked-1');
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'created');
+  const contract = await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`).get();
+  const period = await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/${next.contractId}`).get();
+  assert.equal(contract.get('subscriptionId'), subscriptionId);
+  assert.equal(period.get('providerPaymentId'), next.providerPaymentId);
+  assert.equal(period.get('startsAt'), next.startsAt);
+  assert.equal(period.get('expiresAt'), next.expiresAt);
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'already_recorded');
+  assert.equal((await adminDb.collection(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods`).get()).size, 1);
+});
+
+test('Firestore: mismatched canonical subscription aborts renewal and payment binding', async () => {
+  const storeId = 'renew-emulator-linked-mismatch';
+  const previousContractId = 'original-linked-mismatch';
+  const subscriptionId = 'subscription-wrong-buyer';
+  const { productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: 'another-customer', productId,
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-linked-rejected');
+  await assert.rejects(persistVerifiedPrepaidRenewal(next), /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`).get()).exists, false);
+  assert.equal((await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/${next.contractId}`).get()).exists, false);
+  const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
+  assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
+});
+
+test('Firestore: prepaid renewal grants one canonical benefit cycle only during paid coverage', async () => {
+  const storeId = 'renew-emulator-benefit-cycle';
+  const previousContractId = 'original-benefit';
+  const subscriptionId = 'subscription-benefit';
+  const { customerId, productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}`).set({
+    ownerId: 'owner-benefit', legacyTenantId: 'owner-benefit',
+  });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: customerId, productId,
+    ownerUserId: 'owner-benefit', productName: 'Test subscription', state: 'active',
+    saleModality: buildSubscriptionSaleModality({
+      billingUnit: 'month', billingIntervalCount: 12, benefitKind: 'access', autoRenew: false,
+    }),
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-benefit-cycle');
+  // The fixture is in 2028, so reconciliation before the start must not grant access.
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'created');
+  const cycle = await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId);
+  if (Date.now() < Date.parse(next.startsAt)) {
+    assert.equal(cycle, null);
+  } else if (Date.now() < Date.parse(next.expiresAt)) {
+    assert.ok(cycle);
+    assert.equal(cycle.providerPaymentId, next.providerPaymentId);
+    assert.equal(cycle.billingPeriodEndsAt, next.expiresAt);
+    assert.equal((await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId))?.id, cycle.id);
+  } else {
+    assert.equal(cycle, null);
+  }
+});
+
+test('Firestore: active paid prepaid period materializes one idempotent access benefit', async () => {
+  const storeId = 'renew-emulator-active-benefit';
+  const subscriptionId = 'active-prepaid';
+  const buyerId = 'active-buyer';
+  const productId = 'active-product';
+  const start = new Date(Date.now() - 86400000).toISOString();
+  const end = new Date(Date.now() + 86400000).toISOString();
+  await adminDb.doc(`stores/${storeId}`).set({
+    ownerId: 'owner-active-benefit', legacyTenantId: 'owner-active-benefit',
+  });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId, productId,
+    ownerUserId: 'owner-active-benefit', productName: 'Prepaid access', state: 'active',
+    saleModality: buildSubscriptionSaleModality({
+      billingUnit: 'month', billingIntervalCount: 3, benefitKind: 'access', autoRenew: false,
+    }),
+  });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/contract-active`).set({
+    contractId: 'contract-active', storeId, subscriptionId, buyerId, productId,
+    startsAt: start, expiresAt: end, providerPaymentId: 'mp-active-benefit', state: 'paid',
+  });
+  const first = await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId);
+  assert.ok(first);
+  assert.equal(first.providerPaymentId, 'mp-active-benefit');
+  assert.equal(first.billingPeriodStartsAt, start);
+  assert.equal(first.billingPeriodEndsAt, end);
+  assert.equal(first.benefitKind, 'access');
+  assert.equal(first.grantedUnits, null);
+  const again = await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId);
+  assert.equal(again?.id, first.id);
+  assert.equal((await adminDb.collection(
+    `stores/${storeId}/subscriptions/${subscriptionId}/benefitCycles`
+  ).get()).size, 1);
 });
