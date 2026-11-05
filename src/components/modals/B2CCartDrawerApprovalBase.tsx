@@ -19,7 +19,7 @@ import {
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
 import { InitialPrepaidSubscriptionCheckout } from '../InitialPrepaidSubscriptionCheckout';
-import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
+import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract, loadCatalogSubscriptionBillingRoute } from '../../utils/storeSubscription';
 import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
@@ -171,12 +171,24 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     : [1];
 
   const hasSubscriptionCartItem = cart.some(item => item.product.saleModality?.mode === 'subscription');
+  const [subscriptionBillingKind, setSubscriptionBillingKind] = useState<'platform-plan' | 'merchant' | 'free-plan' | null>(null);
+  const [subscriptionRouteError, setSubscriptionRouteError] = useState('');
+  useEffect(() => {
+    let current = true;
+    setSubscriptionBillingKind(null); setSubscriptionRouteError('');
+    if (isOpen && visitingStore && cart.length === 1 && cart[0].product.saleModality?.mode === 'subscription') {
+      void loadCatalogSubscriptionBillingRoute(visitingStore.id, cart[0].product.id)
+        .then(route => { if (current) setSubscriptionBillingKind(route.kind); })
+        .catch(error => { if (current) setSubscriptionRouteError(error instanceof Error ? error.message : 'Não foi possível consultar a contratação.'); });
+    }
+    return () => { current = false; };
+  }, [isOpen, visitingStore?.id, cartFingerprint]);
   const canStartLegacyMonthlySubscription = cart.length === 1 &&
     cart[0].product.saleModality?.mode === 'subscription' &&
     cart[0].quantity === 1 &&
     cart[0].product.contractDiscounts === undefined &&
     subscriptionMonths === 1 &&
-    !isQuotingSubscription;
+    !isQuotingSubscription && subscriptionBillingKind === 'merchant';
 
   const accountTotals = useMemo(() => {
     if (!currentOrder) {
@@ -322,6 +334,10 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     // blocked until their server-side collection and activation exist.
     const subscriptions = cart.filter(item => item.product.saleModality?.mode === 'subscription');
     if (subscriptions.length) {
+      if (subscriptionBillingKind !== 'merchant') {
+        setFormError('Utilize a contratação Pix do plano oficial exibida acima.');
+        return;
+      }
       // A stale or pending quote must never be interpreted as authorization to
       // charge different contractual terms. The server remains authoritative.
       if (isQuotingSubscription) {
@@ -530,14 +546,15 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       {CONTRACT_TERM_MONTHS.filter(months => availableContractTerms.includes(months)).map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
                     </select>
                     <p className="mt-1 text-slate-400">Os prazos exibidos são sugestões da vitrine. Somente a cotação validada no catálogo oficial confirma disponibilidade, preço e desconto. Esta consulta não gera cobrança.</p>
-                    {subscriptionMonths !== 1 && cart[0].quantity === 1 && (
+                    {subscriptionRouteError && <p role="alert" className="text-amber-300">{subscriptionRouteError}</p>}
+                    {(subscriptionBillingKind === 'platform-plan' || (subscriptionBillingKind === 'merchant' && subscriptionMonths !== 1)) && cart[0].quantity === 1 && (
                       <InitialPrepaidSubscriptionCheckout storeId={visitingStore.id} productId={cart[0].product.id}
-                        selectedMonths={subscriptionMonths as 3 | 6 | 12} />
+                        selectedMonths={subscriptionMonths} billingAuthority={subscriptionBillingKind === 'platform-plan' ? 'platform' : undefined} />
                     )}
                     {subscriptionMonths !== 1 && cart[0].quantity !== 1 && (
                       <p className="mt-3 text-amber-300">Contrate uma assinatura por vez. Ajuste a quantidade deste produto para 1.</p>
                     )}
-                    {subscriptionMonths === 1 && <>
+                    {subscriptionMonths === 1 && subscriptionBillingKind === 'merchant' && <>
                     <button
                       type="button"
                       disabled={isQuotingSubscription}

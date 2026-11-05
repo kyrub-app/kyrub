@@ -10,7 +10,7 @@ import {
   type InitialPrepaidSubscriptionQuote,
 } from '../utils/storeSubscription';
 
-type Props = { storeId: string; productId: string; selectedMonths: 3 | 6 | 12 };
+type Props = { storeId: string; productId: string; selectedMonths: 1 | 3 | 6 | 12; billingAuthority?: 'platform' };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const date = (value: string) => new Date(value).toLocaleDateString('pt-BR');
 
@@ -19,7 +19,7 @@ export function InitialPrepaidSubscriptionCheckout(props: Props) {
   const [uid, setUid] = useState<string | null>(null);
   useEffect(() => onAuthStateChanged(auth, user => setUid(user?.uid ?? null)), []);
   if (!uid) return <p className="mt-3 text-amber-300">Entre na sua conta para contratar o período pré-pago.</p>;
-  return <InitialPrepaidSubscriptionSession key={JSON.stringify([uid, props.storeId, props.productId, props.selectedMonths])} {...props} buyerUid={uid} />;
+  return <InitialPrepaidSubscriptionSession key={JSON.stringify([uid, props.storeId, props.productId, props.selectedMonths, props.billingAuthority])} {...props} buyerUid={uid} />;
 }
 
 export function InitialPrepaidSubscriptionSession({ buyerUid, ...props }: Props & { buyerUid: string }) {
@@ -44,18 +44,18 @@ export function InitialPrepaidSubscriptionSession({ buyerUid, ...props }: Props 
           // Reopening the cart resumes the existing attempt through a read-only
           // reconciliation. Never ask the buyer to generate another charge.
           setPayment({ state: 'recovery_required' });
-          const resumed = await loadInitialPrepaidSubscriptionStatus({ storeId: props.storeId, checkoutId: result.checkoutId });
+          const resumed = await loadInitialPrepaidSubscriptionStatus({ storeId: props.storeId, checkoutId: result.checkoutId, billingAuthority: props.billingAuthority });
           if (current()) setPayment(resumed);
         }
       } else {
         if (!quote || (action === 'checkout' && !accepted)) return;
         if (action === 'checkout') {
-          await acceptInitialPrepaidSubscription({ storeId: props.storeId, checkoutId: quote.checkoutId, acceptedTotalMinor: quote.quote.totalMinor });
+          await acceptInitialPrepaidSubscription({ storeId: props.storeId, checkoutId: quote.checkoutId, acceptedTotalMinor: quote.quote.totalMinor, billingAuthority: props.billingAuthority });
           if (!current()) return;
         }
         const result = action === 'checkout'
-          ? await checkoutInitialPrepaidSubscription({ storeId: props.storeId, checkoutId: quote.checkoutId })
-          : await loadInitialPrepaidSubscriptionStatus({ storeId: props.storeId, checkoutId: quote.checkoutId });
+          ? await checkoutInitialPrepaidSubscription({ storeId: props.storeId, checkoutId: quote.checkoutId, billingAuthority: props.billingAuthority })
+          : await loadInitialPrepaidSubscriptionStatus({ storeId: props.storeId, checkoutId: quote.checkoutId, billingAuthority: props.billingAuthority });
         if (current()) setPayment(result);
       }
     } catch (cause) {
@@ -75,7 +75,7 @@ export function InitialPrepaidSubscriptionSession({ buyerUid, ...props }: Props 
 export function InitialPrepaidSubscriptionCard({ quote, payment, accepted, busy, error, selectedMonths, onAccept, onAction }: {
   quote: InitialPrepaidSubscriptionQuote | null;
   payment: InitialPrepaidSubscriptionPaymentState | null;
-  accepted: boolean; busy: boolean; error: string; selectedMonths: 3 | 6 | 12;
+  accepted: boolean; busy: boolean; error: string; selectedMonths: 1 | 3 | 6 | 12;
   onAccept: (value: boolean) => void; onAction: (action: 'quote' | 'checkout' | 'status') => void;
 }) {
   const pixExpired = payment?.pix && Date.parse(payment.pix.expiresAt) <= Date.now();
@@ -102,6 +102,7 @@ export function InitialPrepaidSubscriptionCard({ quote, payment, accepted, busy,
         <p className="font-bold">Pagamento confirmado. Assinatura e contrato ativos.</p>
         {payment.startsAt && payment.expiresAt && <p>Vigência: {date(payment.startsAt)} a {date(payment.expiresAt)}.</p>}
         <p>A contratação está registrada no ERP da loja.</p>
+        {payment.rewards && <p>Recompensas registradas: {payment.rewards.xp} XP · {payment.rewards.points} pontos da loja{payment.rewards.achievementTitle ? ` · ${payment.rewards.achievementTitle}` : ''}.</p>}
       </div> : payment && <>
         <p role="status" className="text-cyan-300">{payment.state === 'rejected'
           ? 'Pagamento rejeitado. Nenhum contrato foi ativado.'

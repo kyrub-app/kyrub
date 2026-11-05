@@ -385,6 +385,13 @@ const syncPaidSubscriberIntoCrm = async (input: {
   return true;
 };
 
+/** Trusted payment reconciliation hook. No public route may call this without payment verification. */
+export const reconcilePaidSubscriberIntoCrm = async (storeId: string, buyerId: string): Promise<boolean> => {
+  if (!safeIdentity(storeId) || !safeIdentity(buyerId)) throw new Error('SUBSCRIBER_CRM_IDENTITY_INVALID');
+  const subscriptions = (await loadCanonicalSubscriptions(storeId)).filter(subscription => subscription.buyerId === buyerId);
+  return syncPaidSubscriberIntoCrm({ storeId, buyerId, subscriptions, nowIso: new Date().toISOString() });
+};
+
 export const reconcileAuthorizedStoreSubscribersIntoCrm = async (
   authorization: string,
   storeReference: unknown

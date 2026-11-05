@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth';
+import type { OfficialPlanRewards } from '../../shared/officialPlanRewards';
 
 export type OfficialStoreIdentity = {
   schemaVersion: 1;
@@ -79,4 +80,17 @@ export const designateOfficialStore = async (
     );
   }
   return response.json() as Promise<OfficialStoreDesignationResult>;
+};
+
+export type OfficialPlanProductRow = { id: string; name: string; price: number; publicationStatus: string;
+  planId: 'pro' | 'business' | 'free' | null; rewards: OfficialPlanRewards };
+export const loadOfficialPlanProducts = async (user: Pick<User, 'getIdToken'>): Promise<{ storeId: string; products: OfficialPlanProductRow[] }> => {
+  const response = await authorizedFetch(user, 'admin.official-plan-product.list', { cache: 'no-store' });
+  if (!response.ok) throw await responseError(response, 'Não foi possível carregar os produtos oficiais.');
+  return response.json();
+};
+export const configureOfficialPlanProduct = async (user: Pick<User, 'getIdToken'>, productId: string,
+  planId: 'pro' | 'business', rewards: OfficialPlanRewards): Promise<void> => {
+  const response = await authorizedFetch(user, 'admin.official-plan-product.assign', { method: 'POST', body: JSON.stringify({ productId, planId, rewards }) });
+  if (!response.ok) throw await responseError(response, 'Não foi possível configurar o plano oficial.');
 };

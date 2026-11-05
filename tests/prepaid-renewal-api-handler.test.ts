@@ -20,6 +20,7 @@ const mock = (name: string, input: unknown) => {
   if (name === 'acceptPrepaidRenewalWithFirebaseAuth') return 'accepted';
   if (name === 'checkoutAuthenticatedPrepaidRenewalPix' || name === 'reconcileAuthenticatedPrepaidRenewalPix') return { state: 'awaiting_payment', paymentId: '123456', pix: { qrCode: 'PIX', expiresAt: '2027-01-01T00:00:00Z' } };
   if (['quoteInitialPrepaidSubscription', 'acceptInitialPrepaidSubscription', 'checkoutInitialPrepaidSubscription', 'reconcileInitialPrepaidSubscription'].includes(name)) return { state: 'awaiting_payment' };
+  if (['quoteOfficialPlanPix', 'acceptOfficialPlanPix', 'checkoutOfficialPlanPix', 'reconcileOfficialPlanPix'].includes(name)) return { state: 'awaiting_payment' };
   throw new Error('UNEXPECTED_MOCK_CALL:' + name);
 };
 
@@ -73,6 +74,28 @@ const invoke = async (op: string, method: string, requestBody: unknown, authoriz
   await handler({ method, query: { op }, headers: { authorization }, body: requestBody }, response);
   return state;
 };
+
+test('official Pix gateway rejects browser prices, plan tags and account selection before invoking a service', async () => {
+  for (const op of ['official.prepaid.checkout', 'official.prepaid.payment-status']) {
+    for (const extra of [{ paymentId: '123' }, { amountMinor: 1 }, { buyerId: 'other' }, { plan: 'business' }, { collectorId: 'other' }, { storeId: 'merchant' }]) {
+      const result = await invoke(op, 'POST', { checkoutId: proposalId, ...extra });
+      assert.equal(result.status, 409); assert.equal(calls.length, 0);
+    }
+    assert.equal((await invoke(op, 'GET', { checkoutId: proposalId })).status, 405);
+    const result = await invoke(op, 'POST', { checkoutId: proposalId });
+    assert.equal(result.status, 200); assert.equal(result.headers['cache-control'], 'no-store, max-age=0');
+    assert.deepEqual(calls[0].input, { authorization: 'Bearer test', checkoutId: proposalId });
+    assert.equal(calls[0].name, op.endsWith('.checkout') ? 'checkoutOfficialPlanPix' : 'reconcileOfficialPlanPix');
+  }
+});
+
+test('official Pix disabled creation returns an explicit unavailable code', async () => {
+  simulatedFailure = new Error('OFFICIAL_PIX_DISABLED');
+  try {
+    const result = await invoke('official.prepaid.checkout', 'POST', { checkoutId: proposalId });
+    assert.equal(result.status, 503); assert.equal((result.body as any).code, 'OFFICIAL_PIX_DISABLED');
+  } finally { simulatedFailure = null; }
+});
 
 test('actual renewal checkout and status routes accept only proposal locator and disable caching', async () => {
   for (const op of ['merchant.prepaid-renewal.checkout', 'merchant.prepaid-renewal.payment-status']) {
@@ -230,5 +253,14 @@ test('initial prepaid API sanitizes failures and exposes the disabled creation g
       assert.equal(result.status, status); assert.equal((result.body as any).code, code);
       assert.equal(JSON.stringify(result.body).includes('private-provider-diagnostic'), false);
     }
+  } finally { simulatedFailure = null; }
+});
+
+test('official Pix without a designated platform receiver stays unavailable', async () => {
+  try {
+    simulatedFailure = new Error('OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
+    const result = await invoke('official.prepaid.checkout', 'POST', { checkoutId: 'c'.repeat(64) });
+    assert.equal(result.status, 503);
+    assert.equal((result.body as any).code, 'OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
   } finally { simulatedFailure = null; }
 });
