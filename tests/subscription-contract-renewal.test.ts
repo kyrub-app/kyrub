@@ -179,3 +179,13 @@ test('new Pix checkout fails closed when predecessor has no canonical subscripti
   assert.match(preparation, /assertPrepaidRenewalEntitlementBinding\(\{/);
   assert.match(preparation, /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
 });
+
+
+test('seller cannot propose renewal of an unbound prepaid predecessor', () => {
+  const source = readFileSync('server/payments/prepaidRenewalProposalCreation.ts', 'utf8');
+  const proposalGate = source.indexOf('assertPrepaidRenewalEntitlementBinding({');
+  const proposalWrite = source.indexOf('tx.create(proposalRef, {');
+  assert.ok(proposalGate >= 0 && proposalWrite > proposalGate);
+  assert.match(source, /previousDoc\.get\('subscriptionId'\)/);
+  assert.match(source, /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
+});
