@@ -157,6 +157,13 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
     if (linkedSubscriptionId !== undefined && !safeId(linkedSubscriptionId)) {
       throw new Error('RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED');
     }
+    // A verified Pix must never produce a paid successor without benefits.
+    // If a binding disappears after payment creation, retain the paid attempt
+    // for reconciliation after the canonical link is restored; do not silently
+    // persist an unbound contract. Legacy internal non-Pix callers are unchanged.
+    if (verifiedPixPaymentApprovedAt && !safeId(linkedSubscriptionId)) {
+      throw new Error('RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED');
+    }
     const linkedSubscriptionRef = typeof linkedSubscriptionId === 'string' && safeId(linkedSubscriptionId)
       ? adminDb.doc(`stores/${renewal.storeId}/subscriptions/${linkedSubscriptionId}`) : null;
     const linkedSubscriptionDoc = linkedSubscriptionRef ? await tx.get(linkedSubscriptionRef) : null;
