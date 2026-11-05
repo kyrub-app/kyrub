@@ -7,14 +7,21 @@ const storeId = 'canonical-store';
 const proposalId = 'b'.repeat(64);
 const acceptedAt = new Date(Date.now() - 60 * 60_000).toISOString();
 const expiresAt = new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString();
-const proposal = { storeId, customerId: 'buyer', previousContractId: 'old', totalDueMinor: 12000 };
+const proposal = { storeId, customerId: 'buyer', previousContractId: 'old', productId: 'product', totalDueMinor: 12000 };
 const acceptance = { customerId: 'buyer', storeId, acceptedTotalMinor: 12000, acceptedAt };
 const body = JSON.stringify({ transaction_amount: 120, payment_method_id: 'pix', payer: { email: 'original@example.test' }, date_of_expiration: expiresAt,
   external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`, metadata: { kyrub_store_id: storeId, kyrub_prepaid_renewal_proposal_id: proposalId } });
 let attempt: Record<string, unknown>;
 let saved: Record<string, unknown>;
 (globalThis as any).__renewalPreparation = {
-  doc: (path: string) => ({ get: async () => ({ exists: true, data: () => path.includes('PixAttempts') ? attempt : saved }) }),
+  doc: (path: string) => ({ get: async () => {
+    const predecessor = { storeId, contractId: 'old', customerId: 'buyer', productId: 'product', subscriptionId: 'canonical-subscription' };
+    const subscription = { id: 'canonical-subscription', storeId, buyerId: 'buyer', productId: 'product' };
+    const value = path.includes('PixAttempts') ? attempt
+      : path.includes('prepaidSubscriptionContracts') ? predecessor
+      : path.includes('/subscriptions/') ? subscription : saved;
+    return { exists: true, data: () => value, get: (field: string) => (value as Record<string, unknown>)[field] };
+  } }),
   auth: async () => ({ uid: 'buyer', email: 'changed@example.test' }),
   accepted: async () => ({ proposal, acceptance }),
   authority: async () => ({ context: 'store_subscription', recipientKind: 'merchant_store', credentialAuthority: 'store_oauth_vault', canonicalStoreId: storeId, ownerUserId: 'owner', credentialScopeId: 'owner', externalAccountId: '42' }),
