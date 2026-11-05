@@ -150,7 +150,8 @@ test('authenticated Pix reconciliation requires bound attempt at transactional c
   assert.match(activation, /input\.requireBoundPixAttempt \? input\.payment\.occurredAt : undefined/);
   assert.match(persistence, /verifiedPixPaymentApprovedAt && acceptedProposalId/);
   assert.match(persistence, /assertVerifiedPrepaidRenewalPixAttempt\(/);
-  assert.match(persistence, /tx\.create\(contractRef, renewal\)/);
+  assert.match(persistence, /tx\.create\(contractRef, linkedEntitlement/);
+  assert.match(persistence, /subscriptionId: linkedEntitlement\.subscriptionId/);
   assert.match(persistence, /tx\.create\(paymentRef,/);
 });
 
