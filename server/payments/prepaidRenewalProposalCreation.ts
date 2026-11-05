@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { assertPrepaidRenewalEntitlementBinding } from './prepaidRenewalEntitlementBinding.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import { resolveCanonicalStoreIdentity } from '../identity/canonicalStoreIdentityService.js';
@@ -61,6 +62,19 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
       ![3, 6, 12].includes(previous.months)) {
     throw new Error('INVALID_RENEWAL_PREVIOUS_CONTRACT');
   }
+  // Do not offer a renewal that cannot extend the original entitlement.
+  // An unbound legacy contract needs an authorized migration first.
+  const subscriptionId = previousDoc.get('subscriptionId');
+  if (!safeId(subscriptionId)) throw new Error('RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED');
+  const subscriptionDoc = await adminDb.doc(
+    `stores/${input.storeId}/subscriptions/${subscriptionId}`,
+  ).get();
+  assertPrepaidRenewalEntitlementBinding({
+    storeId: input.storeId, previousContractId: input.previousContractId,
+    customerId: previous.customerId, productId: previous.productId,
+    predecessor: previousDoc.data() as Record<string, unknown>,
+    subscription: subscriptionDoc.exists ? subscriptionDoc.data() as Record<string, unknown> : null,
+  });
   const successorRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalSuccessors/${input.previousContractId}`);
   if (typeof input.discountPercent !== 'number' || !Number.isFinite(input.discountPercent) ||
       input.discountPercent < 0 || input.discountPercent > 100 ||
