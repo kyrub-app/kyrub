@@ -100,6 +100,22 @@ test('emulator: checkout gate disabled creates neither payment nor reservation',
   assert.equal((await adminDb.doc(`stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`).get()).exists, false);
 });
 
+test('emulator: existing Pix can be recovered after predecessor entitlement becomes unavailable', async () => {
+  process.env.KYRUB_PREPAID_RENEWAL_PIX_CHECKOUT_ENABLED = 'true';
+  fixture.unknown = false;
+  const input = await seed('recovery-entitlement');
+  const n = fixture.posts;
+  const started = await api.checkoutAuthenticatedPrepaidRenewalPix(input);
+  assert.equal(started.state, 'awaiting_payment');
+  assert.equal(fixture.posts, n + 1);
+  await adminDb.doc(`stores/${input.storeId}/prepaidSubscriptionContracts/previous-recovery-entitlement`)
+    .update({ subscriptionId: null });
+  const recovered = await api.checkoutAuthenticatedPrepaidRenewalPix(input);
+  assert.equal(recovered.paymentId, started.paymentId);
+  assert.equal(recovered.state, 'awaiting_payment');
+  assert.equal(fixture.posts, n + 1);
+});
+
 
 test('emulator: missing entitlement blocks a new Pix but preserves recovery of existing attempt', async () => {
   process.env.KYRUB_PREPAID_RENEWAL_PIX_CHECKOUT_ENABLED = 'true';
