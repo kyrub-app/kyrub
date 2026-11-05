@@ -1,3 +1,4 @@
+import { handleInitialPrepaidSubscriptionWebhook, quoteInitialPrepaidSubscription, acceptInitialPrepaidSubscription, checkoutInitialPrepaidSubscription, reconcileInitialPrepaidSubscription } from '../server/payments/initialPrepaidSubscriptionCheckout.js';
 import {
   createCouponCampaign,
   loadPlanManagementSnapshot,
@@ -173,6 +174,22 @@ export default async function handler(
     return;
   }
 
+  if (operation === 'merchant.prepaid-initial.webhook') {
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    if (method !== 'POST') { methodNotAllowed(response); return; }
+    try {
+      const result = await handleInitialPrepaidSubscriptionWebhook({
+        headers: request.headers,
+        dataId: webhookDataId(body, request.query),
+        storeId: String(request.query.storeId ?? ''),
+        checkoutId: String(request.query.checkoutId ?? ''),
+      });
+      response.status(200).json(result);
+    } catch {
+      response.status(401).json({ error: 'Webhook inválido.' });
+    }
+    return;
+  }
   if (operation === 'merchant.subscription.webhook') {
     if (method !== 'POST') {
       methodNotAllowed(response);
@@ -525,6 +542,32 @@ export default async function handler(
         response.status(200).json(result);
         return;
       }
+      case 'merchant.prepaid-initial.quote':
+      case 'merchant.prepaid-initial.accept':
+      case 'merchant.prepaid-initial.checkout':
+      case 'merchant.prepaid-initial.payment-status': {
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        const allowed = operation.endsWith('.quote')
+          ? ['storeId', 'productId', 'selectedMonths']
+          : operation.endsWith('.accept')
+            ? ['storeId', 'checkoutId', 'acceptedTotalMinor']
+            : ['storeId', 'checkoutId'];
+        if (Object.keys(body).some(key => !allowed.includes(key))) {
+          response.status(400).json({ error: 'Dados inválidos.' });
+          return;
+        }
+        const input = { authorization, ...body } as any;
+        const result = operation.endsWith('.quote')
+          ? await quoteInitialPrepaidSubscription({ ...input, months: body.selectedMonths })
+          : operation.endsWith('.accept')
+            ? await acceptInitialPrepaidSubscription(input)
+            : operation.endsWith('.checkout')
+              ? await checkoutInitialPrepaidSubscription(input)
+              : await reconcileInitialPrepaidSubscription(input);
+        response.status(200).json(result);
+        return;
+      }
       case 'merchant.subscription.quote': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -721,6 +764,16 @@ export default async function handler(
         });
         return;
       }
+    }
+    if (operation.startsWith('merchant.prepaid-initial.')) {
+      const status = error instanceof Error && 'status' in error && (error as any).status === 401
+        ? 401 : error instanceof Error && error.message === 'INITIAL_PREPAID_CHECKOUT_DISABLED' ? 503 : 409;
+      response.status(status).json({
+        error: 'Não foi possível concluir a contratação pré-paga.',
+        code: error instanceof Error && /^(INITIAL_PREPAID_|INVALID_INITIAL_PREPAID_)[A-Z_]+$/.test(error.message)
+          ? error.message : 'INITIAL_PREPAID_UNAVAILABLE',
+      });
+      return;
     }
     const mapped = operation.startsWith('merchant.subscription.benefit')
       ? mapStoreSubscriptionBenefitError(error)

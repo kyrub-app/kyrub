@@ -510,7 +510,9 @@ export default function StoreSubscriptionsWorkspace({
                         <div className="min-w-0">
                           <strong className="block truncate text-[10px] text-slate-200">{subscription.productName}</strong>
                           <span className="mt-0.5 block text-[9px] text-slate-600">
-                            {money.format(subscription.amountMinor / 100)} · a cada {subscription.terms.billingInterval.count} {subscription.terms.billingInterval.unit} · {benefitKindLabel(subscription)}
+                            {subscription.collectionMode === 'prepaid'
+                              ? `${money.format(subscription.amountMinor / 100)} total · ${subscription.contractedMonths} meses · Pix único, sem renovação automática · vigência até ${dateLabel(subscription.expiresAt ?? '')}`
+                              : `${money.format(subscription.amountMinor / 100)} · a cada ${subscription.terms.billingInterval.count} ${subscription.terms.billingInterval.unit}`} · {benefitKindLabel(subscription)}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">

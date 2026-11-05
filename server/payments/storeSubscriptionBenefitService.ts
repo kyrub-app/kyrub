@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { loadVerifiedStoreSubscriptionPrepaidCoverage } from './storeSubscriptionService.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import {
   parseProductSaleModality,
@@ -53,6 +54,7 @@ interface CanonicalStoreIdentity {
 }
 
 interface BenefitSourceSubscription {
+  collectionMode?: 'prepaid';
   id: string;
   storeId: string;
   ownerUserId: string;
@@ -132,6 +134,7 @@ const loadBenefitSourceSubscription = async (
     providerPaymentStatusDetail: clean(data.providerPaymentStatusDetail),
     paymentConfirmedAt: clean(data.paymentConfirmedAt),
     terms: modality.subscription,
+    ...(data.collectionMode === 'prepaid' ? { collectionMode: 'prepaid' as const } : {}),
   };
   if (
     source.ownerUserId.length === 0 ||
@@ -262,9 +265,15 @@ const reconcilePrepaidBenefitCycle = async (
     `stores/${source.storeId}/subscriptions/${source.id}/prepaidPeriods`
   ).where('state', '==', 'paid').get();
   const now = Date.now();
+  const verifiedCoverage = source.collectionMode === 'prepaid'
+    ? await loadVerifiedStoreSubscriptionPrepaidCoverage(source, now) : null;
+  if (source.collectionMode === 'prepaid' && !verifiedCoverage?.current) return null;
   const valid = periods.docs.filter(doc => {
     const p = record(doc.data());
-    return p.contractId === doc.id && p.storeId === source.storeId &&
+    return (!verifiedCoverage || (verifiedCoverage.current?.contractId === doc.id &&
+      verifiedCoverage.current.providerPaymentId === p.providerPaymentId &&
+      verifiedCoverage.current.startsAt === p.startsAt && verifiedCoverage.current.expiresAt === p.expiresAt)) &&
+      p.contractId === doc.id && p.storeId === source.storeId &&
       p.subscriptionId === source.id && p.buyerId === source.buyerId &&
       p.productId === source.productId && safeIdentity(p.providerPaymentId) &&
       Number.isFinite(Date.parse(clean(p.startsAt))) &&

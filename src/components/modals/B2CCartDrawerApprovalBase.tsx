@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
+import { InitialPrepaidSubscriptionCheckout } from '../InitialPrepaidSubscriptionCheckout';
 import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract } from '../../utils/storeSubscription';
 import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
@@ -529,6 +530,14 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                       {CONTRACT_TERM_MONTHS.filter(months => availableContractTerms.includes(months)).map(months => <option key={months} value={months}>{months} {months === 1 ? "mês" : "meses"}</option>)}
                     </select>
                     <p className="mt-1 text-slate-400">Os prazos exibidos são sugestões da vitrine. Somente a cotação validada no catálogo oficial confirma disponibilidade, preço e desconto. Esta consulta não gera cobrança.</p>
+                    {subscriptionMonths !== 1 && cart[0].quantity === 1 && (
+                      <InitialPrepaidSubscriptionCheckout storeId={visitingStore.id} productId={cart[0].product.id}
+                        selectedMonths={subscriptionMonths as 3 | 6 | 12} />
+                    )}
+                    {subscriptionMonths !== 1 && cart[0].quantity !== 1 && (
+                      <p className="mt-3 text-amber-300">Contrate uma assinatura por vez. Ajuste a quantidade deste produto para 1.</p>
+                    )}
+                    {subscriptionMonths === 1 && <>
                     <button
                       type="button"
                       disabled={isQuotingSubscription}
@@ -568,6 +577,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                         ? 'Assinatura mensal recorrente: o pagamento será iniciado pelo Mercado Pago e a ativação depende da confirmação.'
                         : 'A contratação de planos com prazo ou desconto ainda não está disponível neste carrinho.'}
                     </p>
+                    </>}
                   </div>
                 )}
                 {cart.length === 0 ? (
@@ -661,7 +671,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                 )}
               </section>
 
-              {cart.length > 0 && (
+              {cart.length > 0 && !hasSubscriptionCartItem && (
                 <>
                   <section className="space-y-3">
                     <h4 className="text-xs font-black uppercase text-white">
@@ -868,7 +878,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               )}
             </div>
 
-            {cart.length > 0 && (
+            {cart.length > 0 && !(hasSubscriptionCartItem && subscriptionMonths !== 1) && (
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-5 backdrop-blur-sm">
                 <button
                   type="submit"

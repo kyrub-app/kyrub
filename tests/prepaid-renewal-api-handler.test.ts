@@ -19,6 +19,7 @@ const mock = (name: string, input: unknown) => {
   if (name === 'createOwnerAuthorizedPrepaidRenewalProposal') return { proposalId: 'mock-proposal' };
   if (name === 'acceptPrepaidRenewalWithFirebaseAuth') return 'accepted';
   if (name === 'checkoutAuthenticatedPrepaidRenewalPix' || name === 'reconcileAuthenticatedPrepaidRenewalPix') return { state: 'awaiting_payment', paymentId: '123456', pix: { qrCode: 'PIX', expiresAt: '2027-01-01T00:00:00Z' } };
+  if (['quoteInitialPrepaidSubscription', 'acceptInitialPrepaidSubscription', 'checkoutInitialPrepaidSubscription', 'reconcileInitialPrepaidSubscription'].includes(name)) return { state: 'awaiting_payment' };
   throw new Error('UNEXPECTED_MOCK_CALL:' + name);
 };
 
@@ -192,4 +193,42 @@ test('actual API route rejects absent and array request bodies before reconcilia
     assert.equal(result.status, 400);
     assert.equal(calls.length, 0);
   }
+});
+
+test('initial prepaid API accepts only each operation contract and forwards the authenticated session', async () => {
+  const checkoutId = 'c'.repeat(64);
+  const cases = [
+    ['quote', { storeId: 'store-a', productId: 'product', selectedMonths: 3 }, 'quoteInitialPrepaidSubscription'],
+    ['accept', { storeId: 'store-a', checkoutId, acceptedTotalMinor: 3000 }, 'acceptInitialPrepaidSubscription'],
+    ['checkout', { storeId: 'store-a', checkoutId }, 'checkoutInitialPrepaidSubscription'],
+    ['payment-status', { storeId: 'store-a', checkoutId }, 'reconcileInitialPrepaidSubscription'],
+  ] as const;
+  for (const [suffix, input, service] of cases) {
+    const op = 'merchant.prepaid-initial.' + suffix;
+    assert.equal((await invoke(op, 'GET', input)).status, 405);
+    assert.equal(calls.length, 0);
+    for (const extra of [{ authorization: 'forged' }, { amountMinor: 1 }, { paymentId: '123' }, { buyerId: 'other' }, { accessToken: 'forged' }]) {
+      assert.equal((await invoke(op, 'POST', { ...input, ...extra })).status, 400);
+      assert.equal(calls.length, 0);
+    }
+    const result = await invoke(op, 'POST', input);
+    assert.equal(result.status, 200);
+    assert.equal(result.headers['cache-control'], 'no-store, max-age=0');
+    assert.equal(calls[0].name, service);
+    assert.equal((calls[0].input as any).authorization, 'Bearer test');
+  }
+});
+test('initial prepaid API sanitizes failures and exposes the disabled creation gate', async () => {
+  try {
+    for (const [failure, code, status] of [
+      ['INITIAL_PREPAID_CHECKOUT_DISABLED', 'INITIAL_PREPAID_CHECKOUT_DISABLED', 503],
+      ['INITIAL_PREPAID_SELLER_CHANGED', 'INITIAL_PREPAID_SELLER_CHANGED', 409],
+      ['private-provider-diagnostic', 'INITIAL_PREPAID_UNAVAILABLE', 409],
+    ] as const) {
+      simulatedFailure = new Error(failure);
+      const result = await invoke('merchant.prepaid-initial.checkout', 'POST', { storeId: 'store-a', checkoutId: 'c'.repeat(64) });
+      assert.equal(result.status, status); assert.equal((result.body as any).code, code);
+      assert.equal(JSON.stringify(result.body).includes('private-provider-diagnostic'), false);
+    }
+  } finally { simulatedFailure = null; }
 });
