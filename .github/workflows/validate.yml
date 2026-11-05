@@ -62,6 +62,8 @@ jobs:
           tests/gamification-redemption-repository.test.ts
           tests/global-challenge-publication.test.ts
           tests/xp-ledger-persistence.test.ts
+          tests/official-plan-pix.test.ts
+          tests/official-plan-pix-provider.test.ts
           tests/app-error-boundary.test.ts
           tests/production-health.test.ts
           tests/local-attendance-serverless-routing.test.ts

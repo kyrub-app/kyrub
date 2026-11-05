@@ -41,6 +41,9 @@ const post = async <T>(operation: string, body: Record<string, unknown>): Promis
     body: JSON.stringify(body),
   }));
 
+export const loadCatalogSubscriptionBillingRoute = (storeId: string, productId: string): Promise<{ kind: 'platform-plan' | 'merchant' | 'free-plan' }> =>
+  post('catalog.subscription.route', { storeId, productId });
+
 /** Unified canonical product checkout: the server chooses platform or merchant billing. */
 export const createCatalogSubscriptionCheckout = async (input: {
   storeId: string;
@@ -209,32 +212,33 @@ export interface InitialPrepaidSubscriptionPaymentState {
   startsAt?: string;
   expiresAt?: string;
   code?: string;
+  rewards?: { xp: number; points: number; achievementTitle?: string };
 }
 
 /** Freeze commercial terms on the server before explicit buyer acceptance. */
 export const quoteInitialPrepaidSubscription = async (input: {
-  storeId: string; productId: string; selectedMonths: 3 | 6 | 12;
-}): Promise<InitialPrepaidSubscriptionQuote> => post('merchant.prepaid-initial.quote', {
+  storeId: string; productId: string; selectedMonths: ContractTermMonths; billingAuthority?: 'platform';
+}): Promise<InitialPrepaidSubscriptionQuote> => post(input.billingAuthority === 'platform' ? 'official.prepaid.quote' : 'merchant.prepaid-initial.quote', {
   storeId: input.storeId.trim(), productId: input.productId.trim(), selectedMonths: input.selectedMonths,
 });
 
 /** Explicit buyer acceptance of the exact server quote; no payment creation. */
 export const acceptInitialPrepaidSubscription = async (input: {
-  storeId: string; checkoutId: string; acceptedTotalMinor: number;
-}): Promise<{ status: 'accepted' | 'already_accepted' }> => post('merchant.prepaid-initial.accept', {
-  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(), acceptedTotalMinor: input.acceptedTotalMinor,
+  storeId: string; checkoutId: string; acceptedTotalMinor: number; billingAuthority?: 'platform';
+}): Promise<{ status: 'accepted' | 'already_accepted' }> => post(input.billingAuthority === 'platform' ? 'official.prepaid.accept' : 'merchant.prepaid-initial.accept', {
+  ...(input.billingAuthority === 'platform' ? {} : { storeId: input.storeId.trim() }), checkoutId: input.checkoutId.trim(), acceptedTotalMinor: input.acceptedTotalMinor,
 });
 
 /** One full Pix charge; never calls the recurring subscription checkout. */
 export const checkoutInitialPrepaidSubscription = async (input: {
-  storeId: string; checkoutId: string;
-}): Promise<InitialPrepaidSubscriptionPaymentState> => post('merchant.prepaid-initial.checkout', {
-  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(),
+  storeId: string; checkoutId: string; billingAuthority?: 'platform';
+}): Promise<InitialPrepaidSubscriptionPaymentState> => post(input.billingAuthority === 'platform' ? 'official.prepaid.checkout' : 'merchant.prepaid-initial.checkout', {
+  ...(input.billingAuthority === 'platform' ? {} : { storeId: input.storeId.trim() }), checkoutId: input.checkoutId.trim(),
 });
 
 /** Reconciliation only: this operation cannot create a new Pix payment. */
 export const loadInitialPrepaidSubscriptionStatus = async (input: {
-  storeId: string; checkoutId: string;
-}): Promise<InitialPrepaidSubscriptionPaymentState> => post('merchant.prepaid-initial.payment-status', {
-  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(),
+  storeId: string; checkoutId: string; billingAuthority?: 'platform';
+}): Promise<InitialPrepaidSubscriptionPaymentState> => post(input.billingAuthority === 'platform' ? 'official.prepaid.payment-status' : 'merchant.prepaid-initial.payment-status', {
+  ...(input.billingAuthority === 'platform' ? {} : { storeId: input.storeId.trim() }), checkoutId: input.checkoutId.trim(),
 });

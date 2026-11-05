@@ -52,6 +52,9 @@ jobs:
       - name: Validate paid plan billing contract
         run: node --test --import tsx tests/paid-plan-billing.test.ts >> build.log 2>&1
 
+      - name: Validate official platform Pix and commercial effects
+        run: node --test --import tsx tests/official-plan-pix.test.ts tests/official-plan-pix-provider.test.ts >> build.log 2>&1
+
       - name: Validate payment refund contract
         run: node --test --import tsx tests/payment-refund-contract.test.ts >> build.log 2>&1
 

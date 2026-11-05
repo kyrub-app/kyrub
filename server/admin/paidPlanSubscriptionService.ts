@@ -152,7 +152,7 @@ const findCanonicalStore = async (ownerId: string): Promise<string | null> => {
   return snapshot.empty ? null : snapshot.docs[0].id;
 };
 
-const writePlanMirrors = (
+export const writePlanMirrors = (
   transaction: FirebaseFirestore.Transaction,
   ownerId: string,
   canonicalStoreId: string | null,
@@ -443,6 +443,7 @@ export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: 
     const snapshot = await transaction.get(reservationRef);
     const current = snapshot.data() ?? {};
     if (current.checkoutReservationStatus === 'pending' ||
+        (current.collectionMode === 'prepaid' && Date.parse(String(current.expiresAt)) > Date.now()) ||
         (current.providerSubscriptionId && current.providerStatus !== 'cancelled')) {
       throw new PlanManagementError(409, 'SUBSCRIPTION_CHECKOUT_IN_PROGRESS', 'Ja existe uma contratacao em andamento para esta loja.');
     }

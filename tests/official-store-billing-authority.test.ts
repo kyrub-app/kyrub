@@ -17,7 +17,8 @@ test('official store identity has a single persisted authority with canonical an
 
 test('Kyrub plan checkout and merchant subscriptions keep separate route authorities', () => {
   assert.match(planRouterSource, /case 'store\.subscription\.checkout'/);
-  assert.match(planRouterSource, /createOwnPaidPlanCheckout\(authorization, body\.plan\)/);
+  assert.match(planRouterSource, /createOwnPaidPlanCheckout\(authorization, route\.plan, body\.productId\)/);
+  assert.match(planRouterSource, /OFFICIAL_STORE_BILLING_MIGRATION_PENDING/);
   assert.match(planRouterSource, /case 'merchant\.subscription\.checkout'/);
   assert.match(planRouterSource, /createAuthorizedStoreSubscription\(authorization, request\.body\)/);
   assert.match(planBillingSource, /KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN/);
@@ -27,7 +28,8 @@ test('Kyrub plan checkout and merchant subscriptions keep separate route authori
 test('platform preapproval uses its persisted billing reference for provider correlation', () => {
   assert.match(planBillingSource, /const billingReference = randomUUID\(\)\.replaceAll\('-', '_'\)/);
   assert.match(planBillingSource, /external_reference: billingReference/);
-  assert.match(planBillingSource, /billingReference,\s*payerEmail: user\.email/);
+  assert.match(planBillingSource, /billingReference,\s*checkoutReservationStatus: 'completed'/);
+  assert.match(planBillingSource, /payerEmail: user\.email/);
 });
 
 test('Kyrub plan activation requires approved payment evidence', () => {

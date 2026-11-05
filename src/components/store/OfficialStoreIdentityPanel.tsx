@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
+import OfficialPlanProductsPanel from './OfficialPlanProductsPanel';
 import {
   BadgeCheck,
   LoaderCircle,
@@ -225,6 +226,7 @@ export default function OfficialStoreIdentityPanel({
         </div>
       )}
 
+      {currentStoreIsOfficial && identity && <OfficialPlanProductsPanel key={`${authenticatedUser.uid}:${identity.canonicalStoreId}`} user={authenticatedUser} storeId={identity.canonicalStoreId} />}
       {state.error && (
         <div className="mt-3 rounded-xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] text-red-200">
           {state.error}

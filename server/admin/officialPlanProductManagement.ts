@@ -5,6 +5,7 @@ import { adminDb } from '../firebaseAdmin.js';
 import { authorizeOperationsHealth } from './operationsHealthRouter.js';
 import { getOfficialStoreIdentity } from './officialStoreService.js';
 import { PlanManagementError } from './planManagementService.js';
+import { parseOfficialPlanRewards, type OfficialPlanRewards } from '../../shared/officialPlanRewards.js';
 
 const ROOT = 'kyrub_admin/control_plane/official_plan_products';
 const validId = (value: string): boolean => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
@@ -14,6 +15,7 @@ export const assignOfficialPlanProduct = async (input: {
   authorization: string;
   productId: string;
   planId: KyrubCommercialPlanId;
+  rewards?: OfficialPlanRewards;
 }): Promise<void> => {
   const admin = await authorizeOperationsHealth(input.authorization);
   if (admin.role !== 'super_admin') {
@@ -27,6 +29,9 @@ export const assignOfficialPlanProduct = async (input: {
     throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Defina a Loja Oficial antes de vincular planos.');
   }
   const productRef = adminDb.doc(`stores/${official.canonicalStoreId}/products/${input.productId}`);
+  let rewards: OfficialPlanRewards | undefined;
+  try { rewards = input.rewards === undefined ? undefined : parseOfficialPlanRewards(input.rewards); }
+  catch { throw new PlanManagementError(400, 'OFFICIAL_PLAN_REWARDS_INVALID', 'Informe recompensas válidas.'); }
   const mappingRef = adminDb.doc(`${ROOT}/${input.productId}`);
   await adminDb.runTransaction(async transaction => {
     const [product, mapping] = await Promise.all([
@@ -35,7 +40,7 @@ export const assignOfficialPlanProduct = async (input: {
     ]);
     const data = product.data() ?? {};
     const modality = parseProductSaleModality(data.saleModality);
-    if (!product.exists || data.publicationStatus !== 'published' ||
+    if (!product.exists || !['draft', 'published'].includes(data.publicationStatus) ||
         data.platformPlanId !== undefined || data.kyrubPlanId !== undefined ||
         typeof data.price !== 'number' || !Number.isFinite(data.price) ||
         data.price < 0 || !Number.isSafeInteger(Math.round(data.price * 100)) ||
@@ -62,6 +67,24 @@ export const assignOfficialPlanProduct = async (input: {
       status: 'active',
       updatedBy: admin.uid,
       updatedAt: FieldValue.serverTimestamp(),
+      ...(rewards === undefined ? {} : { rewards }),
     }, { merge: true });
   });
+};
+
+export const listOfficialPlanProducts = async (authorization: string) => {
+  const admin = await authorizeOperationsHealth(authorization);
+  if (admin.role !== 'super_admin') throw new PlanManagementError(403, 'PLAN_MANAGEMENT_FORBIDDEN', 'Somente Super Admin pode configurar planos oficiais.');
+  const official = await getOfficialStoreIdentity();
+  if (!official) throw new PlanManagementError(409, 'OFFICIAL_STORE_NOT_CONFIGURED', 'Defina a Loja Oficial.');
+  const [products, mappings] = await Promise.all([
+    adminDb.collection(`stores/${official.canonicalStoreId}/products`).get(), adminDb.collection(ROOT).get(),
+  ]);
+  return { storeId: official.canonicalStoreId, products: products.docs.flatMap(doc => {
+    const data = doc.data(), modality = parseProductSaleModality(data.saleModality);
+    if (modality?.mode !== 'subscription' || modality.subscription?.benefit.kind !== 'access') return [];
+    const mapping = mappings.docs.find(item => item.id === doc.id)?.data();
+    return [{ id: doc.id, name: data.name || doc.id, price: data.price, publicationStatus: data.publicationStatus,
+      planId: mapping?.planId || null, rewards: parseOfficialPlanRewards(mapping?.rewards) }];
+  }) };
 };

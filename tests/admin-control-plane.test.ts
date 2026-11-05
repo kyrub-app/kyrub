@@ -201,7 +201,7 @@ test('active plan versions hydrate the action executor with a safe V1 fallback',
 });
 
 test('plans and coupons preserve one Vercel Hobby serverless slot as operational headroom', () => {
-  const apiFunctions = collectApiFunctions('api');
+  const apiFunctions = collectApiFunctions('api').map(path => path.replaceAll('\\', '/'));
   assert.ok(apiFunctions.length <= 11, `Expected at most 11 active Vercel functions so one Hobby slot stays reserved, found ${apiFunctions.length}: ${apiFunctions.join(', ')}`);
   assert.ok(apiFunctions.includes('api/plan-control.ts'));
   assert.equal(apiFunctions.includes('api/admin/store-entitlements/promotional-pro.ts'), false);

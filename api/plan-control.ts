@@ -19,7 +19,8 @@ import {
   reconcileOwnPaidPlanSubscription,
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
-import { assignOfficialPlanProduct } from '../server/admin/officialPlanProductManagement.js';
+import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
+import { quoteOfficialPlanPix, acceptOfficialPlanPix, checkoutOfficialPlanPix, reconcileOfficialPlanPix, handleOfficialPlanPixWebhook } from '../server/payments/officialPlanPixCheckout.js';
 import {
   grantComplimentaryPlanWithLifecycle,
   reconcileStoreEntitlementFromAuthorization,
@@ -145,7 +146,8 @@ export default async function handler(
       return;
     }
     response.setHeader('cache-control', 'no-store, max-age=0');
-    response.status(200).json(loadPaidPlanBillingAvailability());
+    const billing = loadPaidPlanBillingAvailability();
+    response.status(200).json({ ...billing, pixAvailable: billing.available && process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true' });
     return;
   }
 
@@ -174,6 +176,19 @@ export default async function handler(
     return;
   }
 
+  if (operation === 'official.prepaid.webhook') {
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    if (method !== 'POST') { methodNotAllowed(response); return; }
+    try {
+      response.status(200).json(await handleOfficialPlanPixWebhook({ headers: request.headers,
+        dataId: webhookDataId(body, request.query), checkoutId: first(request.query?.checkoutId) }));
+    } catch (error) {
+      console.warn('[official-plan-pix]', { stage: 'webhook_retry', checkoutId: /^[a-f0-9]{64}$/.test(first(request.query?.checkoutId)) ? first(request.query?.checkoutId) : 'invalid',
+        code: error instanceof Error && /^OFFICIAL_PIX_[A-Z_]+$/.test(error.message) ? error.message : 'RECONCILIATION_FAILED' });
+      response.status(error instanceof Error && /SIGNATURE|INVALID_PAYMENT|INVALID_CHECKOUT/.test(error.message) ? 401 : 503).json({ error: 'Confirmação pendente de reconciliação.' });
+    }
+    return;
+  }
   if (operation === 'merchant.prepaid-initial.webhook') {
     response.setHeader('cache-control', 'no-store, max-age=0');
     if (method !== 'POST') { methodNotAllowed(response); return; }
@@ -228,6 +243,37 @@ export default async function handler(
 
   try {
     switch (operation) {
+      case 'catalog.subscription.route': {
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        await authenticateConsultantRequest(authorization);
+        if (typeof body.storeId !== 'string' || typeof body.productId !== 'string' || Object.keys(body).some(key => !['storeId', 'productId'].includes(key))) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await resolvePersistedProductCheckoutRoute({ sellerStoreReference: body.storeId,
+          productId: body.productId, allowOfficialContractOffers: true, allowMerchantSubscription: true }));
+        return;
+      }
+      case 'official.prepaid.quote':
+      case 'official.prepaid.accept':
+      case 'official.prepaid.checkout':
+      case 'official.prepaid.payment-status': {
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        const fields = operation.endsWith('.quote') ? ['storeId', 'productId', 'selectedMonths']
+          : operation.endsWith('.accept') ? ['checkoutId', 'acceptedTotalMinor'] : ['checkoutId'];
+        if (Object.keys(body).some(key => !fields.includes(key)) ||
+          (!operation.endsWith('.quote') && typeof body.checkoutId !== 'string')) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
+        const result = operation.endsWith('.quote')
+          ? await quoteOfficialPlanPix({ authorization, storeId: body.storeId as string, productId: body.productId as string, selectedMonths: body.selectedMonths as any })
+          : operation.endsWith('.accept') ? await acceptOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string, acceptedTotalMinor: body.acceptedTotalMinor as number })
+            : operation.endsWith('.checkout') ? await checkoutOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string })
+              : await reconcileOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string });
+        response.status(200).json(result); return;
+      }
+      case 'admin.official-plan-product.list': {
+        if (method !== 'GET') { methodNotAllowed(response); return; }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await listOfficialPlanProducts(authorization)); return;
+      }
       case 'admin.snapshot': {
         if (method !== 'GET') {
           methodNotAllowed(response);
@@ -275,6 +321,7 @@ export default async function handler(
           authorization,
           productId: body.productId,
           planId: body.planId,
+          ...(body.rewards === undefined ? {} : { rewards: body.rewards as any }),
         });
         response.status(200).json({ ok: true });
         return;
@@ -723,6 +770,13 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation.startsWith('official.prepaid.') || (error instanceof Error && error.message.startsWith('OFFICIAL_PIX_'))) {
+      const code = error instanceof Error && /^OFFICIAL_PIX_[A-Z_]+$/.test(error.message) ? error.message : 'OFFICIAL_PIX_UNAVAILABLE';
+      const unauthorized = error instanceof Error && /AUTH_REQUIRED|id-token/.test(error.message);
+      response.status(unauthorized ? 401 : code === 'OFFICIAL_PIX_DISABLED' || code === 'OFFICIAL_PIX_NOT_CONFIGURED' ? 503 : 409)
+        .json({ error: unauthorized ? 'Entre na sua conta para continuar.' : 'Não foi possível concluir a contratação oficial. Consulte a situação antes de tentar novamente.', code });
+      return;
+    }
     if (operation === 'merchant.prepaid-renewal.my-proposals' ||
         operation === 'merchant.prepaid-renewal.contracts' ||
         operation === 'merchant.prepaid-renewal.propose' ||

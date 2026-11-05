@@ -213,6 +213,23 @@ export const applyStoreEconomicLedgerPaymentPlan = (
   for (const write of plan.writes) transaction.set(write.ref, write.entry);
 };
 
+/** Trusted server reconciliation of a provider-confirmed canonical capture.
+ * Unlike webhook events this records canonical_payment_snapshot provenance;
+ * callers must have fetched and validated the PSP payment before invoking it.
+ */
+export const prepareStoreEconomicLedgerConfirmedCapture = async (input: {
+  transaction: Transaction; payment: CanonicalPayment; paymentIntentId: string;
+}): Promise<StoreEconomicLedgerPaymentPlan> => {
+  if (input.payment.status !== 'paid' || !input.payment.providerPaymentId) throw new Error('STORE_ECONOMIC_LEDGER_CAPTURE_NOT_CONFIRMED');
+  const entry = buildRecoveredPaymentCaptureEconomicEntry(input);
+  const ref = refFor(input.payment.storeId, entry.id), existing = await input.transaction.get(ref);
+  if (existing.exists) {
+    assertEntryEquivalent(parseEntry(existing.data(), input.payment.storeId, entry.id), entry);
+    return { writes: [] };
+  }
+  return { writes: [{ ref, entry }] };
+};
+
 export const listStoreEconomicLedgerEntries = async (input: {
   storeId: string;
   limit?: number;

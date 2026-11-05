@@ -99,7 +99,7 @@ test('plan-control multiplexes merchant subscriptions without altering the ordin
 });
 
 test('merchant subscription runtime does not add another Vercel serverless function', () => {
-  const functions = collectApiFunctions('api');
+  const functions = collectApiFunctions('api').map(path => path.replaceAll('\\', '/'));
   assert.ok(functions.length <= 11, `Expected at most 11 API functions, found ${functions.length}`);
   assert.ok(functions.includes('api/plan-control.ts'));
   assert.ok(functions.includes('api/action-execute.ts'));

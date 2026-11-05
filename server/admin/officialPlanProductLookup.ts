@@ -17,6 +17,8 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   sellerStoreReference: string;
   productId: string;
   allowMerchantSubscription?: boolean;
+  /** Internal Pix quote boundary only; the legacy recurring endpoint must reject contract offers. */
+  allowOfficialContractOffers?: boolean;
 }): Promise<CheckoutBillingRoute> => {
   const productId = typeof input.productId === 'string' ? input.productId.trim() : '';
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(productId)) {
@@ -79,7 +81,7 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   if (mapping.exists && planId === null) {
     throw new OfficialPlanCheckoutRouteError('INVALID_PLATFORM_PLAN_MAPPING', 'Plano oficial não identificado.');
   }
-  if (planId !== null && data.contractDiscounts !== undefined) {
+  if (planId !== null && data.contractDiscounts !== undefined && !input.allowOfficialContractOffers) {
     throw new OfficialPlanCheckoutRouteError(
       'OFFICIAL_PLAN_CONTRACT_CHECKOUT_REQUIRED',
       'Este plano possui condições contratuais. O checkout mensal não pode ignorar seus prazos e descontos.'
@@ -123,7 +125,7 @@ export const resolvePersistedProductCheckoutRoute = async (input: {
   // The merchant service independently enforces this, but routing must not
   // authorize a recurring checkout that discards persisted contract terms.
   if (planId === null && input.allowMerchantSubscription &&
-      parsedModality.mode === 'subscription' && data.contractDiscounts !== undefined) {
+      parsedModality.mode === 'subscription' && data.contractDiscounts !== undefined && !input.allowOfficialContractOffers) {
     throw new OfficialPlanCheckoutRouteError(
       'MERCHANT_CONTRACT_CHECKOUT_REQUIRED',
       'Esta assinatura possui condições contratuais. Utilize o checkout específico do contrato.'
