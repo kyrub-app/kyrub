@@ -89,8 +89,11 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       const acceptance = data?.acceptance;
       if (!proposal || !acceptance || data?.status !== 'accepted' ||
           data.acceptedBy !== renewal.customerId ||
-          data.sellerCredentialScopeId !==
-            (verifiedSellerCredentialScopeId ?? renewal.storeId) ||
+          // Proposals created against the canonical store persist its ID,
+          // while provider verification resolves the owner's OAuth scope.
+          // Accept only these two authenticated identities, never an arbitrary seller.
+          (data.sellerCredentialScopeId !== renewal.storeId &&
+           data.sellerCredentialScopeId !== (verifiedSellerCredentialScopeId ?? renewal.storeId)) ||
           data.paymentExternalReference !== `kyrub:prepaid-renewal:${renewal.storeId}:${acceptedProposalId}` ||
           data.acceptedAt !== renewal.acceptedAt ||
           data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||

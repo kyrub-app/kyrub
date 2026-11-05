@@ -422,6 +422,60 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
   assert.equal((await paymentRef.get()).get('providerPaymentId'), paymentId);
 });
 
+test('Firestore: canonical store proposal binds to distinct verified owner OAuth scope', async () => {
+  const storeId = 'renew-emulator-canonical-owner-scope';
+  const previousContractId = 'original-canonical-owner';
+  const proposalId = 'f'.repeat(64);
+  const paymentId = '123456791';
+  const approvedAt = '2027-01-02T00:10:00.000Z';
+  await seed(storeId, previousContractId);
+  const next = renewal(storeId, previousContractId, paymentId);
+  const proposal = {
+    storeId, customerId: next.customerId, previousContractId,
+    productId: next.productId, months: next.months, totalDueMinor: next.totalPaidMinor,
+  };
+  const acceptance = {
+    storeId, customerId: next.customerId,
+    acceptedAt: next.acceptedAt, acceptedTotalMinor: next.totalPaidMinor,
+  };
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
+    status: 'accepted', acceptedBy: next.customerId, acceptedAt: next.acceptedAt,
+    acceptedProposalDigest: createHash('sha256').update(JSON.stringify(proposal)).digest('hex'),
+    sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
+    proposal, acceptance,
+  });
+  const attemptRef = adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`);
+  const attempt = {
+    storeId, proposalId, status: 'reserved',
+    idempotencyKey: `prepaid-renewal-${proposalId}`,
+    requestDigest: 'a'.repeat(64),
+    expiresAt: new Date(Date.parse(next.acceptedAt) + 30 * 60_000).toISOString(),
+  };
+  await adminDb.doc(`stores/${storeId}`).set({
+    ownerId: 'owner-canonical-oauth',
+  });
+  await adminDb.doc('stores/owner-canonical-oauth/paymentProviderConnections/mercado_pago').set({
+    provider: 'mercado_pago', storeId: 'owner-canonical-oauth', status: 'connected', externalAccountId: '987654',
+  });
+  const persist = () => persistVerifiedPrepaidRenewal(next, proposalId, 'owner-canonical-oauth', approvedAt, '987654');
+  const contractRef = adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`);
+  const paymentRef = adminDb.doc('prepaidRenewalPaymentBindings/' +
+    createHash('sha256').update('mercado_pago:' + paymentId).digest('hex'));
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  await attemptRef.set(attempt);
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  await attemptRef.update({ providerPaymentId: '987654321' });
+  await assert.rejects(persist(), /RENEWAL_PIX_PAYMENT_ATTEMPT_MISMATCH/);
+  assert.equal((await contractRef.get()).exists, false);
+  assert.equal((await paymentRef.get()).exists, false);
+  await attemptRef.update({ providerPaymentId: paymentId });
+  const concurrent = await Promise.all([persist(), persist()]);
+  assert.deepEqual(concurrent.sort(), ['already_recorded', 'created']);
+  assert.equal((await contractRef.get()).exists, true);
+  assert.equal((await paymentRef.get()).get('providerPaymentId'), paymentId);
+});
+
 test('Firestore: disconnected or rotated seller cannot atomically activate Pix renewal', async () => {
   const storeId = 'renew-emulator-seller-rotation';
   const previousContractId = 'original-seller-rotation';
