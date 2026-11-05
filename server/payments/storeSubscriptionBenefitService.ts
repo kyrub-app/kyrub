@@ -257,7 +257,7 @@ const assertCycleMatchesSource = (
 const reconcilePrepaidBenefitCycle = async (
   source: BenefitSourceSubscription
 ): Promise<StoreSubscriptionBenefitCycle | null> => {
-  if (source.terms.autoRenew) return null;
+  if (source.terms.autoRenew || source.state !== 'active') return null;
   const periods = await adminDb.collection(
     `stores/${source.storeId}/subscriptions/${source.id}/prepaidPeriods`
   ).where('state', '==', 'paid').get();
@@ -288,7 +288,9 @@ const reconcilePrepaidBenefitCycle = async (
           cycle.providerPaymentId !== period.providerPaymentId ||
           cycle.providerInvoiceId !== `prepaid:${valid[0].id}` ||
           cycle.billingPeriodStartsAt !== period.startsAt ||
-          cycle.billingPeriodEndsAt !== period.expiresAt) {
+          cycle.billingPeriodEndsAt !== period.expiresAt ||
+          cycle.benefitKind !== source.terms.benefit.kind ||
+          cycle.grantedUnits !== (source.terms.benefit.kind === 'access' ? null : source.terms.benefit.unitsPerCycle)) {
         fail(409, 'SUBSCRIPTION_BENEFIT_PREPAID_CYCLE_CONFLICT', 'O ciclo pré-pago não corresponde ao contrato verificado.');
       }
       return cycle;
