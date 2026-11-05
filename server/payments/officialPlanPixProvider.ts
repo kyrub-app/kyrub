@@ -1,4 +1,7 @@
 import { verifyMercadoPagoWebhookSignatureWithSecret } from './mercadoPagoPixProvider.js';
+import { getOfficialStoreIdentity } from '../admin/officialStoreService.js';
+import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
+import { validateMercadoPagoStoreConnection } from '../integrations/mercadoPagoStoreOauthService.js';
 
 /** Platform billing only. Never falls back to marketplace credentials or merchant OAuth. */
 export const officialPlanPixRequest = async <T = any>(path: string, init: RequestInit = {}): Promise<T> => {
@@ -18,10 +21,32 @@ export const officialPlanPixRequest = async <T = any>(path: string, init: Reques
 export const verifyOfficialPlanPixSignature = (headers: Record<string, string | string[] | undefined>, dataId: string) =>
   verifyMercadoPagoWebhookSignatureWithSecret({ headers, dataId }, process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET || '');
 
+/**
+ * Official subscriptions are sales of the official ERP store.
+ * Require its live, owner-authorized Mercado Pago OAuth account to match
+ * the platform billing token before any Pix creation or reconciliation.
+ * Never infer the receiver from a mutable store label or client input.
+ */
 export const officialPlanPixAccount = async (): Promise<string> => {
-  const expected = process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID?.trim() || '';
-  if (!/^\d+$/.test(expected)) throw new Error('OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
-  const account = await officialPlanPixRequest('/users/me');
-  if (String(account.id) !== expected) throw new Error('OFFICIAL_PIX_ACCOUNT_INVALID');
-  return String(account.id);
+  const official = await getOfficialStoreIdentity();
+  if (!official?.canonicalStoreId) throw new Error('OFFICIAL_PIX_STORE_NOT_CONFIGURED');
+
+  const authority = await resolveCommercialRecipientAuthority({
+    context: 'store_sale',
+    canonicalStoreId: official.canonicalStoreId,
+  });
+  const storeAccountId = await validateMercadoPagoStoreConnection(authority.credentialScopeId);
+  if (!/^\\d+$/.test(storeAccountId) || storeAccountId !== authority.externalAccountId) {
+    throw new Error('OFFICIAL_PIX_STORE_ACCOUNT_INVALID');
+  }
+
+  const platformAccount = await officialPlanPixRequest<{ id?: string | number }>('/users/me');
+  if (String(platformAccount.id) !== storeAccountId) {
+    throw new Error('OFFICIAL_PIX_PLATFORM_STORE_ACCOUNT_MISMATCH');
+  }
+
+  // Optional pinned receiver for rollout/incident response. Never override the ERP account.
+  const pinned = process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID?.trim();
+  if (pinned && pinned !== storeAccountId) throw new Error('OFFICIAL_PIX_ACCOUNT_INVALID');
+  return storeAccountId;
 };
