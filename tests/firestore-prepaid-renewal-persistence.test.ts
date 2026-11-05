@@ -620,3 +620,39 @@ test('Firestore: verified OAuth mismatch cannot use store-ID fallback during ato
   ).get()).exists, false);
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId, storeId), 'created');
 });
+
+test('Firestore: verified renewal binds a canonical prepaid subscription period atomically', async () => {
+  const storeId = 'renew-emulator-linked-period';
+  const previousContractId = 'original-linked';
+  const subscriptionId = 'subscription-linked';
+  const { customerId, productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: customerId, productId,
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-linked-1');
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'created');
+  const contract = await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`).get();
+  const period = await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/${next.contractId}`).get();
+  assert.equal(contract.get('subscriptionId'), subscriptionId);
+  assert.equal(period.get('providerPaymentId'), next.providerPaymentId);
+  assert.equal(period.get('startsAt'), next.startsAt);
+  assert.equal(period.get('expiresAt'), next.expiresAt);
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'already_recorded');
+  assert.equal((await adminDb.collection(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods`).get()).size, 1);
+});
+
+test('Firestore: mismatched canonical subscription aborts renewal and payment binding', async () => {
+  const storeId = 'renew-emulator-linked-mismatch';
+  const previousContractId = 'original-linked-mismatch';
+  const subscriptionId = 'subscription-wrong-buyer';
+  const { productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: 'another-customer', productId,
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-linked-rejected');
+  await assert.rejects(persistVerifiedPrepaidRenewal(next), /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`).get()).exists, false);
+  assert.equal((await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/${next.contractId}`).get()).exists, false);
+  const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
+  assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
+});
