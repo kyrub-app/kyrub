@@ -189,3 +189,14 @@ test('seller cannot propose renewal of an unbound prepaid predecessor', () => {
   assert.match(source, /previousDoc\.get\('subscriptionId'\)/);
   assert.match(source, /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
 });
+
+
+test('seller proposal revalidates canonical entitlement inside its Firestore transaction', () => {
+  const source = readFileSync('server/payments/prepaidRenewalProposalCreation.ts', 'utf8');
+  const transaction = source.slice(source.indexOf('await adminDb.runTransaction(async tx => {'));
+  assert.match(transaction, /tx\.get\(adminDb\.doc\(`stores\/\$\{input\.storeId\}\/subscriptions\/\$\{subscriptionId\}`\)\)/);
+  const gate = transaction.indexOf('assertPrepaidRenewalEntitlementBinding({');
+  const write = transaction.indexOf('tx.create(proposalRef, {');
+  assert.ok(gate >= 0 && write > gate, 'entitlement must be verified before persisting proposal');
+  assert.match(transaction.slice(gate, write), /currentSubscription\.data\(\)/);
+});
