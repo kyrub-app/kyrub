@@ -55,6 +55,7 @@ import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRe
 import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
 import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
 import { listBuyerPrepaidRenewalProposals, listOwnerPrepaidRenewalContracts } from '../server/payments/prepaidRenewalContractListing.js';
+import { checkoutAuthenticatedPrepaidRenewalPix, reconcileAuthenticatedPrepaidRenewalPix } from '../server/payments/prepaidRenewalPixCheckout.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
@@ -507,6 +508,23 @@ export default async function handler(
         );
         return;
       }
+      case 'merchant.prepaid-renewal.checkout':
+      case 'merchant.prepaid-renewal.payment-status': {
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        if (Object.keys(body).some(key => !['storeId', 'proposalId'].includes(key)) ||
+            typeof body.storeId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.proposalId !== 'string' || !/^[a-f0-9]{64}$/.test(body.proposalId)) {
+          response.status(400).json({ error: 'Informe a loja e a proposta aceita.', code: 'INVALID_RENEWAL_CHECKOUT_REQUEST' });
+          return;
+        }
+        const input = { authorization, storeId: body.storeId, proposalId: body.proposalId };
+        const result = operation === 'merchant.prepaid-renewal.checkout'
+          ? await checkoutAuthenticatedPrepaidRenewalPix(input)
+          : await reconcileAuthenticatedPrepaidRenewalPix(input);
+        response.status(200).json(result);
+        return;
+      }
       case 'merchant.subscription.quote': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -666,6 +684,8 @@ export default async function handler(
         operation === 'merchant.prepaid-renewal.contracts' ||
         operation === 'merchant.prepaid-renewal.propose' ||
         operation === 'merchant.prepaid-renewal.accept' ||
+        operation === 'merchant.prepaid-renewal.checkout' ||
+        operation === 'merchant.prepaid-renewal.payment-status' ||
         operation === 'merchant.prepaid-renewal.reconcile') {
       const mapped = mapPrepaidRenewalHttpError(error);
       if (mapped) {

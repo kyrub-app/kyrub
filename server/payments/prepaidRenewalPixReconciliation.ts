@@ -37,7 +37,6 @@ export const reconcileUnknownPrepaidRenewalPixPayment = async (input: {
     const authority = input.sellerAuthority;
     if (!authority || !/^[a-zA-Z0-9_-]{1,128}$/.test(authority.credentialScopeId) ||
         !/^\d+$/.test(authority.externalAccountId) ||
-        authority.credentialScopeId !== input.storeId ||
         authority.externalAccountId !== input.expectedCollectorId) {
       throw new Error('RENEWAL_PIX_RECONCILIATION_SELLER_CHANGED');
     }
