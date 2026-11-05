@@ -132,17 +132,16 @@ const PlanEditor = ({
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <label className="block">
-          <span className="mb-1.5 block text-[9px] font-black uppercase tracking-wider text-slate-500">Valor mensal</span>
+          <span className="mb-1.5 block text-[9px] font-black uppercase tracking-wider text-slate-500">Referência administrativa mensal</span>
           <input
             type="number"
             min="0"
             step="0.01"
-            disabled={entry.planId === 'free' || state.busy}
+            readOnly
             value={draft.monthlyPriceBRL}
-            onChange={event => updateNumber('monthlyPriceBRL', event.target.value)}
             className="w-full rounded-xl border border-slate-700 bg-slate-900 px-3 py-2.5 text-xs text-white outline-none focus:border-cyan-500/60 disabled:opacity-50"
           />
-          <span className="mt-1 block text-[9px] text-slate-600">{money(draft.monthlyPriceBRL)}</span>
+          <span className="mt-1 block text-[9px] text-slate-500">{money(draft.monthlyPriceBRL)} · O preço de venda é definido no produto da Loja Oficial.</span>
         </label>
 
         <label className="block">
@@ -603,7 +602,7 @@ export default function AdminPlansCouponsWorkspace({ authenticatedUser, profile 
           </div>
           <h2 id="admin-plans-coupons-title" className="mt-2 text-xl font-black text-white">Governança comercial versionada</h2>
           <p className="mt-2 text-xs leading-relaxed text-slate-400">
-            Altere preço, capacidade e funcionalidades criando uma nova versão do plano. Cupons e concessões usam a mesma camada de entitlement e nunca registram pagamento fictício.
+            Defina capacidades e funcionalidades criando uma nova versão das regras do plano. Produtos, preços de venda, descontos por prazo e publicação são gerenciados em Gerencial → Produtos da Loja Oficial. Os cupons administrativos abaixo concedem acesso; cupons de desconto sobre produtos pertencem a Promocionais da loja.
           </p>
         </div>
         <div className="flex items-center gap-2">

@@ -201,7 +201,7 @@ export function StorePromotionsManager({
             <div className="mt-2 grid max-h-52 gap-2 overflow-auto sm:grid-cols-2">
               {storeProducts.map(product => <label key={product.id} className="flex items-center gap-2 rounded-xl border border-slate-800 p-3 text-[10px]"><input type="checkbox" checked={draft.productIds.includes(product.id)} onChange={() => setDraft(value => ({ ...value, productIds: value.productIds.includes(product.id) ? value.productIds.filter(id => id !== product.id) : [...value.productIds, product.id] }))} /><span>{product.name}</span></label>)}
             </div>
-            {!storeProducts.length && <p className="mt-2 text-[10px] text-amber-300">Cadastre produtos antes de criar um cupom.</p>}
+            {!storeProducts.length && <p className="mt-2 text-[10px] text-amber-300">Nenhum produto publicado disponível para este cupom. Cadastre ou publique os itens em Gerencial → Produtos; depois selecione os participantes aqui.</p>}
           </div>
           <label className="flex items-center gap-2 text-[10px]"><input type="checkbox" checked={draft.active} onChange={event => setDraft(value => ({ ...value, active: event.target.checked }))} />Ativar assim que salvar</label>
           <div className="flex gap-2"><button type="button" disabled={busy} onClick={() => void save()} className="min-h-10 rounded-xl bg-emerald-500 px-4 text-[9px] font-black uppercase text-slate-950">{busy ? 'Salvando…' : draft.id ? 'Salvar alterações' : 'Criar cupom'}</button><button type="button" disabled={busy} onClick={reset} className="min-h-10 rounded-xl border border-slate-700 px-4 text-[9px] font-black uppercase text-slate-300">Cancelar</button></div>
