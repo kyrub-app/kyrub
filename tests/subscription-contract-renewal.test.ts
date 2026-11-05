@@ -165,3 +165,15 @@ test('Pix contract activation rechecks current seller after provider verificatio
   assert.ok(accountCheck > finalAuthority && activation > accountCheck);
   assert.match(source.slice(accountCheck, activation), /RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED/);
 });
+
+
+test('new Pix checkout fails closed when predecessor has no canonical subscription entitlement', () => {
+  const preparation = readFileSync('server/payments/prepaidRenewalCheckoutPreparation.ts', 'utf8');
+  const checkout = readFileSync('server/payments/prepaidRenewalPixCheckout.ts', 'utf8');
+  assert.match(checkout, /prepareAuthenticatedPrepaidRenewalPixWithRecipient\(input\)/);
+  assert.match(preparation, /if \(!input\.readOnlyRecovery\)/);
+  assert.match(preparation, /prepaidSubscriptionContracts\/\$\{proposal\.previousContractId\}/);
+  assert.match(preparation, /predecessor\.get\('subscriptionId'\)/);
+  assert.match(preparation, /subscription\.get\('buyerId'\) !== buyer\.uid/);
+  assert.match(preparation, /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
+});
