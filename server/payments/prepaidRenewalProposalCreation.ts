@@ -115,9 +115,10 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     `stores/${input.storeId}/prepaidRenewalProposals/${proposalId}`
   );
   await adminDb.runTransaction(async tx => {
-    const [existing, alreadyRenewed, currentPrevious, currentProduct, currentOfficialMapping] = await Promise.all([
+    const [existing, alreadyRenewed, currentPrevious, currentProduct, currentOfficialMapping, currentSubscription] = await Promise.all([
       tx.get(proposalRef), tx.get(successorRef), tx.get(previousRef), tx.get(productRef),
       tx.get(adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${previous.productId}`)),
+      tx.get(adminDb.doc(`stores/${input.storeId}/subscriptions/${subscriptionId}`)),
     ]);
     if (!currentProduct.exists || currentProduct.get('publicationStatus') !== 'published' ||
         JSON.stringify(currentProduct.data()) !== JSON.stringify(productDoc.data())) {
@@ -129,6 +130,15 @@ export const createPersistedPrepaidRenewalProposal = async (input: {
     if (!currentPrevious.exists || JSON.stringify(currentPrevious.data()) !== JSON.stringify(previousDoc.data())) {
       throw new Error('RENEWAL_PREVIOUS_CONTRACT_CHANGED');
     }
+    // The canonical entitlement must still match inside the write transaction.
+    // A separate preflight read is not sufficient if the subscription changes.
+    assertPrepaidRenewalEntitlementBinding({
+      storeId: input.storeId, previousContractId: input.previousContractId,
+      customerId: previous.customerId, productId: previous.productId,
+      predecessor: currentPrevious.data() as Record<string, unknown>,
+      subscription: currentSubscription.exists
+        ? currentSubscription.data() as Record<string, unknown> : null,
+    });
     if (alreadyRenewed.exists) throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
     if (existing.exists) {
       const data = existing.data();
