@@ -3,6 +3,8 @@ import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { persistVerifiedPrepaidRenewal } from '../server/payments/persistedPrepaidRenewal.js';
+import { reconcileStoreSubscriptionBenefitCycle } from '../server/payments/storeSubscriptionBenefitService.js';
+import { buildSubscriptionSaleModality } from '../shared/productSaleModality.js';
 import { addMonthsUtc } from '../server/payments/prepaidSubscriptionContractLifecycle.js';
 import { prepaidRenewalPixPredecessorReservationPath } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
 
@@ -655,4 +657,35 @@ test('Firestore: mismatched canonical subscription aborts renewal and payment bi
   assert.equal((await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}/prepaidPeriods/${next.contractId}`).get()).exists, false);
   const bindings = await adminDb.collection('prepaidRenewalPaymentBindings').get();
   assert.equal(bindings.docs.some(doc => doc.get('providerPaymentId') === next.providerPaymentId), false);
+});
+
+test('Firestore: prepaid renewal grants one canonical benefit cycle only during paid coverage', async () => {
+  const storeId = 'renew-emulator-benefit-cycle';
+  const previousContractId = 'original-benefit';
+  const subscriptionId = 'subscription-benefit';
+  const { customerId, productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}`).set({
+    ownerId: 'owner-benefit', legacyTenantId: 'owner-benefit',
+  });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: customerId, productId,
+    ownerUserId: 'owner-benefit', productName: 'Test subscription', state: 'active',
+    saleModality: buildSubscriptionSaleModality({
+      billingUnit: 'month', billingIntervalCount: 12, benefitKind: 'access', autoRenew: false,
+    }),
+  });
+  const next = renewal(storeId, previousContractId, 'mp-emulator-benefit-cycle');
+  // The fixture is in 2028, so reconciliation before the start must not grant access.
+  assert.equal(await persistVerifiedPrepaidRenewal(next), 'created');
+  const cycle = await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId);
+  if (Date.now() < Date.parse(next.startsAt)) {
+    assert.equal(cycle, null);
+  } else if (Date.now() < Date.parse(next.expiresAt)) {
+    assert.ok(cycle);
+    assert.equal(cycle.providerPaymentId, next.providerPaymentId);
+    assert.equal(cycle.billingPeriodEndsAt, next.expiresAt);
+    assert.equal((await reconcileStoreSubscriptionBenefitCycle(storeId, subscriptionId))?.id, cycle.id);
+  } else {
+    assert.equal(cycle, null);
+  }
 });
