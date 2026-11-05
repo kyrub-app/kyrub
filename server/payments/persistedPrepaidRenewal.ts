@@ -201,14 +201,15 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       return verdict;
     }
     if (predecessorDoc.exists) throw new Error('RENEWAL_PREDECESSOR_BINDING_CONFLICT');
+    const linkedPeriodRef = linkedSubscriptionRef && linkedEntitlement
+      ? linkedSubscriptionRef.collection('prepaidPeriods').doc(renewal.contractId) : null;
+    const existingLinkedPeriod = linkedPeriodRef ? await tx.get(linkedPeriodRef) : null;
+    if (existingLinkedPeriod?.exists) throw new Error('RENEWAL_ENTITLEMENT_PERIOD_ALREADY_EXISTS');
     tx.create(contractRef, linkedEntitlement
       ? { ...renewal, subscriptionId: linkedEntitlement.subscriptionId }
       : renewal);
-    if (linkedSubscriptionRef && linkedEntitlement) {
-      const periodRef = linkedSubscriptionRef.collection('prepaidPeriods').doc(renewal.contractId);
-      const existingPeriod = await tx.get(periodRef);
-      if (existingPeriod.exists) throw new Error('RENEWAL_ENTITLEMENT_PERIOD_ALREADY_EXISTS');
-      tx.create(periodRef, {
+    if (linkedPeriodRef && linkedEntitlement) {
+      tx.create(linkedPeriodRef, {
         contractId: renewal.contractId,
         previousContractId: renewal.previousContractId,
         storeId: renewal.storeId,
