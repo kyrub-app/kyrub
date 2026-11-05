@@ -3,6 +3,7 @@ import { adminDb } from '../firebaseAdmin.js';
 import { assertVerifiedPrepaidRenewalPixAttempt } from './prepaidRenewalPixPaymentBinding.js';
 import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
+import { assertPrepaidRenewalEntitlementBinding } from './prepaidRenewalEntitlementBinding.js';
 import { prepaidRenewalPixPredecessorReservationPath } from './prepaidRenewalPixAttemptReservation.js';
 import {
   resolveRenewalPaymentReplay,
@@ -65,6 +66,8 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
   const paymentRef = adminDb.doc(`prepaidRenewalPaymentBindings/${paymentKey(renewal.providerPaymentId)}`);
   const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   const originalContractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.previousContractId}`);
+  // Read a canonical subscription only when the predecessor carries an explicit ID.
+  // Legacy contracts without that ID are not silently mapped by buyer/product.
   return adminDb.runTransaction(async tx => {
     const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc, sellerStoreDoc, sellerConnectionDoc, predecessorReservationDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef), tx.get(originalContractRef),
@@ -150,6 +153,18 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
         originalContractDoc.get('totalPaidMinor') <= 0) {
       throw new Error('RENEWAL_PREDECESSOR_CONTRACT_MISMATCH');
     }
+    const linkedSubscriptionId = originalContractDoc.get('subscriptionId');
+    const linkedSubscriptionRef = typeof linkedSubscriptionId === 'string' && safeId(linkedSubscriptionId)
+      ? adminDb.doc(`stores/${renewal.storeId}/subscriptions/${linkedSubscriptionId}`) : null;
+    const linkedSubscriptionDoc = linkedSubscriptionRef ? await tx.get(linkedSubscriptionRef) : null;
+    const linkedEntitlement = linkedSubscriptionRef ? assertPrepaidRenewalEntitlementBinding({
+      storeId: renewal.storeId,
+      previousContractId: renewal.previousContractId,
+      customerId: renewal.customerId,
+      productId: renewal.productId,
+      predecessor: originalContractDoc.data() as Record<string, unknown>,
+      subscription: linkedSubscriptionDoc?.exists ? linkedSubscriptionDoc.data() as Record<string, unknown> : null,
+    }) : null;
     // Defense in depth: reject overlapping terms or a duration that does not
     // match the fully prepaid renewal. The predecessor is read transactionally.
     // An early renewal extends the predecessor at its expiry. If the old
@@ -186,7 +201,27 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       return verdict;
     }
     if (predecessorDoc.exists) throw new Error('RENEWAL_PREDECESSOR_BINDING_CONFLICT');
-    tx.create(contractRef, renewal);
+    tx.create(contractRef, linkedEntitlement
+      ? { ...renewal, subscriptionId: linkedEntitlement.subscriptionId }
+      : renewal);
+    if (linkedSubscriptionRef && linkedEntitlement) {
+      const periodRef = linkedSubscriptionRef.collection('prepaidPeriods').doc(renewal.contractId);
+      const existingPeriod = await tx.get(periodRef);
+      if (existingPeriod.exists) throw new Error('RENEWAL_ENTITLEMENT_PERIOD_ALREADY_EXISTS');
+      tx.create(periodRef, {
+        contractId: renewal.contractId,
+        previousContractId: renewal.previousContractId,
+        storeId: renewal.storeId,
+        subscriptionId: linkedEntitlement.subscriptionId,
+        buyerId: renewal.customerId,
+        productId: renewal.productId,
+        startsAt: renewal.startsAt,
+        expiresAt: renewal.expiresAt,
+        providerPaymentId: renewal.providerPaymentId,
+        paidAmountMinor: renewal.totalPaidMinor,
+        state: 'paid',
+      });
+    }
     tx.create(predecessorRef, {
       contractId: renewal.contractId,
       providerPaymentId: renewal.providerPaymentId,
