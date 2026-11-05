@@ -46,11 +46,11 @@ export const assertPrepaidRenewalPixCheckoutEnabled = (): void => {
 export const checkoutAuthenticatedPrepaidRenewalPix = async (input: Locator): Promise<PrepaidRenewalPixCheckoutResult> => {
   validateLocator(input);
   assertPrepaidRenewalPixCheckoutEnabled();
-  const { recipient } = await prepareAuthenticatedPrepaidRenewalPixWithRecipient(input);
   const attempt = await adminDb.doc(`stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`).get();
   if (attempt.exists && (attempt.get('providerPaymentId') || attempt.get('executionState') !== 'idle')) {
     return reconcileAuthenticatedPrepaidRenewalPix(input);
   }
+  const { recipient } = await prepareAuthenticatedPrepaidRenewalPixWithRecipient(input);
   const oauth = await getValidMercadoPagoStoreAccessToken(recipient.credentialScopeId);
   try {
     await executeAuthenticatedLockedIsolatedPrepaidRenewalPix({
