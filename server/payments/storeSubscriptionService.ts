@@ -714,6 +714,12 @@ const reserveCheckoutSlot = async (input: {
       }
     }
 
+    // Initial Pix attempts keep this shared slot until their financial outcome
+    // is reconciled. A recurring checkout must never overwrite that lock.
+    if (typeof data.checkoutId === 'string' && data.checkoutId) {
+      fail(409, 'STORE_SUBSCRIPTION_CREATION_IN_PROGRESS', 'Há uma contratação pré-paga em reconciliação para este produto.');
+    }
+
     if (slotState === 'creating') {
       const lockAge = Date.now() - validIsoTime(data.updatedAt);
       if (lockAge >= 0 && lockAge < CREATION_LOCK_MS) {

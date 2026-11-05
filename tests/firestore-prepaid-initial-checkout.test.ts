@@ -46,7 +46,7 @@ const compiled = await build({ stdin: { resolveDir: process.cwd(), contents: `
 });
 const api = await import('data:text/javascript;base64,' + Buffer.from(compiled.outputFiles[0].text).toString('base64'));
 const hash = (s: string) => createHash('sha256').update(s).digest('hex');
-async function seed(suffix: string, months: 3 | 6 | 12 = 3, benefitKind: 'access' | 'usage_credits' = 'usage_credits') {
+async function seed(suffix: string, months: 3 | 6 | 12 = 3, benefitKind: 'access' | 'usage_credits' = 'usage_credits', catalogAutoRenew = false) {
   const storeId = 'initial-emulator-' + suffix;
   await adminDb.doc(`stores/${storeId}`).set({ ownerId: 'initial-owner', legacyTenantId: 'initial-owner', name: 'Isolated Test' });
   await adminDb.doc('tenants/initial-owner').set({ publicationStatus: 'published' });
@@ -56,7 +56,7 @@ async function seed(suffix: string, months: 3 | 6 | 12 = 3, benefitKind: 'access
   await adminDb.doc(`stores/${storeId}/products/product`).set({ name: 'Monthly access', price: 100,
     publicationStatus: 'published', contractDiscounts: [{ months: 1, discountPercent: 0 },
       { months: 3, discountPercent: 10 }, { months: 6, discountPercent: 15 }, { months: 12, discountPercent: 20 }],
-    saleModality: { schemaVersion: 1, mode: 'subscription', subscription: { schemaVersion: 1, autoRenew: false,
+    saleModality: { schemaVersion: 1, mode: 'subscription', subscription: { schemaVersion: 1, autoRenew: catalogAutoRenew,
       billingInterval: { unit: 'month', count: 1 }, benefit: { kind: benefitKind, unitsPerCycle: benefitKind === 'access' ? null : 10 } } },
   });
   process.env.KYRUB_INITIAL_PREPAID_PIX_CHECKOUT_ENABLED = 'true';
@@ -219,4 +219,24 @@ test('verified initial access benefit is consumed by the existing subscription b
   assert.equal(cycle.benefitKind, 'access'); assert.equal(cycle.state, 'available');
   assert.equal(cycle.grantedUnits, null);
   assert.equal((await api.getAuthorizedStoreSubscription('initial-buyer', { storeId: input.storeId, subscriptionId: active.subscriptionId })).state, 'active');
+});
+
+test('legacy recurring checkout cannot overwrite an unresolved initial Pix slot', async () => {
+  const input = await seed('cross-collection-lock', 3, 'access', true);
+  const pending = await api.checkoutInitialPrepaidSubscription(input);
+  const posts = state.posts;
+  // Even if the merchant later changes the catalog to a recurring-only offer,
+  // the accepted Pix cannot be displaced by the legacy checkout.
+  const productRef = adminDb.doc(`stores/${input.storeId}/products/product`);
+  const recurringProduct = (await productRef.get()).data()!;
+  delete recurringProduct.contractDiscounts;
+  await productRef.set(recurringProduct);
+  const slot = adminDb.doc(`stores/${input.storeId}/subscriptionCheckoutSlots/${hash('initial-buyer:product')}`);
+  await assert.rejects(api.createAuthorizedStoreSubscription('initial-buyer', {
+    storeId: input.storeId, productId: 'product',
+  }), /pré-paga em reconciliação/);
+  assert.equal(state.posts, posts);
+  assert.equal((await slot.get()).get('checkoutId'), input.checkoutId);
+  approved(pending.paymentId);
+  assert.equal((await api.reconcileInitialPrepaidSubscription(input)).state, 'activated');
 });
