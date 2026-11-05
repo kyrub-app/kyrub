@@ -6,14 +6,18 @@ import type {
   StoreSubscriptionSnapshot,
 } from '../../shared/storeSubscriptionBilling';
 
+export class StoreSubscriptionRequestError extends Error {
+  constructor(message: string, public readonly code?: string) { super(message); }
+}
+
 const json = async <T>(response: Response): Promise<T> => {
   const type = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!type.includes('application/json')) {
     throw new Error('O serviço de assinaturas respondeu em um formato inesperado.');
   }
-  const payload = await response.json() as T & { error?: string };
+  const payload = await response.json() as T & { error?: string; code?: string };
   if (!response.ok) {
-    throw new Error(payload.error || 'Não foi possível atualizar a assinatura.');
+    throw new StoreSubscriptionRequestError(payload.error || 'Não foi possível atualizar a assinatura.', payload.code);
   }
   return payload;
 };
@@ -21,7 +25,9 @@ const json = async <T>(response: Response): Promise<T> => {
 const authorization = async (): Promise<string> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente para gerenciar a assinatura.');
-  return `Bearer ${await user.getIdToken()}`;
+  const token = await user.getIdToken();
+  if (auth.currentUser?.uid !== user.uid) throw new Error('Sua conta mudou. Atualize a tela antes de continuar.');
+  return `Bearer ${token}`;
 };
 
 const post = async <T>(operation: string, body: Record<string, unknown>): Promise<T> =>
@@ -118,12 +124,12 @@ export const acceptMerchantPrepaidRenewal = async (input: {
     acceptedTotalMinor: input.acceptedTotalMinor,
   });
 
-/** Read-only provider verification and atomic activation; never trust a UI payment status. */
+/** Provider verification and atomic activation; never trust a UI payment status. */
 export const reconcileMerchantPrepaidRenewal = async (input: {
   storeId: string;
   proposalId: string;
   paymentId: string;
-}): Promise<{ status: 'created' | 'already_exists' }> =>
+}): Promise<{ status: 'created' | 'already_recorded' }> =>
   post('merchant.prepaid-renewal.reconcile', {
     storeId: input.storeId.trim(),
     proposalId: input.proposalId.trim(),
@@ -149,6 +155,8 @@ export const listMyMerchantPrepaidRenewalProposals = async (input: {
 }): Promise<{ proposals: Array<{
   id: string;
   status: 'awaiting_acceptance' | 'accepted';
+  renewalState?: 'awaiting_acceptance' | 'accepted' | 'awaiting_payment' | 'activated' | 'recovery_required' | 'expired';
+  contract?: { contractId: string; startsAt: string; expiresAt: string };
   proposal: {
     storeId: string;
     productId: string;
@@ -160,4 +168,28 @@ export const listMyMerchantPrepaidRenewalProposals = async (input: {
   };
 }> }> => post('merchant.prepaid-renewal.my-proposals', {
   storeId: input.storeId.trim(),
+});
+
+/** Server-authoritative buyer state. Pix display alone never confirms payment. */
+export interface MerchantPrepaidRenewalPaymentState {
+  state: 'awaiting_payment' | 'payment_confirmed' | 'activated' | 'recovery_required';
+  paymentId?: string;
+  binding?: 'bound' | 'already_bound';
+  pix?: { qrCode: string; qrCodeBase64?: string; expiresAt: string };
+  contract?: { contractId: string; startsAt: string; expiresAt: string };
+  code?: string;
+}
+
+/** Creates or resumes the single server-reserved Pix attempt after explicit acceptance. */
+export const checkoutMerchantPrepaidRenewal = async (input: {
+  storeId: string; proposalId: string;
+}): Promise<MerchantPrepaidRenewalPaymentState> => post('merchant.prepaid-renewal.checkout', {
+  storeId: input.storeId.trim(), proposalId: input.proposalId.trim(),
+});
+
+/** Queries/reconciles the existing attempt; never creates another payment. */
+export const loadMerchantPrepaidRenewalPaymentStatus = async (input: {
+  storeId: string; proposalId: string;
+}): Promise<MerchantPrepaidRenewalPaymentState> => post('merchant.prepaid-renewal.payment-status', {
+  storeId: input.storeId.trim(), proposalId: input.proposalId.trim(),
 });
