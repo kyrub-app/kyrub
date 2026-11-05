@@ -1,3 +1,4 @@
+import { loadVerifiedStoreSubscriptionPrepaidCoverage } from './storeSubscriptionService.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import {
@@ -70,6 +71,10 @@ interface CanonicalSubscriptionRelationship {
   productId: string;
   productName: string;
   amountMinor: number;
+  collectionMode?: 'prepaid';
+  startsAt?: string;
+  expiresAt?: string;
+  contractedMonths?: number;
   currency: 'BRL';
   state: StoreSubscriptionState;
   providerStatus: StoreSubscriptionProviderStatus;
@@ -174,6 +179,7 @@ const parseCanonicalSubscription = (
     productId,
     productName,
     amountMinor,
+    ...(data.collectionMode === 'prepaid' ? { collectionMode: 'prepaid' as const, startsAt: validIso(data.startsAt), expiresAt: validIso(data.expiresAt), contractedMonths: Number(data.contractedMonths) } : {}),
     currency: 'BRL',
     state,
     providerStatus,
@@ -190,9 +196,16 @@ const loadCanonicalSubscriptions = async (
   storeId: string
 ): Promise<CanonicalSubscriptionRelationship[]> => {
   const snapshot = await adminDb.collection(`stores/${storeId}/subscriptions`).get();
-  return snapshot.docs
+  const subscriptions = snapshot.docs
     .map(doc => parseCanonicalSubscription(record(doc.data()), doc.id, storeId))
     .filter((subscription): subscription is CanonicalSubscriptionRelationship => subscription !== null);
+  return Promise.all(subscriptions.map(async subscription => {
+    if (subscription.collectionMode !== 'prepaid') return subscription;
+    const coverage = await loadVerifiedStoreSubscriptionPrepaidCoverage(subscription);
+    return { ...subscription, expiresAt: coverage.expiresAt,
+      state: subscription.state === 'paused' || subscription.state === 'cancelled' ? subscription.state
+        : coverage.current ? 'active' as const : 'payment_due' as const };
+  }));
 };
 
 const byBuyer = (
@@ -214,6 +227,7 @@ const publicSubscription = (
   productId: subscription.productId,
   productName: subscription.productName,
   amountMinor: subscription.amountMinor,
+  ...(subscription.collectionMode === 'prepaid' ? { collectionMode: 'prepaid' as const, startsAt: subscription.startsAt, expiresAt: subscription.expiresAt, contractedMonths: subscription.contractedMonths } : {}),
   currency: 'BRL',
   state: subscription.state,
   providerStatus: subscription.providerStatus,

@@ -90,6 +90,10 @@ interface InternalStoreSubscriptionRecord {
   amountMinor: number;
   currency: 'BRL';
   saleModality: ProductSaleModality;
+  collectionMode?: 'recurring' | 'prepaid';
+  startsAt?: string;
+  expiresAt?: string;
+  contractedMonths?: number;
   provider: 'mercado_pago';
   providerSubscriptionId: string;
   providerStatus: StoreSubscriptionProviderStatus;
@@ -313,6 +317,7 @@ const safeSnapshot = (subscription: InternalStoreSubscriptionRecord): StoreSubsc
   amountMinor: subscription.amountMinor,
   currency: CURRENCY,
   saleModality: subscription.saleModality,
+  ...(subscription.collectionMode === 'prepaid' ? { collectionMode: 'prepaid' as const, startsAt: subscription.startsAt, expiresAt: subscription.expiresAt, contractedMonths: subscription.contractedMonths } : {}),
   provider: PROVIDER,
   providerSubscriptionId: subscription.providerSubscriptionId,
   providerStatus: subscription.providerStatus,
@@ -335,6 +340,7 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
   const saleModality = parseProductSaleModality(data.saleModality);
   const amountMinor = Number(data.amountMinor);
   const providerSubscriptionId = safeIdentity(data.providerSubscriptionId);
+  const prepaid = data.collectionMode === 'prepaid';
   const id = safeIdentity(data.id);
   const storeId = safeIdentity(data.storeId);
   const buyerId = safeIdentity(data.buyerId);
@@ -346,7 +352,8 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
   if (
     data.schemaVersion !== STORE_SUBSCRIPTION_SCHEMA_VERSION ||
     !id || !storeId || !buyerId || !productId || !ownerUserId || !legacyStoreId ||
-    !credentialScopeId || !externalAccountId || !providerSubscriptionId ||
+    !credentialScopeId || !externalAccountId || (!prepaid && !providerSubscriptionId) ||
+    (prepaid && (data.providerSubscriptionId !== '' || saleModality?.subscription?.autoRenew !== false)) ||
     !Number.isInteger(amountMinor) || amountMinor <= 0 ||
     !saleModality || saleModality.mode !== 'subscription' || !saleModality.subscription
   ) return null;
@@ -380,6 +387,7 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
     amountMinor,
     currency: CURRENCY,
     saleModality,
+    ...(prepaid ? { collectionMode: 'prepaid' as const, startsAt: clean(data.startsAt), expiresAt: clean(data.expiresAt), contractedMonths: Number(data.contractedMonths) } : {}),
     provider: PROVIDER,
     providerSubscriptionId,
     providerStatus: providerStatus(data.providerStatus),
@@ -398,6 +406,95 @@ const parseStoredSubscription = (value: unknown): InternalStoreSubscriptionRecor
     activatedAt: clean(data.activatedAt),
     cancelledAt: clean(data.cancelledAt),
     paymentConfirmedAt: clean(data.paymentConfirmedAt),
+  };
+};
+
+export interface VerifiedStoreSubscriptionPrepaidPeriod {
+  contractId: string;
+  startsAt: string;
+  expiresAt: string;
+  providerPaymentId: string;
+  paidAmountMinor: number;
+}
+
+/** Canonical prepaid coverage reader shared by ERP state and benefit consumers.
+ * A period alone is not financial proof: the linked immutable contract and
+ * globally unique payment binding must identify the same subscription.
+ */
+export const loadVerifiedStoreSubscriptionPrepaidCoverage = async (source: {
+  id: string; storeId: string; buyerId: string; productId: string;
+}, nowMillis = Date.now()): Promise<{
+  current: VerifiedStoreSubscriptionPrepaidPeriod | null;
+  expiresAt: string;
+}> => {
+  if (![source.id, source.storeId, source.buyerId, source.productId].every(safeIdentity) ||
+      !Number.isFinite(nowMillis)) fail(409, 'STORE_SUBSCRIPTION_PREPAID_IDENTITY_INVALID', 'O vínculo pré-pago está inválido.');
+  const snapshots = await adminDb.collection(
+    `stores/${source.storeId}/subscriptions/${source.id}/prepaidPeriods`
+  ).where('state', '==', 'paid').get();
+  const verified = await Promise.all(snapshots.docs.map(async snapshot => {
+    const period = record(snapshot.data());
+    const id = safeIdentity(snapshot.id);
+    const paymentId = safeIdentity(period.providerPaymentId);
+    const startsAt = clean(period.startsAt);
+    const expiresAt = clean(period.expiresAt);
+    if (!id || period.contractId !== id || period.storeId !== source.storeId ||
+        period.subscriptionId !== source.id || period.buyerId !== source.buyerId ||
+        period.productId !== source.productId || !paymentId ||
+        !Number.isSafeInteger(period.paidAmountMinor) || Number(period.paidAmountMinor) <= 0 ||
+        !Number.isFinite(Date.parse(startsAt)) || !Number.isFinite(Date.parse(expiresAt)) ||
+        Date.parse(expiresAt) <= Date.parse(startsAt)) {
+      fail(409, 'STORE_SUBSCRIPTION_PREPAID_PERIOD_INVALID', 'O período pré-pago não corresponde à assinatura.');
+    }
+    const contractPath = `stores/${source.storeId}/prepaidSubscriptionContracts/${id}`;
+    const [contractDoc, bindingDoc] = await Promise.all([
+      adminDb.doc(contractPath).get(),
+      adminDb.doc(`prepaidRenewalPaymentBindings/${hash('mercado_pago:' + paymentId)}`).get(),
+    ]);
+    const contract = record(contractDoc.data());
+    const binding = record(bindingDoc.data());
+    if (!contractDoc.exists || !bindingDoc.exists ||
+        contract.contractId !== id || contract.storeId !== source.storeId ||
+        contract.subscriptionId !== source.id || contract.customerId !== source.buyerId ||
+        contract.productId !== source.productId || contract.providerPaymentId !== paymentId ||
+        contract.totalPaidMinor !== period.paidAmountMinor || contract.startsAt !== startsAt ||
+        contract.expiresAt !== expiresAt || binding.provider !== 'mercado_pago' ||
+        binding.providerPaymentId !== paymentId || binding.storeId !== source.storeId ||
+        binding.contractId !== id || binding.contractPath !== contractPath ||
+        (binding.subscriptionId !== undefined && binding.subscriptionId !== source.id)) {
+      fail(409, 'STORE_SUBSCRIPTION_PREPAID_PAYMENT_BINDING_INVALID', 'O pagamento do período pré-pago não foi vinculado corretamente.');
+    }
+    return { contractId: id, startsAt, expiresAt, providerPaymentId: paymentId,
+      paidAmountMinor: Number(period.paidAmountMinor) };
+  }));
+  verified.sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt));
+  for (let index = 1; index < verified.length; index++) {
+    if (Date.parse(verified[index].startsAt) < Date.parse(verified[index - 1].expiresAt)) {
+      fail(409, 'STORE_SUBSCRIPTION_PREPAID_PERIOD_OVERLAP', 'Há períodos pré-pagos sobrepostos.');
+    }
+  }
+  const current = verified.find(period => Date.parse(period.startsAt) <= nowMillis &&
+    nowMillis < Date.parse(period.expiresAt)) ?? null;
+  let expiresAt = current?.expiresAt ?? verified.at(-1)?.expiresAt ?? '';
+  if (current) {
+    for (const next of verified) {
+      if (Date.parse(next.startsAt) === Date.parse(expiresAt)) expiresAt = next.expiresAt;
+    }
+  }
+  return { current, expiresAt };
+};
+
+const resolvePrepaidSubscriptionState = async (
+  subscription: InternalStoreSubscriptionRecord
+): Promise<InternalStoreSubscriptionRecord> => {
+  if (subscription.collectionMode !== 'prepaid') return subscription;
+  const coverage = await loadVerifiedStoreSubscriptionPrepaidCoverage(subscription);
+  return {
+    ...subscription,
+    // Explicit administrative suspension/cancellation remains authoritative.
+    state: subscription.state === 'paused' || subscription.state === 'cancelled'
+      ? subscription.state : coverage.current ? 'active' : 'payment_due',
+    expiresAt: coverage.expiresAt,
   };
 };
 
@@ -541,6 +638,7 @@ const releaseCheckoutSlotIfCancelled = async (
 const reconcileInternalSubscription = async (
   subscription: InternalStoreSubscriptionRecord
 ): Promise<InternalStoreSubscriptionRecord> => {
+  if (subscription.collectionMode === 'prepaid') return resolvePrepaidSubscriptionState(subscription);
   const provider = await mercadoPagoStoreRequest<MpPreapproval>(
     subscription.credentialScopeId,
     `/preapproval/${encodeURIComponent(subscription.providerSubscriptionId)}`
@@ -614,6 +712,12 @@ const reserveCheckoutSlot = async (input: {
       if (existing && existing.state !== 'cancelled') {
         return { subscriptionId: existingSubscriptionId, existing: true };
       }
+    }
+
+    // Initial Pix attempts keep this shared slot until their financial outcome
+    // is reconciled. A recurring checkout must never overwrite that lock.
+    if (typeof data.checkoutId === 'string' && data.checkoutId) {
+      fail(409, 'STORE_SUBSCRIPTION_CREATION_IN_PROGRESS', 'Há uma contratação pré-paga em reconciliação para este produto.');
     }
 
     if (slotState === 'creating') {
@@ -893,7 +997,7 @@ export const getAuthorizedStoreSubscription = async (
   authorization: string,
   body: unknown
 ): Promise<StoreSubscriptionSnapshot> =>
-  safeSnapshot(await loadAuthorizedSubscription(authorization, body));
+  safeSnapshot(await resolvePrepaidSubscriptionState(await loadAuthorizedSubscription(authorization, body)));
 
 export const reconcileAuthorizedStoreSubscription = async (
   authorization: string,
@@ -908,6 +1012,11 @@ export const cancelAuthorizedStoreSubscription = async (
   body: unknown
 ): Promise<StoreSubscriptionSnapshot> => {
   const subscription = await loadAuthorizedSubscription(authorization, body);
+  if (subscription.collectionMode === 'prepaid') {
+    // A prepaid term has no automatic renewal to cancel. Preserve paid access;
+    // financial refunds or revocation require their existing explicit workflows.
+    return safeSnapshot(await resolvePrepaidSubscriptionState(subscription));
+  }
   if (subscription.state === 'cancelled') return safeSnapshot(subscription);
   const provider = await mercadoPagoStoreRequest<MpPreapproval>(
     subscription.credentialScopeId,

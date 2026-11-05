@@ -11,6 +11,10 @@ export interface StoreSubscriberSubscriptionSummary {
   productId: string;
   productName: string;
   amountMinor: number;
+  collectionMode?: 'prepaid';
+  startsAt?: string;
+  expiresAt?: string;
+  contractedMonths?: number;
   currency: 'BRL';
   state: StoreSubscriptionState;
   providerStatus: StoreSubscriptionProviderStatus;

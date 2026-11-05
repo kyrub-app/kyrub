@@ -193,3 +193,48 @@ export const loadMerchantPrepaidRenewalPaymentStatus = async (input: {
 }): Promise<MerchantPrepaidRenewalPaymentState> => post('merchant.prepaid-renewal.payment-status', {
   storeId: input.storeId.trim(), proposalId: input.proposalId.trim(),
 });
+
+export interface InitialPrepaidSubscriptionQuote {
+  checkoutId: string;
+  quote: SubscriptionContractOffer;
+  status?: 'quoted' | 'accepted' | 'bound' | 'in_flight' | 'outcome_unknown' | 'activated';
+}
+
+export interface InitialPrepaidSubscriptionPaymentState {
+  state: 'awaiting_payment' | 'activated' | 'recovery_required' | 'rejected';
+  paymentId?: string;
+  pix?: { qrCode: string; expiresAt: string };
+  subscriptionId?: string;
+  contractId?: string;
+  startsAt?: string;
+  expiresAt?: string;
+  code?: string;
+}
+
+/** Freeze commercial terms on the server before explicit buyer acceptance. */
+export const quoteInitialPrepaidSubscription = async (input: {
+  storeId: string; productId: string; selectedMonths: 3 | 6 | 12;
+}): Promise<InitialPrepaidSubscriptionQuote> => post('merchant.prepaid-initial.quote', {
+  storeId: input.storeId.trim(), productId: input.productId.trim(), selectedMonths: input.selectedMonths,
+});
+
+/** Explicit buyer acceptance of the exact server quote; no payment creation. */
+export const acceptInitialPrepaidSubscription = async (input: {
+  storeId: string; checkoutId: string; acceptedTotalMinor: number;
+}): Promise<{ status: 'accepted' | 'already_accepted' }> => post('merchant.prepaid-initial.accept', {
+  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(), acceptedTotalMinor: input.acceptedTotalMinor,
+});
+
+/** One full Pix charge; never calls the recurring subscription checkout. */
+export const checkoutInitialPrepaidSubscription = async (input: {
+  storeId: string; checkoutId: string;
+}): Promise<InitialPrepaidSubscriptionPaymentState> => post('merchant.prepaid-initial.checkout', {
+  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(),
+});
+
+/** Reconciliation only: this operation cannot create a new Pix payment. */
+export const loadInitialPrepaidSubscriptionStatus = async (input: {
+  storeId: string; checkoutId: string;
+}): Promise<InitialPrepaidSubscriptionPaymentState> => post('merchant.prepaid-initial.payment-status', {
+  storeId: input.storeId.trim(), checkoutId: input.checkoutId.trim(),
+});
