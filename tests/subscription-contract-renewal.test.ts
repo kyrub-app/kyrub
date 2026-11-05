@@ -174,6 +174,6 @@ test('new Pix checkout fails closed when predecessor has no canonical subscripti
   assert.match(preparation, /if \(!input\.readOnlyRecovery\)/);
   assert.match(preparation, /prepaidSubscriptionContracts\/\$\{proposal\.previousContractId\}/);
   assert.match(preparation, /predecessor\.get\('subscriptionId'\)/);
-  assert.match(preparation, /subscription\.get\('buyerId'\) !== buyer\.uid/);
+  assert.match(preparation, /assertPrepaidRenewalEntitlementBinding\(\{/);
   assert.match(preparation, /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
 });
