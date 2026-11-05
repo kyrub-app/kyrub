@@ -45,9 +45,13 @@ async function seed(suffix: string) {
   await adminDb.doc('stores/flow-owner/paymentProviderConnections/mercado_pago').set({
     provider: 'mercado_pago', storeId: 'flow-owner', status: 'connected', externalAccountId: '987654',
   });
+  const subscriptionId = 'subscription-' + suffix;
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: 'flow-buyer', productId: 'product',
+  });
   await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${previousContractId}`).set({
     contractId: previousContractId, storeId, customerId: 'flow-buyer', productId: 'product', months: 3,
-    totalPaidMinor: 30000, expiresAt: '2030-01-01T00:00:00.000Z',
+    subscriptionId, totalPaidMinor: 30000, expiresAt: '2030-01-01T00:00:00.000Z',
   });
   await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
     status: 'awaiting_acceptance', proposal, createdAt: new Date(Date.now() - 1000).toISOString(),
@@ -92,6 +96,19 @@ test('emulator: checkout gate disabled creates neither payment nor reservation',
   const input = await seed('disabled'); delete process.env.KYRUB_PREPAID_RENEWAL_PIX_CHECKOUT_ENABLED;
   const n = fixture.posts;
   await assert.rejects(api.checkoutAuthenticatedPrepaidRenewalPix(input), /CHECKOUT_DISABLED/);
+  assert.equal(fixture.posts, n);
+  assert.equal((await adminDb.doc(`stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`).get()).exists, false);
+});
+
+
+test('emulator: missing entitlement blocks a new Pix but preserves recovery of existing attempt', async () => {
+  process.env.KYRUB_PREPAID_RENEWAL_PIX_CHECKOUT_ENABLED = 'true';
+  fixture.unknown = false;
+  const input = await seed('missing-entitlement');
+  const previousRef = adminDb.doc(`stores/${input.storeId}/prepaidSubscriptionContracts/previous-missing-entitlement`);
+  await previousRef.update({ subscriptionId: null });
+  const n = fixture.posts;
+  await assert.rejects(api.checkoutAuthenticatedPrepaidRenewalPix(input), /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
   assert.equal(fixture.posts, n);
   assert.equal((await adminDb.doc(`stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`).get()).exists, false);
 });
