@@ -66,7 +66,19 @@ jobs:
               print("OpenAI API authentication check failed:", type(exc).__name__)
               raise SystemExit(1)
           PY
-          timeout --signal=TERM --kill-after=30s 35m env CODEX_API_KEY="$OPENAI_API_KEY" codex exec --sandbox read-only --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
+          # GitHub-hosted runners reject bwrap loopback RTM_NEWADDR, so Codex's
+          # Linux sandbox cannot start. This isolated audit runner has a
+          # read-only GitHub token, no persisted checkout credentials,
+          # and no production service credentials. Explicitly bypass only
+          # the Codex OS sandbox; do not use this mode for write-capable jobs.
+          baseline="$(git status --porcelain --untracked-files=no)"
+          timeout --signal=TERM --kill-after=30s 35m env CODEX_API_KEY="$OPENAI_API_KEY" codex exec --dangerously-bypass-approvals-and-sandbox --output-last-message executor-results/report.md - < executor-config/.github/kyrub-executor/mission-1064.md
+          test "$(git status --porcelain --untracked-files=no)" = "$baseline" || { echo "Audit modified tracked repository files"; exit 1; }
+          # A completed CLI process is not proof that an audit was performed.
+          test -s executor-results/report.md || { echo "Audit report missing"; exit 1; }
+          if grep -Eiq 'audit is (blocked|pending)|cannot provide verified implementation findings|no tests ran|bwrap: loopback:' executor-results/report.md; then
+            echo "Executor reported a blocked audit"; exit 1
+          fi
       - name: Upload executor report
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
