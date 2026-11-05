@@ -118,6 +118,20 @@ export const reconcileAuthenticatedPrepaidRenewalPix = async (input: Locator): P
   const { request, recipient } = await prepareAuthenticatedPrepaidRenewalPixWithRecipient({ ...input, readOnlyRecovery: true });
   const oauth = await getValidMercadoPagoStoreAccessToken(recipient.credentialScopeId);
   if (oauth.externalAccountId !== recipient.externalAccountId) throw new Error('RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+  const assertCurrentRecipient = async (): Promise<void> => {
+    // Provider GETs and activation can outlive an owner/account change. Reuse
+    // authenticated preparation instead of returning instructions for a stale seller.
+    const current = await prepareAuthenticatedPrepaidRenewalPixWithRecipient({ ...input, readOnlyRecovery: true });
+    if (current.recipient.credentialScopeId !== recipient.credentialScopeId ||
+        current.recipient.externalAccountId !== recipient.externalAccountId ||
+        current.request.init.body !== request.init.body) {
+      throw new Error('RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+    }
+    const currentOauth = await getValidMercadoPagoStoreAccessToken(current.recipient.credentialScopeId);
+    if (currentOauth.externalAccountId !== current.recipient.externalAccountId) {
+      throw new Error('RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+    }
+  };
   if (paymentId === undefined) {
     if (!['in_flight', 'outcome_unknown'].includes(String(attempt.get('executionState')))) {
       return recovery(new Error('RENEWAL_PIX_ATTEMPT_NOT_STARTED'));
@@ -144,6 +158,7 @@ export const reconcileAuthenticatedPrepaidRenewalPix = async (input: Locator): P
       expectedStoreId: input.storeId, expectedProposalId: input.proposalId, expectedCollectorId: recipient.externalAccountId });
     if (verifiedId !== paymentId) throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
     payment = raw as Record<string, unknown>;
+    await assertCurrentRecipient();
   } catch (error) { return recovery(error, paymentId); }
   if (payment.status === 'approved') {
     // Confirm accreditation with the canonical verifier before claiming that a
@@ -151,12 +166,16 @@ export const reconcileAuthenticatedPrepaidRenewalPix = async (input: Locator): P
     await verifyPrepaidRenewalMercadoPagoPayment({ sellerCredentialScopeId: recipient.credentialScopeId,
       paymentId, expectedExternalReference: `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`,
       expectedAmountMinor: stored.proposal.totalDueMinor });
+    try { await assertCurrentRecipient(); }
+    catch (error) { return recovery(error, paymentId); }
     try {
       await recordPrepaidRenewalWithVerifiedSources({ ...input, paymentId });
       const contract = await activatedContract(paymentId);
       if (!contract) throw new Error('RENEWAL_PIX_ACTIVATION_NOT_OBSERVED');
       return { state: 'activated', paymentId, contract };
     } catch {
+      try { await assertCurrentRecipient(); }
+      catch (error) { return recovery(error, paymentId); }
       return { state: 'payment_confirmed', paymentId, code: 'RENEWAL_PIX_ACTIVATION_RECOVERY_REQUIRED' };
     }
   }

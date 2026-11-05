@@ -13,23 +13,30 @@ let executionFailure: Error | undefined;
 let activationFailure: Error | undefined;
 let searchFailure: Error | undefined;
 let authBuyer = 'buyer';
+let recipientScope = 'owner-not-store';
+let recipientAccount = '42';
+let onProviderGet: (() => void) | undefined;
+let onPaymentVerified: (() => void) | undefined;
+let onActivation: (() => void) | undefined;
 const attemptPath = `stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`;
 const stored = { proposal: { previousContractId: 'old', totalDueMinor: 12000, productId: 'product', months: 12, currentMonthlyPriceMinor: 1000, discountPercent: 0 }, acceptance: { customerId: 'buyer', acceptedAt: '2026-01-01T00:00:00Z' } };
-const expiry = () => new Date(Date.now() + 30 * 60_000).toISOString();
+let expiryValue: string;
+const expiry = () => expiryValue;
 const request = () => ({ path: '/v1/payments', init: { method: 'POST', headers: { 'X-Idempotency-Key': `prepaid-renewal-${proposalId}` }, body: JSON.stringify({ transaction_amount: 120, date_of_expiration: expiry(), external_reference: `kyrub:prepaid-renewal:${storeId}:${proposalId}` }) } });
 const snap = (path: string) => ({ exists: docs.has(path), ref: { path }, data: () => docs.get(path), get: (key: string) => docs.get(path)?.[key] });
 const mock = (name: string, value: unknown) => {
   calls.push(name);
   if (name === 'authenticateConsultantRequest') { if (value !== 'Bearer buyer') throw new Error('AUTH_REQUIRED'); return { uid: authBuyer }; }
   if (name === 'loadAcceptedPrepaidRenewal') { if ((value as { authenticatedBuyerId: string }).authenticatedBuyerId !== 'buyer') throw new Error('RENEWAL_ACCEPTANCE_REQUIRED'); return stored; }
-  if (name === 'prepareAuthenticatedPrepaidRenewalPixWithRecipient') return { request: request(), recipient: { credentialScopeId: 'owner-not-store', externalAccountId: '42' } };
-  if (name === 'getValidMercadoPagoStoreAccessToken') return { externalAccountId: '42' };
+  if (name === 'prepareAuthenticatedPrepaidRenewalPixWithRecipient') return { request: request(), recipient: { credentialScopeId: recipientScope, externalAccountId: recipientAccount } };
+  if (name === 'getValidMercadoPagoStoreAccessToken') return { externalAccountId: recipientAccount };
   if (name === 'executeAuthenticatedLockedIsolatedPrepaidRenewalPix') { if (executionFailure) throw executionFailure; docs.set(attemptPath, { providerPaymentId: '123', executionState: 'in_flight' }); return { paymentId: '123', binding: 'bound' }; }
   if (name === 'reconcileUnknownSellerPrepaidRenewalPixPayment') { if (searchFailure) throw searchFailure; docs.set(attemptPath, { providerPaymentId: '123', executionState: 'outcome_unknown' }); return 'bound'; }
-  if (name === 'mercadoPagoStoreRequest') return payment;
+  if (name === 'mercadoPagoStoreRequest') { onProviderGet?.(); return payment; }
   if (name === 'validatePrepaidRenewalPixCreationResponse') { if (payment.collector_id !== 42) throw new Error('RENEWAL_PIX_CREATION_RESPONSE_MISMATCH'); return '123'; }
-  if (name === 'verifyPrepaidRenewalMercadoPagoPayment') { if (payment.status_detail !== 'accredited') throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH'); return { id: '123', verifiedByProvider: true }; }
+  if (name === 'verifyPrepaidRenewalMercadoPagoPayment') { if (payment.status_detail !== 'accredited') throw new Error('RENEWAL_PROVIDER_PAYMENT_MISMATCH'); onPaymentVerified?.(); return { id: '123', verifiedByProvider: true }; }
   if (name === 'recordPrepaidRenewalWithVerifiedSources') {
+    onActivation?.();
     if (activationFailure) throw activationFailure;
     const contractId = 'renewal-' + createHash('sha256').update(JSON.stringify([storeId, proposalId, '123'])).digest('hex');
     const contractPath = `stores/${storeId}/prepaidSubscriptionContracts/${contractId}`;
@@ -64,6 +71,9 @@ const bundle = await build({ entryPoints: ['server/payments/prepaidRenewalPixChe
 const service = await import('data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0].text).toString('base64'));
 beforeEach(() => {
   docs = new Map(); calls.length = 0; executionFailure = activationFailure = searchFailure = undefined; authBuyer = 'buyer';
+  recipientScope = 'owner-not-store'; recipientAccount = '42';
+  onProviderGet = onPaymentVerified = onActivation = undefined;
+  expiryValue = new Date(Date.now() + 30 * 60_000).toISOString();
   payment = { id: 123, status: 'pending', status_detail: 'pending_waiting_payment', collector_id: 42, point_of_interaction: { transaction_data: { qr_code: 'PIX-CODE', qr_code_base64: 'YWJj' } } };
   delete process.env.KYRUB_PREPAID_RENEWAL_PIX_CHECKOUT_ENABLED;
 });
@@ -119,4 +129,36 @@ test('mismatched recipient returns no Pix instructions or activation', async () 
   docs.set(attemptPath, { providerPaymentId: '123' }); payment.collector_id = 9;
   const result = await service.reconcileAuthenticatedPrepaidRenewalPix(input);
   assert.equal(result.state, 'recovery_required'); assert.equal(result.pix, undefined); assert(!calls.includes('recordPrepaidRenewalWithVerifiedSources'));
+});
+
+test('owner rotation during bound payment GET returns no stale seller Pix instructions', async () => {
+  docs.set(attemptPath, { providerPaymentId: '123' });
+  onProviderGet = () => { recipientScope = 'rotated-owner'; recipientAccount = '99'; };
+  const result = await service.reconcileAuthenticatedPrepaidRenewalPix(input);
+  assert.equal(result.state, 'recovery_required');
+  assert.equal(result.code, 'RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+  assert.equal(result.pix, undefined);
+  assert(!calls.includes('recordPrepaidRenewalWithVerifiedSources'));
+});
+
+test('seller account rotation during approval verification cannot report payment confirmed or activate', async () => {
+  docs.set(attemptPath, { providerPaymentId: '123' });
+  payment.status = 'approved'; payment.status_detail = 'accredited';
+  onPaymentVerified = () => { recipientAccount = '99'; };
+  const result = await service.reconcileAuthenticatedPrepaidRenewalPix(input);
+  assert.equal(result.state, 'recovery_required');
+  assert.equal(result.code, 'RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+  assert.equal(result.pix, undefined);
+  assert(!calls.includes('recordPrepaidRenewalWithVerifiedSources'));
+});
+
+test('owner rotation during failed activation cannot fall back to payment confirmed', async () => {
+  docs.set(attemptPath, { providerPaymentId: '123' });
+  payment.status = 'approved'; payment.status_detail = 'accredited';
+  onActivation = () => { recipientScope = 'rotated-owner'; recipientAccount = '99'; };
+  activationFailure = new Error('RENEWAL_SELLER_ACCOUNT_NOT_VERIFIED');
+  const result = await service.reconcileAuthenticatedPrepaidRenewalPix(input);
+  assert.equal(result.state, 'recovery_required');
+  assert.equal(result.code, 'RENEWAL_RECIPIENT_AUTHORITY_MISMATCH');
+  assert.equal(result.pix, undefined);
 });
