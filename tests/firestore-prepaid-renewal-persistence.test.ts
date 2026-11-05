@@ -4,6 +4,7 @@ import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { persistVerifiedPrepaidRenewal } from '../server/payments/persistedPrepaidRenewal.js';
 import { addMonthsUtc } from '../server/payments/prepaidSubscriptionContractLifecycle.js';
+import { prepaidRenewalPixPredecessorReservationPath } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
 
 // Run ONLY under the isolated Firestore Emulator invoked by test:rules.
 // Never allow these regression fixtures to touch a live Firebase project.
@@ -206,6 +207,14 @@ test('Firestore: valid accepted proposal is checked and renewed atomically', asy
     paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${proposalId}`,
     proposal, acceptance,
   });
+  const predecessorReservation = adminDb.doc(prepaidRenewalPixPredecessorReservationPath(storeId, previousContractId));
+  await predecessorReservation.set({
+    kind: 'predecessor_reservation', storeId, previousContractId,
+    proposalId: '0'.repeat(64), requestDigest: 'a'.repeat(64),
+  });
+  await assert.rejects(persistVerifiedPrepaidRenewal(next, proposalId), /RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS/);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidSubscriptionContracts/${next.contractId}`).get()).exists, false);
+  await predecessorReservation.update({ proposalId });
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId), 'created');
   assert.equal(await persistVerifiedPrepaidRenewal(next, proposalId), 'already_recorded');
   assert.equal((await adminDb.doc(
@@ -523,7 +532,9 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   const successOwnerId = 'oauth-owner-distinct-scope-success';
   const successPreviousId = 'original-distinct-scope-success';
   const successProposalId = '8'.repeat(64);
-  const successPaymentId = '123456791';
+  // Global payment bindings intentionally span stores: each independent
+  // success fixture must use its own provider payment ID.
+  const successPaymentId = '1069000000000526';
   await seed(successStoreId, successPreviousId);
   const successNext = renewal(successStoreId, successPreviousId, successPaymentId);
   const successProposal = {

@@ -8,7 +8,7 @@ const proposalId = 'a'.repeat(64);
 const storeId = 'store-a';
 const acceptedAt = new Date(Date.now() - 60_000).toISOString();
 const expiry = new Date(Date.parse(acceptedAt) + 30 * 60_000).toISOString();
-const embeddedProposal = { customerId: 'buyer-a', storeId, totalDueMinor: 29990 };
+const embeddedProposal = { customerId: 'buyer-a', storeId, previousContractId: 'old-contract', totalDueMinor: 29990 };
 const proposal = {
   status: 'accepted', acceptedBy: 'buyer-a', acceptedAt,
   acceptedProposalDigest: createHash('sha256').update(JSON.stringify(embeddedProposal)).digest('hex'),
@@ -33,6 +33,7 @@ const db = {
         get: async (ref: { path: string }) => ({
           exists: store.has(ref.path),
           data: () => store.get(ref.path),
+          get: (field: string) => store.get(ref.path)?.[field],
         }),
         create: (ref: { path: string }, data: Record<string, unknown>) => {
           pending.push(() => {
@@ -81,7 +82,7 @@ test('two simultaneous reservation requests create exactly one attempt', async (
     reservePrepaidRenewalPixAttempt({ storeId, proposalId, request }),
   ]);
   assert.deepEqual(results.map((x: { action: string }) => x.action).sort(), ['create', 'reuse']);
-  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
+  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 2);
 });
 test('conflicting concurrent retry cannot mutate the reserved attempt', async () => {
   const altered = {
@@ -90,7 +91,7 @@ test('conflicting concurrent retry cannot mutate the reserved attempt', async ()
   await assert.rejects(reservePrepaidRenewalPixAttempt({
     storeId, proposalId, request: altered,
   }), /RENEWAL_PIX_ATTEMPT_INVALID/);
-  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
+  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 2);
 });
 
 test('reservation rejects a missing accepted proposal without writing an attempt', async () => {
@@ -123,7 +124,7 @@ test('reservation rejects cross-store request before writing anything', async ()
   await assert.rejects(reservePrepaidRenewalPixAttempt({
     storeId: 'other-store', proposalId, request,
   }), /RENEWAL_PIX_ACCEPTANCE_REQUIRED/);
-  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 1);
+  assert.equal([...store.keys()].filter(key => key.includes('prepaidRenewalPixAttempts')).length, 2);
 });
 
 for (const invalidBody of ['null', '[]', '"unexpected"', '123', 'true']) {

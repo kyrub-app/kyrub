@@ -6,13 +6,22 @@ import {
 } from './prepaidRenewalPixAttempt.js';
 import { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.js';
 
+/** Same collection, separate immutable reservation key shared by competing proposals. */
+export const prepaidRenewalPixPredecessorReservationPath = (storeId: string, previousContractId: unknown): string => {
+  if (typeof previousContractId !== 'string' || !previousContractId ||
+      previousContractId.length > 180 || previousContractId.includes('/')) {
+    throw new Error('RENEWAL_PIX_ACCEPTANCE_REQUIRED');
+  }
+  return `stores/${storeId}/prepaidRenewalPixAttempts/contract_${createHash('sha256').update(previousContractId).digest('hex')}`;
+};
+
 /**
  * Server-only reservation. This module is NOT an HTTP endpoint and MUST NOT
  * be invoked in production until the isolated emulator tests and explicit
  * payment-executor review are complete. It never calls Mercado Pago.
  *
  * Firestore transactions serialize conflicting creates at the unique
- * proposal-scoped document. The caller must have authenticated the buyer,
+ * proposal-scoped document and predecessor-scoped reservation. The caller must have authenticated the buyer,
  * loaded the immutable accepted proposal and resolved seller OAuth authority.
  */
 export const reservePrepaidRenewalPixAttempt = async (input: {
@@ -68,12 +77,44 @@ export const reservePrepaidRenewalPixAttempt = async (input: {
           new Date(Date.parse(acceptance.acceptedAt) + 30 * 60_000).toISOString()) {
       throw new Error('RENEWAL_PIX_ATTEMPT_INVALID');
     }
+    const previousContractId = embeddedProposal.previousContractId;
+    const predecessorReservationRef = adminDb.doc(
+      prepaidRenewalPixPredecessorReservationPath(storeId, previousContractId)
+    );
+    const successorRef = adminDb.doc(`stores/${storeId}/prepaidRenewalSuccessors/${previousContractId}`);
+    const [predecessorReservation, successor] = await Promise.all([
+      tx.get(predecessorReservationRef), tx.get(successorRef),
+    ]);
+    const requestDigest = createHash('sha256').update(request.init.body).digest('hex');
+    if (predecessorReservation.exists &&
+        (predecessorReservation.get('kind') !== 'predecessor_reservation' ||
+         predecessorReservation.get('storeId') !== storeId ||
+         predecessorReservation.get('previousContractId') !== previousContractId ||
+         predecessorReservation.get('proposalId') !== proposalId ||
+         predecessorReservation.get('requestDigest') !== requestDigest)) {
+      // Never release on expiration or unknown outcome: an earlier Pix may still be payable.
+      throw new Error('RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS');
+    }
+    if (successor.exists && (!attemptSnapshot.exists ||
+        !attemptSnapshot.get('providerPaymentId') ||
+        successor.get('providerPaymentId') !== attemptSnapshot.get('providerPaymentId'))) {
+      throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
+    }
+    if (attemptSnapshot.exists && attemptSnapshot.get('requestBody') !== undefined &&
+        attemptSnapshot.get('requestBody') !== request.init.body) {
+      throw new Error('RENEWAL_PIX_ATTEMPT_CONFLICT');
+    }
     const result = decidePrepaidRenewalPixAttempt({
       storeId, proposalId, request,
       existing: attemptSnapshot.exists
         ? attemptSnapshot.data() as PrepaidRenewalPixAttempt : null,
     });
-    if (result.action === 'create') tx.create(attemptRef, { ...result.attempt, executionState: 'idle' });
+    if (!predecessorReservation.exists) tx.create(predecessorReservationRef, {
+      kind: 'predecessor_reservation', storeId, previousContractId, proposalId, requestDigest,
+    });
+    if (result.action === 'create') tx.create(attemptRef, {
+      ...result.attempt, requestBody: request.init.body, executionState: 'idle',
+    });
     return result;
   });
 };
