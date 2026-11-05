@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
-import { reservePrepaidRenewalPixAttempt } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
+import { reservePrepaidRenewalPixAttempt, prepaidRenewalPixPredecessorReservationPath } from '../server/payments/prepaidRenewalPixAttemptReservation.js';
 import { bindVerifiedPrepaidRenewalPixCreation } from '../server/payments/prepaidRenewalPixVerifiedCreationBinding.js';
 import { bindCreatedPrepaidRenewalPixPaymentId } from '../server/payments/prepaidRenewalPixPaymentIdBinding.js';
 import { claimPrepaidRenewalPixExecution } from '../server/payments/prepaidRenewalPixExecutionClaim.js';
@@ -23,7 +23,7 @@ const seed = async (storeId: string) => {
     provider: 'mercado_pago', storeId, status: 'connected', externalAccountId: '987654',
   });
   const embedded = {
-    storeId, customerId: 'buyer-emulator', totalDueMinor: 29990,
+    storeId, customerId: 'buyer-emulator', previousContractId: 'previous-contract', totalDueMinor: 29990,
   };
   await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).set({
     status: 'accepted', acceptedBy: 'buyer-emulator', acceptedAt,
@@ -57,6 +57,100 @@ test('Firestore emulator: simultaneous Pix reservations serialize to create and 
   assert.equal(snapshot.exists, true);
   assert.equal(snapshot.get('requestDigest'),
     createHash('sha256').update(request.init.body).digest('hex'));
+});
+
+test('Firestore emulator: competing accepted proposals reserve one predecessor before any provider call', async () => {
+  const storeId = 'renew-pix-emulator-competing-proposals';
+  await seed(storeId);
+  const alternativeId = 'c'.repeat(64);
+  const source = (await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).get()).data()!;
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${alternativeId}`).set({
+    ...source, paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${alternativeId}`,
+  });
+  const otherRequest = buildPrepaidRenewalPixRequest({
+    storeId, proposalId: alternativeId, acceptedBuyerId: 'buyer-emulator',
+    authenticatedBuyerId: 'buyer-emulator', acceptedTotalMinor: 29990,
+    proposalTotalMinor: 29990, sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${alternativeId}`,
+    payerEmail: 'buyer@example.com', expiresAt,
+  });
+  const results = await Promise.allSettled([
+    reservePrepaidRenewalPixAttempt({ storeId, proposalId, request: makeRequest(storeId) }),
+    reservePrepaidRenewalPixAttempt({ storeId, proposalId: alternativeId, request: otherRequest }),
+  ]);
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+  const rejected = results.find(result => result.status === 'rejected');
+  assert.match(String(rejected?.status === 'rejected' && rejected.reason), /RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS/);
+  const attempts = await adminDb.collection(`stores/${storeId}/prepaidRenewalPixAttempts`).get();
+  assert.equal(attempts.size, 2); // Exactly one attempt and its predecessor reservation.
+  const lock = await adminDb.doc(prepaidRenewalPixPredecessorReservationPath(storeId, 'previous-contract')).get();
+  assert.ok([proposalId, alternativeId].includes(lock.get('proposalId')));
+});
+
+test('Firestore emulator: unknown outcome retains predecessor reservation and blocks a second proposal', async () => {
+  const storeId = 'renew-pix-emulator-predecessor-unknown';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const expectedRequestDigest = createHash('sha256').update(request.init.body).digest('hex');
+  await claimPrepaidRenewalPixExecution({ storeId, proposalId, expectedRequestDigest });
+  const { markPrepaidRenewalPixExecutionOutcomeUnknown } = await import('../server/payments/prepaidRenewalPixExecutionClaim.js');
+  await markPrepaidRenewalPixExecutionOutcomeUnknown({ storeId, proposalId, expectedRequestDigest });
+  const lock = await adminDb.doc(prepaidRenewalPixPredecessorReservationPath(storeId, 'previous-contract')).get();
+  assert.equal(lock.get('proposalId'), proposalId);
+  const alternativeId = 'd'.repeat(64);
+  const source = (await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${proposalId}`).get()).data()!;
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalProposals/${alternativeId}`).set({
+    ...source, paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${alternativeId}`,
+  });
+  const otherRequest = buildPrepaidRenewalPixRequest({
+    storeId, proposalId: alternativeId, acceptedBuyerId: 'buyer-emulator', authenticatedBuyerId: 'buyer-emulator',
+    acceptedTotalMinor: 29990, proposalTotalMinor: 29990, sellerCredentialScopeId: storeId,
+    paymentExternalReference: `kyrub:prepaid-renewal:${storeId}:${alternativeId}`, payerEmail: 'buyer@example.com', expiresAt,
+  });
+  await assert.rejects(reservePrepaidRenewalPixAttempt({ storeId, proposalId: alternativeId, request: otherRequest }),
+    /RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS/);
+});
+
+test('Firestore emulator: missing predecessor reservation blocks an old unclaimed attempt', async () => {
+  const storeId = 'renew-pix-emulator-missing-predecessor-lock';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  await adminDb.doc(prepaidRenewalPixPredecessorReservationPath(storeId, 'previous-contract')).delete();
+  await assert.rejects(claimPrepaidRenewalPixExecution({
+    storeId, proposalId, expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex'),
+  }), /RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS/);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).get()).get('executionState'), 'idle');
+});
+
+test('Firestore emulator: successor created after reservation blocks provider execution', async () => {
+  const storeId = 'renew-pix-emulator-successor-after-reserve';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalSuccessors/previous-contract`).set({
+    contractId: 'already-renewed', providerPaymentId: '999999',
+  });
+  await assert.rejects(claimPrepaidRenewalPixExecution({
+    storeId, proposalId, expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex'),
+  }), /RENEWAL_PREDECESSOR_ALREADY_RENEWED/);
+  assert.equal((await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).get()).get('executionState'), 'idle');
+});
+
+test('Firestore emulator: matching activated successor permits only bound-payment recovery', async () => {
+  const storeId = 'renew-pix-emulator-successor-bound-recovery';
+  await seed(storeId);
+  const request = makeRequest(storeId);
+  await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request });
+  const locator = { storeId, proposalId, expectedRequestDigest: createHash('sha256').update(request.init.body).digest('hex') };
+  assert.equal(await claimPrepaidRenewalPixExecution(locator), 'claimed');
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalPixAttempts/${proposalId}`).update({ providerPaymentId: '999998' });
+  await adminDb.doc(`stores/${storeId}/prepaidRenewalSuccessors/previous-contract`).set({
+    contractId: 'already-renewed', providerPaymentId: '999998',
+  });
+  assert.equal((await reservePrepaidRenewalPixAttempt({ storeId, proposalId, request })).action, 'reuse');
+  assert.equal(await claimPrepaidRenewalPixExecution(locator), 'fetch_bound');
 });
 
 test('Firestore emulator: conflicting payload cannot overwrite a reserved attempt', async () => {

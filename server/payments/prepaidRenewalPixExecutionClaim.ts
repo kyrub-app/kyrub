@@ -1,4 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
+import { createHash } from 'node:crypto';
+import { prepaidRenewalPixPredecessorReservationPath } from './prepaidRenewalPixAttemptReservation.js';
 import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 import { decidePrepaidRenewalPixExecutionGate } from './prepaidRenewalPixExecutionGate.js';
 
@@ -23,11 +25,39 @@ export const claimPrepaidRenewalPixExecution = async (input: {
     `stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`
   );
   return adminDb.runTransaction(async tx => {
-    const snapshot = await tx.get(ref);
-    if (!snapshot.exists) throw new Error('RENEWAL_PIX_EXECUTION_GATE_CONFLICT');
+    const proposalRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalProposals/${input.proposalId}`);
+    const [snapshot, proposalSnapshot] = await Promise.all([tx.get(ref), tx.get(proposalRef)]);
+    if (!snapshot.exists || snapshot.get('requestDigest') !== input.expectedRequestDigest) {
+      throw new Error('RENEWAL_PIX_EXECUTION_GATE_CONFLICT');
+    }
+    const proposal = proposalSnapshot.data();
+    if (!proposalSnapshot.exists || proposal?.status !== 'accepted' ||
+        proposal.proposal?.storeId !== input.storeId ||
+        proposal.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal.proposal)).digest('hex')) {
+      throw new Error('RENEWAL_PIX_EXECUTION_GATE_CONFLICT');
+    }
+    const predecessorReservationRef = adminDb.doc(prepaidRenewalPixPredecessorReservationPath(
+      input.storeId, proposal.proposal.previousContractId
+    ));
+    const successorRef = adminDb.doc(`stores/${input.storeId}/prepaidRenewalSuccessors/${proposal.proposal.previousContractId}`);
+    const [predecessorReservation, successor] = await Promise.all([
+      tx.get(predecessorReservationRef), tx.get(successorRef),
+    ]);
+    if (!predecessorReservation.exists ||
+        predecessorReservation.get('kind') !== 'predecessor_reservation' ||
+        predecessorReservation.get('storeId') !== input.storeId ||
+        predecessorReservation.get('previousContractId') !== proposal.proposal.previousContractId ||
+        predecessorReservation.get('proposalId') !== input.proposalId ||
+        predecessorReservation.get('requestDigest') !== input.expectedRequestDigest) {
+      throw new Error('RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS');
+    }
     const attempt = snapshot.data() as PrepaidRenewalPixAttempt & {
       executionState?: 'idle' | 'in_flight' | 'outcome_unknown';
     };
+    if (successor.exists && (!attempt.providerPaymentId ||
+        successor.get('providerPaymentId') !== attempt.providerPaymentId)) {
+      throw new Error('RENEWAL_PREDECESSOR_ALREADY_RENEWED');
+    }
     const decision = decidePrepaidRenewalPixExecutionGate({
       attempt,
       expectedStoreId: input.storeId,

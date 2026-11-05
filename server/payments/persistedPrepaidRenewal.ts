@@ -3,6 +3,7 @@ import { adminDb } from '../firebaseAdmin.js';
 import { assertVerifiedPrepaidRenewalPixAttempt } from './prepaidRenewalPixPaymentBinding.js';
 import type { PrepaidRenewalPixAttempt } from './prepaidRenewalPixAttempt.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
+import { prepaidRenewalPixPredecessorReservationPath } from './prepaidRenewalPixAttemptReservation.js';
 import {
   resolveRenewalPaymentReplay,
   type snapshotAcceptedPrepaidRenewal,
@@ -58,18 +59,29 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalPixAttempts/${acceptedProposalId}`) : null;
   const acceptedProposalRef = acceptedProposalId
     ? adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalProposals/${acceptedProposalId}`) : null;
+  const predecessorReservationRef = acceptedProposalId
+    ? adminDb.doc(prepaidRenewalPixPredecessorReservationPath(renewal.storeId, renewal.previousContractId)) : null;
   const contractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.contractId}`);
   const paymentRef = adminDb.doc(`prepaidRenewalPaymentBindings/${paymentKey(renewal.providerPaymentId)}`);
   const predecessorRef = adminDb.doc(`stores/${renewal.storeId}/prepaidRenewalSuccessors/${renewal.previousContractId}`);
   const originalContractRef = adminDb.doc(`stores/${renewal.storeId}/prepaidSubscriptionContracts/${renewal.previousContractId}`);
   return adminDb.runTransaction(async tx => {
-    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc, sellerStoreDoc, sellerConnectionDoc] = await Promise.all([
+    const [contractDoc, paymentDoc, predecessorDoc, originalContractDoc, acceptedProposalDoc, pixAttemptDoc, sellerStoreDoc, sellerConnectionDoc, predecessorReservationDoc] = await Promise.all([
       tx.get(contractRef), tx.get(paymentRef), tx.get(predecessorRef), tx.get(originalContractRef),
       acceptedProposalRef ? tx.get(acceptedProposalRef) : Promise.resolve(null),
       pixAttemptRef ? tx.get(pixAttemptRef) : Promise.resolve(null),
       sellerStoreRef ? tx.get(sellerStoreRef) : Promise.resolve(null),
       sellerConnectionRef ? tx.get(sellerConnectionRef) : Promise.resolve(null),
+      predecessorReservationRef ? tx.get(predecessorReservationRef) : Promise.resolve(null),
     ]);
+    if (predecessorReservationDoc?.exists &&
+        (predecessorReservationDoc.get('kind') !== 'predecessor_reservation' ||
+         predecessorReservationDoc.get('storeId') !== renewal.storeId ||
+         predecessorReservationDoc.get('previousContractId') !== renewal.previousContractId ||
+         predecessorReservationDoc.get('proposalId') !== acceptedProposalId ||
+         (pixAttemptDoc?.exists && predecessorReservationDoc.get('requestDigest') !== pixAttemptDoc.get('requestDigest')))) {
+      throw new Error('RENEWAL_PREDECESSOR_PAYMENT_IN_PROGRESS');
+    }
     if (sellerStoreRef) {
       const store = sellerStoreDoc?.data();
       const connection = sellerConnectionDoc?.data();
@@ -91,9 +103,12 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
           data.acceptedBy !== renewal.customerId ||
           // Proposals created against the canonical store persist its ID,
           // while provider verification resolves the owner's OAuth scope.
-          // Accept only these two authenticated identities, never an arbitrary seller.
-          (data.sellerCredentialScopeId !== renewal.storeId &&
-           data.sellerCredentialScopeId !== (verifiedSellerCredentialScopeId ?? renewal.storeId)) ||
+          // Canonical-ID normalization is safe only when this transaction has
+          // independently checked the current owner and OAuth account above.
+          // Internal non-Pix callers retain exact-scope matching; a supplied
+          // "verified" scope alone must never authorize the store-ID fallback.
+          (data.sellerCredentialScopeId !== (verifiedSellerCredentialScopeId ?? renewal.storeId) &&
+           !(sellerStoreRef && data.sellerCredentialScopeId === renewal.storeId)) ||
           data.paymentExternalReference !== `kyrub:prepaid-renewal:${renewal.storeId}:${acceptedProposalId}` ||
           data.acceptedAt !== renewal.acceptedAt ||
           data.acceptedProposalDigest !== createHash('sha256').update(JSON.stringify(proposal)).digest('hex') ||
