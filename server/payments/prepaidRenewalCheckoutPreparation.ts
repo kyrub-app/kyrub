@@ -6,6 +6,7 @@ import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthor
 import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
 import { prepaidRenewalPixExpiryFromAcceptance } from './prepaidRenewalPixExpiry.js';
 import { createHash } from 'node:crypto';
+import { assertPrepaidRenewalEntitlementBinding } from './prepaidRenewalEntitlementBinding.js';
 
 /**
  * Read-only authenticated checkout preparation. Does not contact Mercado Pago
@@ -42,9 +43,8 @@ export const prepareAuthenticatedPrepaidRenewalPixWithRecipient = async (input: 
         `kyrub:prepaid-renewal:${input.storeId}:${input.proposalId}`) {
     throw new Error('RENEWAL_CHECKOUT_BINDING_MISSING');
   }
-  // Never initiate a new Pix payment for a predecessor whose canonical
-  // subscription entitlement cannot be verified. Recovery remains available
-  // for already-started attempts; do not strand a paid buyer.
+  // Check the canonical entitlement before a new Pix charge. Existing
+  // payment attempts retain their separate GET-only recovery path.
   if (!input.readOnlyRecovery) {
     const predecessor = await adminDb.doc(
       `stores/${input.storeId}/prepaidSubscriptionContracts/${proposal.previousContractId}`,
@@ -57,16 +57,14 @@ export const prepareAuthenticatedPrepaidRenewalPixWithRecipient = async (input: 
     const subscription = await adminDb.doc(
       `stores/${input.storeId}/subscriptions/${subscriptionId}`,
     ).get();
-    if (predecessor.get('storeId') !== input.storeId ||
-        predecessor.get('contractId') !== proposal.previousContractId ||
-        predecessor.get('customerId') !== buyer.uid ||
-        predecessor.get('productId') !== proposal.productId ||
-        !subscription.exists || subscription.get('id') !== subscriptionId ||
-        subscription.get('storeId') !== input.storeId ||
-        subscription.get('buyerId') !== buyer.uid ||
-        subscription.get('productId') !== proposal.productId) {
-      throw new Error('RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED');
-    }
+    assertPrepaidRenewalEntitlementBinding({
+      storeId: input.storeId,
+      previousContractId: proposal.previousContractId,
+      customerId: buyer.uid,
+      productId: proposal.productId,
+      predecessor: predecessor.data() as Record<string, unknown>,
+      subscription: subscription.exists ? subscription.data() as Record<string, unknown> : null,
+    });
   }
   const authority = await resolveCommercialRecipientAuthority({
     context: 'store_subscription', canonicalStoreId: input.storeId,
