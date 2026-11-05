@@ -22,6 +22,9 @@ export const persistVerifiedKyrubXp = async (input: {
   const sourceId = safeId(input.sourceId, 'XP_SOURCE');
   const idempotencyKey = safeId(input.idempotencyKey, 'XP_IDEMPOTENCY');
   const correlationId = safeId(input.correlationId, 'XP_CORRELATION');
+  if (!['challenge', 'achievement', 'community', 'admin_adjustment'].includes(input.sourceType)) {
+    throw new Error('XP_SOURCE_TYPE_INVALID');
+  }
   if (!Number.isSafeInteger(input.deltaXp) || input.deltaXp <= 0) throw new Error('XP_DELTA_INVALID');
   if (!Number.isFinite(Date.parse(input.occurredAt))) throw new Error('XP_DATE_INVALID');
   const id = `xp_${idempotencyKey}`;
@@ -49,10 +52,11 @@ export const persistVerifiedKyrubXp = async (input: {
 };
 
 export const readVerifiedKyrubXpTotal = async (userId: string): Promise<{ total: number | null; entryCount: number }> => {
-  const snapshot = await adminDb.collection(`users/${safeId(userId, 'XP_USER')}/xpLedger`).get();
+  const normalizedUserId = safeId(userId, 'XP_USER');
+  const snapshot = await adminDb.collection(`users/${normalizedUserId}/xpLedger`).get();
   const entries = snapshot.docs.map(doc => {
     const entry = doc.data() as KyrubXpEntry;
-    if (entry.id !== doc.id || entry.userId !== userId) throw new Error('XP_LEDGER_SCOPE_INVALID');
+    if (entry.id !== doc.id || entry.userId !== normalizedUserId) throw new Error('XP_LEDGER_SCOPE_INVALID');
     return entry;
   });
   return { total: entries.length ? kyrubXpTotal(entries) : null, entryCount: entries.length };

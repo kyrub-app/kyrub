@@ -15,13 +15,18 @@ const requireValue = (value: string, name: string) => {
   return value.trim();
 };
 
+const requireAuditTime = (value: string) => {
+  requireValue(value, 'AUDIT_TIME');
+  if (!Number.isFinite(Date.parse(value))) throw new Error('AUDIT_TIME_INVALID');
+};
+
 export const planGlobalChallengeDraft = (
   challenge: KyrubChallengeDefinition,
   actorId: string,
   occurredAt: string
 ): { challenge: KyrubChallengeDefinition; audit: KyrubChallengeAuditEvent } => {
   requireValue(actorId, 'ADMIN_ACTOR');
-  requireValue(occurredAt, 'AUDIT_TIME');
+  requireAuditTime(occurredAt);
   if (challenge.sponsorType !== 'kyrub') throw new Error('GLOBAL_CHALLENGE_SPONSOR_INVALID');
   if (challenge.status !== 'draft') throw new Error('GLOBAL_CHALLENGE_MUST_START_AS_DRAFT');
   return {
@@ -36,7 +41,7 @@ export const planGlobalChallengePublication = (
   occurredAt: string
 ): { challenge: KyrubChallengeDefinition; audit: KyrubChallengeAuditEvent } => {
   requireValue(actorId, 'ADMIN_ACTOR');
-  requireValue(occurredAt, 'AUDIT_TIME');
+  requireAuditTime(occurredAt);
   if (current.sponsorType !== 'kyrub') throw new Error('GLOBAL_CHALLENGE_SPONSOR_INVALID');
   if (current.status !== 'draft') throw new Error('GLOBAL_CHALLENGE_NOT_DRAFT');
   if (current.startsAt && !Number.isFinite(Date.parse(current.startsAt))) throw new Error('CHALLENGE_START_INVALID');
