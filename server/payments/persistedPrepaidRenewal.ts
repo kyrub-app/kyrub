@@ -154,6 +154,9 @@ export const persistVerifiedPrepaidRenewal = async (renewal: RenewalSnapshot, ac
       throw new Error('RENEWAL_PREDECESSOR_CONTRACT_MISMATCH');
     }
     const linkedSubscriptionId = originalContractDoc.get('subscriptionId');
+    if (linkedSubscriptionId !== undefined && !safeId(linkedSubscriptionId)) {
+      throw new Error('RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED');
+    }
     const linkedSubscriptionRef = typeof linkedSubscriptionId === 'string' && safeId(linkedSubscriptionId)
       ? adminDb.doc(`stores/${renewal.storeId}/subscriptions/${linkedSubscriptionId}`) : null;
     const linkedSubscriptionDoc = linkedSubscriptionRef ? await tx.get(linkedSubscriptionRef) : null;
