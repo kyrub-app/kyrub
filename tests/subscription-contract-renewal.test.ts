@@ -170,7 +170,9 @@ test('Pix contract activation rechecks current seller after provider verificatio
 test('new Pix checkout fails closed when predecessor has no canonical subscription entitlement', () => {
   const preparation = readFileSync('server/payments/prepaidRenewalCheckoutPreparation.ts', 'utf8');
   const checkout = readFileSync('server/payments/prepaidRenewalPixCheckout.ts', 'utf8');
-  assert.match(checkout, /prepareAuthenticatedPrepaidRenewalPixWithRecipient\(input\)/);
+  const existingAttemptRecovery = checkout.indexOf('return reconcileAuthenticatedPrepaidRenewalPix(input);');
+  const newChargePreflight = checkout.indexOf('await prepareAuthenticatedPrepaidRenewalPixWithRecipient(input)');
+  assert.ok(existingAttemptRecovery >= 0 && newChargePreflight > existingAttemptRecovery);
   assert.match(preparation, /if \(!input\.readOnlyRecovery\)/);
   assert.match(preparation, /prepaidSubscriptionContracts\/\$\{proposal\.previousContractId\}/);
   assert.match(preparation, /predecessor\.get\('subscriptionId'\)/);
