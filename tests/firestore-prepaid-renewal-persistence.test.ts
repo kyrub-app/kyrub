@@ -28,6 +28,14 @@ const seed = async (storeId: string, previousContractId: string, overrides: Reco
   return { customerId, productId };
 };
 
+const seedBoundPixPredecessor = async (storeId: string, previousContractId: string) => {
+  const subscriptionId = 'subscription-' + previousContractId;
+  const { customerId, productId } = await seed(storeId, previousContractId, { subscriptionId });
+  await adminDb.doc(`stores/${storeId}/subscriptions/${subscriptionId}`).set({
+    id: subscriptionId, storeId, buyerId: customerId, productId,
+  });
+};
+
 const renewal = (storeId: string, previousContractId: string, paymentId: string) => ({
   contractId: 'renewed-' + previousContractId,
   previousContractId,
@@ -385,7 +393,7 @@ test('Firestore: Pix binding is rechecked atomically before creating successor',
   const proposalId = 'f'.repeat(64);
   const paymentId = '123456789';
   const approvedAt = '2027-01-02T00:10:00.000Z';
-  await seed(storeId, previousContractId);
+  await seedBoundPixPredecessor(storeId, previousContractId);
   const next = renewal(storeId, previousContractId, paymentId);
   const proposal = {
     storeId, customerId: next.customerId, previousContractId,
@@ -439,7 +447,7 @@ test('Firestore: canonical store proposal binds to distinct verified owner OAuth
   const proposalId = 'f'.repeat(64);
   const paymentId = '123456791';
   const approvedAt = '2027-01-02T00:10:00.000Z';
-  await seed(storeId, previousContractId);
+  await seedBoundPixPredecessor(storeId, previousContractId);
   const next = renewal(storeId, previousContractId, paymentId);
   const proposal = {
     storeId, customerId: next.customerId, previousContractId,
@@ -494,7 +502,7 @@ test('Firestore: disconnected or rotated seller cannot atomically activate Pix r
   const proposalId = '9'.repeat(64);
   const paymentId = '123456790';
   const approvedAt = '2027-01-02T00:10:00.000Z';
-  await seed(storeId, previousContractId);
+  await seedBoundPixPredecessor(storeId, previousContractId);
   const next = renewal(storeId, previousContractId, paymentId);
   const proposal = {
     storeId, customerId: next.customerId, previousContractId,
