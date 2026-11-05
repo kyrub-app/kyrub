@@ -18,6 +18,7 @@ const mock = (name: string, input: unknown) => {
   if (name === 'recordPrepaidRenewalWithVerifiedSources') return simulatedReconcileStatus;
   if (name === 'createOwnerAuthorizedPrepaidRenewalProposal') return { proposalId: 'mock-proposal' };
   if (name === 'acceptPrepaidRenewalWithFirebaseAuth') return 'accepted';
+  if (name === 'checkoutAuthenticatedPrepaidRenewalPix' || name === 'reconcileAuthenticatedPrepaidRenewalPix') return { state: 'awaiting_payment', paymentId: '123456', pix: { qrCode: 'PIX', expiresAt: '2027-01-01T00:00:00Z' } };
   throw new Error('UNEXPECTED_MOCK_CALL:' + name);
 };
 
@@ -71,6 +72,28 @@ const invoke = async (op: string, method: string, requestBody: unknown, authoriz
   await handler({ method, query: { op }, headers: { authorization }, body: requestBody }, response);
   return state;
 };
+
+test('actual renewal checkout and status routes accept only proposal locator and disable caching', async () => {
+  for (const op of ['merchant.prepaid-renewal.checkout', 'merchant.prepaid-renewal.payment-status']) {
+    for (const extra of [{ paymentId: '123' }, { amountMinor: 1 }, { buyerId: 'other' }, { sellerToken: 'untrusted' }]) {
+      assert.equal((await invoke(op, 'POST', { storeId: 'store-a', proposalId, ...extra })).status, 400);
+      assert.equal(calls.length, 0);
+    }
+    assert.equal((await invoke(op, 'GET', { storeId: 'store-a', proposalId })).status, 405);
+    const result = await invoke(op, 'POST', { storeId: 'store-a', proposalId });
+    assert.equal(result.status, 200); assert.equal(result.headers['cache-control'], 'no-store, max-age=0');
+    assert.equal(calls[0].name, op.endsWith('checkout') ? 'checkoutAuthenticatedPrepaidRenewalPix' : 'reconcileAuthenticatedPrepaidRenewalPix');
+    assert.deepEqual(calls[0].input, { authorization: 'Bearer test', storeId: 'store-a', proposalId });
+  }
+});
+
+test('actual checkout route returns disabled rollout gate as service unavailable', async () => {
+  simulatedFailure = new Error('RENEWAL_PIX_CHECKOUT_DISABLED');
+  try {
+    const result = await invoke('merchant.prepaid-renewal.checkout', 'POST', { storeId: 'store-a', proposalId });
+    assert.equal(result.status, 503); assert.equal((result.body as { code: string }).code, 'RENEWAL_PIX_CHECKOUT_DISABLED');
+  } finally { simulatedFailure = null; }
+});
 
 test('actual API route rejects malformed and client-controlled payment data before any service call', async () => {
   const result = await invoke('merchant.prepaid-renewal.reconcile', 'POST', { ...body, amountMinor: 100 });

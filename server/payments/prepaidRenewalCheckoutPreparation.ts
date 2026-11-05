@@ -5,6 +5,7 @@ import { buildPrepaidRenewalPixRequest } from './prepaidRenewalPixRequest.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { resolvePrepaidRenewalRecipientBinding } from './prepaidRenewalRecipientBinding.js';
 import { prepaidRenewalPixExpiryFromAcceptance } from './prepaidRenewalPixExpiry.js';
+import { createHash } from 'node:crypto';
 
 /**
  * Read-only authenticated checkout preparation. Does not contact Mercado Pago
@@ -14,6 +15,8 @@ export const prepareAuthenticatedPrepaidRenewalPixWithRecipient = async (input: 
   authorization: string | null | undefined;
   storeId: string;
   proposalId: string;
+  /** Reconstruct only a persisted request for provider GET/search; never authorizes a POST. */
+  readOnlyRecovery?: boolean;
 }) => {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.storeId) ||
       !/^[a-f0-9]{64}$/.test(input.proposalId)) {
@@ -47,6 +50,39 @@ export const prepareAuthenticatedPrepaidRenewalPixWithRecipient = async (input: 
     storedSellerCredentialScopeId: data.sellerCredentialScopeId,
     authority,
   });
+  if (input.readOnlyRecovery) {
+    const attemptDoc = await adminDb.doc(
+      `stores/${input.storeId}/prepaidRenewalPixAttempts/${input.proposalId}`,
+    ).get();
+    const attempt = attemptDoc.data();
+    if (attempt?.requestBody !== undefined) {
+      let payload: Record<string, unknown>;
+      try { payload = JSON.parse(attempt.requestBody); }
+      catch { throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT'); }
+      if (!payload || typeof payload !== 'object' || Array.isArray(payload)) throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
+      const metadata = payload?.metadata as Record<string, unknown> | undefined;
+      if (typeof attempt.requestBody !== 'string' ||
+          attempt.storeId !== input.storeId || attempt.proposalId !== input.proposalId ||
+          attempt.status !== 'reserved' ||
+          attempt.requestDigest !== createHash('sha256').update(attempt.requestBody).digest('hex') ||
+          attempt.idempotencyKey !== `prepaid-renewal-${input.proposalId}` ||
+          payload.transaction_amount !== proposal.totalDueMinor / 100 ||
+          payload.payment_method_id !== 'pix' ||
+          payload.external_reference !== data.paymentExternalReference ||
+          metadata?.kyrub_store_id !== input.storeId ||
+          metadata?.kyrub_prepaid_renewal_proposal_id !== input.proposalId ||
+          payload.date_of_expiration !== attempt.expiresAt ||
+          attempt.expiresAt !== new Date(Date.parse(acceptance.acceptedAt) + 30 * 60_000).toISOString()) {
+        throw new Error('RENEWAL_PIX_RECOVERY_CONFLICT');
+      }
+      return { recipient, request: {
+        path: '/v1/payments' as const,
+        init: { method: 'POST' as const,
+          headers: { 'X-Idempotency-Key': `prepaid-renewal-${input.proposalId}` },
+          body: attempt.requestBody as string },
+      } };
+    }
+  }
   const request = buildPrepaidRenewalPixRequest({
     storeId: input.storeId,
     proposalId: input.proposalId,

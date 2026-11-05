@@ -12,7 +12,8 @@ export const mapPrepaidRenewalHttpError = (error: unknown): {
     return { status: error.status, body: { error: error.message, code: error.code } };
   }
   const code = error instanceof Error ? error.message : '';
-  const status = code === 'RENEWAL_SELLER_NOT_AUTHORIZED' ? 403
+  const status = code === 'RENEWAL_PIX_CHECKOUT_DISABLED' ? 503
+    : code === 'RENEWAL_SELLER_NOT_AUTHORIZED' ? 403
     : code === 'RENEWAL_PROPOSAL_NOT_FOUND' ||
       code === 'RENEWAL_PREVIOUS_CONTRACT_NOT_FOUND' ||
       code === 'RENEWAL_PRODUCT_NOT_FOUND' ? 404
@@ -25,7 +26,8 @@ export const mapPrepaidRenewalHttpError = (error: unknown): {
   return {
     status,
     body: {
-      error: status === 403 ? 'A operação exige o proprietário da loja.'
+      error: status === 503 ? 'O checkout Pix de renovação ainda não foi liberado.'
+        : status === 403 ? 'A operação exige o proprietário da loja.'
         : status === 404 ? 'A proposta, contrato ou produto não foi encontrado.'
         : status === 400 ? 'Os dados da renovação são inválidos.'
         : status === 422 ? 'O pagamento não foi confirmado para esta renovação.'

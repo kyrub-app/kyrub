@@ -6,6 +6,8 @@ export type PrepaidRenewalPixAttempt = {
   storeId: string;
   idempotencyKey: string;
   requestDigest: string;
+  /** Immutable server request retained for GET-only recovery after expiry/email changes. */
+  requestBody?: string;
   expiresAt: string;
   status: 'reserved';
   /** Persisted execution gate; legacy attempts without this field fail closed. */

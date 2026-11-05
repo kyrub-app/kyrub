@@ -20,7 +20,7 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
     throw new Error('RENEWAL_PIX_PAYMENT_BINDING_INVALID');
   }
   const authority = input.sellerAuthority;
-  if (!authority || authority.credentialScopeId !== input.storeId ||
+  if (!authority || !/^[a-zA-Z0-9_-]{1,128}$/.test(authority.credentialScopeId) ||
       !/^\d+$/.test(authority.externalAccountId)) {
     throw new Error('RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED');
   }
@@ -31,7 +31,7 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
     const storeRef = adminDb.doc(`stores/${input.storeId}`);
     const primaryRef = adminDb.doc(`users/${input.storeId}/stores/${input.storeId}`);
     const connectionRef = adminDb.doc(
-      `stores/${input.storeId}/paymentProviderConnections/mercado_pago`
+      `stores/${authority.credentialScopeId}/paymentProviderConnections/mercado_pago`
     );
     const [storeSnapshot, primarySnapshot, connectionSnapshot] = await Promise.all([
       tx.get(storeRef), tx.get(primaryRef), tx.get(connectionRef),
@@ -39,14 +39,14 @@ export const bindCreatedPrepaidRenewalPixPaymentId = async (input: {
     const store = storeSnapshot.data();
     const primary = primarySnapshot.data();
     const identityMatches = store
-      ? store.ownerId === input.storeId &&
-        (store.legacyTenantId || store.ownerId) === input.storeId
+      ? store.ownerId === authority.credentialScopeId &&
+        (store.legacyTenantId || store.ownerId) === authority.credentialScopeId
       : primary?.id === input.storeId &&
-        primary?.ownerId === input.storeId &&
-        (!primary.legacyTenantId || primary.legacyTenantId === input.storeId);
+        primary?.ownerId === authority.credentialScopeId &&
+        (!primary.legacyTenantId || primary.legacyTenantId === authority.credentialScopeId);
     const connection = connectionSnapshot.data();
     if (!identityMatches || connection?.provider !== 'mercado_pago' ||
-        connection.storeId !== input.storeId ||
+        connection.storeId !== authority.credentialScopeId ||
         connection.status !== 'connected' ||
         connection.externalAccountId !== authority.externalAccountId) {
       throw new Error('RENEWAL_PIX_PAYMENT_BINDING_SELLER_CHANGED');
