@@ -147,7 +147,8 @@ export default async function handler(
     }
     response.setHeader('cache-control', 'no-store, max-age=0');
     const billing = loadPaidPlanBillingAvailability();
-    response.status(200).json({ ...billing, pixAvailable: billing.available && process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true' });
+    response.status(200).json({ ...billing, pixAvailable: billing.available && process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true' &&
+      /^\d+$/.test(process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID?.trim() || '') });
     return;
   }
 
@@ -773,7 +774,7 @@ export default async function handler(
     if (operation.startsWith('official.prepaid.') || (error instanceof Error && error.message.startsWith('OFFICIAL_PIX_'))) {
       const code = error instanceof Error && /^OFFICIAL_PIX_[A-Z_]+$/.test(error.message) ? error.message : 'OFFICIAL_PIX_UNAVAILABLE';
       const unauthorized = error instanceof Error && /AUTH_REQUIRED|id-token/.test(error.message);
-      response.status(unauthorized ? 401 : code === 'OFFICIAL_PIX_DISABLED' || code === 'OFFICIAL_PIX_NOT_CONFIGURED' ? 503 : 409)
+      response.status(unauthorized ? 401 : ['OFFICIAL_PIX_DISABLED', 'OFFICIAL_PIX_NOT_CONFIGURED', 'OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED'].includes(code) ? 503 : 409)
         .json({ error: unauthorized ? 'Entre na sua conta para continuar.' : 'Não foi possível concluir a contratação oficial. Consulte a situação antes de tentar novamente.', code });
       return;
     }

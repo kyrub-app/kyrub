@@ -19,7 +19,9 @@ export const verifyOfficialPlanPixSignature = (headers: Record<string, string | 
   verifyMercadoPagoWebhookSignatureWithSecret({ headers, dataId }, process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET || '');
 
 export const officialPlanPixAccount = async (): Promise<string> => {
+  const expected = process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID?.trim() || '';
+  if (!/^\d+$/.test(expected)) throw new Error('OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
   const account = await officialPlanPixRequest('/users/me');
-  if (!/^\d+$/.test(String(account.id))) throw new Error('OFFICIAL_PIX_ACCOUNT_INVALID');
+  if (String(account.id) !== expected) throw new Error('OFFICIAL_PIX_ACCOUNT_INVALID');
   return String(account.id);
 };

@@ -10,17 +10,25 @@ test('platform transport never uses merchant credentials and never logs provider
   try {
     process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN = 'platform-test-token';
     process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET = 'platform-test-secret';
+    process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
     process.env.MERCADO_PAGO_ACCESS_TOKEN = 'unrelated-merchant-token';
     const calls: Array<{ url: string; init: RequestInit }> = [];
     globalThis.fetch = (async (url: any, init: any) => { calls.push({ url: String(url), init }); return new Response(JSON.stringify({ id: 42 }), { status: 200 }); }) as typeof fetch;
     assert.equal(await officialPlanPixAccount(), '42');
     assert.equal(calls[0].url, 'https://api.mercadopago.com/users/me');
     assert.equal((calls[0].init.headers as Record<string, string>).authorization, 'Bearer platform-test-token');
+    process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '99';
+    await assert.rejects(officialPlanPixAccount(), /ACCOUNT_INVALID/);
+    process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
     await assert.rejects(officialPlanPixRequest('https://other.example/v1/payments'), /PATH_INVALID/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
+    delete process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID;
+    await assert.rejects(officialPlanPixAccount(), /ACCOUNT_NOT_CONFIGURED/);
+    assert.equal(calls.length, 2);
+    process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
     delete process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN;
     await assert.rejects(officialPlanPixAccount(), /NOT_CONFIGURED/);
-    assert.equal(calls.length, 1);
+    assert.equal(calls.length, 2);
   } finally { globalThis.fetch = originalFetch; process.env = old; }
 });
 

@@ -255,3 +255,12 @@ test('initial prepaid API sanitizes failures and exposes the disabled creation g
     }
   } finally { simulatedFailure = null; }
 });
+
+test('official Pix without a designated platform receiver stays unavailable', async () => {
+  try {
+    simulatedFailure = new Error('OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
+    const result = await invoke('official.prepaid.checkout', 'POST', { checkoutId: 'c'.repeat(64) });
+    assert.equal(result.status, 503);
+    assert.equal((result.body as any).code, 'OFFICIAL_PIX_ACCOUNT_NOT_CONFIGURED');
+  } finally { simulatedFailure = null; }
+});

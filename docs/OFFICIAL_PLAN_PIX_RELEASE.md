@@ -12,6 +12,10 @@ This change is prepared for owner approval. Do not merge, deploy or enable real-
 
 ## Platform configuration
 
+Set `KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID` to the exact numeric platform account ID approved by the owner. It is a non-secret identifier. The authenticated `/users/me` result must match before a charge or reconciliation; a missing or different receiver fails closed. No account ID is seeded by deployment.
+
+The Firestore concurrency proof runs with `FIRESTORE_EMULATOR_HOST=127.0.0.1:8181 node --test --import tsx tests/firestore-official-plan-pix.test.ts`. It refuses a non-local host and uses only `demo-kyrub-pix`, with a simulated provider. Four concurrent attempts must produce one provider POST; concurrent confirmations must preserve one contract, payment, financial capture, point entry, XP entry, achievement and benefit cycle.
+
 Use existing server-only `KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN` and `KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET`, scoped to Production. Never copy merchant OAuth credentials into platform billing. `/users/me` identifies the platform collector; every payment GET independently checks that collector, BRL, Pix, external reference, exact cents and Production `live_mode=true`.
 
 `KYRUB_PLAN_BILLING_WEBHOOK_URL` must identify the HTTPS production application. The adapter constructs `/api/plan-control?op=official.prepaid.webhook&checkoutId=...`; use the same platform application's webhook secret and enable Mercado Pago payment notifications. Missing/incorrect signatures cannot activate a contract. Confirm delivery on the first owner-executed purchase, not by creating a live payment from an engineering script.
