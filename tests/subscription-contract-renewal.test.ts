@@ -200,3 +200,12 @@ test('seller proposal revalidates canonical entitlement inside its Firestore tra
   assert.ok(gate >= 0 && write > gate, 'entitlement must be verified before persisting proposal');
   assert.match(transaction.slice(gate, write), /currentSubscription\.data\(\)/);
 });
+
+
+test('verified Pix renewal cannot persist an unbound successor after checkout', () => {
+  const source = readFileSync('server/payments/persistedPrepaidRenewal.ts', 'utf8');
+  const guard = source.indexOf('if (verifiedPixPaymentApprovedAt && !safeId(linkedSubscriptionId))');
+  const create = source.indexOf('tx.create(contractRef, linkedEntitlement');
+  assert.ok(guard >= 0 && create > guard, 'verified Pix binding must be checked before contract creation');
+  assert.match(source.slice(guard, create), /RENEWAL_ENTITLEMENT_BINDING_NOT_VERIFIED/);
+});
