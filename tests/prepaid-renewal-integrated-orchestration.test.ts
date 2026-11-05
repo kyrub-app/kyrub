@@ -101,11 +101,20 @@ const { recordPrepaidRenewalWithVerifiedSources } = await import(
       };
       if (path.endsWith('/prepaidRenewalProposals/' + proposalId))
         return { exists: true, data: () => data };
+      if (path.endsWith('/subscriptions/canonical-subscription')) return {
+        exists: true,
+        data: () => ({ id: 'canonical-subscription', storeId, buyerId, productId: 'subscription' }),
+      };
       if (path.endsWith('/prepaidSubscriptionContracts/old-contract'))
-        return { exists: true, get: (field: string) => ({
-          storeId, contractId: 'old-contract', customerId: buyerId,
-          productId: 'subscription', months: 3, expiresAt: '2027-01-01T00:00:00.000Z',
-        } as Record<string, unknown>)[field] };
+        return { exists: true,
+          data: () => ({ storeId, contractId: 'old-contract', customerId: buyerId,
+            productId: 'subscription', subscriptionId: 'canonical-subscription' }),
+          get: (field: string) => ({
+            storeId, contractId: 'old-contract', customerId: buyerId,
+            productId: 'subscription', subscriptionId: 'canonical-subscription',
+            months: 3, expiresAt: '2027-01-01T00:00:00.000Z',
+          } as Record<string, unknown>)[field],
+        };
       throw new Error('UNEXPECTED_DOC:' + path);
     }
     if (name === 'provider') {
@@ -303,7 +312,7 @@ test('authenticated renewal checkout preparation uses accepted Firestore amount 
   assert.equal(body.external_reference, reference);
   assert.equal(body.transaction_amount, proposal.totalDueMinor / 100);
   assert.equal(body.payer.email, 'buyer@example.com');
-  assert.deepEqual(calls, ['auth', 'load', 'get']);
+  assert.deepEqual(calls, ['auth', 'load', 'get', 'get', 'get']);
   assert.equal(calls.includes('provider'), false);
 });
 
@@ -317,5 +326,5 @@ test('authenticated renewal checkout preparation blocks wrong buyer and tampered
   await assert.rejects(prepareAuthenticatedPrepaidRenewalPix({
     authorization: 'Bearer valid', storeId, proposalId,
   }), /RENEWAL_RECIPIENT_AUTHORITY_MISMATCH/);
-  assert.deepEqual(calls, ['auth', 'load', 'get']);
+  assert.deepEqual(calls, ['auth', 'load', 'get', 'get', 'get']);
 });
