@@ -18,6 +18,7 @@ import {
   loadPaidPlanBillingAvailability,
   reconcileOwnPaidPlanSubscription,
 } from '../server/admin/paidPlanSubscriptionService.js';
+import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
 import { quoteOfficialPlanPix, acceptOfficialPlanPix, checkoutOfficialPlanPix, reconcileOfficialPlanPix, handleOfficialPlanPixWebhook } from '../server/payments/officialPlanPixCheckout.js';
@@ -147,8 +148,7 @@ export default async function handler(
     }
     response.setHeader('cache-control', 'no-store, max-age=0');
     const billing = loadPaidPlanBillingAvailability();
-    response.status(200).json({ ...billing, pixAvailable: billing.available && process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true' &&
-      /^\d+$/.test(process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID?.trim() || '') });
+    response.status(200).json({ ...billing, pixAvailable: billing.available && process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true' });
     return;
   }
 
@@ -283,6 +283,25 @@ export default async function handler(
         response.status(200).json(
           await loadPlanManagementSnapshot(authorization)
         );
+        return;
+      }
+      case 'admin.official-store.billing-preflight': {
+        if (method !== 'GET') { methodNotAllowed(response); return; }
+        // Authenticate as Super Admin before touching any protected provider credential.
+        await loadOfficialStoreSnapshot(authorization);
+        try {
+          const receiverId = await officialPlanPixAccount();
+          response.status(200).json({
+            ok: true,
+            accountMatched: true,
+            receiverId,
+            checkoutEnabled: process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED === 'true',
+          });
+        } catch (error) {
+          const code = error instanceof Error && /^[A-Z][A-Z0-9_]+$/.test(error.message)
+            ? error.message : 'OFFICIAL_PIX_PREFLIGHT_UNAVAILABLE';
+          response.status(409).json({ ok: false, accountMatched: false, code });
+        }
         return;
       }
       case 'admin.official-store.snapshot': {
