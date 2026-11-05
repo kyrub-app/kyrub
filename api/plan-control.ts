@@ -1,3 +1,4 @@
+import { handleInitialPrepaidSubscriptionWebhook, quoteInitialPrepaidSubscription, acceptInitialPrepaidSubscription, checkoutInitialPrepaidSubscription, reconcileInitialPrepaidSubscription } from '../server/payments/initialPrepaidSubscriptionCheckout.js';
 import {
   createCouponCampaign,
   loadPlanManagementSnapshot,
@@ -49,6 +50,13 @@ import {
 
 import { authenticateConsultantRequest } from '../server/ai/consultantAuth.js';
 import { quotePersistedMerchantSubscription } from '../server/payments/persistedMerchantSubscriptionQuote.js';
+import { acceptPrepaidRenewalWithFirebaseAuth } from '../server/payments/prepaidRenewalAcceptance.js';
+import { recordPrepaidRenewalWithVerifiedSources } from '../server/payments/prepaidRenewalActivation.js';
+import { handlePrepaidRenewalReconciliation } from '../server/payments/prepaidRenewalHttpBoundary.js';
+import { mapPrepaidRenewalHttpError } from '../server/payments/prepaidRenewalHttpErrors.js';
+import { createOwnerAuthorizedPrepaidRenewalProposal } from '../server/payments/prepaidRenewalProposalCreation.js';
+import { listBuyerPrepaidRenewalProposals, listOwnerPrepaidRenewalContracts } from '../server/payments/prepaidRenewalContractListing.js';
+import { checkoutAuthenticatedPrepaidRenewalPix, reconcileAuthenticatedPrepaidRenewalPix } from '../server/payments/prepaidRenewalPixCheckout.js';
 import { OfficialPlanCheckoutRouteError } from '../server/admin/officialPlanCheckoutRouting.js';
 import { resolvePersistedProductCheckoutRoute } from '../server/admin/officialPlanProductLookup.js';
 
@@ -166,6 +174,22 @@ export default async function handler(
     return;
   }
 
+  if (operation === 'merchant.prepaid-initial.webhook') {
+    response.setHeader('cache-control', 'no-store, max-age=0');
+    if (method !== 'POST') { methodNotAllowed(response); return; }
+    try {
+      const result = await handleInitialPrepaidSubscriptionWebhook({
+        headers: request.headers,
+        dataId: webhookDataId(body, request.query),
+        storeId: String(request.query.storeId ?? ''),
+        checkoutId: String(request.query.checkoutId ?? ''),
+      });
+      response.status(200).json(result);
+    } catch {
+      response.status(401).json({ error: 'Webhook inválido.' });
+    }
+    return;
+  }
   if (operation === 'merchant.subscription.webhook') {
     if (method !== 'POST') {
       methodNotAllowed(response);
@@ -397,6 +421,153 @@ export default async function handler(
         response.status(201).json(await createAuthorizedStoreSubscription(authorization, body));
         return;
       }
+      case 'merchant.prepaid-renewal.my-proposals': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (Object.keys(body).some(key => key !== 'storeId') ||
+            typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId)) {
+          response.status(400).json({
+            error: 'Informe uma loja válida.',
+            code: 'INVALID_RENEWAL_STORE_ID',
+          });
+          return;
+        }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await listBuyerPrepaidRenewalProposals({
+          authorization,
+          storeId: body.storeId,
+        }));
+        return;
+      }
+      case 'merchant.prepaid-renewal.contracts': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (Object.keys(body).some(key => key !== 'storeId') ||
+            typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId)) {
+          response.status(400).json({
+            error: 'Informe uma loja válida.',
+            code: 'INVALID_RENEWAL_STORE_ID',
+          });
+          return;
+        }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await listOwnerPrepaidRenewalContracts({
+          authorization,
+          storeId: body.storeId,
+        }));
+        return;
+      }
+      case 'merchant.prepaid-renewal.propose': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        if (Object.keys(body).some(key => !['storeId', 'previousContractId'].includes(key)) ||
+            typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.previousContractId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.previousContractId)) {
+          response.status(400).json({
+            error: 'Informe a loja e o contrato anterior. Valores são obtidos do catálogo.',
+            code: 'INVALID_RENEWAL_PROPOSAL_REQUEST',
+          });
+          return;
+        }
+        const proposal = await createOwnerAuthorizedPrepaidRenewalProposal({
+          authorization,
+          storeId: body.storeId,
+          previousContractId: body.previousContractId,
+        });
+        response.status(201).json(proposal);
+        return;
+      }
+      case 'merchant.prepaid-renewal.accept': {
+        if (method !== 'POST') {
+          methodNotAllowed(response);
+          return;
+        }
+        // This endpoint records explicit acceptance only; it never creates
+        // checkout, verifies payments or activates entitlements.
+        if (Object.keys(body).some(key =>
+          !['storeId', 'proposalId', 'acceptedTotalMinor'].includes(key)
+        ) || typeof body.storeId !== 'string' ||
+            !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.proposalId !== 'string' ||
+            !/^[a-f0-9]{64}$/.test(body.proposalId) ||
+            !Number.isSafeInteger(body.acceptedTotalMinor) ||
+            (body.acceptedTotalMinor as number) <= 0) {
+          response.status(400).json({
+            error: 'Informe a proposta e o valor integral aceito.',
+            code: 'INVALID_RENEWAL_ACCEPTANCE_REQUEST',
+          });
+          return;
+        }
+        const result = await acceptPrepaidRenewalWithFirebaseAuth({
+          authorization,
+          storeId: body.storeId,
+          proposalId: body.proposalId,
+          acceptedTotalMinor: body.acceptedTotalMinor as number,
+        });
+        response.status(200).json({ status: result });
+        return;
+      }
+      case 'merchant.prepaid-renewal.reconcile': {
+        await handlePrepaidRenewalReconciliation(
+          { method, body, authorization },
+          response,
+          recordPrepaidRenewalWithVerifiedSources,
+        );
+        return;
+      }
+      case 'merchant.prepaid-renewal.checkout':
+      case 'merchant.prepaid-renewal.payment-status': {
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        if (Object.keys(body).some(key => !['storeId', 'proposalId'].includes(key)) ||
+            typeof body.storeId !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(body.storeId) ||
+            typeof body.proposalId !== 'string' || !/^[a-f0-9]{64}$/.test(body.proposalId)) {
+          response.status(400).json({ error: 'Informe a loja e a proposta aceita.', code: 'INVALID_RENEWAL_CHECKOUT_REQUEST' });
+          return;
+        }
+        const input = { authorization, storeId: body.storeId, proposalId: body.proposalId };
+        const result = operation === 'merchant.prepaid-renewal.checkout'
+          ? await checkoutAuthenticatedPrepaidRenewalPix(input)
+          : await reconcileAuthenticatedPrepaidRenewalPix(input);
+        response.status(200).json(result);
+        return;
+      }
+      case 'merchant.prepaid-initial.quote':
+      case 'merchant.prepaid-initial.accept':
+      case 'merchant.prepaid-initial.checkout':
+      case 'merchant.prepaid-initial.payment-status': {
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        const allowed = operation.endsWith('.quote')
+          ? ['storeId', 'productId', 'selectedMonths']
+          : operation.endsWith('.accept')
+            ? ['storeId', 'checkoutId', 'acceptedTotalMinor']
+            : ['storeId', 'checkoutId'];
+        if (Object.keys(body).some(key => !allowed.includes(key))) {
+          response.status(400).json({ error: 'Dados inválidos.' });
+          return;
+        }
+        const input = { authorization, ...body } as any;
+        const result = operation.endsWith('.quote')
+          ? await quoteInitialPrepaidSubscription({ ...input, months: body.selectedMonths })
+          : operation.endsWith('.accept')
+            ? await acceptInitialPrepaidSubscription(input)
+            : operation.endsWith('.checkout')
+              ? await checkoutInitialPrepaidSubscription(input)
+              : await reconcileInitialPrepaidSubscription(input);
+        response.status(200).json(result);
+        return;
+      }
       case 'merchant.subscription.quote': {
         if (method !== 'POST') {
           methodNotAllowed(response);
@@ -552,6 +723,19 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'merchant.prepaid-renewal.my-proposals' ||
+        operation === 'merchant.prepaid-renewal.contracts' ||
+        operation === 'merchant.prepaid-renewal.propose' ||
+        operation === 'merchant.prepaid-renewal.accept' ||
+        operation === 'merchant.prepaid-renewal.checkout' ||
+        operation === 'merchant.prepaid-renewal.payment-status' ||
+        operation === 'merchant.prepaid-renewal.reconcile') {
+      const mapped = mapPrepaidRenewalHttpError(error);
+      if (mapped) {
+        response.status(mapped.status).json(mapped.body);
+        return;
+      }
+    }
     if (operation === 'merchant.subscription.quote') {
       if (error instanceof OfficialPlanCheckoutRouteError) {
         const status = error.code === 'PRODUCT_NOT_FOUND' ? 404
@@ -580,6 +764,16 @@ export default async function handler(
         });
         return;
       }
+    }
+    if (operation.startsWith('merchant.prepaid-initial.')) {
+      const status = error instanceof Error && 'status' in error && (error as any).status === 401
+        ? 401 : error instanceof Error && error.message === 'INITIAL_PREPAID_CHECKOUT_DISABLED' ? 503 : 409;
+      response.status(status).json({
+        error: 'Não foi possível concluir a contratação pré-paga.',
+        code: error instanceof Error && /^(INITIAL_PREPAID_|INVALID_INITIAL_PREPAID_)[A-Z_]+$/.test(error.message)
+          ? error.message : 'INITIAL_PREPAID_UNAVAILABLE',
+      });
+      return;
     }
     const mapped = operation.startsWith('merchant.subscription.benefit')
       ? mapStoreSubscriptionBenefitError(error)

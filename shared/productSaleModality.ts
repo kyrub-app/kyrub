@@ -21,7 +21,7 @@ export interface ProductSubscriptionTerms {
   schemaVersion: 1;
   billingInterval: SubscriptionBillingInterval;
   benefit: SubscriptionBenefit;
-  autoRenew: true;
+  autoRenew: boolean;
 }
 
 export interface ProductSaleModality {
@@ -55,7 +55,11 @@ export const buildSubscriptionSaleModality = (input: {
   billingIntervalCount?: number;
   benefitKind: SubscriptionBenefitKind;
   unitsPerCycle?: number | null;
+  autoRenew?: boolean;
 }): ProductSaleModality => {
+  if (input.autoRenew !== undefined && typeof input.autoRenew !== 'boolean') {
+    throw new Error('PRODUCT_SUBSCRIPTION_AUTO_RENEW_INVALID');
+  }
   const count = positiveInteger(input.billingIntervalCount ?? 1);
   if (count === null) {
     throw new Error('PRODUCT_SUBSCRIPTION_INTERVAL_INVALID');
@@ -83,7 +87,7 @@ export const buildSubscriptionSaleModality = (input: {
         kind: input.benefitKind,
         unitsPerCycle,
       },
-      autoRenew: true,
+      autoRenew: input.autoRenew ?? true,
     },
   };
 };
@@ -113,7 +117,7 @@ export const parseProductSaleModality = (
     return null;
   }
   const subscriptionRecord = subscription as Record<string, unknown>;
-  if (subscriptionRecord.schemaVersion !== 1 || subscriptionRecord.autoRenew !== true) {
+  if (subscriptionRecord.schemaVersion !== 1 || typeof subscriptionRecord.autoRenew !== 'boolean') {
     return null;
   }
 
@@ -147,6 +151,7 @@ export const parseProductSaleModality = (
     billingIntervalCount: billingCount,
     benefitKind,
     unitsPerCycle,
+    autoRenew: subscriptionRecord.autoRenew,
   });
 };
 

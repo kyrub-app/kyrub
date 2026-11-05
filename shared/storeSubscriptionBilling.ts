@@ -33,6 +33,11 @@ export interface StoreSubscriptionSnapshot {
   amountMinor: number;
   currency: 'BRL';
   saleModality: ProductSaleModality;
+  /** Prepaid contracts use Pix once; no provider preapproval is created. */
+  collectionMode?: 'recurring' | 'prepaid';
+  startsAt?: string;
+  expiresAt?: string;
+  contractedMonths?: number;
   provider: 'mercado_pago';
   providerSubscriptionId: string;
   providerStatus: StoreSubscriptionProviderStatus;

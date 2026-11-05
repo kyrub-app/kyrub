@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
+import { listMerchantPrepaidRenewalContracts, proposeMerchantPrepaidRenewal } from '../../utils/storeSubscription';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -126,6 +127,11 @@ export default function StoreSubscriptionsWorkspace({
   notify,
 }: StoreSubscriptionsWorkspaceProps) {
   const [summary, setSummary] = useState<StoreSubscriberRegistrySummary | null>(null);
+  const [renewalContracts, setRenewalContracts] = useState<Array<{ id: string; productId: string; customerId: string; months: number; expiresAt: string }>>([]);
+  const [renewalContractId, setRenewalContractId] = useState('');
+  const [renewalProposalId, setRenewalProposalId] = useState('');
+  const [renewalBusy, setRenewalBusy] = useState(false);
+  const [renewalError, setRenewalError] = useState('');
   const [filter, setFilter] = useState<SubscriberFilter>('all');
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(true);
@@ -139,6 +145,16 @@ export default function StoreSubscriptionsWorkspace({
   const [usageNote, setUsageNote] = useState('');
   const [pendingUsageOperationId, setPendingUsageOperationId] = useState('');
   const [consumingBenefit, setConsumingBenefit] = useState(false);
+
+  useEffect(() => {
+    let active = true;
+    void listMerchantPrepaidRenewalContracts({ storeId }).then(result => {
+      if (active) setRenewalContracts(result.contracts);
+    }).catch(error => {
+      if (active) setRenewalError(error instanceof Error ? error.message : 'Não foi possível carregar os contratos pré-pagos.');
+    });
+    return () => { active = false; };
+  }, [storeId]);
 
   const load = async (): Promise<void> => {
     setError('');
@@ -365,6 +381,45 @@ export default function StoreSubscriptionsWorkspace({
         </div>
       </section>
 
+      <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5" aria-label="Renovação de contratos pré-pagos">
+        <h3 className="text-sm font-black text-white">Oferecer renovação</h3>
+        <p className="mt-2 text-xs text-slate-400">Selecione um contrato pré-pago. O servidor verifica o preço e o desconto; o cliente ainda precisará aceitar a proposta e pagar.</p>
+        <form className="mt-3 flex flex-col gap-3 sm:flex-row" onSubmit={async event => {
+          event.preventDefault();
+          if (renewalBusy || !renewalContractId) return;
+          setRenewalBusy(true);
+          setRenewalError('');
+          setRenewalProposalId('');
+          try {
+            const result = await proposeMerchantPrepaidRenewal({ storeId, previousContractId: renewalContractId });
+            setRenewalProposalId(result.proposalId);
+            notify?.('Proposta registrada. Aguardando aceite do cliente.', 'success');
+          } catch (error) {
+            setRenewalError(error instanceof Error ? error.message : 'Não foi possível oferecer a renovação.');
+          } finally {
+            setRenewalBusy(false);
+          }
+        }}>
+          <select aria-label="Contrato pré-pago" required value={renewalContractId}
+            onChange={event => setRenewalContractId(event.target.value)}
+            className="min-h-10 flex-1 rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs text-white">
+            <option value="">Selecione o contrato pré-pago</option>
+            {renewalContracts.map(contract => (
+              <option key={contract.id} value={contract.id}>
+                {contract.productId} · {contract.months} meses · vence {dateLabel(contract.expiresAt)}
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={renewalBusy || !renewalContractId}
+            className="min-h-10 rounded-xl bg-cyan-700 px-4 text-xs font-bold text-white disabled:opacity-50">
+            {renewalBusy ? 'Registrando…' : 'Oferecer renovação'}
+          </button>
+        </form>
+        {renewalContracts.length === 0 && <p className="mt-2 text-xs text-slate-500">Nenhum contrato pré-pago elegível foi listado.</p>}
+        {renewalError && <p role="alert" className="mt-2 text-xs text-red-300">{renewalError}</p>}
+        {renewalProposalId && <p className="mt-2 break-all text-xs text-cyan-300">Proposta criada: {renewalProposalId}. Aguardando aceite; nenhum Pix foi gerado.</p>}
+      </section>
+
       <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4 sm:p-5">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
           <div className="flex gap-2 overflow-x-auto pb-1">
@@ -455,7 +510,9 @@ export default function StoreSubscriptionsWorkspace({
                         <div className="min-w-0">
                           <strong className="block truncate text-[10px] text-slate-200">{subscription.productName}</strong>
                           <span className="mt-0.5 block text-[9px] text-slate-600">
-                            {money.format(subscription.amountMinor / 100)} · a cada {subscription.terms.billingInterval.count} {subscription.terms.billingInterval.unit} · {benefitKindLabel(subscription)}
+                            {subscription.collectionMode === 'prepaid'
+                              ? `${money.format(subscription.amountMinor / 100)} total · ${subscription.contractedMonths} meses · Pix único, sem renovação automática · vigência até ${dateLabel(subscription.expiresAt ?? '')}`
+                              : `${money.format(subscription.amountMinor / 100)} · a cada ${subscription.terms.billingInterval.count} ${subscription.terms.billingInterval.unit}`} · {benefitKindLabel(subscription)}
                           </span>
                         </div>
                         <div className="flex flex-wrap items-center gap-2">

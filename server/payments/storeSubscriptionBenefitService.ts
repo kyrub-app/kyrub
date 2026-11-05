@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { loadVerifiedStoreSubscriptionPrepaidCoverage } from './storeSubscriptionService.js';
 import { authenticateConsultantRequest } from '../ai/consultantAuth.js';
 import {
   parseProductSaleModality,
@@ -53,6 +54,7 @@ interface CanonicalStoreIdentity {
 }
 
 interface BenefitSourceSubscription {
+  collectionMode?: 'prepaid';
   id: string;
   storeId: string;
   ownerUserId: string;
@@ -132,6 +134,7 @@ const loadBenefitSourceSubscription = async (
     providerPaymentStatusDetail: clean(data.providerPaymentStatusDetail),
     paymentConfirmedAt: clean(data.paymentConfirmedAt),
     terms: modality.subscription,
+    ...(data.collectionMode === 'prepaid' ? { collectionMode: 'prepaid' as const } : {}),
   };
   if (
     source.ownerUserId.length === 0 ||
@@ -253,6 +256,78 @@ const assertCycleMatchesSource = (
   }
 };
 
+/** A prepaid payment is represented by a deterministic benefit cycle, not a fake recurring invoice. */
+const reconcilePrepaidBenefitCycle = async (
+  source: BenefitSourceSubscription
+): Promise<StoreSubscriptionBenefitCycle | null> => {
+  if (source.terms.autoRenew || source.state !== 'active') return null;
+  const periods = await adminDb.collection(
+    `stores/${source.storeId}/subscriptions/${source.id}/prepaidPeriods`
+  ).where('state', '==', 'paid').get();
+  const now = Date.now();
+  const verifiedCoverage = source.collectionMode === 'prepaid'
+    ? await loadVerifiedStoreSubscriptionPrepaidCoverage(source, now) : null;
+  if (source.collectionMode === 'prepaid' && !verifiedCoverage?.current) return null;
+  const valid = periods.docs.filter(doc => {
+    const p = record(doc.data());
+    return (!verifiedCoverage || (verifiedCoverage.current?.contractId === doc.id &&
+      verifiedCoverage.current.providerPaymentId === p.providerPaymentId &&
+      verifiedCoverage.current.startsAt === p.startsAt && verifiedCoverage.current.expiresAt === p.expiresAt)) &&
+      p.contractId === doc.id && p.storeId === source.storeId &&
+      p.subscriptionId === source.id && p.buyerId === source.buyerId &&
+      p.productId === source.productId && safeIdentity(p.providerPaymentId) &&
+      Number.isFinite(Date.parse(clean(p.startsAt))) &&
+      Number.isFinite(Date.parse(clean(p.expiresAt))) &&
+      Date.parse(clean(p.startsAt)) <= now && now < Date.parse(clean(p.expiresAt));
+  });
+  if (valid.length > 1) {
+    fail(409, 'SUBSCRIPTION_BENEFIT_PREPAID_PERIOD_OVERLAP', 'Há períodos pré-pagos simultâneos para esta assinatura.');
+  }
+  if (valid.length === 0) return null;
+  const period = record(valid[0].data());
+  const cycleId = `cycle_${hash('prepaid:' + source.storeId + ':' + source.id + ':' + valid[0].id).slice(0, 40)}`;
+  const reference = adminDb.doc(cyclePath(source.storeId, source.id, cycleId));
+  return adminDb.runTransaction(async tx => {
+    const existing = await tx.get(reference);
+    if (existing.exists) {
+      const cycle = parseCycle(existing.data());
+      if (!cycle || cycle.storeId !== source.storeId ||
+          cycle.subscriptionId !== source.id || cycle.buyerId !== source.buyerId ||
+          cycle.productId !== source.productId ||
+          cycle.providerPaymentId !== period.providerPaymentId ||
+          cycle.providerInvoiceId !== `prepaid:${valid[0].id}` ||
+          cycle.billingPeriodStartsAt !== period.startsAt ||
+          cycle.billingPeriodEndsAt !== period.expiresAt ||
+          cycle.benefitKind !== source.terms.benefit.kind ||
+          cycle.grantedUnits !== (source.terms.benefit.kind === 'access' ? null : source.terms.benefit.unitsPerCycle)) {
+        fail(409, 'SUBSCRIPTION_BENEFIT_PREPAID_CYCLE_CONFLICT', 'O ciclo pré-pago não corresponde ao contrato verificado.');
+      }
+      return cycle;
+    }
+    const units = source.terms.benefit.kind === 'access'
+      ? null : positiveInteger(source.terms.benefit.unitsPerCycle);
+    if (source.terms.benefit.kind !== 'access' && units === null) {
+      fail(409, 'SUBSCRIPTION_BENEFIT_UNITS_INVALID', 'O benefício não possui unidades válidas.');
+    }
+    const createdAt = nowIso();
+    const cycle: StoreSubscriptionBenefitCycle = {
+      schemaVersion: STORE_SUBSCRIPTION_BENEFIT_SCHEMA_VERSION,
+      id: cycleId, storeId: source.storeId, subscriptionId: source.id,
+      buyerId: source.buyerId, productId: source.productId, productName: source.productName,
+      benefitKind: source.terms.benefit.kind,
+      providerInvoiceId: `prepaid:${valid[0].id}`,
+      providerPaymentId: clean(period.providerPaymentId),
+      paidAt: clean(period.startsAt),
+      billingPeriodStartsAt: clean(period.startsAt),
+      billingPeriodEndsAt: clean(period.expiresAt),
+      grantedUnits: units, consumedUnits: 0, remainingUnits: units,
+      state: 'available', createdAt, updatedAt: createdAt,
+    };
+    tx.create(reference, cycle);
+    return cycle;
+  });
+};
+
 export const reconcileStoreSubscriptionBenefitCycle = async (
   storeIdInput: unknown,
   subscriptionIdInput: unknown
@@ -261,6 +336,9 @@ export const reconcileStoreSubscriptionBenefitCycle = async (
   const source = await loadBenefitSourceSubscription(store.canonicalStoreId, subscriptionIdInput);
   if (source.ownerUserId !== store.ownerUserId) {
     fail(409, 'SUBSCRIPTION_BENEFIT_OWNER_MISMATCH', 'A assinatura não pertence ao proprietário da loja.');
+  }
+  if (!source.terms.autoRenew) {
+    return reconcilePrepaidBenefitCycle(source);
   }
   if (
     source.state !== 'active' ||
@@ -396,7 +474,11 @@ export const consumeAuthorizedStoreSubscriptionBenefit = async (
       transaction.get(usageRef),
     ]);
     const current = cycleSnapshot.exists ? parseCycle(cycleSnapshot.data()) : null;
-    if (!current || current.providerInvoiceId !== source.providerInvoiceId) {
+    if (!current || (source.terms.autoRenew
+      ? current.providerInvoiceId !== source.providerInvoiceId
+      : !current.providerInvoiceId.startsWith('prepaid:') ||
+        Date.parse(current.billingPeriodStartsAt) > Date.now() ||
+        Date.parse(current.billingPeriodEndsAt) <= Date.now())) {
       fail(409, 'SUBSCRIPTION_BENEFIT_CURRENT_CYCLE_MISMATCH', 'O ciclo atual mudou antes do consumo. Atualize a assinatura e tente novamente.');
     }
 

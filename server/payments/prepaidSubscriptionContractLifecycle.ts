@@ -12,7 +12,7 @@ export interface PrepaidContractLifecycle {
   expiresAt: string;
 }
 
-const addMonthsUtc = (iso: string, months: number): string => {
+export const addMonthsUtc = (iso: string, months: number): string => {
   const start = new Date(iso);
   if (!Number.isFinite(start.getTime()) || !iso.endsWith('Z')) throw new Error('INVALID_PAYMENT_TIMESTAMP');
   const year = start.getUTCFullYear();
@@ -43,4 +43,33 @@ export const activatePrepaidContractAfterVerifiedPayment = (
   const startsAt = new Date(payment.occurredAt).toISOString();
   return { ...contract, state: 'active', providerPaymentId: payment.id,
     paymentConfirmedAt: startsAt, startsAt, expiresAt: addMonthsUtc(startsAt, contract.months) };
+};
+
+/**
+ * Prepaying an extension never forfeits the remaining time on the previous
+ * contract. Expired contracts restart when the *verified* payment is approved.
+ * A payment approved before explicit acceptance is not a valid renewal.
+ */
+export const calculatePrepaidRenewalPeriod = (input: {
+  previousExpiresAt: string;
+  acceptedAt: string;
+  paymentApprovedAt: string;
+  months: ContractTermMonths;
+}): { startsAt: string; expiresAt: string } => {
+  const parseInstant = (value: unknown): number => {
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T/.test(value) ||
+        !(value.endsWith('Z') || /[+-]\d{2}:\d{2}$/.test(value))) {
+      throw new Error('INVALID_RENEWAL_PERIOD_TIMESTAMP');
+    }
+    const timestamp = Date.parse(value);
+    if (!Number.isFinite(timestamp)) throw new Error('INVALID_RENEWAL_PERIOD_TIMESTAMP');
+    return timestamp;
+  };
+  if (![3, 6, 12].includes(input.months)) throw new Error('INVALID_PREPAID_CONTRACT_TERM');
+  const expiry = parseInstant(input.previousExpiresAt);
+  const acceptance = parseInstant(input.acceptedAt);
+  const payment = parseInstant(input.paymentApprovedAt);
+  if (payment < acceptance) throw new Error('RENEWAL_PAYMENT_PRECEDES_ACCEPTANCE');
+  const startsAt = new Date(Math.max(expiry, payment)).toISOString();
+  return { startsAt, expiresAt: addMonthsUtc(startsAt, input.months) };
 };
