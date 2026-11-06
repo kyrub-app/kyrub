@@ -66,6 +66,19 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_TARGET_MISMATCH');
     }
 
+    // Do not settle an order using a paid intent for a different amount.
+    // Compare integer cents to avoid floating-point representation errors.
+    const orderTotalCents = Math.round(order.total * 100);
+    const intentAmountCents = Math.round(intent.amount * 100);
+    if (
+      !Number.isSafeInteger(orderTotalCents) ||
+      !Number.isSafeInteger(intentAmountCents) ||
+      orderTotalCents < 0 ||
+      orderTotalCents !== intentAmountCents
+    ) {
+      throw new Error('PAYMENT_ORDER_SETTLEMENT_AMOUNT_MISMATCH');
+    }
+
     if (order.paymentStatus === 'paid') return;
     if (order.status !== 'accepted') {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER');
