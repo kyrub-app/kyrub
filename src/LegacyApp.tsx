@@ -311,6 +311,35 @@ export default function App() {
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
 
+  // The authenticated /?app=1 storefront has its own cart, separate from the
+  // public storefront. Refresh subscription snapshots from the verified public
+  // catalog before checkout, without changing payment or quotation rules.
+  useEffect(() => {
+    if (!isCartOpen || !visitingStore?.slug || !cart.some(item => item.product.saleModality?.mode === 'subscription')) return;
+    const controller = new AbortController();
+    void fetch(`/api/marketplace-discovery/public/${encodeURIComponent(visitingStore.slug)}`, {
+      headers: { accept: 'application/json' },
+      cache: 'no-store',
+      signal: controller.signal,
+    }).then(async response => {
+      if (!response.ok) throw new Error('PUBLIC_CATALOG_UNAVAILABLE');
+      return response.json() as Promise<{ store?: { id?: string }; offers?: Product[] }>;
+    }).then(payload => {
+      if (controller.signal.aborted || payload.store?.id !== visitingStore.id || !Array.isArray(payload.offers)) return;
+      const offers = new Map(payload.offers.map(offer => [offer.id, offer]));
+      setCart(previous => previous.map(item => {
+        const published = offers.get(item.product.id);
+        return published && published.saleModality?.mode === 'subscription'
+          ? { ...item, product: published }
+          : item;
+      }));
+    }).catch(error => {
+      if (!controller.signal.aborted) console.warn('Não foi possível atualizar as condições contratuais públicas.', error);
+    });
+    return () => controller.abort();
+  }, [isCartOpen, visitingStore?.id, visitingStore?.slug]);
+
+
   // Toast State
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' | 'warning'} | null>(null);
 
