@@ -1077,15 +1077,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
 
         {view === 'account' && (
           <div className="flex-1 p-5" id="customer-account-panel">
-            {!currentOrder && cart.length > 0 ? (
-              <div className="rounded-3xl border border-slate-700 bg-slate-950 p-5 text-sm text-slate-200">
-                <h4 className="font-black">Conferência do pedido</h4>
-                <p className="mt-2 text-xs text-slate-400">Itens selecionados: {cartItemsCount}. Confirme os dados e consulte a cotação oficial antes de qualquer pagamento.</p>
-                {contractPreview && <p className="mt-2 text-sm">Total estimado: {currencyFormatter.format(contractPreview.totalMinor / 100)} · Desconto: {contractPreview.discountPercent}%</p>}
-                <p className="mt-3 text-xs text-amber-300">A confirmação visual não cria pedido nem autoriza cobrança. A contratação depende do checkout oficial.</p>
-                <button type="button" onClick={() => setView('cart')} className="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-xs">Voltar ao carrinho</button>
-              </div>
-            ) : !currentOrder || !currentPaymentPresentation ? (
+            {!currentOrder || !currentPaymentPresentation ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-14 text-center">
                 <ReceiptText className="mx-auto h-10 w-10 text-slate-700" />
                 <p className="mt-3 text-xs font-black uppercase text-slate-500">
