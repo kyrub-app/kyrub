@@ -98,7 +98,7 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
       intent,
       now: input.occurredAt,
     });
-    transaction.set(orderRef, { ...rawOrder, ...settled });
+    transaction.set(orderRef, { ...rawOrder, ...settled, paymentIntentId });
 
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     if (canonicalStoreId) {
@@ -106,6 +106,7 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
         adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`),
         {
           ...settled,
+          paymentIntentId,
           storeId: canonicalStoreId,
           legacyStoreId: storeId,
           legacyUpdatedAt: settled.updatedAt,
