@@ -1077,32 +1077,47 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
 
         {view === 'account' && (
           <div className="flex-1 p-5" id="customer-account-panel">
-            {!currentOrder && cart.length > 0 ? (
-              <div className="space-y-4">
+            {cart.length > 0 ? (
+              <div className="space-y-5">
                 <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
-                  <span className="font-mono text-[9px] font-bold uppercase text-orange-400">Prévia · pedido ainda não registrado</span>
-                  <h4 className="mt-2 text-lg font-black text-white">Sua conta</h4>
-                  <p className="mt-1 text-xs text-slate-400">Confira os itens e valores antes de iniciar o checkout oficial.</p>
-                  <div className="mt-4 space-y-3">
-                    {cart.map(item => (
-                      <div key={item.product.id} className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3 text-xs">
-                        <span className="text-slate-200">{item.quantity}× {item.product.name}</span>
-                        <span className="shrink-0 font-mono text-white">{currencyFormatter.format(
-                          contractPreview && item.product.saleModality?.mode === 'subscription'
-                            ? contractPreview.totalMinor / 100 : item.product.price * item.quantity
-                        )}</span>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex min-w-0 items-start gap-3">
+                      <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl text-white" style={{ backgroundColor: accentColor }}>
+                        <WalletCards className="h-5 w-5" />
+                      </span>
+                      <div className="min-w-0">
+                        <span className="font-mono text-[9px] font-bold uppercase tracking-wide text-orange-400">Checkout do consumo</span>
+                        <h4 className="mt-1 text-lg font-black text-white">Sua conta</h4>
+                        <p className="mt-1 text-[10px] text-slate-500">Prévia do carrinho · pedido ainda não registrado</p>
                       </div>
-                    ))}
+                    </div>
+                    <span className="shrink-0 rounded-full border border-orange-500/30 bg-orange-500/10 px-2.5 py-1 text-[8px] font-black uppercase text-orange-300">Em preparação</span>
                   </div>
-                  <div className="mt-3 flex justify-between text-xs text-slate-400"><span>Subtotal mensal / base</span><span>{currencyFormatter.format(subtotal)}</span></div>
-                  {contractPreview && <>
-                    <div className="mt-2 flex justify-between text-xs text-emerald-300"><span>Desconto contratual ({contractPreview.discountPercent}%)</span><span>-{currencyFormatter.format(subtotal * subscriptionMonths - contractPreview.totalMinor / 100)}</span></div>
-                    <div className="mt-2 flex justify-between text-xs text-slate-400"><span>Equivalente mensal</span><span>{currencyFormatter.format(contractPreview.monthlyEquivalentMinor / 100)}</span></div>
-                  </>}
-                  <div className="mt-4 flex justify-between border-t border-slate-700 pt-3 text-sm font-black text-white"><span>Total estimado</span><span>{currencyFormatter.format(contractPreview ? contractPreview.totalMinor / 100 : checkoutTotal)}</span></div>
-                  <p className="mt-3 text-xs text-amber-300">Prévia informativa. O valor e a forma de pagamento dependem da cotação oficial. Nenhum pedido ou cobrança foi criado.</p>
-                  <button type="button" onClick={() => setView('cart')} className="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-xs text-white">Voltar ao carrinho</button>
+                  <div className="mt-5 grid grid-cols-2 gap-2">
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><span className="block font-mono text-[8px] uppercase text-slate-500">Total estimado</span><strong className="mt-1 block font-mono text-sm text-white">{currencyFormatter.format(contractPreview ? contractPreview.totalMinor / 100 : checkoutTotal)}</strong></div>
+                    <div className="rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3"><span className="block font-mono text-[8px] uppercase text-orange-300/70">A confirmar</span><strong className="mt-1 block font-mono text-sm text-orange-300">{currencyFormatter.format(contractPreview ? contractPreview.totalMinor / 100 : checkoutTotal)}</strong></div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><span className="block font-mono text-[8px] uppercase text-slate-500">Pago</span><strong className="mt-1 block font-mono text-sm text-slate-300">Não iniciado</strong></div>
+                    <div className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3"><span className="block font-mono text-[8px] uppercase text-slate-500">Desconto contratual</span><strong className="mt-1 block font-mono text-sm text-emerald-300">{contractPreview ? `${contractPreview.discountPercent}%` : '—'}</strong></div>
+                  </div>
                 </section>
+                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-4">
+                  <div className="flex items-center justify-between gap-3"><h5 className="text-xs font-black uppercase text-white">Itens selecionados</h5><span className="font-mono text-[9px] text-slate-500">{cartItemsCount} item(ns)</span></div>
+                  <div className="mt-3 space-y-2">{cart.map(item => (
+                    <article key={item.product.id} className="rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+                      <div className="flex items-start justify-between gap-3"><strong className="min-w-0 text-xs text-slate-200">{item.quantity}× {item.product.name}</strong><span className="shrink-0 font-mono text-xs text-white">{currencyFormatter.format(contractPreview && item.product.saleModality?.mode === 'subscription' ? contractPreview.totalMinor / 100 : item.product.price * item.quantity)}</span></div>
+                    </article>
+                  ))}</div>
+                  <div className="mt-4 space-y-2 border-t border-slate-800 pt-4 text-xs">
+                    <div className="flex justify-between text-slate-400"><span>Subtotal mensal / base</span><span>{currencyFormatter.format(subtotal)}</span></div>
+                    {contractPreview && <>
+                      <div className="flex justify-between text-slate-400"><span>Prazo contratado</span><span>{subscriptionMonths} {subscriptionMonths === 1 ? 'mês' : 'meses'}</span></div>
+                      <div className="flex justify-between text-emerald-300"><span>Desconto contratual ({contractPreview.discountPercent}%)</span><span>-{currencyFormatter.format(subtotal * subscriptionMonths - contractPreview.totalMinor / 100)}</span></div>
+                      <div className="flex justify-between text-slate-400"><span>Equivalente mensal</span><span>{currencyFormatter.format(contractPreview.monthlyEquivalentMinor / 100)}</span></div>
+                    </>}
+                  </div>
+                  <div className="mt-4 flex items-end justify-between border-t border-slate-800 pt-4"><div><span className="block font-mono text-[8px] uppercase text-slate-500">Total para confirmação</span><p className="mt-1 max-w-[230px] text-[9px] leading-relaxed text-slate-500">O valor e a forma de pagamento dependem da cotação oficial. Nenhuma cobrança foi criada.</p></div><strong className="font-mono text-xl" style={{ color: accentColor }}>{currencyFormatter.format(contractPreview ? contractPreview.totalMinor / 100 : checkoutTotal)}</strong></div>
+                </section>
+                <button type="button" onClick={() => setView('cart')} className="w-full rounded-xl border border-slate-800 bg-slate-950 py-3 text-[10px] font-black uppercase text-slate-300">Voltar ao carrinho</button>
               </div>
             ) : !currentOrder || !currentPaymentPresentation ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-14 text-center">
