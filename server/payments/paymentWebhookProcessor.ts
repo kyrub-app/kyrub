@@ -411,7 +411,10 @@ export const processVerifiedPaymentWebhook = async (input: {
       const orderRef = adminDb.doc(
         operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
       );
-      transaction.set(orderRef, operationalOrder);
+      transaction.set(orderRef, {
+        ...operationalOrder,
+        paymentIntentId: marketplaceIntent!.id,
+      });
       orderMaterialized = true;
     }
 
