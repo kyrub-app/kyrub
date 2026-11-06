@@ -48,6 +48,34 @@ export const assertPrepaidStoreMirrorIdentity = async (transaction: Transaction,
   }
 };
 
+/** Prepare all projection reads before the checkout transaction starts writing. */
+export const preparePrepaidOrderMirror = async (
+  transaction: Transaction, order: CustomerOrder
+): Promise<(() => void) | null> => {
+  if (order.releaseMode !== 'pay_before_fulfillment') return null;
+  if (![order.id, order.storeId, order.buyerId, order.paymentIntentId, order.paymentId].every(validReference)) {
+    throw Error('PAYMENT_ORDER_SETTLEMENT_TARGET_MISMATCH');
+  }
+  const tenant = await transaction.get(adminDb.doc(`tenants/${order.storeId}`));
+  const canonicalStoreId = clean(tenant.get('canonicalStoreId'));
+  // An unmapped legacy store retains its existing legacy-only contract.
+  if (!canonicalStoreId) return null;
+  await assertPrepaidStoreMirrorIdentity(transaction, order.storeId, canonicalStoreId);
+  const reference = adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`);
+  const existing = await transaction.get(reference);
+  if (existing.exists && (existing.get('id') !== order.id || existing.get('storeId') !== canonicalStoreId ||
+      existing.get('legacyStoreId') !== order.storeId || existing.get('buyerId') !== order.buyerId ||
+      (existing.get('paymentIntentId') && existing.get('paymentIntentId') !== order.paymentIntentId) ||
+      (existing.get('paymentId') && existing.get('paymentId') !== order.paymentId))) {
+    throw Error('PAYMENT_ORDER_SETTLEMENT_TARGET_MISMATCH');
+  }
+  return () => transaction.set(reference, {
+    ...order, storeId: canonicalStoreId, legacyStoreId: order.storeId,
+    legacyCreatedAt: order.createdAt, legacyUpdatedAt: order.updatedAt,
+    createdByUserId: order.buyerId, createdByRole: 'customer',
+  }, { merge: true });
+};
+
 /** Read-only transaction preparation, reused by approval, settlement and KDS transitions. */
 export const loadPrepaidPaymentConfirmation = async (input: {
   transaction: Transaction; storeId: string; orderId: string; order: Record<string, unknown>; now: string;

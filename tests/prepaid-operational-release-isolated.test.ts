@@ -47,10 +47,15 @@ const bundle = await build({ stdin: {contents: `export * from './server/payments
     plugin.onLoad({filter: /.*/, namespace: 'isolated-ready'}, () => ({contents: 'export const writeStoreMarkedReadyEvidenceInTransaction = async()=>{};', loader: 'js'}));
   }}] });
 const { settleMarketplaceOperationalOrderAfterPayment: settle, writeOperationalOrderRefundState: refund,
+  preparePrepaidOrderMirror: prepareMirror,
   processVerifiedPaymentWebhook: webhook,
   transitionOrderStatusWithInventory: transition, reconcilePersistedOrderInventory: reconcile,
   } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text + '\n//# sourceURL=isolated-order-release.js').toString('base64')}`);
 const execute = () => settle({storeId: 'seller', orderId: 'order', paymentIntentId: 'intent', occurredAt: now});
+const project = () => db.runTransaction(async (tx:any) => {
+  const write = await prepareMirror(tx, records.get(orderPath));
+  write?.();
+});
 beforeEach(() => {
   records.clear(); writes = 0;
   for (const [path, data] of orderReleaseFixture(now)) records.set(path, data);
@@ -63,6 +68,26 @@ test('full verified payment plus approval releases both mirrors and replay prese
   assert.deepEqual(records.get('stores/canonical/orders/order').operationalRelease, first.operationalRelease);
   await execute();
   assert.deepEqual(records.get(orderPath), first);
+});
+test('server creates or repairs canonical projection without authorizing pending order', async()=>{
+  records.get(orderPath).status='pending';
+  await project();
+  const projected=structuredClone(records.get('stores/canonical/orders/order'));
+  assert.equal(projected.status,'pending');
+  assert.equal(projected.legacyStoreId,'seller');
+  assert.equal(projected.paymentIntentId,'intent');
+  assert.equal(projected.paymentId,'payment');
+  assert.equal(projected.createdByUserId,'buyer');
+  assert.equal(isPrepaidOrderReleased(projected),false);
+  await project();
+  assert.deepEqual(records.get('stores/canonical/orders/order'),projected);
+});
+test('projection rejects a different store owner and an existing conflicting payment atomically',async()=>{
+  records.get('stores/canonical').ownerId='other';
+  await assert.rejects(project());assert.equal(writes,0);
+  records.get('stores/canonical').ownerId='seller';
+  records.set('stores/canonical/orders/order',{...records.get(orderPath),storeId:'canonical',legacyStoreId:'seller',paymentId:'other'});
+  await assert.rejects(project());assert.equal(writes,0);
 });
 test('a paid pending request remains outside KDS until merchant approval', async () => {
   records.get(orderPath).status = 'pending';

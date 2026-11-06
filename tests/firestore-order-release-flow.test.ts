@@ -18,11 +18,24 @@ const path='artifacts/seller/public/data/customerOrders/order';
 const paymentPath='stores/seller/payments/payment';
 before(async()=>{
   const bundle=await build({stdin:{contents:`export * from './server/payments/marketplaceOrderPaymentSettlementService.ts';
+    export {createMarketplacePaymentIntent} from './server/payments/paymentIntentRouter.ts';
+    export {isOrderVisibleInKds} from './src/utils/orderWorkflow';
+    export {parseCustomerOrder,customerOrdersEquivalent} from './src/utils/customerOrders';
     export * from './server/payments/paymentWebhookProcessor.ts';
     export * from './server/inventory/orderInventoryService.ts';`,resolveDir:process.cwd(),loader:'ts'},
     bundle:true,platform:'node',format:'cjs',packages:'external',write:false,plugins:[{name:'emulator-only-db',setup(plugin){
       plugin.onResolve({filter:/firebaseAdmin\.js$/},()=>({path:'db',namespace:'emulator-only-db'}));
       plugin.onLoad({filter:/.*/,namespace:'emulator-only-db'},()=>({contents:'export const adminDb=globalThis.__orderReleaseEmulatorDb;',loader:'js'}));
+    const boundaries:Record<string,string>={
+      'consultantAuth.js':'export const verifyFirebaseIdToken=async()=>({uid:"buyer"});',
+      'mercadoPagoCheckoutBridge.js':'export const attachMercadoPagoPixToExistingIntent=async()=>{throw Error("PSP_NOT_ALLOWED_IN_TEST");};',
+      'mercadoPagoWebhook.js':'export const mapMercadoPagoWebhookError=()=>({}); export const processMercadoPagoWebhook=async()=>{throw Error("PSP_NOT_ALLOWED_IN_TEST");};',
+      'storePromotionService.js':'export const listPublicStorePromotions=async()=>[]; export const resolveStorePromotionForCheckout=async()=>{throw Error("COUPON_NOT_USED_IN_TEST");};',
+    };
+    plugin.onResolve({filter:/\.js$/},args=>{const name=args.path.split('/').at(-1)!;return boundaries[name]?{path:name,namespace:'test-boundary'}:undefined;});
+    plugin.onLoad({filter:/.*/,namespace:'test-boundary'},args=>({contents:boundaries[args.path],loader:'js'}));
+    plugin.onResolve({filter:/(^|\/)firebase(\.js)?$/},()=>({path:'client',namespace:'client-db'}));
+    plugin.onLoad({filter:/.*/,namespace:'client-db'},()=>({contents:'export const db=null; export const auth={currentUser:null};',loader:'js'}));
     }}]});
   const module={exports:{}};
   new Function('require','module','exports',bundle.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
@@ -68,4 +81,57 @@ test('real Firestore transaction: late payment does not revive a cancelled reque
   await settle();
   assert.equal((await read()).status,'cancelled');
   assert.equal(isPrepaidOrderReleased(await read() as any),false);
+});
+const checkoutBody={storeId:'seller',buyerName:'Cliente',buyerEmail:'buyer@example.test',fulfillmentType:'pickup',
+  method:'pix',items:[{productId:'product',quantity:1}],idempotencyKey:'pending-projection-test'};
+const mappedStore=async()=>{
+  await db.doc('tenants/seller').set({canonicalStoreId:'canonical',publicationStatus:'published',publicProducts:[{id:'product',name:'Produto',price:20}]});
+  await db.doc('stores/canonical/members/seller').set({userId:'seller',role:'owner',status:'active'});
+};
+test('official checkout creates both pending projections; retry repairs mirror and preserves approval through KDS',async()=>{
+  await mappedStore();
+  const checkout=()=>service.createMarketplacePaymentIntent('Bearer isolated-test',checkoutBody);
+  const result=await checkout();
+  assert.equal(result.status,201);
+  assert.equal(result.body.providerReady,false);
+  const {orderId,paymentIntentId,paymentId}=result.body;
+  const legacy=db.doc(`artifacts/seller/public/data/customerOrders/${orderId}`);
+  const mirror=db.doc(`stores/canonical/orders/${orderId}`);
+  const pending=(await legacy.get()).data()!;
+  const canonical=(await mirror.get()).data()!;
+  assert.equal(canonical.status,'pending');
+  assert.equal(canonical.paymentStatus,'unpaid');
+  assert.equal(canonical.paymentIntentId,paymentIntentId);
+  assert.equal(canonical.paymentId,paymentId);
+  assert.equal(canonical.legacyStoreId,'seller');
+  assert.equal(canonical.createdByUserId,'buyer');
+  assert.equal(canonical.checkoutAuthority,'merchant_approval_required');
+  assert.equal(service.customerOrdersEquivalent(service.parseCustomerOrder(pending),
+    service.parseCustomerOrder({...canonical,storeId:'seller'})),true);
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder(pending)),false);
+  assert.equal((await checkout()).body.duplicate,true);
+  assert.deepEqual((await mirror.get()).data(),canonical);
+  await mirror.delete(); // Only this newly-created emulator fixture.
+  assert.equal((await checkout()).body.duplicate,true);
+  assert.equal((await mirror.get()).get('status'),'pending');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  assert.equal((await checkout()).body.duplicate,true);
+  assert.equal((await legacy.get()).get('status'),'accepted');
+  assert.equal((await mirror.get()).get('status'),'accepted');
+  const provider=db.batch();
+  provider.update(db.doc(`stores/seller/payments/${paymentId}`),{provider:'mercado-pago',providerPaymentId:'psp'});
+  provider.update(db.doc(`stores/seller/paymentIntents/${paymentIntentId}`),{provider:'mercado-pago',providerIntentId:'psp'});
+  await provider.commit();
+  await service.processVerifiedPaymentWebhook({storeId:'seller',paymentId,event:{...paidEvent,paymentIntentId}});
+  await service.settleMarketplaceOperationalOrderAfterPayment({storeId:'seller',orderId,paymentIntentId,occurredAt:now});
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder((await legacy.get()).data())),true);
+  await service.transitionOrderStatusWithInventory('seller',orderId,'preparing');
+  assert.equal((await mirror.get()).get('status'),'preparing');
+});
+test('checkout fails atomically for cross-store mapping without creating financial documents',async()=>{
+  await mappedStore();
+  await db.doc('stores/canonical').update({ownerId:'other'});
+  await assert.rejects(service.createMarketplacePaymentIntent('Bearer isolated-test',checkoutBody),/STORE_MISMATCH/);
+  assert.equal((await db.collection('stores/seller/paymentIntents').get()).size,1); // Existing baseline fixture only.
+  assert.equal((await db.collection('stores/canonical/orders').get()).empty,true);
 });

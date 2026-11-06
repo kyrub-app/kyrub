@@ -3,7 +3,8 @@ import test from 'node:test';
 import { createRequire } from 'node:module';
 import { build } from 'esbuild';
 
-const bundle = await build({stdin: {contents: `export {parseCustomerOrder} from './src/utils/customerOrders';
+const bundle = await build({stdin: {contents: `export {parseCustomerOrder,persistCustomerOrder} from './src/utils/customerOrders';
+  export {mirrorLegacyOrderToCanonical} from './src/utils/operationalDualWrite';
   export {isOrderVisibleInKds} from './src/utils/orderWorkflow';`, resolveDir: process.cwd(), loader:'ts'},
   bundle:true, platform:'node', format:'cjs', packages:'external', write:false,
   plugins:[{name:'no-browser-session',setup(plugin){
@@ -12,7 +13,7 @@ const bundle = await build({stdin: {contents: `export {parseCustomerOrder} from 
   }}]});
 const module = {exports: {} as any};
 new Function('require','module','exports',bundle.outputFiles[0].text)(createRequire(import.meta.url),module,module.exports);
-const {parseCustomerOrder, isOrderVisibleInKds} = module.exports;
+const {parseCustomerOrder, persistCustomerOrder, mirrorLegacyOrderToCanonical, isOrderVisibleInKds} = module.exports;
 const now = '2026-11-06T12:00:00.000Z';
 const order = () => ({id:'order',storeId:'seller',buyerId:'buyer',buyerName:'Cliente',buyerEmail:'buyer@example.test',
   source:'customer',fulfillmentType:'pickup',status:'accepted',paymentStatus:'paid',subtotal:20,total:20,
@@ -20,6 +21,15 @@ const order = () => ({id:'order',storeId:'seller',buyerId:'buyer',buyerName:'Cli
   releaseMode:'pay_before_fulfillment',paymentIntentId:'intent',paymentId:'payment',createdAt:now,updatedAt:now,
   operationalRelease:{schemaVersion:1,orderId:'order',storeId:'seller',buyerId:'buyer',paymentIntentId:'intent',
     paymentId:'payment',providerPaymentId:'psp',paymentEventKey:'verified',recipientAccountId:'collector',amountMinor:2000,authorizedAt:now}});
+test('prepaid browser persistence fails before touching the null Firestore instance',async()=>{
+  await assert.rejects(persistCustomerOrder(order()),/PREPAID_ORDER_REQUIRES_SERVER_PERSISTENCE/);
+  const markerOnly = {...order()} as any;
+  delete markerOnly.releaseMode;
+  await assert.rejects(persistCustomerOrder(markerOnly),/PREPAID_ORDER_REQUIRES_SERVER_PERSISTENCE/);
+});
+test('active browser mirror skips prepaid before migration checks or Firestore access',async()=>{
+  assert.equal(await mirrorLegacyOrderToCanonical({uid:'seller'}, {}, order()),'unchanged');
+});
 test('server authorization survives customer order parsing and reaches the KDS visibility gate',()=>{
   const raw = order();
   const parsed = parseCustomerOrder(JSON.parse(JSON.stringify(raw)));

@@ -1,4 +1,4 @@
-import { parsePrepaidOperationalRelease } from '../../shared/orderReleasePolicy';
+import { parsePrepaidOperationalRelease, requiresServerOrderPersistence } from '../../shared/orderReleasePolicy';
 import {
   collection,
   doc,
@@ -631,6 +631,9 @@ export const resolveCanonicalCustomerOrderStoreId = async (
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
+  if (requiresServerOrderPersistence(order)) {
+    throw new Error('PREPAID_ORDER_REQUIRES_SERVER_PERSISTENCE');
+  }
   if (!order.id.trim()) throw new Error('Pedido inválido.');
 
   const legacyReference = doc(

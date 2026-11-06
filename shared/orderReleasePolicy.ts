@@ -7,6 +7,10 @@ export type OrderReleaseMode = 'pay_before_fulfillment' | 'open_tab';
 export type OrderApprovalState = 'pending' | 'approved' | 'rejected';
 export type OrderSettlementState = 'unpaid' | 'partial' | 'paid';
 
+export const requiresServerOrderPersistence = (order: {
+  releaseMode?: unknown; operationalRelease?: unknown;
+}): boolean => order.releaseMode === 'pay_before_fulfillment' || order.operationalRelease !== undefined;
+
 /** Server-issued projection; fulfillment endpoints still re-read the payment ledger. */
 export interface PrepaidOperationalRelease {
   schemaVersion: 1;
