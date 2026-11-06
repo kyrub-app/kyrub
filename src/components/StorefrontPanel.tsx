@@ -41,7 +41,10 @@ const CONFIRMED_SALE_STATUSES = new Set<CustomerOrderStatus>([
 type StorefrontPanelProps = Omit<
   React.ComponentProps<typeof LegacyStorefrontPanel>,
   'activeKdsOrderCount' | 'salesByProductId'
->;
+> & {
+  /** PublicStorefrontApp already loaded the server-verified published catalog. */
+  catalogSource?: 'live' | 'published-api';
+};
 
 type AvailabilityResponse = {
   stockByProductId?: Record<string, unknown>;
@@ -85,6 +88,7 @@ const promotionPriority = (
 
 export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   const storeId = props.activeConsumerStore?.id ?? '';
+  const hasPublishedCatalog = props.catalogSource === 'published-api';
   const [publicProducts, setPublicProducts] = useState<PublicProduct[] | null>(
     null
   );
@@ -105,6 +109,10 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
   useEffect(() => {
     setPublicProducts(null);
 
+    // Do not replace verified API offers with a client read that may suppress
+    // contract discounts while canonical/legacy convergence is unresolved.
+    if (hasPublishedCatalog) return;
+
     if (!storeId) {
       setPublicProducts([]);
       return;
@@ -120,7 +128,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
         );
       }
     );
-  }, [storeId]);
+  }, [storeId, hasPublishedCatalog]);
 
   useEffect(() => {
     let cancelled = false;
@@ -250,7 +258,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
 
   const storefrontProducts = useMemo(
     () =>
-      (publicProducts ?? localStoreProducts).map(product => {
+      (hasPublishedCatalog ? localStoreProducts : publicProducts ?? localStoreProducts).map(product => {
         const resolved = resolveCatalogCustomization(
           product,
           customizationDefaults
@@ -272,6 +280,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
     [
       customizationDefaults,
       derivedStockByProductId,
+      hasPublishedCatalog,
       localStoreProducts,
       publicProducts,
     ]

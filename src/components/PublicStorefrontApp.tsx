@@ -447,6 +447,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       <main className="mx-auto w-full max-w-5xl p-3 pb-10 sm:p-5">
         {user ? (
           <StorefrontPanel
+            catalogSource="published-api"
             activeConsumerStore={store}
             products={publicProducts}
             cart={cart}
