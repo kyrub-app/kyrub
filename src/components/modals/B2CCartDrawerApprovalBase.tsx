@@ -518,7 +518,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               className={tabClassName('account')}
               id="customer-account-tab"
             >
-              <PackageCheck className="h-4 w-4 shrink-0" />
+              <ReceiptText className="h-4 w-4 shrink-0" />
               <span className="truncate">Conta</span>
             </button>
             <button
@@ -527,7 +527,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
               className={tabClassName('order')}
               id="customer-order-tab"
             >
-              <ReceiptText className="h-4 w-4 shrink-0" />
+              <PackageCheck className="h-4 w-4 shrink-0" />
               <span className="truncate">Meu pedido</span>
             </button>
           </div>
