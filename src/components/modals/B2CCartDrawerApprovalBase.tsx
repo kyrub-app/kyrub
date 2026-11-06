@@ -544,9 +544,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   <h4 className="text-xs font-black uppercase text-white">
                     Itens selecionados ({cartItemsCount})
                   </h4>
-                  <button type="button" disabled={cart.length === 0} onClick={() => setView('order')}
+                  <button type="button" disabled={cart.length === 0} onClick={() => setView('account')}
                     className="rounded-lg bg-orange-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-40">
-                    Meu pedido
+                    Revisar conta
                   </button>
                 </div>
 
