@@ -89,6 +89,11 @@ const isApprovalGatedKyrubMarketplaceOrder = (order: CustomerOrder): boolean =>
   order.operatorId.trim() === order.buyerId.trim();
 
 export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
+  // Rejected or cancelled customer requests must not reappear in production.
+  // Keep marketplace/partner rules unchanged until their server-side release
+  // contracts can be migrated and verified independently.
+  if (order.source === 'customer' &&
+      (order.status === 'rejected' || order.status === 'cancelled')) return false;
   if (isPendingAttendanceApproval(order)) return false;
   if (order.source !== 'customer') return true;
   if (order.fulfillmentType === 'dine_in') return true;
