@@ -24,8 +24,8 @@ test('settlement service obtains intent from server Firestore and binds store or
 });
 
 test('marketplace settlement requires exact cents match', () => {
-  assert.match(settlement, /Math\\.round\\(order\\.total \\* 100\\)/);
-  assert.match(settlement, /Math\\.round\\(intent\\.amount \\* 100\\)/);
+  assert.match(settlement, /Math\.round\(order\.total \* 100\)/);
+  assert.match(settlement, /Math\.round\(intent\.amount \* 100\)/);
   assert.match(settlement, /orderTotalCents !== intentAmountCents/);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_AMOUNT_MISMATCH/);
 });
@@ -33,14 +33,14 @@ test('marketplace settlement requires exact cents match', () => {
 test('idempotent settlement refuses unpaid or cross-intent replay', () => {
   const paidGate = settlement.indexOf("intent.status !== 'paid'");
   const bindingGate = settlement.indexOf('recordedIntentId !== paymentIntentId');
-  const earlyReturn = settlement.indexOf("if (order.paymentStatus === 'paid') return");
+  const earlyReturn = settlement.indexOf("if (order.paymentStatus === 'paid' && !prepaid) return");
   assert.ok(paidGate > 0 && paidGate < earlyReturn);
   assert.ok(bindingGate > paidGate && bindingGate < earlyReturn);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_INTENT_MISMATCH/);
 });
 
 test('settlement persists payment intent binding on legacy and canonical mirrors', () => {
-  assert.match(settlement, /transaction\.set\(orderRef, \{ \.\.\.rawOrder, \.\.\.settled, paymentIntentId \}\)/);
+  assert.match(settlement, /transaction\.set\(orderRef, \{ \.\.\.rawOrder, \.\.\.settled, paymentIntentId, \.\.\.releasePatch \}\)/);
   assert.match(settlement, /transaction\.set\(\s*adminDb\.doc\(`stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}`\),\s*\{\s*\.\.\.settled,\s*paymentIntentId,/);
 });
 
@@ -53,7 +53,7 @@ test('verified webhook materialization records the original payment intent', () 
 
 test('cancelled or rejected orders cannot be silently settled on replay', () => {
   const closedGate = settlement.indexOf("order.status === 'rejected' || order.status === 'cancelled'");
-  const idempotentReturn = settlement.indexOf("if (order.paymentStatus === 'paid') return");
+  const idempotentReturn = settlement.indexOf("if (order.paymentStatus === 'paid' && !prepaid) return");
   assert.ok(closedGate > 0 && closedGate < idempotentReturn);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_ORDER_CLOSED/);
 });

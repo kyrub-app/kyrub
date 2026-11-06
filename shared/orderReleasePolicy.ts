@@ -7,6 +7,44 @@ export type OrderReleaseMode = 'pay_before_fulfillment' | 'open_tab';
 export type OrderApprovalState = 'pending' | 'approved' | 'rejected';
 export type OrderSettlementState = 'unpaid' | 'partial' | 'paid';
 
+/** Server-issued projection; fulfillment endpoints still re-read the payment ledger. */
+export interface PrepaidOperationalRelease {
+  schemaVersion: 1;
+  orderId: string;
+  storeId: string;
+  buyerId: string;
+  paymentIntentId: string;
+  paymentId: string;
+  providerPaymentId: string;
+  paymentEventKey: string;
+  recipientAccountId: string;
+  amountMinor: number;
+  authorizedAt: string;
+}
+
+export const parsePrepaidOperationalRelease = (value: unknown): PrepaidOperationalRelease | null => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const record = value as Record<string, unknown>;
+  if (record.schemaVersion !== 1 || !Number.isSafeInteger(record.amountMinor) || Number(record.amountMinor) <= 0) return null;
+  for (const key of ['orderId', 'storeId', 'buyerId', 'paymentIntentId', 'paymentId', 'providerPaymentId', 'paymentEventKey', 'authorizedAt']) {
+    if (typeof record[key] !== 'string' || !record[key].trim() || record[key].length > 1500) return null;
+  }
+  if (typeof record.recipientAccountId !== 'string' || record.recipientAccountId.length > 180 ||
+      !Number.isFinite(Date.parse(record.authorizedAt as string))) return null;
+  return record as unknown as PrepaidOperationalRelease;
+};
+
+export const isPrepaidOrderReleased = (order: {
+  id: string; storeId: string; buyerId: string; status: string; paymentStatus: string; total: number;
+  paymentIntentId?: string; paymentId?: string; operationalRelease?: unknown;
+}): boolean => {
+  const release = parsePrepaidOperationalRelease(order.operationalRelease);
+  return Boolean(release && ['accepted', 'preparing', 'ready', 'out_for_delivery', 'completed'].includes(order.status) &&
+    order.paymentStatus === 'paid' && release.orderId === order.id && release.storeId === order.storeId &&
+    release.buyerId === order.buyerId && release.paymentIntentId === order.paymentIntentId && release.paymentId === order.paymentId &&
+    release.amountMinor === Math.round(order.total * 100));
+};
+
 export interface OrderReleaseDecisionInput {
   mode: OrderReleaseMode;
   approval: OrderApprovalState;

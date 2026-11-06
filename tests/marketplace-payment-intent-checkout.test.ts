@@ -153,7 +153,9 @@ test('Express and Vercel expose payment intent plus Mercado Pago webhook without
 });
 
 test('paid settlement requires the same accepted operational order before marking it paid', () => {
-  assert.match(settlementSource, /if \(order\.status !== 'accepted'\)/);
+  assert.match(settlementSource, /order\.status !== 'accepted' && !\(prepaid && order\.status === 'pending'\)/);
+  assert.match(settlementSource, /approval: order\.status === 'pending' \? 'pending' : 'approved'/);
+  assert.match(settlementSource, /fulfillmentAuthorized \? confirmation : null/);
   assert.match(settlementSource, /PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER/);
   assert.match(settlementSource, /settleExistingMarketplaceOrder/);
   assert.match(materializationSource, /paymentStatus: 'paid'/);

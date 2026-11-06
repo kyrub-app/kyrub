@@ -138,6 +138,7 @@ export const materializePendingMarketplaceOrder = (input: {
 
   return {
     ...baseMarketplaceOrder(intent, now, false),
+    releaseMode: 'pay_before_fulfillment',
     paymentIntentId: intent.id,
     paymentId,
     checkoutAuthority: 'merchant_approval_required',

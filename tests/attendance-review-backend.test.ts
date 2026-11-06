@@ -19,7 +19,7 @@ test('attendance review client delegates to authenticated backend', () => {
 
 test('attendance review route authenticates tenant before server transaction', () => {
   assert.match(router, /router\.post\('\/:orderId\/attendance-review'/);
-  assert.match(router, /authenticatedTenantId\(request\)/);
+  assert.match(router, /authenticatedUserId\(request\)/);
   assert.match(router, /reviewAttendanceOrderAuthoritatively/);
   assert.match(service, /adminDb\.runTransaction/);
   assert.match(service, /artifacts\/\$\{tenantId\}\/public\/data\/customerOrders/);

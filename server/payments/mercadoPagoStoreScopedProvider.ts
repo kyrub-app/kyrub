@@ -10,6 +10,8 @@ import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
 import { mercadoPagoMerchantPixRolloutError } from './mercadoPagoMerchantPixRolloutPolicy.js';
 
 interface MercadoPagoPayment {
+  currency_id?: string;
+  payment_method_id?: string;
   id?: string | number;
   collector_id?: string | number;
   status?: string;
@@ -103,6 +105,7 @@ export const createStoreScopedMercadoPagoLocalPix = async (input: {
     canonicalStoreId: input.intent.storeId,
     paymentId: input.paymentId,
     paymentIntentId: input.intent.id,
+    recipientAccountId: recipientAuthority.externalAccountId,
   });
   return normalized;
 };
@@ -136,7 +139,7 @@ export const getStoreScopedMercadoPagoPixCheckout = async (providerPaymentId: st
 const eventType = (payment: MercadoPagoPayment): PaymentProviderEventType | null => {
   const status = clean(payment.status).toLowerCase();
   const detail = clean(payment.status_detail).toLowerCase();
-  if (status === 'approved') return 'payment.paid';
+  if (status === 'approved' && clean(payment.status_detail) === 'accredited') return 'payment.paid';
   if (status === 'rejected') return 'payment.failed';
   if (status === 'cancelled') return detail.includes('expired') ? 'payment.expired' : 'payment.failed';
   if (status === 'refunded' || status === 'charged_back') return 'refund.succeeded';
@@ -155,12 +158,25 @@ export const verifiedStoreScopedMercadoPagoPaymentEvent = async (input: {
   const binding = await loadMercadoPagoPaymentProviderBinding(input.dataId);
   if (!binding) return null;
   await verifyMercadoPagoWebhookSignature(input);
+  return reconcileStoreScopedMercadoPagoPaymentEvent(input.dataId);
+};
+
+/** Trusted server reconciliation shares receiver/metadata checks with webhook delivery. */
+export const reconcileStoreScopedMercadoPagoPaymentEvent = async (
+  providerPaymentIdInput: string
+): Promise<VerifiedStoreMercadoPagoEvent | null> => {
+  const binding = await loadMercadoPagoPaymentProviderBinding(providerPaymentIdInput);
+  if (!binding) throw Error('MERCADO_PAGO_STORE_PAYMENT_BINDING_NOT_FOUND');
   const payment = await mercadoPagoStoreRequest<MercadoPagoPayment>(
     binding.legacyStoreId,
-    `/v1/payments/${encodeURIComponent(input.dataId)}`
+    `/v1/payments/${encodeURIComponent(providerPaymentIdInput)}`
   );
   const type = eventType(payment);
   if (!type) return null;
+  const authority = await resolveCommercialRecipientAuthority({ context: 'store_sale', canonicalStoreId: binding.canonicalStoreId });
+  if (authority.credentialScopeId !== binding.legacyStoreId ||
+      clean(payment.collector_id) !== (binding.recipientAccountId || authority.externalAccountId) ||
+      payment.currency_id !== 'BRL' || payment.payment_method_id !== 'pix') throw Error('MERCADO_PAGO_STORE_PAYMENT_COLLECTOR_MISMATCH');
   const metadata = payment.metadata ?? {};
   const paymentIntentId = clean(metadata.kyrub_payment_intent_id) || clean(payment.external_reference);
   const kyrubStoreId = clean(metadata.kyrub_store_id);
@@ -188,6 +204,7 @@ export const verifiedStoreScopedMercadoPagoPaymentEvent = async (input: {
     method: 'pix',
     occurredAt,
     signatureVerified: true,
+    recipientAccountId: clean(payment.collector_id),
     kyrubStoreId,
     kyrubPaymentId,
   };

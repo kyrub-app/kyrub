@@ -25,6 +25,9 @@ export interface MercadoPagoPixCheckout {
 }
 
 export interface MercadoPagoPayment {
+  collector_id?: string | number;
+  currency_id?: string;
+  payment_method_id?: string;
   id?: string | number;
   status?: string;
   status_detail?: string;
@@ -270,13 +273,24 @@ export const verifyMercadoPagoWebhookSignature = async (input: {
 const eventTypeForPayment = (payment: MercadoPagoPayment): PaymentProviderEventType | null => {
   const status = clean(payment.status).toLowerCase();
   const detail = clean(payment.status_detail).toLowerCase();
-  if (status === 'approved') return 'payment.paid';
+  if (status === 'approved' && detail === 'accredited') return 'payment.paid';
   if (status === 'rejected') return 'payment.failed';
   if (status === 'cancelled') {
     return detail.includes('expired') ? 'payment.expired' : 'payment.cancelled';
   }
   if (status === 'refunded' || status === 'charged_back') return 'refund.succeeded';
   return null;
+};
+
+/** Verify the original platform credential's recipient for unbound historical Pix. */
+export const verifyLegacyMercadoPagoPaymentRecipient = async (payment: MercadoPagoPayment): Promise<string> => {
+  const account = await mercadoPagoRequest<{ id?: string | number }>('/users/me');
+  const recipientAccountId = clean(account.id);
+  if (!recipientAccountId || clean(payment.collector_id) !== recipientAccountId ||
+      payment.currency_id !== 'BRL' || payment.payment_method_id !== 'pix') {
+    throw Error('MERCADO_PAGO_PAYMENT_RECIPIENT_MISMATCH');
+  }
+  return recipientAccountId;
 };
 
 export const verifiedMercadoPagoPaymentEvent = async (input: {
@@ -287,6 +301,7 @@ export const verifiedMercadoPagoPaymentEvent = async (input: {
   const payment = await getMercadoPagoPayment(input.dataId);
   const eventType = eventTypeForPayment(payment);
   if (!eventType) return null;
+  const recipientAccountId = eventType === 'payment.paid' ? await verifyLegacyMercadoPagoPaymentRecipient(payment) : '';
 
   const metadata = payment.metadata ?? {};
   const paymentIntentId = clean(metadata.kyrub_payment_intent_id) || clean(payment.external_reference);
@@ -310,6 +325,7 @@ export const verifiedMercadoPagoPaymentEvent = async (input: {
     method: 'pix',
     occurredAt,
     signatureVerified: true,
+    recipientAccountId,
     kyrubStoreId,
     kyrubPaymentId,
   };

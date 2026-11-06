@@ -109,7 +109,8 @@
     }
 
     function storeSecImmutableOrderIdentity() {
-      return incoming().id == existing().id
+      return storeSecOrderReleaseUnchanged()
+        && incoming().id == existing().id
         && incoming().storeId == existing().storeId
         && incoming().source == existing().source
         && incoming().buyerId == existing().buyerId
@@ -118,8 +119,19 @@
         && incoming().createdAt == existing().createdAt;
     }
 
+    // Operational release is issued only by the server after ledger verification.
+    function storeSecClientOrderReleaseIsValid() {
+      return !incoming().keys().hasAny(['releaseMode', 'operationalRelease']);
+    }
+
+    function storeSecOrderReleaseUnchanged() {
+      return existing().get('releaseMode', '') != 'pay_before_fulfillment'
+        && !incoming().diff(existing()).affectedKeys().hasAny(['releaseMode', 'operationalRelease']);
+    }
+
     function storeSecValidCustomerOrderCreate(storeId) {
-      return incoming().storeId == storeId
+      return storeSecClientOrderReleaseIsValid()
+        && incoming().storeId == storeId
         && incoming().source == 'customer'
         && incoming().buyerId == request.auth.uid
         && incoming().createdByUserId == request.auth.uid
@@ -131,7 +143,8 @@
     }
 
     function storeSecValidStaffOrderCreate(storeId) {
-      return storeSecOperationalStaff(storeId)
+      return storeSecClientOrderReleaseIsValid()
+        && storeSecOperationalStaff(storeId)
         && incoming().storeId == storeId
         && incoming().source in ['staff', 'transfer']
         && incoming().createdByUserId == request.auth.uid

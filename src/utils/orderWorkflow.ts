@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth';
+import { isPrepaidOrderReleased } from '../../shared/orderReleasePolicy';
 import { auth } from './firebase';
 import type {
   CustomerOrder,
@@ -92,13 +93,11 @@ export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
   // Rejected or cancelled customer requests must not reappear in production.
   // Keep marketplace/partner rules unchanged until their server-side release
   // contracts can be migrated and verified independently.
-  if (order.source === 'customer' &&
-      (order.status === 'rejected' || order.status === 'cancelled')) return false;
+  if (order.status === 'rejected' || order.status === 'cancelled') return false;
   if (isPendingAttendanceApproval(order)) return false;
-  // Explicit prepaid orders remain hidden until a server-authoritative
-  // fulfillment release is implemented. A client-visible payment status alone
-  // must never bypass this gate.
-  if ((order as CustomerOrder & { releaseMode?: string }).releaseMode === 'pay_before_fulfillment') return false;
+  // This projection only controls visibility. The server revalidates the
+  // underlying payment and receipt before every fulfillment transition.
+  if (order.releaseMode === 'pay_before_fulfillment') return isPrepaidOrderReleased(order);
   if (order.source !== 'customer') return true;
   if (order.fulfillmentType === 'dine_in') return true;
   if (isNinetyNineFoodOrder(order)) return true;

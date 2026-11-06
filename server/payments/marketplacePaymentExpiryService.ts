@@ -14,7 +14,10 @@ import type {
 import {
   cancelMercadoPagoPayment,
   getMercadoPagoPayment,
+  verifyLegacyMercadoPagoPaymentRecipient,
 } from './mercadoPagoPixProvider.js';
+import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
+import { reconcileStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
 import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor.js';
 import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import {
@@ -49,7 +52,7 @@ const providerEventType = (
 ): PaymentProviderEventType | null => {
   const status = clean(payment.status).toLowerCase();
   const detail = clean(payment.status_detail).toLowerCase();
-  if (status === 'approved') return 'payment.paid';
+  if (status === 'approved' && detail === 'accredited') return 'payment.paid';
   if (status === 'rejected') return 'payment.failed';
   if (status === 'cancelled') {
     if (forcedExpiry || detail.includes('expired')) return 'payment.expired';
@@ -58,14 +61,16 @@ const providerEventType = (
   return null;
 };
 
-const authoritativeProviderEvent = (input: {
+const authoritativeProviderEvent = async (input: {
   payment: Awaited<ReturnType<typeof getMercadoPagoPayment>>;
   intent: ReturnType<typeof normalizeCanonicalPaymentIntent>;
   canonicalPayment: CanonicalPayment;
   forcedExpiry?: boolean;
-}): VerifiedPaymentProviderEvent | null => {
+}): Promise<VerifiedPaymentProviderEvent | null> => {
   const eventType = providerEventType(input.payment, input.forcedExpiry === true);
   if (!eventType) return null;
+  const recipientAccountId = eventType === 'payment.paid'
+    ? await verifyLegacyMercadoPagoPaymentRecipient(input.payment) : '';
 
   const providerPaymentId = clean(input.payment.id);
   const metadata = input.payment.metadata ?? {};
@@ -103,6 +108,7 @@ const authoritativeProviderEvent = (input: {
     method: 'pix',
     occurredAt,
     signatureVerified: true,
+    recipientAccountId,
   };
 };
 
@@ -121,7 +127,7 @@ const reconcileVerifiedProviderEvent = async (input: {
     event: input.event,
   });
 
-  if (input.event.eventType === 'payment.paid' && result.orderId) {
+  if (input.event.eventType === 'payment.paid' && result.status === 'paid' && result.orderId) {
     await settleMarketplaceOperationalOrderAfterPayment({
       storeId: input.storeId,
       orderId: result.orderId,
@@ -243,6 +249,10 @@ const reconcileDueReservation = async (input: {
   }
 
   if (intent.status === 'paid' || payment.status === 'paid') {
+    if (order.releaseMode === 'pay_before_fulfillment') {
+      await settleMarketplaceOperationalOrderAfterPayment({ ...input, paymentIntentId,
+        occurredAt: payment.paidAt || new Date().toISOString() });
+    }
     await markMarketplaceOrderInventoryReservationPaymentConfirmed(
       input.storeId,
       input.orderId
@@ -270,6 +280,9 @@ const reconcileDueReservation = async (input: {
       paymentId,
     });
     if (localResult === 'paid') {
+      if (order.releaseMode === 'pay_before_fulfillment') {
+        await settleMarketplaceOperationalOrderAfterPayment({ ...input, paymentIntentId, occurredAt: new Date().toISOString() });
+      }
       await markMarketplaceOrderInventoryReservationPaymentConfirmed(
         input.storeId,
         input.orderId
@@ -311,8 +324,19 @@ const reconcileDueReservation = async (input: {
     return 'deferred';
   }
 
+  const binding = await loadMercadoPagoPaymentProviderBinding(intent.providerIntentId);
+  if (binding) {
+    if (binding.canonicalStoreId !== input.storeId || binding.paymentIntentId !== intent.id || binding.paymentId !== paymentId) {
+      throw Error('PAYMENT_EXPIRY_STATE_MISMATCH');
+    }
+    const scopedEvent = await reconcileStoreScopedMercadoPagoPaymentEvent(intent.providerIntentId);
+    // A pending scoped Pix is retried under its own credential. Never cancel it with the platform token.
+    if (!scopedEvent) return 'deferred';
+    const result = await reconcileVerifiedProviderEvent({ storeId: input.storeId, paymentId, event: scopedEvent });
+    return result === 'paid' ? 'paid' : 'released';
+  }
   let providerPayment = await getMercadoPagoPayment(intent.providerIntentId);
-  let event = authoritativeProviderEvent({
+  let event = await authoritativeProviderEvent({
     payment: providerPayment,
     intent,
     canonicalPayment: payment,
@@ -325,7 +349,7 @@ const reconcileDueReservation = async (input: {
       );
     } catch (error) {
       providerPayment = await getMercadoPagoPayment(intent.providerIntentId);
-      const afterFailure = authoritativeProviderEvent({
+      const afterFailure = await authoritativeProviderEvent({
         payment: providerPayment,
         intent,
         canonicalPayment: payment,
@@ -334,7 +358,7 @@ const reconcileDueReservation = async (input: {
       event = afterFailure;
     }
     if (!event) {
-      event = authoritativeProviderEvent({
+      event = await authoritativeProviderEvent({
         payment: providerPayment,
         intent,
         canonicalPayment: payment,

@@ -39,6 +39,7 @@
 
     match /stores/{storeId}/orders/{orderId} {
       allow create: if operationalMirrorMetadataIsValid(storeId)
+        && storeSecClientOrderReleaseIsValid()
         && incoming().id == orderId
         && incoming().storeId == storeId
         && operationalMirroredOrderActorIsValid()
