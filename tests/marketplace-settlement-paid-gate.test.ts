@@ -43,3 +43,10 @@ test('settlement persists payment intent binding on legacy and canonical mirrors
   assert.match(settlement, /transaction\.set\(orderRef, \{ \.\.\.rawOrder, \.\.\.settled, paymentIntentId \}\)/);
   assert.match(settlement, /transaction\.set\(\s*adminDb\.doc\(`stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}`\),\s*\{\s*\.\.\.settled,\s*paymentIntentId,/);
 });
+
+test('verified webhook materialization records the original payment intent', () => {
+  const webhook = readFileSync('server/payments/paymentWebhookProcessor.ts', 'utf8');
+  assert.match(webhook, /paymentIntentId: marketplaceIntent!\.id/);
+  assert.match(webhook, /if \(operationalOrder && !operationalOrderExists\)/);
+  assert.match(webhook, /transaction\.set\(orderRef, \{/);
+});
