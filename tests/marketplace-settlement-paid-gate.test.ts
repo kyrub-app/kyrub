@@ -38,3 +38,8 @@ test('idempotent settlement refuses unpaid or cross-intent replay', () => {
   assert.ok(bindingGate > paidGate && bindingGate < earlyReturn);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_INTENT_MISMATCH/);
 });
+
+test('settlement persists payment intent binding on legacy and canonical mirrors', () => {
+  assert.match(settlement, /transaction\.set\(orderRef, \{ \.\.\.rawOrder, \.\.\.settled, paymentIntentId \}\)/);
+  assert.match(settlement, /transaction\.set\(\s*adminDb\.doc\(`stores\/\$\{canonicalStoreId\}\/orders\/\$\{orderId\}`\),\s*\{\s*\.\.\.settled,\s*paymentIntentId,/);
+});
