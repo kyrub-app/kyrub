@@ -88,6 +88,9 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
     if (recordedIntentId && recordedIntentId !== paymentIntentId) {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_INTENT_MISMATCH');
     }
+    if (order.status === 'rejected' || order.status === 'cancelled') {
+      throw new Error('PAYMENT_ORDER_SETTLEMENT_ORDER_CLOSED');
+    }
     if (order.paymentStatus === 'paid') return;
     if (order.status !== 'accepted') {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER');
