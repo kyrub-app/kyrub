@@ -67,6 +67,8 @@ import { ProductInventoryCompositionEditor } from './ProductInventoryComposition
 import { ProductPurchaseList } from './ProductPurchaseList';
 import { ProductQuickNotesEditor } from './ProductQuickNotesEditor';
 import { ProductSaleModalityEditor } from './ProductSaleModalityEditor';
+import { SubscriptionContractTermsEditor } from './SubscriptionContractTermsEditor';
+import { parseSubscriptionContractDiscounts, type ContractTermMonths } from '../../../shared/subscriptionContractOffers';
 
 export type ProductModalMode = 'create' | 'edit';
 type ProductModalTab = 'showcase' | 'inventory' | 'purchase';
@@ -186,6 +188,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
   const [saleModality, setSaleModality] = useState<ProductSaleModality>(
     ONE_TIME_PRODUCT_SALE_MODALITY
   );
+  const [contractDiscounts, setContractDiscounts] = useState<{ months: ContractTermMonths; discountPercent: number }[] | undefined>(undefined);
   const [categoryRoot, setCategoryRoot] = useState('');
   const [hierarchySegments, setHierarchySegments] = useState<string[]>([]);
   const [catalogPaths, setCatalogPaths] = useState<ProductCategoryCollection[]>([]);
@@ -269,6 +272,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
         parseProductSaleModality(product.saleModality)
           ?? ONE_TIME_PRODUCT_SALE_MODALITY
       );
+      setContractDiscounts(parseSubscriptionContractDiscounts(product.contractDiscounts) ?? undefined);
       setCategoryRoot(segments[0] ?? '');
       setHierarchySegments(segments.slice(1, 5));
       setImage(product.image);
@@ -282,6 +286,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
       setDescription('');
       setPrice('');
       setSaleModality(ONE_TIME_PRODUCT_SALE_MODALITY);
+      setContractDiscounts(undefined);
       setCategoryRoot('');
       setHierarchySegments([]);
       setImage('');
@@ -567,6 +572,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           isService,
           isComplimentary,
           saleModality,
+          ...(saleModality.mode === 'subscription' && contractDiscounts ? { contractDiscounts } : {}),
         });
       } else {
         if (!product) {
@@ -595,6 +601,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
           isService,
           isComplimentary,
           saleModality,
+          contractDiscounts: saleModality.mode === 'subscription' ? contractDiscounts : undefined,
         });
       }
 
@@ -770,6 +777,7 @@ export const UnifiedProductModal: React.FC<UnifiedProductModalProps> = ({
                 onChange={setSaleModality}
                 disabled={isSaving}
               />
+              {saleModality.mode === 'subscription' && <SubscriptionContractTermsEditor value={contractDiscounts} onChange={setContractDiscounts} monthlyPrice={Number(price.replace(',', '.')) || 0} disabled={isSaving} />}
 
               {canonicalCategoriesError && (
                 <p role="alert" className="rounded-lg border border-red-500/40 bg-red-950/30 p-3 text-xs text-red-200">
