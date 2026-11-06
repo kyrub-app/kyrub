@@ -18,6 +18,8 @@ import {
   type CanonicalPayment,
 } from '../../src/utils/canonicalPayment.js';
 import { listPublicStorePromotions } from './storePromotionService.js';
+import { parseProductSaleModality } from '../../shared/productSaleModality.js';
+import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers.js';
 
 const MAX_DISCOVERY_STORES = 24;
 const MAX_PUBLIC_STOREFRONT_OFFERS = 250;
@@ -77,6 +79,8 @@ export type PublicStorefrontSnapshot = {
     isService: boolean;
     category: string;
     supplierId: string;
+    saleModality?: NonNullable<ReturnType<typeof parseProductSaleModality>>;
+    contractDiscounts?: NonNullable<ReturnType<typeof parseSubscriptionContractDiscounts>>;
   }>;
 };
 
@@ -86,6 +90,13 @@ const storefrontStatus = (
   value === 'open' || value === 'delayed' || value === 'closed'
     ? value
     : 'closed';
+
+const projectSubscriptionFields = (data: Record<string, unknown>) => {
+  const saleModality = parseProductSaleModality(data.saleModality);
+  if (!saleModality || saleModality.mode !== 'subscription') return {};
+  const contractDiscounts = parseSubscriptionContractDiscounts(data.contractDiscounts);
+  return { saleModality, ...(contractDiscounts ? { contractDiscounts } : {}) };
+};
 
 const projectLegacyPublicOffers = (
   value: unknown,
@@ -128,13 +139,15 @@ const projectLegacyPublicOffers = (
       isService: data.isService === true,
       category,
       supplierId: storeId,
+      ...projectSubscriptionFields(data),
     }];
   });
 };
 
 const projectCanonicalOffers = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
-  storeId: string
+  storeId: string,
+  productById: ReadonlyMap<string, Record<string, unknown>>
 ): PublicStorefrontSnapshot['offers'] =>
   docs.flatMap(document => {
     const data = document.data();
@@ -161,6 +174,7 @@ const projectCanonicalOffers = (
       isService: data.isService === true,
       category: clean(data.category),
       supplierId: storeId,
+      ...projectSubscriptionFields(productById.get(clean(data.productId) || offerId) ?? {}),
     }];
   });
 
@@ -277,6 +291,10 @@ export const loadPublicStorefrontBySlug = async (
       .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
       .get();
 
+    const canonicalProducts = await adminDb.collection('stores').doc(storeId).collection('products')
+      .where('publicationStatus', '==', 'published').limit(MAX_PUBLIC_STOREFRONT_OFFERS).get();
+    const productById = new Map(canonicalProducts.docs.map(document => [document.id, document.data() as Record<string, unknown>]));
+
     return {
       store: {
         id: storeId,
@@ -290,7 +308,7 @@ export const loadPublicStorefrontBySlug = async (
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
       },
-      offers: projectCanonicalOffers(offerCandidates.docs, storeId),
+      offers: projectCanonicalOffers(offerCandidates.docs, storeId, productById),
     };
   }
 
