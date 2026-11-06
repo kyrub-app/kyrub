@@ -95,6 +95,10 @@ export const isOrderVisibleInKds = (order: CustomerOrder): boolean => {
   if (order.source === 'customer' &&
       (order.status === 'rejected' || order.status === 'cancelled')) return false;
   if (isPendingAttendanceApproval(order)) return false;
+  // Explicit prepaid orders remain hidden until a server-authoritative
+  // fulfillment release is implemented. A client-visible payment status alone
+  // must never bypass this gate.
+  if ((order as CustomerOrder & { releaseMode?: string }).releaseMode === 'pay_before_fulfillment') return false;
   if (order.source !== 'customer') return true;
   if (order.fulfillmentType === 'dine_in') return true;
   if (isNinetyNineFoodOrder(order)) return true;
