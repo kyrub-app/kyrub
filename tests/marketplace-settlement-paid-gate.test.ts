@@ -22,3 +22,10 @@ test('settlement service obtains intent from server Firestore and binds store or
   assert.match(settlement, /intent\.buyerId !== order\.buyerId/);
   assert.match(settlement, /settleExistingMarketplaceOrder/);
 });
+
+test('marketplace settlement requires exact cents match', () => {
+  assert.match(settlement, /Math\\.round\\(order\\.total \\* 100\\)/);
+  assert.match(settlement, /Math\\.round\\(intent\\.amount \\* 100\\)/);
+  assert.match(settlement, /orderTotalCents !== intentAmountCents/);
+  assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_AMOUNT_MISMATCH/);
+});
