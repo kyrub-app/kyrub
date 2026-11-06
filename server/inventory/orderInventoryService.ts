@@ -479,6 +479,17 @@ export const transitionOrderStatusWithInventory = async (
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado.');
 
+    // Explicitly tagged prepaid requests cannot enter fulfillment through
+    // ordinary status transitions. A separate authoritative payment-release
+    // operation must be implemented before these requests can be prepared.
+    // Untagged legacy and partner orders retain their existing behavior.
+    const releaseMode = (orderSnapshot.data() as Record<string, unknown> | undefined)?.releaseMode;
+    if (releaseMode === 'pay_before_fulfillment' &&
+        (nextStatus === 'preparing' || nextStatus === 'ready' ||
+         nextStatus === 'out_for_delivery' || nextStatus === 'completed')) {
+      throw new Error('Pedido pré-pago aguardando liberação financeira autoritativa.');
+    }
+
     if (
       order.status !== nextStatus &&
       !STATUS_TRANSITIONS[order.status].includes(nextStatus)
