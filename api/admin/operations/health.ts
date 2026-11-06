@@ -25,6 +25,42 @@ export default async function handler(request: RequestLike, response: ResponseLi
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
+  if (transport === 'firebase-preflight') {
+    response.setHeader('cache-control', 'no-store');
+    if (method !== 'GET') {
+      response.setHeader('allow', 'GET');
+      response.status(405).json({ status: 'FAIL', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    if (!/^Bearer\s+\S+/i.test(authorization)) {
+      response.status(401).json({ status: 'FAIL', code: 'AUTH_REQUIRED' });
+      return;
+    }
+    let deadline: ReturnType<typeof setTimeout> | undefined;
+    let expired = false;
+    try {
+      const result = await Promise.race([
+        (async () => {
+          const preflight = await import('../../../server/admin/firebasePreflightService.js');
+          if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
+          return preflight.runFirebasePreflight(authorization);
+        })(),
+        new Promise<{ httpStatus: number; body: { status: string; code: string } }>(resolve => {
+          deadline = setTimeout(() => {
+            expired = true;
+            resolve({ httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } });
+          }, 12_000);
+        }),
+      ]);
+      response.status(result.httpStatus).json(result.body);
+    } catch {
+      response.status(503).json({ status: 'FAIL', code: 'PREFLIGHT_UNAVAILABLE' });
+    } finally {
+      if (deadline) clearTimeout(deadline);
+    }
+    return;
+  }
+
   if (transport === 'social-moderation-list' || transport === 'social-moderation-remove') {
     const expectedMethod = transport === 'social-moderation-list' ? 'GET' : 'POST';
     if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
