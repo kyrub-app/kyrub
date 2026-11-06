@@ -1077,7 +1077,34 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
 
         {view === 'account' && (
           <div className="flex-1 p-5" id="customer-account-panel">
-            {!currentOrder || !currentPaymentPresentation ? (
+            {!currentOrder && cart.length > 0 ? (
+              <div className="space-y-4">
+                <section className="rounded-3xl border border-slate-800 bg-slate-950 p-5">
+                  <span className="font-mono text-[9px] font-bold uppercase text-orange-400">Prévia · pedido ainda não registrado</span>
+                  <h4 className="mt-2 text-lg font-black text-white">Sua conta</h4>
+                  <p className="mt-1 text-xs text-slate-400">Confira os itens e valores antes de iniciar o checkout oficial.</p>
+                  <div className="mt-4 space-y-3">
+                    {cart.map(item => (
+                      <div key={item.product.id} className="flex items-start justify-between gap-3 border-b border-slate-800 pb-3 text-xs">
+                        <span className="text-slate-200">{item.quantity}× {item.product.name}</span>
+                        <span className="shrink-0 font-mono text-white">{currencyFormatter.format(
+                          contractPreview && item.product.saleModality?.mode === 'subscription'
+                            ? contractPreview.totalMinor / 100 : item.product.price * item.quantity
+                        )}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="mt-3 flex justify-between text-xs text-slate-400"><span>Subtotal mensal / base</span><span>{currencyFormatter.format(subtotal)}</span></div>
+                  {contractPreview && <>
+                    <div className="mt-2 flex justify-between text-xs text-emerald-300"><span>Desconto contratual ({contractPreview.discountPercent}%)</span><span>-{currencyFormatter.format(subtotal * subscriptionMonths - contractPreview.totalMinor / 100)}</span></div>
+                    <div className="mt-2 flex justify-between text-xs text-slate-400"><span>Equivalente mensal</span><span>{currencyFormatter.format(contractPreview.monthlyEquivalentMinor / 100)}</span></div>
+                  </>}
+                  <div className="mt-4 flex justify-between border-t border-slate-700 pt-3 text-sm font-black text-white"><span>Total estimado</span><span>{currencyFormatter.format(contractPreview ? contractPreview.totalMinor / 100 : checkoutTotal)}</span></div>
+                  <p className="mt-3 text-xs text-amber-300">Prévia informativa. O valor e a forma de pagamento dependem da cotação oficial. Nenhum pedido ou cobrança foi criado.</p>
+                  <button type="button" onClick={() => setView('cart')} className="mt-4 rounded-lg border border-slate-600 px-3 py-2 text-xs text-white">Voltar ao carrinho</button>
+                </section>
+              </div>
+            ) : !currentOrder || !currentPaymentPresentation ? (
               <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-950/50 px-5 py-14 text-center">
                 <ReceiptText className="mx-auto h-10 w-10 text-slate-700" />
                 <p className="mt-3 text-xs font-black uppercase text-slate-500">
