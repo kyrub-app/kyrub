@@ -29,3 +29,12 @@ test('marketplace settlement requires exact cents match', () => {
   assert.match(settlement, /orderTotalCents !== intentAmountCents/);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_AMOUNT_MISMATCH/);
 });
+
+test('idempotent settlement refuses unpaid or cross-intent replay', () => {
+  const paidGate = settlement.indexOf("intent.status !== 'paid'");
+  const bindingGate = settlement.indexOf('recordedIntentId !== paymentIntentId');
+  const earlyReturn = settlement.indexOf("if (order.paymentStatus === 'paid') return");
+  assert.ok(paidGate > 0 && paidGate < earlyReturn);
+  assert.ok(bindingGate > paidGate && bindingGate < earlyReturn);
+  assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_INTENT_MISMATCH/);
+});
