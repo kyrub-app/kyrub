@@ -81,7 +81,7 @@ test('rendered action is hidden outside preview and from inactive or non-super a
   const render = (hostname: string, nextProfile: AdminProfile) => {
     Object.defineProperty(globalThis, 'window', { configurable: true, value: { location: { hostname, search: '?kyrub_admin_preview=1' } } });
     return renderToStaticMarkup(createElement(AdminFirebasePreflight, {
-      user: { ...user, getIdToken: async () => { throw Error('render must not authenticate'); } } as User,
+      user: { ...user, getIdToken: async () => { throw Error('render must not authenticate'); } },
       profile: nextProfile,
     }));
   };

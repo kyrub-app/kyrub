@@ -3,7 +3,7 @@ import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
 import { canRunFirebasePreflight, createFirebasePreflightRunner, isFirebasePreflightPreview, type PreflightStatus } from '../../utils/adminFirebasePreflight';
 
-export default function AdminFirebasePreflight({ user, profile }: { user: User; profile: AdminProfile }) {
+export default function AdminFirebasePreflight({ user, profile }: { user: Pick<User, 'uid' | 'emailVerified' | 'getIdToken'>; profile: AdminProfile }) {
   const runner = useRef(createFirebasePreflightRunner());
   const locked = useRef(false);
   const [busy, setBusy] = useState(false);
