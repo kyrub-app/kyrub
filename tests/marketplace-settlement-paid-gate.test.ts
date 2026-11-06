@@ -50,3 +50,10 @@ test('verified webhook materialization records the original payment intent', () 
   assert.match(webhook, /if \(operationalOrder && !operationalOrderExists\)/);
   assert.match(webhook, /transaction\.set\(orderRef, \{/);
 });
+
+test('cancelled or rejected orders cannot be silently settled on replay', () => {
+  const closedGate = settlement.indexOf("order.status === 'rejected' || order.status === 'cancelled'");
+  const idempotentReturn = settlement.indexOf("if (order.paymentStatus === 'paid') return");
+  assert.ok(closedGate > 0 && closedGate < idempotentReturn);
+  assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_ORDER_CLOSED/);
+});
