@@ -514,21 +514,21 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
             </button>
             <button
               type="button"
-              onClick={() => setView('account')}
-              className={tabClassName('account')}
-              id="customer-account-tab"
-            >
-              <ReceiptText className="h-4 w-4 shrink-0" />
-              <span className="truncate">Conta</span>
-            </button>
-            <button
-              type="button"
               onClick={() => setView('order')}
               className={tabClassName('order')}
               id="customer-order-tab"
             >
               <PackageCheck className="h-4 w-4 shrink-0" />
               <span className="truncate">Meu pedido</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setView('account')}
+              className={tabClassName('account')}
+              id="customer-account-tab"
+            >
+              <ReceiptText className="h-4 w-4 shrink-0" />
+              <span className="truncate">Conta</span>
             </button>
           </div>
         </header>
@@ -544,9 +544,9 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                   <h4 className="text-xs font-black uppercase text-white">
                     Itens selecionados ({cartItemsCount})
                   </h4>
-                  <button type="button" disabled={cart.length === 0} onClick={() => setView('account')}
+                  <button type="button" disabled={cart.length === 0} onClick={() => setView('order')}
                     className="rounded-lg bg-orange-600 px-3 py-2 text-[10px] font-black uppercase text-white disabled:opacity-40">
-                    Confirmar pedido
+                    Meu pedido
                   </button>
                 </div>
 
