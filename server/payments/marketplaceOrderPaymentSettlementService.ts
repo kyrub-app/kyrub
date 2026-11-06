@@ -79,6 +79,15 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_AMOUNT_MISMATCH');
     }
 
+    // A settled order must not be replayed with a different payment intent.
+    // The authoritative intent must itself be paid, including on retries.
+    if (intent.status !== 'paid') {
+      throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_VERIFIED_PAYMENT');
+    }
+    const recordedIntentId = clean(rawOrder.paymentIntentId);
+    if (recordedIntentId && recordedIntentId !== paymentIntentId) {
+      throw new Error('PAYMENT_ORDER_SETTLEMENT_INTENT_MISMATCH');
+    }
     if (order.paymentStatus === 'paid') return;
     if (order.status !== 'accepted') {
       throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_ACCEPTED_ORDER');
