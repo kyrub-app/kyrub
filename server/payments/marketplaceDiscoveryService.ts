@@ -174,7 +174,7 @@ const projectCanonicalOffers = (
       isService: data.isService === true,
       category: clean(data.category),
       supplierId: storeId,
-      ...projectSubscriptionFields(productById.get(offerId) ?? {}),
+      ...projectSubscriptionFields(productById.get(clean(data.productId) || offerId) ?? {}),
     }];
   });
 
