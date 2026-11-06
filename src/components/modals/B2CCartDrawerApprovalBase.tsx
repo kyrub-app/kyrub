@@ -20,7 +20,7 @@ import { B2CCartDrawer as LegacyB2CCartDrawer } from './LegacyB2CCartDrawer';
 import { auth } from '../../utils/firebase';
 import { InitialPrepaidSubscriptionCheckout } from '../InitialPrepaidSubscriptionCheckout';
 import { createCatalogSubscriptionCheckout, quoteMerchantSubscriptionContract, loadCatalogSubscriptionBillingRoute } from '../../utils/storeSubscription';
-import { CONTRACT_TERM_MONTHS, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
+import { CONTRACT_TERM_MONTHS, calculateSubscriptionContractOffer, parseSubscriptionContractDiscounts, type ContractTermMonths, type SubscriptionContractOffer } from '../../../shared/subscriptionContractOffers';
 import {
   initiateMarketplaceCheckout,
   listMarketplacePromotions,
@@ -170,6 +170,19 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     ? parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)?.map(offer => offer.months) ?? [1]
     : [1];
 
+  // Display-only preview. The server quote remains authoritative for charging.
+  const contractPreview = useMemo(() => {
+    if (cart.length !== 1 || cart[0].quantity !== 1 ||
+        cart[0].product.saleModality?.mode !== 'subscription') return null;
+    const discount = parseSubscriptionContractDiscounts(cart[0].product.contractDiscounts)
+      ?.find(offer => offer.months === subscriptionMonths);
+    if (!discount) return null;
+    try {
+      return calculateSubscriptionContractOffer(
+        Math.round(cart[0].product.price * 100), subscriptionMonths, discount.discountPercent
+      );
+    } catch { return null; }
+  }, [cartFingerprint, subscriptionMonths]);
   const hasSubscriptionCartItem = cart.some(item => item.product.saleModality?.mode === 'subscription');
   const [subscriptionBillingKind, setSubscriptionBillingKind] = useState<'platform-plan' | 'merchant' | 'free-plan' | null>(null);
   const [subscriptionRouteError, setSubscriptionRouteError] = useState('');
@@ -633,8 +646,15 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                               {item.product.name}
                             </h5>
                             <p className="mt-1 font-mono text-xs text-white">
-                              {currencyFormatter.format(item.product.price)}
+                              {contractPreview && item.product.saleModality?.mode === 'subscription'
+                                ? currencyFormatter.format(contractPreview.totalMinor / 100)
+                                : currencyFormatter.format(item.product.price)}
                             </p>
+                            {contractPreview && item.product.saleModality?.mode === 'subscription' && (
+                              <p className="mt-1 text-[11px] text-slate-400">
+                                Total estimado para {subscriptionMonths} {subscriptionMonths === 1 ? 'mês' : 'meses'} · {contractPreview.discountPercent}% de desconto · Equivalente mensal {currencyFormatter.format(contractPreview.monthlyEquivalentMinor / 100)}. Sujeito à cotação oficial.
+                              </p>
+                            )}
 
                             <div className="mt-2 flex items-center gap-2">
                               <button
