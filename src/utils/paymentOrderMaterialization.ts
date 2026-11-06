@@ -169,6 +169,9 @@ export const settleExistingMarketplaceOrder = (input: {
   if (intent.context !== 'marketplace') {
     throw new Error('PAYMENT_ORDER_SETTLEMENT_CONTEXT_INVALID');
   }
+  if (!canMaterializeOperationalOrder(intent)) {
+    throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_VERIFIED_PAYMENT');
+  }
   const order = input.order;
   if (
     order.id !== intent.target.orderId ||
