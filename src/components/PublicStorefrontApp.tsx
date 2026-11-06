@@ -171,6 +171,14 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         if (cancelled) return;
         setStore(responseStoreToStore(payload.store));
         setPublicProducts(payload.offers);
+        // Cart entries persisted in local storage contain product snapshots.
+        // Refresh them from the current published offers so newly configured
+        // contract terms cannot remain hidden behind an older cart snapshot.
+        const currentOffers = new Map(payload.offers.map(offer => [offer.id, offer]));
+        setCart(previous => previous.map(item => {
+          const currentProduct = currentOffers.get(item.product.id);
+          return currentProduct ? { ...item, product: currentProduct } : item;
+        }));
       })
       .catch(error => {
         if (cancelled || controller.signal.aborted) return;
