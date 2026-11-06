@@ -23,3 +23,10 @@ test('KDS keeps the existing partner and paid order handling intact', () => {
   assert.match(visibility, /if \(order\.fulfillmentType === 'dine_in'\) return true/);
   assert.match(visibility, /return order\.paymentStatus === 'paid'/);
 });
+
+test('explicit prepaid orders are not KDS-visible based on paid status alone', () => {
+  const gate = visibility.indexOf("releaseMode === 'pay_before_fulfillment'");
+  const paidFallback = visibility.indexOf("return order.paymentStatus === 'paid'");
+  assert.ok(gate > 0 && gate < paidFallback);
+  assert.ok(gate < visibility.indexOf('if (isNinetyNineFoodOrder(order)) return true'));
+});
