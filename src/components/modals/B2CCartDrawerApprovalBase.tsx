@@ -568,7 +568,7 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
                     {subscriptionMonths !== 1 && cart[0].quantity !== 1 && (
                       <p className="mt-3 text-amber-300">Contrate uma assinatura por vez. Ajuste a quantidade deste produto para 1.</p>
                     )}
-                    {subscriptionMonths === 1 && subscriptionBillingKind === 'merchant' && <>
+                    {subscriptionMonths === 1 && subscriptionBillingKind === 'merchant' && cart[0].product.contractDiscounts === undefined && <>
                     <button
                       type="button"
                       disabled={isQuotingSubscription}
