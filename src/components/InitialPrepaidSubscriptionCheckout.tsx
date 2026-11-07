@@ -81,17 +81,17 @@ export function InitialPrepaidSubscriptionCard({ quote, payment, accepted, busy,
   const pixExpired = payment?.pix && Date.parse(payment.pix.expiresAt) <= Date.now();
   return <section className="mt-3 space-y-3 rounded-xl border border-cyan-500/30 bg-slate-950 p-3" aria-label="Contratação pré-paga por Pix">
     <p className="font-bold text-white">Contrato de {quote?.quote.months ?? selectedMonths} meses · Pix único</p>
-    <p>Pagamento integral, sem parcelamento e sem renovação automática. Uma futura renovação exige novo aceite.</p>
+    <p>Pagamento único antecipado por Pix, sem parcelamento e sem renovação automática. A assinatura termina ao final do período contratado; para continuar, será necessário escolher uma nova oferta, aceitar as condições e realizar outro pagamento.</p>
     {!quote ? <button type="button" disabled={busy} onClick={() => onAction('quote')} className="min-h-10 rounded-lg border border-cyan-700 px-3 disabled:opacity-50">
       {busy ? 'Consultando…' : 'Consultar preço oficial do contrato'}
     </button> : <>
       <p>Total confirmado pelo servidor: <strong>{currency.format(quote.quote.totalMinor / 100)}</strong></p>
-      <p>Desconto: {quote.quote.discountPercent}% · Equivalente mensal: {currency.format(quote.quote.monthlyEquivalentMinor / 100)}</p>
+      <p>Desconto sobre o período contratado: {quote.quote.discountPercent}% · Equivalente mensal: {currency.format(quote.quote.monthlyEquivalentMinor / 100)}</p>
       {quote.status && quote.status !== 'quoted' && <p>Retomando a contratação já registrada, com suas condições originais.</p>}
       {!payment && <>
         <label className="flex items-start gap-2">
           <input type="checkbox" checked={accepted} disabled={busy} onChange={event => onAccept(event.target.checked)} />
-          <span>Confirmo a contratação de {quote.quote.months} meses pelo total de {currency.format(quote.quote.totalMinor / 100)}, em pagamento único Pix e sem renovação automática.</span>
+          <span>Confirmo a contratação de {quote.quote.months} meses pelo total de {currency.format(quote.quote.totalMinor / 100)}, em pagamento único Pix, sem renovação automática e com término ao final do período contratado. Uma nova contratação dependerá do meu aceite.</span>
         </label>
         <button type="button" disabled={busy || !accepted} onClick={() => onAction('checkout')}
           className="min-h-10 rounded-lg bg-cyan-700 px-3 font-bold text-white disabled:opacity-50">
