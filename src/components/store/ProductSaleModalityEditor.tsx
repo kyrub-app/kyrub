@@ -66,6 +66,7 @@ export const ProductSaleModalityEditor: React.FC<ProductSaleModalityEditorProps>
     billingIntervalCount?: number;
     benefitKind?: SubscriptionBenefitKind;
     unitsPerCycle?: number | null;
+    autoRenew?: boolean;
   }): void => {
     const currentBenefitKind =
       input?.benefitKind ?? subscription?.benefit.kind ?? 'access';
@@ -84,6 +85,7 @@ export const ProductSaleModalityEditor: React.FC<ProductSaleModalityEditorProps>
           input?.billingIntervalCount ?? subscription?.billingInterval.count ?? 1,
         benefitKind: currentBenefitKind,
         unitsPerCycle: currentUnits,
+        autoRenew: input?.autoRenew ?? subscription?.autoRenew ?? false,
       })
     );
   };
@@ -246,6 +248,18 @@ export const ProductSaleModalityEditor: React.FC<ProductSaleModalityEditorProps>
               />
             </label>
           )}
+
+          <label className="flex items-center gap-3 rounded-lg border border-slate-800 bg-slate-900/70 px-3 py-3 text-xs text-slate-200">
+            <input
+              id="product-subscription-auto-renew"
+              type="checkbox"
+              checked={subscription.autoRenew}
+              onChange={event => setSubscription({ autoRenew: event.target.checked })}
+              disabled={disabled}
+              className="h-4 w-4 accent-cyan-400"
+            />
+            Renovação automática (desmarque para exigir novo aceite e pagamento)
+          </label>
 
           <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[9px] leading-relaxed text-amber-200/80">
             O cadastro da assinatura já pode ser salvo. A contratação recorrente do cliente será liberada somente pelo fluxo próprio de assinatura, nunca pelo checkout comum.
