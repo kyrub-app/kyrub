@@ -51,9 +51,13 @@ export default async function handler(request: RequestLike, response: ResponseLi
               ? 'PREFLIGHT_MODULE_NOT_FOUND'
               : loaderCode === 'ERR_PACKAGE_PATH_NOT_EXPORTED' || loaderCode === 'ERR_PACKAGE_IMPORT_NOT_DEFINED'
                 ? 'PREFLIGHT_PACKAGE_RESOLUTION_FAILED'
-                : loaderCode === 'ERR_REQUIRE_ESM' || loaderCode === 'ERR_UNKNOWN_FILE_EXTENSION' || loaderCode === 'ERR_UNSUPPORTED_DIR_IMPORT'
-                  ? 'PREFLIGHT_MODULE_FORMAT_FAILED'
-                  : 'PREFLIGHT_MODULE_UNAVAILABLE';
+                : loaderCode === 'ERR_REQUIRE_ESM'
+                  ? 'PREFLIGHT_REQUIRE_ESM'
+                  : loaderCode === 'ERR_UNKNOWN_FILE_EXTENSION'
+                    ? 'PREFLIGHT_UNKNOWN_FILE_EXTENSION'
+                    : loaderCode === 'ERR_UNSUPPORTED_DIR_IMPORT'
+                      ? 'PREFLIGHT_UNSUPPORTED_DIR_IMPORT'
+                      : 'PREFLIGHT_MODULE_UNAVAILABLE';
             return { httpStatus: 503, body: { status: 'FAIL', code } };
           }
           if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
