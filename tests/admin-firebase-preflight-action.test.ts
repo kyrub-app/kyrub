@@ -173,5 +173,5 @@ test('transport separates module load from execution failures without exposing r
   assert.match(branch, /await import\(['"]\.\.\/\.\.\/\.\.\/server\/admin\/firebasePreflightService\.js['"]\)/);
   assert.match(branch, /await service\.runFirebasePreflight\(authorization\)/);
   assert.doesNotMatch(branch, /error\.message|error\.stack/);
-  assert.doesNotMatch(branch, /console\.error\([^)]*,|JSON\.stringify\(authorization\)/);
+  assert.doesNotMatch(branch, /console\.error\([^)]*\b(?:error|authorization)\b|JSON\.stringify\(authorization\)/);
 });
