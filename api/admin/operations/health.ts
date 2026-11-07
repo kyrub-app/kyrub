@@ -55,7 +55,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
               : loaderCode === 'ERR_MODULE_NOT_FOUND' || loaderCode === 'MODULE_NOT_FOUND'
                 ? 'PREFLIGHT_IMPORT_MODULE_MISSING'
                 : 'PREFLIGHT_SERVICE_IMPORT_FAILED';
-            console.error('[Firebase Preflight]', failureCode);
+            console.error('[Firebase Preflight]', failureCode, 'node', process.versions.node);
             return { httpStatus: 503, body: { status: 'FAIL', code: failureCode } };
           }
           try {
