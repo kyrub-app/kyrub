@@ -2,6 +2,7 @@ import type { User } from 'firebase/auth';
 import type { AdminProfile } from './adminControlPlane';
 
 export type PreflightStatus = { status: 'PASS' | 'FAIL'; code: string | null };
+export const FIREBASE_PREFLIGHT_CLIENT_TIMEOUT_MS = 15_000;
 const fail = (code: string): PreflightStatus => ({ status: 'FAIL', code });
 const codes = new Set(['AUTH_REQUIRED', 'AUTH_INVALID', 'FORBIDDEN', 'AUTHORIZED_RUNTIME_REQUIRED',
   'FIREBASE_CREDENTIAL_UNAVAILABLE', 'FIREBASE_CREDENTIAL_INVALID', 'FIREBASE_PROJECT_MISMATCH',
@@ -22,8 +23,14 @@ export const createFirebasePreflightRunner = (request: typeof fetch = fetch) => 
     if (busy) return fail('PREFLIGHT_IN_PROGRESS');
     busy = true;
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 15_000);
-    try {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const deadline = new Promise<PreflightStatus>(resolve => {
+      timer = setTimeout(() => {
+        resolve(fail('PREFLIGHT_TIMEOUT'));
+        controller.abort();
+      }, FIREBASE_PREFLIGHT_CLIENT_TIMEOUT_MS);
+    });
+    const execute = async (): Promise<PreflightStatus> => {
       let token: string;
       try { token = await user.getIdToken(); }
       catch { return fail('AUTH_INVALID'); }
@@ -33,13 +40,22 @@ export const createFirebasePreflightRunner = (request: typeof fetch = fetch) => 
         method: 'GET', headers: { authorization: `Bearer ${token}` },
         cache: 'no-store', redirect: 'error', signal: controller.signal,
       });
-      const body: unknown = await response.json();
-      if (!body || typeof body !== 'object') return fail('PREFLIGHT_UNAVAILABLE');
+      let body: unknown;
+      try { body = await response.json(); }
+      catch (error) {
+        if (controller.signal.aborted) return fail('PREFLIGHT_TIMEOUT');
+        return fail(error instanceof SyntaxError ? 'PREFLIGHT_NON_JSON_RESPONSE' : 'PREFLIGHT_NETWORK_ERROR');
+      }
+      if (!body || typeof body !== 'object' || Array.isArray(body)) {
+        return fail(response.ok ? 'PREFLIGHT_INVALID_RESPONSE' : 'PREFLIGHT_HTTP_ERROR');
+      }
       const result = body as Record<string, unknown>;
       if (response.ok && result.status === 'PASS' && result.code === null) return { status: 'PASS', code: null };
       return result.status === 'FAIL' && typeof result.code === 'string' && codes.has(result.code)
-        ? fail(result.code) : fail('PREFLIGHT_UNAVAILABLE');
-    } catch { return fail(controller.signal.aborted ? 'PREFLIGHT_TIMEOUT' : 'PREFLIGHT_UNAVAILABLE'); }
+        ? fail(result.code) : fail(response.ok ? 'PREFLIGHT_INVALID_RESPONSE' : 'PREFLIGHT_HTTP_ERROR');
+    };
+    try { return await Promise.race([execute(), deadline]); }
+    catch { return fail(controller.signal.aborted ? 'PREFLIGHT_TIMEOUT' : 'PREFLIGHT_NETWORK_ERROR'); }
     finally { clearTimeout(timer); busy = false; }
   };
 };
