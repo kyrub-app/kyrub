@@ -12,6 +12,8 @@ export type PaymentProviderEventType =
   | 'chargeback.reversed';
 
 export interface VerifiedPaymentProviderEvent {
+  /** Receiver verified by the PSP adapter; never supplied by a checkout client. */
+  recipientAccountId?: string;
   provider: string;
   eventId: string;
   eventType: PaymentProviderEventType;
@@ -44,6 +46,7 @@ export const normalizeVerifiedProviderEvent = (
   if (input.signatureVerified !== true) {
     throw new Error('PAYMENT_WEBHOOK_NOT_VERIFIED');
   }
+  if (input.currency !== 'BRL') throw Error('PAYMENT_WEBHOOK_CURRENCY_INVALID');
   if (!Number.isFinite(input.amount) || input.amount <= 0) {
     throw new Error('PAYMENT_WEBHOOK_AMOUNT_INVALID');
   }

@@ -222,6 +222,14 @@ export const processVerifiedPaymentWebhook = async (input: {
     }
 
     const duplicate = eventSnapshot.exists;
+    if (duplicate) {
+      const receipt = eventSnapshot.data()!;
+      if (receipt.storeId !== storeId || receipt.paymentId !== paymentId ||
+          receipt.paymentIntentId !== event.paymentIntentId || receipt.provider !== event.provider ||
+          receipt.providerPaymentId !== event.providerPaymentId || receipt.eventType !== event.eventType) {
+        throw Error('PAYMENT_WEBHOOK_RECEIPT_TARGET_MISMATCH');
+      }
+    }
     const requestedStatus = paymentStatusFromProviderEvent(event.eventType);
     const effectiveStatus = duplicate ? current.status : requestedStatus;
 
@@ -252,6 +260,7 @@ export const processVerifiedPaymentWebhook = async (input: {
     let marketplaceIntent: MarketplaceCanonicalPaymentIntent | null = null;
     let operationalOrder: ReturnType<typeof materializePaidMarketplaceOrder> | null = null;
     let operationalOrderExists = false;
+    const releasesToRevoke: ReturnType<typeof adminDb.doc>[] = [];
     let promotionRef: ReturnType<typeof adminDb.doc> | null = null;
     let promotionExists = false;
     let redemptionRef: ReturnType<typeof adminDb.doc> | null = null;
@@ -277,6 +286,25 @@ export const processVerifiedPaymentWebhook = async (input: {
       assertMarketplacePaymentIntentMatchesPayment(current, normalizedIntent, event);
       paymentIntent = normalizedIntent;
       marketplaceIntent = normalizedIntent;
+
+      if (effectiveStatus !== 'paid') {
+        const orderRef = adminDb.doc(operationalOrderPath(storeId, marketplaceIntent.target.orderId));
+        const orderDoc = await transaction.get(orderRef);
+        if (orderDoc.get('releaseMode') === 'pay_before_fulfillment' &&
+            orderDoc.get('id') === marketplaceIntent.target.orderId && orderDoc.get('storeId') === storeId &&
+            orderDoc.get('buyerId') === marketplaceIntent.buyerId &&
+            orderDoc.get('paymentIntentId') === marketplaceIntent.id && orderDoc.get('paymentId') === paymentId) {
+          releasesToRevoke.push(orderRef);
+          const tenantDoc = await transaction.get(adminDb.doc(`tenants/${storeId}`));
+          const canonicalId = tenantDoc.get('canonicalStoreId');
+          if (typeof canonicalId === 'string' && canonicalId && !canonicalId.includes('/')) {
+            const mirrorRef = adminDb.doc(`stores/${canonicalId}/orders/${marketplaceIntent.target.orderId}`);
+            const mirror = await transaction.get(mirrorRef);
+            if (mirror.get('legacyStoreId') === storeId && mirror.get('buyerId') === marketplaceIntent.buyerId &&
+                mirror.get('paymentIntentId') === marketplaceIntent.id && mirror.get('paymentId') === paymentId) releasesToRevoke.push(mirrorRef);
+          }
+        }
+      }
 
       if (effectiveStatus === 'paid') {
         const paidIntent: MarketplaceCanonicalPaymentIntent = {
@@ -411,9 +439,14 @@ export const processVerifiedPaymentWebhook = async (input: {
       const orderRef = adminDb.doc(
         operationalOrderPath(operationalOrder.storeId, operationalOrder.id)
       );
-      transaction.set(orderRef, operationalOrder);
+      transaction.set(orderRef, {
+        ...operationalOrder,
+        paymentIntentId: marketplaceIntent!.id,
+        paymentId,
+      });
       orderMaterialized = true;
     }
+    for (const orderRef of releasesToRevoke) transaction.set(orderRef, { operationalRelease: null }, { merge: true });
 
     if (pointLedgerEntry && pointLedgerRef && !pointLedgerExists) {
       transaction.set(pointLedgerRef, pointLedgerEntry);
@@ -476,6 +509,10 @@ export const processVerifiedPaymentWebhook = async (input: {
         paymentId,
         occurredAt: event.occurredAt,
         processedAt: now,
+        amountMinor: Math.round(event.amount * 100),
+        currency: event.currency,
+        method: event.method,
+        recipientAccountId: event.recipientAccountId ?? '',
       });
 
       transaction.update(paymentRef, {
@@ -483,7 +520,7 @@ export const processVerifiedPaymentWebhook = async (input: {
         provider: event.provider,
         providerPaymentId: event.providerPaymentId,
         updatedAt: new Date().toISOString(),
-        ...(requestedStatus === 'paid' ? { paidAt: event.occurredAt } : {}),
+        ...(requestedStatus === 'paid' ? { paidAt: event.occurredAt, verifiedEventKey: idempotencyKey } : {}),
         ...(requestedStatus === 'refunded' ? { refundedAt: event.occurredAt } : {}),
       });
     }

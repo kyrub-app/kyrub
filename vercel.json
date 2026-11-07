@@ -6,7 +6,8 @@
       "*": false,
       "main": true,
       "preview-*": true,
-      "feat/profile-react-rebuild": true
+      "feat/profile-react-rebuild": true,
+      "feat/order-release-policy": true
     }
   },
   "functions": {

@@ -136,7 +136,7 @@ export const processMercadoPagoWebhook = async (input: {
   });
 
   let effectiveOrderId = result.orderId;
-  if (event.eventType === 'payment.paid' && result.orderId) {
+  if (event.eventType === 'payment.paid' && result.status === 'paid' && result.orderId) {
     await settleMarketplaceOperationalOrderAfterPayment({
       storeId: event.kyrubStoreId,
       orderId: result.orderId,

@@ -114,6 +114,9 @@ test('payment transports do not statically initialize the legacy action graph', 
 test('admin integration transports do not statically initialize operations health', () => {
   const source = readFileSync('api/admin/operations/health.ts', 'utf8');
 
+  // The Firebase preflight is intentionally statically linked to avoid
+  // Vercel converting its dynamic ESM import into a CommonJS require().
+  // No other admin transport may add an eager server dependency.
   assert.doesNotMatch(source, /^import\s.+from\s+['"]\.\.\/\.\.\/\.\.\/server\//m);
   assert.match(source, /transport === 'integration-readiness'/);
   assert.match(source, /transport === 'mercado-livre-platform-status'/);

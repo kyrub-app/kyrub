@@ -138,6 +138,7 @@ export const materializePendingMarketplaceOrder = (input: {
 
   return {
     ...baseMarketplaceOrder(intent, now, false),
+    releaseMode: 'pay_before_fulfillment',
     paymentIntentId: intent.id,
     paymentId,
     checkoutAuthority: 'merchant_approval_required',
@@ -168,6 +169,9 @@ export const settleExistingMarketplaceOrder = (input: {
   const intent = normalizeCanonicalPaymentIntent(input.intent);
   if (intent.context !== 'marketplace') {
     throw new Error('PAYMENT_ORDER_SETTLEMENT_CONTEXT_INVALID');
+  }
+  if (!canMaterializeOperationalOrder(intent)) {
+    throw new Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_VERIFIED_PAYMENT');
   }
   const order = input.order;
   if (

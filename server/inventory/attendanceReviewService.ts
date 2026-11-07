@@ -1,4 +1,5 @@
 import { adminAuth, adminDb } from '../firebaseAdmin';
+import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy';
 
 export type AttendanceReviewItemInput = {
   lineId: string;
@@ -256,6 +257,17 @@ export const reviewAttendanceOrderAuthoritatively = async (
       const item = candidate as Record<string, unknown>;
       return sum + (finiteMoney(item.price) ?? 0) * (finiteInteger(item.quantity) ?? 0);
     }, 0);
+    // An approved dine-in attendance is an open tab: KDS may prepare before
+    // settlement. This is NOT the release rule for prepaid marketplace orders.
+    const release = resolveOrderReleaseDecision({
+      mode: 'open_tab',
+      approval: 'approved',
+      settlement: 'unpaid',
+      paymentVerifiedByServer: false,
+    });
+    if (!release.fulfillmentAuthorized) {
+      throw new Error('A liberação operacional da comanda foi bloqueada.');
+    }
     const patch = {
       items,
       subtotal: total,

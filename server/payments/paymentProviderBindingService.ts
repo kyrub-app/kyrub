@@ -2,6 +2,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 
 export interface PaymentProviderBinding {
+  recipientAccountId?: string;
   provider: 'mercado-pago';
   providerPaymentId: string;
   legacyStoreId: string;
@@ -36,7 +37,8 @@ export const saveMercadoPagoPaymentProviderBinding = async (
         clean(current.legacyStoreId) !== legacyStoreId ||
         clean(current.canonicalStoreId) !== canonicalStoreId ||
         clean(current.paymentId) !== paymentId ||
-        clean(current.paymentIntentId) !== paymentIntentId
+        clean(current.paymentIntentId) !== paymentIntentId ||
+        (current.recipientAccountId && input.recipientAccountId && current.recipientAccountId !== input.recipientAccountId)
       ) {
         throw new Error('PAYMENT_PROVIDER_BINDING_CONFLICT');
       }
@@ -49,6 +51,7 @@ export const saveMercadoPagoPaymentProviderBinding = async (
       canonicalStoreId,
       paymentId,
       paymentIntentId,
+      ...(input.recipientAccountId ? { recipientAccountId: clean(input.recipientAccountId) } : {}),
       createdAt: FieldValue.serverTimestamp(),
     });
   });
@@ -63,6 +66,7 @@ export const loadMercadoPagoPaymentProviderBinding = async (
   if (!snapshot.exists) return null;
   const data = snapshot.data() as Record<string, unknown>;
   const result: PaymentProviderBinding = {
+    ...(clean(data.recipientAccountId) ? { recipientAccountId: clean(data.recipientAccountId) } : {}),
     provider: 'mercado-pago',
     providerPaymentId: clean(data.providerPaymentId),
     legacyStoreId: clean(data.legacyStoreId),

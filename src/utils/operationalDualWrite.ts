@@ -1,4 +1,5 @@
 import type { User } from 'firebase/auth';
+import { requiresServerOrderPersistence } from '../../shared/orderReleasePolicy';
 import {
   collection,
   doc,
@@ -376,6 +377,9 @@ export const mirrorLegacyOrderToCanonical = async (
   canonicalStore: CanonicalStoreRecord,
   order: CustomerOrder
 ): Promise<'created' | 'updated' | 'unchanged'> => {
+  // The checkout/approval/payment transactions own both prepaid projections.
+  // Skip before any client read or write, even when the mirror is absent.
+  if (requiresServerOrderPersistence(order)) return 'unchanged';
   assertMigrationContext(user, canonicalStore, order.storeId);
   const reference = doc(db, getStoreOrderDocumentPath(canonicalStore.id, order.id));
   const snapshot = await getDoc(reference);
