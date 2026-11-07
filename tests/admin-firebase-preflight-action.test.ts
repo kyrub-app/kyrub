@@ -167,8 +167,8 @@ test('transport separates module load from execution failures without exposing r
   const end = route.indexOf("transport === 'social-moderation-list'");
   const branch = route.slice(start, end);
   assert.match(branch, /PREFLIGHT_EXECUTION_FAILED/);
-  assert.match(route, /import \\{ runFirebasePreflight \\} from/);
-  assert.match(branch, /await runFirebasePreflight\\(authorization\\)/);
-  assert.doesNotMatch(branch, /error\\.message|error\\.stack/);
+  assert.match(route, /import \{ runFirebasePreflight \} from/);
+  assert.match(branch, /await runFirebasePreflight\(authorization\)/);
+  assert.doesNotMatch(branch, /error\.message|error\.stack/);
   assert.doesNotMatch(branch, /console\.|JSON\.stringify\(authorization\)/);
 });
