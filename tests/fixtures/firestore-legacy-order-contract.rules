@@ -1,0 +1,27 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Synthetic legacy contract for compatibility tests. Not production rules.
+    function signedIn() { return request.auth != null; }
+    function ownsStore(storeId) {
+      return signedIn() && get(/databases/$(database)/documents/stores/$(storeId)).data.ownerId == request.auth.uid;
+    }
+    function buyerCancels() {
+      return signedIn() && resource.data.buyerId == request.auth.uid
+        && resource.data.status == 'pending' && request.resource.data.status == 'cancelled'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt']);
+    }
+    match /artifacts/{tenantId}/public/data/customerOrders/{orderId} {
+      allow read: if signedIn() && (request.auth.uid == tenantId || resource.data.buyerId == request.auth.uid);
+      allow update: if buyerCancels();
+    }
+    match /artifacts/{tenantId}/{path=**} {
+      allow read, write: if signedIn() && request.auth.uid == tenantId;
+    }
+    match /stores/{storeId}/orders/{orderId} {
+      allow read: if ownsStore(storeId) || (signedIn() && resource.data.buyerId == request.auth.uid);
+      allow create, update, delete: if ownsStore(storeId);
+      allow update: if buyerCancels();
+    }
+  }
+}

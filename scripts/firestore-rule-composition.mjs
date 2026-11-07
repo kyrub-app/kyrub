@@ -73,6 +73,8 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
             || existing().buyerId == request.auth.uid
           );
         allow create: if isSignedIn()
+          && storeSecClientOrderReleaseIsValid()
+          && (!incoming().keys().hasAny(['source']) || incoming().source != 'customer' || incoming().fulfillmentType == 'dine_in')
           && (
             request.auth.uid == tenantId
             || (
@@ -85,8 +87,9 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
             )
           );
         allow update: if isSignedIn()
+          && !incoming().diff(existing()).affectedKeys().hasAny(['releaseMode', 'operationalRelease', 'paymentIntentId', 'paymentId'])
           && (
-            request.auth.uid == tenantId
+            (request.auth.uid == tenantId && storeSecOrderReleaseUnchanged())
             || (
               existing().buyerId == request.auth.uid
               && incoming().buyerId == existing().buyerId
@@ -104,11 +107,13 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
         allow delete: if false;
       }
 
-      match /{allData=**} {
-        allow read: if isSignedIn()
-          && request.auth.uid == tenantId;
-        allow create, update, delete: if isSignedIn()
-          && request.auth.uid == tenantId;
+      match /{artifactCollection}/{artifactDocument} {
+        allow read, create, update, delete: if isSignedIn() && request.auth.uid == tenantId;
+        match /{nestedCollection}/{nestedDocument}/{rest=**} {
+          allow read, create, update, delete: if isSignedIn()
+            && request.auth.uid == tenantId
+            && !(artifactCollection == 'public' && artifactDocument == 'data' && nestedCollection == 'customerOrders');
+        }
       }
     }`;
 

@@ -19,7 +19,7 @@ test('attendance review client delegates to authenticated backend', () => {
 
 test('attendance review route authenticates tenant before server transaction', () => {
   assert.match(router, /router\.post\('\/:orderId\/attendance-review'/);
-  assert.match(router, /authenticatedTenantId\(request\)/);
+  assert.match(router, /authenticatedUserId\(request\)/);
   assert.match(router, /reviewAttendanceOrderAuthoritatively/);
   assert.match(service, /adminDb\.runTransaction/);
   assert.match(service, /artifacts\/\$\{tenantId\}\/public\/data\/customerOrders/);
@@ -47,4 +47,12 @@ test('rejection requires reason and canonical mirror is updated when available',
   assert.match(service, /canonicalStoreId/);
   assert.match(service, /stores\/\$\{canonicalStoreId\}\/orders/);
   assert.match(service, /transaction\.set\(canonicalReference/);
+});
+
+test('attendance approval checks shared open-tab policy before committing KDS-visible approval', () => {
+  assert.match(service, /resolveOrderReleaseDecision/);
+  assert.match(service, /mode: 'open_tab'/);
+  assert.match(service, /approval: 'approved'/);
+  assert.match(service, /if \(!release\.fulfillmentAuthorized\)/);
+  assert.doesNotMatch(service, /mode: 'pay_before_fulfillment'/);
 });

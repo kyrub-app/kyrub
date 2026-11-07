@@ -5,6 +5,8 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { loadPrepaidPaymentConfirmation, assertPrepaidStoreMirrorIdentity } from '../payments/marketplaceOrderPaymentSettlementService.js';
+import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy.js';
 import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import {
   applyInventoryConsumptionLines,
@@ -462,7 +464,7 @@ export const transitionOrderStatusWithInventory = async (
 ): Promise<OrderInventoryTransitionResult> => {
   const normalizedTenantId = clean(tenantId);
   const normalizedOrderId = clean(orderId);
-  if (!normalizedTenantId || !normalizedOrderId) {
+  if (!normalizedTenantId || !normalizedOrderId || normalizedTenantId.includes('/') || normalizedOrderId.includes('/')) {
     throw new Error('Pedido não identificado.');
   }
   if (!isOrderStatus(nextStatus)) throw new Error('Status do pedido inválido.');
@@ -478,6 +480,28 @@ export const transitionOrderStatusWithInventory = async (
     ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado.');
+
+    // Re-read proof inside this transaction; a UI payment flag or forged
+    // release marker cannot authorize inventory consumption or KDS work.
+    const releaseMode = (orderSnapshot.data() as Record<string, unknown> | undefined)?.releaseMode;
+    const rawOrder = orderSnapshot.data()!;
+    if (order.id !== normalizedOrderId || (rawOrder.storeId && rawOrder.storeId !== normalizedTenantId)) {
+      throw Error('ORDER_IDENTITY_MISMATCH');
+    }
+    const prepaid = releaseMode === 'pay_before_fulfillment';
+    if (prepaid) await assertPrepaidStoreMirrorIdentity(transaction, normalizedTenantId, clean(tenantSnapshot.get('canonicalStoreId')));
+    const confirmation = prepaid && !['rejected', 'cancelled'].includes(nextStatus)
+      ? await loadPrepaidPaymentConfirmation({ transaction, storeId: normalizedTenantId,
+        orderId: normalizedOrderId, order: rawOrder, now: new Date().toISOString() }) : null;
+    const fulfillmentAuthorized = resolveOrderReleaseDecision({ mode: 'pay_before_fulfillment',
+      approval: order.status === 'pending' ? 'pending' : order.status === 'rejected' ? 'rejected' : 'approved',
+      settlement: confirmation ? 'paid' : 'unpaid', paymentVerifiedByServer: Boolean(confirmation),
+      orderCancelled: order.status === 'cancelled' }).fulfillmentAuthorized;
+    if (prepaid && !fulfillmentAuthorized &&
+        (nextStatus === 'preparing' || nextStatus === 'ready' ||
+         nextStatus === 'out_for_delivery' || nextStatus === 'completed')) {
+      throw new Error('Pedido pré-pago aguardando liberação financeira autoritativa.');
+    }
 
     if (
       order.status !== nextStatus &&
@@ -526,7 +550,7 @@ export const transitionOrderStatusWithInventory = async (
       status: nextStatus,
       customerNote: nextNote,
     };
-    const inventoryAction = applyInventoryForStatus({
+    const inventoryAction = prepaid && nextStatus === 'accepted' && !confirmation ? 'waiting' : applyInventoryForStatus({
       transaction,
       tenantId: normalizedTenantId,
       inventoryAuthority,
@@ -537,10 +561,13 @@ export const transitionOrderStatusWithInventory = async (
       ledgerData: ledgerSnapshot.data(),
     });
     const updatedAt = new Date().toISOString();
+    const releasePatch = prepaid ? { operationalRelease:
+      ['pending', 'rejected', 'cancelled'].includes(nextStatus) ? null : confirmation } : {};
     transaction.set(
       orderReference,
       {
         status: nextStatus,
+        ...releasePatch,
         customerNote: nextNote,
         updatedAt,
         inventory: {
@@ -557,7 +584,10 @@ export const transitionOrderStatusWithInventory = async (
       transaction.set(
         adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`),
         {
+          ...(prepaid ? { ...rawOrder, storeId: canonicalStoreId, legacyStoreId: normalizedTenantId,
+            legacyUpdatedAt: updatedAt } : {}),
           status: nextStatus,
+          ...releasePatch,
           customerNote: nextNote,
           updatedAt,
           inventory: {
@@ -608,6 +638,9 @@ export const updateIntegratedOrderStatusWithInventory = async (
     ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido integrado não encontrado.');
+    if (orderSnapshot.get('releaseMode') === 'pay_before_fulfillment') {
+      throw Error('PREPAID_ORDER_REQUIRES_MERCHANT_WORKFLOW');
+    }
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,
@@ -695,6 +728,19 @@ export const reconcilePersistedOrderInventory = async (
     ]);
     const order = parseOrder(orderSnapshot.data());
     if (!order) throw new Error('Pedido não encontrado para conciliação de estoque.');
+    const rawOrder = orderSnapshot.data()!;
+    if (order.id !== orderId || (rawOrder.storeId && rawOrder.storeId !== tenantId)) {
+      throw new Error('PAYMENT_ORDER_SETTLEMENT_TARGET_MISMATCH');
+    }
+    if (rawOrder.releaseMode === 'pay_before_fulfillment' &&
+        !['rejected', 'cancelled'].includes(order.status)) {
+      await assertPrepaidStoreMirrorIdentity(transaction, tenantId, clean(tenantSnapshot.get('canonicalStoreId')));
+      const confirmation = await loadPrepaidPaymentConfirmation({ transaction, storeId: tenantId,
+        orderId, order: rawOrder, now: new Date().toISOString() });
+      if (!confirmation || order.status === 'pending') return {
+        orderId, status: order.status, inventoryAction: 'waiting' as const, ...integrationIdentity(order),
+      };
+    }
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,

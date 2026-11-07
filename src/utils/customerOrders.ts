@@ -1,3 +1,4 @@
+import { parsePrepaidOperationalRelease, requiresServerOrderPersistence } from '../../shared/orderReleasePolicy';
 import {
   collection,
   doc,
@@ -59,6 +60,10 @@ export interface CustomerOrderItem {
 }
 
 export interface CustomerOrder {
+  releaseMode?: import('../../shared/orderReleasePolicy').OrderReleaseMode;
+  operationalRelease?: import('../../shared/orderReleasePolicy').PrepaidOperationalRelease | null;
+  paymentIntentId?: string;
+  paymentId?: string;
   id: string;
   storeId: string;
   buyerId: string;
@@ -400,6 +405,7 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
   if (!value || typeof value !== 'object') return null;
 
   const candidate = value as Record<string, unknown>;
+  if (candidate.releaseMode !== undefined && candidate.releaseMode !== 'pay_before_fulfillment' && candidate.releaseMode !== 'open_tab') return null;
   const id = cleanString(candidate.id);
   const storeId = cleanString(candidate.storeId);
   const buyerId = cleanString(candidate.buyerId);
@@ -507,6 +513,12 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
     subtotal,
     total,
     status: candidate.status,
+    ...(candidate.releaseMode === 'pay_before_fulfillment' || candidate.releaseMode === 'open_tab'
+      ? { releaseMode: candidate.releaseMode } : {}),
+    ...(candidate.operationalRelease !== undefined
+      ? { operationalRelease: parsePrepaidOperationalRelease(candidate.operationalRelease) } : {}),
+    ...(cleanString(candidate.paymentIntentId) ? { paymentIntentId: cleanString(candidate.paymentIntentId) } : {}),
+    ...(cleanString(candidate.paymentId) ? { paymentId: cleanString(candidate.paymentId) } : {}),
     paymentStatus,
     source,
     sourceChannel,
@@ -520,6 +532,10 @@ export const parseCustomerOrder = (value: unknown): CustomerOrder | null => {
 };
 
 const comparableOrder = (order: CustomerOrder) => ({
+  releaseMode: order.releaseMode ?? null,
+  operationalRelease: order.operationalRelease ?? null,
+  paymentIntentId: order.paymentIntentId ?? '',
+  paymentId: order.paymentId ?? '',
   id: order.id,
   buyerId: order.buyerId,
   fulfillmentType: order.fulfillmentType,
@@ -615,6 +631,9 @@ export const resolveCanonicalCustomerOrderStoreId = async (
 export const persistCustomerOrder = async (
   order: CustomerOrder
 ): Promise<void> => {
+  if (requiresServerOrderPersistence(order)) {
+    throw new Error('PREPAID_ORDER_REQUIRES_SERVER_PERSISTENCE');
+  }
   if (!order.id.trim()) throw new Error('Pedido inválido.');
 
   const legacyReference = doc(

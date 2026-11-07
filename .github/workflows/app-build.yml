@@ -37,6 +37,9 @@ jobs:
       - name: Validate admin integration recovery and economic Firestore index
         run: node --test --import tsx tests/admin-integration-recovery.test.ts >> build.log 2>&1
 
+      - name: Validate isolated Firebase preflight and temporary admin action
+        run: node --test --import tsx tests/firebase-admin-preflight.test.ts tests/admin-firebase-preflight-action.test.ts >> build.log 2>&1
+
       - name: Validate Mercado Pago merchant migration inventory (read only)
         run: node --test --import tsx tests/marketplace-merchant-pix-migration-inventory.test.ts >> build.log 2>&1
 

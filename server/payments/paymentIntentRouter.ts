@@ -13,6 +13,7 @@ import {
   type PaymentMethod,
 } from '../../src/utils/canonicalPayment.js';
 import { materializePendingMarketplaceOrder } from '../../src/utils/paymentOrderMaterialization.js';
+import { preparePrepaidOrderMirror } from './marketplaceOrderPaymentSettlementService.js';
 import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
@@ -526,19 +527,32 @@ export const createMarketplacePaymentIntent = async (
       ) {
         throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
       }
-      if (!existingOrder.exists && savedIntent.status === 'pending' && savedPayment.status === 'pending') {
-        transaction.set(orderRef, materializePendingMarketplaceOrder({
+      const recoveredOrder = !existingOrder.exists && savedIntent.status === 'pending' && savedPayment.status === 'pending'
+        ? materializePendingMarketplaceOrder({
           intent: savedIntent,
           paymentId: savedPayment.id,
           now,
-        }));
+        }) : null;
+      const persistedOrder = existingOrder.data() as typeof pendingOrder | undefined;
+      if (persistedOrder && (persistedOrder.id !== orderId || persistedOrder.storeId !== input.storeId ||
+          persistedOrder.buyerId !== identity.uid || (persistedOrder.releaseMode === 'pay_before_fulfillment' &&
+          (persistedOrder.paymentIntentId !== savedIntent.id || persistedOrder.paymentId !== savedPayment.id)))) {
+        throw Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
       }
+      const mirrorOrder = persistedOrder ?? recoveredOrder;
+      const writeMirror = mirrorOrder ? await preparePrepaidOrderMirror(transaction, mirrorOrder) : null;
+      if (recoveredOrder) {
+        transaction.set(orderRef, recoveredOrder);
+      }
+      writeMirror?.();
       return { intent: savedIntent, payment: savedPayment, duplicate: true };
     }
     if (existingOrder.exists) throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
+    const writeMirror = await preparePrepaidOrderMirror(transaction, pendingOrder);
     transaction.set(intentRef, intent);
     transaction.set(paymentRef, payment);
     transaction.set(orderRef, pendingOrder);
+    writeMirror?.();
     return { intent, payment, duplicate: false };
   });
 

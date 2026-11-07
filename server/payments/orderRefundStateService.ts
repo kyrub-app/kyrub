@@ -46,41 +46,43 @@ export const writeOperationalOrderRefundState = async (
     `artifacts/${storeId}/public/data/customerOrders/${orderId}`
   );
   const tenantRef = adminDb.doc(`tenants/${storeId}`);
-  const [legacySnapshot, tenantSnapshot] = await Promise.all([
-    legacyRef.get(),
-    tenantRef.get(),
-  ]);
-  if (!legacySnapshot.exists) {
-    throw new Error('ORDER_REFUND_STATE_ORDER_NOT_FOUND');
-  }
-
-  const legacy = legacySnapshot.data() as Record<string, unknown>;
-  const now = new Date().toISOString();
-  const existingReason = clean(legacy.refundReason);
-  const existingRequestedAt = clean(legacy.refundRequestedAt);
-  const patch = {
-    refundStatus: input.status,
-    refundPaymentId: paymentId,
-    refundProvider: provider,
-    refundAmount: Number(amount.toFixed(2)),
-    refundReason: reason || existingReason,
-    refundRequestedAt: requestedAt || existingRequestedAt || now,
-    refundedAt: input.status === 'refunded' ? refundedAt || now : '',
-    refundFailureCode: input.status === 'failed' ? failureCode : '',
-    updatedAt: now,
-  };
-
-  const batch = adminDb.batch();
-  batch.set(legacyRef, patch, { merge: true });
-
-  const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-  if (canonicalStoreId) {
-    const canonicalRef = adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`);
-    const canonicalSnapshot = await canonicalRef.get();
-    if (canonicalSnapshot.exists) {
-      batch.set(canonicalRef, patch, { merge: true });
+  await adminDb.runTransaction(async transaction => {
+    const [legacySnapshot, tenantSnapshot] = await Promise.all([
+      transaction.get(legacyRef),
+      transaction.get(tenantRef),
+    ]);
+    if (!legacySnapshot.exists) {
+      throw new Error('ORDER_REFUND_STATE_ORDER_NOT_FOUND');
     }
-  }
 
-  await batch.commit();
+    const legacy = legacySnapshot.data() as Record<string, unknown>;
+    // A refund of an older attempt must not revoke a newer payment authorization.
+    if (legacy.releaseMode === 'pay_before_fulfillment' && legacy.paymentId !== paymentId) return;
+    const now = new Date().toISOString();
+    const existingReason = clean(legacy.refundReason);
+    const existingRequestedAt = clean(legacy.refundRequestedAt);
+    const patch = {
+      ...(legacy.releaseMode === 'pay_before_fulfillment' ? { operationalRelease: null } : {}),
+      refundStatus: input.status,
+      refundPaymentId: paymentId,
+      refundProvider: provider,
+      refundAmount: Number(amount.toFixed(2)),
+      refundReason: reason || existingReason,
+      refundRequestedAt: requestedAt || existingRequestedAt || now,
+      refundedAt: input.status === 'refunded' ? refundedAt || now : '',
+      refundFailureCode: input.status === 'failed' ? failureCode : '',
+      updatedAt: now,
+    };
+
+    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    let canonicalRef: ReturnType<typeof adminDb.doc> | null = null;
+    if (canonicalStoreId) {
+      const reference = adminDb.doc(`stores/${canonicalStoreId}/orders/${orderId}`);
+      const canonicalSnapshot = await transaction.get(reference);
+      if (canonicalSnapshot.exists && (legacy.releaseMode !== 'pay_before_fulfillment' ||
+          canonicalSnapshot.get('paymentId') === paymentId)) canonicalRef = reference;
+    }
+    transaction.set(legacyRef, patch, { merge: true });
+    if (canonicalRef) transaction.set(canonicalRef, patch, { merge: true });
+  });
 };
