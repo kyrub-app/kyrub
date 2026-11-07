@@ -59,7 +59,7 @@ test('token errors are sanitized and never send a request', async () => {
   assert.deepEqual(await runner({ ...user, getIdToken: async () => { throw Error('sensitive'); } }, profile), { status: 'FAIL', code: 'AUTH_INVALID' });
 });
 test('HTTP denial and read failure codes survive, raw errors and malformed bodies do not', async () => {
-  for (const code of ['AUTH_REQUIRED', 'AUTH_INVALID', 'FORBIDDEN', 'AUTHORIZED_RUNTIME_REQUIRED', 'FIREBASE_CREDENTIAL_UNAVAILABLE', 'FIREBASE_CREDENTIAL_INVALID', 'FIREBASE_PROJECT_MISMATCH', 'ADMIN_AUTH_UNAVAILABLE', 'FIREBASE_READ_FAILED', 'PREFLIGHT_TIMEOUT', 'PREFLIGHT_UNAVAILABLE', 'METHOD_NOT_ALLOWED']) {
+  for (const code of ['AUTH_REQUIRED', 'AUTH_INVALID', 'FORBIDDEN', 'AUTHORIZED_RUNTIME_REQUIRED', 'FIREBASE_CREDENTIAL_UNAVAILABLE', 'FIREBASE_CREDENTIAL_INVALID', 'FIREBASE_PROJECT_MISMATCH', 'ADMIN_AUTH_UNAVAILABLE', 'FIREBASE_READ_FAILED', 'PREFLIGHT_TIMEOUT', 'PREFLIGHT_UNAVAILABLE', 'PREFLIGHT_MODULE_UNAVAILABLE', 'PREFLIGHT_EXECUTION_FAILED', 'METHOD_NOT_ALLOWED']) {
     assert.deepEqual(await createFirebasePreflightRunner(async () => response({ status: 'FAIL', code, error: 'sensitive' }, 403))(user, profile), { status: 'FAIL', code });
   }
   for (const body of [null, { status: 'PASS', code: null }, { status: 'FAIL', code: 'secret error' }, { error: 'sensitive' }]) {
@@ -159,4 +159,16 @@ test('Vercel branch deployment is enabled and no configured rewrite intercepts t
     assert.equal(new RegExp(pattern).test(pathname), false, rule.source);
   }
   assert.match(readFileSync('api/admin/operations/health.ts', 'utf8'), /transport === 'firebase-preflight'/);
+});
+
+test('transport separates module load from execution failures without exposing raw errors', () => {
+  const route = readFileSync('api/admin/operations/health.ts', 'utf8');
+  const start = route.indexOf("transport === 'firebase-preflight'");
+  const end = route.indexOf("transport === 'social-moderation-list'");
+  const branch = route.slice(start, end);
+  assert.match(branch, /PREFLIGHT_MODULE_UNAVAILABLE/);
+  assert.match(branch, /PREFLIGHT_EXECUTION_FAILED/);
+  assert.match(branch, /await import\('\.\.\/\.\.\/\.\.\/server\/admin\/firebasePreflightService\.js'\)/);
+  assert.match(branch, /await preflight\.runFirebasePreflight\(authorization\)/);
+  assert.doesNotMatch(branch, /console\.|JSON\.stringify\(authorization\)/);
 });
