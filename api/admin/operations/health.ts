@@ -1,3 +1,4 @@
+import { runFirebasePreflight } from '../../../server/admin/firebasePreflightService.js';
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 
@@ -41,28 +42,9 @@ export default async function handler(request: RequestLike, response: ResponseLi
     try {
       const result = await Promise.race([
         (async () => {
-          let preflight: typeof import('../../../server/admin/firebasePreflightService.js');
-          try {
-            preflight = await import('../../../server/admin/firebasePreflightService.js');
-          } catch (error) {
-            // Classify only stable Node loader codes; never expose the error message or stack.
-            const loaderCode = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
-            const code = loaderCode === 'ERR_MODULE_NOT_FOUND' || loaderCode === 'MODULE_NOT_FOUND'
-              ? 'PREFLIGHT_MODULE_NOT_FOUND'
-              : loaderCode === 'ERR_PACKAGE_PATH_NOT_EXPORTED' || loaderCode === 'ERR_PACKAGE_IMPORT_NOT_DEFINED'
-                ? 'PREFLIGHT_PACKAGE_RESOLUTION_FAILED'
-                : loaderCode === 'ERR_REQUIRE_ESM'
-                  ? 'PREFLIGHT_REQUIRE_ESM'
-                  : loaderCode === 'ERR_UNKNOWN_FILE_EXTENSION'
-                    ? 'PREFLIGHT_UNKNOWN_FILE_EXTENSION'
-                    : loaderCode === 'ERR_UNSUPPORTED_DIR_IMPORT'
-                      ? 'PREFLIGHT_UNSUPPORTED_DIR_IMPORT'
-                      : 'PREFLIGHT_MODULE_UNAVAILABLE';
-            return { httpStatus: 503, body: { status: 'FAIL', code } };
-          }
           if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
           try {
-            return await preflight.runFirebasePreflight(authorization);
+            return await runFirebasePreflight(authorization);
           } catch {
             return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_EXECUTION_FAILED' } };
           }
