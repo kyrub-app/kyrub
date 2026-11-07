@@ -41,9 +41,18 @@ export default async function handler(request: RequestLike, response: ResponseLi
     try {
       const result = await Promise.race([
         (async () => {
-          const preflight = await import('../../../server/admin/firebasePreflightService.js');
+          let preflight: typeof import('../../../server/admin/firebasePreflightService.js');
+          try {
+            preflight = await import('../../../server/admin/firebasePreflightService.js');
+          } catch {
+            return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_MODULE_UNAVAILABLE' } };
+          }
           if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
-          return preflight.runFirebasePreflight(authorization);
+          try {
+            return await preflight.runFirebasePreflight(authorization);
+          } catch {
+            return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_EXECUTION_FAILED' } };
+          }
         })(),
         new Promise<{ httpStatus: number; body: { status: string; code: string } }>(resolve => {
           deadline = setTimeout(() => {
