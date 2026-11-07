@@ -45,10 +45,18 @@ export default async function handler(request: RequestLike, response: ResponseLi
           let service: typeof import('../../../server/admin/firebasePreflightService.js');
           try {
             service = await import('../../../server/admin/firebasePreflightService.js');
-          } catch {
-            // Do not log SDK exceptions, credentials or authorization details.
-            console.error('[Firebase Preflight] SERVICE_IMPORT_FAILED');
-            return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_SERVICE_IMPORT_FAILED' } };
+          } catch (error) {
+            // Classify only stable Node loader codes; never log raw exceptions,
+            // module paths, credentials or authorization details.
+            const loaderCode = error && typeof error === 'object' && 'code' in error
+              ? String(error.code) : '';
+            const failureCode = loaderCode === 'ERR_REQUIRE_ESM'
+              ? 'PREFLIGHT_IMPORT_ESM_INCOMPATIBLE'
+              : loaderCode === 'ERR_MODULE_NOT_FOUND' || loaderCode === 'MODULE_NOT_FOUND'
+                ? 'PREFLIGHT_IMPORT_MODULE_MISSING'
+                : 'PREFLIGHT_SERVICE_IMPORT_FAILED';
+            console.error('[Firebase Preflight]', failureCode);
+            return { httpStatus: 503, body: { status: 'FAIL', code: failureCode } };
           }
           try {
             return await service.runFirebasePreflight(authorization);
