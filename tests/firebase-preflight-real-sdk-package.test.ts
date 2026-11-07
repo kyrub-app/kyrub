@@ -79,3 +79,11 @@ test('real preflight HTTP handler loads its dynamic import in a CJS serverless b
   assert.equal(result.status, 401);
   assert.deepEqual(result.body, { status: 'FAIL', code: 'AUTH_REQUIRED' });
 });
+
+// Catch the exact transitive CommonJS -> ESM boundary seen in Vercel runtime logs.
+// A Firebase-only import does not exercise jwks-rsa's require('jose') path.
+test('Firebase Admin transitive JWKS loader is compatible with the Node runtime', () => {
+  const require = createRequire(import.meta.url);
+  const jwks = require('jwks-rsa');
+  assert.equal(typeof jwks, 'function');
+});
