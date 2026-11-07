@@ -25,3 +25,10 @@ test('prepaid checkout explicitly discloses expiry and requires fresh consent fo
   assert.match(source, /quote\.quote\.totalMinor/);
   assert.match(source, /onAccept=\{setAccepted\}/);
 });
+
+test('contract-based monthly offers do not expose the legacy recurring checkout', () => {
+  const source = readFileSync('src/components/modals/B2CCartDrawerApprovalBase.tsx', 'utf8');
+  assert.match(source, /subscriptionMonths === 1 && subscriptionBillingKind === 'merchant' && cart\[0\]\.product\.contractDiscounts === undefined/);
+  assert.match(source, /subscriptionBillingKind === 'platform-plan'/);
+  assert.match(source, /InitialPrepaidSubscriptionCheckout/);
+});
