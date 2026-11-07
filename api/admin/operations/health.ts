@@ -42,10 +42,18 @@ export default async function handler(request: RequestLike, response: ResponseLi
       const result = await Promise.race([
         (async () => {
           if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
+          let service: typeof import('../../../server/admin/firebasePreflightService.js');
           try {
-            const service = await import('../../../server/admin/firebasePreflightService.js');
+            service = await import('../../../server/admin/firebasePreflightService.js');
+          } catch {
+            // Do not log SDK exceptions, credentials or authorization details.
+            console.error('[Firebase Preflight] SERVICE_IMPORT_FAILED');
+            return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_SERVICE_IMPORT_FAILED' } };
+          }
+          try {
             return await service.runFirebasePreflight(authorization);
           } catch {
+            console.error('[Firebase Preflight] SERVICE_EXECUTION_FAILED');
             return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_EXECUTION_FAILED' } };
           }
         })(),
