@@ -168,7 +168,7 @@ test('transport separates module load from execution failures without exposing r
   const branch = route.slice(start, end);
   assert.match(branch, /PREFLIGHT_EXECUTION_FAILED/);
   assert.match(branch, /await import\(['"]\.\.\/\.\.\/\.\.\/server\/admin\/firebasePreflightService\.js['"]\)/);
-  assert.match(branch, /await runFirebasePreflight\(authorization\)/);
+  assert.match(branch, /await service\.runFirebasePreflight\(authorization\)/);
   assert.doesNotMatch(branch, /error\.message|error\.stack/);
   assert.doesNotMatch(branch, /console\.|JSON\.stringify\(authorization\)/);
 });
