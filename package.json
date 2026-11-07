@@ -59,6 +59,11 @@
     "vite": "^6.4.4"
   },
   "overrides": {
+    "firebase-admin": {
+      "jwks-rsa@4.1.0": {
+        "jose": "5.10.0"
+      }
+    },
     "@grpc/grpc-js": ">=1.14.5",
     "proxy-addr": "2.0.8",
     "source-map-js": "1.2.2",

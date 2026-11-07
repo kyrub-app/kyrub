@@ -1,89 +1,91 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
 import { build } from 'esbuild';
-import { createRequire } from 'node:module';
 
-// Reproduce the Vercel serverless CJS packaging boundary with the REAL
-// Firebase Admin SDK. No credentials, network calls, or Firebase operations.
-test('Firebase preflight loads with real SDK in a CJS serverless bundle', async () => {
+function runWithRequireEsmDisabled(source: string, format: 'commonjs' | 'module') {
+  const result = spawnSync(process.execPath, [
+    '--no-experimental-require-module',
+    `--input-type=${format}`,
+  ], {
+    input: source,
+    encoding: 'utf8',
+    timeout: 10_000,
+    // Do not inherit deployment credentials or runtime flags.
+    env: {},
+  });
+  const status = result.stdout.trim();
+  assert.equal(result.status, 0, /^ERR_[A-Z_]+$/.test(status) ? status : 'Isolated SDK check failed');
+  assert.equal(status, 'PASS');
+}
+
+test('packaged preflight handler imports the real SDK with require(esm) disabled', async () => {
   const output = await build({
-    stdin: {
-      contents: "export { runFirebasePreflight } from './server/admin/firebasePreflightService.ts';",
-      resolveDir: process.cwd(),
-      loader: 'ts',
-    },
+    entryPoints: ['api/admin/operations/health.ts'],
     bundle: true,
     platform: 'node',
     format: 'cjs',
     packages: 'external',
     write: false,
-    logLevel: 'silent',
   });
-  const mod = { exports: {} as Record<string, unknown> };
-  const run = new Function('require', 'module', 'exports', output.outputFiles[0].text);
-  run(createRequire(import.meta.url), mod, mod.exports);
-  assert.equal(typeof mod.exports.runFirebasePreflight, 'function');
+
+  runWithRequireEsmDisabled(`
+    ${output.outputFiles[0].text}
+    const assert = require('node:assert/strict');
+    (async () => {
+      assert.equal(Boolean(process.features.require_module), false);
+      const result = {};
+      await module.exports.default({
+        method: 'GET',
+        headers: { authorization: 'Bearer isolated-fixture' },
+        query: { transport: 'firebase-preflight' },
+      }, {
+        setHeader() {},
+        status(code) { result.status = code; return this; },
+        json(body) { result.body = body; },
+      });
+      assert.deepEqual(result, {
+        status: 503,
+        body: { status: 'FAIL', code: 'AUTHORIZED_RUNTIME_REQUIRED' },
+      });
+      console.log('PASS');
+    })().catch(() => { process.exitCode = 1; });
+  `, 'commonjs');
 });
 
-test('Firebase preflight loads with real SDK in an ESM serverless bundle', async () => {
-  const output = await build({
-    stdin: {
-      contents: "export { runFirebasePreflight } from './server/admin/firebasePreflightService.ts';",
-      resolveDir: process.cwd(),
-      loader: 'ts',
-    },
-    bundle: true,
-    platform: 'node',
-    format: 'esm',
-    packages: 'external',
-    write: false,
-    logLevel: 'silent',
-  });
-  const encoded = Buffer.from(output.outputFiles[0].text).toString('base64');
-  // ESM relative resolution from a data URL cannot resolve bare SDK imports;
-  // check generated output instead of executing from an invalid origin.
-  assert.match(Buffer.from(encoded, 'base64').toString(), /firebase-admin\/auth/);
+test('Firebase Admin Auth loads via native ESM without relying on require(esm)', () => {
+  runWithRequireEsmDisabled(`
+    import assert from 'node:assert/strict';
+    try {
+      assert.equal(Boolean(process.features.require_module), false);
+      const auth = await import('firebase-admin/auth');
+      assert.equal(typeof auth.getAuth, 'function');
+      console.log('PASS');
+    } catch (error) {
+      console.log(error.code === 'ERR_REQUIRE_ESM' ? error.code : 'FAIL');
+      process.exitCode = 1;
+    }
+  `, 'module');
 });
 
-test('real preflight HTTP handler loads its dynamic import in a CJS serverless bundle', async () => {
-  const output = await build({
-    stdin: {
-      contents: "export { default as handler } from './api/admin/operations/health.ts';",
-      resolveDir: process.cwd(),
-      loader: 'ts',
-    },
-    bundle: true,
-    platform: 'node',
-    format: 'cjs',
-    packages: 'external',
-    write: false,
-    logLevel: 'silent',
-  });
-  const mod = { exports: {} as Record<string, any> };
-  new Function('require', 'module', 'exports', output.outputFiles[0].text)(
-    createRequire(import.meta.url), mod, mod.exports
-  );
-  const result: { status?: number; body?: unknown } = {};
-  const response = {
-    setHeader(_name: string, _value: string) {},
-    status(value: number) { result.status = value; return this; },
-    json(value: unknown) { result.body = value; },
-  };
-  // The request is deliberately unauthenticated; the SDK must never be
-  // initialized or any Firebase operation performed.
-  await mod.exports.handler({
-    method: 'GET',
-    headers: {},
-    query: { transport: 'firebase-preflight' },
-  }, response);
-  assert.equal(result.status, 401);
-  assert.deepEqual(result.body, { status: 'FAIL', code: 'AUTH_REQUIRED' });
-});
-
-// Catch the exact transitive CommonJS -> ESM boundary seen in Vercel runtime logs.
-// A Firebase-only import does not exercise jwks-rsa's require('jose') path.
-test('Firebase Admin transitive JWKS loader is compatible with the Node runtime', () => {
-  const require = createRequire(import.meta.url);
-  const jwks = require('jwks-rsa');
-  assert.equal(typeof jwks, 'function');
+test('Firebase Admin JWKS dependency resolves an RSA signing key and rejects unknown keys', () => {
+  runWithRequireEsmDisabled(`
+    const assert = require('node:assert/strict');
+    const { generateKeyPairSync } = require('node:crypto');
+    const { createRequire } = require('node:module');
+    (async () => {
+      const requireFromFirebase = createRequire(require.resolve('firebase-admin/auth'));
+      const jwks = requireFromFirebase('jwks-rsa');
+      const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      const key = { ...publicKey.export({ format: 'jwk' }), kid: 'fixture', alg: 'RS256', use: 'sig' };
+      const client = jwks({ cache: false, fetcher: async () => ({ keys: [key] }) });
+      const signingKey = await client.getSigningKey('fixture');
+      assert.equal(signingKey.getPublicKey(), publicKey.export({ type: 'spki', format: 'pem' }));
+      await assert.rejects(client.getSigningKey('missing'), { name: 'SigningKeyNotFoundError' });
+      console.log('PASS');
+    })().catch(error => {
+      console.log(error.code === 'ERR_REQUIRE_ESM' ? error.code : 'FAIL');
+      process.exitCode = 1;
+    });
+  `, 'commonjs');
 });
