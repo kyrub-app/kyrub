@@ -1,4 +1,3 @@
-import { runFirebasePreflight } from '../../../server/admin/firebasePreflightService.js';
 type HeaderValue = string | string[] | undefined;
 type QueryValue = string | string[] | undefined;
 
@@ -44,7 +43,8 @@ export default async function handler(request: RequestLike, response: ResponseLi
         (async () => {
           if (expired) return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_TIMEOUT' } };
           try {
-            return await runFirebasePreflight(authorization);
+            const service = await import('../../../server/admin/firebasePreflightService.js');
+            return await service.runFirebasePreflight(authorization);
           } catch {
             return { httpStatus: 503, body: { status: 'FAIL', code: 'PREFLIGHT_EXECUTION_FAILED' } };
           }
