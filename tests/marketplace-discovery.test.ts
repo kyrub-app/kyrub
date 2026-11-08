@@ -118,6 +118,16 @@ describe('marketplace discovery', () => {
     assert.doesNotMatch(service, /contact:/);
   });
 
+  test('official plan storefront projects canonical contract terms on both catalog paths', () => {
+    const service = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
+    assert.match(service, /projectOfficialCanonicalTerms\(projectCanonicalOffers/);
+    assert.match(service, /projectOfficialCanonicalTerms\(projectLegacyPublicOffers/);
+    assert.match(service, /canonical\.description, saleModality: modality/);
+    assert.match(service, /OFFICIAL_PLAN_PUBLIC_PROJECTION_CONFLICT/);
+    assert.match(service, /canonical\?\.publicationStatus !== 'published'/);
+    assert.match(service, /canonical\?\.price !== offer\.price/);
+  });
+
   test('marketplace UI exposes promotion and for-you as separate filters', () => {
     const source = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
     assert.match(source, />\s*Em promoção\s*</);
