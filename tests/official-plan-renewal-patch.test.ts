@@ -29,3 +29,12 @@ test('only simulation exposes a sanitized failing guard', () => {
   assert.match(patch, /!mapping\.exists\) conflict\('OFFICIAL_MAPPING_MISSING'\)/);
   assert.match(patch, /data\?\.description !== input\.expectedDescription\) conflict\('DESCRIPTION_MISMATCH'\)/);
 });
+
+test('Pro-only simulation sends one dry run and exits before enabling apply', () => {
+  const action = readFileSync('src/components/admin/AdminOfficialPlanRenewalAction.tsx', 'utf8');
+  assert.match(action, /onClick=\{\(\) => void simulate\('pro'\)\}/);
+  assert.match(action, /const PLANS = \[\s*\{ planId: 'pro'/);
+  assert.match(action, /if \(scope === 'pro'\) \{\s*await patch\(user, PLANS\[0\], false\);\s*setMessage\([^\n]+\);\s*return;\s*\}/);
+  assert.match(action, /setBusy\(true\); setSimulated\(false\); setConfirmed\(false\)/);
+  assert.match(action, /disabled=\{busy \|\| !simulated \|\| !confirmed\}/);
+});

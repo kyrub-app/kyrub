@@ -38,9 +38,15 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
-  const simulate = async () => {
+  const simulate = async (scope: 'pro' | 'both') => {
+    if (busy) return;
     setBusy(true); setSimulated(false); setConfirmed(false); setError(''); setMessage('');
     try {
+      if (scope === 'pro') {
+        await patch(user, PLANS[0], false);
+        setMessage('Simulação do Kyrub Pro aprovada. Nenhum dado foi gravado.');
+        return;
+      }
       for (const plan of PLANS) await patch(user, plan, false);
       setSimulated(true);
       setMessage('As duas simulações foram aprovadas. Confira os produtos e confirme antes de gravar.');
@@ -71,7 +77,12 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
       <p className="mt-1 break-all text-slate-400">ID: {plan.productId}</p>
       <p className="mt-2 text-slate-300">{description(plan.label)}</p>
     </div>)}
-    <button type="button" disabled={busy} onClick={() => void simulate()} className="rounded-lg bg-cyan-700 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? 'Processando…' : '1. Simular os dois produtos (sem gravação)'}</button>
+    <div className="flex flex-wrap gap-2">
+      <button type="button" disabled={busy} onClick={() => void simulate('pro')} className="rounded-lg border border-cyan-700 px-4 py-2 font-bold text-cyan-200 disabled:opacity-50">
+        Simular somente Kyrub Pro (sem gravação)
+      </button>
+      <button type="button" disabled={busy} onClick={() => void simulate('both')} className="rounded-lg bg-cyan-700 px-4 py-2 font-bold text-white disabled:opacity-50">{busy ? 'Processando…' : '1. Simular os dois produtos (sem gravação)'}</button>
+    </div>
     {simulated && <label className="flex items-center gap-2 text-amber-200"><input type="checkbox" checked={confirmed} onChange={event => setConfirmed(event.target.checked)} /> Confirmo a atualização dos dois produtos acima.</label>}
     <div><button type="button" disabled={busy || !simulated || !confirmed} onClick={() => void apply()} className="rounded-lg bg-amber-700 px-4 py-2 font-bold text-white disabled:opacity-50">2. Aplicar atualização pontual</button></div>
     {error && <p role="alert" className="text-red-300">{error}</p>}
