@@ -178,6 +178,43 @@ const projectCanonicalOffers = (
     }];
   });
 
+// Official plan contract terms are maintained on canonical products, not
+// tenant.publicProducts or marketplace listing projections.
+const OFFICIAL_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
+const OFFICIAL_PLAN_IDS = new Set([
+  'draft_1d3dfa74091747d3a3012eadd8027894',
+  'draft_5f46706373714839a55846e6d8cb102c',
+]);
+
+const projectOfficialCanonicalTerms = async (
+  offers: PublicStorefrontSnapshot['offers'],
+  canonicalStoreId: string
+): Promise<PublicStorefrontSnapshot['offers']> => {
+  if (canonicalStoreId !== OFFICIAL_STORE_ID) return offers;
+  const targeted = offers.filter(offer => OFFICIAL_PLAN_IDS.has(offer.id));
+  if (targeted.length === 0) return offers;
+  const canonicalDocs = await Promise.all(targeted.map(offer =>
+    adminDb.doc(`stores/${canonicalStoreId}/products/${offer.id}`).get()
+  ));
+  const canonicalById = new Map(canonicalDocs.map(doc => [doc.id, doc.data()]));
+  return offers.map(offer => {
+    if (!OFFICIAL_PLAN_IDS.has(offer.id)) return offer;
+    const canonical = canonicalById.get(offer.id);
+    const modality = parseProductSaleModality(canonical?.saleModality);
+    if (canonical?.publicationStatus !== 'published' ||
+        canonical?.storeId !== canonicalStoreId ||
+        canonical?.price !== offer.price ||
+        typeof canonical?.description !== 'string' ||
+        modality?.mode !== 'subscription') {
+      // Do not publish stale subscription promises when canonical authority
+      // cannot be verified.
+      throw new Error('OFFICIAL_PLAN_PUBLIC_PROJECTION_CONFLICT');
+    }
+    return { ...offer, description: canonical.description, saleModality: modality,
+      ...projectSubscriptionFields(canonical) };
+  });
+};
+
 const countConfirmedPurchases = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
@@ -308,7 +345,7 @@ export const loadPublicStorefrontBySlug = async (
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
       },
-      offers: projectCanonicalOffers(offerCandidates.docs, storeId, productById),
+      offers: await projectOfficialCanonicalTerms(projectCanonicalOffers(offerCandidates.docs, storeId, productById), storeId),
     };
   }
 
@@ -359,7 +396,7 @@ export const loadPublicStorefrontBySlug = async (
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
     },
-    offers: projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId),
+    offers: await projectOfficialCanonicalTerms(projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId), legacyStoreId),
   };
 };
 
