@@ -77,3 +77,4 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
     {error && <p role="alert" className="text-red-300">{error}</p>}
     {message && <p role="status" className="text-emerald-300">{message}</p>}
   </section>;
+}
