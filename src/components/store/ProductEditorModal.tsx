@@ -130,7 +130,8 @@ export const ProductEditorModal: React.FC<ProductEditorModalProps> = ({
     );
     const previousFiscalProfile = fiscalState.initialProfile;
     const shouldPersistFiscalProfile = Boolean(
-      nextFiscalProfile || previousFiscalProfile
+      (nextFiscalProfile || previousFiscalProfile) &&
+      JSON.stringify(nextFiscalProfile) !== JSON.stringify(previousFiscalProfile)
     );
 
     if (shouldPersistFiscalProfile) {
