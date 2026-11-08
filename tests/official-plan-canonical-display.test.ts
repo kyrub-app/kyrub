@@ -26,6 +26,7 @@ test('both official plans project canonical description, manual renewal and disc
       saleModality: buildSubscriptionSaleModality({
         billingUnit: 'month', benefitKind: 'access', autoRenew: true,
       }),
+      contractDiscounts: undefined as { months: 1 | 3 | 6 | 12; discountPercent: number }[] | undefined,
       supplierId: 'tenant-owner',
       image: 'unchanged-image',
     };
