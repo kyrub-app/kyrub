@@ -32,12 +32,18 @@ const OFFICIAL_PLAN_IDS = new Set([
 ]);
 const OFFICIAL_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
 
+const isOfficialPlanForStore = async (legacyStoreId: string, productId: string): Promise<boolean> => {
+  if (!OFFICIAL_PLAN_IDS.has(productId)) return false;
+  const canonicalStore = await getDoc(doc(db, 'stores', OFFICIAL_STORE_ID));
+  const store = canonicalStore.data();
+  return canonicalStore.exists() &&
+    store?.ownerId === legacyStoreId &&
+    store?.legacyTenantId === legacyStoreId &&
+    auth.currentUser?.uid === legacyStoreId;
+};
+
 const readOfficialPlanTerms = async (legacyStoreId: string, product: Product): Promise<Product> => {
-  if (!OFFICIAL_PLAN_IDS.has(product.id)) return product;
-  const designation = await getDoc(doc(db, 'kyrub_admin', 'official_store'));
-  const identity = designation.data();
-  if (identity?.legacyStoreId !== legacyStoreId ||
-      identity?.canonicalStoreId !== OFFICIAL_STORE_ID) return product;
+  if (!await isOfficialPlanForStore(legacyStoreId, product.id)) return product;
   const canonical = await getDoc(doc(db, 'stores', OFFICIAL_STORE_ID, 'products', product.id));
   const record = canonical.data();
   const modality = parseProductSaleModality(record?.saleModality);
@@ -72,7 +78,6 @@ export function ProductInventoryDirectRuntime({
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [officialTerms, setOfficialTerms] = useState<Record<string, Product>>({});
   const [officialTermsError, setOfficialTermsError] = useState('');
-  const [officialTermsLoading, setOfficialTermsLoading] = useState(false);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -93,10 +98,8 @@ export function ProductInventoryDirectRuntime({
     if (matching.length === 0) {
       setOfficialTerms({});
       setOfficialTermsError('');
-      setOfficialTermsLoading(false);
       return;
     }
-    setOfficialTermsLoading(true);
     setOfficialTermsError('');
     void Promise.all(matching.map(product => readOfficialPlanTerms(activeRetailerId, product)))
       .then(resolved => {
@@ -108,25 +111,24 @@ export function ProductInventoryDirectRuntime({
         setOfficialTerms({});
         setOfficialTermsError(error instanceof Error ? error.message : 'Não foi possível consultar os termos oficiais.');
       })
-      .finally(() => { if (!cancelled) setOfficialTermsLoading(false); });
-    return () => { cancelled = true; };
+;    return () => { cancelled = true; };
   }, [activeRetailerId, activeRetailerProducts]);
 
   const displayProducts = useMemo(() =>
-    activeRetailerProducts.map(product => officialTerms[product.id] ?? product),
-    [activeRetailerProducts, officialTerms]
+    activeRetailerProducts.flatMap(product => {
+      if (!OFFICIAL_PLAN_IDS.has(product.id)) return [product];
+      const resolved = officialTerms[product.id];
+      return resolved ? [resolved] : [];
+    }), [activeRetailerProducts, officialTerms]
   );
 
   const openEditor = async (product: Product): Promise<void> => {
     if (OFFICIAL_PLAN_IDS.has(product.id)) {
-      setOfficialTermsLoading(true);
       try {
         const verified = await readOfficialPlanTerms(activeRetailerId, product);
         setEditingProduct(verified);
       } catch (error) {
         triggerToast(error instanceof Error ? error.message : 'Termos oficiais indisponíveis.', 'error');
-      } finally {
-        setOfficialTermsLoading(false);
       }
       return;
     }
@@ -207,13 +209,8 @@ export function ProductInventoryDirectRuntime({
     }
 
     // Canonical terms must not be edited via the legacy tenant writer.
-    if (OFFICIAL_PLAN_IDS.has(product.id)) {
-      const verified = await readOfficialPlanTerms(activeRetailerId, previousProduct);
-      if (verified.description !== product.description ||
-          JSON.stringify(verified.saleModality) !== JSON.stringify(product.saleModality)) {
-        throw new Error('Os termos oficiais do plano não podem ser alterados pelo editor legado.');
-      }
-      throw new Error('Edite os planos oficiais pelo fluxo canônico. O editor legado é somente leitura para esses produtos.');
+    if (await isOfficialPlanForStore(activeRetailerId, product.id)) {
+      throw new Error('Os planos oficiais são administrados pelo catálogo canônico. O editor legado não pode gravar esses produtos.');
     }
 
     const updatedProduct: PublicProduct = {
