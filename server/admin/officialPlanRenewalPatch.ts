@@ -41,16 +41,28 @@ export const patchOfficialPlanRenewal = async (input: {
     const data = product.data();
     const map = mapping.data();
     const modality = parseProductSaleModality(data?.saleModality);
-    if (!product.exists || !mapping.exists || map?.status !== 'active' ||
-        map?.canonicalStoreId !== official.canonicalStoreId || map?.planId !== input.planId ||
-        data?.price !== prices[input.planId] || data?.description !== input.expectedDescription ||
-        !modality || modality.mode !== 'subscription' || !modality.subscription ||
-        modality.subscription.autoRenew !== true ||
+    // Keep apply failures generic. The Super Admin simulation can identify the
+    // first failed guard without exposing stored descriptions or other data.
+    const conflict = (reason: string): never => {
+      const code = 'OFFICIAL_RENEWAL_PATCH_CONFLICT';
+      throw new PlanManagementError(
+        409,
+        input.apply ? code : `${code}_${reason}`,
+        'Dados divergentes; nenhuma alteração realizada.'
+      );
+    };
+    if (!product.exists) conflict('CANONICAL_PRODUCT_MISSING');
+    if (!mapping.exists) conflict('OFFICIAL_MAPPING_MISSING');
+    if (map?.status !== 'active') conflict('OFFICIAL_MAPPING_INACTIVE');
+    if (map?.canonicalStoreId !== official.canonicalStoreId) conflict('MAPPING_STORE_MISMATCH');
+    if (map?.planId !== input.planId) conflict('MAPPING_PLAN_MISMATCH');
+    if (data?.price !== prices[input.planId]) conflict('PRICE_MISMATCH');
+    if (data?.description !== input.expectedDescription) conflict('DESCRIPTION_MISMATCH');
+    if (!modality || modality.mode !== 'subscription' || !modality.subscription ||
         modality.subscription.billingInterval.unit !== 'month' ||
         modality.subscription.billingInterval.count !== 1 ||
-        modality.subscription.benefit.kind !== 'access') {
-      throw new PlanManagementError(409, 'OFFICIAL_RENEWAL_PATCH_CONFLICT', 'Dados divergentes; nenhuma alteração realizada.');
-    }
+        modality.subscription.benefit.kind !== 'access') conflict('INVALID_MODALITY');
+    if (modality?.subscription?.autoRenew !== true) conflict('AUTO_RENEW_MISMATCH');
     if (input.apply) {
       transaction.update(productRef, {
         'saleModality.subscription.autoRenew': false,
@@ -58,6 +70,6 @@ export const patchOfficialPlanRenewal = async (input: {
       });
     }
     return { ok: true, applied: input.apply, planId: input.planId, productId: input.productId,
-      previousAutoRenew: true, nextAutoRenew: false, price: data.price };
+      previousAutoRenew: true, nextAutoRenew: false, price: prices[input.planId] };
   });
 };
