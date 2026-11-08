@@ -35,13 +35,14 @@ const patch = async (user: User, plan: typeof PLANS[number], apply: boolean): Pr
 export default function AdminOfficialPlanRenewalAction({ user }: { user: User }) {
   const [busy, setBusy] = useState(false);
   const [audit, setAudit] = useState<string>('');
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
   const [simulated, setSimulated] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const runAudit = async () => {
     if (busy) return;
-    setBusy(true); setAudit(''); setError('');
+    setBusy(true); setAudit(''); setMappingConfirmed(false); setError('');
     try {
       const token = await user.getIdToken(true);
       const response = await fetch('/api/plan-control?op=admin.official-plan-product.mapping-audit', {
@@ -53,6 +54,35 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
       setAudit(JSON.stringify(data, null, 2));
     } catch (cause) { setError(cause instanceof Error ? cause.message : 'Auditoria indisponível.'); }
     finally { setBusy(false); }
+  };
+  const assignMappings = async () => {
+    if (busy || !mappingConfirmed) return;
+    setBusy(true); setMappingConfirmed(false); setSimulated(false); setConfirmed(false); setError(''); setMessage('');
+    const assigned: string[] = [];
+    try {
+      const token = await user.getIdToken(true);
+      const headers = { authorization: `Bearer ${token}`, 'content-type': 'application/json' };
+      const auditResponse = await fetch('/api/plan-control?op=admin.official-plan-product.mapping-audit', { headers: { authorization: headers.authorization }, cache: 'no-store' });
+      const current = await auditResponse.json() as { ok?: boolean; canonicalStoreId?: string; mappingCount?: number; targets?: Array<{planId:string;productId:string;productExists:boolean;directMapping:unknown;otherActiveMappingIds:string[];safeToConsiderMissingMapping:boolean}> };
+      if (!auditResponse.ok || current.ok !== true || current.canonicalStoreId !== 'store-ae53dc42e57eb9d5c3f7151c1431' ||
+          current.mappingCount !== 0 || current.targets?.length !== 2 ||
+          !PLANS.every(plan => current.targets?.some(target => target.planId === plan.planId && target.productId === plan.productId &&
+            target.productExists && target.directMapping === null && target.otherActiveMappingIds.length === 0 && target.safeToConsiderMissingMapping))) {
+        throw new Error('Auditoria atual não permite criar os vínculos. Nenhuma gravação iniciada.');
+      }
+      for (const plan of PLANS) {
+        const response = await fetch('/api/plan-control?op=admin.official-plan-product.assign', {
+          method: 'POST', headers,
+          body: JSON.stringify({ planId: plan.planId, productId: plan.productId }),
+        });
+        const result = await response.json().catch(() => null) as {ok?:boolean;code?:string;error?:string}|null;
+        if (!response.ok || result?.ok !== true) throw new Error(`${plan.label}: ${result?.code ?? result?.error ?? 'Falha ao criar vínculo'}`);
+        assigned.push(plan.label);
+      }
+      setMessage('Vínculos criados. Execute a auditoria novamente para confirmar os registros.');
+    } catch (cause) {
+      setError(`Operação interrompida. Vínculos criados nesta tentativa: ${assigned.join(', ') || 'nenhum'}. ${cause instanceof Error ? cause.message : 'Erro inesperado'}`);
+    } finally { setBusy(false); }
   };
   const simulate = async (scope: 'pro' | 'both') => {
     if (busy) return;
@@ -95,6 +125,11 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
     </div>)}
     <button type="button" disabled={busy} onClick={() => void runAudit()} className="rounded-lg border border-slate-500 px-4 py-2 text-white disabled:opacity-50">Auditar vínculos oficiais (somente leitura)</button>
     {audit && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-900 p-3 text-slate-200">{audit}</pre>}
+    <div className="rounded-lg border border-slate-600 p-3 space-y-2">
+      <p className="text-slate-300">Regularização administrativa: cria somente os vínculos oficiais Pro e Business, sem enviar recompensas. Revalida a auditoria antes da gravação. Não altera produtos, contratos ou Pix.</p>
+      <label className="flex items-center gap-2 text-amber-200"><input type="checkbox" checked={mappingConfirmed} disabled={busy} onChange={event => setMappingConfirmed(event.target.checked)} /> Autorizo exclusivamente os dois vínculos administrativos.</label>
+      <button type="button" disabled={busy || !mappingConfirmed} onClick={() => void assignMappings()} className="rounded-lg bg-amber-700 px-4 py-2 font-bold text-white disabled:opacity-50">Criar vínculos oficiais Pro e Business</button>
+    </div>
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={busy} onClick={() => void simulate('pro')} className="rounded-lg border border-cyan-700 px-4 py-2 font-bold text-cyan-200 disabled:opacity-50">
         Simular somente Kyrub Pro (sem gravação)
