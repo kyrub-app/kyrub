@@ -9,7 +9,11 @@ import {
 import type { Product } from '../../types';
 import { doc, getDoc } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
-import { parseProductSaleModality } from '../../../shared/productSaleModality';
+import {
+  OFFICIAL_STORE_CANONICAL_ID,
+  isOfficialPlanProductId,
+  projectOfficialCanonicalProductTerms,
+} from '../../../shared/officialPlanCanonicalDisplay';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
 import {
   persistPublicProduct,
@@ -25,15 +29,9 @@ import OfficialStoreCatalogPanel from './OfficialStoreCatalogPanel';
 
 // Canonical product terms are the sole authority for the two official plans.
 // Never copy a stale legacy description or autoRenew into an editor.
-const OFFICIAL_PLAN_IDS = new Set([
-  'draft_1d3dfa74091747d3a3012eadd8027894',
-  'draft_5f46706373714839a55846e6d8cb102c',
-]);
-const OFFICIAL_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
-
 const isOfficialPlanForStore = async (legacyStoreId: string, productId: string): Promise<boolean> => {
-  if (!OFFICIAL_PLAN_IDS.has(productId)) return false;
-  const canonicalStore = await getDoc(doc(db, 'stores', OFFICIAL_STORE_ID));
+  if (!isOfficialPlanProductId(productId)) return false;
+  const canonicalStore = await getDoc(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID));
   const store = canonicalStore.data();
   return canonicalStore.exists() &&
     store?.ownerId === legacyStoreId &&
@@ -43,17 +41,9 @@ const isOfficialPlanForStore = async (legacyStoreId: string, productId: string):
 
 const readOfficialPlanTerms = async (legacyStoreId: string, product: Product): Promise<Product> => {
   if (!await isOfficialPlanForStore(legacyStoreId, product.id)) return product;
-  const canonical = await getDoc(doc(db, 'stores', OFFICIAL_STORE_ID, 'products', product.id));
+  const canonical = await getDoc(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID, 'products', product.id));
   const record = canonical.data();
-  const modality = parseProductSaleModality(record?.saleModality);
-  if (record?.publicationStatus !== 'published' ||
-      record?.storeId !== OFFICIAL_STORE_ID ||
-      record?.price !== product.price ||
-      typeof record?.description !== 'string' ||
-      modality?.mode !== 'subscription') {
-    throw new Error('Não foi possível validar os termos canônicos do plano oficial.');
-  }
-  return { ...product, description: record.description, saleModality: modality };
+  return projectOfficialCanonicalProductTerms(product, record, OFFICIAL_STORE_CANONICAL_ID);
 };
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
@@ -93,7 +83,7 @@ export function ProductInventoryDirectRuntime({
 
   useEffect(() => {
     let cancelled = false;
-    const matching = activeRetailerProducts.filter(product => OFFICIAL_PLAN_IDS.has(product.id));
+    const matching = activeRetailerProducts.filter(product => isOfficialPlanProductId(product.id));
     if (matching.length === 0) {
       setOfficialTerms({});
       setOfficialTermsError('');
@@ -115,14 +105,14 @@ export function ProductInventoryDirectRuntime({
 
   const displayProducts = useMemo(() =>
     activeRetailerProducts.flatMap(product => {
-      if (!OFFICIAL_PLAN_IDS.has(product.id)) return [product];
+      if (!isOfficialPlanProductId(product.id)) return [product];
       const resolved = officialTerms[product.id];
       return resolved ? [resolved] : [];
     }), [activeRetailerProducts, officialTerms]
   );
 
   const openEditor = async (product: Product): Promise<void> => {
-    if (OFFICIAL_PLAN_IDS.has(product.id)) {
+    if (isOfficialPlanProductId(product.id)) {
       try {
         const verified = await readOfficialPlanTerms(activeRetailerId, product);
         setEditingProduct(verified);
