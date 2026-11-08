@@ -7,6 +7,9 @@ import {
   X,
 } from 'lucide-react';
 import type { Product } from '../../types';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../../utils/firebase';
+import { parseProductSaleModality } from '../../../shared/productSaleModality';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
 import { auth } from '../../utils/firebase';
 import {
@@ -20,6 +23,33 @@ import { OperationalDualWriteBridge } from './OperationalDualWriteBridge';
 import { ProductEditorModal } from './ProductEditorModal';
 import { ProductInventoryWorkspace } from './ProductInventoryWorkspace';
 import OfficialStoreCatalogPanel from './OfficialStoreCatalogPanel';
+
+// Canonical product terms are the sole authority for the two official plans.
+// Never copy a stale legacy description or autoRenew into an editor.
+const OFFICIAL_PLAN_IDS = new Set([
+  'draft_1d3dfa74091747d3a3012eadd8027894',
+  'draft_5f46706373714839a55846e6d8cb102c',
+]);
+const OFFICIAL_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
+
+const readOfficialPlanTerms = async (legacyStoreId: string, product: Product): Promise<Product> => {
+  if (!OFFICIAL_PLAN_IDS.has(product.id)) return product;
+  const designation = await getDoc(doc(db, 'kyrub_admin', 'official_store'));
+  const identity = designation.data();
+  if (identity?.legacyStoreId !== legacyStoreId ||
+      identity?.canonicalStoreId !== OFFICIAL_STORE_ID) return product;
+  const canonical = await getDoc(doc(db, 'stores', OFFICIAL_STORE_ID, 'products', product.id));
+  const record = canonical.data();
+  const modality = parseProductSaleModality(record?.saleModality);
+  if (record?.publicationStatus !== 'published' ||
+      record?.storeId !== OFFICIAL_STORE_ID ||
+      record?.price !== product.price ||
+      typeof record?.description !== 'string' ||
+      modality?.mode !== 'subscription') {
+    throw new Error('Não foi possível validar os termos canônicos do plano oficial.');
+  }
+  return { ...product, description: record.description, saleModality: modality };
+};
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -40,6 +70,9 @@ export function ProductInventoryDirectRuntime({
   triggerToast,
 }: ProductInventoryDirectRuntimeProps) {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [officialTerms, setOfficialTerms] = useState<Record<string, Product>>({});
+  const [officialTermsError, setOfficialTermsError] = useState('');
+  const [officialTermsLoading, setOfficialTermsLoading] = useState(false);
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +86,52 @@ export function ProductInventoryDirectRuntime({
       ),
     [activeRetailerId, products]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const matching = activeRetailerProducts.filter(product => OFFICIAL_PLAN_IDS.has(product.id));
+    if (matching.length === 0) {
+      setOfficialTerms({});
+      setOfficialTermsError('');
+      setOfficialTermsLoading(false);
+      return;
+    }
+    setOfficialTermsLoading(true);
+    setOfficialTermsError('');
+    void Promise.all(matching.map(product => readOfficialPlanTerms(activeRetailerId, product)))
+      .then(resolved => {
+        if (cancelled) return;
+        setOfficialTerms(Object.fromEntries(resolved.map(product => [product.id, product])));
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setOfficialTerms({});
+        setOfficialTermsError(error instanceof Error ? error.message : 'Não foi possível consultar os termos oficiais.');
+      })
+      .finally(() => { if (!cancelled) setOfficialTermsLoading(false); });
+    return () => { cancelled = true; };
+  }, [activeRetailerId, activeRetailerProducts]);
+
+  const displayProducts = useMemo(() =>
+    activeRetailerProducts.map(product => officialTerms[product.id] ?? product),
+    [activeRetailerProducts, officialTerms]
+  );
+
+  const openEditor = async (product: Product): Promise<void> => {
+    if (OFFICIAL_PLAN_IDS.has(product.id)) {
+      setOfficialTermsLoading(true);
+      try {
+        const verified = await readOfficialPlanTerms(activeRetailerId, product);
+        setEditingProduct(verified);
+      } catch (error) {
+        triggerToast(error instanceof Error ? error.message : 'Termos oficiais indisponíveis.', 'error');
+      } finally {
+        setOfficialTermsLoading(false);
+      }
+      return;
+    }
+    setEditingProduct(product);
+  };
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
@@ -125,6 +204,16 @@ export function ProductInventoryDirectRuntime({
     const previousProduct = products.find(item => item.id === product.id);
     if (!previousProduct || previousProduct.supplierId !== activeRetailerId) {
       throw new Error('O item selecionado não pertence à loja autenticada.');
+    }
+
+    // Canonical terms must not be edited via the legacy tenant writer.
+    if (OFFICIAL_PLAN_IDS.has(product.id)) {
+      const verified = await readOfficialPlanTerms(activeRetailerId, previousProduct);
+      if (verified.description !== product.description ||
+          JSON.stringify(verified.saleModality) !== JSON.stringify(product.saleModality)) {
+        throw new Error('Os termos oficiais do plano não podem ser alterados pelo editor legado.');
+      }
+      throw new Error('Edite os planos oficiais pelo fluxo canônico. O editor legado é somente leitura para esses produtos.');
     }
 
     const updatedProduct: PublicProduct = {
@@ -228,19 +317,20 @@ export function ProductInventoryDirectRuntime({
 
         <OfficialStoreCatalogPanel key={activeRetailerId} storeId={activeRetailerId} />
         <ProductInventoryWorkspace
-          products={activeRetailerProducts}
+          products={displayProducts}
           keywords={activeStore.keywords ?? []}
           onCreateProduct={() => undefined}
-          onEditProduct={setEditingProduct}
+          onEditProduct={product => { void openEditor(product); }}
           onDeleteProduct={setDeletingProduct}
           busyProductId={busyProductId}
           searchQuery={searchQuery}
         />
       </div>
 
+      {officialTermsError && <p role="alert" className="text-amber-300 text-xs">{officialTermsError}</p>}
       <ProductEditorModal
         product={editingProduct}
-        products={activeRetailerProducts}
+        products={displayProducts}
         keywords={activeStore.keywords ?? []}
         isSaving={Boolean(busyProductId)}
         onClose={() => !busyProductId && setEditingProduct(null)}
