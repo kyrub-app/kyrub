@@ -7,8 +7,14 @@ import {
   X,
 } from 'lucide-react';
 import type { Product } from '../../types';
+import { doc, getDocFromServer } from 'firebase/firestore';
+import { auth, db } from '../../utils/firebase';
+import {
+  OFFICIAL_STORE_CANONICAL_ID,
+  isOfficialPlanProductId,
+  projectOfficialCanonicalProductTerms,
+} from '../../../shared/officialPlanCanonicalDisplay';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
-import { auth } from '../../utils/firebase';
 import {
   persistPublicProduct,
   PUBLIC_PRODUCT_CREATE_EVENT,
@@ -20,6 +26,25 @@ import { OperationalDualWriteBridge } from './OperationalDualWriteBridge';
 import { ProductEditorModal } from './ProductEditorModal';
 import { ProductInventoryWorkspace } from './ProductInventoryWorkspace';
 import OfficialStoreCatalogPanel from './OfficialStoreCatalogPanel';
+
+// Canonical product terms are the sole authority for the two official plans.
+// Never copy a stale legacy description or autoRenew into an editor.
+const isOfficialPlanForStore = async (legacyStoreId: string, productId: string): Promise<boolean> => {
+  if (!isOfficialPlanProductId(productId)) return false;
+  const canonicalStore = await getDocFromServer(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID));
+  const store = canonicalStore.data();
+  return canonicalStore.exists() &&
+    store?.ownerId === legacyStoreId &&
+    store?.legacyTenantId === legacyStoreId &&
+    auth.currentUser?.uid === legacyStoreId;
+};
+
+const readOfficialPlanTerms = async (legacyStoreId: string, product: Product): Promise<Product> => {
+  if (!await isOfficialPlanForStore(legacyStoreId, product.id)) return product;
+  const canonical = await getDocFromServer(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID, 'products', product.id));
+  const record = canonical.data();
+  return projectOfficialCanonicalProductTerms(product, record, OFFICIAL_STORE_CANONICAL_ID);
+};
 
 type RetailerPanelProps = React.ComponentProps<typeof LegacyRetailerPanel>;
 
@@ -40,6 +65,8 @@ export function ProductInventoryDirectRuntime({
   triggerToast,
 }: ProductInventoryDirectRuntimeProps) {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [officialTerms, setOfficialTerms] = useState<Record<string, Product>>({});
+  const [officialTermsError, setOfficialTermsError] = useState('');
   const [deletingProduct, setDeletingProduct] = useState<Product | null>(null);
   const [busyProductId, setBusyProductId] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -53,6 +80,50 @@ export function ProductInventoryDirectRuntime({
       ),
     [activeRetailerId, products]
   );
+
+  useEffect(() => {
+    let cancelled = false;
+    const matching = activeRetailerProducts.filter(product => isOfficialPlanProductId(product.id));
+    if (matching.length === 0) {
+      setOfficialTerms({});
+      setOfficialTermsError('');
+      return;
+    }
+    setOfficialTerms({});
+    setOfficialTermsError('');
+    void Promise.all(matching.map(product => readOfficialPlanTerms(activeRetailerId, product)))
+      .then(resolved => {
+        if (cancelled) return;
+        setOfficialTerms(Object.fromEntries(resolved.map(product => [product.id, product])));
+      })
+      .catch(error => {
+        if (cancelled) return;
+        setOfficialTerms({});
+        setOfficialTermsError(error instanceof Error ? error.message : 'Não foi possível consultar os termos oficiais.');
+      });
+    return () => { cancelled = true; };
+  }, [activeRetailerId, activeRetailerProducts]);
+
+  const displayProducts = useMemo(() =>
+    activeRetailerProducts.flatMap(product => {
+      if (!isOfficialPlanProductId(product.id)) return [product];
+      const resolved = officialTerms[product.id];
+      return resolved ? [resolved] : [];
+    }), [activeRetailerProducts, officialTerms]
+  );
+
+  const openEditor = async (product: Product): Promise<void> => {
+    if (isOfficialPlanProductId(product.id)) {
+      try {
+        const verified = await readOfficialPlanTerms(activeRetailerId, product);
+        setEditingProduct(verified);
+      } catch (error) {
+        triggerToast(error instanceof Error ? error.message : 'Termos oficiais indisponíveis.', 'error');
+      }
+      return;
+    }
+    setEditingProduct(product);
+  };
 
   useEffect(() => {
     const handlePublicProductCreate = (event: Event): void => {
@@ -125,6 +196,11 @@ export function ProductInventoryDirectRuntime({
     const previousProduct = products.find(item => item.id === product.id);
     if (!previousProduct || previousProduct.supplierId !== activeRetailerId) {
       throw new Error('O item selecionado não pertence à loja autenticada.');
+    }
+
+    // Canonical terms must not be edited via the legacy tenant writer.
+    if (await isOfficialPlanForStore(activeRetailerId, product.id)) {
+      throw new Error('Os planos oficiais são administrados pelo catálogo canônico. O editor legado não pode gravar esses produtos.');
     }
 
     const updatedProduct: PublicProduct = {
@@ -228,19 +304,20 @@ export function ProductInventoryDirectRuntime({
 
         <OfficialStoreCatalogPanel key={activeRetailerId} storeId={activeRetailerId} />
         <ProductInventoryWorkspace
-          products={activeRetailerProducts}
+          products={displayProducts}
           keywords={activeStore.keywords ?? []}
           onCreateProduct={() => undefined}
-          onEditProduct={setEditingProduct}
+          onEditProduct={product => { void openEditor(product); }}
           onDeleteProduct={setDeletingProduct}
           busyProductId={busyProductId}
           searchQuery={searchQuery}
         />
       </div>
 
+      {officialTermsError && <p role="alert" className="text-amber-300 text-xs">{officialTermsError}</p>}
       <ProductEditorModal
         product={editingProduct}
-        products={activeRetailerProducts}
+        products={displayProducts}
         keywords={activeStore.keywords ?? []}
         isSaving={Boolean(busyProductId)}
         onClose={() => !busyProductId && setEditingProduct(null)}
