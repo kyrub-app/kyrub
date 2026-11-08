@@ -121,11 +121,11 @@ describe('marketplace discovery', () => {
   test('official plan storefront projects canonical contract terms on both catalog paths', () => {
     const service = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
     assert.match(service, /projectOfficialCanonicalTerms\(projectCanonicalOffers/);
-    assert.match(service, /projectOfficialCanonicalTerms\(projectLegacyPublicOffers/);
-    assert.match(service, /canonical\.description, saleModality: modality/);
-    assert.match(service, /OFFICIAL_PLAN_PUBLIC_PROJECTION_CONFLICT/);
-    assert.match(service, /canonical\?\.publicationStatus !== 'published'/);
-    assert.match(service, /canonical\?\.price !== offer\.price/);
+    assert.match(service, /projectLegacyPublicOffers\(legacyData\.publicProducts, legacyStoreId\)/);
+    assert.match(service, /resolveOfficialStoreProjectionId\(legacyStoreId, offers\)/);
+    assert.match(service, /projectOfficialCanonicalTerms\(offers, canonicalId\)/);
+    assert.match(service, /projectOfficialCanonicalProductTerms\(offer, canonicalById\.get\(offer\.id\), canonicalStoreId\)/);
+    assert.match(service, /OFFICIAL_PLAN_PUBLIC_IDENTITY_CONFLICT/);
   });
 
   test('marketplace UI exposes promotion and for-you as separate filters', () => {
