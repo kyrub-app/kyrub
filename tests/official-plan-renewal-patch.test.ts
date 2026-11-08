@@ -22,3 +22,10 @@ test('admin route supports dry run and does not expose public GET write', () => 
   assert.match(route, /if \(method !== 'POST'\)/);
   assert.match(route, /apply: body\.apply === true/);
 });
+
+test('only simulation exposes a sanitized failing guard', () => {
+  assert.match(patch, /input\.apply \? code : `\$\{code\}_\$\{reason\}`/);
+  assert.match(patch, /!product\.exists\) conflict\('CANONICAL_PRODUCT_MISSING'\)/);
+  assert.match(patch, /!mapping\.exists\) conflict\('OFFICIAL_MAPPING_MISSING'\)/);
+  assert.match(patch, /data\?\.description !== input\.expectedDescription\) conflict\('DESCRIPTION_MISMATCH'\)/);
+});
