@@ -8,10 +8,9 @@ import {
 } from 'lucide-react';
 import type { Product } from '../../types';
 import { doc, getDoc } from 'firebase/firestore';
-import { db } from '../../utils/firebase';
+import { auth, db } from '../../utils/firebase';
 import { parseProductSaleModality } from '../../../shared/productSaleModality';
 import { RetailerPanel as LegacyRetailerPanel } from '../LegacyRetailerPanel';
-import { auth } from '../../utils/firebase';
 import {
   persistPublicProduct,
   PUBLIC_PRODUCT_CREATE_EVENT,
@@ -110,8 +109,8 @@ export function ProductInventoryDirectRuntime({
         if (cancelled) return;
         setOfficialTerms({});
         setOfficialTermsError(error instanceof Error ? error.message : 'Não foi possível consultar os termos oficiais.');
-      })
-;    return () => { cancelled = true; };
+      });
+    return () => { cancelled = true; };
   }, [activeRetailerId, activeRetailerProducts]);
 
   const displayProducts = useMemo(() =>
