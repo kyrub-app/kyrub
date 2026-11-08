@@ -253,6 +253,27 @@ const comparableProductFields = (
   archivedAt: cleanString(value.archivedAt),
 });
 
+// The official subscription contract is administered on the canonical product.
+ // A legacy tenant snapshot must never roll back its description or renewal terms.
+const OFFICIAL_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
+const OFFICIAL_PLAN_PRODUCT_IDS = new Set([
+  'draft_1d3dfa74091747d3a3012eadd8027894',
+  'draft_5f46706373714839a55846e6d8cb102c',
+]);
+
+export const preserveOfficialPlanCanonicalTerms = (
+  existing: Record<string, unknown>,
+  next: CanonicalProductMirrorData
+): CanonicalProductMirrorData => {
+  if (next.storeId !== OFFICIAL_STORE_ID || !OFFICIAL_PLAN_PRODUCT_IDS.has(next.id)) return next;
+  const canonicalModality = parseProductSaleModality(existing.saleModality);
+  if (!canonicalModality || canonicalModality.mode !== 'subscription' ||
+      typeof existing.description !== 'string') {
+    throw new Error('Os termos canônicos do plano oficial estão inválidos; sincronização interrompida.');
+  }
+  return { ...next, description: existing.description, saleModality: canonicalModality };
+};
+
 export const canonicalProductNeedsUpdate = (
   existing: Record<string, unknown>,
   next: CanonicalProductMirrorData
@@ -377,7 +398,7 @@ export const syncLegacyProductsToCanonical = async (
   };
 
   for (const product of products) {
-    const next = buildCanonicalProductMirrorData(
+    const mirrored = buildCanonicalProductMirrorData(
       product,
       canonicalStore.id,
       user.uid,
@@ -388,6 +409,7 @@ export const syncLegacyProductsToCanonical = async (
       getCanonicalProductDocumentPath(canonicalStore.id, product.id)
     );
     const existing = canonicalById.get(product.id);
+    const next = existing ? preserveOfficialPlanCanonicalTerms(existing, mirrored) : mirrored;
 
     if (!existing) {
       operations.push(batch =>
