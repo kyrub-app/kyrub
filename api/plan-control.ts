@@ -21,6 +21,7 @@ import {
 import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
+import { patchOfficialPlanRenewal } from '../server/admin/officialPlanRenewalPatch.js';
 import { quoteOfficialPlanPix, acceptOfficialPlanPix, checkoutOfficialPlanPix, reconcileOfficialPlanPix, handleOfficialPlanPixWebhook } from '../server/payments/officialPlanPixCheckout.js';
 import {
   grantComplimentaryPlanWithLifecycle,
@@ -269,6 +270,19 @@ export default async function handler(
             : operation.endsWith('.checkout') ? await checkoutOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string })
               : await reconcileOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string });
         response.status(200).json(result); return;
+      }
+      case 'admin.official-plan-product.renewal-patch': {
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await patchOfficialPlanRenewal({
+          authorization,
+          planId: body.planId as 'pro' | 'business',
+          productId: body.productId as string,
+          expectedDescription: body.expectedDescription as string,
+          nextDescription: body.nextDescription as string,
+          apply: body.apply === true,
+        }));
+        return;
       }
       case 'admin.official-plan-product.list': {
         if (method !== 'GET') { methodNotAllowed(response); return; }
