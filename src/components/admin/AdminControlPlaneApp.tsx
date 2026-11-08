@@ -7,6 +7,7 @@ import AdminAccordionSection from './AdminAccordionSection';
 import AdminDirectoryWorkspace from './AdminDirectoryWorkspace';
 import AdminModulesWorkspace from './AdminModulesWorkspace';
 import AdminOfficialBillingPreflight from './AdminOfficialBillingPreflight';
+import AdminOfficialPlanRenewalAction from './AdminOfficialPlanRenewalAction';
 import AdminFirebasePreflight from './AdminFirebasePreflight';
 
 const OfficialPlanGovernance = lazy(() => import('../store/OfficialStoreCommercialWorkspace'));
@@ -39,6 +40,7 @@ export default function AdminControlPlaneApp() {
         <div className="mt-4"><div className="mb-3 flex items-center justify-between"><div><h3 className="text-xs font-black uppercase text-white">Indicadores básicos</h3><p className="mt-1 text-[9px] text-slate-500">Contagens reais consultadas no Firestore.</p></div>{metricsLoading && <span className="text-[9px] font-black uppercase text-cyan-400">Atualizando</span>}</div>{metricsError && <div className="mb-3 rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-[10px] text-amber-200">{metricsError}</div>}<div className="grid gap-3 sm:grid-cols-3" aria-busy={metricsLoading}>{metricsLoading && metrics.length === 0 ? [0,1,2].map(item => <MetricSkeleton key={item}/>) : metrics.map(metric => <article key={metric.key} className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4"><span className="text-[9px] font-black uppercase text-slate-500">{metric.label}</span><strong className="mt-2 block text-2xl font-black text-white">{formatMetric(metric)}</strong></article>)}</div></div>
       </AdminAccordionSection>
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-official-billing-preflight" title="Validação da cobrança oficial" description="Verificação somente leitura da identidade Mercado Pago dos planos." icon={ShieldCheck}><AdminOfficialBillingPreflight user={user}/></AdminAccordionSection>}
+      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-official-renewal-repair" title="Correção dos planos oficiais" description="Simulação e atualização protegida da renovação de Pro e Business." icon={ShieldCheck}><AdminOfficialPlanRenewalAction user={user}/></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-plan-governance" title="Regras e limites dos planos" description="Versões, capacidades e concessões administrativas. Produtos e preços de venda são gerenciados na Loja Oficial." icon={ShieldCheck}><Suspense fallback={<p>Carregando regras dos planos…</p>}><OfficialPlanGovernance authenticatedUser={user} profile={profile}/></Suspense></AdminAccordionSection>}
       {canReadDirectory && <AdminAccordionSection id="admin-platform-directory" title="Plataforma & Tenants" description="Usuários, lojas, vínculos e infraestrutura administrativa dos tenants." icon={Users} badge="Control Plane"><AdminDirectoryWorkspace authenticatedUser={user} profile={profile}/></AdminAccordionSection>}
       <AdminFirebasePreflight key={user.uid} user={user} profile={profile} />
