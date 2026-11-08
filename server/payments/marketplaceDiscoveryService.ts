@@ -215,6 +215,23 @@ const projectOfficialCanonicalTerms = async (
   });
 };
 
+// Resolve the official identity through the administrative designation. A public
+// legacy storefront uses a tenant UID, not the canonical stores/{id} key.
+const resolveOfficialStoreProjectionId = async (
+  legacyStoreId: string,
+  offers: PublicStorefrontSnapshot['offers']
+): Promise<string> => {
+  if (!offers.some(offer => OFFICIAL_PLAN_IDS.has(offer.id))) return legacyStoreId;
+  const designation = await adminDb.doc('kyrub_admin/official_store').get();
+  const data = designation.data();
+  if (data?.kind !== 'official_cairobi_store' ||
+      clean(data.legacyStoreId) !== legacyStoreId ||
+      clean(data.canonicalStoreId) !== OFFICIAL_STORE_ID) {
+    throw new Error('OFFICIAL_PLAN_PUBLIC_IDENTITY_CONFLICT');
+  }
+  return OFFICIAL_STORE_ID;
+};
+
 const countConfirmedPurchases = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
@@ -396,7 +413,11 @@ export const loadPublicStorefrontBySlug = async (
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
     },
-    offers: await projectOfficialCanonicalTerms(projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId), legacyStoreId),
+    offers: await (async () => {
+      const offers = projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId);
+      const canonicalId = await resolveOfficialStoreProjectionId(legacyStoreId, offers);
+      return projectOfficialCanonicalTerms(offers, canonicalId);
+    })(),
   };
 };
 
