@@ -34,10 +34,26 @@ const patch = async (user: User, plan: typeof PLANS[number], apply: boolean): Pr
 
 export default function AdminOfficialPlanRenewalAction({ user }: { user: User }) {
   const [busy, setBusy] = useState(false);
+  const [audit, setAudit] = useState<string>('');
   const [simulated, setSimulated] = useState(false);
   const [confirmed, setConfirmed] = useState(false);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
+  const runAudit = async () => {
+    if (busy) return;
+    setBusy(true); setAudit(''); setError('');
+    try {
+      const token = await user.getIdToken(true);
+      const response = await fetch('/api/plan-control?op=admin.official-plan-product.mapping-audit', {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => null) as { ok?: boolean; code?: string } | null;
+      if (!response.ok || data?.ok !== true) throw new Error(data?.code ?? 'Auditoria indisponível');
+      setAudit(JSON.stringify(data, null, 2));
+    } catch (cause) { setError(cause instanceof Error ? cause.message : 'Auditoria indisponível.'); }
+    finally { setBusy(false); }
+  };
   const simulate = async (scope: 'pro' | 'both') => {
     if (busy) return;
     setBusy(true); setSimulated(false); setConfirmed(false); setError(''); setMessage('');
@@ -77,6 +93,8 @@ export default function AdminOfficialPlanRenewalAction({ user }: { user: User })
       <p className="mt-1 break-all text-slate-400">ID: {plan.productId}</p>
       <p className="mt-2 text-slate-300">{description(plan.label)}</p>
     </div>)}
+    <button type="button" disabled={busy} onClick={() => void runAudit()} className="rounded-lg border border-slate-500 px-4 py-2 text-white disabled:opacity-50">Auditar vínculos oficiais (somente leitura)</button>
+    {audit && <pre className="max-h-96 overflow-auto whitespace-pre-wrap break-all rounded-lg bg-slate-900 p-3 text-slate-200">{audit}</pre>}
     <div className="flex flex-wrap gap-2">
       <button type="button" disabled={busy} onClick={() => void simulate('pro')} className="rounded-lg border border-cyan-700 px-4 py-2 font-bold text-cyan-200 disabled:opacity-50">
         Simular somente Kyrub Pro (sem gravação)

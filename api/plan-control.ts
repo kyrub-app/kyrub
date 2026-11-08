@@ -22,6 +22,7 @@ import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvid
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
 import { patchOfficialPlanRenewal } from '../server/admin/officialPlanRenewalPatch.js';
+import { auditOfficialPlanMappings } from '../server/admin/officialPlanMappingAudit.js';
 import { quoteOfficialPlanPix, acceptOfficialPlanPix, checkoutOfficialPlanPix, reconcileOfficialPlanPix, handleOfficialPlanPixWebhook } from '../server/payments/officialPlanPixCheckout.js';
 import {
   grantComplimentaryPlanWithLifecycle,
@@ -283,6 +284,11 @@ export default async function handler(
           apply: body.apply === true,
         }));
         return;
+      }
+      case 'admin.official-plan-product.mapping-audit': {
+        if (method !== 'GET') { methodNotAllowed(response); return; }
+        response.setHeader('cache-control', 'no-store, max-age=0');
+        response.status(200).json(await auditOfficialPlanMappings(authorization)); return;
       }
       case 'admin.official-plan-product.list': {
         if (method !== 'GET') { methodNotAllowed(response); return; }
