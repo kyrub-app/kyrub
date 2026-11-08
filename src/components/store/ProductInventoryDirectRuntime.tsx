@@ -7,7 +7,7 @@ import {
   X,
 } from 'lucide-react';
 import type { Product } from '../../types';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDocFromServer } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import {
   OFFICIAL_STORE_CANONICAL_ID,
@@ -31,7 +31,7 @@ import OfficialStoreCatalogPanel from './OfficialStoreCatalogPanel';
 // Never copy a stale legacy description or autoRenew into an editor.
 const isOfficialPlanForStore = async (legacyStoreId: string, productId: string): Promise<boolean> => {
   if (!isOfficialPlanProductId(productId)) return false;
-  const canonicalStore = await getDoc(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID));
+  const canonicalStore = await getDocFromServer(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID));
   const store = canonicalStore.data();
   return canonicalStore.exists() &&
     store?.ownerId === legacyStoreId &&
@@ -41,7 +41,7 @@ const isOfficialPlanForStore = async (legacyStoreId: string, productId: string):
 
 const readOfficialPlanTerms = async (legacyStoreId: string, product: Product): Promise<Product> => {
   if (!await isOfficialPlanForStore(legacyStoreId, product.id)) return product;
-  const canonical = await getDoc(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID, 'products', product.id));
+  const canonical = await getDocFromServer(doc(db, 'stores', OFFICIAL_STORE_CANONICAL_ID, 'products', product.id));
   const record = canonical.data();
   return projectOfficialCanonicalProductTerms(product, record, OFFICIAL_STORE_CANONICAL_ID);
 };
@@ -89,6 +89,7 @@ export function ProductInventoryDirectRuntime({
       setOfficialTermsError('');
       return;
     }
+    setOfficialTerms({});
     setOfficialTermsError('');
     void Promise.all(matching.map(product => readOfficialPlanTerms(activeRetailerId, product)))
       .then(resolved => {
