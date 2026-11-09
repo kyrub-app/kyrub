@@ -178,4 +178,20 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal(repeated.startsAt, payment.date_approved);
   assert.equal(repeated.expiresAt, results[0].expiresAt);
   assert.equal(posts, 0, 'injected provider confirmation must not issue a new Pix charge');
+
+  // Creating the private store later must inherit Pro, never reset the paid term.
+  const entitlementBefore = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
+  const created = await api.ensureFreePlanForStoreCreation('Bearer buyer');
+  assert.deepEqual(created, { plan: 'pro', created: true });
+  assert.equal((await db.doc('users/buyer/stores/buyer').get()).get('plan'), 'pro');
+  assert.equal((await db.doc('stores/buyer').get()).exists, false,
+    'private provisioning must not fabricate a canonical store');
+  const again = await api.ensureFreePlanForStoreCreation('Bearer buyer');
+  assert.deepEqual(again, { plan: 'pro', created: false });
+  const entitlementAfter = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
+  assert.equal(entitlementAfter.benefitStartsAt, entitlementBefore.benefitStartsAt);
+  assert.equal(entitlementAfter.benefitEndsAt, entitlementBefore.benefitEndsAt);
+  const afterProvisioning = await api.reconcileOfficialPlanPix(input);
+  assert.equal(afterProvisioning.startsAt, payment.date_approved);
+  assert.equal(afterProvisioning.expiresAt, results[0].expiresAt);
 });
