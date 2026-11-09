@@ -14,7 +14,7 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   plan: 'free' | 'pro' | 'business';
   created: boolean;
 }> {
-  const token = /^Bearer\\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+  const token = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
   if (!token) throw Error('FREE_STORE_AUTH_REQUIRED');
   const actor = await verifyFirebaseIdToken(token);
   if (!validUid(actor.uid)) throw Error('FREE_STORE_INVALID_USER');
