@@ -31,7 +31,15 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
     const subscription = subscriptionDoc.data();
     const paidPlan = [entitlement?.plan, current?.plan, subscription?.plan]
       .find(plan => plan === 'pro' || plan === 'business') as 'pro' | 'business' | undefined;
-    if (paidPlan) return { plan: paidPlan, created: false };
+    if (paidPlan) {
+      // A paid entitlement may have been issued before the buyer created a store.
+      // The store profile must inherit that plan, not revert to Free.
+      if (entitlement?.status === 'active' && (entitlement.plan === 'pro' || entitlement.plan === 'business') &&
+          (!privateDoc.exists || current?.plan !== entitlement.plan)) {
+        tx.set(privateRef, { plan: entitlement.plan, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+      }
+      return { plan: paidPlan, created: false };
+    }
     if (entitlement?.status === 'active' && entitlement?.source !== 'free') {
       // Never overwrite an unknown active grant with Free.
       return { plan: 'free' as const, created: false };
