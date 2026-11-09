@@ -154,6 +154,13 @@ export function RendaTab({
 
   const openRetailerWorkspace = async () => {
     if (isProvisioningFree) return;
+    // Existing stores must remain accessible even when a paid entitlement
+    // requires reconciliation; Free provisioning is only for first creation.
+    if (hasConfiguredStore) {
+      setIsGestaoOpen(true);
+      setGestaoRole('retailer');
+      return;
+    }
     const user = auth.currentUser;
     if (!user) {
       triggerToast('Entre na sua conta para criar sua loja.', 'warning');
