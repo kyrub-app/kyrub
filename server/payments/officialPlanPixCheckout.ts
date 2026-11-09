@@ -261,13 +261,19 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       throw Error('OFFICIAL_PIX_ACCEPTANCE_CHANGED');
     }
     if (existingBinding.exists) {
+      const currentStatus = current.get('status');
+      const contractState = existingContract.get('state');
       if (existingBinding.get('contractPath') !== contractRef.path ||
           existingBinding.get('providerPaymentId') !== String(payment.id) ||
-          current.get('status') !== 'paid_pending_activation' ||
-          existingContract.get('state') !== 'paid_pending_activation' ||
-          existingSubscription.get('buyerId') !== uid) {
+          existingSubscription.get('buyerId') !== uid ||
+          !(
+            (currentStatus === 'paid_pending_activation' && contractState === 'paid_pending_activation') ||
+            (currentStatus === 'activated' && contractState === 'active')
+          )) {
         throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
       }
+      // Once the store activates, provider retries must not reset the
+      // contract dates or downgrade the subscription.
       return;
     }
     if (lock.get('officialPixCheckoutId') !== d.checkoutId ||
@@ -325,6 +331,13 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       startsAt: null, contractExpiresAt: null, effectsStatus: 'pending',
     });
   });
+  // Read after the transaction: a concurrent store activation may have
+  // advanced this same contract while the provider callback was running.
+  const settled = await checkoutRef(d.checkoutId).get();
+  if (settled.get('status') === 'activated') {
+    return { state: 'activated', subscriptionId: id, contractId,
+      startsAt: settled.get('startsAt'), expiresAt: settled.get('contractExpiresAt') };
+  }
   return { state: 'paid_pending_activation', subscriptionId: id, contractId,
     startsAt: null, expiresAt: null };
 }
