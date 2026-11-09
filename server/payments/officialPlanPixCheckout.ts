@@ -528,7 +528,8 @@ async function materialize(d: any, payment: any) {
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId);
     const [current, binding, slot, buyerStore, entitlement, existingContract, existingSubscription, seller] = await Promise.all([
-      tx.get(r), tx.get(bindingRef), tx.get(slotRef(uid)), tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)), tx.get(entitlementRef(uid)),
+      tx.get(r), tx.get(bindingRef), tx.get(slotRef(uid)),
+      d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null), tx.get(entitlementRef(uid)),
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
     ]);
     if (current.get('providerPaymentId') !== String(payment.id) || current.get('offerDigest') !== digest(d.offer) ||
@@ -543,7 +544,8 @@ async function materialize(d: any, payment: any) {
     if (slot.get('officialPixCheckoutId') !== d.checkoutId ||
       slot.get('checkoutReservationStatus') !== 'pending' ||
       !['bound', 'in_flight', 'outcome_unknown'].includes(current.get('status')) ||
-      buyerStore.get('ownerId') !== uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+      (d.buyerStoreId ? buyerStore?.get('ownerId') !== uid : d.buyerStoreProvisioningRequired !== true) ||
+      seller.get('ownerId') !== d.offer.ownerUserId ||
       existingContract.exists || existingSubscription.exists ||
       liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
     const finance = await prepareStoreEconomicLedgerConfirmedCapture({ transaction: tx, payment: canonical, paymentIntentId: d.checkoutId });
@@ -568,7 +570,7 @@ async function materialize(d: any, payment: any) {
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
     applyStoreEconomicLedgerPaymentPlan(tx, finance);
     if (pointEntry) tx.create(adminDb.doc(`${root}/storePointLedger/${Buffer.from(pointEntry.id).toString('base64url')}`), pointEntry);
-    writePlanMirrors(tx, uid, d.buyerStoreId, d.offer.plan, FieldValue.serverTimestamp());
+    writePlanMirrors(tx, uid, d.buyerStoreId ?? null, d.offer.plan, FieldValue.serverTimestamp());
     tx.set(entitlementRef(uid), { schemaVersion: 2, storeId: uid, ownerId: uid, plan: d.offer.plan,
       planVersion: d.offer.planVersion, source: 'subscription', status: 'active', benefitStartsAt: startsAt, benefitEndsAt: expiresAt,
       provider: 'mercado_pago', providerPaymentId: String(payment.id), officialPixCheckoutId: d.checkoutId, updatedAt: FieldValue.serverTimestamp() });
