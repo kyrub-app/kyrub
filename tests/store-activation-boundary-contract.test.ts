@@ -57,3 +57,15 @@ test('saving settings and publishing a listing cannot trigger first activation',
   assert.match(publication, /setStoreMarketplacePublication\(/);
   assert.doesNotMatch(save + publication, /recordFirstCanonicalStoreActivation|activateCanonicalStoreAndReconcileOfficialPlan/);
 });
+
+test('existing-store Pix materialization fails closed on stale reservation and duplicate contracts', () => {
+  const checkout = read('../server/payments/officialPlanPixCheckout.ts');
+  const start = checkout.indexOf('async function materialize(d: any, payment: any)');
+  const end = checkout.indexOf('async function reconcileLoaded(', start);
+  assert.ok(start >= 0 && end > start);
+  const materialization = checkout.slice(start, end);
+  assert.match(materialization, /slot\.get\('checkoutReservationStatus'\) !== 'pending'/);
+  assert.match(materialization, /existingContract\.exists \|\| existingSubscription\.exists/);
+  assert.match(materialization, /scheduleOfficialPlanFromConfirmedPayment\(/);
+  assert.match(materialization, /liveEntitlement\(entitlement\.data\(\)\)/);
+});
