@@ -218,6 +218,117 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   return reconcileOfficialPlanPix(input);
 }
 
+/**
+ * Persist a verified Pix payment without activating a store or starting a
+ * subscription term. This branch is deliberately unreachable from new Pix
+ * issuance until the full preactivation flow has passed integration tests.
+ */
+async function materializePendingStoreActivation(d: any, payment: any) {
+  const approvedAt = typeof payment.date_approved === 'string' ? Date.parse(payment.date_approved) : NaN;
+  if (payment.status_detail !== 'accredited' || !Number.isFinite(approvedAt) ||
+      !Number.isFinite(Date.parse(d.acceptedAt)) || approvedAt < Date.parse(d.acceptedAt)) {
+    throw Error('OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED');
+  }
+  const paidAt = new Date(approvedAt).toISOString();
+  const uid = d.buyerId, storeId = d.offer.storeId;
+  const id = `official_${d.checkoutId}`, contractId = `official-${d.checkoutId}`;
+  const root = `stores/${storeId}`;
+  const contractRef = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
+  const subscriptionRef = adminDb.doc(`${root}/subscriptions/${id}`);
+  const bindingRef = adminDb.doc(`prepaidRenewalPaymentBindings/${hash('mercado_pago:' + payment.id)}`);
+  const paymentId = `official_pix_${payment.id}`;
+  const canonical: CanonicalPayment = {
+    id: paymentId, storeId, orderId: contractId, buyerId: uid,
+    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100,
+    currency: 'BRL', method: 'pix', context: 'pos', status: 'paid',
+    provider: 'mercado-pago', providerPaymentId: String(payment.id),
+    idempotencyKey: d.checkoutId, createdAt: paidAt, updatedAt: paidAt,
+    paidAt, refundedAt: '',
+  };
+  await adminDb.runTransaction(async tx => {
+    const checkout = checkoutRef(d.checkoutId), slot = slotRef(uid);
+    const [current, existingBinding, lock, existingContract, existingSubscription, seller] = await Promise.all([
+      tx.get(checkout), tx.get(bindingRef), tx.get(slot),
+      tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
+    ]);
+    if (current.get('providerPaymentId') !== String(payment.id) ||
+        current.get('offerDigest') !== digest(d.offer) ||
+        current.get('acceptedOfferDigest') !== current.get('offerDigest') ||
+        current.get('acceptedBy') !== uid ||
+        current.get('requestDigest') !== hash(current.get('requestBody')) ||
+        current.get('collectorId') !== d.collectorId ||
+        seller.get('ownerId') !== d.offer.ownerUserId) {
+      throw Error('OFFICIAL_PIX_ACCEPTANCE_CHANGED');
+    }
+    if (existingBinding.exists) {
+      if (existingBinding.get('contractPath') !== contractRef.path ||
+          existingBinding.get('providerPaymentId') !== String(payment.id) ||
+          current.get('status') !== 'paid_pending_activation' ||
+          existingContract.get('state') !== 'paid_pending_activation' ||
+          existingSubscription.get('buyerId') !== uid) {
+        throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
+      }
+      return;
+    }
+    if (lock.get('officialPixCheckoutId') !== d.checkoutId ||
+        !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
+        existingContract.exists || existingSubscription.exists) {
+      throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
+    }
+    const finance = await prepareStoreEconomicLedgerConfirmedCapture({
+      transaction: tx, payment: canonical, paymentIntentId: d.checkoutId,
+    });
+    tx.create(bindingRef, {
+      provider: 'mercado_pago', providerPaymentId: String(payment.id),
+      storeId, subscriptionId: id, contractId, contractPath: contractRef.path,
+    });
+    tx.create(contractRef, {
+      contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId,
+      customerId: uid, productId: d.offer.productId, months: d.offer.quote.months,
+      totalPaidMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      discountPercent: d.offer.quote.discountPercent, acceptedAt: d.acceptedAt,
+      paidAt, state: 'paid_pending_activation', startsAt: null, expiresAt: null,
+      providerPaymentId: String(payment.id),
+    });
+    tx.create(subscriptionRef, {
+      schemaVersion: 1, id, storeId, buyerId: uid, buyerEmail: d.buyerEmail,
+      ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId,
+      productId: d.offer.productId, productName: d.offer.productName,
+      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months,
+      amountMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      currency: 'BRL', saleModality: d.offer.saleModality,
+      provider: 'mercado_pago', providerSubscriptionId: '',
+      providerStatus: 'authorized', state: 'paid_pending_activation',
+      credentialScopeId: 'kyrub_platform_billing', externalAccountId: d.collectorId,
+      externalReference: reference(d.checkoutId), providerPaymentId: String(payment.id),
+      providerPaymentStatus: 'approved', providerPaymentStatusDetail: 'accredited',
+      providerPaymentOccurredAt: paidAt, paymentConfirmedAt: paidAt,
+      createdAt: paidAt, updatedAt: paidAt, activatedAt: null,
+      startsAt: null, expiresAt: null, initialContractId: contractId,
+      billingAuthority: 'platform',
+    });
+    tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), {
+      contractId, storeId, subscriptionId: id, buyerId: uid,
+      productId: d.offer.productId, startsAt: null, expiresAt: null,
+      providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor,
+      state: 'paid_pending_activation',
+    });
+    tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
+    applyStoreEconomicLedgerPaymentPlan(tx, finance);
+    tx.set(slot, {
+      checkoutReservationStatus: 'paid_pending_activation', collectionMode: 'prepaid',
+      officialPixCheckoutId: d.checkoutId, providerPaymentId: String(payment.id),
+      providerStatus: 'authorized', updatedAt: paidAt,
+    }, { merge: true });
+    tx.update(checkout, {
+      status: 'paid_pending_activation', subscriptionId: id, contractId,
+      startsAt: null, contractExpiresAt: null, effectsStatus: 'pending',
+    });
+  });
+  return { state: 'paid_pending_activation', subscriptionId: id, contractId,
+    startsAt: null, expiresAt: null };
+}
+
 async function materialize(d: any, payment: any) {
   const approvedAt = typeof payment.date_approved === 'string' ? Date.parse(payment.date_approved) : NaN;
   if (payment.status_detail !== 'accredited' || !Number.isFinite(approvedAt) || !Number.isFinite(Date.parse(d.acceptedAt)) || approvedAt < Date.parse(d.acceptedAt)) throw Error('OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED');
