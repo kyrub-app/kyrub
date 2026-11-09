@@ -29,3 +29,15 @@ test('first activation is explicit and reconciliation follows its committed time
   assert.ok(orchestrator.indexOf('await recordFirstCanonicalStoreActivation(input)') <
     orchestrator.indexOf('await activatePendingOfficialPlanForStore('));
 });
+
+test('Pix reconciliation uses the reservation status read inside the Firestore transaction', () => {
+  const checkout = read('../server/payments/officialPlanPixCheckout.ts');
+  const start = checkout.indexOf('export async function activatePendingOfficialPlanForStore');
+  assert.ok(start >= 0);
+  const reconciliation = checkout.slice(start);
+  assert.match(reconciliation, /const transactionalReservationStatus = slotDoc\.get\('checkoutReservationStatus'\)/);
+  assert.match(reconciliation, /if \(transactionalReservationStatus === 'complete'/);
+  assert.match(reconciliation, /if \(transactionalReservationStatus !== 'paid_pending_activation'\)/);
+  assert.doesNotMatch(reconciliation, /if \(reservationStatus === 'complete'/);
+  assert.doesNotMatch(reconciliation, /if \(reservationStatus !== 'paid_pending_activation'\)/);
+});
