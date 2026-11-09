@@ -103,16 +103,15 @@ beforeEach(() => {
   posts = 0; payments = new Map(); lost = false; failCrm = false; beforeResponse = null; collector = '42'; queue = Promise.resolve();
   delete process.env.VERCEL_ENV;
   process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
-  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
-  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID;
-  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_CHECKOUT_ID;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
   docs = new Map([
     ['kyrub_admin/official_store', { canonicalStoreId: 'official' }],
     ['stores/official', { ownerId: 'platform-owner', legacyTenantId: 'platform-owner' }],
     ['stores/buyer-store', { ownerId: 'buyer', legacyTenantId: 'buyer', plan: 'free' }],
     ['users/buyer/stores/buyer', { plan: 'free' }],
     ['users/buyer', { displayName: 'Buyer' }],
-    ['stores/official/products/pro-product', { name: 'Kyrub Pro', price: 20, publicationStatus: 'published', saleModality: modality, storePointsPerUnit: 7,
+    ['stores/official/products/pro-product', { name: 'Kyrub Pro', price: 197, publicationStatus: 'published', saleModality: modality, storePointsPerUnit: 7,
       contractDiscounts: [{ months: 1, discountPercent: 0 }, { months: 3, discountPercent: 10 }] }],
     [`${ROOT}/official_plan_products/pro-product`, { productId: 'pro-product', planId: 'pro', status: 'active', canonicalStoreId: 'official',
       rewards: { xp: 12, achievement: { id: 'member', title: 'Member', description: 'Paid membership', badgeId: 'member-badge' } } }],
@@ -150,7 +149,7 @@ test('monthly platform Pix activates canonical contract, access, CRM, finance, c
 });
 
 test('lost POST response is recovered by reference without sending a second payment', async () => {
-  const q = await accepted(3); assert.equal(q.quote.totalMinor, 5400);
+  const q = await accepted(3); assert.equal(q.quote.totalMinor, 53190);
   lost = true;
   assert.equal((await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId })).state, 'recovery_required');
   assert.equal((await reconcile(q.checkoutId)).state, 'awaiting_payment');
@@ -252,12 +251,7 @@ test('pilot rejects invalid term, amount and incomplete config', async () => {
 });
 
 test('pilot reservation allows only one provider POST even after payment rejection', async () => {
-  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
-  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
-  // The test fixture uses a made-up R$20 offer, so a pilot test must use R$197.
-  const product = docs.get('stores/official/products/pro-product');
-  product.price = 197;
-  // A fresh quote snapshots the new approved price.
+  // Fresh canonical Pro/month quote.
   const first = await api.quoteOfficialPlanPix({ authorization: 'buyer', storeId: 'official', productId: 'pro-product', selectedMonths: 1 });
   await api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId, acceptedTotalMinor: first.quote.totalMinor });
   const pending = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId });
