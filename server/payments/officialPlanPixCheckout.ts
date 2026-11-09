@@ -619,7 +619,9 @@ async function reconcileLoaded(d: any, candidateId?: string) {
   await bind(d, paymentId);
   if (payment.status === 'approved') {
     const verified = { ...d, providerPaymentId: paymentId };
-    return d.buyerStoreProvisioningRequired
+    // Existing legacy pending contracts retain their original reconciliation path.
+    // New launch checkouts always start their term at the provider's approved timestamp.
+    return d.status === 'paid_pending_activation'
       ? materializePendingStoreActivation(verified, payment)
       : materialize(verified, payment);
   }
