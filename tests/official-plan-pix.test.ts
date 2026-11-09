@@ -228,6 +228,7 @@ test('Business follows configured prices and discounts; missing rewards produce 
 });
 
 
+
 test('pilot rejects unauthorized buyer before provider POST', async () => {
   const q = await accepted();
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'someone-else';
@@ -235,26 +236,31 @@ test('pilot rejects unauthorized buyer before provider POST', async () => {
   assert.equal(posts, 0);
 });
 
-test('pilot rejects another plan term or price and rejects missing pilot configuration', async () => {
-  const longer = await accepted(3);
-  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: longer.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
+test('pilot rejects invalid term, amount and incomplete config', async () => {
+  let q = await accepted(3);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
   assert.equal(posts, 0);
-  const monthly = await accepted();
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = '';
-  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: monthly.checkoutId }), /PILOT_FORBIDDEN/);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_FORBIDDEN/);
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
   delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
-  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: monthly.checkoutId }), /PILOT_MODE_REQUIRED/);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_MODE_REQUIRED/);
   assert.equal(posts, 0);
 });
 
-test('pilot reservation is consumed once, including after a definitively rejected charge', async () => {
+test('pilot reservation allows only one provider POST even after payment rejection', async () => {
   const q = await accepted();
-  const first = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId });
-  assert.equal(first.state, 'awaiting_payment');
+  // The test fixture uses a made-up R$20 offer, so a pilot test must use R$197.
+  const product = docs.get('stores/official/products/pro-product');
+  product.price = 197;
+  // A fresh quote snapshots the new approved price.
+  const first = await api.quoteOfficialPlanPix({ authorization: 'buyer', storeId: 'official', productId: 'pro-product', selectedMonths: 1 });
+  await api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId, acceptedTotalMinor: first.quote.totalMinor });
+  const pending = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId });
+  assert.equal(pending.state, 'awaiting_payment');
   assert.equal(posts, 1);
   payments.get('1').status = 'rejected';
-  assert.equal((await reconcile(q.checkoutId)).state, 'rejected');
+  assert.equal((await reconcile(first.checkoutId)).state, 'rejected');
   const next = await accepted();
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: next.checkoutId }), /PILOT_ALREADY_USED/);
   assert.equal(posts, 1);
