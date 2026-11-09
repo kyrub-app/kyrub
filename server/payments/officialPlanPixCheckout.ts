@@ -8,7 +8,7 @@ import { loadPublicActivePlanCatalog } from '../admin/publicPlanCatalogService.j
 import { writePlanMirrors } from '../admin/paidPlanSubscriptionService.js';
 import { resolveSubscriptionContractQuote } from './subscriptionContractQuote.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
-import { officialPixStatusAfterProviderBind } from './officialPlanActivationSchedule.js';
+import { officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore } from './officialPlanActivationSchedule.js';
 import { prepareStoreEconomicLedgerConfirmedCapture, applyStoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 import { buildStorePointPurchaseEntry } from '../../shared/storePoints.js';
 import { reconcilePaidSubscriberIntoCrm } from './storeSubscriberRegistryService.js';
@@ -102,12 +102,14 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
   // The buyer may purchase a plan before creating a store. A legacy Free
   // profile alone is not proof that a canonical store has been activated.
   // Multiple canonical stores are ambiguous and must never be guessed.
-  if (owned.size > 1 || (owned.size === 1 && !legacy.exists)) throw Error('OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT');
+  const buyerStore = resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: owned.docs.map(document => document.id),
+    hasLegacyStore: legacy.exists,
+  });
   if (liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVE_ENTITLEMENT');
   const checkoutId = randomBytes(32).toString('hex');
   await checkoutRef(checkoutId).create({ checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
-    buyerStoreId: owned.size === 1 ? owned.docs[0].id : null,
-    buyerStoreProvisioningRequired: owned.size === 0,
+    ...buyerStore,
     offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
   return { checkoutId, quote: snapshot.quote, status: 'quoted' };
 }
