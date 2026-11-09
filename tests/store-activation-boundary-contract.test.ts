@@ -117,3 +117,10 @@ test('Free provisioning fails closed on authentication and transient server fail
   assert.match(renda, /if \(!response\.ok\) throw Error\('FREE_STORE_PROVISIONING_FAILED'\)/);
   assert.match(renda, /finally \{\s*setIsProvisioningFree\(false\)/);
 });
+
+test('store creation button prevents duplicate requests while Free provisioning is in flight', () => {
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  assert.match(renda, /disabled=\{isCheckingStore \|\| isProvisioningFree\}/);
+  assert.match(renda, /isProvisioningFree\s*\? 'Preparando loja\.\.\.'/);
+  assert.match(renda, /if \(isProvisioningFree\) return/);
+});
