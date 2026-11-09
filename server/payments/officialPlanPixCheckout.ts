@@ -364,7 +364,8 @@ export async function activatePendingOfficialPlanForStore(input: {
   }
   const slot = slotRef(input.buyerUid);
   const currentSlot = await slot.get();
-  if (currentSlot.get('checkoutReservationStatus') !== 'paid_pending_activation') {
+  const reservationStatus = currentSlot.get('checkoutReservationStatus');
+  if (reservationStatus !== 'paid_pending_activation' && reservationStatus !== 'complete') {
     return { state: 'no_pending_contract' };
   }
   const checkoutId = currentSlot.get('officialPixCheckoutId');
@@ -384,6 +385,19 @@ export async function activatePendingOfficialPlanForStore(input: {
       throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
     }
     const d = checkoutDoc.data();
+    if (reservationStatus === 'complete' && d?.status === 'activated' &&
+        d.buyerId === input.buyerUid &&
+        slotDoc.get('officialPixCheckoutId') === checkoutId &&
+        d.buyerStoreProvisioningRequired === true &&
+        d.effectsStatus === 'pending' &&
+        typeof d.subscriptionId === 'string' && valid(d.subscriptionId)) {
+      return { state: 'activated' as const, subscriptionId: d.subscriptionId,
+        contractId: d.contractId, startsAt: d.startsAt,
+        expiresAt: d.contractExpiresAt, storeId: d.offer.storeId };
+    }
+    if (reservationStatus !== 'paid_pending_activation') {
+      return { state: 'no_pending_contract' as const };
+    }
     if (!d || d.buyerId !== input.buyerUid ||
         slotDoc.get('officialPixCheckoutId') !== checkoutId ||
         d.status !== 'paid_pending_activation' ||
