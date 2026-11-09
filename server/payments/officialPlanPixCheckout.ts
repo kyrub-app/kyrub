@@ -430,8 +430,13 @@ async function reconcileLoaded(d: any, candidateId?: string) {
   validatePayment(payment, d);
   if (String(payment.id) !== paymentId) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
   await bind(d, paymentId);
-  if (payment.status === 'approved') return materialize({ ...d, providerPaymentId: paymentId }, payment);
-  if (d.status === 'activated') throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+  if (payment.status === 'approved') {
+    const verified = { ...d, providerPaymentId: paymentId };
+    return d.buyerStoreProvisioningRequired
+      ? materializePendingStoreActivation(verified, payment)
+      : materialize(verified, payment);
+  }
+  if (['activated', 'paid_pending_activation'].includes(d.status)) throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
   if (['rejected', 'cancelled'].includes(payment.status)) {
     await adminDb.runTransaction(async tx => {
       const r = checkoutRef(d.checkoutId), slot = slotRef(d.buyerId);
@@ -457,7 +462,7 @@ export async function handleOfficialPlanPixWebhook(input: { headers: Record<stri
   verifyOfficialPlanPixSignature(input.headers, input.dataId); checkId(input.checkoutId);
   if (!/^\d{1,32}$/.test(input.dataId)) throw Error('OFFICIAL_PIX_INVALID_PAYMENT');
   const d = (await checkoutRef(input.checkoutId).get()).data();
-  if (!d || !['in_flight', 'outcome_unknown', 'bound', 'activated'].includes(d.status)) return { processed: false };
+  if (!d || !['in_flight', 'outcome_unknown', 'bound', 'activated', 'paid_pending_activation'].includes(d.status)) return { processed: false };
   if (d.providerPaymentId && d.providerPaymentId !== input.dataId) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
   return { processed: true, ...await reconcileLoaded(d, input.dataId) };
 }
