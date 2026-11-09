@@ -99,3 +99,11 @@ test('Criar minha loja provisions Free through authenticated server route before
   assert.match(service, /tx\.create\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
 });
+
+test('pre-store paid entitlement is inherited by the first private store profile', () => {
+  const service = read('../server/actions/freeStoreProvisioningService.ts');
+  assert.match(service, /entitlement\?\.status === 'active'/);
+  assert.match(service, /current\?\.plan !== entitlement\.plan/);
+  assert.match(service, /tx\.set\(privateRef, \{ plan: entitlement\.plan/);
+  assert.ok(service.indexOf('if (paidPlan)') < service.indexOf("plan: 'free', status: 'closed'"));
+});
