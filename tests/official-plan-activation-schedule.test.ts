@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, officialPlanPaymentEffects, resolveOfficialPlanBuyerStore, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
 
 test('paid buyer without a store does not lose ten days before activation', () => {
   const paid = scheduleOfficialPlanAfterPayment({
@@ -100,4 +100,28 @@ test('existing store is reused; conflicting store identity is rejected', () => {
   assert.throws(() => resolveOfficialPlanBuyerStore({
     canonicalStoreIds: ['store_a'], hasLegacyStore: false,
   }), /OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT/);
+});
+
+test('paid pending contract records payment but grants no Pro access', () => {
+  const pending = scheduleOfficialPlanAfterPayment({
+    paidAt: '2026-11-09T10:00:00.000Z',
+    buyerStoreActivatedAt: null, months: 1,
+  });
+  assert.deepEqual(officialPlanPaymentEffects(pending), {
+    recordPayment: true,
+    grantEntitlement: false,
+    writePlanMirrors: false,
+    reconcileBenefitCycle: false,
+    checkoutStatus: 'paid_pending_activation',
+  });
+  const active = activatePaidOfficialPlan({
+    schedule: pending, activatedAt: '2026-11-19T10:00:00.000Z', months: 1,
+  });
+  assert.deepEqual(officialPlanPaymentEffects(active), {
+    recordPayment: true,
+    grantEntitlement: true,
+    writePlanMirrors: true,
+    reconcileBenefitCycle: true,
+    checkoutStatus: 'activated',
+  });
 });
