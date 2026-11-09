@@ -323,12 +323,14 @@ export function RendaTab({
           <button
             type="button"
             onClick={openRetailerWorkspace}
-            disabled={isCheckingStore}
+            disabled={isCheckingStore || isProvisioningFree}
             className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
             id="btn-criar-loja-ofertas"
           >
             {isCheckingStore
               ? 'Verificando loja...'
+              : isProvisioningFree
+                ? 'Preparando loja...'
               : hasConfiguredStore
                 ? 'Acessar loja'
                 : 'Criar minha loja'}
