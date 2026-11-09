@@ -350,8 +350,10 @@ async function materializePendingStoreActivation(d: any, payment: any) {
 export async function activatePendingOfficialPlanForStore(input: {
   buyerUid: string; canonicalStoreId: string; activatedAt: string;
 }) {
+  const requestedActivation = Date.parse(input.activatedAt);
   if (!valid(input.buyerUid) || !valid(input.canonicalStoreId) ||
-      !Number.isFinite(Date.parse(input.activatedAt))) {
+      !Number.isFinite(requestedActivation) ||
+      requestedActivation > Date.now()) {
     throw Error('OFFICIAL_PLAN_INVALID_ACTIVATION');
   }
   const slot = slotRef(input.buyerUid);
@@ -370,7 +372,8 @@ export async function activatePendingOfficialPlanForStore(input: {
       tx.get(store), tx.get(privateStore), tx.get(slot), tx.get(checkout),
       tx.get(entitlementRef(input.buyerUid)),
     ]);
-    if (storeDoc.get('ownerId') !== input.buyerUid || !privateDoc.exists) {
+    if (storeDoc.get('ownerId') !== input.buyerUid || !privateDoc.exists ||
+        (storeDoc.get('legacyTenantId') && storeDoc.get('legacyTenantId') !== input.buyerUid)) {
       throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
     }
     const d = checkoutDoc.data();
