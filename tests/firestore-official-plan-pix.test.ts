@@ -200,6 +200,9 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   const afterCanonicalCreation = await api.ensureFreePlanForStoreCreation('Bearer buyer');
   assert.deepEqual(afterCanonicalCreation, { plan: 'pro', created: false },
     'canonical registration must not trigger a Free downgrade');
+  const privateStore = await db.doc('users/buyer/stores/buyer').get();
+  assert.equal(privateStore.get('plan'), 'pro');
+  assert.equal(privateStore.get('ownerId'), 'buyer');
   const entitlementAfterCanonical = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
   assert.equal(entitlementAfterCanonical.benefitStartsAt, entitlementBefore.benefitStartsAt);
   assert.equal(entitlementAfterCanonical.benefitEndsAt, entitlementBefore.benefitEndsAt);
