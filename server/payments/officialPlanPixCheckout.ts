@@ -267,6 +267,10 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       if (existingBinding.get('contractPath') !== contractRef.path ||
           existingBinding.get('providerPaymentId') !== String(payment.id) ||
           existingSubscription.get('buyerId') !== uid ||
+          existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor ||
+          existingContract.get('paidAt') !== paidAt ||
+          existingContract.get('providerPaymentId') !== String(payment.id) ||
+          existingSubscription.get('providerPaymentId') !== String(payment.id) ||
           !(
             (currentStatus === 'paid_pending_activation' && contractState === 'paid_pending_activation') ||
             (currentStatus === 'activated' && contractState === 'active')
