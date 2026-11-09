@@ -60,6 +60,7 @@ export function RendaTab({
     useState(false);
   const [isCheckingStore, setIsCheckingStore] =
     useState(true);
+  const [isProvisioningFree, setIsProvisioningFree] = useState(false);
   const [isDeliveryEarningsOpen, setIsDeliveryEarningsOpen] =
     useState(false);
 
@@ -151,15 +152,36 @@ export function RendaTab({
     };
   }, [isDeliveryEarningsOpen]);
 
-  const openRetailerWorkspace = () => {
-    setIsGestaoOpen(true);
-    setGestaoRole('retailer');
-    triggerToast(
-      hasConfiguredStore
-        ? 'Abrindo a gestão da sua loja.'
-        : 'Vamos configurar sua loja no Kyrub Ofertas.',
-      'success'
-    );
+  const openRetailerWorkspace = async () => {
+    if (isProvisioningFree) return;
+    const user = auth.currentUser;
+    if (!user) {
+      triggerToast('Entre na sua conta para criar sua loja.', 'warning');
+      return;
+    }
+    setIsProvisioningFree(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/plan-control?op=store.free.ensure', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!response.ok) throw Error('FREE_STORE_PROVISIONING_FAILED');
+      setIsGestaoOpen(true);
+      setGestaoRole('retailer');
+      triggerToast(
+        hasConfiguredStore
+          ? 'Abrindo a gestão da sua loja.'
+          : 'Vamos configurar sua loja no Kyrub Ofertas.',
+        'success'
+      );
+    } catch (error) {
+      console.warn('Falha ao preparar o acesso à loja.', error);
+      triggerToast('Não foi possível preparar sua loja agora. Tente novamente.', 'error');
+    } finally {
+      setIsProvisioningFree(false);
+    }
   };
 
   return (
