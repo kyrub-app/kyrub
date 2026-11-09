@@ -32,7 +32,6 @@ const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !=
 // Fail closed whenever live creation is enabled. Pilot mode restricts issuance
 // to one authenticated user and one canonical Pro/month offer.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
-const pilotMode = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true';
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
