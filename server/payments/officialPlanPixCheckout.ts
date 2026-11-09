@@ -458,6 +458,39 @@ export async function activatePendingOfficialPlanForStore(input: {
       startsAt, expiresAt, storeId: d.offer.storeId };
   });
   if (outcome.state === 'activated') {
+    const activationCheckout = (await checkout.get()).data();
+    if (!activationCheckout || activationCheckout.buyerId !== input.buyerUid ||
+        activationCheckout.status !== 'activated') {
+      throw Error('OFFICIAL_PLAN_ACTIVATION_EFFECTS_CONFLICT');
+    }
+    const rewards = activationCheckout.offer?.rewards;
+    if (Number.isInteger(rewards?.xp) && rewards.xp > 0) {
+      await persistVerifiedKyrubXp({
+        userId: input.buyerUid, sourceType: 'achievement',
+        sourceId: activationCheckout.offer.productId,
+        deltaXp: rewards.xp, correlationId: checkoutId,
+        idempotencyKey: `official_${checkoutId}`,
+        occurredAt: activationCheckout.startsAt,
+      });
+    }
+    const achievement = rewards?.achievement;
+    if (achievement) await adminDb.runTransaction(async tx => {
+      const ref = adminDb.doc(`users/${input.buyerUid}/achievements/${achievement.id}`);
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (existing.get('userId') !== input.buyerUid) {
+          throw Error('OFFICIAL_PIX_ACHIEVEMENT_CONFLICT');
+        }
+        return;
+      }
+      tx.create(ref, {
+        ...achievement, userId: input.buyerUid,
+        sourceType: 'official_plan_purchase',
+        sourceId: activationCheckout.offer.productId,
+        checkoutId, providerPaymentId: activationCheckout.providerPaymentId,
+        occurredAt: activationCheckout.startsAt,
+      });
+    });
     await reconcilePaidSubscriberIntoCrm(outcome.storeId, input.buyerUid);
     await reconcileStoreSubscriptionBenefitCycle(outcome.storeId, outcome.subscriptionId);
     await checkout.update({ effectsStatus: 'complete' });
