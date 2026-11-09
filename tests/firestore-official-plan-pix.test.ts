@@ -54,6 +54,15 @@ test('real Firestore transaction races preserve one provider charge and one set 
   payment = { ...payment, status: 'approved', status_detail: 'accredited', date_approved: new Date().toISOString() };
   const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
   assert(results.every(result => result.state === 'activated'));
+  const expectedPaidAt = payment.date_approved;
+  assert(results.every(result => result.startsAt === expectedPaidAt),
+    'the paid term must start at provider approval, not callback time');
+  assert(results.every(result => result.expiresAt === results[0].expiresAt),
+    'concurrent callbacks must preserve one immutable expiry');
+  const repeated = await api.reconcileOfficialPlanPix(input);
+  assert.equal(repeated.startsAt, expectedPaidAt,
+    'later callbacks must never restart the paid term');
+  assert.equal(repeated.expiresAt, results[0].expiresAt);
   assert.equal((await db.doc('stores/buyer-store').get()).get('plan'), 'pro');
   for (const path of ['subscriptions', 'prepaidSubscriptionContracts', 'payments', 'economicLedger', 'storePointLedger']) {
     assert.equal((await db.collection(`stores/official-store/${path}`).get()).size, 1, path);
