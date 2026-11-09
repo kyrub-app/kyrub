@@ -818,6 +818,19 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'store.free.ensure') {
+      const code = error instanceof Error ? error.message : '';
+      const unauthorized = code === 'FREE_STORE_AUTH_REQUIRED' ||
+        code === 'AUTH_REQUIRED' || code === 'AUTH_UNAVAILABLE' ||
+        /id-token|token-expired|invalid-token/i.test(code);
+      response.status(unauthorized ? 401 : code === 'FREE_STORE_INVALID_USER' ? 400 : 503).json({
+        error: unauthorized ? 'Entre novamente na sua conta para criar a loja.'
+          : 'Não foi possível preparar sua loja. Tente novamente.',
+        code: unauthorized ? 'FREE_STORE_AUTH_REQUIRED' : code === 'FREE_STORE_INVALID_USER'
+          ? code : 'FREE_STORE_PROVISIONING_UNAVAILABLE',
+      });
+      return;
+    }
     if (operation.startsWith('official.prepaid.') || (error instanceof Error && error.message.startsWith('OFFICIAL_PIX_'))) {
       const code = error instanceof Error && /^OFFICIAL_PIX_[A-Z_]+$/.test(error.message) ? error.message : 'OFFICIAL_PIX_UNAVAILABLE';
       const unauthorized = error instanceof Error && /AUTH_REQUIRED|id-token/.test(error.message);
