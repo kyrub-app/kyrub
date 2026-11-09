@@ -237,7 +237,7 @@ test('pilot rejects unauthorized buyer before provider POST', async () => {
 });
 
 test('pilot rejects invalid term, amount and incomplete config', async () => {
-  let q = await accepted(3);
+  const q = await accepted(3);
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
   assert.equal(posts, 0);
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = '';
@@ -249,7 +249,6 @@ test('pilot rejects invalid term, amount and incomplete config', async () => {
 });
 
 test('pilot reservation allows only one provider POST even after payment rejection', async () => {
-  const q = await accepted();
   // The test fixture uses a made-up R$20 offer, so a pilot test must use R$197.
   const product = docs.get('stores/official/products/pro-product');
   product.price = 197;
