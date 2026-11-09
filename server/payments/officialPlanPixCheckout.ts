@@ -8,7 +8,7 @@ import { loadPublicActivePlanCatalog } from '../admin/publicPlanCatalogService.j
 import { writePlanMirrors } from '../admin/paidPlanSubscriptionService.js';
 import { resolveSubscriptionContractQuote } from './subscriptionContractQuote.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
-import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore } from './officialPlanActivationSchedule.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore, scheduleOfficialPlanFromConfirmedPayment } from './officialPlanActivationSchedule.js';
 import { prepareStoreEconomicLedgerConfirmedCapture, applyStoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 import { buildStorePointPurchaseEntry } from '../../shared/storePoints.js';
 import { reconcilePaidSubscriberIntoCrm } from './storeSubscriberRegistryService.js';
