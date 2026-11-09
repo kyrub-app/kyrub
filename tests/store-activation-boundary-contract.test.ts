@@ -95,7 +95,8 @@ test('Criar minha loja provisions Free through authenticated server route before
   assert.match(renda, /op=store\.free\.ensure/);
   assert.ok(renda.indexOf("if (!response.ok)") < renda.indexOf("setIsGestaoOpen(true)", renda.indexOf("const openRetailerWorkspace")));
   assert.match(service, /runTransaction\(async tx/);
-  assert.match(service, /if \(paidPlan\) return/);
+  assert.match(service, /if \(paidPlan\) \{/);
+  assert.match(service, /return \{ plan: paidPlan, created: false \}/);
   assert.match(service, /tx\.create\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
 });
