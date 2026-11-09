@@ -386,6 +386,16 @@ export async function activatePendingOfficialPlanForStore(input: {
         (storeDoc.get('legacyTenantId') && storeDoc.get('legacyTenantId') !== input.buyerUid)) {
       throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
     }
+    // The activation instant must be recorded by the trusted store backend.
+    // A caller-provided date alone must never start a paid contract.
+    const persistedActivation = storeDoc.get('activatedAt');
+    const persistedActivationIso = typeof persistedActivation === 'string'
+      ? persistedActivation
+      : persistedActivation?.toDate?.()?.toISOString();
+    if (!persistedActivationIso ||
+        Date.parse(persistedActivationIso) !== requestedActivation) {
+      throw Error('OFFICIAL_PLAN_STORE_ACTIVATION_NOT_VERIFIED');
+    }
     const d = checkoutDoc.data();
     if (reservationStatus === 'complete' && d?.status === 'activated' &&
         d.buyerId === input.buyerUid &&
