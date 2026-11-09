@@ -109,3 +109,13 @@ test('pre-store paid entitlement is inherited by the first private store profile
   assert.match(service, /tx\.create\(privateRef, \{\s*id: uid, ownerId: uid, plan: entitlement\.plan/);
   assert.ok(service.indexOf('if (paidPlan)') < service.indexOf("plan: 'free', status: 'closed'"));
 });
+
+test('Free provisioning fails closed on authentication and transient server failures', () => {
+  const api = read('../api/plan-control.ts');
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  assert.match(api, /operation === 'store\.free\.ensure'/);
+  assert.match(api, /FREE_STORE_AUTH_REQUIRED/);
+  assert.match(api, /FREE_STORE_PROVISIONING_UNAVAILABLE/);
+  assert.match(renda, /if \(!response\.ok\) throw Error\('FREE_STORE_PROVISIONING_FAILED'\)/);
+  assert.match(renda, /finally \{\s*setIsProvisioningFree\(false\)/);
+});
