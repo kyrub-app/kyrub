@@ -29,19 +29,16 @@ const checkoutRef = (id: string) => adminDb.doc(`${ROOT}/plan_pix_checkouts/${id
 const slotRef = (uid: string) => adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
 const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
-// The pilot is fail-closed. A global checkout flag alone cannot emit live Pix.
-// Outside the pilot the same gateway must be explicitly opened for general sales.
+// Fail closed whenever live creation is enabled. Pilot mode restricts issuance
+// to one authenticated user and one canonical Pro/month offer.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
 const pilotMode = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true';
-const allowPilotBuyer = (uid: string) => {
-  gate();
-  if (pilotMode() && (!pilotUid() || uid !== pilotUid())) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
-};
 const allowPilotOffer = (d: any, uid: string) => {
-  allowPilotBuyer(uid);
+  gate();
   if (!pilotMode()) return;
+  if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
-      d.offer.quote.totalMinor !== 19700 || d.offer.quote.collectionMode !== 'prepaid') {
+      d.offer.quote.totalMinor !== 19700 || d.offer.quote.paymentTerms?.collectionMode !== 'prepaid') {
     throw Error('OFFICIAL_PIX_PILOT_OFFER_FORBIDDEN');
   }
 };
@@ -182,7 +179,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     tx.update(r, { status: 'in_flight', collectorId, requestBody: body, requestDigest: hash(body), buyerEmail: buyer.email });
   });
   try {
-    gate();
+    allowPilotOffer(d, buyer.uid);
     if (await officialPlanPixAccount() !== collectorId) throw Error('OFFICIAL_PIX_ACCOUNT_CHANGED');
     const payment = await officialPlanPixRequest('/v1/payments', { method: 'POST', body,
       headers: { 'X-Idempotency-Key': `official-plan-${d.checkoutId}` } });
