@@ -84,3 +84,18 @@ test('a new confirmed Pix contract can begin before canonical store creation', (
   assert.match(reconciliation, /d\.status === 'paid_pending_activation'/);
   assert.doesNotMatch(reconciliation, /return d\.buyerStoreProvisioningRequired\s*\?/);
 });
+
+test('Criar minha loja provisions Free through authenticated server route before opening ERP', () => {
+  const api = read('../api/plan-control.ts');
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  const service = read('../server/actions/freeStoreProvisioningService.ts');
+  assert.match(api, /case 'store\.free\.ensure'/);
+  assert.match(api, /ensureFreePlanForStoreCreation\(authorization\)/);
+  assert.match(renda, /getIdToken\(\)/);
+  assert.match(renda, /op=store\.free\.ensure/);
+  assert.ok(renda.indexOf("if (!response.ok)") < renda.indexOf("setIsGestaoOpen(true)", renda.indexOf("const openRetailerWorkspace")));
+  assert.match(service, /runTransaction\(async tx/);
+  assert.match(service, /if \(paidPlan\) return/);
+  assert.match(service, /tx\.create\(privateRef/);
+  assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
+});
