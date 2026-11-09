@@ -35,10 +35,10 @@ const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim
 const pilotMode = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true';
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
-  if (!pilotMode()) return;
+  if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
-      d.offer.quote.totalMinor !== 19700 || d.offer.quote.paymentTerms?.collectionMode !== 'prepaid') {
+      d.offer.quote.totalMinor !== 19700) {
     throw Error('OFFICIAL_PIX_PILOT_OFFER_FORBIDDEN');
   }
 };
@@ -181,6 +181,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   try {
     allowPilotOffer(d, buyer.uid);
     if (await officialPlanPixAccount() !== collectorId) throw Error('OFFICIAL_PIX_ACCOUNT_CHANGED');
+    allowPilotOffer(d, buyer.uid);
     const payment = await officialPlanPixRequest('/v1/payments', { method: 'POST', body,
       headers: { 'X-Idempotency-Key': `official-plan-${d.checkoutId}` } });
     const bound = { ...d, collectorId, requestDigest: hash(body) };
