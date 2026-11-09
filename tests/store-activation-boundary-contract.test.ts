@@ -106,5 +106,6 @@ test('pre-store paid entitlement is inherited by the first private store profile
   assert.match(service, /entitlement\?\.status === 'active'/);
   assert.match(service, /current\?\.plan !== entitlement\.plan/);
   assert.match(service, /tx\.set\(privateRef, \{ plan: entitlement\.plan/);
+  assert.match(service, /tx\.create\(privateRef, \{\s*id: uid, ownerId: uid, plan: entitlement\.plan/);
   assert.ok(service.indexOf('if (paidPlan)') < service.indexOf("plan: 'free', status: 'closed'"));
 });
