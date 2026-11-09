@@ -35,6 +35,27 @@ export function scheduleOfficialPlanAfterPayment(input: {
     : { state: 'paid_pending_activation', paidAt: iso, startsAt: null, expiresAt: null };
 }
 
+/**
+ * Launch rule: a verified Pix payment starts the purchased term immediately,
+ * regardless of whether the buyer has created or published a store.
+ * This pure helper does not grant access before provider confirmation.
+ */
+export function scheduleOfficialPlanFromConfirmedPayment(input: {
+  paidAt: string;
+  months: 1 | 3 | 6 | 12;
+}): OfficialPlanActivationSchedule {
+  const timestamp = new Date(input.paidAt);
+  if (!Number.isFinite(timestamp.getTime())) throw Error('OFFICIAL_PLAN_INVALID_PAYMENT_DATE');
+  if (![1, 3, 6, 12].includes(input.months)) throw Error('OFFICIAL_PLAN_INVALID_TERM');
+  const startsAt = timestamp.toISOString();
+  return {
+    state: 'active',
+    paidAt: startsAt,
+    startsAt,
+    expiresAt: addMonthsUtc(startsAt, input.months),
+  };
+}
+
 export function activatePaidOfficialPlan(input: {
   schedule: OfficialPlanActivationSchedule;
   activatedAt: string;
