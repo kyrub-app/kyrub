@@ -68,3 +68,25 @@ export function officialPixStatusAfterProviderBind(
   if (current === 'paid_pending_activation') return 'paid_pending_activation';
   return 'bound';
 }
+
+/**
+ * Resolve buyer-store identity without treating legacy Free registration as
+ * store activation. An ambiguous or orphaned canonical identity fails closed.
+ */
+export function resolveOfficialPlanBuyerStore(input: {
+  canonicalStoreIds: string[];
+  hasLegacyStore: boolean;
+}): { buyerStoreId: string | null; buyerStoreProvisioningRequired: boolean } {
+  if (input.canonicalStoreIds.length > 1 ||
+      (input.canonicalStoreIds.length === 1 && !input.hasLegacyStore)) {
+    throw Error('OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT');
+  }
+  if (input.canonicalStoreIds.length === 1) {
+    const id = input.canonicalStoreIds[0];
+    if (!id || !/^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+      throw Error('OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT');
+    }
+    return { buyerStoreId: id, buyerStoreProvisioningRequired: false };
+  }
+  return { buyerStoreId: null, buyerStoreProvisioningRequired: true };
+}
