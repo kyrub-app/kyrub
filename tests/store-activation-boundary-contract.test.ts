@@ -124,3 +124,10 @@ test('store creation button prevents duplicate requests while Free provisioning 
   assert.match(renda, /isProvisioningFree\s*\? 'Preparando loja\.\.\.'/);
   assert.match(renda, /if \(isProvisioningFree\) return/);
 });
+
+test('existing store opens ERP without triggering Free provisioning again', () => {
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  const handler = renda.slice(renda.indexOf('const openRetailerWorkspace ='), renda.indexOf('\n  return (', renda.indexOf('const openRetailerWorkspace =')));
+  assert.match(handler, /if \(hasConfiguredStore\) \{\s*setIsGestaoOpen\(true\);\s*setGestaoRole\('retailer'\);\s*return;/);
+  assert.ok(handler.indexOf('if (hasConfiguredStore)') < handler.indexOf("op=store.free.ensure"));
+});
