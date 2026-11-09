@@ -72,6 +72,11 @@ export async function activateCanonicalStoreAndReconcileOfficialPlan(input: {
   const token = /^Bearer\s+(.+)$/i.exec(input.authorization)?.[1]?.trim();
   if (!token) throw Error('STORE_ACTIVATION_AUTH_REQUIRED');
   const actor = await verifyFirebaseIdToken(token);
+  // Revalidate ownership before running a privileged follow-up operation.
+  const canonical = await adminDb.doc(`stores/${input.canonicalStoreId}`).get();
+  if (canonical.get('ownerId') !== actor.uid) {
+    throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  }
   const planReconciliation = await activatePendingOfficialPlanForStore({
     buyerUid: actor.uid,
     canonicalStoreId: input.canonicalStoreId,
