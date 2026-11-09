@@ -99,11 +99,16 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     adminDb.collection('stores').where('ownerId', '==', buyer.uid).get(),
     adminDb.doc(`users/${buyer.uid}/stores/${buyer.uid}`).get(), entitlementRef(buyer.uid).get(),
   ]);
-  if (owned.size !== 1 || !legacy.exists) throw Error('OFFICIAL_PIX_BUYER_STORE_REQUIRED');
+  // The buyer may purchase a plan before creating a store. A legacy Free
+  // profile alone is not proof that a canonical store has been activated.
+  // Multiple canonical stores are ambiguous and must never be guessed.
+  if (owned.size > 1 || (owned.size === 1 && !legacy.exists)) throw Error('OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT');
   if (liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVE_ENTITLEMENT');
   const checkoutId = randomBytes(32).toString('hex');
   await checkoutRef(checkoutId).create({ checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
-    buyerStoreId: owned.docs[0].id, offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
+    buyerStoreId: owned.size === 1 ? owned.docs[0].id : null,
+    buyerStoreProvisioningRequired: owned.size === 0,
+    offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
   return { checkoutId, quote: snapshot.quote, status: 'quoted' };
 }
 
@@ -150,6 +155,11 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
   allowPilotOffer(d, buyer.uid);
+  // Do not issue real Pix for pre-activation purchases until the payment
+  // materializer can atomically persist a pending contract without a store.
+  if (d.buyerStoreProvisioningRequired || !d.buyerStoreId) {
+    throw Error('OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY');
+  }
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||
     d.acceptedOfferDigest !== d.offerDigest || Date.parse(d.expiresAt) <= Date.now()) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
   const fresh = await offer(d.offer.storeId, d.offer.productId, d.offer.quote.months);
