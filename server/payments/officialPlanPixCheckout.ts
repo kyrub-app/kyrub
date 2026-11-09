@@ -512,7 +512,8 @@ export async function activatePendingOfficialPlanForStore(input: {
 async function materialize(d: any, payment: any) {
   const approvedAt = typeof payment.date_approved === 'string' ? Date.parse(payment.date_approved) : NaN;
   if (payment.status_detail !== 'accredited' || !Number.isFinite(approvedAt) || !Number.isFinite(Date.parse(d.acceptedAt)) || approvedAt < Date.parse(d.acceptedAt)) throw Error('OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED');
-  const startsAt = new Date(approvedAt).toISOString(), expiresAt = addMonthsUtc(startsAt, d.offer.quote.months);
+  const schedule = scheduleOfficialPlanFromConfirmedPayment({ paidAt: new Date(approvedAt).toISOString(), months: d.offer.quote.months });
+  const startsAt = schedule.startsAt!, expiresAt = schedule.expiresAt!;
   const storeId = d.offer.storeId, uid = d.buyerId, id = `official_${d.checkoutId}`, contractId = `official-${d.checkoutId}`;
   const root = `stores/${storeId}`, subscriptionRef = adminDb.doc(`${root}/subscriptions/${id}`);
   const contractRef = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
