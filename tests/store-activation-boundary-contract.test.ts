@@ -89,21 +89,21 @@ test('Criar minha loja provisions Free through authenticated server route before
   const api = read('../api/plan-control.ts');
   const renda = read('../src/components/tabs/RendaTab.tsx');
   const service = read('../server/actions/freeStoreProvisioningService.ts');
-  assert.match(api, /case 'store\\.free\\.ensure'/);
-  assert.match(api, /ensureFreePlanForStoreCreation\\(authorization\\)/);
-  assert.match(renda, /getIdToken\\(\\)/);
-  assert.match(renda, /op=store\\.free\\.ensure/);
+  assert.match(api, /case 'store\.free\.ensure'/);
+  assert.match(api, /ensureFreePlanForStoreCreation\(authorization\)/);
+  assert.match(renda, /getIdToken\(\)/);
+  assert.match(renda, /op=store\.free\.ensure/);
   assert.ok(renda.indexOf("if (!response.ok)") < renda.indexOf("setIsGestaoOpen(true)", renda.indexOf("const openRetailerWorkspace")));
-  assert.match(service, /runTransaction\\(async tx/);
-  assert.match(service, /tx\\.create\\(privateRef/);
+  assert.match(service, /runTransaction\(async tx/);
+  assert.match(service, /tx\.create\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
 });
 
 test('paid pre-store grants are inherited, but expired or ambiguous grants fail closed', () => {
   const service = read('../server/actions/freeStoreProvisioningService.ts');
   assert.match(service, /paidEntitlement/);
-  assert.match(service, /expiryMillis > Date\\.now\\(\\)/);
-  assert.match(service, /tx\\.create\\(privateRef, \\{\\s*id: uid, ownerId: uid, plan: entitlement\\.plan/);
+  assert.match(service, /expiryMillis > Date\.now\(\)/);
+  assert.match(service, /tx\.create\(privateRef, \{\s*id: uid, ownerId: uid, plan: entitlement\.plan/);
   assert.match(service, /FREE_STORE_ENTITLEMENT_RECONCILIATION_REQUIRED/);
   assert.ok(service.indexOf('if (paidEntitlement)') < service.indexOf("plan: 'free', status: 'closed'"));
 });
