@@ -54,3 +54,23 @@ test('a legacy Free record does not imply store activation, and future activatio
     buyerStoreActivatedAt: 'invalid', months: 1,
   }), /OFFICIAL_PLAN_INVALID_STORE_ACTIVATION_DATE/);
 });
+
+test('a twelve-month prepaid term starts on activation, not on payment', () => {
+  const pending = scheduleOfficialPlanAfterPayment({
+    paidAt: '2026-11-09T10:00:00.000Z', buyerStoreActivatedAt: null, months: 12,
+  });
+  const active = activatePaidOfficialPlan({
+    schedule: pending, activatedAt: '2026-12-09T10:00:00.000Z', months: 12,
+  });
+  assert.equal(active.expiresAt, '2027-12-09T10:00:00.000Z');
+  assert.equal(active.paidAt, '2026-11-09T10:00:00.000Z');
+});
+
+test('activation exactly at payment confirmation is valid', () => {
+  const paidAt = '2026-11-09T10:00:00.000Z';
+  const active = scheduleOfficialPlanAfterPayment({
+    paidAt, buyerStoreActivatedAt: paidAt, months: 1,
+  });
+  assert.equal(active.state, 'active');
+  assert.equal(active.startsAt, paidAt);
+});
