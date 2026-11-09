@@ -191,7 +191,16 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   const entitlementAfter = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
   assert.equal(entitlementAfter.benefitStartsAt, entitlementBefore.benefitStartsAt);
   assert.equal(entitlementAfter.benefitEndsAt, entitlementBefore.benefitEndsAt);
+  // Canonical store registration is a separate lifecycle operation.
+  // Simulate its eventual existence without changing the subscription.
+  await db.doc('stores/buyer').set({ ownerId: 'buyer', plan: 'pro', status: 'closed' });
   const afterProvisioning = await api.reconcileOfficialPlanPix(input);
   assert.equal(afterProvisioning.startsAt, payment.date_approved);
   assert.equal(afterProvisioning.expiresAt, results[0].expiresAt);
+  const entitlementAfterCanonical = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
+  assert.equal(entitlementAfterCanonical.benefitStartsAt, entitlementBefore.benefitStartsAt);
+  assert.equal(entitlementAfterCanonical.benefitEndsAt, entitlementBefore.benefitEndsAt);
+  assert.equal((await db.doc('stores/buyer').get()).get('plan'), 'pro');
+  assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 1);
+  assert.equal((await db.collection('stores/official-store/subscriptions').get()).size, 1);
 });
