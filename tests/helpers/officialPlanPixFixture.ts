@@ -19,7 +19,7 @@ export async function loadOfficialPlanPixFixture() {
         a.path.endsWith('firebaseAdmin.js') ? 'export const adminDb=globalThis.__officialPix.db;export const getFirebaseAdminAccessToken=()=>{throw Error("UNEXPECTED_NETWORK")};' :
         a.path.endsWith('consultantAuth.js') ? 'export const authenticateConsultantRequest=globalThis.__officialPix.auth;export const verifyFirebaseIdToken=authenticateConsultantRequest;' :
         a.path.endsWith('paidPlanSubscriptionService.js') ? `export const platformBillingRequest=globalThis.__officialPix.request;
-          export const writePlanMirrors=(tx,buyer,storeId,plan,now)=>{ for(const path of ['users/'+buyer+'/stores/'+buyer,'tenants/'+buyer,...(storeId ? ['stores/'+storeId] : [])]) tx.set(globalThis.__officialPix.db.doc(path),{plan,updatedAt:now},{merge:true}); };` :
+          export const writePlanMirrors=(tx,buyer,storeId,plan,now)=>{ for(const path of [...(storeId ? ['users/'+buyer+'/stores/'+buyer,'stores/'+storeId] : []),'tenants/'+buyer]) tx.set(globalThis.__officialPix.db.doc(path),{plan,updatedAt:now},{merge:true}); };` :
         a.path.endsWith('officialStoreService.js') ? `export const getOfficialStoreIdentity=async()=>({canonicalStoreId:'official-store',ownerUserId:'owner',legacyStoreId:'owner'});` :
         a.path.endsWith('publicPlanCatalogService.js') ? `export const loadPublicActivePlanCatalog=async()=>({plans:[{planId:'pro',version:4},{planId:'business',version:4}]});` :
         a.path.endsWith('canonicalStoreIdentityService.js') ? `export const resolveCanonicalStoreIdentity=async(store)=>({canonicalStoreId:store,ownerUserId:'owner',legacyStoreId:'owner'});` :
