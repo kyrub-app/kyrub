@@ -103,8 +103,8 @@ beforeEach(() => {
   posts = 0; payments = new Map(); lost = false; failCrm = false; beforeResponse = null; collector = '42'; queue = Promise.resolve();
   delete process.env.VERCEL_ENV;
   process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
-  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
-  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID;
   delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_CHECKOUT_ID;
   docs = new Map([
     ['kyrub_admin/official_store', { canonicalStoreId: 'official' }],
@@ -231,6 +231,7 @@ test('Business follows configured prices and discounts; missing rewards produce 
 
 test('pilot rejects unauthorized buyer before provider POST', async () => {
   const q = await accepted();
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'someone-else';
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_FORBIDDEN/);
   assert.equal(posts, 0);
@@ -238,6 +239,8 @@ test('pilot rejects unauthorized buyer before provider POST', async () => {
 
 test('pilot rejects invalid term, amount and incomplete config', async () => {
   const q = await accepted(3);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
   assert.equal(posts, 0);
   process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = '';
@@ -249,6 +252,8 @@ test('pilot rejects invalid term, amount and incomplete config', async () => {
 });
 
 test('pilot reservation allows only one provider POST even after payment rejection', async () => {
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
   // The test fixture uses a made-up R$20 offer, so a pilot test must use R$197.
   const product = docs.get('stores/official/products/pro-product');
   product.price = 197;
