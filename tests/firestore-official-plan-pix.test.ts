@@ -138,4 +138,44 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
     'blocked checkout must not provision a private store');
   assert.equal((await db.doc('stores/buyer').get()).exists, false,
     'blocked checkout must not create a canonical store');
+
+  // Emulator-only injection of an already-bound, verified provider payment.
+  // The public checkout gate remains closed: no payment is issued or charged.
+  const { createHash } = await import('node:crypto');
+  const accepted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
+  const requestBody = JSON.stringify({ testOnly: true, checkoutId: q.checkoutId });
+  await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).update({
+    status: 'bound', collectorId: '42', requestBody,
+    requestDigest: createHash('sha256').update(requestBody).digest('hex'),
+    providerPaymentId: '123',
+  });
+  await db.doc(root + '/store_subscriptions/buyer').set({
+    officialPixCheckoutId: q.checkoutId, checkoutReservationStatus: 'pending',
+    collectionMode: 'prepaid',
+  });
+  payment = {
+    id: '123', status: 'approved', status_detail: 'accredited',
+    date_approved: new Date(Date.parse(accepted.get('acceptedAt')) + 1000).toISOString(),
+    collector_id: '42', currency_id: 'BRL', payment_method_id: 'pix',
+    transaction_amount: q.quote.totalMinor / 100,
+    transaction_amount_refunded: 0,
+    external_reference: 'kyrub:official-plan-pix:' + q.checkoutId,
+    live_mode: true,
+  };
+  const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
+  assert(results.every(result => result.state === 'activated'));
+  assert(results.every(result => result.startsAt === payment.date_approved));
+  assert(results.every(result => result.expiresAt === results[0].expiresAt));
+  assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('plan'), 'pro');
+  assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('benefitStartsAt'), payment.date_approved);
+  assert.equal((await db.doc('stores/buyer').get()).exists, false,
+    'paid entitlement must not implicitly create a canonical store');
+  assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 1);
+  assert.equal((await db.collection('stores/official-store/subscriptions').get()).size, 1);
+  assert.equal((await db.collection('stores/official-store/payments').get()).size, 1);
+  assert.equal((await db.collection('stores/official-store/economicLedger').get()).size, 1);
+  const repeated = await api.reconcileOfficialPlanPix(input);
+  assert.equal(repeated.startsAt, payment.date_approved);
+  assert.equal(repeated.expiresAt, results[0].expiresAt);
+  assert.equal(posts, 0, 'injected provider confirmation must not issue a new Pix charge');
 });
