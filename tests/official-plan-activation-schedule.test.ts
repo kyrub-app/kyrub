@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activatePaidOfficialPlan, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
 
 test('paid buyer without a store does not lose ten days before activation', () => {
   const paid = scheduleOfficialPlanAfterPayment({
@@ -73,4 +73,10 @@ test('activation exactly at payment confirmation is valid', () => {
   });
   assert.equal(active.state, 'active');
   assert.equal(active.startsAt, paidAt);
+});
+
+test('provider retries never downgrade paid or activated checkouts', () => {
+  assert.equal(officialPixStatusAfterProviderBind('paid_pending_activation'), 'paid_pending_activation');
+  assert.equal(officialPixStatusAfterProviderBind('activated'), 'activated');
+  assert.equal(officialPixStatusAfterProviderBind('in_flight'), 'bound');
 });
