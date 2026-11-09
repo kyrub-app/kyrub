@@ -103,6 +103,9 @@ beforeEach(() => {
   posts = 0; payments = new Map(); lost = false; failCrm = false; beforeResponse = null; collector = '42'; queue = Promise.resolve();
   delete process.env.VERCEL_ENV;
   process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_CHECKOUT_ID;
   docs = new Map([
     ['kyrub_admin/official_store', { canonicalStoreId: 'official' }],
     ['stores/official', { ownerId: 'platform-owner', legacyTenantId: 'platform-owner' }],
@@ -222,4 +225,37 @@ test('Business follows configured prices and discounts; missing rewards produce 
   assert.equal(result.state, 'activated'); assert.equal(docs.get('stores/buyer-store').plan, 'business');
   assert.equal(docs.get(`${ROOT}/store_entitlements/buyer`).planVersion, 3);
   assert.equal(count('/xpLedger/'), 0); assert.equal(count('/storePointLedger/'), 0); assert.equal(count('/achievements/'), 0);
+});
+
+
+test('pilot rejects unauthorized buyer before provider POST', async () => {
+  const q = await accepted();
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'someone-else';
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_FORBIDDEN/);
+  assert.equal(posts, 0);
+});
+
+test('pilot rejects another plan term or price and rejects missing pilot configuration', async () => {
+  const longer = await accepted(3);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: longer.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
+  assert.equal(posts, 0);
+  const monthly = await accepted();
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = '';
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: monthly.checkoutId }), /PILOT_FORBIDDEN/);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: monthly.checkoutId }), /PILOT_MODE_REQUIRED/);
+  assert.equal(posts, 0);
+});
+
+test('pilot reservation is consumed once, including after a definitively rejected charge', async () => {
+  const q = await accepted();
+  const first = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId });
+  assert.equal(first.state, 'awaiting_payment');
+  assert.equal(posts, 1);
+  payments.get('1').status = 'rejected';
+  assert.equal((await reconcile(q.checkoutId)).state, 'rejected');
+  const next = await accepted();
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: next.checkoutId }), /PILOT_ALREADY_USED/);
+  assert.equal(posts, 1);
 });
