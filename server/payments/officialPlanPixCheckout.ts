@@ -167,7 +167,8 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       tx.get(pilotRef()),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
-    if (pilot.exists || process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
+    allowPilotOffer(d, buyer.uid);
+    if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
     if (buyerStore.get('ownerId') !== buyer.uid || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
