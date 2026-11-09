@@ -183,7 +183,6 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     tx.update(r, { status: 'in_flight', collectorId, requestBody: body, requestDigest: hash(body), buyerEmail: buyer.email });
   });
   try {
-    allowPilotOffer(d, buyer.uid);
     if (await officialPlanPixAccount() !== collectorId) throw Error('OFFICIAL_PIX_ACCOUNT_CHANGED');
     allowPilotOffer(d, buyer.uid);
     const payment = await officialPlanPixRequest('/v1/payments', { method: 'POST', body,
