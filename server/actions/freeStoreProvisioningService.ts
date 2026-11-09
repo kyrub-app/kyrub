@@ -36,7 +36,15 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
       // The store profile must inherit that plan, not revert to Free.
       if (entitlement?.status === 'active' && (entitlement.plan === 'pro' || entitlement.plan === 'business') &&
           (!privateDoc.exists || current?.plan !== entitlement.plan)) {
-        tx.set(privateRef, { plan: entitlement.plan, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        if (privateDoc.exists) {
+          tx.set(privateRef, { plan: entitlement.plan, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
+        } else {
+          tx.create(privateRef, {
+            id: uid, ownerId: uid, plan: entitlement.plan, status: 'closed',
+            createdAt: FieldValue.serverTimestamp(),
+            updatedAt: FieldValue.serverTimestamp(),
+          });
+        }
       }
       return { plan: paidPlan, created: false };
     }
