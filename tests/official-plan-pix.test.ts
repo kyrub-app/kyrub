@@ -149,7 +149,7 @@ test('monthly platform Pix activates canonical contract, access, CRM, finance, c
 });
 
 test('lost POST response is recovered by reference without sending a second payment', async () => {
-  const q = await accepted(3); assert.equal(q.quote.totalMinor, 53190);
+  const q = await accepted(); assert.equal(q.quote.totalMinor, 19700);
   lost = true;
   assert.equal((await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId })).state, 'recovery_required');
   assert.equal((await reconcile(q.checkoutId)).state, 'awaiting_payment');
@@ -187,11 +187,11 @@ test('rejects catalog drift, buyer substitution, unsigned webhook and mismatched
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'other', checkoutId: q.checkoutId }), /FORBIDDEN/);
   docs.get('stores/official/products/pro-product').price = 21;
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /OFFER_CHANGED/); assert.equal(posts, 0);
-  docs.get('stores/official/products/pro-product').price = 20;
+  docs.get('stores/official/products/pro-product').price = 197;
   await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }); approve();
   await assert.rejects(webhook(q.checkoutId, 'invalid'), /SIGNATURE/);
   const original = copy(payments.get('1'));
-  for (const patch of [{ collector_id: 'other' }, { transaction_amount: 19 }, { external_reference: 'other' }, { live_mode: false }, { transaction_amount_refunded: 1 }, { status_detail: 'pending' }, { date_approved: 'invalid' }]) {
+  for (const patch of [{ collector_id: 'other' }, { transaction_amount: 196 }, { external_reference: 'other' }, { live_mode: false }, { transaction_amount_refunded: 1 }, { status_detail: 'pending' }, { date_approved: 'invalid' }]) {
     process.env.VERCEL_ENV = 'production'; payments.set('1', { ...original, ...patch }); await assert.rejects(webhook(q.checkoutId));
     assert(!docs.has(`${ROOT}/store_entitlements/buyer`));
   }
@@ -214,16 +214,13 @@ test('a globally bound provider payment cannot be materialized for another contr
   await assert.rejects(webhook(q.checkoutId), /PAYMENT_ALREADY_USED/); assert.equal(count('/economicLedger/'), 0);
 });
 
-test('Business follows configured prices and discounts; missing rewards produce no fabricated grants', async () => {
+test('Business retains configured quote but cannot be charged during pilot', async () => {
   const p = docs.get('stores/official/products/pro-product');
   p.price = 67.89; delete p.storePointsPerUnit;
   const mapping = docs.get(`${ROOT}/official_plan_products/pro-product`); mapping.planId = 'business'; delete mapping.rewards;
   const q = await accepted(3); assert.equal(q.quote.totalMinor, 18330);
-  await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }); approve();
-  const result = await webhook(q.checkoutId);
-  assert.equal(result.state, 'activated'); assert.equal(docs.get('stores/buyer-store').plan, 'business');
-  assert.equal(docs.get(`${ROOT}/store_entitlements/buyer`).planVersion, 3);
-  assert.equal(count('/xpLedger/'), 0); assert.equal(count('/storePointLedger/'), 0); assert.equal(count('/achievements/'), 0);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
+  assert.equal(posts, 0);
 });
 
 
