@@ -397,7 +397,8 @@ export async function activatePendingOfficialPlanForStore(input: {
       throw Error('OFFICIAL_PLAN_STORE_ACTIVATION_NOT_VERIFIED');
     }
     const d = checkoutDoc.data();
-    if (reservationStatus === 'complete' && d?.status === 'activated' &&
+    const transactionalReservationStatus = slotDoc.get('checkoutReservationStatus');
+    if (transactionalReservationStatus === 'complete' && d?.status === 'activated' &&
         d.buyerId === input.buyerUid &&
         slotDoc.get('officialPixCheckoutId') === checkoutId &&
         d.buyerStoreProvisioningRequired === true &&
@@ -407,7 +408,7 @@ export async function activatePendingOfficialPlanForStore(input: {
         contractId: d.contractId, startsAt: d.startsAt,
         expiresAt: d.contractExpiresAt, storeId: d.offer.storeId };
     }
-    if (reservationStatus !== 'paid_pending_activation') {
+    if (transactionalReservationStatus !== 'paid_pending_activation') {
       return { state: 'no_pending_contract' as const };
     }
     if (!d || d.buyerId !== input.buyerUid ||
