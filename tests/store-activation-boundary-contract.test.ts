@@ -41,3 +41,19 @@ test('Pix reconciliation uses the reservation status read inside the Firestore t
   assert.doesNotMatch(reconciliation, /if \(reservationStatus === 'complete'/);
   assert.doesNotMatch(reconciliation, /if \(reservationStatus !== 'paid_pending_activation'\)/);
 });
+
+test('Renda creates or opens the store workspace; it does not activate a paid term', () => {
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  assert.match(renda, /'Criar minha loja'/);
+  assert.match(renda, /setIsGestaoOpen\(true\)/);
+  assert.doesNotMatch(renda, /recordFirstCanonicalStoreActivation|activateCanonicalStoreAndReconcileOfficialPlan/);
+});
+
+test('saving settings and publishing a listing cannot trigger first activation', () => {
+  const settings = read('../src/components/modals/StoreConfigModal.tsx');
+  const save = settings.slice(settings.indexOf('const handleSave ='), settings.indexOf('const handlePublication ='));
+  const publication = settings.slice(settings.indexOf('const handlePublication ='), settings.indexOf('const ', settings.indexOf('const handlePublication =') + 7) > 0 ? settings.indexOf('const ', settings.indexOf('const handlePublication =') + 7) : undefined);
+  assert.match(save, /saveStore\(true\)/);
+  assert.match(publication, /setStoreMarketplacePublication\(/);
+  assert.doesNotMatch(save + publication, /recordFirstCanonicalStoreActivation|activateCanonicalStoreAndReconcileOfficialPlan/);
+});
