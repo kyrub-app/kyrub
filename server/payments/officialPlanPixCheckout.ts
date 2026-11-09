@@ -247,9 +247,10 @@ async function materializePendingStoreActivation(d: any, payment: any) {
   };
   await adminDb.runTransaction(async tx => {
     const checkout = checkoutRef(d.checkoutId), slot = slotRef(uid);
-    const [current, existingBinding, lock, existingContract, existingSubscription, seller] = await Promise.all([
+    const [current, existingBinding, lock, existingContract, existingSubscription, seller, entitlement] = await Promise.all([
       tx.get(checkout), tx.get(bindingRef), tx.get(slot),
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
+      tx.get(entitlementRef(uid)),
     ]);
     if (current.get('providerPaymentId') !== String(payment.id) ||
         current.get('offerDigest') !== digest(d.offer) ||
@@ -277,6 +278,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       return;
     }
     if (lock.get('officialPixCheckoutId') !== d.checkoutId ||
+        liveEntitlement(entitlement.data()) ||
         !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
         existingContract.exists || existingSubscription.exists) {
       throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
