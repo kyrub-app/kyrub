@@ -379,6 +379,7 @@ export async function activatePendingOfficialPlanForStore(input: {
       tx.get(entitlementRef(input.buyerUid)),
     ]);
     if (storeDoc.get('ownerId') !== input.buyerUid || !privateDoc.exists ||
+        privateDoc.get('canonicalStoreId') !== input.canonicalStoreId ||
         (storeDoc.get('legacyTenantId') && storeDoc.get('legacyTenantId') !== input.buyerUid)) {
       throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
     }
