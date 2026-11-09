@@ -64,3 +64,46 @@ test('real Firestore transaction races preserve one provider charge and one set 
   assert.equal((await db.doc('users/buyer/achievements/owner-defined-badge').get()).get('userId'), 'buyer');
   assert.equal(posts, 1);
 });
+
+test('buyer without a canonical store cannot be charged while pre-store checkout gate is enabled', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0;
+  payment = undefined;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  const root = 'kyrub_admin/control_plane';
+  const modality = { schemaVersion: 1, mode: 'subscription', subscription: {
+    schemaVersion: 1, autoRenew: true,
+    billingInterval: { unit: 'month', count: 1 },
+    benefit: { kind: 'access', unitsPerCycle: null },
+  } };
+  await Promise.all([
+    db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+    db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+    db.doc('stores/official-store/products/product').set({
+      name: 'Pro', price: 197, publicationStatus: 'published',
+      saleModality: modality, storePointsPerUnit: 0,
+      contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    }),
+    db.doc(root + '/official_plan_products/product').set({
+      canonicalStoreId: 'official-store', productId: 'product',
+      planId: 'pro', status: 'active', rewards: { xp: 0 },
+    }),
+  ]);
+  const q = await api.quoteOfficialPlanPix({
+    authorization: 'buyer', storeId: 'official-store',
+    productId: 'product', selectedMonths: 1,
+  });
+  const input = { authorization: 'buyer', checkoutId: q.checkoutId };
+  await api.acceptOfficialPlanPix({ ...input, acceptedTotalMinor: q.quote.totalMinor });
+  await assert.rejects(
+    api.checkoutOfficialPlanPix(input),
+    /OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY/,
+  );
+  assert.equal(posts, 0, 'must not call Mercado Pago to create a charge');
+  assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
+  assert.equal((await db.collection('stores/official-store/subscriptions').get()).size, 0);
+});
