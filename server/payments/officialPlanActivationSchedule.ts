@@ -17,14 +17,20 @@ export interface OfficialPlanActivationSchedule {
  */
 export function scheduleOfficialPlanAfterPayment(input: {
   paidAt: string;
-  buyerStoreActivated: boolean;
+  buyerStoreActivatedAt: string | null;
   months: 1 | 3 | 6 | 12;
 }): OfficialPlanActivationSchedule {
   const paidAt = new Date(input.paidAt);
   if (!Number.isFinite(paidAt.getTime())) throw Error('OFFICIAL_PLAN_INVALID_PAYMENT_DATE');
   if (![1, 3, 6, 12].includes(input.months)) throw Error('OFFICIAL_PLAN_INVALID_TERM');
   const iso = paidAt.toISOString();
-  return input.buyerStoreActivated
+  // A legacy Free record or an incomplete store profile is not proof of activation.
+  // The caller must provide an authoritative activation timestamp.
+  const activatedAt = input.buyerStoreActivatedAt === null ? NaN : Date.parse(input.buyerStoreActivatedAt);
+  if (input.buyerStoreActivatedAt !== null && !Number.isFinite(activatedAt)) {
+    throw Error('OFFICIAL_PLAN_INVALID_STORE_ACTIVATION_DATE');
+  }
+  return Number.isFinite(activatedAt) && activatedAt <= paidAt.getTime()
     ? { state: 'active', paidAt: iso, startsAt: iso, expiresAt: addMonthsUtc(iso, input.months) }
     : { state: 'paid_pending_activation', paidAt: iso, startsAt: null, expiresAt: null };
 }
