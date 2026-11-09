@@ -89,25 +89,23 @@ test('Criar minha loja provisions Free through authenticated server route before
   const api = read('../api/plan-control.ts');
   const renda = read('../src/components/tabs/RendaTab.tsx');
   const service = read('../server/actions/freeStoreProvisioningService.ts');
-  assert.match(api, /case 'store\.free\.ensure'/);
-  assert.match(api, /ensureFreePlanForStoreCreation\(authorization\)/);
-  assert.match(renda, /getIdToken\(\)/);
-  assert.match(renda, /op=store\.free\.ensure/);
+  assert.match(api, /case 'store\\.free\\.ensure'/);
+  assert.match(api, /ensureFreePlanForStoreCreation\\(authorization\\)/);
+  assert.match(renda, /getIdToken\\(\\)/);
+  assert.match(renda, /op=store\\.free\\.ensure/);
   assert.ok(renda.indexOf("if (!response.ok)") < renda.indexOf("setIsGestaoOpen(true)", renda.indexOf("const openRetailerWorkspace")));
-  assert.match(service, /runTransaction\(async tx/);
-  assert.match(service, /if \(paidPlan\) \{/);
-  assert.match(service, /return \{ plan: paidPlan, created: false \}/);
-  assert.match(service, /tx\.create\(privateRef/);
+  assert.match(service, /runTransaction\\(async tx/);
+  assert.match(service, /tx\\.create\\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
 });
 
-test('pre-store paid entitlement is inherited by the first private store profile', () => {
+test('paid pre-store grants are inherited, but expired or ambiguous grants fail closed', () => {
   const service = read('../server/actions/freeStoreProvisioningService.ts');
-  assert.match(service, /entitlement\?\.status === 'active'/);
-  assert.match(service, /current\?\.plan !== entitlement\.plan/);
-  assert.match(service, /tx\.set\(privateRef, \{ plan: entitlement\.plan/);
-  assert.match(service, /tx\.create\(privateRef, \{\s*id: uid, ownerId: uid, plan: entitlement\.plan/);
-  assert.ok(service.indexOf('if (paidPlan)') < service.indexOf("plan: 'free', status: 'closed'"));
+  assert.match(service, /paidEntitlement/);
+  assert.match(service, /expiryMillis > Date\\.now\\(\\)/);
+  assert.match(service, /tx\\.create\\(privateRef, \\{\\s*id: uid, ownerId: uid, plan: entitlement\\.plan/);
+  assert.match(service, /FREE_STORE_ENTITLEMENT_RECONCILIATION_REQUIRED/);
+  assert.ok(service.indexOf('if (paidEntitlement)') < service.indexOf("plan: 'free', status: 'closed'"));
 });
 
 test('Free provisioning fails closed on authentication and transient server failures', () => {
