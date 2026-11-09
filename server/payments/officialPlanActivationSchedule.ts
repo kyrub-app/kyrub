@@ -56,3 +56,15 @@ export function activatePaidOfficialPlan(input: {
   const startsAt = activatedAt.toISOString();
   return { ...input.schedule, state: 'active', startsAt, expiresAt: addMonthsUtc(startsAt, input.months) };
 }
+
+/**
+ * Provider retries must never downgrade an already confirmed payment to
+ * 'bound'. A pending paid contract remains pending until store activation.
+ */
+export function officialPixStatusAfterProviderBind(
+  current: string
+): 'activated' | 'paid_pending_activation' | 'bound' {
+  if (current === 'activated') return 'activated';
+  if (current === 'paid_pending_activation') return 'paid_pending_activation';
+  return 'bound';
+}
