@@ -51,7 +51,13 @@ test('real Firestore transaction races preserve one provider charge and one set 
   const pilot = await db.doc(root + '/official_plan_pix_pilot/one_shot').get();
   assert.equal(pilot.get('checkoutId'), q.checkoutId);
   assert.equal(pilot.get('buyerId'), 'buyer');
-  payment = { ...payment, status: 'approved', status_detail: 'accredited', date_approved: new Date().toISOString() };
+  payment = { ...payment, status: 'approved', status_detail: 'pending_waiting_payment',
+    date_approved: new Date().toISOString() };
+  await assert.rejects(api.reconcileOfficialPlanPix(input), /OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED/,
+    'an approved status without accredited detail must never activate benefits');
+  assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
+  assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).exists, false);
+  payment = { ...payment, status_detail: 'accredited' };
   const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
   assert(results.every(result => result.state === 'activated'));
   const expectedPaidAt = payment.date_approved;
