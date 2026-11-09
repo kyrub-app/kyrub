@@ -51,3 +51,31 @@ export async function recordFirstCanonicalStoreActivation(input: {
     return { activatedAt: timestamp.toISOString(), newlyActivated: true };
   });
 }
+
+/**
+ * Server-only orchestration for an explicit activation action.
+ * If entitlement effects fail after the activation marker commits, retrying
+ * this operation reuses the original timestamp and resumes reconciliation.
+ * Do not call from navigation, store creation, or marketplace publication.
+ */
+export async function activateCanonicalStoreAndReconcileOfficialPlan(input: {
+  authorization: string;
+  canonicalStoreId: string;
+}): Promise<{
+  activatedAt: string;
+  newlyActivated: boolean;
+  planReconciliation: unknown;
+}> {
+  const activation = await recordFirstCanonicalStoreActivation(input);
+  // Lazy import avoids loading Pix reconciliation on unrelated store reads.
+  const { activatePendingOfficialPlanForStore } = await import('../payments/officialPlanPixCheckout.js');
+  const token = /^Bearer\s+(.+)$/i.exec(input.authorization)?.[1]?.trim();
+  if (!token) throw Error('STORE_ACTIVATION_AUTH_REQUIRED');
+  const actor = await verifyFirebaseIdToken(token);
+  const planReconciliation = await activatePendingOfficialPlanForStore({
+    buyerUid: actor.uid,
+    canonicalStoreId: input.canonicalStoreId,
+    activatedAt: activation.activatedAt,
+  });
+  return { ...activation, planReconciliation };
+}
