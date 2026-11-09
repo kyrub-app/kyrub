@@ -50,6 +50,10 @@ const liveEntitlement = (value: any) => {
   return !Number.isFinite(expiry) || expiry > Date.now();
 };
 const blockedSlot = (value: any) => value?.checkoutReservationStatus === 'pending' ||
+  // A paid contract awaiting store activation has no expiry date yet.
+  // It must still block a second checkout for the same buyer.
+  value?.checkoutReservationStatus === 'paid_pending_activation' ||
+  value?.state === 'paid_pending_activation' ||
   (value?.providerSubscriptionId && value.providerStatus !== 'cancelled') ||
   (value?.collectionMode === 'prepaid' && Date.parse(value.expiresAt) > Date.now());
 
