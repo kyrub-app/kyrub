@@ -8,7 +8,7 @@ import { loadPublicActivePlanCatalog } from '../admin/publicPlanCatalogService.j
 import { writePlanMirrors } from '../admin/paidPlanSubscriptionService.js';
 import { resolveSubscriptionContractQuote } from './subscriptionContractQuote.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
-import { officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore } from './officialPlanActivationSchedule.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore } from './officialPlanActivationSchedule.js';
 import { prepareStoreEconomicLedgerConfirmedCapture, applyStoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 import { buildStorePointPurchaseEntry } from '../../shared/storePoints.js';
 import { reconcilePaidSubscriberIntoCrm } from './storeSubscriberRegistryService.js';
@@ -340,6 +340,103 @@ async function materializePendingStoreActivation(d: any, payment: any) {
   }
   return { state: 'paid_pending_activation', subscriptionId: id, contractId,
     startsAt: null, expiresAt: null };
+}
+
+/**
+ * Called by the authoritative store-activation backend after canonical store
+ * creation has committed. Never call this from the Renda navigation button.
+ * The buyer is determined by the canonical store owner, not client input.
+ */
+export async function activatePendingOfficialPlanForStore(input: {
+  buyerUid: string; canonicalStoreId: string; activatedAt: string;
+}) {
+  if (!valid(input.buyerUid) || !valid(input.canonicalStoreId) ||
+      !Number.isFinite(Date.parse(input.activatedAt))) {
+    throw Error('OFFICIAL_PLAN_INVALID_ACTIVATION');
+  }
+  const slot = slotRef(input.buyerUid);
+  const currentSlot = await slot.get();
+  if (currentSlot.get('checkoutReservationStatus') !== 'paid_pending_activation') {
+    return { state: 'no_pending_contract' };
+  }
+  const checkoutId = currentSlot.get('officialPixCheckoutId');
+  if (typeof checkoutId !== 'string') throw Error('OFFICIAL_PLAN_PENDING_CHECKOUT_MISSING');
+  checkId(checkoutId);
+  const checkout = checkoutRef(checkoutId);
+  const outcome = await adminDb.runTransaction(async tx => {
+    const store = adminDb.doc(`stores/${input.canonicalStoreId}`);
+    const privateStore = adminDb.doc(`users/${input.buyerUid}/stores/${input.buyerUid}`);
+    const [storeDoc, privateDoc, slotDoc, checkoutDoc, entitlementDoc] = await Promise.all([
+      tx.get(store), tx.get(privateStore), tx.get(slot), tx.get(checkout),
+      tx.get(entitlementRef(input.buyerUid)),
+    ]);
+    if (storeDoc.get('ownerId') !== input.buyerUid || !privateDoc.exists) {
+      throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
+    }
+    const d = checkoutDoc.data();
+    if (!d || d.buyerId !== input.buyerUid ||
+        slotDoc.get('officialPixCheckoutId') !== checkoutId ||
+        d.status !== 'paid_pending_activation' ||
+        !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
+        liveEntitlement(entitlementDoc.data())) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_CONFLICT');
+    }
+    const contractId = d.contractId, subscriptionId = d.subscriptionId;
+    if (!valid(contractId) || !valid(subscriptionId)) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_MISSING');
+    }
+    const root = `stores/${d.offer.storeId}`;
+    const contract = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
+    const subscription = adminDb.doc(`${root}/subscriptions/${subscriptionId}`);
+    const period = subscription.collection('prepaidPeriods').doc(contractId);
+    const [contractDoc, subscriptionDoc, periodDoc] = await Promise.all([
+      tx.get(contract), tx.get(subscription), tx.get(period),
+    ]);
+    if (contractDoc.get('state') !== 'paid_pending_activation' ||
+        subscriptionDoc.get('state') !== 'paid_pending_activation' ||
+        periodDoc.get('state') !== 'paid_pending_activation' ||
+        contractDoc.get('customerId') !== input.buyerUid ||
+        subscriptionDoc.get('buyerId') !== input.buyerUid) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_CONFLICT');
+    }
+    const schedule = activatePaidOfficialPlan({
+      schedule: {
+        state: 'paid_pending_activation',
+        paidAt: contractDoc.get('paidAt'),
+        startsAt: null, expiresAt: null,
+      },
+      activatedAt: input.activatedAt,
+      months: d.offer.quote.months,
+    });
+    const startsAt = schedule.startsAt!, expiresAt = schedule.expiresAt!;
+    tx.update(contract, { state: 'active', startsAt, expiresAt,
+      buyerStoreId: input.canonicalStoreId, activatedAt: startsAt });
+    tx.update(subscription, { state: 'active', startsAt, expiresAt,
+      activatedAt: startsAt, buyerStoreId: input.canonicalStoreId, updatedAt: startsAt });
+    tx.update(period, { state: 'paid', startsAt, expiresAt });
+    writePlanMirrors(tx, input.buyerUid, input.canonicalStoreId,
+      d.offer.plan, FieldValue.serverTimestamp());
+    tx.set(entitlementRef(input.buyerUid), {
+      schemaVersion: 2, storeId: input.buyerUid, ownerId: input.buyerUid,
+      plan: d.offer.plan, planVersion: d.offer.planVersion,
+      source: 'subscription', status: 'active',
+      benefitStartsAt: startsAt, benefitEndsAt: expiresAt,
+      provider: 'mercado-pago', providerPaymentId: d.providerPaymentId,
+      officialPixCheckoutId: checkoutId, updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(slot, { checkoutReservationStatus: 'complete', expiresAt,
+      updatedAt: startsAt }, { merge: true });
+    tx.update(checkout, { status: 'activated', startsAt,
+      contractExpiresAt: expiresAt, effectsStatus: 'pending' });
+    return { state: 'activated' as const, subscriptionId, contractId,
+      startsAt, expiresAt, storeId: d.offer.storeId };
+  });
+  if (outcome.state === 'activated') {
+    await reconcilePaidSubscriberIntoCrm(outcome.storeId, input.buyerUid);
+    await reconcileStoreSubscriptionBenefitCycle(outcome.storeId, outcome.subscriptionId);
+    await checkout.update({ effectsStatus: 'complete' });
+  }
+  return outcome;
 }
 
 async function materialize(d: any, payment: any) {
