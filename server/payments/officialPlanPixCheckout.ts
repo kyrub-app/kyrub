@@ -282,6 +282,8 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       return;
     }
     if (lock.get('officialPixCheckoutId') !== d.checkoutId ||
+        lock.get('checkoutReservationStatus') !== 'pending' ||
+        !['bound', 'in_flight', 'outcome_unknown'].includes(current.get('status')) ||
         liveEntitlement(entitlement.data()) ||
         !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
         existingContract.exists || existingSubscription.exists) {
