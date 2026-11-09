@@ -115,4 +115,10 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal(posts, 0, 'must not call Mercado Pago to create a charge');
   assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
   assert.equal((await db.collection('stores/official-store/subscriptions').get()).size, 0);
+  assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).exists, false,
+    'blocked checkout must not grant Pro or Business entitlement');
+  assert.equal((await db.doc('users/buyer/stores/buyer').get()).exists, false,
+    'blocked checkout must not provision a private store');
+  assert.equal((await db.doc('stores/buyer').get()).exists, false,
+    'blocked checkout must not create a canonical store');
 });
