@@ -90,3 +90,33 @@ export function resolveOfficialPlanBuyerStore(input: {
   }
   return { buyerStoreId: null, buyerStoreProvisioningRequired: true };
 }
+
+/**
+ * Financial recognition and access entitlement are separate effects.
+ * Payment may be recorded immediately, but benefits and plan mirrors must
+ * wait until the canonical store has actually been activated.
+ */
+export function officialPlanPaymentEffects(
+  schedule: OfficialPlanActivationSchedule
+): {
+  recordPayment: true;
+  grantEntitlement: boolean;
+  writePlanMirrors: boolean;
+  reconcileBenefitCycle: boolean;
+  checkoutStatus: 'paid_pending_activation' | 'activated';
+} {
+  const active = schedule.state === 'active';
+  if (active && (!schedule.startsAt || !schedule.expiresAt)) {
+    throw Error('OFFICIAL_PLAN_INVALID_ACTIVE_TERM');
+  }
+  if (!active && (schedule.startsAt !== null || schedule.expiresAt !== null)) {
+    throw Error('OFFICIAL_PLAN_INVALID_PENDING_TERM');
+  }
+  return {
+    recordPayment: true,
+    grantEntitlement: active,
+    writePlanMirrors: active,
+    reconcileBenefitCycle: active,
+    checkoutStatus: active ? 'activated' : 'paid_pending_activation',
+  };
+}
