@@ -35,10 +35,7 @@ const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !=
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
-  if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') {
-    if (process.env.VERCEL_ENV === 'production') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
-    return;
-  }
+  if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
       d.offer.quote.totalMinor !== 19700) {
@@ -171,7 +168,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
     allowPilotOffer(d, buyer.uid);
-    if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true' && pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
+    if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
     if (buyerStore.get('ownerId') !== buyer.uid || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
@@ -181,9 +178,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       (product.get('storePointsPerUnit') ?? 0) !== d.offer.points || digest(product.get('saleModality')) !== digest(d.offer.saleModality) ||
       digest(resolveSubscriptionContractQuote({ persistedSaleModality: product.get('saleModality'), authoritativeMonthlyPriceMinor: d.offer.priceMinor,
         persistedOffers: product.get('contractDiscounts'), selectedMonths: d.offer.quote.months, paymentTerms: { collectionMode: 'prepaid', installments: 1 } })) !== digest(d.offer.quote)) throw Error('OFFICIAL_PIX_OFFER_CHANGED');
-    if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true') {
-      tx.create(pilotRef(), { checkoutId: d.checkoutId, buyerId: buyer.uid, consumedAt: now() });
-    }
+    tx.create(pilotRef(), { checkoutId: d.checkoutId, buyerId: buyer.uid, consumedAt: now() });
     tx.set(slot, { checkoutReservationStatus: 'pending', officialPixCheckoutId: d.checkoutId, collectionMode: 'prepaid', updatedAt: now() }, { merge: true });
     tx.update(r, { status: 'in_flight', collectorId, requestBody: body, requestDigest: hash(body), buyerEmail: buyer.email });
   });
