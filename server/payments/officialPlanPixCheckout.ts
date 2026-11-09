@@ -575,7 +575,9 @@ async function reconcileLoaded(d: any, candidateId?: string) {
     await adminDb.runTransaction(async tx => {
       const r = checkoutRef(d.checkoutId), slot = slotRef(d.buyerId);
       const [current, lock] = await Promise.all([tx.get(r), tx.get(slot)]);
-      if (current.get('status') === 'activated') throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+      if (['activated', 'paid_pending_activation'].includes(current.get('status'))) {
+        throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+      }
       tx.update(r, { status: 'rejected', providerPaymentId: paymentId });
       if (lock.get('officialPixCheckoutId') === d.checkoutId) tx.set(slot, { checkoutReservationStatus: 'closed', providerStatus: 'cancelled' }, { merge: true });
     });
