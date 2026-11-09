@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   scheduleOfficialPlanAfterPayment,
+  scheduleOfficialPlanFromConfirmedPayment,
   activatePaidOfficialPlan,
   officialPlanPaymentEffects,
 } from '../server/payments/officialPlanActivationSchedule';
@@ -45,4 +46,31 @@ test('a pending plan rejects an activation timestamp earlier than payment', () =
   assert.throws(() => activatePaidOfficialPlan({
     schedule: pending, activatedAt: '2026-11-08T12:00:00.000Z', months: 1,
   }), /OFFICIAL_PLAN_INVALID_ACTIVATION_DATE/);
+});
+
+test('launch policy starts Pro or Business at approved Pix payment, with no store', () => {
+  for (const months of [1, 3, 6, 12] as const) {
+    const active = scheduleOfficialPlanFromConfirmedPayment({ paidAt, months });
+    assert.equal(active.state, 'active');
+    assert.equal(active.startsAt, paidAt);
+    assert.equal(active.paidAt, paidAt);
+    assert.ok(active.expiresAt && Date.parse(active.expiresAt) > Date.parse(paidAt));
+    assert.deepEqual(officialPlanPaymentEffects(active), {
+      recordPayment: true, grantEntitlement: true, writePlanMirrors: true,
+      reconcileBenefitCycle: true, checkoutStatus: 'activated',
+    });
+  }
+});
+
+test('launch policy is deterministic and cannot start from invalid payment data', () => {
+  assert.deepEqual(
+    scheduleOfficialPlanFromConfirmedPayment({ paidAt, months: 3 }),
+    scheduleOfficialPlanFromConfirmedPayment({ paidAt, months: 3 }),
+  );
+  assert.throws(() => scheduleOfficialPlanFromConfirmedPayment({
+    paidAt: 'invalid', months: 1,
+  }), /OFFICIAL_PLAN_INVALID_PAYMENT_DATE/);
+  assert.throws(() => scheduleOfficialPlanFromConfirmedPayment({
+    paidAt, months: 2 as 1,
+  }), /OFFICIAL_PLAN_INVALID_TERM/);
 });
