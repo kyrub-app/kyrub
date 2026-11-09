@@ -8,6 +8,7 @@ import { loadPublicActivePlanCatalog } from '../admin/publicPlanCatalogService.j
 import { writePlanMirrors } from '../admin/paidPlanSubscriptionService.js';
 import { resolveSubscriptionContractQuote } from './subscriptionContractQuote.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
+import { officialPixStatusAfterProviderBind } from './officialPlanActivationSchedule.js';
 import { prepareStoreEconomicLedgerConfirmedCapture, applyStoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 import { buildStorePointPurchaseEntry } from '../../shared/storePoints.js';
 import { reconcilePaidSubscriberIntoCrm } from './storeSubscriberRegistryService.js';
@@ -141,7 +142,7 @@ async function bind(d: any, paymentId: string) {
     const r = checkoutRef(d.checkoutId), latest = await tx.get(r);
     if (latest.get('offerDigest') !== d.offerDigest || latest.get('requestDigest') !== d.requestDigest ||
       latest.get('collectorId') !== d.collectorId || (latest.get('providerPaymentId') && latest.get('providerPaymentId') !== paymentId)) throw Error('OFFICIAL_PIX_BINDING_CONFLICT');
-    tx.update(r, { providerPaymentId: paymentId, status: latest.get('status') === 'activated' ? 'activated' : 'bound' });
+    tx.update(r, { providerPaymentId: paymentId, status: officialPixStatusAfterProviderBind(latest.get('status')) });
   });
 }
 
