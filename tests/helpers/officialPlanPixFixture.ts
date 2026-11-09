@@ -12,7 +12,7 @@ export async function loadOfficialPlanPixFixture() {
     if (target.origin !== 'https://api.mercadopago.com') throw Error('UNEXPECTED_NETWORK');
     return Response.json(await (globalThis as any).__officialPix.request(target.pathname + target.search, init));
   }) as typeof fetch;
-  const bundle = await build({ entryPoints: ['server/payments/officialPlanPixCheckout.ts'], bundle: true, platform: 'node', format: 'esm', write: false,
+  const bundle = await build({ stdin: { contents: "export * from './server/payments/officialPlanPixCheckout.ts'; export * from './server/actions/freeStoreProvisioningService.ts';", resolveDir: process.cwd(), sourcefile: 'official-pix-fixture-entry.ts', loader: 'ts' }, bundle: true, platform: 'node', format: 'esm', write: false,
     packages: 'external', plugins: [{ name: 'isolated-platform', setup(b) {
       b.onResolve({ filter: /firebaseAdmin\.js$|consultantAuth\.js$|paidPlanSubscriptionService\.js$|officialStoreService\.js$|publicPlanCatalogService\.js$|canonicalStoreIdentityService\.js$|mercadoPagoStoreOauthService\.js$|mercadoPagoStoreConnectionSecretStore\.js$/ }, a => ({ path: a.path, namespace: 'mock' }));
       b.onLoad({ filter: /.*/, namespace: 'mock' }, a => ({ contents:
