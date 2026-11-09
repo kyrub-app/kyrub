@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore, scheduleOfficialPlanAfterPayment } from '../server/payments/officialPlanActivationSchedule.js';
 
 test('paid buyer without a store does not lose ten days before activation', () => {
   const paid = scheduleOfficialPlanAfterPayment({
@@ -79,4 +79,25 @@ test('provider retries never downgrade paid or activated checkouts', () => {
   assert.equal(officialPixStatusAfterProviderBind('paid_pending_activation'), 'paid_pending_activation');
   assert.equal(officialPixStatusAfterProviderBind('activated'), 'activated');
   assert.equal(officialPixStatusAfterProviderBind('in_flight'), 'bound');
+});
+
+test('buyer with no canonical store may quote before activating a store', () => {
+  assert.deepEqual(resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: [], hasLegacyStore: true,
+  }), { buyerStoreId: null, buyerStoreProvisioningRequired: true });
+  assert.deepEqual(resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: [], hasLegacyStore: false,
+  }), { buyerStoreId: null, buyerStoreProvisioningRequired: true });
+});
+
+test('existing store is reused; conflicting store identity is rejected', () => {
+  assert.deepEqual(resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: ['store_valid'], hasLegacyStore: true,
+  }), { buyerStoreId: 'store_valid', buyerStoreProvisioningRequired: false });
+  assert.throws(() => resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: ['store_a', 'store_b'], hasLegacyStore: true,
+  }), /OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT/);
+  assert.throws(() => resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: ['store_a'], hasLegacyStore: false,
+  }), /OFFICIAL_PIX_BUYER_STORE_IDENTITY_CONFLICT/);
 });
