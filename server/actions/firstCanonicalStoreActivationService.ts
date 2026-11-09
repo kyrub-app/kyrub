@@ -13,7 +13,7 @@ export async function recordFirstCanonicalStoreActivation(input: {
   authorization: string;
   canonicalStoreId: string;
 }): Promise<{ activatedAt: string; newlyActivated: boolean }> {
-  const token = /^Bearer\\s+(.+)$/i.exec(input.authorization)?.[1]?.trim();
+  const token = /^Bearer\s+(.+)$/i.exec(input.authorization)?.[1]?.trim();
   if (!token) throw Error('STORE_ACTIVATION_AUTH_REQUIRED');
   const actor = await verifyFirebaseIdToken(token);
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.canonicalStoreId)) {
