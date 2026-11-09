@@ -29,6 +29,22 @@ const checkoutRef = (id: string) => adminDb.doc(`${ROOT}/plan_pix_checkouts/${id
 const slotRef = (uid: string) => adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
 const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
+// The pilot is fail-closed. A global checkout flag alone cannot emit live Pix.
+// Outside the pilot the same gateway must be explicitly opened for general sales.
+const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
+const pilotMode = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true';
+const allowPilotBuyer = (uid: string) => {
+  gate();
+  if (pilotMode() && (!pilotUid() || uid !== pilotUid())) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
+};
+const allowPilotOffer = (d: any, uid: string) => {
+  allowPilotBuyer(uid);
+  if (!pilotMode()) return;
+  if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
+      d.offer.quote.totalMinor !== 19700 || d.offer.quote.collectionMode !== 'prepaid') {
+    throw Error('OFFICIAL_PIX_PILOT_OFFER_FORBIDDEN');
+  }
+};
 const now = () => new Date().toISOString();
 const reference = (id: string) => `kyrub:official-plan-pix:${id}`;
 const liveEntitlement = (value: any) => {
@@ -131,7 +147,7 @@ async function bind(d: any, paymentId: string) {
 export async function checkoutOfficialPlanPix(input: { authorization: string; checkoutId: string }) {
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
-  gate();
+  allowPilotOffer(d, buyer.uid);
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||
     d.acceptedOfferDigest !== d.offerDigest || Date.parse(d.expiresAt) <= Date.now()) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
   const fresh = await offer(d.offer.storeId, d.offer.productId, d.offer.quote.months);
