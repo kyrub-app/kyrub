@@ -69,3 +69,18 @@ test('existing-store Pix materialization fails closed on stale reservation and d
   assert.match(materialization, /scheduleOfficialPlanFromConfirmedPayment\(/);
   assert.match(materialization, /liveEntitlement\(entitlement\.data\(\)\)/);
 });
+
+test('a new confirmed Pix contract can begin before canonical store creation', () => {
+  const checkout = read('../server/payments/officialPlanPixCheckout.ts');
+  const materializeStart = checkout.indexOf('async function materialize(d: any, payment: any)');
+  const reconcileStart = checkout.indexOf('async function reconcileLoaded(', materializeStart);
+  const body = checkout.slice(materializeStart, reconcileStart);
+  assert.match(body, /d\.buyerStoreId \? tx\.get\(/);
+  assert.match(body, /Promise\.resolve\(null\)/);
+  assert.match(body, /d\.buyerStoreProvisioningRequired !== true/);
+  assert.match(body, /writePlanMirrors\(tx, uid, d\.buyerStoreId \?\? null/);
+  assert.match(body, /state: 'active'/);
+  const reconciliation = checkout.slice(reconcileStart);
+  assert.match(reconciliation, /d\.status === 'paid_pending_activation'/);
+  assert.doesNotMatch(reconciliation, /return d\.buyerStoreProvisioningRequired\s*\?/);
+});
