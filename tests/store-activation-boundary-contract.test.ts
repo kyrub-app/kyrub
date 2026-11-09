@@ -52,7 +52,8 @@ test('Renda creates or opens the store workspace; it does not activate a paid te
 test('saving settings and publishing a listing cannot trigger first activation', () => {
   const settings = read('../src/components/modals/StoreConfigModal.tsx');
   const save = settings.slice(settings.indexOf('const handleSave ='), settings.indexOf('const handlePublication ='));
-  const publication = settings.slice(settings.indexOf('const handlePublication ='), settings.indexOf('const ', settings.indexOf('const handlePublication =') + 7) > 0 ? settings.indexOf('const ', settings.indexOf('const handlePublication =') + 7) : undefined);
+  const publicationStart = settings.indexOf('const handlePublication =');
+  const publication = settings.slice(publicationStart, settings.indexOf('\n  };', publicationStart) + 5);
   assert.match(save, /saveStore\(true\)/);
   assert.match(publication, /setStoreMarketplacePublication\(/);
   assert.doesNotMatch(save + publication, /recordFirstCanonicalStoreActivation|activateCanonicalStoreAndReconcileOfficialPlan/);
@@ -93,7 +94,11 @@ test('Criar minha loja provisions Free through authenticated server route before
   assert.match(api, /ensureFreePlanForStoreCreation\(authorization\)/);
   assert.match(renda, /getIdToken\(\)/);
   assert.match(renda, /op=store\.free\.ensure/);
-  assert.ok(renda.indexOf("if (!response.ok)") < renda.indexOf("setIsGestaoOpen(true)", renda.indexOf("const openRetailerWorkspace")));
+  const handler = renda.slice(renda.indexOf('const openRetailerWorkspace ='), renda.indexOf('\n  return (', renda.indexOf('const openRetailerWorkspace =')));
+  const request = handler.indexOf('op=store.free.ensure');
+  const confirmed = handler.indexOf('if (!response.ok)');
+  const openAfterProvisioning = handler.indexOf('setIsGestaoOpen(true)', confirmed);
+  assert.ok(request >= 0 && confirmed > request && openAfterProvisioning > confirmed);
   assert.match(service, /runTransaction\(async tx/);
   assert.match(service, /tx\.create\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
