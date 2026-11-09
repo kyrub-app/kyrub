@@ -540,7 +540,11 @@ async function materialize(d: any, payment: any) {
         existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
       return;
     }
-    if (slot.get('officialPixCheckoutId') !== d.checkoutId || buyerStore.get('ownerId') !== uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+    if (slot.get('officialPixCheckoutId') !== d.checkoutId ||
+      slot.get('checkoutReservationStatus') !== 'pending' ||
+      !['bound', 'in_flight', 'outcome_unknown'].includes(current.get('status')) ||
+      buyerStore.get('ownerId') !== uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+      existingContract.exists || existingSubscription.exists ||
       liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
     const finance = await prepareStoreEconomicLedgerConfirmedCapture({ transaction: tx, payment: canonical, paymentIntentId: d.checkoutId });
     // All reads precede writes. The immutable provider binding gates every commercial effect.
