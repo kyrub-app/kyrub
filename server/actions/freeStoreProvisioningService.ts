@@ -29,28 +29,31 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
     const entitlement = entitlementDoc.data();
     const current = privateDoc.data();
     const subscription = subscriptionDoc.data();
-    const paidPlan = [entitlement?.plan, current?.plan, subscription?.plan]
-      .find(plan => plan === 'pro' || plan === 'business') as 'pro' | 'business' | undefined;
-    if (paidPlan) {
-      // A paid entitlement may have been issued before the buyer created a store.
-      // The store profile must inherit that plan, not revert to Free.
-      if (entitlement?.status === 'active' && (entitlement.plan === 'pro' || entitlement.plan === 'business') &&
-          (!privateDoc.exists || current?.plan !== entitlement.plan)) {
-        if (privateDoc.exists) {
-          tx.set(privateRef, { plan: entitlement.plan, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-        } else {
-          tx.create(privateRef, {
-            id: uid, ownerId: uid, plan: entitlement.plan, status: 'closed',
-            createdAt: FieldValue.serverTimestamp(),
-            updatedAt: FieldValue.serverTimestamp(),
-          });
-        }
+    const paid = (plan: unknown): plan is 'pro' | 'business' =>
+      plan === 'pro' || plan === 'business';
+    const expiry = entitlement?.benefitEndsAt;
+    const expiryMillis = expiry?.toDate?.() instanceof Date
+      ? expiry.toDate().getTime()
+      : typeof expiry === 'string' ? Date.parse(expiry) : NaN;
+    const paidEntitlement = entitlement?.status === 'active' && paid(entitlement.plan) &&
+      (!expiry || (Number.isFinite(expiryMillis) && expiryMillis > Date.now()));
+    if (paidEntitlement) {
+      if (!privateDoc.exists) {
+        tx.create(privateRef, {
+          id: uid, ownerId: uid, plan: entitlement.plan, status: 'closed',
+          createdAt: FieldValue.serverTimestamp(),
+          updatedAt: FieldValue.serverTimestamp(),
+        });
+      } else if (current?.plan !== entitlement.plan) {
+        tx.set(privateRef, { plan: entitlement.plan, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       }
-      return { plan: paidPlan, created: false };
+      return { plan: entitlement.plan as 'pro' | 'business', created: !privateDoc.exists };
     }
-    if (entitlement?.status === 'active' && entitlement?.source !== 'free') {
-      // Never overwrite an unknown active grant with Free.
-      return { plan: 'free' as const, created: false };
+    // A stale paid mirror, an expired benefit, or an unknown active grant
+    // requires authoritative reconciliation. Never silently downgrade it.
+    if (paid(current?.plan) || paid(subscription?.plan) || paid(entitlement?.plan) ||
+        (entitlement?.status === 'active' && entitlement?.source !== 'free')) {
+      throw Error('FREE_STORE_ENTITLEMENT_RECONCILIATION_REQUIRED');
     }
     if (privateDoc.exists) {
       if (current?.plan === 'free') return { plan: 'free' as const, created: false };
