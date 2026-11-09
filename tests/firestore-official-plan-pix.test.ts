@@ -118,6 +118,11 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
     authorization: 'buyer', storeId: 'official-store',
     productId: 'product', selectedMonths: 1,
   });
+  const quoted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
+  assert.equal(quoted.get('buyerStoreProvisioningRequired'), true,
+    'a buyer without a store must be explicitly marked for later provisioning');
+  assert.equal(quoted.get('buyerStoreId'), null,
+    'no canonical store must be invented for the buyer');
   const input = { authorization: 'buyer', checkoutId: q.checkoutId };
   await api.acceptOfficialPlanPix({ ...input, acceptedTotalMinor: q.quote.totalMinor });
   await assert.rejects(
