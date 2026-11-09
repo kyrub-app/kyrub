@@ -157,7 +157,7 @@ export function RendaTab({
     triggerToast(
       hasConfiguredStore
         ? 'Abrindo a gestão da sua loja.'
-        : 'Vamos ativar sua loja no Kyrub Ofertas.',
+        : 'Vamos configurar sua loja no Kyrub Ofertas.',
       'success'
     );
   };
@@ -309,7 +309,7 @@ export function RendaTab({
               ? 'Verificando loja...'
               : hasConfiguredStore
                 ? 'Acessar loja'
-                : 'Ativar loja'}
+                : 'Criar minha loja'}
           </button>
 
           {hasConfiguredStore && <LocalServiceDashboardCards />}
