@@ -105,7 +105,7 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
     db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
     db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
     db.doc('stores/official-store/products/product').set({
-      name: 'Pro', price: 197, publicationStatus: 'published',
+      name: 'Pro', price: 205, publicationStatus: 'published',
       saleModality: modality, storePointsPerUnit: 0,
       contractDiscounts: [{ months: 1, discountPercent: 0 }],
     }),
@@ -118,6 +118,7 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
     authorization: 'buyer', storeId: 'official-store',
     productId: 'product', selectedMonths: 1,
   });
+  assert.equal(q.quote.totalMinor, 20500, 'pilot must use the canonical product price, not a fixed R$197');
   const quoted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
   assert.equal(quoted.get('buyerStoreProvisioningRequired'), true,
     'a buyer without a store must be explicitly marked for later provisioning');
