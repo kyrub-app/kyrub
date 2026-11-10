@@ -1,5 +1,25 @@
 # Official Pro/Business Pix release
 
+## Confirmed store activation product rule — correction
+
+The **user's confirmed behavior** is: clicking **Criar minha loja** both
+creates and activates the store on **Free** when there is no valid paid
+entitlement. If the buyer already paid for Pro/Business, the same action
+creates and activates the store **on the existing paid plan**, never
+downgrading to Free or resetting the term that began at provider Pix approval.
+**Acessar loja** only opens an existing ERP; publishing a marketplace listing
+remains independent of store activation.
+
+The previously documented requirement for a *separate* **Ativar loja** action
+was incorrect for this onboarding path. The current
+`store.free.ensure` endpoint provisions a private store record but does
+**not yet prove canonical-store activation**. The first-activation helper
+currently forbids invoking it from creation, so both implementation and
+boundary tests must be reconciled with the confirmed product rule. Do not
+mark onboarding complete merely because the Free provisioner returns 200.
+Any legacy `paid_pending_activation` reconciliation must preserve existing
+records without shifting new paid contracts' start dates.
+
 ## Current release checkpoint — 10 Nov 2026
 
 **Do not treat this document's older rollout steps as proof that the release is ready.**
