@@ -1,5 +1,37 @@
 # Official Pro/Business Pix release
 
+## Current release checkpoint — 10 Nov 2026
+
+**Do not treat this document's older rollout steps as proof that the release is ready.**
+PR #1110 (`codex/official-plan-preactivation-contract`) is Draft and targets
+`codex/official-plan-pix-one-buyer-pilot`, **not** `main`.
+The current PR head is ahead of `main` by more than 100 commits, including its
+parent pilot branch. Before a production merge, review the full combined diff,
+required migrations and feature flags; retargeting #1110 alone is insufficient.
+
+The no-store checkout remains **blocked for real providers** by
+`OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY`. Only an explicitly enabled
+localhost Firestore emulator with the isolated fake platform token may exercise
+the no-store POST path. Do not configure
+`KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST` in Vercel or any live environment.
+The integration test covers issuance, provider confirmation, recovery, and
+later store provisioning in isolation. Passing CI does **not** authorize
+production charging or prove the deployed production configuration.
+
+**Commercial rule:** confirmed Pix payment begins the prepaid term at the
+provider's verified approval timestamp, even if the buyer creates their store
+later. Delayed store creation must not restart or extend that term. The earlier
+paragraph below stating that a buyer must activate a Free store before paying
+is historical and is superseded by this rule, subject to completing the
+real-provider pre-store checkout before release.
+
+Before enabling a live pilot, require: reviewed combined integration to
+`main`, exact-head CI and emulator checks, verified platform collector and
+webhook configuration, pre-store charge path released from its deliberate
+gate through a separately reviewed change, and an owner-approved one-buyer
+one-shot test. Never use real money to bypass incomplete engineering checks.
+
+
 This change is prepared for owner approval. Do not merge, deploy or enable real-money creation before that approval. Do not seed prices, discounts, published products or rewards on behalf of the owner.
 
 ## Integration
@@ -26,7 +58,7 @@ Set `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=true` only after approval. It appl
 
 In the Official Store ERP, create subscription products with a monthly interval and access benefit. Use the existing product editor for actual monthly price, publication status, points per purchase and optional 1/3/6/12-month contract discounts. Bind each eligible draft or published product to Pro or Business in the new official-plan panel. Configure optional purchase XP and an achievement/badge there; no reward is issued when unconfigured. Global XP configuration remains super-admin controlled. Publication remains an explicit owner action in the product editor.
 
-Paid plans are prepaid for the explicitly accepted period, with a single Pix, no installments and no automatic renewal. An active entitlement or unresolved subscription prevents a competing plan purchase; upgrades/proration are not invented. A buyer first activates their ordinary free store, as required by existing platform plan billing.
+Paid plans are prepaid for the explicitly accepted period, with a single Pix, no installments and no automatic renewal. An active entitlement or unresolved subscription prevents a competing plan purchase; upgrades/proration are not invented. Historical implementation note: the earlier flow required a Free store before purchase. PR #1110 changes the commercial rule to allow payment before store creation, but the real-provider no-store checkout is still gated pending release validation.
 
 ## Confirmation, logs and first purchase
 
