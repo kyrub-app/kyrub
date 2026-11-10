@@ -159,7 +159,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   allowPilotOffer(d, buyer.uid);
   // Do not issue real Pix for pre-activation purchases until the payment
   // materializer can atomically persist a pending contract without a store.
-  const isolatedPreStoreTest = process.env.FIRESTORE_EMULATOR_HOST?.match(/^(127\\.0\\.0\\.1|localhost):\\d+$/) &&
+  const isolatedPreStoreTest = process.env.FIRESTORE_EMULATOR_HOST?.match(/^(127\.0\.0\.1|localhost):\d+$/) &&
     process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST === 'true' &&
     process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN === 'isolated-platform-token';
   if ((d.buyerStoreProvisioningRequired || !d.buyerStoreId) && !isolatedPreStoreTest) {
