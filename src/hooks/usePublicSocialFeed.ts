@@ -104,6 +104,13 @@ const mapPost = (
     publicationType,
     visibility,
     audienceIds: readStringList(data.audienceIds),
+    storePromotion: data.storePromotion && typeof data.storePromotion === 'object'
+      && readString((data.storePromotion as Record<string, unknown>).storeId)
+      && readString((data.storePromotion as Record<string, unknown>).promotionId)
+      ? {
+          storeId: readString((data.storePromotion as Record<string, unknown>).storeId),
+          promotionId: readString((data.storePromotion as Record<string, unknown>).promotionId),
+        } : undefined,
   };
 };
 
