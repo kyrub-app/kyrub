@@ -107,6 +107,20 @@ test('real Firestore transaction races preserve one provider charge and one set 
   assert.equal((await db.doc('stores/official-store/crmCustomers/buyer').get()).get('subscriptionStats.activeSubscriptionCount'), 1);
   assert.equal((await db.collection('stores/official-store/subscriptions/' + results[0].subscriptionId + '/benefitCycles').get()).size, 1);
   assert.equal((await db.doc('users/buyer/achievements/owner-defined-badge').get()).get('userId'), 'buyer');
+  // Emulate an interrupted post-payment projection: the financial transaction is already committed,
+  // but the completion marker was not persisted. Reconciliation must replay effects without charging twice.
+  const checkoutRef = db.doc(root + '/plan_pix_checkouts/' + q.checkoutId);
+  await checkoutRef.update({ effectsStatus: 'pending' });
+  const replay = await api.reconcileOfficialPlanPix(input);
+  assert.equal(replay.state, 'activated');
+  assert.equal(replay.startsAt, expectedPaidAt);
+  assert.equal(replay.expiresAt, results[0].expiresAt);
+  assert.equal((await checkoutRef.get()).get('effectsStatus'), 'complete');
+  for (const path of ['subscriptions', 'prepaidSubscriptionContracts', 'payments', 'economicLedger', 'storePointLedger']) {
+    assert.equal((await db.collection(`stores/official-store/${path}`).get()).size, 1, 'replay: ' + path);
+  }
+  assert.equal((await db.collection('users/buyer/xpLedger').get()).size, 1, 'replay must not duplicate XP');
+  assert.equal((await db.collection('users/buyer/achievements').get()).size, 1, 'replay must not duplicate achievements');
   assert.equal(posts, 1);
 });
 
