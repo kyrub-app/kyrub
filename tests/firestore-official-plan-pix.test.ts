@@ -8,7 +8,7 @@ if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST |
 const app = initializeApp({ projectId: 'demo-kyrub-pix' }, 'official-pix-integration');
 const db = getFirestore(app);
 let payment: any, posts = 0;
-let loseProviderResponse = false, searches = 0;
+let loseProviderResponse = false, searches = 0, ambiguousSearch = false;
 (globalThis as any).__officialPix = { db,
   auth: async () => ({ uid: 'buyer', email: 'buyer@example.test', emailVerified: true }),
   request: async (path: string, init?: RequestInit) => {
@@ -23,6 +23,7 @@ let loseProviderResponse = false, searches = 0;
       searches++;
       const query = new URLSearchParams(path.split('?')[1]);
       assert.equal(query.get('external_reference'), payment?.external_reference);
+      if (ambiguousSearch) return { paging: { total: 2 }, results: [payment, { ...payment, id: '124' }] };
       return { paging: { total: payment ? 1 : 0 }, results: payment ? [payment] : [] };
     }
     if (path === '/v1/payments/123') return payment;
@@ -58,6 +59,15 @@ test('real Firestore transaction races preserve one provider charge and one set 
   loseProviderResponse = true;
   await Promise.allSettled(Array.from({ length: 4 }, () => api.checkoutOfficialPlanPix(input)));
   assert.equal(posts, 1);
+  ambiguousSearch = true;
+  const ambiguous = await api.reconcileOfficialPlanPix(input);
+  assert.equal(ambiguous.state, 'recovery_required', 'multiple provider candidates must never be selected automatically');
+  assert.equal(posts, 1, 'ambiguous recovery must not issue a second Pix');
+  assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0,
+    'ambiguous provider results must not create a paid contract');
+  assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).exists, false,
+    'ambiguous provider results must not grant a plan');
+  ambiguousSearch = false;
   const recovered = await api.reconcileOfficialPlanPix(input);
   assert.equal(recovered.state, 'awaiting_payment', 'lost provider response must recover the original Pix');
   assert.ok(searches >= 1, 'recovery must locate the existing payment by external_reference');
