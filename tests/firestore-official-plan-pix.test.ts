@@ -163,8 +163,11 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal(settledSlot.get('checkoutReservationStatus'), 'complete',
     'new paid contracts must be complete without an Ativar loja action');
   const settledContract = await db.collection('stores/official-store/prepaidSubscriptionContracts').get();
-  assert.equal(settledContract.docs[0]?.get('state'), undefined,
+  assert.equal(settledContract.size, 1);
+  assert.notEqual(settledContract.docs[0].get('state'), 'paid_pending_activation',
     'new contracts must not inherit the legacy pending activation state');
+  assert.equal(settledContract.docs[0].get('startsAt'), payment.date_approved,
+    'the contract must start at payment approval before store creation');
   assert(results.every(result => result.startsAt === payment.date_approved));
   assert(results.every(result => result.expiresAt === results[0].expiresAt));
   assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('plan'), 'pro');
