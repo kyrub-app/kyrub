@@ -71,6 +71,16 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
     return { plan: 'free' as const, created: true };
   });
   const canonicalStoreId = await activateStoreAfterProvisioning(uid, provisioned.plan);
+  // The activation marker is persisted before attempting paid pre-store
+  // reconciliation. Retries reuse that marker and cannot issue another charge.
+  const activated = await adminDb.doc(`stores/${canonicalStoreId}`).get();
+  const marker = activated.get('activatedAt');
+  const activatedAt = typeof marker === 'string' ? marker : marker?.toDate?.()?.toISOString();
+  if (!activatedAt || !Number.isFinite(Date.parse(activatedAt))) {
+    throw Error('STORE_ACTIVATION_TIMESTAMP_UNAVAILABLE');
+  }
+  const { activatePendingOfficialPlanForStore } = await import('../payments/officialPlanPixCheckout.js');
+  await activatePendingOfficialPlanForStore({ buyerUid: uid, canonicalStoreId, activatedAt });
   return { ...provisioned, canonicalStoreId };
 }
 
