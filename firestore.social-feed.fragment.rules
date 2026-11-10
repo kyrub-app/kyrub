@@ -15,8 +15,6 @@
           && get(storePath).data.ownerId == request.auth.uid
           && exists(couponPath)
           && get(couponPath).data.active == true
-          && get(couponPath).data.startsAt <= request.time.toString()
-          && get(couponPath).data.endsAt > request.time.toString()
           && (get(couponPath).data.maxRedemptions == 0
             || get(couponPath).data.redemptionCount < get(couponPath).data.maxRedemptions)
           && data.authorName == get(storePath).data.name
