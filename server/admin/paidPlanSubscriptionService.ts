@@ -400,6 +400,9 @@ export const loadOwnPlanSubscriptionState = async (authorization: string): Promi
 };
 
 export const createOwnPaidPlanCheckout = async (authorization: string, rawPlan: unknown, rawProductId?: unknown): Promise<KyrubPlanCheckoutResult> => {
+  // Official plans are sold through the Official Store's explicit, non-recurring checkout.
+  // Keep existing subscription reconciliation, cancellation and webhooks operational.
+  throw new PlanManagementError(409, 'OFFICIAL_PLAN_RECURRING_CHECKOUT_DISABLED', 'Novas assinaturas recorrentes dos planos Kyrub devem ser contratadas pela Loja Oficial.');
   const user = await authenticateConsultantRequest(authorization);
   const ownerId = safeOwnerId(user.uid);
   const targetPlan = paidPlan(rawPlan);
