@@ -42,6 +42,19 @@ test('Pix reconciliation uses the reservation status read inside the Firestore t
   assert.doesNotMatch(reconciliation, /if \(reservationStatus !== 'paid_pending_activation'\)/);
 });
 
+test('no navigation or store creation API can invoke the explicit activation orchestrator', () => {
+  const api = read('../api/plan-control.ts');
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  const activation = read('../server/actions/firstCanonicalStoreActivationService.ts');
+  assert.match(activation, /export async function activateCanonicalStoreAndReconcileOfficialPlan/);
+  assert.doesNotMatch(api, /activateCanonicalStoreAndReconcileOfficialPlan|recordFirstCanonicalStoreActivation/);
+  assert.doesNotMatch(renda, /activateCanonicalStoreAndReconcileOfficialPlan|recordFirstCanonicalStoreActivation/);
+  const freeStart = api.indexOf("case 'store.free.ensure'");
+  const freeEnd = api.indexOf("case 'catalog.subscription.route'", freeStart);
+  assert.ok(freeStart >= 0 && freeEnd > freeStart);
+  assert.doesNotMatch(api.slice(freeStart, freeEnd), /activatedAt|activateCanonicalStore/);
+});
+
 test('Renda creates or opens the store workspace; it does not activate a paid term', () => {
   const renda = read('../src/components/tabs/RendaTab.tsx');
   assert.match(renda, /'Criar minha loja'/);
