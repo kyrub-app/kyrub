@@ -161,12 +161,18 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
   allowPilotOffer(d, buyer.uid);
-  // Do not issue real Pix for pre-activation purchases until the payment
-  // materializer can atomically persist a pending contract without a store.
+  // Pre-store checkout remains disabled by default. A separate explicit launch flag
+  // permits only the existing one-buyer, one-shot Pro pilot (enforced by allowPilotOffer).
+  // A paid term starts at provider approval, not when the buyer creates a store.
   const isolatedPreStoreTest = process.env.FIRESTORE_EMULATOR_HOST?.match(/^(127\.0\.0\.1|localhost):\d+$/) &&
     process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST === 'true' &&
     process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN === 'isolated-platform-token';
-  if ((d.buyerStoreProvisioningRequired || !d.buyerStoreId) && !isolatedPreStoreTest) {
+  const explicitlyAuthorizedPreStorePilot =
+    process.env.KYRUB_OFFICIAL_PLAN_PIX_PRESTORE_PILOT_ENABLED === 'true' &&
+    process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE === 'true' &&
+    process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID === buyer.uid;
+  if ((d.buyerStoreProvisioningRequired || !d.buyerStoreId) &&
+      !isolatedPreStoreTest && !explicitlyAuthorizedPreStorePilot) {
     throw Error('OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY');
   }
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||

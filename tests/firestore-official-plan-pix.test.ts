@@ -178,9 +178,9 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal((await db.doc('stores/buyer').get()).exists, false,
     'blocked checkout must not create a canonical store');
 
-  // The production gate remains closed. This branch is enabled only with a
-  // localhost Firestore emulator and isolated fake Mercado Pago credentials.
-  process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST = 'true';
+  // The production default remains closed. Exercise the explicit pilot-only
+  // pre-store flag with a fake provider and local Firestore emulator.
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PRESTORE_PILOT_ENABLED = 'true';
   try {
     const pending = await api.checkoutOfficialPlanPix(input);
     assert.equal(posts, 1, 'the isolated provider must receive exactly one Pix POST');
@@ -191,7 +191,7 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
     payment = { ...payment, status: 'approved', status_detail: 'accredited',
       date_approved: new Date(Date.parse(accepted.get('acceptedAt')) + 1000).toISOString() };
   } finally {
-    delete process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST;
+    delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PRESTORE_PILOT_ENABLED;
   }
   const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
   assert(results.every(result => result.state === 'activated'));
