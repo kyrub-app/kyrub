@@ -42,7 +42,7 @@ test('Pix reconciliation uses the reservation status read inside the Firestore t
   assert.doesNotMatch(reconciliation, /if \(reservationStatus !== 'paid_pending_activation'\)/);
 });
 
-test('no navigation or store creation API can invoke the explicit activation orchestrator', () => {
+test('creation activates canonical store without invoking legacy activation orchestrator', () => {
   const api = read('../api/plan-control.ts');
   const renda = read('../src/components/tabs/RendaTab.tsx');
   const activation = read('../server/actions/firstCanonicalStoreActivationService.ts');
@@ -52,10 +52,10 @@ test('no navigation or store creation API can invoke the explicit activation orc
   const freeStart = api.indexOf("case 'store.free.ensure'");
   const freeEnd = api.indexOf("case 'catalog.subscription.route'", freeStart);
   assert.ok(freeStart >= 0 && freeEnd > freeStart);
-  assert.doesNotMatch(api.slice(freeStart, freeEnd), /activatedAt|activateCanonicalStore/);
+  assert.doesNotMatch(api.slice(freeStart, freeEnd), /activateCanonicalStoreAndReconcileOfficialPlan/);
 });
 
-test('Renda creates or opens the store workspace; it does not activate a paid term', () => {
+test('Renda creation activates the store via server, while opening existing ERP does not restart a paid term', () => {
   const renda = read('../src/components/tabs/RendaTab.tsx');
   assert.match(renda, /'Criar minha loja'/);
   assert.match(renda, /setIsGestaoOpen\(true\)/);
@@ -115,6 +115,18 @@ test('Criar minha loja provisions Free through authenticated server route before
   assert.match(service, /runTransaction\(async tx/);
   assert.match(service, /tx\.create\(privateRef/);
   assert.doesNotMatch(service, /publicationStatus: 'published'|setStoreMarketplacePublication/);
+});
+
+test('Criar minha loja commits an idempotent canonical activation without publishing', () => {
+  const service = read('../server/actions/freeStoreProvisioningService.ts');
+  assert.match(service, /activateStoreAfterProvisioning\(uid, provisioned\.plan\)/);
+  assert.match(service, /adminDb\.collection\('stores'\)\.where\('ownerId', '==', uid\)/);
+  assert.match(service, /ownerStores\.docs\.length > 1/);
+  assert.match(service, /STORE_ACTIVATION_IDENTITY_CONFLICT/);
+  assert.match(service, /activatedAt: FieldValue\.serverTimestamp\(\)/);
+  assert.match(service, /publicationStatus: 'paused'/);
+  assert.match(service, /else if \(previous == null\)/);
+  assert.doesNotMatch(service, /publicationStatus: 'published'/);
 });
 
 test('paid pre-store grants are inherited, but expired or ambiguous grants fail closed', () => {
