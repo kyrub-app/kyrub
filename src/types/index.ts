@@ -262,6 +262,7 @@ export interface SocialPost {
   visibility?: 'public' | 'private' | 'connections';
   audienceIds?: string[];
   commentCount?: number;
+  storePromotion?: { storeId: string; promotionId: string };
 }
 
 export interface DeliveryJob {
