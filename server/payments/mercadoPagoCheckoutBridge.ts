@@ -1,3 +1,4 @@
+import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
@@ -123,13 +124,9 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
 
   // Guard also applies to already persisted intents and approved-order retries.
   // Do not rely on the public catalog or the official Pix feature flag here.
-  const productIds = [...new Set(intent.orderDraft.items.map(item => item.productId))];
-  const mappings = await Promise.all(productIds.map(id =>
-    adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()
-  ));
-  if (mappings.some(mapping => mapping.exists)) {
-    throw new Error('CHECKOUT_OFFICIAL_PLAN_REQUIRES_OFFICIAL_FLOW');
-  }
+  await assertNoOfficialPlanProducts(intent.orderDraft.items.map(item => item.productId), async id =>
+    (await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()).exists
+  );
 
   const orderRef = adminDb.doc(operationalOrderPath(intent.storeId, intent.target.orderId));
   const orderSnapshot = await orderRef.get();
