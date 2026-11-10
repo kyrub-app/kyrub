@@ -39,11 +39,16 @@ const STORE_CHECK_TIMEOUT_MS = 4_000;
 
 const hasMeaningfulStoreProfile = (
   data: Record<string, unknown>
-): boolean =>
-  ['name', 'slug', 'description', 'address'].some(field => {
+): boolean => {
+  // The first authenticated Create my store action creates the canonical
+  // identity before any name or profile fields have been filled out.
+  const canonicalId = data.canonicalStoreId;
+  if (typeof canonicalId === 'string' && canonicalId.trim().length > 0) return true;
+  return ['name', 'slug', 'description', 'address'].some(field => {
     const value = data[field];
     return typeof value === 'string' && value.trim().length > 0;
   });
+};
 
 export function RendaTab({
   deliveries,
@@ -60,6 +65,7 @@ export function RendaTab({
     useState(false);
   const [isCheckingStore, setIsCheckingStore] =
     useState(true);
+  const [isProvisioningFree, setIsProvisioningFree] = useState(false);
   const [isDeliveryEarningsOpen, setIsDeliveryEarningsOpen] =
     useState(false);
 
@@ -151,15 +157,46 @@ export function RendaTab({
     };
   }, [isDeliveryEarningsOpen]);
 
-  const openRetailerWorkspace = () => {
-    setIsGestaoOpen(true);
-    setGestaoRole('retailer');
-    triggerToast(
-      hasConfiguredStore
-        ? 'Abrindo a gestão da sua loja.'
-        : 'Vamos ativar sua loja no Kyrub Ofertas.',
-      'success'
-    );
+  const openRetailerWorkspace = async () => {
+    if (isProvisioningFree) return;
+    // Existing stores must remain accessible even when a paid entitlement
+    // requires reconciliation; Free provisioning is only for first creation.
+    if (hasConfiguredStore) {
+      setIsGestaoOpen(true);
+      setGestaoRole('retailer');
+      return;
+    }
+    const user = auth.currentUser;
+    if (!user) {
+      triggerToast('Entre na sua conta para criar sua loja.', 'warning');
+      return;
+    }
+    setIsProvisioningFree(true);
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch('/api/plan-control?op=store.free.ensure', {
+        method: 'POST',
+        headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+        body: '{}',
+      });
+      if (!response.ok) throw Error('FREE_STORE_PROVISIONING_FAILED');
+      const activation = await response.json() as { canonicalStoreId?: string };
+      if (!activation.canonicalStoreId) throw Error('STORE_ACTIVATION_RECEIPT_MISSING');
+      setHasConfiguredStore(true);
+      setIsGestaoOpen(true);
+      setGestaoRole('retailer');
+      triggerToast(
+        hasConfiguredStore
+          ? 'Abrindo a gestão da sua loja.'
+          : 'Vamos configurar sua loja no Kyrub Ofertas.',
+        'success'
+      );
+    } catch (error) {
+      console.warn('Falha ao preparar o acesso à loja.', error);
+      triggerToast('Não foi possível preparar sua loja agora. Tente novamente.', 'error');
+    } finally {
+      setIsProvisioningFree(false);
+    }
   };
 
   return (
@@ -301,15 +338,17 @@ export function RendaTab({
           <button
             type="button"
             onClick={openRetailerWorkspace}
-            disabled={isCheckingStore}
+            disabled={isCheckingStore || isProvisioningFree}
             className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
             id="btn-criar-loja-ofertas"
           >
             {isCheckingStore
               ? 'Verificando loja...'
+              : isProvisioningFree
+                ? 'Preparando loja...'
               : hasConfiguredStore
                 ? 'Acessar loja'
-                : 'Ativar loja'}
+                : 'Criar minha loja'}
           </button>
 
           {hasConfiguredStore && <LocalServiceDashboardCards />}

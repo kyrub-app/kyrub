@@ -8,6 +8,7 @@ import { loadPublicActivePlanCatalog } from '../admin/publicPlanCatalogService.j
 import { writePlanMirrors } from '../admin/paidPlanSubscriptionService.js';
 import { resolveSubscriptionContractQuote } from './subscriptionContractQuote.js';
 import { addMonthsUtc } from './prepaidSubscriptionContractLifecycle.js';
+import { activatePaidOfficialPlan, officialPixStatusAfterProviderBind, resolveOfficialPlanBuyerStore, scheduleOfficialPlanFromConfirmedPayment } from './officialPlanActivationSchedule.js';
 import { prepareStoreEconomicLedgerConfirmedCapture, applyStoreEconomicLedgerPaymentPlan } from './storeEconomicLedgerService.js';
 import { buildStorePointPurchaseEntry } from '../../shared/storePoints.js';
 import { reconcilePaidSubscriberIntoCrm } from './storeSubscriberRegistryService.js';
@@ -50,6 +51,10 @@ const liveEntitlement = (value: any) => {
   return !Number.isFinite(expiry) || expiry > Date.now();
 };
 const blockedSlot = (value: any) => value?.checkoutReservationStatus === 'pending' ||
+  // A paid contract awaiting store activation has no expiry date yet.
+  // It must still block a second checkout for the same buyer.
+  value?.checkoutReservationStatus === 'paid_pending_activation' ||
+  value?.state === 'paid_pending_activation' ||
   (value?.providerSubscriptionId && value.providerStatus !== 'cancelled') ||
   (value?.collectionMode === 'prepaid' && Date.parse(value.expiresAt) > Date.now());
 
@@ -94,11 +99,18 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     adminDb.collection('stores').where('ownerId', '==', buyer.uid).get(),
     adminDb.doc(`users/${buyer.uid}/stores/${buyer.uid}`).get(), entitlementRef(buyer.uid).get(),
   ]);
-  if (owned.size !== 1 || !legacy.exists) throw Error('OFFICIAL_PIX_BUYER_STORE_REQUIRED');
+  // The buyer may purchase a plan before creating a store. A legacy Free
+  // profile alone is not proof that a canonical store has been activated.
+  // Multiple canonical stores are ambiguous and must never be guessed.
+  const buyerStore = resolveOfficialPlanBuyerStore({
+    canonicalStoreIds: owned.docs.map(document => document.id),
+    hasLegacyStore: legacy.exists,
+  });
   if (liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVE_ENTITLEMENT');
   const checkoutId = randomBytes(32).toString('hex');
   await checkoutRef(checkoutId).create({ checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
-    buyerStoreId: owned.docs[0].id, offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
+    ...buyerStore,
+    offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
   return { checkoutId, quote: snapshot.quote, status: 'quoted' };
 }
 
@@ -137,7 +149,7 @@ async function bind(d: any, paymentId: string) {
     const r = checkoutRef(d.checkoutId), latest = await tx.get(r);
     if (latest.get('offerDigest') !== d.offerDigest || latest.get('requestDigest') !== d.requestDigest ||
       latest.get('collectorId') !== d.collectorId || (latest.get('providerPaymentId') && latest.get('providerPaymentId') !== paymentId)) throw Error('OFFICIAL_PIX_BINDING_CONFLICT');
-    tx.update(r, { providerPaymentId: paymentId, status: latest.get('status') === 'activated' ? 'activated' : 'bound' });
+    tx.update(r, { providerPaymentId: paymentId, status: officialPixStatusAfterProviderBind(latest.get('status')) });
   });
 }
 
@@ -145,6 +157,14 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
   allowPilotOffer(d, buyer.uid);
+  // Do not issue real Pix for pre-activation purchases until the payment
+  // materializer can atomically persist a pending contract without a store.
+  const isolatedPreStoreTest = process.env.FIRESTORE_EMULATOR_HOST?.match(/^(127\.0\.0\.1|localhost):\d+$/) &&
+    process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST === 'true' &&
+    process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN === 'isolated-platform-token';
+  if ((d.buyerStoreProvisioningRequired || !d.buyerStoreId) && !isolatedPreStoreTest) {
+    throw Error('OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY');
+  }
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||
     d.acceptedOfferDigest !== d.offerDigest || Date.parse(d.expiresAt) <= Date.now()) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
   const fresh = await offer(d.offer.storeId, d.offer.productId, d.offer.quote.months);
@@ -162,14 +182,14 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
-      tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)),
+      tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
       tx.get(pilotRef()),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
     allowPilotOffer(d, buyer.uid);
     if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
-    if (buyerStore.get('ownerId') !== buyer.uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+    if ((d.buyerStoreId ? buyerStore?.get('ownerId') !== buyer.uid : d.buyerStoreProvisioningRequired !== true) || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
       mapping.get('status') !== 'active' || mapping.get('planId') !== d.offer.plan || mapping.get('canonicalStoreId') !== d.offer.storeId ||
@@ -201,10 +221,302 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   return reconcileOfficialPlanPix(input);
 }
 
+/**
+ * Persist a verified Pix payment without activating a store or starting a
+ * subscription term. This branch is deliberately unreachable from new Pix
+ * issuance until the full preactivation flow has passed integration tests.
+ */
+async function materializePendingStoreActivation(d: any, payment: any) {
+  const approvedAt = typeof payment.date_approved === 'string' ? Date.parse(payment.date_approved) : NaN;
+  if (payment.status_detail !== 'accredited' || !Number.isFinite(approvedAt) ||
+      !Number.isFinite(Date.parse(d.acceptedAt)) || approvedAt < Date.parse(d.acceptedAt)) {
+    throw Error('OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED');
+  }
+  const paidAt = new Date(approvedAt).toISOString();
+  const uid = d.buyerId, storeId = d.offer.storeId;
+  const id = `official_${d.checkoutId}`, contractId = `official-${d.checkoutId}`;
+  const root = `stores/${storeId}`;
+  const contractRef = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
+  const subscriptionRef = adminDb.doc(`${root}/subscriptions/${id}`);
+  const bindingRef = adminDb.doc(`prepaidRenewalPaymentBindings/${hash('mercado_pago:' + payment.id)}`);
+  const paymentId = `official_pix_${payment.id}`;
+  const canonical: CanonicalPayment = {
+    id: paymentId, storeId, orderId: contractId, buyerId: uid,
+    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100,
+    currency: 'BRL', method: 'pix', context: 'pos', status: 'paid',
+    provider: 'mercado-pago', providerPaymentId: String(payment.id),
+    idempotencyKey: d.checkoutId, createdAt: paidAt, updatedAt: paidAt,
+    paidAt, refundedAt: '',
+  };
+  await adminDb.runTransaction(async tx => {
+    const checkout = checkoutRef(d.checkoutId), slot = slotRef(uid);
+    const [current, existingBinding, lock, existingContract, existingSubscription, seller, entitlement] = await Promise.all([
+      tx.get(checkout), tx.get(bindingRef), tx.get(slot),
+      tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
+      tx.get(entitlementRef(uid)),
+    ]);
+    if (current.get('providerPaymentId') !== String(payment.id) ||
+        current.get('offerDigest') !== digest(d.offer) ||
+        current.get('acceptedOfferDigest') !== current.get('offerDigest') ||
+        current.get('acceptedBy') !== uid ||
+        current.get('requestDigest') !== hash(current.get('requestBody')) ||
+        current.get('collectorId') !== d.collectorId ||
+        seller.get('ownerId') !== d.offer.ownerUserId) {
+      throw Error('OFFICIAL_PIX_ACCEPTANCE_CHANGED');
+    }
+    if (existingBinding.exists) {
+      const currentStatus = current.get('status');
+      const contractState = existingContract.get('state');
+      if (existingBinding.get('contractPath') !== contractRef.path ||
+          existingBinding.get('providerPaymentId') !== String(payment.id) ||
+          existingSubscription.get('buyerId') !== uid ||
+          existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor ||
+          existingContract.get('paidAt') !== paidAt ||
+          existingContract.get('providerPaymentId') !== String(payment.id) ||
+          existingSubscription.get('providerPaymentId') !== String(payment.id) ||
+          !(
+            (currentStatus === 'paid_pending_activation' && contractState === 'paid_pending_activation') ||
+            (currentStatus === 'activated' && contractState === 'active')
+          )) {
+        throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
+      }
+      // Once the store activates, provider retries must not reset the
+      // contract dates or downgrade the subscription.
+      return;
+    }
+    if (lock.get('officialPixCheckoutId') !== d.checkoutId ||
+        lock.get('checkoutReservationStatus') !== 'pending' ||
+        !['bound', 'in_flight', 'outcome_unknown'].includes(current.get('status')) ||
+        liveEntitlement(entitlement.data()) ||
+        !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
+        existingContract.exists || existingSubscription.exists) {
+      throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
+    }
+    const finance = await prepareStoreEconomicLedgerConfirmedCapture({
+      transaction: tx, payment: canonical, paymentIntentId: d.checkoutId,
+    });
+    tx.create(bindingRef, {
+      provider: 'mercado_pago', providerPaymentId: String(payment.id),
+      storeId, subscriptionId: id, contractId, contractPath: contractRef.path,
+    });
+    tx.create(contractRef, {
+      contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId,
+      customerId: uid, productId: d.offer.productId, months: d.offer.quote.months,
+      totalPaidMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      discountPercent: d.offer.quote.discountPercent, acceptedAt: d.acceptedAt,
+      paidAt, state: 'paid_pending_activation', startsAt: null, expiresAt: null,
+      providerPaymentId: String(payment.id),
+    });
+    tx.create(subscriptionRef, {
+      schemaVersion: 1, id, storeId, buyerId: uid, buyerEmail: d.buyerEmail,
+      ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId,
+      productId: d.offer.productId, productName: d.offer.productName,
+      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months,
+      amountMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      currency: 'BRL', saleModality: d.offer.saleModality,
+      provider: 'mercado_pago', providerSubscriptionId: '',
+      providerStatus: 'authorized', state: 'paid_pending_activation',
+      credentialScopeId: 'kyrub_platform_billing', externalAccountId: d.collectorId,
+      externalReference: reference(d.checkoutId), providerPaymentId: String(payment.id),
+      providerPaymentStatus: 'approved', providerPaymentStatusDetail: 'accredited',
+      providerPaymentOccurredAt: paidAt, paymentConfirmedAt: paidAt,
+      createdAt: paidAt, updatedAt: paidAt, activatedAt: null,
+      startsAt: null, expiresAt: null, initialContractId: contractId,
+      billingAuthority: 'platform',
+    });
+    tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), {
+      contractId, storeId, subscriptionId: id, buyerId: uid,
+      productId: d.offer.productId, startsAt: null, expiresAt: null,
+      providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor,
+      state: 'paid_pending_activation',
+    });
+    tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
+    applyStoreEconomicLedgerPaymentPlan(tx, finance);
+    tx.set(slot, {
+      checkoutReservationStatus: 'paid_pending_activation', collectionMode: 'prepaid',
+      officialPixCheckoutId: d.checkoutId, providerPaymentId: String(payment.id),
+      providerStatus: 'authorized', updatedAt: paidAt,
+    }, { merge: true });
+    tx.update(checkout, {
+      status: 'paid_pending_activation', subscriptionId: id, contractId,
+      startsAt: null, contractExpiresAt: null, effectsStatus: 'pending',
+    });
+  });
+  // Read after the transaction: a concurrent store activation may have
+  // advanced this same contract while the provider callback was running.
+  const settled = await checkoutRef(d.checkoutId).get();
+  if (settled.get('status') === 'activated') {
+    return { state: 'activated', subscriptionId: id, contractId,
+      startsAt: settled.get('startsAt'), expiresAt: settled.get('contractExpiresAt') };
+  }
+  return { state: 'paid_pending_activation', subscriptionId: id, contractId,
+    startsAt: null, expiresAt: null };
+}
+
+/**
+ * Called by the authoritative store-activation backend after canonical store
+ * creation has committed. Never call this from the Renda navigation button.
+ * The buyer is determined by the canonical store owner, not client input.
+ */
+export async function activatePendingOfficialPlanForStore(input: {
+  buyerUid: string; canonicalStoreId: string; activatedAt: string;
+}) {
+  const requestedActivation = Date.parse(input.activatedAt);
+  if (!valid(input.buyerUid) || !valid(input.canonicalStoreId) ||
+      !Number.isFinite(requestedActivation) ||
+      requestedActivation > Date.now()) {
+    throw Error('OFFICIAL_PLAN_INVALID_ACTIVATION');
+  }
+  const slot = slotRef(input.buyerUid);
+  const currentSlot = await slot.get();
+  const reservationStatus = currentSlot.get('checkoutReservationStatus');
+  if (reservationStatus !== 'paid_pending_activation' && reservationStatus !== 'complete') {
+    return { state: 'no_pending_contract' };
+  }
+  const checkoutId = currentSlot.get('officialPixCheckoutId');
+  if (typeof checkoutId !== 'string') throw Error('OFFICIAL_PLAN_PENDING_CHECKOUT_MISSING');
+  checkId(checkoutId);
+  const checkout = checkoutRef(checkoutId);
+  const outcome = await adminDb.runTransaction(async tx => {
+    const store = adminDb.doc(`stores/${input.canonicalStoreId}`);
+    const privateStore = adminDb.doc(`users/${input.buyerUid}/stores/${input.buyerUid}`);
+    const [storeDoc, privateDoc, slotDoc, checkoutDoc, entitlementDoc] = await Promise.all([
+      tx.get(store), tx.get(privateStore), tx.get(slot), tx.get(checkout),
+      tx.get(entitlementRef(input.buyerUid)),
+    ]);
+    if (storeDoc.get('ownerId') !== input.buyerUid || !privateDoc.exists ||
+        privateDoc.get('canonicalStoreId') !== input.canonicalStoreId ||
+        (storeDoc.get('legacyTenantId') && storeDoc.get('legacyTenantId') !== input.buyerUid)) {
+      throw Error('OFFICIAL_PLAN_STORE_IDENTITY_CONFLICT');
+    }
+    // The activation instant must be recorded by the trusted store backend.
+    // A caller-provided date alone must never start a paid contract.
+    const persistedActivation = storeDoc.get('activatedAt');
+    const persistedActivationIso = typeof persistedActivation === 'string'
+      ? persistedActivation
+      : persistedActivation?.toDate?.()?.toISOString();
+    if (!persistedActivationIso ||
+        Date.parse(persistedActivationIso) !== requestedActivation) {
+      throw Error('OFFICIAL_PLAN_STORE_ACTIVATION_NOT_VERIFIED');
+    }
+    const d = checkoutDoc.data();
+    const transactionalReservationStatus = slotDoc.get('checkoutReservationStatus');
+    if (transactionalReservationStatus === 'complete' && d?.status === 'activated' &&
+        d.buyerId === input.buyerUid &&
+        slotDoc.get('officialPixCheckoutId') === checkoutId &&
+        d.buyerStoreProvisioningRequired === true &&
+        d.effectsStatus === 'pending' &&
+        typeof d.subscriptionId === 'string' && valid(d.subscriptionId)) {
+      return { state: 'activated' as const, subscriptionId: d.subscriptionId,
+        contractId: d.contractId, startsAt: d.startsAt,
+        expiresAt: d.contractExpiresAt, storeId: d.offer.storeId };
+    }
+    if (transactionalReservationStatus !== 'paid_pending_activation') {
+      return { state: 'no_pending_contract' as const };
+    }
+    if (!d || d.buyerId !== input.buyerUid ||
+        slotDoc.get('officialPixCheckoutId') !== checkoutId ||
+        d.status !== 'paid_pending_activation' ||
+        !d.buyerStoreProvisioningRequired || d.buyerStoreId !== null ||
+        liveEntitlement(entitlementDoc.data())) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_CONFLICT');
+    }
+    const contractId = d.contractId, subscriptionId = d.subscriptionId;
+    if (!valid(contractId) || !valid(subscriptionId)) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_MISSING');
+    }
+    const root = `stores/${d.offer.storeId}`;
+    const contract = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
+    const subscription = adminDb.doc(`${root}/subscriptions/${subscriptionId}`);
+    const period = subscription.collection('prepaidPeriods').doc(contractId);
+    const [contractDoc, subscriptionDoc, periodDoc] = await Promise.all([
+      tx.get(contract), tx.get(subscription), tx.get(period),
+    ]);
+    if (contractDoc.get('state') !== 'paid_pending_activation' ||
+        subscriptionDoc.get('state') !== 'paid_pending_activation' ||
+        periodDoc.get('state') !== 'paid_pending_activation' ||
+        contractDoc.get('customerId') !== input.buyerUid ||
+        subscriptionDoc.get('buyerId') !== input.buyerUid) {
+      throw Error('OFFICIAL_PLAN_PENDING_CONTRACT_CONFLICT');
+    }
+    const schedule = activatePaidOfficialPlan({
+      schedule: {
+        state: 'paid_pending_activation',
+        paidAt: contractDoc.get('paidAt'),
+        startsAt: null, expiresAt: null,
+      },
+      activatedAt: input.activatedAt,
+      months: d.offer.quote.months,
+    });
+    const startsAt = schedule.startsAt!, expiresAt = schedule.expiresAt!;
+    tx.update(contract, { state: 'active', startsAt, expiresAt,
+      buyerStoreId: input.canonicalStoreId, activatedAt: startsAt });
+    tx.update(subscription, { state: 'active', startsAt, expiresAt,
+      activatedAt: startsAt, buyerStoreId: input.canonicalStoreId, updatedAt: startsAt });
+    tx.update(period, { state: 'paid', startsAt, expiresAt });
+    writePlanMirrors(tx, input.buyerUid, input.canonicalStoreId,
+      d.offer.plan, FieldValue.serverTimestamp());
+    tx.set(entitlementRef(input.buyerUid), {
+      schemaVersion: 2, storeId: input.buyerUid, ownerId: input.buyerUid,
+      plan: d.offer.plan, planVersion: d.offer.planVersion,
+      source: 'subscription', status: 'active',
+      benefitStartsAt: startsAt, benefitEndsAt: expiresAt,
+      provider: 'mercado-pago', providerPaymentId: d.providerPaymentId,
+      officialPixCheckoutId: checkoutId, updatedAt: FieldValue.serverTimestamp(),
+    });
+    tx.set(slot, { checkoutReservationStatus: 'complete', expiresAt,
+      updatedAt: startsAt }, { merge: true });
+    tx.update(checkout, { status: 'activated', startsAt,
+      contractExpiresAt: expiresAt, effectsStatus: 'pending' });
+    return { state: 'activated' as const, subscriptionId, contractId,
+      startsAt, expiresAt, storeId: d.offer.storeId };
+  });
+  if (outcome.state === 'activated') {
+    const activationCheckout = (await checkout.get()).data();
+    if (!activationCheckout || activationCheckout.buyerId !== input.buyerUid ||
+        activationCheckout.status !== 'activated') {
+      throw Error('OFFICIAL_PLAN_ACTIVATION_EFFECTS_CONFLICT');
+    }
+    const rewards = activationCheckout.offer?.rewards;
+    if (Number.isInteger(rewards?.xp) && rewards.xp > 0) {
+      await persistVerifiedKyrubXp({
+        userId: input.buyerUid, sourceType: 'achievement',
+        sourceId: activationCheckout.offer.productId,
+        deltaXp: rewards.xp, correlationId: checkoutId,
+        idempotencyKey: `official_${checkoutId}`,
+        occurredAt: activationCheckout.startsAt,
+      });
+    }
+    const achievement = rewards?.achievement;
+    if (achievement) await adminDb.runTransaction(async tx => {
+      const ref = adminDb.doc(`users/${input.buyerUid}/achievements/${achievement.id}`);
+      const existing = await tx.get(ref);
+      if (existing.exists) {
+        if (existing.get('userId') !== input.buyerUid) {
+          throw Error('OFFICIAL_PIX_ACHIEVEMENT_CONFLICT');
+        }
+        return;
+      }
+      tx.create(ref, {
+        ...achievement, userId: input.buyerUid,
+        sourceType: 'official_plan_purchase',
+        sourceId: activationCheckout.offer.productId,
+        checkoutId, providerPaymentId: activationCheckout.providerPaymentId,
+        occurredAt: activationCheckout.startsAt,
+      });
+    });
+    await reconcilePaidSubscriberIntoCrm(outcome.storeId, input.buyerUid);
+    await reconcileStoreSubscriptionBenefitCycle(outcome.storeId, outcome.subscriptionId);
+    await checkout.update({ effectsStatus: 'complete' });
+  }
+  return outcome;
+}
+
 async function materialize(d: any, payment: any) {
   const approvedAt = typeof payment.date_approved === 'string' ? Date.parse(payment.date_approved) : NaN;
   if (payment.status_detail !== 'accredited' || !Number.isFinite(approvedAt) || !Number.isFinite(Date.parse(d.acceptedAt)) || approvedAt < Date.parse(d.acceptedAt)) throw Error('OFFICIAL_PIX_PAYMENT_NOT_CONFIRMED');
-  const startsAt = new Date(approvedAt).toISOString(), expiresAt = addMonthsUtc(startsAt, d.offer.quote.months);
+  const schedule = scheduleOfficialPlanFromConfirmedPayment({ paidAt: new Date(approvedAt).toISOString(), months: d.offer.quote.months });
+  const startsAt = schedule.startsAt!, expiresAt = schedule.expiresAt!;
   const storeId = d.offer.storeId, uid = d.buyerId, id = `official_${d.checkoutId}`, contractId = `official-${d.checkoutId}`;
   const root = `stores/${storeId}`, subscriptionRef = adminDb.doc(`${root}/subscriptions/${id}`);
   const contractRef = adminDb.doc(`${root}/prepaidSubscriptionContracts/${contractId}`);
@@ -219,7 +531,8 @@ async function materialize(d: any, payment: any) {
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId);
     const [current, binding, slot, buyerStore, entitlement, existingContract, existingSubscription, seller] = await Promise.all([
-      tx.get(r), tx.get(bindingRef), tx.get(slotRef(uid)), tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)), tx.get(entitlementRef(uid)),
+      tx.get(r), tx.get(bindingRef), tx.get(slotRef(uid)),
+      d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null), tx.get(entitlementRef(uid)),
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
     ]);
     if (current.get('providerPaymentId') !== String(payment.id) || current.get('offerDigest') !== digest(d.offer) ||
@@ -231,7 +544,12 @@ async function materialize(d: any, payment: any) {
         existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
       return;
     }
-    if (slot.get('officialPixCheckoutId') !== d.checkoutId || buyerStore.get('ownerId') !== uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+    if (slot.get('officialPixCheckoutId') !== d.checkoutId ||
+      slot.get('checkoutReservationStatus') !== 'pending' ||
+      !['bound', 'in_flight', 'outcome_unknown'].includes(current.get('status')) ||
+      (d.buyerStoreId ? buyerStore?.get('ownerId') !== uid : d.buyerStoreProvisioningRequired !== true) ||
+      seller.get('ownerId') !== d.offer.ownerUserId ||
+      existingContract.exists || existingSubscription.exists ||
       liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVATION_CONFLICT');
     const finance = await prepareStoreEconomicLedgerConfirmedCapture({ transaction: tx, payment: canonical, paymentIntentId: d.checkoutId });
     // All reads precede writes. The immutable provider binding gates every commercial effect.
@@ -255,7 +573,7 @@ async function materialize(d: any, payment: any) {
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
     applyStoreEconomicLedgerPaymentPlan(tx, finance);
     if (pointEntry) tx.create(adminDb.doc(`${root}/storePointLedger/${Buffer.from(pointEntry.id).toString('base64url')}`), pointEntry);
-    writePlanMirrors(tx, uid, d.buyerStoreId, d.offer.plan, FieldValue.serverTimestamp());
+    writePlanMirrors(tx, uid, d.buyerStoreId ?? null, d.offer.plan, FieldValue.serverTimestamp());
     tx.set(entitlementRef(uid), { schemaVersion: 2, storeId: uid, ownerId: uid, plan: d.offer.plan,
       planVersion: d.offer.planVersion, source: 'subscription', status: 'active', benefitStartsAt: startsAt, benefitEndsAt: expiresAt,
       provider: 'mercado_pago', providerPaymentId: String(payment.id), officialPixCheckoutId: d.checkoutId, updatedAt: FieldValue.serverTimestamp() });
@@ -302,13 +620,22 @@ async function reconcileLoaded(d: any, candidateId?: string) {
   validatePayment(payment, d);
   if (String(payment.id) !== paymentId) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
   await bind(d, paymentId);
-  if (payment.status === 'approved') return materialize({ ...d, providerPaymentId: paymentId }, payment);
-  if (d.status === 'activated') throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+  if (payment.status === 'approved') {
+    const verified = { ...d, providerPaymentId: paymentId };
+    // Existing legacy pending contracts retain their original reconciliation path.
+    // New launch checkouts always start their term at the provider's approved timestamp.
+    return d.status === 'paid_pending_activation'
+      ? materializePendingStoreActivation(verified, payment)
+      : materialize(verified, payment);
+  }
+  if (['activated', 'paid_pending_activation'].includes(d.status)) throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
   if (['rejected', 'cancelled'].includes(payment.status)) {
     await adminDb.runTransaction(async tx => {
       const r = checkoutRef(d.checkoutId), slot = slotRef(d.buyerId);
       const [current, lock] = await Promise.all([tx.get(r), tx.get(slot)]);
-      if (current.get('status') === 'activated') throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+      if (['activated', 'paid_pending_activation'].includes(current.get('status'))) {
+        throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
+      }
       tx.update(r, { status: 'rejected', providerPaymentId: paymentId });
       if (lock.get('officialPixCheckoutId') === d.checkoutId) tx.set(slot, { checkoutReservationStatus: 'closed', providerStatus: 'cancelled' }, { merge: true });
     });
@@ -329,7 +656,7 @@ export async function handleOfficialPlanPixWebhook(input: { headers: Record<stri
   verifyOfficialPlanPixSignature(input.headers, input.dataId); checkId(input.checkoutId);
   if (!/^\d{1,32}$/.test(input.dataId)) throw Error('OFFICIAL_PIX_INVALID_PAYMENT');
   const d = (await checkoutRef(input.checkoutId).get()).data();
-  if (!d || !['in_flight', 'outcome_unknown', 'bound', 'activated'].includes(d.status)) return { processed: false };
+  if (!d || !['in_flight', 'outcome_unknown', 'bound', 'activated', 'paid_pending_activation'].includes(d.status)) return { processed: false };
   if (d.providerPaymentId && d.providerPaymentId !== input.dataId) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
   return { processed: true, ...await reconcileLoaded(d, input.dataId) };
 }

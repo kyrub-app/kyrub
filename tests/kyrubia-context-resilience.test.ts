@@ -33,7 +33,7 @@ test('store verification is bounded and never leaves activation entry blocked fo
   assert.match(renda, /STORE_CHECK_TIMEOUT_MS = 4_000/);
   assert.match(renda, /window\.setTimeout/);
   assert.match(renda, /setIsCheckingStore\(false\)/);
-  assert.match(renda, /'Ativar loja'/);
+  assert.match(renda, /'Criar minha loja'/);
   assert.match(renda, /'Acessar loja'/);
 });
 

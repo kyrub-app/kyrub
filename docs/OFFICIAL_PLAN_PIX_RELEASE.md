@@ -1,5 +1,107 @@
 # Official Pro/Business Pix release
 
+## Confirmed store activation product rule — correction
+
+The **user's confirmed behavior** is: clicking **Criar minha loja** both
+creates and activates the store on **Free** when there is no valid paid
+entitlement. If the buyer already paid for Pro/Business, the same action
+creates and activates the store **on the existing paid plan**, never
+downgrading to Free or resetting the term that began at provider Pix approval.
+**Acessar loja** only opens an existing ERP; publishing a marketplace listing
+remains independent of store activation.
+
+Implementation trace (reviewed):
+- `RendaTab.openRetailerWorkspace` calls `POST /api/plan-control?op=store.free.ensure`
+  and opens the ERP after HTTP 200.
+- `ensureFreePlanForStoreCreation` currently creates/updates only
+  `users/{uid}/stores/{uid}` and deliberately sets `status: 'closed'`.
+  It does not create a canonical `stores/{storeId}` record, write
+  `activatedAt`, or return an activation receipt. **Therefore the click
+  does not yet fulfill the confirmed activation requirement.**
+- `ensureCanonicalStoreForCatalog` creates/repairs a canonical record
+  only after meaningful store setup, and sets
+  `publicationStatus: 'paused'`; this catalog repair must not become an
+  implicit activation trigger.
+- Correct implementation must make **Criar minha loja** the authenticated,
+  idempotent activation command, reconcile any existing canonical identity
+  rather than inventing a second store, and commit a durable activation marker.
+  A paid entitlement must win over Free, and the payment-approved term dates
+  must remain unchanged. Activation must not publish the storefront.
+- Do not simply call `recordFirstCanonicalStoreActivation` immediately
+  after `store.free.ensure`: that helper requires a pre-existing canonical
+  store and private-to-canonical link, neither of which the current
+  provisioner guarantees. Add an integrated emulator test for the entire
+  command before exposing it in production.
+
+The previously documented requirement for a *separate* **Ativar loja** action
+was incorrect for this onboarding path. The current
+`store.free.ensure` endpoint provisions a private store record but does
+**not yet prove canonical-store activation**. The first-activation helper
+currently forbids invoking it from creation, so both implementation and
+boundary tests must be reconciled with the confirmed product rule. Do not
+mark onboarding complete merely because the Free provisioner returns 200.
+Any legacy `paid_pending_activation` reconciliation must preserve existing
+records without shifting new paid contracts' start dates.
+
+## Current release checkpoint — 10 Nov 2026
+
+**Do not treat this document's older rollout steps as proof that the release is ready.**
+PR #1110 (`codex/official-plan-preactivation-contract`) is Draft and targets
+`codex/official-plan-pix-one-buyer-pilot`, **not** `main`.
+The current PR head is ahead of `main` by more than 100 commits, including its
+parent pilot branch. Before a production merge, review the full combined diff,
+required migrations and feature flags; retargeting #1110 alone is insufficient.
+
+The no-store checkout remains **blocked for real providers** by
+`OFFICIAL_PIX_PENDING_ACTIVATION_NOT_READY`. Only an explicitly enabled
+localhost Firestore emulator with the isolated fake platform token may exercise
+the no-store POST path. Do not configure
+`KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST` in Vercel or any live environment.
+The integration test covers issuance, provider confirmation, recovery, and
+later store provisioning in isolation. Passing CI does **not** authorize
+production charging or prove the deployed production configuration.
+
+**Commercial rule:** confirmed Pix payment begins the prepaid term at the
+provider's verified approval timestamp, even if the buyer creates their store
+later. Delayed store creation must not restart or extend that term. The earlier
+paragraph below stating that a buyer must activate a Free store before paying
+is historical and is superseded by this rule, subject to completing the
+real-provider pre-store checkout before release.
+
+Integration review findings (10 Nov 2026):
+- Comparing `main` with this branch currently yields **16 changed files**, not
+  112 independent feature files. The commit count includes the stacked pilot
+  history; review the actual file diff rather than treating each commit as a
+  separate release feature.
+- Production-sensitive changes include `api/plan-control.ts`,
+  `server/payments/officialPlanPixCheckout.ts`,
+  `server/actions/freeStoreProvisioningService.ts`,
+  `server/actions/firstCanonicalStoreActivationService.ts`, and
+  `src/components/tabs/RendaTab.tsx`. The remaining changes include
+  tests, documentation, schedule helpers and test configuration.
+- `recordFirstCanonicalStoreActivation` explicitly documents that its
+  route is **not yet connected**. Its companion
+  `activateCanonicalStoreAndReconcileOfficialPlan` still invokes
+  `activatePendingOfficialPlanForStore`, which contains the older
+  `paid_pending_activation` path. Code inspection confirms
+  `reconcileLoaded` dispatches to that legacy materializer **only when
+  the checkout already has `status === 'paid_pending_activation'`**;
+  newly approved checkouts dispatch to `materialize`, which starts
+  entitlement at provider approval. Preserve legacy records and their
+  reconciliation during migration; do not delete this branch blindly.
+  Before live release, test that no newly issued checkout can enter
+  the legacy status and verify the actual activation transition.
+- Before calling the release complete, verify the actual authenticated
+  `Ativar loja` transition and paid-entitlement inheritance against the
+  deployed application; tests of isolated helpers alone are insufficient.
+
+Before enabling a live pilot, require: reviewed combined integration to
+`main`, exact-head CI and emulator checks, verified platform collector and
+webhook configuration, pre-store charge path released from its deliberate
+gate through a separately reviewed change, and an owner-approved one-buyer
+one-shot test. Never use real money to bypass incomplete engineering checks.
+
+
 This change is prepared for owner approval. Do not merge, deploy or enable real-money creation before that approval. Do not seed prices, discounts, published products or rewards on behalf of the owner.
 
 ## Integration
@@ -26,7 +128,7 @@ Set `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=true` only after approval. It appl
 
 In the Official Store ERP, create subscription products with a monthly interval and access benefit. Use the existing product editor for actual monthly price, publication status, points per purchase and optional 1/3/6/12-month contract discounts. Bind each eligible draft or published product to Pro or Business in the new official-plan panel. Configure optional purchase XP and an achievement/badge there; no reward is issued when unconfigured. Global XP configuration remains super-admin controlled. Publication remains an explicit owner action in the product editor.
 
-Paid plans are prepaid for the explicitly accepted period, with a single Pix, no installments and no automatic renewal. An active entitlement or unresolved subscription prevents a competing plan purchase; upgrades/proration are not invented. A buyer first activates their ordinary free store, as required by existing platform plan billing.
+Paid plans are prepaid for the explicitly accepted period, with a single Pix, no installments and no automatic renewal. An active entitlement or unresolved subscription prevents a competing plan purchase; upgrades/proration are not invented. Historical implementation note: the earlier flow required a Free store before purchase. PR #1110 changes the commercial rule to allow payment before store creation, but the real-provider no-store checkout is still gated pending release validation.
 
 ## Confirmation, logs and first purchase
 

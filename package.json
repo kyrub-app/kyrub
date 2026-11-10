@@ -27,7 +27,7 @@
     "test:renewal": "node --test --test-concurrency=4 --import tsx tests/subscription-contract*.test.ts tests/prepaid-subscription-contract-lifecycle.test.ts tests/prepaid-renewal*.test.ts",
     "test:prepaid-initial": "node --test --test-concurrency=4 --import tsx tests/prepaid-initial*.test.ts tests/store-subscription-prepaid-runtime.test.ts",
     "test:official-plan-pix:firestore": "node --test --import tsx tests/firestore-official-plan-pix.test.ts",
-    "test:official-plan-pix": "node --test --test-concurrency=4 --import tsx tests/official-plan-pix.test.ts tests/official-plan-pix-provider.test.ts"
+    "test:official-plan-pix": "node --test --test-concurrency=4 --import tsx tests/official-plan-pix.test.ts tests/official-plan-pix-provider.test.ts tests/first-canonical-store-activation-contract.test.ts tests/store-activation-boundary-contract.test.ts tests/official-plan-activation-lifecycle.test.ts"
   },
   "dependencies": {
     "@firebase/rules-unit-testing": "^5.0.1",
