@@ -123,6 +123,7 @@ test('Criar minha loja commits an idempotent canonical activation without publis
   assert.match(service, /adminDb\.collection\('stores'\)\.where\('ownerId', '==', uid\)/);
   assert.match(service, /ownerStores\.docs\.length > 1/);
   assert.match(service, /STORE_ACTIVATION_IDENTITY_CONFLICT/);
+  assert.match(service, /STORE_ACTIVATION_PLAN_RECONCILIATION_REQUIRED/);
   assert.match(service, /activatedAt: FieldValue\.serverTimestamp\(\)/);
   assert.match(service, /publicationStatus: 'paused'/);
   assert.match(service, /else if \(previous == null\)/);
