@@ -45,6 +45,9 @@ const PLAN_LABEL: Record<KyrubCommercialPlanId, string> = {
   business: 'Business',
 };
 
+const money = (value: number): string =>
+  value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
 const planDraft = (entry: KyrubPlanCatalogEntry): PublishAdminPlanInput => ({
   planId: entry.planId,
   monthlyPriceBRL: entry.definition.monthlyPriceBRL,
