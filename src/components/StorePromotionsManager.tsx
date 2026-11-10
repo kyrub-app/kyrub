@@ -211,7 +211,7 @@ export function StorePromotionsManager({
         `${discount} · Cupom: ${promotion.code}`,
         availability,
         `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}`,
-      ].join('\\n');
+      ].join('\n');
       const nowIso = new Date().toISOString();
       await setDoc(reference, {
         postId,
