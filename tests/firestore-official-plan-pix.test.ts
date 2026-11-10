@@ -223,3 +223,28 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 1);
   assert.equal((await db.collection('stores/official-store/subscriptions').get()).size, 1);
 });
+
+test('first Free store creation is persistent, idempotent, and not published', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  const first = await api.ensureFreePlanForStoreCreation('Bearer buyer');
+  assert.equal(first.plan, 'free');
+  assert.equal(first.created, true);
+  const canonicalRef = db.doc('stores/' + first.canonicalStoreId);
+  const firstCanonical = await canonicalRef.get();
+  assert.equal(firstCanonical.get('ownerId'), 'buyer');
+  assert.equal(firstCanonical.get('plan'), 'free');
+  assert.equal(firstCanonical.get('publicationStatus'), 'paused');
+  const firstActivation = firstCanonical.get('activatedAt')?.toDate?.()?.toISOString();
+  assert.ok(firstActivation, 'activation timestamp must be persisted at first creation');
+  const personal = await db.doc('users/buyer/stores/buyer').get();
+  assert.equal(personal.get('canonicalStoreId'), first.canonicalStoreId);
+  assert.equal(personal.get('name'), undefined, 'profile completion is not required');
+
+  const again = await api.ensureFreePlanForStoreCreation('Bearer buyer');
+  assert.equal(again.plan, 'free');
+  assert.equal(again.created, false);
+  assert.equal(again.canonicalStoreId, first.canonicalStoreId);
+  assert.equal((await canonicalRef.get()).get('activatedAt')?.toDate?.()?.toISOString(), firstActivation);
+  assert.equal((await db.collection('stores').where('ownerId', '==', 'buyer').get()).size, 1);
+  assert.equal(posts, 1, 'store creation must not issue a new provider charge');
+});
