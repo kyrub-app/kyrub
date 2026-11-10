@@ -271,7 +271,22 @@ export const preserveOfficialPlanCanonicalTerms = (
       typeof existing.description !== 'string') {
     throw new Error('Os termos canônicos do plano oficial estão inválidos; sincronização interrompida.');
   }
-  return { ...next, description: existing.description, saleModality: canonicalModality };
+  const canonicalPrice = existing.price;
+  if (typeof canonicalPrice !== 'number' || !Number.isFinite(canonicalPrice) || canonicalPrice < 0) {
+    throw new Error('O preço canônico do plano oficial está inválido; sincronização interrompida.');
+  }
+  const canonicalDiscounts = existing.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(existing.contractDiscounts);
+  if (existing.contractDiscounts !== undefined && !canonicalDiscounts) {
+    throw new Error('Os descontos canônicos do plano oficial estão inválidos; sincronização interrompida.');
+  }
+  return {
+    ...next,
+    description: existing.description,
+    saleModality: canonicalModality,
+    price: canonicalPrice,
+    ...(canonicalDiscounts ? { contractDiscounts: canonicalDiscounts } : { contractDiscounts: undefined }),
+  };
 };
 
 export const canonicalProductNeedsUpdate = (
