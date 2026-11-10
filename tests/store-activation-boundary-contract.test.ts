@@ -161,3 +161,22 @@ test('existing store opens ERP without triggering Free provisioning again', () =
   assert.match(handler, /if \(hasConfiguredStore\) \{\s*setIsGestaoOpen\(true\);\s*setGestaoRole\('retailer'\);\s*return;/);
   assert.ok(handler.indexOf('if (hasConfiguredStore)') < handler.indexOf("op=store.free.ensure"));
 });
+
+test('first store creation waits for canonical receipt and remembers identity without a name', () => {
+  const renda = read('../src/components/tabs/RendaTab.tsx');
+  const handler = renda.slice(renda.indexOf('const openRetailerWorkspace ='), renda.indexOf('\n  return (', renda.indexOf('const openRetailerWorkspace =')));
+  assert.match(handler, /activation\.canonicalStoreId/);
+  assert.match(handler, /STORE_ACTIVATION_RECEIPT_MISSING/);
+  assert.ok(handler.indexOf('STORE_ACTIVATION_RECEIPT_MISSING') < handler.lastIndexOf('setIsGestaoOpen(true)'));
+  assert.match(renda, /data\.canonicalStoreId/);
+  assert.match(handler, /setHasConfiguredStore\(true\)/);
+});
+
+test('store creation reconciles pending paid checkout after persisting activation timestamp', () => {
+  const service = read('../server/actions/freeStoreProvisioningService.ts');
+  assert.match(service, /activatePendingOfficialPlanForStore/);
+  assert.match(service, /activated\.get\('activatedAt'\)/);
+  assert.match(service, /buyerUid: uid, canonicalStoreId, activatedAt/);
+  assert.ok(service.indexOf('activateStoreAfterProvisioning(uid, provisioned.plan)') <
+    service.indexOf('await activatePendingOfficialPlanForStore('));
+});
