@@ -175,6 +175,9 @@ export function RendaTab({
         body: '{}',
       });
       if (!response.ok) throw Error('FREE_STORE_PROVISIONING_FAILED');
+      const activation = await response.json() as { canonicalStoreId?: string };
+      if (!activation.canonicalStoreId) throw Error('STORE_ACTIVATION_RECEIPT_MISSING');
+      setHasConfiguredStore(true);
       setIsGestaoOpen(true);
       setGestaoRole('retailer');
       triggerToast(
