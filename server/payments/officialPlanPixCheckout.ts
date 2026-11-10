@@ -28,7 +28,20 @@ const checkId = (value: string) => { if (!/^[a-f0-9]{64}$/.test(value)) throw Er
 const checkoutRef = (id: string) => adminDb.doc(`${ROOT}/plan_pix_checkouts/${id}`);
 const slotRef = (uid: string) => adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
 const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
+const pilotRef = () => adminDb.doc(`${ROOT}/official_plan_pix_pilot/one_shot`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
+// Fail closed whenever live creation is enabled. Pilot mode restricts issuance
+// to one authenticated user and one canonical Pro/month offer.
+const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
+const allowPilotOffer = (d: any, uid: string) => {
+  gate();
+  if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
+  if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
+  if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
+      d.offer.quote.totalMinor !== 19700) {
+    throw Error('OFFICIAL_PIX_PILOT_OFFER_FORBIDDEN');
+  }
+};
 const now = () => new Date().toISOString();
 const reference = (id: string) => `kyrub:official-plan-pix:${id}`;
 const liveEntitlement = (value: any) => {
@@ -131,7 +144,7 @@ async function bind(d: any, paymentId: string) {
 export async function checkoutOfficialPlanPix(input: { authorization: string; checkoutId: string }) {
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
-  gate();
+  allowPilotOffer(d, buyer.uid);
   if (!buyer.email || buyer.emailVerified === false || !d.acceptedAt || d.acceptedBy !== buyer.uid ||
     d.acceptedOfferDigest !== d.offerDigest || Date.parse(d.expiresAt) <= Date.now()) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
   const fresh = await offer(d.offer.storeId, d.offer.productId, d.offer.quote.months);
@@ -146,13 +159,16 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     date_of_expiration: d.expiresAt, external_reference: reference(d.checkoutId) });
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId), slot = slotRef(buyer.uid);
-    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation] = await Promise.all([
+    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
       tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
+      tx.get(pilotRef()),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
+    allowPilotOffer(d, buyer.uid);
+    if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
     if (buyerStore.get('ownerId') !== buyer.uid || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
@@ -162,12 +178,13 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       (product.get('storePointsPerUnit') ?? 0) !== d.offer.points || digest(product.get('saleModality')) !== digest(d.offer.saleModality) ||
       digest(resolveSubscriptionContractQuote({ persistedSaleModality: product.get('saleModality'), authoritativeMonthlyPriceMinor: d.offer.priceMinor,
         persistedOffers: product.get('contractDiscounts'), selectedMonths: d.offer.quote.months, paymentTerms: { collectionMode: 'prepaid', installments: 1 } })) !== digest(d.offer.quote)) throw Error('OFFICIAL_PIX_OFFER_CHANGED');
+    tx.create(pilotRef(), { checkoutId: d.checkoutId, buyerId: buyer.uid, consumedAt: now() });
     tx.set(slot, { checkoutReservationStatus: 'pending', officialPixCheckoutId: d.checkoutId, collectionMode: 'prepaid', updatedAt: now() }, { merge: true });
     tx.update(r, { status: 'in_flight', collectorId, requestBody: body, requestDigest: hash(body), buyerEmail: buyer.email });
   });
   try {
-    gate();
     if (await officialPlanPixAccount() !== collectorId) throw Error('OFFICIAL_PIX_ACCOUNT_CHANGED');
+    allowPilotOffer(d, buyer.uid);
     const payment = await officialPlanPixRequest('/v1/payments', { method: 'POST', body,
       headers: { 'X-Idempotency-Key': `official-plan-${d.checkoutId}` } });
     const bound = { ...d, collectorId, requestDigest: hash(body) };

@@ -103,13 +103,15 @@ beforeEach(() => {
   posts = 0; payments = new Map(); lost = false; failCrm = false; beforeResponse = null; collector = '42'; queue = Promise.resolve();
   delete process.env.VERCEL_ENV;
   process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
   docs = new Map([
     ['kyrub_admin/official_store', { canonicalStoreId: 'official' }],
     ['stores/official', { ownerId: 'platform-owner', legacyTenantId: 'platform-owner' }],
     ['stores/buyer-store', { ownerId: 'buyer', legacyTenantId: 'buyer', plan: 'free' }],
     ['users/buyer/stores/buyer', { plan: 'free' }],
     ['users/buyer', { displayName: 'Buyer' }],
-    ['stores/official/products/pro-product', { name: 'Kyrub Pro', price: 20, publicationStatus: 'published', saleModality: modality, storePointsPerUnit: 7,
+    ['stores/official/products/pro-product', { name: 'Kyrub Pro', price: 197, publicationStatus: 'published', saleModality: modality, storePointsPerUnit: 7,
       contractDiscounts: [{ months: 1, discountPercent: 0 }, { months: 3, discountPercent: 10 }] }],
     [`${ROOT}/official_plan_products/pro-product`, { productId: 'pro-product', planId: 'pro', status: 'active', canonicalStoreId: 'official',
       rewards: { xp: 12, achievement: { id: 'member', title: 'Member', description: 'Paid membership', badgeId: 'member-badge' } } }],
@@ -147,7 +149,7 @@ test('monthly platform Pix activates canonical contract, access, CRM, finance, c
 });
 
 test('lost POST response is recovered by reference without sending a second payment', async () => {
-  const q = await accepted(3); assert.equal(q.quote.totalMinor, 5400);
+  const q = await accepted(); assert.equal(q.quote.totalMinor, 19700);
   lost = true;
   assert.equal((await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId })).state, 'recovery_required');
   assert.equal((await reconcile(q.checkoutId)).state, 'awaiting_payment');
@@ -185,11 +187,11 @@ test('rejects catalog drift, buyer substitution, unsigned webhook and mismatched
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'other', checkoutId: q.checkoutId }), /FORBIDDEN/);
   docs.get('stores/official/products/pro-product').price = 21;
   await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /OFFER_CHANGED/); assert.equal(posts, 0);
-  docs.get('stores/official/products/pro-product').price = 20;
+  docs.get('stores/official/products/pro-product').price = 197;
   await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }); approve();
   await assert.rejects(webhook(q.checkoutId, 'invalid'), /SIGNATURE/);
   const original = copy(payments.get('1'));
-  for (const patch of [{ collector_id: 'other' }, { transaction_amount: 19 }, { external_reference: 'other' }, { live_mode: false }, { transaction_amount_refunded: 1 }, { status_detail: 'pending' }, { date_approved: 'invalid' }]) {
+  for (const patch of [{ collector_id: 'other' }, { transaction_amount: 196 }, { external_reference: 'other' }, { live_mode: false }, { transaction_amount_refunded: 1 }, { status_detail: 'pending' }, { date_approved: 'invalid' }]) {
     process.env.VERCEL_ENV = 'production'; payments.set('1', { ...original, ...patch }); await assert.rejects(webhook(q.checkoutId));
     assert(!docs.has(`${ROOT}/store_entitlements/buyer`));
   }
@@ -212,14 +214,49 @@ test('a globally bound provider payment cannot be materialized for another contr
   await assert.rejects(webhook(q.checkoutId), /PAYMENT_ALREADY_USED/); assert.equal(count('/economicLedger/'), 0);
 });
 
-test('Business follows configured prices and discounts; missing rewards produce no fabricated grants', async () => {
+test('Business retains configured quote but cannot be charged during pilot', async () => {
   const p = docs.get('stores/official/products/pro-product');
   p.price = 67.89; delete p.storePointsPerUnit;
   const mapping = docs.get(`${ROOT}/official_plan_products/pro-product`); mapping.planId = 'business'; delete mapping.rewards;
   const q = await accepted(3); assert.equal(q.quote.totalMinor, 18330);
-  await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }); approve();
-  const result = await webhook(q.checkoutId);
-  assert.equal(result.state, 'activated'); assert.equal(docs.get('stores/buyer-store').plan, 'business');
-  assert.equal(docs.get(`${ROOT}/store_entitlements/buyer`).planVersion, 3);
-  assert.equal(count('/xpLedger/'), 0); assert.equal(count('/storePointLedger/'), 0); assert.equal(count('/achievements/'), 0);
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
+  assert.equal(posts, 0);
+});
+
+
+
+test('pilot rejects unauthorized buyer before provider POST', async () => {
+  const q = await accepted();
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'someone-else';
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_FORBIDDEN/);
+  assert.equal(posts, 0);
+});
+
+test('pilot rejects invalid term, amount and incomplete config', async () => {
+  const q = await accepted(3);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_OFFER_FORBIDDEN/);
+  assert.equal(posts, 0);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = '';
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_FORBIDDEN/);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE;
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: q.checkoutId }), /PILOT_MODE_REQUIRED/);
+  assert.equal(posts, 0);
+});
+
+test('pilot reservation allows only one provider POST even after payment rejection', async () => {
+  // Fresh canonical Pro/month quote.
+  const first = await api.quoteOfficialPlanPix({ authorization: 'buyer', storeId: 'official', productId: 'pro-product', selectedMonths: 1 });
+  await api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId, acceptedTotalMinor: first.quote.totalMinor });
+  const pending = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: first.checkoutId });
+  assert.equal(pending.state, 'awaiting_payment');
+  assert.equal(posts, 1);
+  payments.get('1').status = 'rejected';
+  assert.equal((await reconcile(first.checkoutId)).state, 'rejected');
+  const next = await accepted();
+  await assert.rejects(api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: next.checkoutId }), /PILOT_ALREADY_USED/);
+  assert.equal(posts, 1);
 });

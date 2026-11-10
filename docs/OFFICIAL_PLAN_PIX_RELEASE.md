@@ -41,3 +41,19 @@ The owner performs the first live purchase. Check approved/accredited evidence f
 ## Rollback
 
 First disable new creation with `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=false` and ensure the serving deployment receives it. Keep status and signed webhook reconciliation running for in-flight payments. The kill switch does not prevent already paid contracts from materializing or retrying missing projections. Do not revert/remove the handler while unresolved provider payments exist. Preserve immutable contracts, global bindings, receipts and rewards; never delete ledger records to reset a test. Only roll back to the previous commit after reconciling in-flight payments and assessing any required compensating entries through the existing governed financial workflows.
+
+
+## One-buyer, one-emission live pilot (pending approval)
+
+Pilot code is restricted to one official Kyrub Pro, 1 month, BRL 197.00. The server refuses live creation unless **all** production deployment settings are explicit:
+- `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=true`
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE=true`
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID=<verified Firebase Auth UID of the approved test buyer>`
+
+Never set these until exact deployment, approval and security tests are confirmed. A missing or invalid buyer UID fails closed. Every issuing request authenticates its buyer and checks the offer before transaction reservation and again before provider POST. No buyer-controlled request field selects the pilot UID.
+
+The Firestore document `kyrub_admin/control_plane/official_plan_pix_pilot/one_shot` is atomically **created once** alongside the buyer payment slot and the request snapshot, before a provider call. Once present, it is never deleted automatically, even if the provider rejects or the payment expires; this pilot does not authorize another charge. An in-flight checkout is recovered via the original provider reference, webhook and reconciliation, without creating a fresh payment.
+
+Important: do not reset the one-shot document to retry a charge. If the single live attempt cannot prove settlement, separately investigate that precise transaction before deciding on a new controlled pilot. Turning the checkout gate off must not shut down existing payment status, webhooks or reconciliation. The pilot configuration must be removed or switched off and the change must reach the live deployment; Vercel variable changes alone may not alter a currently serving deployment.
+
+Before any deployment, require CI and dedicated emulator concurrency checks on exact PR head. Verify one eligible buyer is allowed in the isolated test, another buyer fails before provider POST, other plan terms/amounts fail, missing config fails, repeated submissions yield only one provider POST, and webhooks still reconcile after the creation gate closes. Do not merge or deploy this PR without separate authorization. General commercial rollout requires a separate reviewed change to remove pilot-only restrictions.
