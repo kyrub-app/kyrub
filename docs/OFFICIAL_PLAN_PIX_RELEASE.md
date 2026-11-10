@@ -25,6 +25,28 @@ paragraph below stating that a buyer must activate a Free store before paying
 is historical and is superseded by this rule, subject to completing the
 real-provider pre-store checkout before release.
 
+Integration review findings (10 Nov 2026):
+- Comparing `main` with this branch currently yields **16 changed files**, not
+  112 independent feature files. The commit count includes the stacked pilot
+  history; review the actual file diff rather than treating each commit as a
+  separate release feature.
+- Production-sensitive changes include `api/plan-control.ts`,
+  `server/payments/officialPlanPixCheckout.ts`,
+  `server/actions/freeStoreProvisioningService.ts`,
+  `server/actions/firstCanonicalStoreActivationService.ts`, and
+  `src/components/tabs/RendaTab.tsx`. The remaining changes include
+  tests, documentation, schedule helpers and test configuration.
+- `recordFirstCanonicalStoreActivation` explicitly documents that its
+  route is **not yet connected**. Its companion
+  `activateCanonicalStoreAndReconcileOfficialPlan` still invokes
+  `activatePendingOfficialPlanForStore`, which contains the older
+  `paid_pending_activation` path. This is a migration/cleanup review
+  item: the new Pix flow starts entitlement at `paidAt` and must never
+  depend on this older store-activation path.
+- Before calling the release complete, verify the actual authenticated
+  `Ativar loja` transition and paid-entitlement inheritance against the
+  deployed application; tests of isolated helpers alone are insufficient.
+
 Before enabling a live pilot, require: reviewed combined integration to
 `main`, exact-head CI and emulator checks, verified platform collector and
 webhook configuration, pre-store charge path released from its deliberate
