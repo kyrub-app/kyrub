@@ -118,14 +118,14 @@ export const describeKyrubCommercialPlansForAi = (): string => {
   const business = KYRUB_COMMERCIAL_PLANS_V1.business;
 
   return [
-    'Referência comercial V1 dos planos Kyrub:',
-    `Free: ${formatKyrubPlanMonthlyPrice(free.monthlyPriceBRL)}/mês; ${free.catalogLimitLabel}; comissão de referência de ${free.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
-    `Pro: ${formatKyrubPlanMonthlyPrice(pro.monthlyPriceBRL)}/mês; ${pro.catalogLimitLabel}; comissão de referência de ${pro.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
-    `Business: ${formatKyrubPlanMonthlyPrice(business.monthlyPriceBRL)}/mês; ${business.catalogLimitLabel}; comissão de referência de ${business.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub; ${business.positioning}.`,
+    'Referência de capacidades e benefícios dos planos Kyrub (preços exclusivamente na Loja Oficial):',
+    `Free: gratuito; ${free.catalogLimitLabel}; comissão de referência de ${free.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
+    `Pro: preço vigente disponível exclusivamente no produto da Loja Oficial; ${pro.catalogLimitLabel}; comissão de referência de ${pro.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub.`,
+    `Business: preço vigente disponível exclusivamente no produto da Loja Oficial; ${business.catalogLimitLabel}; comissão de referência de ${business.marketplaceOriginatedSaleCommissionPercent}% somente em vendas originadas/intermediadas pelo Kyrub; ${business.positioning}.`,
     'Operações locais e determinísticas da Kyrubia não possuem franquia mensal de créditos de IA.',
     'Respostas generativas podem utilizar uma LLM externa conectada pelo usuário, conforme condições do provedor.',
     'Faturamento total não é trava automática de plano. A Kyrubia recomenda o menor plano suficiente.',
-    'A contratação/checkout de Pro e Business ainda não está conectada ao fluxo executável do Kyrub.',
+    'Pro e Business são comercializados exclusivamente por produtos da Loja Oficial no Marketplace Kyrub; não informe preços a partir desta referência V1.',
     KYRUB_COMMERCIAL_PLAN_REFERENCE_NOTICE,
   ].join(' ');
 };
