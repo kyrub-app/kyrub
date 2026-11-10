@@ -81,7 +81,14 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   }
   const { activatePendingOfficialPlanForStore } = await import('../payments/officialPlanPixCheckout.js');
   await activatePendingOfficialPlanForStore({ buyerUid: uid, canonicalStoreId, activatedAt });
-  return { ...provisioned, canonicalStoreId };
+  // Pending pre-store Pix may have upgraded Free to Pro/Business during
+  // reconciliation. Return the committed plan, not the earlier snapshot.
+  const finalStore = await adminDb.doc(`stores/${canonicalStoreId}`).get();
+  const finalPlan = finalStore.get('plan');
+  if (finalPlan !== 'free' && finalPlan !== 'pro' && finalPlan !== 'business') {
+    throw Error('STORE_ACTIVATION_INVALID_PLAN');
+  }
+  return { ...provisioned, plan: finalPlan, canonicalStoreId };
 }
 
 /**
