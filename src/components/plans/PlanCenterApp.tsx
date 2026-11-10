@@ -44,7 +44,6 @@ import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 type PlanView = {
   id: KyrubCommercialPlanId;
   name: string;
-  price: number;
   catalogLimit: number | null;
   credits: number;
   commission: number;
@@ -66,7 +65,6 @@ const normalizePlan = (value: unknown): KyrubCommercialPlanId =>
 const planFromPublicEntry = (entry: KyrubActivePlanPublicEntry): PlanView => ({
   id: entry.planId,
   name: labels[entry.planId],
-  price: entry.monthlyPriceBRL,
   catalogLimit: entry.activeCatalogLimit,
   credits: entry.kyrubiaIntelligenceCredits,
   commission: entry.marketplaceOriginatedSaleCommissionPercent,
@@ -79,7 +77,6 @@ const compiledPlan = (id: KyrubCommercialPlanId): PlanView => {
   return {
     id,
     name: plan.name,
-    price: plan.monthlyPriceBRL,
     catalogLimit: plan.activeCatalogLimit,
     credits: plan.kyrubiaIntelligenceCredits,
     commission: plan.marketplaceOriginatedSaleCommissionPercent,
