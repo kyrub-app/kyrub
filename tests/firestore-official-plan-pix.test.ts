@@ -248,3 +248,18 @@ test('first Free store creation is persistent, idempotent, and not published', a
   assert.equal((await db.collection('stores').where('ownerId', '==', 'buyer').get()).size, 1);
   assert.equal(posts, 1, 'store creation must not issue a new provider charge');
 });
+
+test('simultaneous first-store clicks converge on one canonical identity', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0;
+  const results = await Promise.all(Array.from({ length: 4 }, () =>
+    api.ensureFreePlanForStoreCreation('Bearer buyer')));
+  const ids = new Set(results.map(result => result.canonicalStoreId));
+  assert.equal(ids.size, 1, 'concurrent clicks must share the same canonical identity');
+  assert(results.every(result => result.plan === 'free'));
+  assert.equal((await db.collection('stores').where('ownerId', '==', 'buyer').get()).size, 1);
+  const canonical = await db.doc('stores/' + results[0].canonicalStoreId).get();
+  assert.ok(canonical.get('activatedAt'));
+  assert.equal(canonical.get('publicationStatus'), 'paused');
+  assert.equal(posts, 0, 'store activation must never create a Pix charge');
+});
