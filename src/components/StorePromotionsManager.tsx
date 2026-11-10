@@ -186,6 +186,16 @@ export function StorePromotionsManager({
     }
     setBusy(true);
     try {
+      // Re-check server-side management authorization and current promotion state
+      // immediately before publishing, rather than trusting a stale list entry.
+      const response = await authorizedFetch(`/api/store-promotions?storeId=${encodeURIComponent(storeId)}`);
+      const payload = await readPromotionApiPayload(response, 'Não foi possível verificar a promoção.');
+      if (!response.ok) throw new Error(payload.error || 'Sem autorização para divulgar esta promoção.');
+      const current = payload.promotions?.find(item => item.id === promotion.id);
+      if (!current || !current.active || Date.parse(current.startsAt) > Date.now() || Date.parse(current.endsAt) <= Date.now()
+        || (current.maxRedemptions > 0 && current.redemptionCount >= current.maxRedemptions)) {
+        throw new Error('Cupom indisponível para divulgação.');
+      }
       // The management API above is owner-authorized. Read the public store identity,
       // never the user's personal profile, to attribute the commercial publication.
       const storeSnapshot = await getDoc(doc(db, 'stores', storeId));
@@ -200,16 +210,12 @@ export function StorePromotionsManager({
       if ((await getDoc(reference)).exists()) {
         throw new Error('Este cupom já foi compartilhado na Praça.');
       }
-      const availability = promotion.maxRedemptions > 0
-        ? `${Math.max(0, promotion.maxRedemptions - promotion.redemptionCount)} disponíveis de ${promotion.maxRedemptions}`
-        : 'Sem limite total de utilizações';
-      const discount = promotion.discountType === 'percentage'
-        ? `${promotion.discountValue}% de desconto`
-        : `R$ ${promotion.discountValue.toFixed(2)} de desconto`;
+      const discount = current.discountType === 'percentage'
+        ? `${current.discountValue}% de desconto`
+        : `R$ ${current.discountValue.toFixed(2)} de desconto`;
       const content = [
-        `🎟️ ${promotion.title}`,
-        `${discount} · Cupom: ${promotion.code}`,
-        availability,
+        `🎟️ ${current.title}`,
+        `${discount} · Cupom: ${current.code}`,
         `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}`,
       ].join('\n');
       const nowIso = new Date().toISOString();
@@ -278,7 +284,7 @@ export function StorePromotionsManager({
         <div role="dialog" aria-label="Compartilhar cupom na Praça" className="space-y-3 rounded-2xl border border-orange-500/40 bg-slate-950 p-4">
           <strong className="text-xs">Compartilhar na Praça</strong>
           <p className="text-xs text-slate-300">{sharingPromotion.title} · Cupom {sharingPromotion.code}</p>
-          <p className="text-[10px] text-slate-400">A oferta será publicada no feed público com o nome da loja. A disponibilidade exibida é a atual no momento da publicação.</p>
+          <p className="text-[10px] text-slate-400">A oferta será publicada no feed público com o nome da loja. A disponibilidade e validade continuam sendo verificadas pelo checkout; a publicação não reserva utilizações.</p>
           <div className="flex gap-2">
             <button type="button" disabled={busy} onClick={() => void shareToPraca()} className="min-h-9 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950">Confirmar publicação</button>
             <button type="button" disabled={busy} onClick={() => setSharingPromotion(null)} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[9px] font-black uppercase">Cancelar</button>
