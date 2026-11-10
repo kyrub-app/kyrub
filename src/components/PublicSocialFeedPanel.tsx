@@ -31,6 +31,41 @@ interface PublicSocialFeedPanelProps {
   ) => void;
 }
 
+function CouponAvailability({ storeId, promotionId }: { storeId: string; promotionId: string }) {
+  const [status, setStatus] = useState<{
+    active: boolean; redemptionCount: number; maxRedemptions: number; remaining: number | null;
+  } | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const response = await fetch(
+          `/api/store-promotions/public/${encodeURIComponent(storeId)}/${encodeURIComponent(promotionId)}`,
+          { cache: 'no-store' }
+        );
+        if (!response.ok) throw new Error('Coupon unavailable');
+        const payload = await response.json();
+        if (!cancelled) setStatus(payload);
+      } catch {
+        if (!cancelled) setStatus(null);
+      }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 30_000);
+    return () => { cancelled = true; clearInterval(timer); };
+  }, [storeId, promotionId]);
+
+  return (
+    <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-3 text-xs text-orange-200" aria-live="polite">
+      {!status ? 'Disponibilidade não confirmada no momento'
+        : !status.active ? 'Cupom indisponível'
+        : status.remaining === null ? `${status.redemptionCount} utilizados · Sem limite total`
+        : `${status.redemptionCount} de ${status.maxRedemptions} utilizados · ${status.remaining} disponíveis`}
+    </div>
+  );
+}
+
 function Avatar({
   src,
   name,
@@ -196,6 +231,10 @@ export function PublicSocialFeedPanel({
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
                 {post.content}
               </p>
+            )}
+
+            {post.storePromotion && (
+              <CouponAvailability storeId={post.storePromotion.storeId} promotionId={post.storePromotion.promotionId} />
             )}
 
             {post.taggedUsers && post.taggedUsers.length > 0 && (
