@@ -281,6 +281,11 @@ const resumeApprovedMarketplacePaymentIntent = async (input: {
   const payment = normalizeCanonicalPayment(
     paymentSnapshot.data() as CanonicalPayment
   );
+  // The persisted intent is the billing authority; the operational order can
+  // be an old or incomplete mirror, so validate both independently.
+  if (intent.context === 'marketplace') {
+    await assertNotOfficialPlanItems(intent.orderDraft.items.map(item => item.productId));
+  }
   if (
     intent.context !== 'marketplace' ||
     intent.storeId !== input.storeId ||
