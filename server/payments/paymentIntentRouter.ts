@@ -255,6 +255,8 @@ const resumeApprovedMarketplacePaymentIntent = async (input: {
   ) {
     throw new Error('CHECKOUT_ORDER_NOT_OWNED');
   }
+  const orderItems = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
+  await assertNotOfficialPlanItems(orderItems.map(item => clean(item.productId)).filter(Boolean));
   const status = clean(order.status);
   if (status === 'pending') throw new Error('CHECKOUT_ORDER_APPROVAL_REQUIRED');
   if (status !== 'accepted') throw new Error('CHECKOUT_ORDER_NOT_PAYABLE');
@@ -308,6 +310,9 @@ export const mapMarketplaceCheckoutError = (
   }
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
     return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
+  }
+  if (message === 'CHECKOUT_OFFICIAL_PLAN_REQUIRES_OFFICIAL_FLOW') {
+    return { status: 409, body: { error: 'Planos Kyrub devem ser contratados exclusivamente pelo checkout da Loja Oficial.' } };
   }
   if (message === 'CHECKOUT_PRODUCT_NOT_AVAILABLE') {
     return {
@@ -608,6 +613,7 @@ export const createPaymentIntentRouter = (): Router => {
       if (!storeId || !couponCode) throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
       const items = parseCheckoutItems(body.items);
       const catalog = await loadPublishedCatalog(storeId);
+      await assertNotOfficialPlanItems(items.map(item => item.productId));
       const intentItems = buildIntentItems(catalog, items);
       const resolved = await resolveStorePromotionForCheckout({
         storeId,
