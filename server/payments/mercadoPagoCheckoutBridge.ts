@@ -1,3 +1,4 @@
+import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   normalizeCanonicalPaymentIntent,
@@ -120,6 +121,12 @@ export const attachMercadoPagoPixToExistingIntent = async (input: {
   const payment = normalizeCanonicalPayment(paymentSnapshot.data() as CanonicalPayment);
   assertMarketplaceCheckoutContext(intent, payment);
   if (intent.status !== 'pending' || payment.status !== 'pending') throw new Error('CHECKOUT_PAYMENT_NOT_PENDING');
+
+  // Guard also applies to already persisted intents and approved-order retries.
+  // Do not rely on the public catalog or the official Pix feature flag here.
+  await assertNoOfficialPlanProducts(intent.orderDraft.items.map(item => item.productId), async id =>
+    (await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()).exists
+  );
 
   const orderRef = adminDb.doc(operationalOrderPath(intent.storeId, intent.target.orderId));
   const orderSnapshot = await orderRef.get();

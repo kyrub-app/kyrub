@@ -1,3 +1,4 @@
+import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
@@ -181,6 +182,11 @@ const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> 
   return catalogProducts(tenant?.publicProducts);
 };
 
+const assertNotOfficialPlanItems = (ids: string[]) =>
+  assertNoOfficialPlanProducts(ids, async id =>
+    (await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()).exists
+  );
+
 const buildIntentItems = (
   catalog: CatalogProduct[],
   items: MarketplaceCheckoutItemInput[]
@@ -243,6 +249,8 @@ const resumeApprovedMarketplacePaymentIntent = async (input: {
   ) {
     throw new Error('CHECKOUT_ORDER_NOT_OWNED');
   }
+  const orderItems = Array.isArray(order.items) ? order.items as Record<string, unknown>[] : [];
+  await assertNotOfficialPlanItems(orderItems.map(item => clean(item.productId)).filter(Boolean));
   const status = clean(order.status);
   if (status === 'pending') throw new Error('CHECKOUT_ORDER_APPROVAL_REQUIRED');
   if (status !== 'accepted') throw new Error('CHECKOUT_ORDER_NOT_PAYABLE');
@@ -267,6 +275,11 @@ const resumeApprovedMarketplacePaymentIntent = async (input: {
   const payment = normalizeCanonicalPayment(
     paymentSnapshot.data() as CanonicalPayment
   );
+  // The persisted intent is the billing authority; the operational order can
+  // be an old or incomplete mirror, so validate both independently.
+  if (intent.context === 'marketplace') {
+    await assertNotOfficialPlanItems(intent.orderDraft.items.map(item => item.productId));
+  }
   if (
     intent.context !== 'marketplace' ||
     intent.storeId !== input.storeId ||
@@ -296,6 +309,9 @@ export const mapMarketplaceCheckoutError = (
   }
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
     return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
+  }
+  if (message === 'CHECKOUT_OFFICIAL_PLAN_REQUIRES_OFFICIAL_FLOW') {
+    return { status: 409, body: { error: 'Planos Kyrub devem ser contratados exclusivamente pelo checkout da Loja Oficial.' } };
   }
   if (message === 'CHECKOUT_PRODUCT_NOT_AVAILABLE') {
     return {
@@ -405,6 +421,7 @@ export const createMarketplacePaymentIntent = async (
 
   const input = parseCheckout(body);
   const catalog = await loadPublishedCatalog(input.storeId);
+  await assertNotOfficialPlanItems(input.items.map(item => item.productId));
   const intentItems = buildIntentItems(catalog, input.items);
   const subtotal = Number(
     intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
@@ -595,6 +612,7 @@ export const createPaymentIntentRouter = (): Router => {
       if (!storeId || !couponCode) throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
       const items = parseCheckoutItems(body.items);
       const catalog = await loadPublishedCatalog(storeId);
+      await assertNotOfficialPlanItems(items.map(item => item.productId));
       const intentItems = buildIntentItems(catalog, items);
       const resolved = await resolveStorePromotionForCheckout({
         storeId,
