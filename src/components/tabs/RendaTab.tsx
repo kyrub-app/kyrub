@@ -39,11 +39,16 @@ const STORE_CHECK_TIMEOUT_MS = 4_000;
 
 const hasMeaningfulStoreProfile = (
   data: Record<string, unknown>
-): boolean =>
-  ['name', 'slug', 'description', 'address'].some(field => {
+): boolean => {
+  // The first authenticated Create my store action creates the canonical
+  // identity before any name or profile fields have been filled out.
+  const canonicalId = data.canonicalStoreId;
+  if (typeof canonicalId === 'string' && canonicalId.trim().length > 0) return true;
+  return ['name', 'slug', 'description', 'address'].some(field => {
     const value = data[field];
     return typeof value === 'string' && value.trim().length > 0;
   });
+};
 
 export function RendaTab({
   deliveries,
