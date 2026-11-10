@@ -261,11 +261,14 @@ const OFFICIAL_PLAN_PRODUCT_IDS = new Set([
   'draft_5f46706373714839a55846e6d8cb102c',
 ]);
 
+const isOfficialPlanCanonicalProduct = (storeId: string, productId: string): boolean =>
+  storeId === OFFICIAL_STORE_ID && OFFICIAL_PLAN_PRODUCT_IDS.has(productId);
+
 export const preserveOfficialPlanCanonicalTerms = (
   existing: Record<string, unknown>,
   next: CanonicalProductMirrorData
 ): CanonicalProductMirrorData => {
-  if (next.storeId !== OFFICIAL_STORE_ID || !OFFICIAL_PLAN_PRODUCT_IDS.has(next.id)) return next;
+  if (!isOfficialPlanCanonicalProduct(next.storeId, next.id)) return next;
   const canonicalModality = parseProductSaleModality(existing.saleModality);
   if (!canonicalModality || canonicalModality.mode !== 'subscription' ||
       typeof existing.description !== 'string') {
@@ -331,6 +334,7 @@ export const getCanonicalProductIdsToArchive = (
     const isUnpublishedDraft = publicationStatus === 'draft';
 
     return belongsToLegacyStore &&
+      !isOfficialPlanCanonicalProduct(cleanString(product.data.storeId), product.id) &&
       !currentProductIds.has(product.id) &&
       !isAlreadyArchived &&
       !isUnpublishedDraft
@@ -427,6 +431,9 @@ export const syncLegacyProductsToCanonical = async (
     const next = existing ? preserveOfficialPlanCanonicalTerms(existing, mirrored) : mirrored;
 
     if (!existing) {
+      if (isOfficialPlanCanonicalProduct(canonicalStore.id, product.id)) {
+        throw new Error('O plano oficial canônico não pode ser recriado pela projeção legada.');
+      }
       operations.push(batch =>
         batch.set(reference, {
           ...next,
