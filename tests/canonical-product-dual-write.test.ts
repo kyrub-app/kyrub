@@ -304,7 +304,7 @@ test('legacy dual-write preserves official canonical price and contract discount
     legacyProduct({ id, price: 79.9, saleModality: modality }), storeId, 'owner-a'
   );
   const existing = { ...mirrored, description: 'Termos canônicos', price: 197,
-    contractDiscounts: { 3: 20, 6: 30, 12: 40 } };
+    contractDiscounts: [{ months: 1, discountPercent: 0 }, { months: 3, discountPercent: 20 }, { months: 6, discountPercent: 30 }, { months: 12, discountPercent: 40 }] };
   const preserved = preserveOfficialPlanCanonicalTerms(existing, mirrored);
   assert.equal(preserved.price, 197);
   assert.equal(preserved.description, 'Termos canônicos');
