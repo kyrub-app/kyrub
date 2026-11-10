@@ -179,14 +179,14 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
-      tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)),
+      tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
       tx.get(pilotRef()),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
     allowPilotOffer(d, buyer.uid);
     if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
-    if (buyerStore.get('ownerId') !== buyer.uid || seller.get('ownerId') !== d.offer.ownerUserId ||
+    if ((d.buyerStoreId ? buyerStore?.get('ownerId') !== buyer.uid : d.buyerStoreProvisioningRequired !== true) || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
       mapping.get('status') !== 'active' || mapping.get('planId') !== d.offer.plan || mapping.get('canonicalStoreId') !== d.offer.storeId ||
