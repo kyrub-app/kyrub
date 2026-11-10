@@ -23,7 +23,6 @@ import {
 import { doc, onSnapshot } from 'firebase/firestore';
 import {
   KYRUB_COMMERCIAL_PLANS_V1,
-  formatKyrubPlanMonthlyPrice,
   type KyrubCommercialPlanId,
 } from '../../../shared/kyrubCommercialPlans';
 import type { KyrubActivePlanPublicEntry } from '../../../shared/kyrubActivePlanCatalog';
@@ -336,7 +335,7 @@ export function PlanCenterApp() {
               <article key={plan.id} className={`relative flex flex-col rounded-3xl border p-5 ${plan.id === 'pro' ? 'border-violet-500/40 bg-violet-500/5' : 'border-slate-800 bg-slate-900/60'}`}>
                 {plan.id === 'pro' && <span className="absolute right-4 top-4 rounded-full bg-violet-500/15 px-2.5 py-1 text-[9px] font-black uppercase text-violet-300">Próximo passo natural</span>}
                 <div className="pr-24"><h3 className="text-xl font-black text-white">{plan.name}</h3><p className="mt-1 text-xs text-slate-500">{plan.positioning}</p></div>
-                <div className="mt-5"><strong className="text-3xl font-black text-white">{formatKyrubPlanMonthlyPrice(plan.price)}</strong><span className="text-xs text-slate-500"> / mês</span></div>
+                <div className="mt-5 text-sm font-semibold text-cyan-300">{plan.id === 'free' ? 'Gratuito' : 'Preço e condições na Loja Oficial Kyrub'}</div>
                 <ul className="mt-5 flex-1 space-y-3 text-xs text-slate-300">
                   <li className="flex gap-2"><PackageCheck className="h-4 w-4 shrink-0 text-cyan-400" /> {catalogLabel(plan.catalogLimit)}</li>
                   <li className="flex gap-2"><Sparkles className="h-4 w-4 shrink-0 text-violet-400" /> {plan.credits.toLocaleString('pt-BR')} Créditos Kyrubia Inteligência/mês</li>
