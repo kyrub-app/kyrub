@@ -38,8 +38,12 @@ const allowPilotOffer = (d: any, uid: string) => {
   gate();
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
+  // The published Official Store product, not a compiled pilot price, owns the charge.
+  // The accepted offer is revalidated against the canonical product before issuance.
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
-      d.offer.quote.totalMinor !== 19700) {
+      !Number.isSafeInteger(d.offer.priceMinor) || d.offer.priceMinor <= 0 ||
+      !Number.isSafeInteger(d.offer.quote.totalMinor) || d.offer.quote.totalMinor <= 0 ||
+      d.offer.quote.totalMinor !== d.offer.priceMinor) {
     throw Error('OFFICIAL_PIX_PILOT_OFFER_FORBIDDEN');
   }
 };
