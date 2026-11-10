@@ -181,6 +181,18 @@ const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> 
   return catalogProducts(tenant?.publicProducts);
 };
 
+// Official plan identity is held in the platform-owned mapping, never in the
+// tenant publicProducts projection. Fail closed before applying retail coupons.
+const assertNotOfficialPlanItems = async (productIds: string[]): Promise<void> => {
+  const uniqueIds = [...new Set(productIds)];
+  const mappings = await Promise.all(uniqueIds.map(id =>
+    adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()
+  ));
+  if (mappings.some(snapshot => snapshot.exists)) {
+    throw new Error('CHECKOUT_OFFICIAL_PLAN_REQUIRES_OFFICIAL_FLOW');
+  }
+};
+
 const buildIntentItems = (
   catalog: CatalogProduct[],
   items: MarketplaceCheckoutItemInput[]
@@ -405,6 +417,7 @@ export const createMarketplacePaymentIntent = async (
 
   const input = parseCheckout(body);
   const catalog = await loadPublishedCatalog(input.storeId);
+  await assertNotOfficialPlanItems(input.items.map(item => item.productId));
   const intentItems = buildIntentItems(catalog, input.items);
   const subtotal = Number(
     intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
