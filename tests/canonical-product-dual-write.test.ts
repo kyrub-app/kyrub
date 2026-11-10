@@ -324,3 +324,18 @@ test('invalid official canonical price stops reverse synchronization', () => {
   const modality = buildSubscriptionSaleModality({ billingUnit: 'month', benefitKind: 'access' });
   assert.throws(() => preserveOfficialPlanCanonicalTerms({ ...mirrored, description: 'Contrato', saleModality: modality, price: NaN }, mirrored), /preço canônico/);
 });
+
+
+test('legacy product disappearance cannot archive official plan products', () => {
+  const officialStore = 'store-ae53dc42e57eb9d5c3f7151c1431';
+  const records = [
+    { id: 'draft_1d3dfa74091747d3a3012eadd8027894', data: { storeId: officialStore, legacyStoreId: 'owner-a', publicationStatus: 'published', migration: { mode: 'dual_write' } } },
+    { id: 'ordinary', data: { storeId: officialStore, legacyStoreId: 'owner-a', publicationStatus: 'published', migration: { mode: 'dual_write' } } },
+  ];
+  assert.deepEqual(getCanonicalProductIdsToArchive(records, new Set(), 'owner-a'), ['ordinary']);
+});
+
+test('legacy sync refuses to recreate missing official canonical plans', () => {
+  const source = readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
+  assert.match(source, /if \(!existing\) \{\s*if \(isOfficialPlanCanonicalProduct\(canonicalStore\.id, product\.id\)\)/);
+});
