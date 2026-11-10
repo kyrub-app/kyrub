@@ -10,6 +10,29 @@ downgrading to Free or resetting the term that began at provider Pix approval.
 **Acessar loja** only opens an existing ERP; publishing a marketplace listing
 remains independent of store activation.
 
+Implementation trace (reviewed):
+- `RendaTab.openRetailerWorkspace` calls `POST /api/plan-control?op=store.free.ensure`
+  and opens the ERP after HTTP 200.
+- `ensureFreePlanForStoreCreation` currently creates/updates only
+  `users/{uid}/stores/{uid}` and deliberately sets `status: 'closed'`.
+  It does not create a canonical `stores/{storeId}` record, write
+  `activatedAt`, or return an activation receipt. **Therefore the click
+  does not yet fulfill the confirmed activation requirement.**
+- `ensureCanonicalStoreForCatalog` creates/repairs a canonical record
+  only after meaningful store setup, and sets
+  `publicationStatus: 'paused'`; this catalog repair must not become an
+  implicit activation trigger.
+- Correct implementation must make **Criar minha loja** the authenticated,
+  idempotent activation command, reconcile any existing canonical identity
+  rather than inventing a second store, and commit a durable activation marker.
+  A paid entitlement must win over Free, and the payment-approved term dates
+  must remain unchanged. Activation must not publish the storefront.
+- Do not simply call `recordFirstCanonicalStoreActivation` immediately
+  after `store.free.ensure`: that helper requires a pre-existing canonical
+  store and private-to-canonical link, neither of which the current
+  provisioner guarantees. Add an integrated emulator test for the entire
+  command before exposing it in production.
+
 The previously documented requirement for a *separate* **Ativar loja** action
 was incorrect for this onboarding path. The current
 `store.free.ensure` endpoint provisions a private store record but does
