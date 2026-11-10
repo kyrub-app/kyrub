@@ -10,6 +10,23 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     new URL('../server/admin/publicPlanCatalogService.ts', import.meta.url), 'utf8'
   );
 
+  it('rejects new legacy recurring checkout before provider preapproval or reservation', () => {
+    const checkout = billing.split('export const createOwnPaidPlanCheckout')[1];
+    assert.ok(checkout, 'legacy checkout entrypoint must remain explicit');
+    const guard = checkout.indexOf('await rejectNewOfficialRecurringCheckout()');
+    const authentication = checkout.indexOf('authenticateConsultantRequest(authorization)');
+    const provider = checkout.indexOf('mpRequest(');
+    assert.ok(guard >= 0 && guard < authentication, 'guard must precede checkout side effects');
+    assert.ok(provider < 0 || guard < provider, 'guard must precede provider preapproval');
+    assert.match(billing, /OFFICIAL_PLAN_RECURRING_CHECKOUT_DISABLED/);
+  });
+
+  it('keeps existing recurring subscription reconciliation and cancellation entrypoints', () => {
+    assert.match(billing, /export const reconcileOwnPaidPlanSubscription/);
+    assert.match(billing, /export const cancelOwnPaidPlanSubscription/);
+    assert.match(billing, /export const handlePaidPlanProviderWebhook/);
+  });
+
   it('charges the persisted official product price rather than compiled catalog prices', () => {
     assert.match(billing, /monthlyPriceBRL: price/);
     assert.match(billing, /OFFICIAL_PLAN_PRODUCT_CHANGED/);
