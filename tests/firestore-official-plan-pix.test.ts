@@ -139,29 +139,21 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal((await db.doc('stores/buyer').get()).exists, false,
     'blocked checkout must not create a canonical store');
 
-  // Emulator-only recovery of a payment whose POST result was lost but whose provider ID was later bound.
-  // The public checkout gate remains closed: no payment is issued or charged.
-  const { createHash } = await import('node:crypto');
-  const accepted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
-  const requestBody = JSON.stringify({ testOnly: true, checkoutId: q.checkoutId });
-  await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).update({
-    status: 'outcome_unknown', collectorId: '42', requestBody,
-    requestDigest: createHash('sha256').update(requestBody).digest('hex'),
-    providerPaymentId: '123',
-  });
-  await db.doc(root + '/store_subscriptions/buyer').set({
-    officialPixCheckoutId: q.checkoutId, checkoutReservationStatus: 'pending',
-    collectionMode: 'prepaid',
-  });
-  payment = {
-    id: '123', status: 'approved', status_detail: 'accredited',
-    date_approved: new Date(Date.parse(accepted.get('acceptedAt')) + 1000).toISOString(),
-    collector_id: '42', currency_id: 'BRL', payment_method_id: 'pix',
-    transaction_amount: q.quote.totalMinor / 100,
-    transaction_amount_refunded: 0,
-    external_reference: 'kyrub:official-plan-pix:' + q.checkoutId,
-    live_mode: true,
-  };
+  // The production gate remains closed. This branch is enabled only with a
+  // localhost Firestore emulator and isolated fake Mercado Pago credentials.
+  process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST = 'true';
+  try {
+    const pending = await api.checkoutOfficialPlanPix(input);
+    assert.equal(posts, 1, 'the isolated provider must receive exactly one Pix POST');
+    assert.equal((await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get()).get('providerPaymentId'), '123');
+    assert.equal((await db.doc('stores/buyer').get()).exists, false);
+    const accepted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
+    await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).update({ status: 'outcome_unknown' });
+    payment = { ...payment, status: 'approved', status_detail: 'accredited',
+      date_approved: new Date(Date.parse(accepted.get('acceptedAt')) + 1000).toISOString() };
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST;
+  }
   const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
   assert(results.every(result => result.state === 'activated'));
   assert(results.every(result => result.startsAt === payment.date_approved));
@@ -177,7 +169,7 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   const repeated = await api.reconcileOfficialPlanPix(input);
   assert.equal(repeated.startsAt, payment.date_approved);
   assert.equal(repeated.expiresAt, results[0].expiresAt);
-  assert.equal(posts, 0, 'injected provider confirmation must not issue a new Pix charge');
+  assert.equal(posts, 1, 'reconciliation must not issue a second Pix charge');
 
   // Creating the private store later must inherit Pro, never reset the paid term.
   const entitlementBefore = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
