@@ -2,6 +2,8 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 
+import { createHash } from 'node:crypto';
+
 const ROOT = 'kyrub_admin/control_plane';
 const validUid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 
@@ -13,6 +15,7 @@ const validUid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 export async function ensureFreePlanForStoreCreation(authorization: string): Promise<{
   plan: 'free' | 'pro' | 'business';
   created: boolean;
+  canonicalStoreId: string;
 }> {
   const token = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
   if (!token) throw Error('FREE_STORE_AUTH_REQUIRED');
@@ -22,7 +25,7 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   const privateRef = adminDb.doc(`users/${uid}/stores/${uid}`);
   const entitlementRef = adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
   const subscriptionRef = adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
-  return adminDb.runTransaction(async tx => {
+  const provisioned = await adminDb.runTransaction(async tx => {
     const [privateDoc, entitlementDoc, subscriptionDoc] = await Promise.all([
       tx.get(privateRef), tx.get(entitlementRef), tx.get(subscriptionRef),
     ]);
@@ -67,4 +70,64 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
     });
     return { plan: 'free' as const, created: true };
   });
+  const canonicalStoreId = await activateStoreAfterProvisioning(uid, provisioned.plan);
+  return { ...provisioned, canonicalStoreId };
+}
+
+/**
+ * The user's authenticated Create my store click is the activation command.
+ * Reuse a unique existing canonical store, or create one deterministically.
+ * Never infer activation from navigation, publication, or catalog repair.
+ */
+async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' | 'business'): Promise<string> {
+  const privateRef = adminDb.doc(`users/${uid}/stores/${uid}`);
+  const ownerStores = await adminDb.collection('stores').where('ownerId', '==', uid).get();
+  const privateSnapshot = await privateRef.get();
+  const linked = privateSnapshot.get('canonicalStoreId');
+  if (linked != null && (typeof linked !== 'string' || !validUid(linked))) {
+    throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  }
+  if (ownerStores.docs.length > 1) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  const existing = ownerStores.docs[0];
+  if (existing && linked && linked !== existing.id) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  if (existing && existing.get('legacyTenantId') && existing.get('legacyTenantId') !== uid) {
+    throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  }
+  if (linked && !existing) throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+  const canonicalId = existing?.id ??
+    `store-${createHash('sha256').update(uid).digest('hex').slice(0, 24)}`;
+  const canonicalRef = adminDb.doc(`stores/${canonicalId}`);
+  await adminDb.runTransaction(async tx => {
+    const [personal, canonical] = await Promise.all([tx.get(privateRef), tx.get(canonicalRef)]);
+    if (!personal.exists || personal.get('ownerId') !== uid ||
+        (personal.get('canonicalStoreId') && personal.get('canonicalStoreId') !== canonicalId) ||
+        (canonical.exists && (canonical.get('ownerId') !== uid ||
+          (canonical.get('legacyTenantId') && canonical.get('legacyTenantId') !== uid)))) {
+      throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    }
+    const previous = canonical.get('activatedAt');
+    if (previous != null) {
+      const date = typeof previous === 'string' ? new Date(previous) : previous?.toDate?.();
+      if (!(date instanceof Date) || !Number.isFinite(date.getTime())) {
+        throw Error('STORE_ACTIVATION_INVALID_EXISTING_MARKER');
+      }
+    }
+    if (!canonical.exists) {
+      tx.create(canonicalRef, {
+        id: canonicalId, ownerId: uid, legacyTenantId: uid,
+        name: 'Minha loja', plan, publicationStatus: 'paused',
+        createdAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        activatedAt: FieldValue.serverTimestamp(),
+      });
+    } else if (previous == null) {
+      tx.update(canonicalRef, { activatedAt: FieldValue.serverTimestamp() });
+    }
+    tx.set(privateRef, {
+      canonicalStoreId: canonicalId,
+      canonicalStoreLinkedAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+    }, { merge: true });
+  });
+  return canonicalId;
 }
