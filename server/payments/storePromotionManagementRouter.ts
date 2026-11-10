@@ -87,6 +87,40 @@ const ensureUniqueCode = async (
 export const createStorePromotionManagementRouter = (): Router => {
   const router = Router();
 
+  // Public, read-only projection: no buyer identities, redemption records or admin data.
+  router.get('/public/:storeId/:promotionId', async (request, response) => {
+    try {
+      const storeId = clean(request.params.storeId);
+      const promotionId = clean(request.params.promotionId);
+      if (!storeId || !promotionId || storeId.includes('/') || promotionId.includes('/')) {
+        response.status(400).json({ error: 'Cupom inválido.' });
+        return;
+      }
+      const snapshot = await adminDb.doc(`${collectionPath(storeId)}/${promotionId}`).get();
+      if (!snapshot.exists) {
+        response.status(404).json({ error: 'Cupom não disponível.' });
+        return;
+      }
+      const promotion = normalizeStorePromotion({ ...(snapshot.data() as StorePromotion), id: promotionId, storeId });
+      if (promotion.eligibility.mode !== 'public') {
+        response.status(404).json({ error: 'Cupom não disponível.' });
+        return;
+      }
+      const now = Date.now();
+      const remaining = promotion.maxRedemptions === 0
+        ? null : Math.max(0, promotion.maxRedemptions - promotion.redemptionCount);
+      response.status(200).json({
+        active: promotion.active && Date.parse(promotion.startsAt) <= now
+          && Date.parse(promotion.endsAt) > now && (remaining === null || remaining > 0),
+        redemptionCount: promotion.redemptionCount,
+        maxRedemptions: promotion.maxRedemptions,
+        remaining,
+      });
+    } catch {
+      response.status(503).json({ error: 'Disponibilidade temporariamente indisponível.' });
+    }
+  });
+
   router.get('/', async (request, response) => {
     try {
       const storeId = clean(request.query.storeId);
