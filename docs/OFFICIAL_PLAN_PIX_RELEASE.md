@@ -40,9 +40,14 @@ Integration review findings (10 Nov 2026):
   route is **not yet connected**. Its companion
   `activateCanonicalStoreAndReconcileOfficialPlan` still invokes
   `activatePendingOfficialPlanForStore`, which contains the older
-  `paid_pending_activation` path. This is a migration/cleanup review
-  item: the new Pix flow starts entitlement at `paidAt` and must never
-  depend on this older store-activation path.
+  `paid_pending_activation` path. Code inspection confirms
+  `reconcileLoaded` dispatches to that legacy materializer **only when
+  the checkout already has `status === 'paid_pending_activation'`**;
+  newly approved checkouts dispatch to `materialize`, which starts
+  entitlement at provider approval. Preserve legacy records and their
+  reconciliation during migration; do not delete this branch blindly.
+  Before live release, test that no newly issued checkout can enter
+  the legacy status and verify the actual activation transition.
 - Before calling the release complete, verify the actual authenticated
   `Ativar loja` transition and paid-entitlement inheritance against the
   deployed application; tests of isolated helpers alone are insufficient.
