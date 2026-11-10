@@ -156,6 +156,15 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   }
   const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(input)));
   assert(results.every(result => result.state === 'activated'));
+  const settledCheckout = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
+  const settledSlot = await db.doc(root + '/store_subscriptions/buyer').get();
+  assert.equal(settledCheckout.get('status'), 'activated',
+    'new no-store payments must never enter the legacy paid_pending_activation state');
+  assert.equal(settledSlot.get('checkoutReservationStatus'), 'complete',
+    'new paid contracts must be complete without an Ativar loja action');
+  const settledContract = await db.collection('stores/official-store/prepaidSubscriptionContracts').get();
+  assert.equal(settledContract.docs[0]?.get('state'), undefined,
+    'new contracts must not inherit the legacy pending activation state');
   assert(results.every(result => result.startsAt === payment.date_approved));
   assert(results.every(result => result.expiresAt === results[0].expiresAt));
   assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('plan'), 'pro');
