@@ -8,13 +8,22 @@ if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST |
 const app = initializeApp({ projectId: 'demo-kyrub-pix' }, 'official-pix-integration');
 const db = getFirestore(app);
 let payment: any, posts = 0;
+let loseProviderResponse = false, searches = 0;
 (globalThis as any).__officialPix = { db,
   auth: async () => ({ uid: 'buyer', email: 'buyer@example.test', emailVerified: true }),
   request: async (path: string, init?: RequestInit) => {
     if (path === '/users/me') return { id: '42' };
     if (path === '/v1/payments' && init?.method === 'POST') {
       posts++; payment = { ...JSON.parse(init.body as string), id: '123', status: 'pending', collector_id: '42', currency_id: 'BRL',
-        live_mode: true, point_of_interaction: { transaction_data: { qr_code: 'LOCAL-EMULATOR-PIX' } } }; return payment;
+        live_mode: true, point_of_interaction: { transaction_data: { qr_code: 'LOCAL-EMULATOR-PIX' } } };
+      if (loseProviderResponse) { loseProviderResponse = false; throw Error('SIMULATED_LOST_PROVIDER_RESPONSE'); }
+      return payment;
+    }
+    if (path.startsWith('/v1/payments/search?')) {
+      searches++;
+      const query = new URLSearchParams(path.split('?')[1]);
+      assert.equal(query.get('external_reference'), payment?.external_reference);
+      return { paging: { total: payment ? 1 : 0 }, results: payment ? [payment] : [] };
     }
     if (path === '/v1/payments/123') return payment;
     throw Error('UNEXPECTED_EXTERNAL_ACCESS');
@@ -46,8 +55,13 @@ test('real Firestore transaction races preserve one provider charge and one set 
   const q = await api.quoteOfficialPlanPix({ authorization: 'buyer', storeId: 'official-store', productId: 'product', selectedMonths: 1 });
   const input = { authorization: 'buyer', storeId: 'official-store', checkoutId: q.checkoutId };
   await api.acceptOfficialPlanPix({ ...input, acceptedTotalMinor: q.quote.totalMinor });
+  loseProviderResponse = true;
   await Promise.allSettled(Array.from({ length: 4 }, () => api.checkoutOfficialPlanPix(input)));
   assert.equal(posts, 1);
+  const recovered = await api.reconcileOfficialPlanPix(input);
+  assert.equal(recovered.state, 'awaiting_payment', 'lost provider response must recover the original Pix');
+  assert.ok(searches >= 1, 'recovery must locate the existing payment by external_reference');
+  assert.equal(posts, 1, 'recovery must never issue another Pix POST');
   const pilot = await db.doc(root + '/official_plan_pix_pilot/one_shot').get();
   assert.equal(pilot.get('checkoutId'), q.checkoutId);
   assert.equal(pilot.get('buyerId'), 'buyer');
