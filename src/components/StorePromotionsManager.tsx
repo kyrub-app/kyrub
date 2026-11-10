@@ -232,6 +232,7 @@ export function StorePromotionsManager({
         mediaUrls: [],
         visibility: 'public',
         audienceIds: [],
+        storePromotion: { storeId, promotionId: current.id },
         createdAtIso: nowIso,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
