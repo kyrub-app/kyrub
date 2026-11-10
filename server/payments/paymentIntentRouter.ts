@@ -1,3 +1,4 @@
+import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
@@ -181,17 +182,10 @@ const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> 
   return catalogProducts(tenant?.publicProducts);
 };
 
-// Official plan identity is held in the platform-owned mapping, never in the
-// tenant publicProducts projection. Fail closed before applying retail coupons.
-const assertNotOfficialPlanItems = async (productIds: string[]): Promise<void> => {
-  const uniqueIds = [...new Set(productIds)];
-  const mappings = await Promise.all(uniqueIds.map(id =>
-    adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()
-  ));
-  if (mappings.some(snapshot => snapshot.exists)) {
-    throw new Error('CHECKOUT_OFFICIAL_PLAN_REQUIRES_OFFICIAL_FLOW');
-  }
-};
+const assertNotOfficialPlanItems = (ids: string[]) =>
+  assertNoOfficialPlanProducts(ids, async id =>
+    (await adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get()).exists
+  );
 
 const buildIntentItems = (
   catalog: CatalogProduct[],
