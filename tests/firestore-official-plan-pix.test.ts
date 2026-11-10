@@ -139,13 +139,13 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal((await db.doc('stores/buyer').get()).exists, false,
     'blocked checkout must not create a canonical store');
 
-  // Emulator-only injection of an already-bound, verified provider payment.
+  // Emulator-only recovery of a payment whose POST result was lost but whose provider ID was later bound.
   // The public checkout gate remains closed: no payment is issued or charged.
   const { createHash } = await import('node:crypto');
   const accepted = await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).get();
   const requestBody = JSON.stringify({ testOnly: true, checkoutId: q.checkoutId });
   await db.doc(root + '/plan_pix_checkouts/' + q.checkoutId).update({
-    status: 'bound', collectorId: '42', requestBody,
+    status: 'outcome_unknown', collectorId: '42', requestBody,
     requestDigest: createHash('sha256').update(requestBody).digest('hex'),
     providerPaymentId: '123',
   });
