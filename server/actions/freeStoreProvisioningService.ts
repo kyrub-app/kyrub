@@ -10,7 +10,7 @@ const validUid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 /**
  * Idempotent initial Free eligibility for the authenticated "Criar minha loja"
  * action. Never writes a plan when a paid entitlement or paid plan already exists.
- * Store publication and canonical-store creation are separate operations.
+ * Canonical creation and activation happen here; marketplace publication is separate.
  */
 export async function ensureFreePlanForStoreCreation(authorization: string): Promise<{
   plan: 'free' | 'pro' | 'business';
@@ -121,6 +121,12 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
         (canonical.exists && (canonical.get('ownerId') !== uid ||
           (canonical.get('legacyTenantId') && canonical.get('legacyTenantId') !== uid)))) {
       throw Error('STORE_ACTIVATION_IDENTITY_CONFLICT');
+    }
+    // Never relabel an existing paid canonical store as Free or return a
+    // mismatched plan when its private entitlement mirror is stale.
+    const canonicalPlan = canonical.get('plan');
+    if (canonical.exists && canonicalPlan !== plan) {
+      throw Error('STORE_ACTIVATION_PLAN_RECONCILIATION_REQUIRED');
     }
     const previous = canonical.get('activatedAt');
     if (previous != null) {
