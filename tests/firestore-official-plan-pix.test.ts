@@ -186,12 +186,16 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   // Creating the private store later must inherit Pro, never reset the paid term.
   const entitlementBefore = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
   const created = await api.ensureFreePlanForStoreCreation('Bearer buyer');
-  assert.deepEqual(created, { plan: 'pro', created: true });
+  assert.equal(created.plan, 'pro');
+  assert.equal(created.created, true);
+  assert.ok(created.canonicalStoreId);
   assert.equal((await db.doc('users/buyer/stores/buyer').get()).get('plan'), 'pro');
   assert.equal((await db.doc('stores/buyer').get()).exists, false,
     'private provisioning must not fabricate a canonical store');
   const again = await api.ensureFreePlanForStoreCreation('Bearer buyer');
-  assert.deepEqual(again, { plan: 'pro', created: false });
+  assert.equal(again.plan, 'pro');
+  assert.equal(again.created, false);
+  assert.equal(again.canonicalStoreId, created.canonicalStoreId);
   const entitlementAfter = (await db.doc(root + '/store_entitlements/buyer').get()).data()!;
   assert.equal(entitlementAfter.benefitStartsAt, entitlementBefore.benefitStartsAt);
   assert.equal(entitlementAfter.benefitEndsAt, entitlementBefore.benefitEndsAt);
@@ -202,8 +206,9 @@ test('buyer without a canonical store cannot be charged while pre-store checkout
   assert.equal(afterProvisioning.startsAt, payment.date_approved);
   assert.equal(afterProvisioning.expiresAt, results[0].expiresAt);
   const afterCanonicalCreation = await api.ensureFreePlanForStoreCreation('Bearer buyer');
-  assert.deepEqual(afterCanonicalCreation, { plan: 'pro', created: false },
+  assert.equal(afterCanonicalCreation.plan, 'pro',
     'canonical registration must not trigger a Free downgrade');
+  assert.equal(afterCanonicalCreation.created, false);
   const privateStore = await db.doc('users/buyer/stores/buyer').get();
   assert.equal(privateStore.get('plan'), 'pro');
   assert.equal(privateStore.get('ownerId'), 'buyer');
