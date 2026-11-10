@@ -7,6 +7,7 @@ import {
   canonicalProductNeedsUpdate,
   getCanonicalProductIdsToArchive,
   parseLegacyPublicProductsForStore,
+  preserveOfficialPlanCanonicalTerms,
   selectLegacyPublicProductsForStore,
 } from '../src/utils/canonicalProductDualWrite';
 import type { PublicProduct } from '../src/utils/publicProducts';
@@ -292,4 +293,49 @@ test('archives only missing published products and preserves unpublished drafts'
     getCanonicalProductIdsToArchive(products, new Set(['keep']), 'owner-a'),
     ['archive']
   );
+});
+
+
+test('legacy dual-write preserves official canonical price and contract discounts', () => {
+  const id = 'draft_1d3dfa74091747d3a3012eadd8027894';
+  const storeId = 'store-ae53dc42e57eb9d5c3f7151c1431';
+  const modality = buildSubscriptionSaleModality({ billingUnit: 'month', benefitKind: 'access' });
+  const mirrored = buildCanonicalProductMirrorData(
+    legacyProduct({ id, price: 79.9, saleModality: modality }), storeId, 'owner-a'
+  );
+  const existing = { ...mirrored, description: 'Termos canônicos', price: 197,
+    contractDiscounts: [{ months: 1, discountPercent: 0 }, { months: 3, discountPercent: 20 }, { months: 6, discountPercent: 30 }, { months: 12, discountPercent: 40 }] };
+  const preserved = preserveOfficialPlanCanonicalTerms(existing, mirrored);
+  assert.equal(preserved.price, 197);
+  assert.equal(preserved.description, 'Termos canônicos');
+  assert.deepEqual(preserved.contractDiscounts, existing.contractDiscounts);
+});
+
+test('ordinary merchant products still accept legacy price updates', () => {
+  const mirrored = buildCanonicalProductMirrorData(legacyProduct({ price: 29 }), 'store-independent-a', 'owner-a');
+  const preserved = preserveOfficialPlanCanonicalTerms({ ...mirrored, price: 39 }, mirrored);
+  assert.equal(preserved.price, 29);
+});
+
+test('invalid official canonical price stops reverse synchronization', () => {
+  const id = 'draft_5f46706373714839a55846e6d8cb102c';
+  const storeId = 'store-ae53dc42e57eb9d5c3f7151c1431';
+  const mirrored = buildCanonicalProductMirrorData(legacyProduct({ id }), storeId, 'owner-a');
+  const modality = buildSubscriptionSaleModality({ billingUnit: 'month', benefitKind: 'access' });
+  assert.throws(() => preserveOfficialPlanCanonicalTerms({ ...mirrored, description: 'Contrato', saleModality: modality, price: NaN }, mirrored), /preço canônico/);
+});
+
+
+test('legacy product disappearance cannot archive official plan products', () => {
+  const officialStore = 'store-ae53dc42e57eb9d5c3f7151c1431';
+  const records = [
+    { id: 'draft_1d3dfa74091747d3a3012eadd8027894', data: { storeId: officialStore, legacyStoreId: 'owner-a', publicationStatus: 'published', migration: { mode: 'dual_write' } } },
+    { id: 'ordinary', data: { storeId: officialStore, legacyStoreId: 'owner-a', publicationStatus: 'published', migration: { mode: 'dual_write' } } },
+  ];
+  assert.deepEqual(getCanonicalProductIdsToArchive(records, new Set(), 'owner-a'), ['ordinary']);
+});
+
+test('legacy sync refuses to recreate missing official canonical plans', () => {
+  const source = readFileSync('src/utils/canonicalProductDualWrite.ts', 'utf8');
+  assert.match(source, /if \(!existing\) \{\s*if \(isOfficialPlanCanonicalProduct\(canonicalStore\.id, product\.id\)\)/);
 });

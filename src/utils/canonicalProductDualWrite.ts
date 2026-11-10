@@ -261,17 +261,35 @@ const OFFICIAL_PLAN_PRODUCT_IDS = new Set([
   'draft_5f46706373714839a55846e6d8cb102c',
 ]);
 
+const isOfficialPlanCanonicalProduct = (storeId: string, productId: string): boolean =>
+  storeId === OFFICIAL_STORE_ID && OFFICIAL_PLAN_PRODUCT_IDS.has(productId);
+
 export const preserveOfficialPlanCanonicalTerms = (
   existing: Record<string, unknown>,
   next: CanonicalProductMirrorData
 ): CanonicalProductMirrorData => {
-  if (next.storeId !== OFFICIAL_STORE_ID || !OFFICIAL_PLAN_PRODUCT_IDS.has(next.id)) return next;
+  if (!isOfficialPlanCanonicalProduct(next.storeId, next.id)) return next;
   const canonicalModality = parseProductSaleModality(existing.saleModality);
   if (!canonicalModality || canonicalModality.mode !== 'subscription' ||
       typeof existing.description !== 'string') {
     throw new Error('Os termos canônicos do plano oficial estão inválidos; sincronização interrompida.');
   }
-  return { ...next, description: existing.description, saleModality: canonicalModality };
+  const canonicalPrice = existing.price;
+  if (typeof canonicalPrice !== 'number' || !Number.isFinite(canonicalPrice) || canonicalPrice < 0) {
+    throw new Error('O preço canônico do plano oficial está inválido; sincronização interrompida.');
+  }
+  const canonicalDiscounts = existing.contractDiscounts === undefined
+    ? undefined : parseSubscriptionContractDiscounts(existing.contractDiscounts);
+  if (existing.contractDiscounts !== undefined && !canonicalDiscounts) {
+    throw new Error('Os descontos canônicos do plano oficial estão inválidos; sincronização interrompida.');
+  }
+  return {
+    ...next,
+    description: existing.description,
+    saleModality: canonicalModality,
+    price: canonicalPrice,
+    ...(canonicalDiscounts ? { contractDiscounts: canonicalDiscounts } : { contractDiscounts: undefined }),
+  };
 };
 
 export const canonicalProductNeedsUpdate = (
@@ -316,6 +334,7 @@ export const getCanonicalProductIdsToArchive = (
     const isUnpublishedDraft = publicationStatus === 'draft';
 
     return belongsToLegacyStore &&
+      !isOfficialPlanCanonicalProduct(cleanString(product.data.storeId), product.id) &&
       !currentProductIds.has(product.id) &&
       !isAlreadyArchived &&
       !isUnpublishedDraft
@@ -412,6 +431,9 @@ export const syncLegacyProductsToCanonical = async (
     const next = existing ? preserveOfficialPlanCanonicalTerms(existing, mirrored) : mirrored;
 
     if (!existing) {
+      if (isOfficialPlanCanonicalProduct(canonicalStore.id, product.id)) {
+        throw new Error('O plano oficial canônico não pode ser recriado pela projeção legada.');
+      }
       operations.push(batch =>
         batch.set(reference, {
           ...next,
