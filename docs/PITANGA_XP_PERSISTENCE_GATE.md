@@ -84,3 +84,8 @@ PRs #274 e #324 introduziram respectivamente o contrato do Reward Ledger e o con
 No arquivo `firestore.rules` da `main`, não há regras explícitas nomeadas `rewardLedger`, `rewardRedemptions` ou `xpLedger` (pesquisa textual no arquivo); isso **não substitui** auditoria de regras herdadas/catch-all e de acessos Admin SDK. Não assumir que o cliente possa escrever ou que todas as gravações estejam protegidas sem teste de regras.
 
 **Condição de desbloqueio:** inventário verificável de todos os caminhos de emissão e débito, regra de autorização de escrita, teste de concorrência entre dois resgates e entre resgate/conversão, e definição de saldo único consistente com o leitor existente. A existência de um planejador de emissão não equivale à implementação do escritor.
+
+
+## Revisão de escopo das regras Firestore (11/11/2026)
+
+`firestore.rules` da `main` contém `match /{document=**} { allow read, write: if false; }` no escopo raiz. As regras de `/users/{userId}` cobrem o documento do usuário e subcoleções explicitamente nomeadas (`tasks`, `favorites`, `savedItems`, `selections`, `skills`, `stores`), **não** `rewardLedger`. A regra recursiva permissiva `match /{allData=**}` está **dentro de** `/artifacts/{tenantId}`, portanto não se aplica a `users/{uid}/rewardLedger/{entryId}`. Pela inspeção estática, o cliente Firestore não tem permissão explícita para escrever diretamente no ledger global; o Admin SDK ignora regras de segurança e exige controle próprio de autorização. Confirmar com testes no emulador antes de tratar isso como garantia de produção.
