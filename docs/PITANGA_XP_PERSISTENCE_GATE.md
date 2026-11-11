@@ -75,3 +75,12 @@ O saldo observado é **derivado da soma do ledger**, não de um documento `avail
 ## Consumidor de saldo confirmado e renomeação visual (11/11/2026)
 
 `src/components/tabs/KyrubTab.tsx` consome `/api/selos-kairubi`, verifica explicitamente `data.unit === 'selos_kairubi'` e apresenta o saldo no cartão Recompensas. Na PR #1128, somente o título visível `Selos Kairubi` foi alterado para **Pitangas**; o contrato da API e sua validação permanecem inalterados. Antes de versionar a rota/unidade, pesquisar todos os demais consumidores; não pressupor que esse seja o único.
+
+
+## Auditoria de emissão e regras (11/11/2026)
+
+PRs #274 e #324 introduziram respectivamente o contrato do Reward Ledger e o construtor **puro** `createAuditableKCoinLedgerEntry`; PR #333 introduziu guardas **puros** de orçamento/emissão. Nenhum desses patches demonstra gravação de **ganhos** no Firestore. A busca de PRs por `rewardLedger` identificou #1057 (somente leitura); isso não comprova ausência de escritor em outras rotas. A investigação do escritor de ganho segue **inconclusiva**.
+
+No arquivo `firestore.rules` da `main`, não há regras explícitas nomeadas `rewardLedger`, `rewardRedemptions` ou `xpLedger` (pesquisa textual no arquivo); isso **não substitui** auditoria de regras herdadas/catch-all e de acessos Admin SDK. Não assumir que o cliente possa escrever ou que todas as gravações estejam protegidas sem teste de regras.
+
+**Condição de desbloqueio:** inventário verificável de todos os caminhos de emissão e débito, regra de autorização de escrita, teste de concorrência entre dois resgates e entre resgate/conversão, e definição de saldo único consistente com o leitor existente. A existência de um planejador de emissão não equivale à implementação do escritor.
