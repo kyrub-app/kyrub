@@ -28,11 +28,22 @@ const callsitePatterns = [
   /\b(?:persistKyrubRedemptionAtomically|applyPitangaEarnInTransaction|applyPitangaSpendInTransaction|applyPitangaXpConversionInTransaction|issuePitangaVoucherInTransaction)\s*\(/g,
 ];
 const callsites = [];
+const firestoreMutationPatterns = [
+  /\b(?:transaction|batch|adminDb|db)\s*\.\s*(?:create|set|update|delete|add)\s*\(/,
+  /\b(?:transaction|batch)\s*\.\s*(?:create|set|update|delete)\s*\(/,
+  /\b(?:set|update|delete|add)\s*\(/,
+];
+const possibleMutations = [];
 for (const path of tracked) {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/);
   for (let index = 0; index < lines.length; index++) {
     if (patterns.some(pattern => pattern.test(lines[index]))) {
       hits.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
+    }
+    if (firestoreMutationPatterns.some(pattern => pattern.test(lines[index])) &&
+        /(?:gamification|reward|challenge|pitanga|coin)/i.test(path)) {
+      possibleMutations.push({ path, line: index + 1,
+        excerpt: lines[index].trim().slice(0, 240) });
     }
     for (const pattern of callsitePatterns) {
       pattern.lastIndex = 0;
@@ -48,5 +59,6 @@ console.log(JSON.stringify({
   filesScanned: tracked.length,
   hits,
   possibleCallsites: callsites,
-  caveat: 'Lexical discovery only. Dynamic paths, aliases, generated code, external workers and Admin SDK writes require manual review.',
+  possibleMutations,
+  caveat: 'Lexical discovery only. Mutation matches include unrelated writes and false positives. Dynamic paths, aliases, generated code, external workers and Admin SDK writes require manual review.',
 }, null, 2));
