@@ -25,6 +25,8 @@ export const applyVerifiedPitangaXpConversionInTransaction = async (
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
       input.balanceRef.path !== `users/${uid}/pitangaBalance/balance` ||
       input.receiptRef.path !== `users/${uid}/pitangaXpConversions/${input.requestId}` ||
+      input.debitRef.path !== `users/${uid}/rewardLedger/conversion_${input.requestId}` ||
+      input.xpRef.path !== `users/${uid}/xpLedger/conversion_${input.requestId}` ||
       input.migrationReceiptRef.path !== `users/${uid}/pitangaMigration/receipt` ||
       input.fenceRef.path !== 'systemControl/pitangaLegacyWriterFence') {
     throw new Error('CONVERSION_MIGRATION_REFERENCE_INVALID');
