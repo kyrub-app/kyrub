@@ -64,7 +64,10 @@ export const persistKyrubRedemptionAtomically = async (
         current.correlationId !== plan.auditEvent.correlationId ||
         current.rewardId !== plan.rewardId ||
         current.userId !== plan.userId ||
-        current.redemptionId !== plan.redemptionId
+        current.redemptionId !== plan.redemptionId ||
+        current.status !== 'issued' ||
+        current.voucherCode !== plan.voucherCode ||
+        current.validUntil !== plan.validUntil
       ) {
         throw new Error('REDEMPTION_IDEMPOTENCY_CONFLICT');
       }
@@ -90,6 +93,7 @@ export const persistKyrubRedemptionAtomically = async (
           recordedVoucher?.rewardId !== plan.rewardId ||
           recordedVoucher?.code !== current.voucherCode ||
           recordedVoucher?.validUntil !== current.validUntil ||
+          recordedVoucher?.status !== 'active' ||
           recordedAudit?.redemptionId !== plan.redemptionId ||
           recordedAudit?.userId !== plan.userId ||
           recordedAudit?.correlationId !== plan.auditEvent.correlationId ||
