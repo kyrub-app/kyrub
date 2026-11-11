@@ -15,8 +15,8 @@ const makeTx = (balance: number, replay = false) => {
     ['balance', { userId: 'user1', availableKCoins: balance }],
   ]);
   if (replay) {
-    snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
-    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100 });
+    snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 1000, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
+    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -1000 });
     snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', economy: 'kyrub_xp', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
   }
   const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
@@ -31,11 +31,11 @@ const makeTx = (balance: number, replay = false) => {
 };
 
 test('stages balance update, debit, XP credit and receipt together', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   const result = await applyPitangaXpConversionInTransaction(tx as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
   } as never);
-  assert.deepEqual(result, { xpCredited: 1, pitangasDebited: 100, remainingPitangas: 0, replay: false });
+  assert.deepEqual(result, { xpCredited: 1, pitangasDebited: 1000, remainingPitangas: 0, replay: false });
   assert.equal(writes.length, 4);
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 0);
   assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -100);
@@ -55,7 +55,7 @@ test('same request replay does not stage additional writes', async () => {
 });
 
 test('insufficient balance fails without writes', async () => {
-  const { refs, tx, writes } = makeTx(99);
+  const { refs, tx, writes } = makeTx(999);
   await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
   } as never), /PITANGA_BALANCE_INSUFFICIENT/);
@@ -70,7 +70,7 @@ test('conflicting replay rejects', async () => {
 });
 
 test('missing authoritative balance fails closed', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   const missingBalanceTx = {
     ...tx,
     get: async (r: { id: string }) => r.id === 'balance'
@@ -84,11 +84,11 @@ test('missing authoritative balance fails closed', async () => {
 });
 
 test('partial ledger state fails closed without additional writes', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   const partialTx = {
     ...tx,
     get: async (r: { id: string }) => r.id === 'debit'
-      ? { exists: true, data: () => ({ deltaKCoins: -100 }) }
+      ? { exists: true, data: () => ({ deltaKCoins: -1000 }) }
       : tx.get(r),
   };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(partialTx as never, {
@@ -126,7 +126,7 @@ test('replay with ledger belonging to another user is rejected', async () => {
 });
 
 test('invalid XP amount fails before any transaction reads', async () => {
-  const { refs, writes } = makeTx(100);
+  const { refs, writes } = makeTx(1000);
   let reads = 0;
   const tx = { get: async () => { reads++; throw new Error('SHOULD_NOT_READ'); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
@@ -136,19 +136,19 @@ test('invalid XP amount fails before any transaction reads', async () => {
   assert.equal(writes.length, 0);
 });
 
-test('275 Pitangas convert to 2 XP with 75 remaining', async () => {
-  const { refs, tx, writes } = makeTx(275);
+test('2075 Pitangas convert to 2 XP with 75 remaining', async () => {
+  const { refs, tx, writes } = makeTx(2075);
   const result = await applyPitangaXpConversionInTransaction(tx as never, {
     ...refs, userId: 'user1', requestId: 'req2', requestedXp: 2, occurredAt: '2026-11-11T12:00:00Z',
   } as never);
-  assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 200, remainingPitangas: 75, replay: false });
+  assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 2000, remainingPitangas: 75, replay: false });
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 75);
   assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -200);
   assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 2);
 });
 
 test('unsafe XP conversion multiplication fails before transaction reads', async () => {
-  const { refs } = makeTx(100);
+  const { refs } = makeTx(1000);
   let reads = 0;
   const tx = { get: async () => { reads++; throw new Error('SHOULD_NOT_READ'); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
@@ -165,7 +165,7 @@ test('replay with mismatched correlation fails closed', async () => {
       ? { exists: true, data: () => ({
           id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           type: 'redeem', sourceType: 'conversion', sourceId: 'req1',
-          correlationId: 'another_request', deltaKCoins: -100,
+          correlationId: 'another_request', deltaKCoins: -1000,
         }) }
       : tx.get(r),
   };
@@ -211,7 +211,7 @@ test('replay rejects a debit belonging to another economy', async () => {
       ? { exists: true, data: () => ({
           id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           type: 'redeem', economy: 'store_loyalty_points', sourceType: 'conversion',
-          sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100,
+          sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -1000,
         }) }
       : tx.get(r),
   };
@@ -259,7 +259,7 @@ test('replay rejects tampered original balance in receipt', async () => {
 });
 
 test('conversion rejects a debit reference in another user account before reads', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
@@ -273,7 +273,7 @@ test('conversion rejects a debit reference in another user account before reads'
 });
 
 test('conversion rejects a debit reference in store loyalty points before reads', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
@@ -287,7 +287,7 @@ test('conversion rejects a debit reference in store loyalty points before reads'
 });
 
 test('conversion rejects XP credit redirected into the Pitanga ledger', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
@@ -301,7 +301,7 @@ test('conversion rejects XP credit redirected into the Pitanga ledger', async ()
 });
 
 test('conversion rejects aliased references before transaction reads', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
@@ -313,7 +313,7 @@ test('conversion rejects aliased references before transaction reads', async () 
 });
 
 test('conversion rejects balance projection placed in XP ledger before reads', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
@@ -327,7 +327,7 @@ test('conversion rejects balance projection placed in XP ledger before reads', a
 });
 
 test('conversion rejects receipt placed in reward ledger before reads', async () => {
-  const { refs, tx, writes } = makeTx(100);
+  const { refs, tx, writes } = makeTx(1000);
   let reads = 0;
   const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
