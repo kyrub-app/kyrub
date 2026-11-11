@@ -50,7 +50,7 @@ export const applyPitangaXpConversionInTransaction = async (
         debit.data()?.id !== input.debitRef.id ||
         debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         debit.data()?.type !== 'redeem' ||
-        debit.data()?.sourceType !== 'reward_redemption' ||
+        debit.data()?.sourceType !== 'conversion' ||
         debit.data()?.sourceId !== input.requestId ||
         debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
         xp.data()?.userId !== input.userId ||
@@ -74,7 +74,7 @@ export const applyPitangaXpConversionInTransaction = async (
   tx.update(input.balanceRef, { availableKCoins: plan.remainingPitangas });
   tx.create(input.debitRef, {
     id: input.debitRef.id, userId: input.userId, type: 'redeem',
-    deltaKCoins: -plan.pitangasToDebit, sourceType: 'reward_redemption',
+    deltaKCoins: -plan.pitangasToDebit, sourceType: 'conversion',
     sourceId: input.requestId, correlationId: input.requestId,
     idempotencyKey, occurredAt: input.occurredAt,
   });
