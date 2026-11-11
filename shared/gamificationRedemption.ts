@@ -20,7 +20,10 @@ const required = (value: string, label: string): string => {
   return normalized;
 };
 
-const safeToken = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+const safeToken = (value: string, label: string): string => {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error(`${label}_INVALID`);
+  return value;
+};
 
 export const buildKyrubRedemptionPlan = (input: {
   userId: string;
@@ -46,8 +49,8 @@ export const buildKyrubRedemptionPlan = (input: {
     throw new Error('REDEMPTION_VALIDITY_INVALID');
   }
 
-  const redemptionId = `redemption_${safeToken(userId)}_${safeToken(idempotencyKey)}`;
-  const voucherCode = `KRB-${safeToken(input.reward.id).toUpperCase()}-${safeToken(idempotencyKey).toUpperCase()}`;
+  const redemptionId = `redemption_${safeToken(userId, 'REDEMPTION_USER')}_${safeToken(idempotencyKey, 'REDEMPTION_IDEMPOTENCY')}`;
+  const voucherCode = `KRB-${safeToken(input.reward.id, 'REDEMPTION_REWARD').toUpperCase()}-${safeToken(idempotencyKey).toUpperCase()}`;
   const debitEntry: KyrubRewardLedgerEntry = {
     id: `${redemptionId}_debit`,
     userId,
