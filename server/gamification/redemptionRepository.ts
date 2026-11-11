@@ -35,6 +35,8 @@ export const persistKyrubRedemptionAtomically = async (
       plan.debitEntry.type !== 'redeem' ||
       plan.debitEntry.sourceType !== 'reward_redemption' ||
       plan.debitEntry.sourceId !== plan.rewardId ||
+      plan.debitEntry.id !== `${plan.redemptionId}_debit` ||
+      plan.debitEntry.idempotencyKey !== `redeem:${plan.auditEvent.idempotencyKey}` ||
       plan.debitEntry.correlationId !== plan.auditEvent.correlationId ||
       !Number.isSafeInteger(plan.debitEntry.deltaKCoins) ||
       plan.debitEntry.deltaKCoins >= 0) {
