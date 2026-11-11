@@ -22,11 +22,11 @@ test('Firestore Emulator serializes competing spend and XP conversion on one bal
   await balanceRef.create({ userId, availableKCoins: 0 });
   await db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
     userId, awardId: 'initial', sourceType: 'challenge', sourceId: 'challenge1',
-    amount: 100, occurredAt, balanceRef,
+    amount: 1000, occurredAt, balanceRef,
     ledgerRef: root.collection('rewardLedger').doc('earn_initial'),
   }));
   const spend = db.runTransaction(tx => applyPitangaSpendInTransaction(tx, {
-    userId, spendId: 'reward1', sourceId: 'reward1', amount: 100, occurredAt,
+    userId, spendId: 'reward1', sourceId: 'reward1', amount: 1000, occurredAt,
     balanceRef, debitRef: root.collection('rewardLedger').doc('spend_reward1'),
   }));
   const convert = db.runTransaction(tx => applyPitangaXpConversionInTransaction(tx, {
@@ -60,7 +60,7 @@ test('Firestore Emulator permits only one of two independent XP conversions', as
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 100 });
+  await balanceRef.create({ userId, availableKCoins: 1000 });
   const convert = (requestId: string) => db.runTransaction(tx =>
     applyPitangaXpConversionInTransaction(tx, {
       userId, requestId, requestedXp: 1, occurredAt, balanceRef,
@@ -89,7 +89,7 @@ test('Firestore Emulator replays the same conversion without duplicating XP', as
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 100 });
+  await balanceRef.create({ userId, availableKCoins: 1000 });
   const run = (requestedXp: number) => db.runTransaction(tx =>
     applyPitangaXpConversionInTransaction(tx, {
       userId, requestId: 'sameRequest', requestedXp, occurredAt, balanceRef,
@@ -186,7 +186,7 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   await balanceRef.create({ userId, availableKCoins: 0 });
   await db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
     userId, awardId: 'seed', sourceType: 'challenge', sourceId: 'challenge1',
-    amount: 275, occurredAt, balanceRef,
+    amount: 1175, occurredAt, balanceRef,
     ledgerRef: root.collection('rewardLedger').doc('earn_seed'),
   }));
   await db.runTransaction(tx => applyPitangaSpendInTransaction(tx, {
