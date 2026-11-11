@@ -195,3 +195,22 @@ test('replay with XP ledger timestamp mismatch is rejected', async () => {
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
   assert.equal(writes.length, 0);
 });
+
+
+test('replay rejects a debit belonging to another economy', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  const tampered = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'debit'
+      ? { exists: true, data: () => ({
+          id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          type: 'redeem', economy: 'store_loyalty_points', sourceType: 'conversion',
+          sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100,
+        }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:01Z',
+  } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
