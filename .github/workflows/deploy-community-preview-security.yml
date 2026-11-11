@@ -8,6 +8,7 @@ on:
       - 'firestore.kyrubia-conversations.fragment.rules'
       - 'firestore.product-inventory.fragment.rules'
       - 'firestore.product-dual-write.fragment.rules'
+      - 'firestore.social-feed.fragment.rules'
       - '.github/workflows/deploy-community-preview-security.yml'
 
 permissions:

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Product } from '../types';
 import type { StorePromotion, StorePromotionDiscountType } from '../utils/storePromotions';
-import { auth } from '../utils/firebase';
+import { auth, db } from '../utils/firebase';
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 
 type ToastType = 'success' | 'error' | 'info';
 type Draft = {
@@ -99,6 +100,7 @@ export function StorePromotionsManager({
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [sharingPromotion, setSharingPromotion] = useState<StorePromotion | null>(null);
 
   const storeProducts = useMemo(
     () => products.filter(product => product.supplierId === storeId && product.wholesalePrice === undefined),
@@ -173,6 +175,79 @@ export function StorePromotionsManager({
     } finally { setBusy(false); }
   };
 
+  const shareToPraca = async () => {
+    const promotion = sharingPromotion;
+    const user = auth.currentUser;
+    if (!promotion || !user) return;
+    if (!promotion.active || Date.parse(promotion.startsAt) > Date.now() || Date.parse(promotion.endsAt) <= Date.now()
+      || (promotion.maxRedemptions > 0 && promotion.redemptionCount >= promotion.maxRedemptions)) {
+      triggerToast('Este cupom não está disponível para divulgação.', 'error');
+      return;
+    }
+    setBusy(true);
+    try {
+      // Re-check server-side management authorization and current promotion state
+      // immediately before publishing, rather than trusting a stale list entry.
+      const response = await authorizedFetch(`/api/store-promotions?storeId=${encodeURIComponent(storeId)}`);
+      const payload = await readPromotionApiPayload(response, 'Não foi possível verificar a promoção.');
+      if (!response.ok) throw new Error(payload.error || 'Sem autorização para divulgar esta promoção.');
+      const current = payload.promotions?.find(item => item.id === promotion.id);
+      if (!current || !current.active || Date.parse(current.startsAt) > Date.now() || Date.parse(current.endsAt) <= Date.now()
+        || (current.maxRedemptions > 0 && current.redemptionCount >= current.maxRedemptions)) {
+        throw new Error('Cupom indisponível para divulgação.');
+      }
+      // The management API above is owner-authorized. Read the public store identity,
+      // never the user's personal profile, to attribute the commercial publication.
+      const storeSnapshot = await getDoc(doc(db, 'stores', storeId));
+      const store = storeSnapshot.data();
+      const storeName = typeof store?.name === 'string' ? store.name.trim() : '';
+      const slug = typeof store?.slug === 'string' ? store.slug.trim() : '';
+      if (!storeSnapshot.exists() || !storeName || !slug) {
+        throw new Error('Não foi possível identificar a loja para publicar na Praça.');
+      }
+      const postId = `coupon_${user.uid}_${storeId}_${promotion.id}`.replaceAll('/', '_').slice(0, 500);
+      const reference = doc(db, 'social_posts', postId);
+      const discount = current.discountType === 'percentage'
+        ? `${current.discountValue}% de desconto`
+        : `R$ ${current.discountValue.toFixed(2)} de desconto`;
+      const content = [
+        `🎟️ ${current.title}`,
+        `${discount} · Cupom: ${current.code}`,
+        `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}`,
+      ].join('\n');
+      const nowIso = new Date().toISOString();
+      const postData = {
+        postId,
+        sourcePostId: postId,
+        authorId: user.uid,
+        authorName: storeName.slice(0, 160),
+        authorAvatar: typeof store.logo === 'string' ? store.logo.slice(0, 2048) : '',
+        content,
+        publicationType: 'feed',
+        taggedUsers: [],
+        taggedUserIds: [],
+        mediaUrls: [],
+        visibility: 'public',
+        audienceIds: [],
+        storePromotion: { storeId, promotionId: current.id },
+        createdAtIso: nowIso,
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+      await runTransaction(db, async transaction => {
+        const existingPost = await transaction.get(reference);
+        if (existingPost.exists()) throw new Error('Este cupom já foi compartilhado na Praça.');
+        transaction.set(reference, postData);
+      });
+      setSharingPromotion(null);
+      triggerToast('Cupom compartilhado na Praça!', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível compartilhar o cupom.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -208,8 +283,19 @@ export function StorePromotionsManager({
         </div>
       )}
 
+      {sharingPromotion && (
+        <div role="dialog" aria-label="Compartilhar cupom na Praça" className="space-y-3 rounded-2xl border border-orange-500/40 bg-slate-950 p-4">
+          <strong className="text-xs">Compartilhar na Praça</strong>
+          <p className="text-xs text-slate-300">{sharingPromotion.title} · Cupom {sharingPromotion.code}</p>
+          <p className="text-[10px] text-slate-400">A oferta será publicada no feed público com o nome da loja. A disponibilidade e validade continuam sendo verificadas pelo checkout; a publicação não reserva utilizações.</p>
+          <div className="flex gap-2">
+            <button type="button" disabled={busy} onClick={() => void shareToPraca()} className="min-h-9 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950">Confirmar publicação</button>
+            <button type="button" disabled={busy} onClick={() => setSharingPromotion(null)} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[9px] font-black uppercase">Cancelar</button>
+          </div>
+        </div>
+      )}
       {loading ? <p className="rounded-2xl border border-slate-800 p-4 text-[10px] text-slate-400">Carregando cupons…</p> : promotions.length === 0 ? <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-center text-[10px] text-slate-400">Nenhum cupom criado para esta loja.</p> : (
-        <div className="space-y-2">{promotions.map(promotion => <article key={promotion.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-4"><div><div className="flex items-center gap-2"><strong className="text-xs">{promotion.code}</strong><span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${promotion.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>{promotion.active ? 'Ativo' : 'Pausado'}</span></div><p className="mt-1 text-[10px] text-slate-400">{promotion.title} · {promotion.discountType === 'percentage' ? `${promotion.discountValue}%` : `R$ ${promotion.discountValue.toFixed(2)}`} · {promotion.redemptionCount} uso(s)</p></div><div className="flex gap-2"><button type="button" disabled={busy} onClick={() => { setDraft(fromPromotion(promotion)); setShowForm(true); }} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase">Editar</button><button type="button" disabled={busy} onClick={() => void toggle(promotion)} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase">{promotion.active ? 'Pausar' : 'Ativar'}</button></div></article>)}</div>
+        <div className="space-y-2">{promotions.map(promotion => <article key={promotion.id} className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-800 bg-slate-950 p-4"><div><div className="flex items-center gap-2"><strong className="text-xs">{promotion.code}</strong><span className={`rounded-full px-2 py-1 text-[8px] font-black uppercase ${promotion.active ? 'bg-emerald-500/15 text-emerald-300' : 'bg-slate-800 text-slate-400'}`}>{promotion.active ? 'Ativo' : 'Pausado'}</span></div><p className="mt-1 text-[10px] text-slate-400">{promotion.title} · {promotion.discountType === 'percentage' ? `${promotion.discountValue}%` : `R$ ${promotion.discountValue.toFixed(2)}`} · {promotion.redemptionCount} uso(s)</p></div><div className="flex flex-wrap gap-2"><button type="button" disabled={busy || !promotion.active} onClick={() => setSharingPromotion(promotion)} className="min-h-9 rounded-xl border border-orange-500/50 px-3 text-[8px] font-black uppercase text-orange-300">Compartilhar na Praça</button><button type="button" disabled={busy} onClick={() => { setDraft(fromPromotion(promotion)); setShowForm(true); }} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase">Editar</button><button type="button" disabled={busy} onClick={() => void toggle(promotion)} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[8px] font-black uppercase">{promotion.active ? 'Pausar' : 'Ativar'}</button></div></article>)}</div>
       )}
     </section>
   );

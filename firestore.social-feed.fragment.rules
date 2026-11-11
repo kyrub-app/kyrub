@@ -1,5 +1,27 @@
     // --- Public Social Feed, Connection Status, Likes, Comments and Reports ---
     match /social_posts/{postId} {
+      function validStoreCouponSocialPost(data) {
+        let promo = data.storePromotion;
+        let storePath = /databases/$(database)/documents/stores/$(promo.storeId);
+        let couponPath = /databases/$(database)/documents/stores/$(promo.storeId)/promotions/$(promo.promotionId);
+        return promo is map
+          && promo.keys().hasAll(['storeId', 'promotionId'])
+          && promo.keys().hasOnly(['storeId', 'promotionId'])
+          && promo.storeId is string
+          && promo.promotionId is string
+          && promo.storeId.size() > 0
+          && promo.promotionId.size() > 0
+          && exists(storePath)
+          && get(storePath).data.ownerId == request.auth.uid
+          && exists(couponPath)
+          && get(couponPath).data.active == true
+          && (get(couponPath).data.maxRedemptions == 0
+            || get(couponPath).data.redemptionCount < get(couponPath).data.maxRedemptions)
+          && data.authorName == get(storePath).data.name
+          && data.visibility == 'public'
+          && data.publicationType == 'feed';
+      }
+
       function hasValidSocialPostShape(data) {
         return data.keys().hasAll([
           'postId',
@@ -33,8 +55,10 @@
           'audienceIds',
           'createdAtIso',
           'createdAt',
-          'updatedAt'
+          'updatedAt',
+          'storePromotion'
         ])
+        && (!data.keys().hasAny(['storePromotion']) || validStoreCouponSocialPost(data))
         && data.postId == postId
         && data.sourcePostId is string
         && data.sourcePostId.size() > 0
@@ -109,6 +133,10 @@
         && incoming().sourcePostId == existing().sourcePostId
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
+        && (!existing().keys().hasAny(['storePromotion']) || (
+          incoming().storePromotion == existing().storePromotion
+          && validStoreCouponSocialPost(incoming())
+        ))
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'authorName',
           'authorAvatar',

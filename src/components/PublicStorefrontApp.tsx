@@ -444,6 +444,16 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
       {user && <BuyerDeliveryTrackingBridge storeId={store.id} buyerId={user.uid} />}
 
+      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('coupon') && (
+        <div className="mx-auto mt-3 flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange-500/40 bg-orange-500/10 p-3 text-xs text-orange-100">
+          <span>Cupom da Praça: <strong className="font-mono">{new URLSearchParams(window.location.search).get('coupon')?.slice(0, 48)}</strong>. Adicione um produto participante ao carrinho e valide o desconto no checkout.</span>
+          {cart.length > 0 && (
+            <button type="button" onClick={() => setIsCartOpen(true)} className="rounded-full bg-white px-4 py-2 font-black text-slate-950">
+              Ir para o carrinho
+            </button>
+          )}
+        </div>
+      )}
       <main className="mx-auto w-full max-w-5xl p-3 pb-10 sm:p-5">
         {user ? (
           <StorefrontPanel
