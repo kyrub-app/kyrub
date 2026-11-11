@@ -129,3 +129,19 @@ test('reward catalog spends K-Coins on benefits rather than declaring a cash bal
   assert.equal(reward.costKCoins, 1000);
   assert.equal(reward.benefit.type, 'voucher');
 });
+
+test('reward balance is independent of Firestore document retrieval order', () => {
+  const credit = entry({});
+  const debit = entry({
+    id: 'entry-2', type: 'redeem', deltaKCoins: -400,
+    sourceType: 'reward_redemption', sourceId: 'reward-1',
+    idempotencyKey: 'redeem:reward-1:user-1',
+    occurredAt: '2026-08-23T00:00:00.000Z',
+  });
+  assert.equal(kyrubKCoinBalance([debit, credit]), 600);
+  assert.equal(kyrubKCoinBalance([credit, debit]), 600);
+  assert.throws(() => kyrubKCoinBalance([
+    { ...debit, occurredAt: '2026-08-21T00:00:00.000Z' },
+    credit,
+  ]), /saldo negativo/);
+});
