@@ -28,7 +28,7 @@ export const applyPitangaEarnInTransaction = async (
     throw new Error('PITANGA_EARN_INPUT_INVALID');
   }
   const root = `users/${input.userId}/`;
-  if (!input.balanceRef.path.startsWith(root) ||
+  if (input.balanceRef.path !== `${root}pitangaBalance/balance` ||
       input.ledgerRef.parent.path !== `users/${input.userId}/rewardLedger` ||
       input.balanceRef.parent.path === `users/${input.userId}/rewardLedger` ||
       input.balanceRef.parent.path === `users/${input.userId}/xpLedger` ||
