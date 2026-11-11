@@ -85,3 +85,21 @@ The inspected global operations have these entry-point constraints:
 - `pitangaMigrationVerifiedBootstrap.ts`: reads the historical ledger in a Firestore transaction, validates the checkpoint, then delegates to `pitangaMigrationBootstrapTransaction.ts` to verify the fence document and atomically create balance and receipt. This is **implemented but unwired**, and a `writersVerified: true` document alone cannot attest that older deployed services are fenced.
 
 **Deployment hazard:** a green CI suite does not eliminate the fail-closed voucher restriction or prove writer coverage. Before merge, either explicitly accept the user-facing voucher restriction as a separately approved release behavior, or connect the atomic voucher path after a verified migration. Do not treat the current branch as a completed Pitangas/XP release.
+
+## CI artifact triage — 20 lexical mutation candidates (run 43105952285)
+
+The downloaded `pitanga-ledger-access-inventory` artifact for commit `5771a2a` reports 1,011 tracked JS/TS files, 96 lexical hits and **20 possible mutation lines**. Classification of those 20 lines by source context:
+
+| Candidate lines | Count | Classification |
+| --- | ---: | --- |
+| `pitangaEarnTransaction.ts:71`, `pitangaSpendTransaction.ts:62`, `pitangaVoucherIssuanceTransaction.ts:90`, `pitangaXpConversionTransaction.ts:98` | 4 | Canonical global Pitanga balance updates in isolated, unwired transaction primitives; require verified migration and shared lock |
+| `xpLedgerRepository.ts:49` | 1 | XP ledger write; separate from global Pitanga reward ledger |
+| `globalChallengeAdminRepository.ts:63` | 1 | Global challenge definition status update, not a Pitanga award |
+| `globalChallengeAdminRateLimit.ts:41` | 1 | Administrative rate-limit state |
+| `globalChallengeVisualServer.ts:53,73,75` | 3 | Visual test seed writes (challenge definitions, admin profile, rate limits), not production Pitanga awards |
+| `storeChallengeProcessor.ts:469`, `storeRewardService.ts:266-268`, `src/utils/storeChallenges.ts:121`, `src/utils/storeRewards.ts:107` | 6 | Store-specific reward/points operations; do not conflate with global Pitangas |
+| `globalChallengeAdminHandler.ts:15`, `globalChallengeAdminRateLimit.ts:28`, `pitangaMigrationSnapshot.ts:34,51` | 4 | Non-Firestore methods (`Set.add`, `Hash.update`); lexical false positives |
+
+**Reconciliation:** 4 + 1 + 1 + 1 + 3 + 6 + 4 = 20. This triage classifies the scanner's **matched lines only**; it is not a complete mutation call graph. The scanner misses methods invoked through aliases and operations split across multiple lines, and does not prove coverage of external/background writers. No new live global award writer is established by this artifact.
+
+**Blocking action:** inspect actual deployed callers and all rewardLedger writes, then enforce the legacy fence across them before activating historical migration. Do not merge solely because this artifact has been triaged.
