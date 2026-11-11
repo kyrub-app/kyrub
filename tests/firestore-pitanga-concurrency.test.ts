@@ -441,7 +441,11 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     correlationId: 'tampered_after_checkpoint',
   });
   await assert.rejects(bootstrap(), /PITANGA_CHECKPOINT_STALE/);
-    await fenceRef.update({ status: 'open' });
+  // Restore historical evidence to isolate the subsequent fence assertion.
+  await root.collection('rewardLedger').doc(historicalEntry.id).update({
+    correlationId: historicalEntry.correlationId,
+  });
+  await fenceRef.update({ status: 'open' });
   await assert.rejects(bootstrap(), /PITANGA_BOOTSTRAP_FENCE_UNVERIFIED/);
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
 });
