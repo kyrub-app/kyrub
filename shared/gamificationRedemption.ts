@@ -34,10 +34,15 @@ export const buildKyrubRedemptionPlan = (input: {
   const userId = required(input.userId, 'REDEMPTION_USER');
   const idempotencyKey = required(input.idempotencyKey, 'REDEMPTION_IDEMPOTENCY');
   const correlationId = required(input.correlationId, 'REDEMPTION_CORRELATION');
-  if (!Number.isSafeInteger(input.currentBalanceKCoins) || input.currentBalanceKCoins < input.reward.costKCoins) {
+  if (!Number.isSafeInteger(input.reward.costKCoins) || input.reward.costKCoins <= 0) {
+    throw new Error('REDEMPTION_COST_INVALID');
+  }
+  if (!Number.isSafeInteger(input.currentBalanceKCoins) || input.currentBalanceKCoins < 0 || input.currentBalanceKCoins < input.reward.costKCoins) {
     throw new Error('REDEMPTION_INSUFFICIENT_KCOINS');
   }
-  if (Date.parse(input.validUntil) <= Date.parse(input.occurredAt)) {
+  const occurredAt = Date.parse(input.occurredAt);
+  const validUntil = Date.parse(input.validUntil);
+  if (!Number.isFinite(occurredAt) || !Number.isFinite(validUntil) || validUntil <= occurredAt) {
     throw new Error('REDEMPTION_VALIDITY_INVALID');
   }
 
