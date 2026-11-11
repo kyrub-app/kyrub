@@ -94,6 +94,7 @@ beforeEach(async () => {
   await ensureAuthUser('admin');
   const key = createHash('sha256').update('admin').digest('hex');
   await adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${key}`).delete();
+  await adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-read-${key}`).delete();
 });
 after(async () => {
   globalThis.fetch = nativeFetch;
@@ -133,6 +134,10 @@ test('HTTP authentication and role authority reject every unauthorized write', a
       const result = await request(operation === 'create' ? draft(id) : { challengeId: id }, operation, bearer);
       assert.equal(result.status, status, JSON.stringify(result));
     }
+    const read = await fetch(`${base}?operation=list`, { headers: bearer ? { authorization: `Bearer ${bearer}` } : {} });
+    assert.equal(read.status, status);
+    const get = await fetch(`${base}?operation=get&challengeId=happy`, { headers: bearer ? { authorization: `Bearer ${bearer}` } : {} });
+    assert.equal(get.status, status);
     assert.equal((await adminDb.doc(`global_challenges/${id}`).get()).exists, false);
     assert.equal(await auditCount(id), 0);
   });
@@ -152,7 +157,7 @@ test('runtime validation rejects malformed contracts, injected audit and invalid
   assert.equal((await request({})).status, 400);
   assert.equal((await request({ challengeId: 'x', actorId: 'other' }, 'publish')).status, 400);
   assert.equal((await request({}, 'unknown')).status, 400);
-  assert.equal((await request({}, 'create', token(), 'GET')).status, 405);
+  assert.equal((await request({}, 'create', token(), 'PUT')).status, 405);
   assert.equal((await adminDb.doc('global_challenges/bad-input').get()).exists, false);
 });
 
@@ -367,13 +372,63 @@ test('compiled Vercel rewrite preserves operation=publish through local HTTP and
 
 test('feature branch deploy block accounts for minimatch slash semantics', async () => {
   const config = JSON.parse(await readFile('vercel.json', 'utf8'));
-  const branch = 'feat/global-challenge-admin-repository';
+  for (const branch of ['feat/global-challenge-admin-repository', 'feat/global-challenge-control-plane']) {
   assert.equal(minimatch(branch, '*'), false);
   const matches = Object.entries(config.git.deploymentEnabled).filter(([pattern]) => minimatch(branch, pattern));
   assert.ok(matches.length > 0);
   assert.equal(matches.some(([, allowed]) => allowed === true), false);
   assert.equal(config.git.deploymentEnabled[branch], false);
+  }
   assert.equal(config.git.deploymentEnabled.main, true);
+});
+
+test('administrative reads paginate with stable IDs, status filters and safe DTOs without writes', async () => {
+  const uid = 'read-admin';
+  await ensureAuthUser(uid);
+  await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).set({ uid, role: 'super_admin', status: 'active' });
+  const read = async (query: string, bearer = token(uid)) => {
+    const response = await fetch(`${base}?${query}`, { headers: { authorization: `Bearer ${bearer}` } });
+    assert.equal(response.headers.get('cache-control'), 'no-store');
+    return { status: response.status, body: await response.json() };
+  };
+  for (const id of ['read-a', 'read-b', 'read-c', 'read-d', 'read-e']) {
+    await adminDb.doc(`global_challenges/${id}`).set({ ...draft(id), status: 'active', createdBy: 'private-admin', secret: 'not-public', createdAt: new Date().toISOString() });
+  }
+  const first = await read('operation=list&status=active&limit=2');
+  assert.equal(first.status, 200); assert.deepEqual(first.body.items.map((x: any) => x.id), ['read-a', 'read-b']);
+  assert.ok(first.body.nextCursor);
+  // Deleting the cursor document must not break continuation, and concurrent
+  // insertions after the cursor may appear without duplicating earlier items.
+  await adminDb.doc('global_challenges/read-b').delete();
+  await adminDb.doc('global_challenges/read-cc').set({ ...draft('read-cc'), status: 'active' });
+  const second = await read(`status=active&limit=2&cursor=${first.body.nextCursor}`);
+  assert.deepEqual(second.body.items.map((x: any) => x.id), ['read-c', 'read-cc']);
+  const third = await read(`status=active&limit=2&cursor=${second.body.nextCursor}`);
+  assert.deepEqual(third.body.items.map((x: any) => x.id), ['read-d', 'read-e']); assert.equal(third.body.nextCursor, null);
+  const rewriteBase = base.replace('/api/admin/global-challenges', '/vercel-offline/api/admin/global-challenges');
+  const throughRewrite = await fetch(`${rewriteBase}?operation=get&challengeId=read-a`, { headers: { authorization: `Bearer ${token(uid)}` } });
+  assert.equal(throughRewrite.status, 200); assert.equal((await throughRewrite.json()).challenge.id, 'read-a');
+  const detail = await read('operation=get&challengeId=read-a');
+  assert.equal(detail.status, 200);
+  assert.equal(detail.body.challenge.status, 'active');
+  for (const item of [...first.body.items, detail.body.challenge]) {
+    assert.equal(item.secret, undefined); assert.equal(item.createdBy, undefined); assert.equal(item.createdAt, undefined); assert.equal(item.audit, undefined);
+  }
+  assert.equal(await auditCount('read-a'), 0);
+  const empty = await read('status=ended'); assert.deepEqual(empty.body, { items: [], nextCursor: null });
+  assert.equal((await read('operation=get&challengeId=not-found')).status, 404);
+  for (const query of ['status=invalid', 'limit=0', 'limit=51', 'limit=1.1', 'limit=2&limit=3', 'status=active&status=draft', 'cursor=invalid',
+    'operation=get&challengeId=../unsafe', 'operation=get', 'operation=create', 'operation=list&audit=true', `status=draft&cursor=${first.body.nextCursor}`]) {
+    assert.equal((await read(query)).status, 400, query);
+  }
+  // Read quota uses a distinct record and cannot exhaust the mutation budget.
+  const key = createHash('sha256').update(uid).digest('hex');
+  const quota = adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-read-${key}`);
+  await quota.set({ count: 60, resetAt: Date.now() + 60000 });
+  assert.equal((await read('operation=list')).status, 429);
+  assert.equal((await request(draft('read-does-not-spend-write-quota'), 'create', token(uid))).status, 201);
+  await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).update({ status: 'revoked' });
+  assert.equal((await read('operation=list')).status, 403);
 });
 
 test('Firebase Auth disable/delete/revocation reject still-signed tokens despite active administrative profiles', async t => {

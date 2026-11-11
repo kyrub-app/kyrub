@@ -2,7 +2,7 @@ name: Validate Kyrub
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, feat/global-challenge-admin-repository]
   push:
     branches: [main, 'agent/**', 'fix/**']
   workflow_dispatch:

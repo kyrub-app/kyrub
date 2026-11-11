@@ -1,8 +1,12 @@
 import { parseGlobalChallengeDraft } from './globalChallengeAdminValidation.js';
+import { FieldPath } from 'firebase-admin/firestore';
+import { GLOBAL_CHALLENGE_FIELDS } from '../../shared/globalChallengeAdmin.js';
+import type { GlobalChallengePage } from '../../shared/globalChallengeAdmin.js';
+import { projectGlobalChallenge } from './globalChallengeAdminValidation.js';
 import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { planGlobalChallengeDraft, planGlobalChallengePublication } from '../../shared/globalChallengeLifecycle.js';
-import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
+import type { KyrubChallengeDefinition, KyrubChallengeStatus } from '../../shared/gamification.js';
 
 /**
  * Trusted server-side persistence only. The calling HTTP route MUST verify
@@ -59,5 +63,39 @@ export const publishGlobalChallenge = async (
     tx.update(ref, { status: planned.challenge.status, publishedAt: occurredAt, publishedBy: actorId });
     tx.create(ref.collection('audit').doc('published'), planned.audit);
     return planned.challenge;
+  });
+};
+
+
+export const getGlobalChallenge = async (challengeId: string, actorId: string) => {
+  safeId(challengeId, 'CHALLENGE_ID'); safeId(actorId, 'ADMIN_ACTOR');
+  return adminDb.runTransaction(async tx => {
+    await requireActiveSuperAdmin(tx, actorId);
+    const snapshot = await tx.get(root().doc(challengeId));
+    if (!snapshot.exists) throw new Error('GLOBAL_CHALLENGE_NOT_FOUND');
+    const result = projectGlobalChallenge(snapshot.data());
+    if (result.id !== snapshot.id) throw new Error('GLOBAL_CHALLENGE_ID_MISMATCH');
+    return result;
+  });
+};
+
+export const listGlobalChallenges = async (
+  options: { status?: KyrubChallengeStatus; limit: number; after?: string }, actorId: string,
+): Promise<GlobalChallengePage> => {
+  safeId(actorId, 'ADMIN_ACTOR');
+  let query = root().orderBy(FieldPath.documentId()).limit(options.limit + 1).select(...GLOBAL_CHALLENGE_FIELDS);
+  if (options.status) query = query.where('status', '==', options.status);
+  if (options.after) query = query.startAfter(options.after);
+  return adminDb.runTransaction(async tx => {
+    await requireActiveSuperAdmin(tx, actorId);
+    const snapshot = await tx.get(query);
+    const page = snapshot.docs.slice(0, options.limit);
+    const items = page.map(doc => {
+      const item = projectGlobalChallenge(doc.data());
+      if (item.id !== doc.id) throw new Error('GLOBAL_CHALLENGE_ID_MISMATCH');
+      return item;
+    });
+    const nextCursor = snapshot.size > options.limit ? Buffer.from(JSON.stringify({ v: 1, status: options.status ?? '', after: page.at(-1)!.id })).toString('base64url') : null;
+    return { items, nextCursor };
   });
 };
