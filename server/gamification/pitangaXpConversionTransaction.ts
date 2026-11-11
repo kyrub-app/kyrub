@@ -48,6 +48,13 @@ export const applyPitangaXpConversionInTransaction = async (
     tx.get(input.debitRef), tx.get(input.xpRef),
   ]);
   if (receipt.exists) {
+    // A historical receipt cannot authorize replay if the shared spending
+    // authority disappeared or was reassigned to another user.
+    if (!balance.exists || balance.data()?.userId !== input.userId ||
+        !Number.isSafeInteger(balance.data()?.availableKCoins) ||
+        balance.data()!.availableKCoins < 0) {
+      throw new Error('CONVERSION_REPLAY_BALANCE_UNAVAILABLE');
+    }
     const previous = receipt.data();
     if (previous?.userId !== input.userId ||
         previous?.requestId !== input.requestId ||
