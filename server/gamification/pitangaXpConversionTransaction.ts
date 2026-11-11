@@ -50,6 +50,7 @@ export const applyPitangaXpConversionInTransaction = async (
         debit.data()?.id !== input.debitRef.id ||
         debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         debit.data()?.type !== 'redeem' ||
+        debit.data()?.economy !== 'k_coin' ||
         debit.data()?.sourceType !== 'conversion' ||
         debit.data()?.sourceId !== input.requestId ||
         debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
@@ -59,6 +60,7 @@ export const applyPitangaXpConversionInTransaction = async (
         xp.data()?.id !== input.xpRef.id ||
         xp.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         xp.data()?.sourceType !== 'conversion' ||
+        xp.data()?.economy !== 'kyrub_xp' ||
         xp.data()?.sourceId !== input.requestId ||
         xp.data()?.deltaXp !== plan.xpToCredit) throw new Error('CONVERSION_LEDGER_INCONSISTENT');
     return { xpCredited: plan.xpToCredit, pitangasDebited: plan.pitangasToDebit,
@@ -73,7 +75,7 @@ export const applyPitangaXpConversionInTransaction = async (
   const idempotencyKey = `pitanga_xp_${input.requestId}`;
   tx.update(input.balanceRef, { availableKCoins: plan.remainingPitangas });
   tx.create(input.debitRef, {
-    id: input.debitRef.id, userId: input.userId, type: 'redeem',
+    id: input.debitRef.id, userId: input.userId, type: 'redeem', economy: 'k_coin',
     deltaKCoins: -plan.pitangasToDebit, sourceType: 'conversion',
     sourceId: input.requestId, correlationId: input.requestId,
     idempotencyKey, occurredAt: input.occurredAt,
