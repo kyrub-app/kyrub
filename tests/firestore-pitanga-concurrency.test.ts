@@ -434,7 +434,7 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
   assert.equal((await receiptRef.get()).data()?.ledgerSha256, checkpoint.ledgerSha256);
   await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
-    /PITANGA_BOOTSTRAP_CONFLICT/);
+    /PITANGA_CHECKPOINT_STALE/);
   // A late historical mutation is detected from the ledger read inside
   // the transaction, not from a stale caller-provided snapshot.
   await root.collection('rewardLedger').doc(historicalEntry.id).update({
