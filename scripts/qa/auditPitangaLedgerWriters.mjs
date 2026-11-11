@@ -24,9 +24,9 @@ const patterns = [
   /pitangaXpConversions/i,
 ];
 const hits = [];
-const callsitePatterns = [
-  /\b(?:persistKyrubRedemptionAtomically|applyPitangaEarnInTransaction|applyPitangaSpendInTransaction|applyPitangaXpConversionInTransaction|issuePitangaVoucherInTransaction)\s*\(/g,
-];
+const callsiteNames = 'persistKyrubRedemptionAtomically|applyPitangaEarnInTransaction|applyPitangaSpendInTransaction|applyPitangaXpConversionInTransaction|issuePitangaVoucherInTransaction|bootstrapVerifiedPitangaBalanceInTransaction|assertLegacyPitangaWriterAllowedInTransaction';
+const callsitePattern = new RegExp(`\\b(?:${callsiteNames})\\s*\\(`, 'g');
+const declarationPattern = new RegExp(`^\\s*(?:export\\s+)?(?:async\\s+function|function|(?:const|let|var)\\s+(?:${callsiteNames})\\s*=)`);
 const callsites = [];
 const firestoreMutationPatterns = [
   /\b(?:transaction|batch|adminDb|db)\s*\.\s*(?:create|set|update|delete|add)\s*\(/,
@@ -45,11 +45,11 @@ for (const path of tracked) {
       possibleMutations.push({ path, line: index + 1,
         excerpt: lines[index].trim().slice(0, 240) });
     }
-    for (const pattern of callsitePatterns) {
-      pattern.lastIndex = 0;
-      if (pattern.test(lines[index]) && !/\b(?:export\s+(?:const|function)|const\s+\w+\s*=|function\s+\w+)\b/.test(lines[index])) {
-        callsites.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
-      }
+    // Exclude declarations by the target symbol name, not every const assignment:
+    // `const result = await applyPitangaEarnInTransaction(...)` is a callsite.
+    callsitePattern.lastIndex = 0;
+    if (callsitePattern.test(lines[index]) && !declarationPattern.test(lines[index])) {
+      callsites.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
     }
   }
 }
