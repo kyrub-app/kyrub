@@ -24,7 +24,7 @@ export const applyPitangaSpendInTransaction = async (
     throw new Error('PITANGA_SPEND_INPUT_INVALID');
   }
   const userRoot = `users/${input.userId}/`;
-  if (!input.balanceRef.path.startsWith(userRoot) ||
+  if (input.balanceRef.path !== `${userRoot}pitangaBalance/balance` ||
       input.debitRef.parent.path !== `users/${input.userId}/rewardLedger` ||
       input.balanceRef.parent.path === `users/${input.userId}/rewardLedger` ||
       input.balanceRef.parent.path === `users/${input.userId}/xpLedger` ||
