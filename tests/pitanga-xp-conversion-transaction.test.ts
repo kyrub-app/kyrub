@@ -10,8 +10,8 @@ const makeTx = (balance: number, replay = false) => {
   ]);
   if (replay) {
     snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed' });
-    snapshots.set('debit', { deltaKCoins: -100 });
-    snapshots.set('xp', { deltaXp: 1 });
+    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', deltaKCoins: -100 });
+    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', deltaXp: 1 });
   }
   const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
   const tx = {
@@ -98,6 +98,20 @@ test('inconsistent replay receipt fails closed', async () => {
       : tx.get(r),
   };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(inconsistentTx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
+
+test('replay with ledger belonging to another user is rejected', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  const tampered = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'xp'
+      ? { exists: true, data: () => ({ id: 'xp', userId: 'other_user', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', deltaXp: 1 }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
   assert.equal(writes.length, 0);
