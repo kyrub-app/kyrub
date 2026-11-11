@@ -34,6 +34,7 @@ test('stages balance update, debit, XP credit and receipt together', async () =>
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 0);
   assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -100);
   assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 1);
+  assert.equal(writes.find(w => w.id === 'xp')?.value.sourceType, 'conversion');
 });
 
 test('same request replay does not stage additional writes', async () => {
