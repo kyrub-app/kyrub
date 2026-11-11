@@ -56,3 +56,10 @@ O arquivo **presente em `main`** `server/gamification/redemptionRepository.ts` i
 **Consequência obrigatória:** a primitiva atual `pitangaXpConversionTransaction.ts` ainda pressupõe um documento `balanceRef` com `availableKCoins`, que **não é usado por esse escritor de resgate**. Não conectar a primitiva, não introduzir esse saldo paralelo nem renomear `k_coin` ou `deltaKCoins` nos documentos persistidos antes de verificar todos os escritores e leitores. A descoberta é de um escritor de **débito**, não de emissão/ganho; tampouco comprova o cálculo autoritativo do saldo ou proteção contra gastos concorrentes entre resgate e conversão.
 
 **Próximo bloqueio:** localizar emissor/ganho global, leitores e projeção do saldo; definir serialização transacional única para resgate e conversão (e revalidar o débito de resgate contra saldo sob concorrência). Só depois ligar conversão e planejar migração dos campos.
+
+
+## Concorrência de resgate identificada (11/11/2026)
+
+`shared/gamificationRedemption.ts` recebe `currentBalanceKCoins` do chamador e verifica saldo **durante o planejamento**. `server/gamification/redemptionRepository.ts` grava débito/voucher/recibo em transação, mas **não relê saldo nem serializa com outro débito na mesma transação**. Portanto, a atomicidade de quatro documentos não equivale à proteção contra gasto simultâneo de Pitangas. É necessário auditar os chamadores e todas as operações de crédito antes de decidir a correção; não habilitar conversão enquanto resgate e conversão puderem gastar sobre visões diferentes do saldo.
+
+`shared/gamificationLedger.ts` define `createAuditableKCoinLedgerEntry`, um **construtor puro** de lançamento auditável; não grava ganhos. Aliases `Pitanga` adicionados para novo código, mantendo formato legado persistido.
