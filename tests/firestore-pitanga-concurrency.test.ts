@@ -75,3 +75,34 @@ test('Firestore Emulator permits only one of two independent XP conversions', as
   assert.equal((await root.collection('xpLedger').get()).size, 1);
   assert.equal((await root.collection('pitangaXpConversions').get()).size, 1);
 });
+
+test('Firestore Emulator replays the same conversion without duplicating XP', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-replay-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `replay_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const occurredAt = '2026-11-11T12:00:00Z';
+  await balanceRef.create({ userId, availableKCoins: 100 });
+  const run = (requestedXp: number) => db.runTransaction(tx =>
+    applyPitangaXpConversionInTransaction(tx, {
+      userId, requestId: 'sameRequest', requestedXp, occurredAt, balanceRef,
+      debitRef: root.collection('rewardLedger').doc('conversion_sameRequest'),
+      xpRef: root.collection('xpLedger').doc('conversion_sameRequest'),
+      receiptRef: root.collection('pitangaXpConversions').doc('sameRequest'),
+    }));
+  const first = await run(1);
+  assert.equal(first.replay, false);
+  const retry = await run(1);
+  assert.equal(retry.replay, true);
+  await assert.rejects(() => run(2), /CONVERSION_IDEMPOTENCY_CONFLICT/);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 0);
+  assert.equal((await root.collection('rewardLedger').get()).size, 1);
+  assert.equal((await root.collection('xpLedger').get()).size, 1);
+  assert.equal((await root.collection('pitangaXpConversions').get()).size, 1);
+});
