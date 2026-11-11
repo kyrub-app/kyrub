@@ -59,7 +59,7 @@ A lexical scan cannot certify that all production writers have been fenced.
 | Global voucher issuance | `issuePitangaVoucherInTransaction` (isolated primitive, not connected to public redemption) | Same candidate | **No** | Blocked |
 | Legacy voucher issuance | `persistKyrubRedemptionAtomically` | No authoritative balance for new issuance; explicitly fails closed | **No** | New issuance blocked; existing replay only |
 | Pitanga-to-XP conversion | `applyPitangaXpConversionInTransaction` (isolated primitive; no public endpoint) | Same candidate | **No** | Blocked |
-| Historical migration | Read-only snapshot/checkpoint verifiers | No write transaction or migration receipt | **No** | Blocked |
+| Historical migration | Read-only verifiers plus isolated `bootstrapVerifiedPitangaBalanceInTransaction` | Transactionally reads ledger, checks checkpoint and creates balance plus receipt; not connected to an approved cutover job | **No** | Blocked |
 | Store points and CRM rewards | Store-specific services and ledger | Separate economy | Not applicable to global Pitangas | Must remain separate |
 
 **Cutover acceptance criteria (all required):**
@@ -71,4 +71,17 @@ A lexical scan cannot certify that all production writers have been fenced.
 5. Switch **all** authorized earn/spend/voucher/conversion paths to the canonical transactional balance, with emulator race tests and a rollback/incident plan.
 6. Obtain independent review and explicit deployment approval. Do not infer readiness from green CI alone.
 
-**Current conclusion:** the read-only verifiers and concurrency tests improve confidence, but neither a production write fence nor an atomic historical bootstrap has been implemented. The PR must not be merged as a complete, user-facing rewards release.
+**Current conclusion:** an isolated atomic historical bootstrap and emulator tests exist, but there is no approved cutover job or production-wide write fence. The caller-provided `legacyWritersFenced` flag does not establish real enforcement. The PR must not be merged as a complete, user-facing rewards release.
+
+
+## Confirmed transaction-primitive call graph and migration fence (11 November 2026)
+
+The branch contains `pitangaLegacyWriterFence.ts`, a transaction-scoped guard reading `systemControl/pitangaLegacyWriterFence`. The Firestore Emulator tests exercise the guard directly and demonstrate rejection after `fencing` or `fenced`, including a race against activation. **Those tests do not establish that any production writer invokes the guard.** The guard intentionally allows a missing control document for pre-cutover compatibility; that behavior cannot authorize historical migration.
+
+The inspected global operations have these entry-point constraints:
+
+- `redemptionRepository.ts`: the existing public-facing persistence path retains idempotent replay and rejects all *new* voucher issuance with `REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE`. It does not call the isolated `issuePitangaVoucherInTransaction` primitive.
+- `pitangaEarnTransaction.ts`, `pitangaSpendTransaction.ts`, `pitangaXpConversionTransaction.ts`, `pitangaVoucherIssuanceTransaction.ts`: transaction primitives, not confirmed active production routes. The global challenge administrative endpoints manage definitions, not completed-award credits.
+- `pitangaMigrationVerifiedBootstrap.ts`: reads the historical ledger in a Firestore transaction, validates the checkpoint, then delegates to `pitangaMigrationBootstrapTransaction.ts` to verify the fence document and atomically create balance and receipt. This is **implemented but unwired**, and a `writersVerified: true` document alone cannot attest that older deployed services are fenced.
+
+**Deployment hazard:** a green CI suite does not eliminate the fail-closed voucher restriction or prove writer coverage. Before merge, either explicitly accept the user-facing voucher restriction as a separately approved release behavior, or connect the atomic voucher path after a verified migration. Do not treat the current branch as a completed Pitangas/XP release.
