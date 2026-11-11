@@ -107,6 +107,12 @@ export const persistKyrubRedemptionAtomically = async (
       return current;
     }
 
+    // A caller-provided balance is not a transactional spending authority.
+    // Until all global Pitanga earn/spend writers share a canonical balance lock,
+    // issuing a new voucher here could double-spend across distinct requests.
+    // Preserve read-only idempotent replay of already-issued redemptions above.
+    throw new Error('REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE');
+
     const persisted: PersistedKyrubRedemption = {
       redemptionId: plan.redemptionId,
       userId: plan.userId,
