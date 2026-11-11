@@ -14,6 +14,9 @@ Searched `server/admin`, `server/ai`, `server/gamification`, `shared/*Challenge*
   Reused as-is; client roles and token role claims cannot grant access.
 - `verifyFirebaseIdToken` is the existing certificate-based verifier. This write
   boundary additionally rejects expired tokens even within its clock-skew tolerance.
+  The existing Admin Auth SDK's `getUser` checks disabled/deleted identities and
+  `auth_time` against `tokensValidAfterTime` on every request. No token role claim,
+  cached identity state or second signature-verification implementation is used.
 - `assertKyrubChallengeDefinition` and `globalChallengeLifecycle` remain the canonical
   definition and lifecycle validators. Extended runtime definition checks; the new
   input parser only restricts writable fields and the global-draft contract.
@@ -91,14 +94,14 @@ Firestore's serial order determines which operation wins.
 ## Validation
 
 Run `npm run test:global-challenges` with Java 21 and the repository's Node 22 runtime.
-It starts Firestore Emulator using the isolated `demo-global-challenges` project,
+It starts Firestore and Auth Emulators using the isolated `demo-global-challenges` project,
 uses the real handlers, transactions, composed rules, role checks and Firebase token
 verifier, and supplies locally signed RSA test tokens and a fixture certificate.
 No real Firebase identity or production credential is used. It covers HTTP and the
 serverless multiplexer, malformed/expired/forged tokens, non-admin and inactive
 profiles, input validation, duplicate/concurrent requests, audit provenance, atomic
 rollback and direct browser write denials. The suite refuses to run without a local
-Firestore Emulator. CI runs this command under `Validate Kyrub`.
+Firestore and Auth Emulators. CI runs this command under `Validate Kyrub`.
 
 Local validation also includes `npm run prebuild`, the related gamification tests,
 `npm --ignore-scripts run build`, serverless ESM normalization, `npm run lint`, and
@@ -198,3 +201,37 @@ build, TypeScript and updated CI passing, this API is ready for final code/secur
 review. This is not authorization to merge or deploy. The PR remains a draft.
 Control Plane UI, public Recompensas integration and a real verified completion event
 remain separate work. No hosted-runtime or production validation is claimed.
+
+
+## Final independent review - 2026-11-11
+
+The review of `e128888` found two reproducible issues before integration:
+
+1. Firebase Auth disable/delete/revokeRefreshTokens did not invalidate an otherwise
+   signed token while the Control Plane profile stayed active. Original requests
+   returned 201 instead of 401. The feature now calls the existing `adminAuth.getUser`
+   after canonical verification and checks disabled/missing identity and the SDK's
+   auth_time/tokensValidAfterTime cutoff. Backend failure is sanitized 503 with no
+   business writes. This is scoped to challenges; other services are unchanged.
+2. Express parser errors (invalid JSON/oversize) skipped ingress admission. A malformed
+   flood never reached 429. Admission now occurs before the parser, with a private
+   WeakSet preventing double counting in the shared handler; direct Vercel calls
+   remain covered. Tests cover both malformed floods and one slot per request.
+
+The real Auth Emulator tests accept the same captured token before disabling,
+removing or revoking its identity, then require 401 and unchanged draft/audit.
+Revocation advances the test clock across the SDK's whole-second cutoff and checks
+that reauthentication permits a fresh session. Firestore role revocation/retry,
+concurrency and rollback tests remain unchanged. Emulator endpoints must be local;
+no production credentials or real certificate/identity requests are used.
+
+Auth revocation is checked at request authorization; there is no distributed atomic
+transaction between Firebase Auth and Firestore. Immediate business authorization
+revocation remains the server-owned Firestore profile, read in the business
+transaction and on every SDK retry. A concurrent revocation ordered after a prior
+commit does not undo that commit. Network/platform limits and cross-instance DDoS
+protection are not promised by the per-process ingress budget; an anonymous client
+can exhaust that shared budget and temporarily deny requests to administrators.
+
+Detailed evidence, merge ordering and final CI links are recorded in the PR review.
+No client rules, production flags, commercial code or reward issuance changed.

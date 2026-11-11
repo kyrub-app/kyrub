@@ -6,6 +6,14 @@ type RequestLike = { method?: string; headers: Record<string, string | string[] 
 type ResponseLike = { setHeader(name: string, value: string): unknown; status(code: number): ResponseLike; json(body: unknown): unknown };
 
 export const GLOBAL_CHALLENGE_PAYLOAD_BYTES = 32 * 1024;
+// Express admits before parsing; the direct Vercel adapter admits in handler.
+// A private WeakSet prevents double-counting without trusting headers/body.
+const admittedRequests = new WeakSet<object>();
+const admitIngress = async (request: object) => {
+  if (admittedRequests.has(request)) return;
+  await consumeGlobalChallengeIngress();
+  admittedRequests.add(request);
+};
 
 export default async function handler(request: RequestLike, response: ResponseLike): Promise<void> {
   response.setHeader('cache-control', 'no-store');
@@ -16,7 +24,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
   }
   const authorization = request.headers.authorization;
   try {
-    await consumeGlobalChallengeIngress();
+    await admitIngress(request);
     const mediaType = request.headers['content-type'];
     if (typeof mediaType !== 'string' || !/^application\/json(?:\s*;|$)/i.test(mediaType)) {
       response.status(415).json({ code: 'JSON_REQUIRED' }); return;
@@ -50,10 +58,15 @@ export default async function handler(request: RequestLike, response: ResponseLi
 export const createGlobalChallengeAdminRouter = () => {
   const router = express.Router();
   router.use((_req, res, next) => { res.setHeader('cache-control', 'no-store'); next(); });
+  router.use((req, _res, next) => { void admitIngress(req).then(() => next(), next); });
   router.use(express.json({ limit: GLOBAL_CHALLENGE_PAYLOAD_BYTES, strict: false,
     inflate: false, verify: (req, _res, bytes) => { (req as RequestLike).rawBody = bytes; } }));
   router.all('/', (req, res) => { void handler(req, res); });
   const errors: ErrorRequestHandler = (error, _req, res, _next) => {
+    if (error instanceof GlobalChallengeRateLimitError) {
+      res.setHeader('retry-after', String(error.retryAfter));
+      res.status(429).json({ code: 'GLOBAL_CHALLENGE_RATE_LIMITED' }); return;
+    }
     const status = error?.status === 413 ? 413 : error?.status === 415 ? 415 : 400;
     res.status(status).json({ code: status === 413 ? 'PAYLOAD_TOO_LARGE' : status === 415 ? 'JSON_REQUIRED' : 'CHALLENGE_INPUT_INVALID' });
   };

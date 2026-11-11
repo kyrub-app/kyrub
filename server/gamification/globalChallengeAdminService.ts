@@ -1,3 +1,4 @@
+import { adminAuth } from '../firebaseAdmin.js';
 import { consumeGlobalChallengeActorLimit } from './globalChallengeAdminRateLimit.js';
 import { authorizeIntegrationReadiness } from '../admin/integrationReadinessService.js';
 import { createGlobalChallengeDraft, publishGlobalChallenge } from './globalChallengeAdminRepository.js';
@@ -8,6 +9,7 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
   if (!token) throw new Error('AUTH_REQUIRED');
   // Reject malformed JWT objects before the shared verifier; its clock-skew
   // tolerance must not permit expired tokens on administrative writes.
+  let authenticatedAt = 0;
   try {
     const parts = token.split('.');
     if (parts.length !== 3) throw new Error();
@@ -16,10 +18,22 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
     if (!header || typeof header !== 'object' || Array.isArray(header) ||
         !claims || typeof claims !== 'object' || Array.isArray(claims) ||
         typeof claims.exp !== 'number' || claims.exp <= Date.now() / 1000) throw new Error();
+    authenticatedAt = claims.auth_time;
   } catch {
     throw new Error('AUTH_REQUIRED');
   }
   const actor = await authorizeIntegrationReadiness(authorization);
+  // Keep the canonical signature/project/email/profile verifier. Consult the
+  // existing Admin Auth SDK for identity state without verifying the JWT twice.
+  // Compare auth_time (not iat), matching the SDK's revocation semantics.
+  try {
+    const identity = await adminAuth.getUser(actor.uid);
+    if (identity.disabled || (identity.tokensValidAfterTime &&
+        authenticatedAt * 1000 < Date.parse(identity.tokensValidAfterTime))) throw new Error('AUTH_REQUIRED');
+  } catch (error) {
+    if ((error as { code?: string }).code === 'auth/user-not-found') throw new Error('AUTH_REQUIRED');
+    throw error; // Auth backend failures fail closed and map to sanitized 503.
+  }
   const occurredAt = new Date().toISOString();
   if (operation === 'create') {
     const challenge = parseGlobalChallengeDraft(input);

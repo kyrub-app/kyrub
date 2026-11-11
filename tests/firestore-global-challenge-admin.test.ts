@@ -8,10 +8,12 @@ import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import express from 'express';
+import { MemoryStore } from 'express-rate-limit';
+import { getAuth } from 'firebase-admin/auth';
 import type { Server } from 'node:http';
 import { getFirestore, type Transaction } from 'firebase-admin/firestore';
 import { GLOBAL_CHALLENGE_ACTOR_LIMIT, GLOBAL_CHALLENGE_INGRESS_LIMIT } from '../server/gamification/globalChallengeAdminRateLimit.js';
-import { adminDb } from '../server/firebaseAdmin.js';
+import { adminDb, adminAuth } from '../server/firebaseAdmin.js';
 import handler, { createGlobalChallengeAdminRouter, GLOBAL_CHALLENGE_PAYLOAD_BYTES } from '../server/gamification/globalChallengeAdminHandler.js';
 import serverlessHandler from '../api/admin/operations/health.js';
 import { createGlobalChallengeDraft } from '../server/gamification/globalChallengeAdminRepository.js';
@@ -19,6 +21,7 @@ import { createGlobalChallengeDraft } from '../server/gamification/globalChallen
 if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '')) {
   throw new Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 }
+if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST ?? '')) throw new Error('LOCAL_AUTH_EMULATOR_REQUIRED');
 const projectId = 'demo-global-challenges';
 process.env.FIREBASE_PROJECT_ID = projectId;
 // Never allow an inherited credential or Vercel environment to select a real project.
@@ -79,7 +82,16 @@ before(async () => {
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   base = `http://127.0.0.1:${address.port}/api/admin/global-challenges`;
 });
+const ensureAuthUser = async (uid: string) => {
+  try { await adminAuth.getUser(uid); }
+  catch (error) {
+    if ((error as { code?: string }).code !== 'auth/user-not-found') throw error;
+    try { await adminAuth.createUser({ uid, emailVerified: true }); }
+    catch (creation) { if ((creation as { code?: string }).code !== 'auth/uid-already-exists') throw creation; }
+  }
+};
 beforeEach(async () => {
+  await ensureAuthUser('admin');
   const key = createHash('sha256').update('admin').digest('hex');
   await adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${key}`).delete();
 });
@@ -90,6 +102,12 @@ after(async () => {
   await adminDb.terminate();
 });
 const request = async (body: unknown, operation = 'create', bearer: string | null = token(), method = 'POST') => {
+  if (bearer) {
+    try {
+      const uid = JSON.parse(Buffer.from(bearer.split('.')[1], 'base64url').toString()).sub;
+      if (typeof uid === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(uid)) await ensureAuthUser(uid);
+    } catch (error) { if (!(error instanceof SyntaxError) && !(error instanceof TypeError)) throw error; }
+  }
   const result = await fetch(`${base}?operation=${operation}`, { method,
     headers: { 'content-type': 'application/json', ...(bearer ? { authorization: `Bearer ${bearer}` } : {}) },
     ...(method === 'POST' ? { body: JSON.stringify(body) } : {}) });
@@ -356,6 +374,78 @@ test('feature branch deploy block accounts for minimatch slash semantics', async
   assert.equal(matches.some(([, allowed]) => allowed === true), false);
   assert.equal(config.git.deploymentEnabled[branch], false);
   assert.equal(config.git.deploymentEnabled.main, true);
+});
+
+test('Firebase Auth disable/delete/revocation reject still-signed tokens despite active administrative profiles', async t => {
+  for (const state of ['disabled', 'deleted', 'revoked']) await t.test(state, async context => {
+    const uid = `identity-${state}`;
+    await ensureAuthUser(uid);
+    await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).set({ uid, role: 'super_admin', status: 'active' });
+    const id = `identity-${state}-draft`;
+    const captured = token(uid);
+    assert.equal((await request(draft(id), 'create', captured)).status, 201, 'same captured token accepted before identity change');
+    if (state === 'disabled') await adminAuth.updateUser(uid, { disabled: true });
+    if (state === 'deleted') await adminAuth.deleteUser(uid);
+    if (state === 'revoked') {
+      // Advance only this test process' clock across the SDK's whole-second
+      // revocation cutoff. No sleeps, fake Auth responses or production calls.
+      const cutoff = Date.now() + 2000;
+      context.mock.timers.enable({ apis: ['Date'], now: cutoff });
+      await adminAuth.revokeRefreshTokens(uid);
+      assert.ok(Date.parse((await adminAuth.getUser(uid)).tokensValidAfterTime) >
+        JSON.parse(Buffer.from(captured.split('.')[1], 'base64url').toString()).auth_time * 1000);
+    }
+    // Send directly: the ordinary fixture helper must not recreate a deleted identity.
+    for (const operation of ['create', 'publish']) {
+      const response = await fetch(`${base}?operation=${operation}`, { method: 'POST',
+        headers: { authorization: `Bearer ${captured}`, 'content-type': 'application/json' },
+        body: JSON.stringify(operation === 'create' ? draft(`${id}-blocked`) : { challengeId: id }) });
+      assert.equal(response.status, 401, state + ':' + operation);
+    }
+    assert.equal((await adminDb.doc(`global_challenges/${id}-blocked`).get()).exists, false);
+    assert.equal((await adminDb.doc(`global_challenges/${id}`).get()).data()?.status, 'draft');
+    assert.equal(await auditCount(id), 1);
+    assert.equal((await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).get()).data()?.status, 'active');
+    if (state === 'revoked') {
+      // Re-authentication after the cutoff restores identity validity, not extra roles.
+      assert.equal((await request(draft(`${id}-reauthenticated`), 'create', token(uid))).status, 201);
+    }
+  });
+});
+
+test('identity backend failures fail closed without business writes or backend detail disclosure', async context => {
+  const fault = context.mock.method(getAuth(), 'getUser', async () => { throw new Error('TEST_PRIVATE_BACKEND_FAILURE'); });
+  try {
+    const response = await fetch(`${base}?operation=create`, { method: 'POST',
+      headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json' },
+      body: JSON.stringify(draft('identity-unavailable')) });
+    assert.equal(response.status, 503);
+    assert.deepEqual(await response.json(), { code: 'GLOBAL_CHALLENGE_UNAVAILABLE' });
+    assert.equal((await adminDb.doc('global_challenges/identity-unavailable').get()).exists, false);
+    assert.equal(await auditCount('identity-unavailable'), 0);
+  } finally { fault.mock.restore(); }
+});
+
+test('Express admission charges one slot per request, including parser errors', async context => {
+  const admission = context.mock.method(MemoryStore.prototype, 'increment');
+  try {
+    assert.equal((await request(draft('admission-once'))).status, 201);
+    assert.equal(admission.mock.callCount(), 1);
+    const oversized = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' },
+      body: ' '.repeat(GLOBAL_CHALLENGE_PAYLOAD_BYTES + 1) });
+    assert.equal(oversized.status, 413);
+    assert.equal(admission.mock.callCount(), 2);
+  } finally { admission.mock.restore(); }
+});
+
+test('malformed and oversized HTTP requests cannot bypass pre-parser ingress admission', async () => {
+  let blocked = false;
+  for (let i = 0; i <= GLOBAL_CHALLENGE_INGRESS_LIMIT; i++) {
+    const response = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
+    if (response.status === 429) { assert.ok(Number(response.headers.get('retry-after')) > 0); blocked = true; break; }
+    assert.equal(response.status, 400);
+  }
+  assert.equal(blocked, true, 'invalid JSON must consume the same admission budget');
 });
 
 test('ingress limit rejects unauthenticated floods without trusting forwarded headers', async () => {
