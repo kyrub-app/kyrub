@@ -71,3 +71,9 @@ export const assertKCoinLedgerIdempotency = (
     seen.add(entry.idempotencyKey);
   }
 };
+
+/** Canonical Pitanga naming for newly authored code. Legacy persisted fields and economy discriminant are unchanged. */
+export type CreatePitangaLedgerEntryInput = CreateKCoinLedgerEntryInput;
+export type AuditablePitangaLedgerEntry = AuditableKCoinLedgerEntry;
+export const createAuditablePitangaLedgerEntry: typeof createAuditableKCoinLedgerEntry = createAuditableKCoinLedgerEntry;
+export const assertPitangaLedgerIdempotency: typeof assertKCoinLedgerIdempotency = assertKCoinLedgerIdempotency;
