@@ -49,6 +49,17 @@ jobs:
       - name: TypeScript
         run: npm run lint
 
+      - name: Inventory global Pitanga ledger access (read-only)
+        run: node scripts/qa/auditPitangaLedgerWriters.mjs > pitanga-ledger-access-inventory.json
+
+      - name: Preserve Pitanga ledger access inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitanga-ledger-access-inventory
+          path: pitanga-ledger-access-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Contract tests
         run: >-
           node --test --import tsx
