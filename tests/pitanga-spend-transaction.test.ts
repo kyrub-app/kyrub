@@ -82,3 +82,13 @@ test('cross-user debit is rejected before reads', async () => {
   assert.equal(m.reads, 0);
   assert.equal(m.writes.length, 0);
 });
+
+
+test('spending rejects a shadow balance document before reads', async () => {
+  const m = mock(100);
+  await assert.rejects(() => applyPitangaSpendInTransaction(m.tx as never, {
+    ...input, balanceRef: { id: 'shadow', path: 'users/user1/pitangaBalance/shadow',
+      parent: { path: 'users/user1/pitangaBalance' } },
+  } as never), /PITANGA_SPEND_REFERENCE_INVALID/);
+  assert.equal(m.reads, 0);
+});
