@@ -214,3 +214,22 @@ test('replay rejects a debit belonging to another economy', async () => {
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
   assert.equal(writes.length, 0);
 });
+
+
+test('replay rejects XP credited to an incorrect economy', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  const tampered = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'xp'
+      ? { exists: true, data: () => ({
+          id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1',
+          correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1,
+        }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:01Z',
+  } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
