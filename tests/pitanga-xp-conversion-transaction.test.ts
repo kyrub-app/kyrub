@@ -9,7 +9,7 @@ const makeTx = (balance: number, replay = false) => {
     ['balance', { userId: 'user1', availableKCoins: balance }],
   ]);
   if (replay) {
-    snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed' });
+    snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
     snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', sourceType: 'reward_redemption', sourceId: 'req1', correlationId: 'req1', deltaKCoins: -100 });
     snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', deltaXp: 1 });
   }
@@ -164,5 +164,13 @@ test('replay with mismatched correlation fails closed', async () => {
   await assert.rejects(() => applyPitangaXpConversionInTransaction(mismatched as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
+
+test('replay with altered timestamp is rejected', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:01Z',
+  } as never), /CONVERSION_IDEMPOTENCY_CONFLICT/);
   assert.equal(writes.length, 0);
 });
