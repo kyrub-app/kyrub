@@ -231,6 +231,16 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   assert.equal(divergent.status, 'inconsistent');
   assert.equal(divergent.ledgerBalance, 100);
   assert.equal(divergent.projectedBalance, 101);
+  assert.throws(() => buildPitangaMigrationSnapshot({
+    userId,
+    ledgerDocuments: historical.docs.map(doc => ({
+      id: doc.id, data: doc.data() as never,
+    })),
+    completeLedgerVerified: true,
+    legacyWritersFenced: true,
+    existingProjection: { userId, availableKCoins: 101 },
+  }), /PITANGA_MIGRATION_PROJECTION_CONFLICT/);
+
 });
 
 test('Firestore Emulator serializes voucher issuance against XP conversion', async (t) => {
