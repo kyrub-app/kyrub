@@ -25,6 +25,15 @@ export interface PersistedKyrubRedemption {
 export const persistKyrubRedemptionAtomically = async (
   plan: KyrubRedemptionPlan
 ): Promise<PersistedKyrubRedemption> => {
+  if (plan.debitEntry.userId !== plan.userId ||
+      plan.debitEntry.type !== 'redeem' ||
+      plan.debitEntry.sourceType !== 'reward_redemption' ||
+      plan.debitEntry.sourceId !== plan.rewardId ||
+      plan.debitEntry.correlationId !== plan.auditEvent.correlationId ||
+      !Number.isSafeInteger(plan.debitEntry.deltaKCoins) ||
+      plan.debitEntry.deltaKCoins >= 0) {
+    throw new Error('REDEMPTION_DEBIT_INVALID');
+  }
   const redemptionRef = adminDb.doc(redemptionPath(plan.userId, plan.redemptionId));
   const voucherRef = adminDb.doc(voucherPath(plan.userId, plan.redemptionId));
   const ledgerRef = adminDb.doc(ledgerPath(plan.userId, plan.debitEntry.id));
@@ -45,7 +54,9 @@ export const persistKyrubRedemptionAtomically = async (
       if (
         current.idempotencyKey !== plan.auditEvent.idempotencyKey ||
         current.correlationId !== plan.auditEvent.correlationId ||
-        current.rewardId !== plan.rewardId
+        current.rewardId !== plan.rewardId ||
+        current.userId !== plan.userId ||
+        current.redemptionId !== plan.redemptionId
       ) {
         throw new Error('REDEMPTION_IDEMPOTENCY_CONFLICT');
       }
