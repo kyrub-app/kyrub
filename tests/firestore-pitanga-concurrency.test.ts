@@ -269,3 +269,52 @@ test('Firestore Emulator serializes voucher issuance against XP conversion', asy
     assert.equal((await root.collection('rewardLedger').get()).size, 1);
   }
 });
+
+
+test('Firestore Emulator prevents two independent vouchers spending the same Pitangas', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-two-vouchers-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `two_vouchers_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  await balanceRef.create({ userId, availableKCoins: 1000 });
+  const occurredAt = '2026-11-11T12:00:00Z';
+  const redeem = (orderId: string) => {
+    const redemptionId = `redemption_${userId}_${orderId}`;
+    const plan = {
+      redemptionId, userId, rewardId: 'gift1',
+      voucherCode: `KRB-GIFT1-${orderId}`,
+      validUntil: '2026-12-11T12:00:00Z',
+      debitEntry: {
+        id: `${redemptionId}_debit`, userId, type: 'redeem' as const,
+        deltaKCoins: -1000, sourceType: 'reward_redemption' as const,
+        sourceId: 'gift1', correlationId: orderId,
+        idempotencyKey: `redeem:${orderId}`, occurredAt,
+      },
+      auditEvent: {
+        type: 'reward_redemption_planned' as const,
+        correlationId: orderId, idempotencyKey: orderId,
+      },
+    };
+    return db.runTransaction(tx => issuePitangaVoucherInTransaction(tx, {
+      plan, balanceRef,
+      redemptionRef: root.collection('rewardRedemptions').doc(redemptionId),
+      voucherRef: root.collection('rewardVouchers').doc(redemptionId),
+      debitRef: root.collection('rewardLedger').doc(`${redemptionId}_debit`),
+      auditRef: root.collection('rewardAudit').doc(redemptionId),
+    }));
+  };
+  const outcomes = await Promise.allSettled([redeem('orderA'), redeem('orderB')]);
+  assert.equal(outcomes.filter(o => o.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(o => o.status === 'rejected').length, 1);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 0);
+  assert.equal((await root.collection('rewardRedemptions').get()).size, 1);
+  assert.equal((await root.collection('rewardVouchers').get()).size, 1);
+  assert.equal((await root.collection('rewardLedger').get()).size, 1);
+  assert.equal((await root.collection('rewardAudit').get()).size, 1);
+});
