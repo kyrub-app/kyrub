@@ -6,6 +6,7 @@ import { applyPitangaEarnInTransaction } from '../server/gamification/pitangaEar
 import { applyPitangaSpendInTransaction } from '../server/gamification/pitangaSpendTransaction.js';
 import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
 import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBalanceAuthorityInspection.js';
+import { issuePitangaVoucherInTransaction } from '../server/gamification/pitangaVoucherIssuanceTransaction.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -212,4 +213,59 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   assert.equal(divergent.status, 'inconsistent');
   assert.equal(divergent.ledgerBalance, 100);
   assert.equal(divergent.projectedBalance, 101);
+});
+
+test('Firestore Emulator serializes voucher issuance against XP conversion', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-voucher-race-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `voucher_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const occurredAt = '2026-11-11T12:00:00Z';
+  await balanceRef.create({ userId, availableKCoins: 1000 });
+  const redemptionId = `redemption_${userId}_order1`;
+  const plan = {
+    redemptionId, userId, rewardId: 'gift1',
+    voucherCode: 'KRB-GIFT1-ORDER1', validUntil: '2026-12-11T12:00:00Z',
+    debitEntry: {
+      id: `${redemptionId}_debit`, userId, type: 'redeem' as const,
+      deltaKCoins: -1000, sourceType: 'reward_redemption' as const,
+      sourceId: 'gift1', correlationId: 'corr1', idempotencyKey: 'redeem:order1', occurredAt,
+    },
+    auditEvent: { type: 'reward_redemption_planned' as const, correlationId: 'corr1', idempotencyKey: 'order1' },
+  };
+  const voucher = () => db.runTransaction(tx => issuePitangaVoucherInTransaction(tx, {
+    plan, balanceRef,
+    redemptionRef: root.collection('rewardRedemptions').doc(redemptionId),
+    voucherRef: root.collection('rewardVouchers').doc(redemptionId),
+    debitRef: root.collection('rewardLedger').doc(`${redemptionId}_debit`),
+    auditRef: root.collection('rewardAudit').doc(redemptionId),
+  }));
+  const convert = () => db.runTransaction(tx => applyPitangaXpConversionInTransaction(tx, {
+    userId, requestId: 'convert1', requestedXp: 1, occurredAt, balanceRef,
+    debitRef: root.collection('rewardLedger').doc('conversion_convert1'),
+    xpRef: root.collection('xpLedger').doc('conversion_convert1'),
+    receiptRef: root.collection('pitangaXpConversions').doc('convert1'),
+  }));
+  const outcomes = await Promise.allSettled([voucher(), convert()]);
+  assert.equal(outcomes.filter(o => o.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(o => o.status === 'rejected').length, 1);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 0);
+  const vouchers = await root.collection('rewardVouchers').get();
+  const xp = await root.collection('xpLedger').get();
+  assert.equal(vouchers.size + xp.size, 1);
+  assert.equal((await root.collection('rewardRedemptions').get()).size, vouchers.size);
+  assert.equal((await root.collection('rewardAudit').get()).size, vouchers.size);
+  assert.equal((await root.collection('pitangaXpConversions').get()).size, xp.size);
+  assert.equal((await root.collection('rewardLedger').get()).size, 1);
+  if (vouchers.size) {
+    const replay = await voucher();
+    assert.equal(replay.replay, true);
+    assert.equal((await root.collection('rewardLedger').get()).size, 1);
+  }
 });
