@@ -85,7 +85,8 @@ export const persistKyrubRedemptionAtomically = async (
           recordedDebit?.sourceId !== plan.rewardId ||
           recordedDebit?.correlationId !== plan.auditEvent.correlationId ||
           recordedDebit?.idempotencyKey !== plan.debitEntry.idempotencyKey ||
-          recordedDebit?.deltaKCoins !== plan.debitEntry.deltaKCoins) {
+          recordedDebit?.deltaKCoins !== plan.debitEntry.deltaKCoins ||
+          recordedDebit?.occurredAt !== plan.debitEntry.occurredAt) {
         throw new Error('REDEMPTION_LEDGER_INCONSISTENT');
       }
       const recordedVoucher = existingVoucher.data();
@@ -111,7 +112,5 @@ export const persistKyrubRedemptionAtomically = async (
     // issuing a new voucher here could double-spend across distinct requests.
     // Preserve read-only idempotent replay of already-issued redemptions above.
     throw new Error('REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE');
-
-
   });
 };
