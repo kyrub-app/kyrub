@@ -240,6 +240,30 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
     legacyWritersFenced: true,
     existingProjection: { userId, availableKCoins: 101 },
   }), /PITANGA_MIGRATION_PROJECTION_CONFLICT/);
+  // A historical ledger mutation with an unchanged projection must also
+  // invalidate the checkpoint. Never silently trust a stale migration digest.
+  await balanceRef.update({ availableKCoins: 100 });
+  const earnedDoc = root.collection('rewardLedger').doc('earn_seed');
+  await earnedDoc.update({ deltaKCoins: 1176 });
+  const changedLedger = await root.collection('rewardLedger').get();
+  assert.throws(() => buildPitangaMigrationSnapshot({
+    userId,
+    ledgerDocuments: changedLedger.docs.map(doc => ({
+      id: doc.id, data: doc.data() as never,
+    })),
+    completeLedgerVerified: true,
+    legacyWritersFenced: true,
+    existingProjection: { userId, availableKCoins: 100 },
+  }), /PITANGA_MIGRATION_PROJECTION_CONFLICT/);
+  const changedDigest = buildPitangaMigrationSnapshot({
+    userId,
+    ledgerDocuments: changedLedger.docs.map(doc => ({
+      id: doc.id, data: doc.data() as never,
+    })),
+    completeLedgerVerified: true,
+    legacyWritersFenced: true,
+  });
+  assert.notEqual(changedDigest.ledgerSha256, checkpoint.ledgerSha256);
 
 });
 
