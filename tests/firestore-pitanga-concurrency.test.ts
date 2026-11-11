@@ -10,6 +10,7 @@ import { issuePitangaVoucherInTransaction } from '../server/gamification/pitanga
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 import { verifyPitangaMigrationCheckpoint } from '../server/gamification/pitangaMigrationCheckpointVerification.js';
 import { bootstrapVerifiedPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationVerifiedBootstrap.js';
+import { assertLegacyPitangaWriterAllowedInTransaction } from '../server/gamification/pitangaLegacyWriterFence.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -443,4 +444,34 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     await fenceRef.update({ status: 'open' });
   await assert.rejects(bootstrap(), /PITANGA_BOOTSTRAP_FENCE_UNVERIFIED/);
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
+});
+
+test('Firestore Emulator prevents guarded legacy writes after the fence is committed', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-fence-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `fence_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const fenceRef = db.doc('systemControl/pitangaLegacyWriterFence');
+  const ledgerRef = root.collection('rewardLedger').doc('earn_after_fence');
+  await fenceRef.set({ status: 'open', epoch: userId });
+  const guardedWrite = () => db.runTransaction(async tx => {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef, expectedEpoch: userId });
+    tx.create(ledgerRef, {
+      id: ledgerRef.id, userId, type: 'earn', economy: 'k_coin',
+      deltaKCoins: 1000, sourceType: 'challenge', sourceId: 'test',
+      correlationId: 'guarded', idempotencyKey: 'guarded',
+      occurredAt: '2026-11-11T12:00:00Z',
+    });
+  });
+  await fenceRef.update({ status: 'fencing' });
+  await assert.rejects(guardedWrite(), /PITANGA_LEGACY_WRITER_FENCED/);
+  assert.equal((await ledgerRef.get()).exists, false);
+  await fenceRef.update({ status: 'fenced', writersVerified: true });
+  await assert.rejects(guardedWrite(), /PITANGA_LEGACY_WRITER_FENCED/);
+  assert.equal((await ledgerRef.get()).exists, false);
 });
