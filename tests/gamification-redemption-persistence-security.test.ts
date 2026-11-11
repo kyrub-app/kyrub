@@ -123,6 +123,6 @@ test('replay refuses voucher metadata inconsistent with the committed redemption
     await assert.rejects(api.persistKyrubRedemptionAtomically(plan), /REDEMPTION_ATOMIC_STATE_CONFLICT/);
     assert.equal(writes, 0);
   } finally {
-    (globalThis as any).__redemptionSecurityDb = db;
+    transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
   }
 });
