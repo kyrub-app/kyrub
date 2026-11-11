@@ -166,3 +166,15 @@ test('consistent persisted redemption replays without writing new documents', as
     transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
   }
 });
+
+test('persistence rejects forged redemption dates before touching Firestore', async () => {
+  for (const modified of [
+    { ...plan, validUntil: 'invalid' },
+    { ...plan, validUntil: plan.debitEntry.occurredAt },
+    { ...plan, debitEntry: { ...plan.debitEntry, occurredAt: 'invalid' } },
+  ]) {
+    pathReads = 0;
+    await assert.rejects(api.persistKyrubRedemptionAtomically(modified), /REDEMPTION_DEBIT_INVALID/);
+    assert.equal(pathReads, 0);
+  }
+});
