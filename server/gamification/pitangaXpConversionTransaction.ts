@@ -86,7 +86,7 @@ export const applyPitangaXpConversionInTransaction = async (
         xp.data()?.sourceId !== input.requestId ||
         xp.data()?.deltaXp !== plan.xpToCredit) throw new Error('CONVERSION_LEDGER_INCONSISTENT');
     return { xpCredited: plan.xpToCredit, pitangasDebited: plan.pitangasToDebit,
-      remainingPitangas: plan.remainingPitangas, replay: true };
+      remainingPitangas: balance.data()!.availableKCoins as number, replay: true };
   }
   if (debit.exists || xp.exists) throw new Error('CONVERSION_PARTIAL_STATE');
   if (!balance.exists || balance.data()?.userId !== input.userId) {
