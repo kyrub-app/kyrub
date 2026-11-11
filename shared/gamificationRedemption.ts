@@ -50,7 +50,7 @@ export const buildKyrubRedemptionPlan = (input: {
   }
 
   const redemptionId = `redemption_${safeToken(userId, 'REDEMPTION_USER')}_${safeToken(idempotencyKey, 'REDEMPTION_IDEMPOTENCY')}`;
-  const voucherCode = `KRB-${safeToken(input.reward.id, 'REDEMPTION_REWARD').toUpperCase()}-${safeToken(idempotencyKey).toUpperCase()}`;
+  const voucherCode = `KRB-${safeToken(input.reward.id, 'REDEMPTION_REWARD').toUpperCase()}-${safeToken(idempotencyKey, 'REDEMPTION_IDEMPOTENCY').toUpperCase()}`;
   const debitEntry: KyrubRewardLedgerEntry = {
     id: `${redemptionId}_debit`,
     userId,
