@@ -431,7 +431,7 @@ export function KyrubTab(props: KyrubTabProps) {
           <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
           <div className="grid grid-cols-2 gap-3">
             <div className="rounded-2xl bg-slate-800 p-4">
-              <h3 className="text-sm text-slate-300">Selos Kairubi</h3>
+              <h3 className="text-sm text-slate-300">Pitangas</h3>
               <p className="mt-3 text-2xl font-bold" aria-live="polite">
                 {selosLoading ? '…' : selosError || selosBalance === null ? '—' : selosBalance.toLocaleString('pt-BR')}
               </p>
