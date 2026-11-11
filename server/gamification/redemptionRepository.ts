@@ -1,4 +1,3 @@
-import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import type { KyrubRedemptionPlan } from '../../shared/gamificationRedemption.js';
 
@@ -113,43 +112,6 @@ export const persistKyrubRedemptionAtomically = async (
     // Preserve read-only idempotent replay of already-issued redemptions above.
     throw new Error('REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE');
 
-    const persisted: PersistedKyrubRedemption = {
-      redemptionId: plan.redemptionId,
-      userId: plan.userId,
-      rewardId: plan.rewardId,
-      voucherCode: plan.voucherCode,
-      validUntil: plan.validUntil,
-      status: 'issued',
-      correlationId: plan.auditEvent.correlationId,
-      idempotencyKey: plan.auditEvent.idempotencyKey,
-    };
 
-    transaction.create(ledgerRef, {
-      ...plan.debitEntry,
-      economy: 'k_coin',
-      persistedAt: FieldValue.serverTimestamp(),
-    });
-    transaction.create(voucherRef, {
-      redemptionId: plan.redemptionId,
-      userId: plan.userId,
-      rewardId: plan.rewardId,
-      code: plan.voucherCode,
-      validUntil: plan.validUntil,
-      status: 'active',
-      createdAt: FieldValue.serverTimestamp(),
-    });
-    transaction.create(auditRef, {
-      ...plan.auditEvent,
-      type: 'reward_redemption_issued',
-      redemptionId: plan.redemptionId,
-      userId: plan.userId,
-      recordedAt: FieldValue.serverTimestamp(),
-    });
-    transaction.create(redemptionRef, {
-      ...persisted,
-      createdAt: FieldValue.serverTimestamp(),
-    });
-
-    return persisted;
   });
 };
