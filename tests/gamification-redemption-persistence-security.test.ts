@@ -58,3 +58,35 @@ test('rejects forged debit provenance before any Firestore reference', async () 
     assert.equal(pathReads, 0);
   }
 });
+
+test('replay refuses a persisted debit whose amount differs from the requested plan', async () => {
+  const stored = new Map<string, Record<string, unknown>>();
+  const redemptionId = plan.redemptionId;
+  stored.set(`users/${plan.userId}/rewardRedemptions/${redemptionId}`, {
+    redemptionId, userId: plan.userId, rewardId: plan.rewardId,
+    idempotencyKey: plan.auditEvent.idempotencyKey,
+    correlationId: plan.auditEvent.correlationId,
+  });
+  stored.set(`users/${plan.userId}/rewardVouchers/${redemptionId}`, {});
+  stored.set(`users/${plan.userId}/rewardAudit/${redemptionId}`, {});
+  stored.set(`users/${plan.userId}/rewardLedger/${plan.debitEntry.id}`, {
+    ...plan.debitEntry, economy: 'k_coin', deltaKCoins: -1,
+  });
+  let writes = 0;
+  const replayDb = {
+    doc: (path: string) => ({ path }),
+    runTransaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+      get: async (ref: { path: string }) => ({
+        exists: stored.has(ref.path), data: () => stored.get(ref.path),
+      }),
+      create: () => { writes++; },
+    }),
+  };
+  (globalThis as any).__redemptionSecurityDb = replayDb;
+  try {
+    await assert.rejects(api.persistKyrubRedemptionAtomically(plan), /REDEMPTION_LEDGER_INCONSISTENT/);
+    assert.equal(writes, 0);
+  } finally {
+    (globalThis as any).__redemptionSecurityDb = db;
+  }
+});
