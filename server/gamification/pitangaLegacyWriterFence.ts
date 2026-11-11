@@ -19,6 +19,9 @@ export const assertLegacyPitangaWriterAllowedInTransaction = async (
     throw new Error('PITANGA_LEGACY_FENCE_REFERENCE_INVALID');
   }
   const snapshot = await tx.get(input.fenceRef);
+  // A missing fence is not evidence of a safe migration. This guard is only
+  // backward-compatible before cutover; the migration verifier requires
+  // an explicit fenced record and independent writer inventory.
   if (!snapshot.exists) return;
   const fence = snapshot.data();
   if (fence?.status === 'fenced' || fence?.status === 'fencing') {
