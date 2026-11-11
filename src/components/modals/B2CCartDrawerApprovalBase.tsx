@@ -253,7 +253,11 @@ export const B2CCartDrawer: React.FC<B2CCartDrawerProps> = props => {
     setTrackedOrderId(previousOrderId);
     setCurrentOrder(null);
     setCheckoutNotice('');
-    setCouponCode('');
+    // Preserve a coupon carried from a Praça offer into the storefront.
+    // Validation and pricing remain exclusively with the checkout quote API.
+    const sharedCoupon = typeof window === 'undefined'
+      ? '' : new URLSearchParams(window.location.search).get('coupon')?.trim().toUpperCase() ?? '';
+    setCouponCode(sharedCoupon.slice(0, 48));
     setCouponQuote(null);
     setCouponError('');
     setView(previousOrderId && cart.length === 0 ? 'order' : 'cart');
