@@ -38,7 +38,7 @@ test('stages balance update, debit, XP credit and receipt together', async () =>
   assert.deepEqual(result, { xpCredited: 1, pitangasDebited: 1000, remainingPitangas: 0, replay: false });
   assert.equal(writes.length, 4);
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 0);
-  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -100);
+  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -1000);
   assert.equal(writes.find(w => w.id === 'debit')?.value.economy, 'k_coin');
   assert.equal(writes.find(w => w.id === 'xp')?.value.economy, 'kyrub_xp');
   assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 1);
@@ -143,7 +143,7 @@ test('2075 Pitangas convert to 2 XP with 75 remaining', async () => {
   } as never);
   assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 2000, remainingPitangas: 75, replay: false });
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 75);
-  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -200);
+  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -2000);
   assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 2);
 });
 
