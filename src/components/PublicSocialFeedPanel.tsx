@@ -3,6 +3,8 @@ import {
   Bookmark,
   CircleUserRound,
   Heart,
+  Gift,
+  ArrowRight,
   LoaderCircle,
   MessageCircle,
   Send,
@@ -31,9 +33,17 @@ interface PublicSocialFeedPanelProps {
   ) => void;
 }
 
-function CouponAvailability({ storeId, promotionId }: { storeId: string; promotionId: string }) {
-  const [status, setStatus] = useState<{
-    active: boolean; redemptionCount: number; maxRedemptions: number; remaining: number | null;
+function CouponOfferCard({ storeId, promotionId }: { storeId: string; promotionId: string }) {
+  const [offer, setOffer] = useState<{
+    active: boolean;
+    title: string;
+    code: string;
+    discountType: 'percentage' | 'fixed';
+    discountValue: number;
+    storeSlug: string;
+    redemptionCount: number;
+    maxRedemptions: number;
+    remaining: number | null;
   } | null>(null);
 
   useEffect(() => {
@@ -46,9 +56,9 @@ function CouponAvailability({ storeId, promotionId }: { storeId: string; promoti
         );
         if (!response.ok) throw new Error('Coupon unavailable');
         const payload = await response.json();
-        if (!cancelled) setStatus(payload);
+        if (!cancelled) setOffer(payload);
       } catch {
-        if (!cancelled) setStatus(null);
+        if (!cancelled) setOffer(null);
       }
     };
     void refresh();
@@ -56,12 +66,40 @@ function CouponAvailability({ storeId, promotionId }: { storeId: string; promoti
     return () => { cancelled = true; clearInterval(timer); };
   }, [storeId, promotionId]);
 
+  const discount = offer?.discountType === 'percentage'
+    ? `${offer.discountValue}% OFF`
+    : offer ? `R$ ${offer.discountValue.toFixed(2)} OFF` : '';
+
   return (
-    <div className="rounded-xl border border-orange-500/30 bg-orange-500/10 p-3 text-xs text-orange-200" aria-live="polite">
-      {!status ? 'Disponibilidade não confirmada no momento'
-        : !status.active ? 'Cupom indisponível'
-        : status.remaining === null ? `${status.redemptionCount} utilizados · Sem limite total`
-        : `${status.redemptionCount} de ${status.maxRedemptions} utilizados · ${status.remaining} disponíveis`}
+    <div className="space-y-3">
+      <div className="space-y-4 rounded-3xl border border-slate-700 bg-neutral-800 px-5 py-8 text-center">
+        <Gift className="mx-auto h-9 w-9 text-orange-300" aria-hidden="true" />
+        <p className="text-sm font-semibold text-slate-300">Oferta especial da loja</p>
+        <h5 className="text-xl font-black text-white">{offer?.title || 'Cupom de desconto'}</h5>
+        {offer && <p className="text-sm font-bold text-orange-200">{discount}</p>}
+        <div className="mx-auto w-fit rounded-2xl border border-slate-600 px-5 py-3 font-mono text-base font-black tracking-wide text-white">
+          {offer?.code || 'Carregando cupom…'}
+        </div>
+        <p className="text-xs text-slate-300" aria-live="polite">
+          {!offer ? 'Disponibilidade não confirmada no momento'
+            : !offer.active ? 'Cupom indisponível'
+            : offer.remaining === null ? `${offer.redemptionCount} utilizados · Sem limite total`
+            : `${offer.redemptionCount} de ${offer.maxRedemptions} utilizados · ${offer.remaining} disponíveis`}
+        </p>
+      </div>
+      {offer?.active && offer.storeSlug ? (
+        <a
+          href={`/@${encodeURIComponent(offer.storeSlug)}?coupon=${encodeURIComponent(offer.code)}`}
+          className="flex min-h-12 items-center justify-center gap-3 rounded-full bg-white px-4 text-sm font-black text-slate-950 hover:bg-slate-200"
+          aria-label={`Aproveitar cupom ${offer.code} na loja`}
+        >
+          Aproveitar cupom <ArrowRight className="h-4 w-4" />
+        </a>
+      ) : (
+        <div className="rounded-full border border-slate-700 px-4 py-3 text-center text-xs text-slate-400">
+          Oferta indisponível no momento
+        </div>
+      )}
     </div>
   );
 }
@@ -227,14 +265,14 @@ export function PublicSocialFeedPanel({
               </span>
             </header>
 
-            {post.content && (
+            {post.content && !post.storePromotion && (
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
                 {post.content}
               </p>
             )}
 
             {post.storePromotion && (
-              <CouponAvailability storeId={post.storePromotion.storeId} promotionId={post.storePromotion.promotionId} />
+              <CouponOfferCard storeId={post.storePromotion.storeId} promotionId={post.storePromotion.promotionId} />
             )}
 
             {post.taggedUsers && post.taggedUsers.length > 0 && (
