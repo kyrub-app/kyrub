@@ -106,10 +106,22 @@ export const createStorePromotionManagementRouter = (): Router => {
         response.status(404).json({ error: 'Cupom não disponível.' });
         return;
       }
+      const storeSnapshot = await adminDb.doc(`stores/${storeId}`).get();
+      const store = storeSnapshot.data();
+      if (!storeSnapshot.exists || store?.publicationStatus !== 'published') {
+        response.status(404).json({ error: 'Loja indisponível.' });
+        return;
+      }
+      const storeSlug = typeof store.slug === 'string' ? store.slug.trim() : '';
       const now = Date.now();
       const remaining = promotion.maxRedemptions === 0
         ? null : Math.max(0, promotion.maxRedemptions - promotion.redemptionCount);
       response.status(200).json({
+        title: promotion.title,
+        code: promotion.code,
+        discountType: promotion.discountType,
+        discountValue: promotion.discountValue,
+        storeSlug,
         active: promotion.active && Date.parse(promotion.startsAt) <= now
           && Date.parse(promotion.endsAt) > now && (remaining === null || remaining > 0),
         redemptionCount: promotion.redemptionCount,
