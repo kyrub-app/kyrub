@@ -102,14 +102,28 @@ test('does not overwrite an existing balance without a receipt', async () => {
   assert.equal(writes.length, 0);
 });
 
-test('rejects a matching receipt with a different existing balance', async () => {
+test('replay preserves a valid post-migration balance without regranting Pitangas', async () => {
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
     ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
-  const { result, writes } = run({
-    fence, receipt, balance: { userId: 'user1', availableKCoins: 999 },
-  });
-  await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
-  assert.equal(writes.length, 0);
+  for (const current of [0, 999, 1000, 1750]) {
+    const { result, writes } = run({
+      fence, receipt, balance: { userId: 'user1', availableKCoins: current, migrationEpoch: 'epoch1' },
+    });
+    assert.deepEqual(await result, { balance: 1000, replay: true });
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('replay rejects malformed live balance even with a valid historical receipt', async () => {
+  const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
+    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+  for (const current of [-1, 1.5, '1000']) {
+    const { result, writes } = run({
+      fence, receipt, balance: { userId: 'user1', availableKCoins: current, migrationEpoch: 'epoch1' },
+    });
+    await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
+    assert.equal(writes.length, 0);
+  }
 });
 
 test('rejects a replay with missing or mismatched balance migration epoch', async () => {
