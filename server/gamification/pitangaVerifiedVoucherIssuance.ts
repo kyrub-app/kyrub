@@ -39,6 +39,7 @@ export const issueVerifiedPitangaVoucherInTransaction = async (
       typeof b?.migrationEpoch !== 'string' ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(b.migrationEpoch) ||
       r?.fenceEpoch !== b.migrationEpoch ||
+      !Number.isSafeInteger(b?.availableKCoins) || b.availableKCoins < 0 ||
       f?.epoch !== b.migrationEpoch || f?.status !== 'fenced' ||
       f?.writersVerified !== true ||
       !Number.isSafeInteger(r?.balance) || r.balance < 0 ||
