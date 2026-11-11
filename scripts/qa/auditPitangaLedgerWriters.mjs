@@ -48,7 +48,9 @@ for (const path of tracked) {
     // Exclude declarations by the target symbol name, not every const assignment:
     // `const result = await applyPitangaEarnInTransaction(...)` is a callsite.
     callsitePattern.lastIndex = 0;
-    if (callsitePattern.test(lines[index]) && !declarationPattern.test(lines[index])) {
+    if (callsitePattern.test(lines[index]) &&
+        !/^\s*(?:\/\/|\*|\/\*)/.test(lines[index]) &&
+        !declarationPattern.test(lines[index])) {
       callsites.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
     }
   }
