@@ -9,7 +9,7 @@ import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBa
 import { issuePitangaVoucherInTransaction } from '../server/gamification/pitangaVoucherIssuanceTransaction.js';
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 import { verifyPitangaMigrationCheckpoint } from '../server/gamification/pitangaMigrationCheckpointVerification.js';
-import { bootstrapPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationBootstrapTransaction.js';
+import { bootstrapVerifiedPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationVerifiedBootstrap.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -421,8 +421,9 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     completeLedgerVerified: true, legacyWritersFenced: true,
   });
   const bootstrap = (cp = checkpoint) => db.runTransaction(tx =>
-    bootstrapPitangaBalanceInTransaction(tx, {
+    bootstrapVerifiedPitangaBalanceInTransaction(tx, {
       checkpoint: cp, fenceEpoch: userId, balanceRef, receiptRef, fenceRef,
+      ledgerRef: root.collection('rewardLedger'), legacyWritersFenced: true,
     }));
   const outcomes = await Promise.allSettled([bootstrap(), bootstrap()]);
   assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 2);
@@ -433,7 +434,13 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
   assert.equal((await receiptRef.get()).data()?.ledgerSha256, checkpoint.ledgerSha256);
   await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
     /PITANGA_BOOTSTRAP_CONFLICT/);
-  await fenceRef.update({ status: 'open' });
+  // A late historical mutation is detected from the ledger read inside
+  // the transaction, not from a stale caller-provided snapshot.
+  await root.collection('rewardLedger').doc(historicalEntry.id).update({
+    correlationId: 'tampered_after_checkpoint',
+  });
+  await assert.rejects(bootstrap(), /PITANGA_CHECKPOINT_STALE/);
+    await fenceRef.update({ status: 'open' });
   await assert.rejects(bootstrap(), /PITANGA_BOOTSTRAP_FENCE_UNVERIFIED/);
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
 });
