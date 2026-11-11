@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 import { reconcilePostMigrationPitangas } from '../server/gamification/pitangaPostMigrationReconciliation.js';
+import { pitangaHistoricalMembershipDigest } from '../server/gamification/pitangaHistoricalMembership.js';
 import type { KyrubRewardLedgerEntry } from '../shared/gamification.js';
 
 const entry = (id: string, deltaKCoins: number, occurredAt: string): { id: string; data: KyrubRewardLedgerEntry } => ({
@@ -26,6 +27,7 @@ const later = [
 ];
 const input = () => ({
   checkpoint, historicalEntryIds: ['historical1', 'historical2'],
+  historicalMembershipSha256: pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical1', 'historical2'] }),
   ledgerDocuments: [...initial, ...later],
   currentBalance: { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: 4000 },
   fenceEpoch: 'epoch1', completeLedgerVerified: true, legacyWritersFenced: true,
@@ -64,4 +66,22 @@ test('rejects mismatched epoch, unverified fence and duplicate ledger document',
   assert.throws(() => reconcilePostMigrationPitangas({
     ...input(), ledgerDocuments: [...input().ledgerDocuments, initial[0]],
   }), /PITANGA_RECONCILIATION_LEDGER_SCOPE_INVALID/);
+});
+
+test('rejects historical IDs substituted after the cutover digest was committed', () => {
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalEntryIds: ['historical1', 'earned_after'],
+  }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalMembershipSha256: '0'.repeat(64),
+  }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
+});
+test('historical membership digest is order independent and rejects duplicate IDs', () => {
+  assert.equal(
+    pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical2', 'historical1'] }),
+    input().historicalMembershipSha256,
+  );
+  assert.throws(() => pitangaHistoricalMembershipDigest({
+    userId: 'user1', entryIds: ['historical1', 'historical1'],
+  }), /PITANGA_HISTORICAL_MEMBERSHIP_INVALID/);
 });
