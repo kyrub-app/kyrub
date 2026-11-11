@@ -33,7 +33,7 @@ export interface KyrubXpEntry {
   id: string;
   userId: string;
   deltaXp: number;
-  sourceType: 'challenge' | 'achievement' | 'community' | 'admin_adjustment';
+  sourceType: 'challenge' | 'achievement' | 'community' | 'conversion' | 'admin_adjustment';
   sourceId: string;
   correlationId: string;
   idempotencyKey: string;
