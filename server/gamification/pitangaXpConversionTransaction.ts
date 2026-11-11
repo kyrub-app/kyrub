@@ -35,6 +35,9 @@ export const applyPitangaXpConversionInTransaction = async (
   if (references.some(ref => !ref.path.startsWith(userRoot)) ||
       input.debitRef.parent.path !== `users/${input.userId}/rewardLedger` ||
       input.xpRef.parent.path !== `users/${input.userId}/xpLedger` ||
+      [input.balanceRef, input.receiptRef].some(ref =>
+        ref.parent.path === `users/${input.userId}/rewardLedger` ||
+        ref.parent.path === `users/${input.userId}/xpLedger`) ||
       new Set(references.map(ref => ref.path)).size !== references.length) {
     throw new Error('CONVERSION_REFERENCE_SCOPE_INVALID');
   }
