@@ -24,6 +24,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/admin/global-challenges",
+      "destination": "/api/admin/operations/health?transport=global-challenges"
+    },
+    {
       "source": "/api/selos-kairubi",
       "destination": "/api/health?transport=selos-kairubi-balance"
     },

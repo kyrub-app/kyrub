@@ -25,6 +25,12 @@ export default async function handler(request: RequestLike, response: ResponseLi
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
+  if (transport === 'global-challenges') {
+    const { default: handler } = await import('../../../server/gamification/globalChallengeAdminHandler.js');
+    await handler(request, response);
+    return;
+  }
+
   if (transport === 'firebase-preflight') {
     response.setHeader('cache-control', 'no-store');
     if (method !== 'GET') {

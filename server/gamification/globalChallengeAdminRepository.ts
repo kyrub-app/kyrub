@@ -1,3 +1,5 @@
+import { parseGlobalChallengeDraft } from './globalChallengeAdminValidation.js';
+import type { Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { planGlobalChallengeDraft, planGlobalChallengePublication } from '../../shared/globalChallengeLifecycle.js';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
@@ -7,7 +9,14 @@ import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
  * the Firebase ID token and active Super Admin role before invoking this service.
  * Never expose this module as a client-writable endpoint.
  */
-const root = adminDb.collection('global_challenges');
+const root = () => adminDb.collection('global_challenges');
+
+// Re-read authority in the write transaction, including on transaction retries.
+const requireActiveSuperAdmin = async (tx: Transaction, actorId: string) => {
+  const snapshot = await tx.get(adminDb.doc(`kyrub_admin/control_plane/admins/${actorId}`));
+  const profile = snapshot.data();
+  if (!snapshot.exists || profile?.uid !== actorId || profile.status !== 'active' || profile.role !== 'super_admin') throw new Error('FORBIDDEN');
+};
 const safeId = (value: string, label: string): string => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(value)) throw new Error(label + '_INVALID');
   return value;
@@ -20,9 +29,10 @@ export const createGlobalChallengeDraft = async (
 ): Promise<KyrubChallengeDefinition> => {
   safeId(actorId, 'ADMIN_ACTOR');
   safeId(challenge.id, 'CHALLENGE_ID');
-  const planned = planGlobalChallengeDraft(challenge, actorId, occurredAt);
-  const ref = root.doc(challenge.id);
+  const planned = planGlobalChallengeDraft(parseGlobalChallengeDraft(challenge), actorId, occurredAt);
+  const ref = root().doc(challenge.id);
   await adminDb.runTransaction(async tx => {
+    await requireActiveSuperAdmin(tx, actorId);
     const existing = await tx.get(ref);
     if (existing.exists) throw new Error('GLOBAL_CHALLENGE_ALREADY_EXISTS');
     tx.create(ref, { ...planned.challenge, createdAt: occurredAt, createdBy: actorId });
@@ -38,8 +48,9 @@ export const publishGlobalChallenge = async (
 ): Promise<KyrubChallengeDefinition> => {
   safeId(challengeId, 'CHALLENGE_ID');
   safeId(actorId, 'ADMIN_ACTOR');
-  const ref = root.doc(challengeId);
+  const ref = root().doc(challengeId);
   return adminDb.runTransaction(async tx => {
+    await requireActiveSuperAdmin(tx, actorId);
     const snapshot = await tx.get(ref);
     if (!snapshot.exists) throw new Error('GLOBAL_CHALLENGE_NOT_FOUND');
     const current = snapshot.data() as KyrubChallengeDefinition;

@@ -1,3 +1,4 @@
+import handleGlobalChallenges from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
 import rateLimit from "express-rate-limit";
@@ -57,6 +58,8 @@ app.use(
     },
   })
 );
+
+app.all('/api/admin/global-challenges', (req, res) => { void handleGlobalChallenges(req, res); });
 
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;
