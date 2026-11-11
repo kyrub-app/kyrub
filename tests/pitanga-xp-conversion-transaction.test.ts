@@ -233,3 +233,21 @@ test('replay rejects XP credited to an incorrect economy', async () => {
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
   assert.equal(writes.length, 0);
 });
+
+
+test('replay rejects tampered original balance in receipt', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  const tampered = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'receipt'
+      ? { exists: true, data: () => ({
+          userId: 'user1', requestId: 'req1', requestedXp: 1,
+          availablePitangasBefore: 99, status: 'committed', occurredAt: '2026-11-11T12:00:00Z',
+        }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:01Z',
+  } as never), /PITANGA_BALANCE_INSUFFICIENT/);
+  assert.equal(writes.length, 0);
+});
