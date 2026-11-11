@@ -9,6 +9,7 @@ import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBa
 import { issuePitangaVoucherInTransaction } from '../server/gamification/pitangaVoucherIssuanceTransaction.js';
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 import { verifyPitangaMigrationCheckpoint } from '../server/gamification/pitangaMigrationCheckpointVerification.js';
+import { bootstrapPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationBootstrapTransaction.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -389,4 +390,50 @@ test('Firestore Emulator prevents two independent vouchers spending the same Pit
   assert.equal((await root.collection('rewardVouchers').get()).size, 1);
   assert.equal((await root.collection('rewardLedger').get()).size, 1);
   assert.equal((await root.collection('rewardAudit').get()).size, 1);
+});
+
+test('Firestore Emulator bootstraps historical balance once and rejects competing checkpoint', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-bootstrap-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `bootstrap_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const receiptRef = root.collection('pitangaMigration').doc('receipt');
+  const fenceRef = db.doc('systemControl/pitangaLegacyWriterFence');
+  await fenceRef.set({ status: 'fenced', epoch: userId, writersVerified: true });
+  const historicalEntry = {
+    id: 'earn_historical', userId, type: 'earn' as const,
+    deltaKCoins: 1000, sourceType: 'challenge' as const,
+    sourceId: 'challenge1', correlationId: 'historical1',
+    idempotencyKey: 'historical1', occurredAt: '2026-11-11T12:00:00Z',
+  };
+  await root.collection('rewardLedger').doc(historicalEntry.id).create(historicalEntry);
+  const historical = await root.collection('rewardLedger').get();
+  const checkpoint = buildPitangaMigrationSnapshot({
+    userId, ledgerDocuments: historical.docs.map(doc => ({
+      id: doc.id, data: doc.data() as never,
+    })),
+    completeLedgerVerified: true, legacyWritersFenced: true,
+  });
+  const bootstrap = (cp = checkpoint) => db.runTransaction(tx =>
+    bootstrapPitangaBalanceInTransaction(tx, {
+      checkpoint: cp, fenceEpoch: userId, balanceRef, receiptRef, fenceRef,
+    }));
+  const outcomes = await Promise.allSettled([bootstrap(), bootstrap()]);
+  assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 2);
+  assert.deepEqual(outcomes.filter(x => x.status === 'fulfilled')
+    .map(x => (x as PromiseFulfilledResult<Awaited<ReturnType<typeof bootstrap>>>).value.replay)
+    .sort(), [false, true]);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
+  assert.equal((await receiptRef.get()).data()?.ledgerSha256, checkpoint.ledgerSha256);
+  await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
+    /PITANGA_BOOTSTRAP_CONFLICT/);
+  await fenceRef.update({ status: 'open' });
+  await assert.rejects(bootstrap(), /PITANGA_BOOTSTRAP_FENCE_UNVERIFIED/);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
 });
