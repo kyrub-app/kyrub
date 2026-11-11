@@ -67,6 +67,7 @@ test('replay refuses a persisted debit whose amount differs from the requested p
   const redemptionId = plan.redemptionId;
   stored.set(`users/${plan.userId}/rewardRedemptions/${redemptionId}`, {
     redemptionId, userId: plan.userId, rewardId: plan.rewardId,
+    voucherCode: plan.voucherCode, validUntil: plan.validUntil, status: 'issued',
     idempotencyKey: plan.auditEvent.idempotencyKey,
     correlationId: plan.auditEvent.correlationId,
   });
@@ -99,7 +100,7 @@ test('replay refuses an inactive voucher despite matching redemption metadata', 
   const id = plan.redemptionId;
   stored.set(`users/${plan.userId}/rewardRedemptions/${id}`, {
     redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
-    voucherCode: plan.voucherCode, validUntil: plan.validUntil,
+    voucherCode: plan.voucherCode, validUntil: plan.validUntil, status: 'issued',
     idempotencyKey: plan.auditEvent.idempotencyKey,
     correlationId: plan.auditEvent.correlationId,
   });
