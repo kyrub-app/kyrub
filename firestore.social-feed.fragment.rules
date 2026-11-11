@@ -133,6 +133,10 @@
         && incoming().sourcePostId == existing().sourcePostId
         && incoming().createdAt == existing().createdAt
         && incoming().updatedAt == request.time
+        && (!existing().keys().hasAny(['storePromotion']) || (
+          incoming().storePromotion == existing().storePromotion
+          && validStoreCouponSocialPost(incoming())
+        ))
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'authorName',
           'authorAvatar',
