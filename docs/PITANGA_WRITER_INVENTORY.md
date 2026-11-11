@@ -23,3 +23,15 @@ This inventory records **inspected files only**, not a repository-wide proof tha
 - Verify that store loyalty points and Kyrubia credits remain separate from global Pitangas.
 
 **Decision:** no production bootstrap, redemption enablement or conversion endpoint until these unknowns are resolved. The read-only authority inspection is diagnostic, not a migration lock.
+
+## Additional route and processor inspection (11 November 2026)
+
+- `server/gamification/globalChallengeAdminHandler.ts` routes administrative create/read/update/publish operations through the admin service; no challenge-completion reward ledger write observed in this handler.
+- `server/gamification/globalChallengeAdminValidation.ts` validates challenge definitions and queries; no persistence of earned Pitangas observed.
+- `server/payments/storeChallengeProcessor.ts` processes **store** challenge contributions and imports `StorePointLedgerEntry` from `shared/storePoints.ts`; it is not evidence of a global Pitanga award writer.
+- `server/payments/storeRewardRouter.ts` routes **store** reward operations to `storeRewardService.ts`, not to the global `redemptionRepository.ts`.
+- `server/gamification/xpLedgerRepository.ts` reads/writes `users/{uid}/xpLedger`, which is a separate economy from `users/{uid}/rewardLedger`.
+
+The recursive branch file tree contains the expected global gamification modules, but **a filename inventory cannot prove absence of dynamically constructed ledger writes elsewhere**. A repository-wide symbol/path search plus call-graph review remains mandatory before cutover. No global challenge-completion-to-Pitanga-award endpoint was established by these inspections.
+
+**Important functional release condition:** `redemptionRepository.ts` intentionally rejects *new* voucher issuance. Shipping the current branch unchanged would preserve that restriction. A green CI result does not certify readiness for user-facing redemption.
