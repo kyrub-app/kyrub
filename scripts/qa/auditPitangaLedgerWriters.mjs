@@ -17,6 +17,11 @@ const patterns = [
   /kyrubKCoinBalance/i,
   /persistKyrubRedemptionAtomically/i,
   /applyPitanga(?:Earn|Spend|XpConversion)InTransaction/i,
+  /issuePitangaVoucherInTransaction/i,
+  /buildPitangaMigrationSnapshot/i,
+  /verifyPitangaMigrationCheckpoint/i,
+  /rewardAudit/i,
+  /pitangaXpConversions/i,
 ];
 const hits = [];
 for (const path of tracked) {
