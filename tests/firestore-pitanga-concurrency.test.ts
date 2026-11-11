@@ -5,6 +5,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { applyPitangaEarnInTransaction } from '../server/gamification/pitangaEarnTransaction.js';
 import { applyPitangaSpendInTransaction } from '../server/gamification/pitangaSpendTransaction.js';
 import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
+import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBalanceAuthorityInspection.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -164,4 +165,48 @@ test('Firestore Emulator serializes an earn racing with a spend on the same bala
   const ledger = await root.collection('rewardLedger').get();
   assert.equal(ledger.size, 2);
   assert.deepEqual(ledger.docs.map(doc => doc.data().deltaKCoins).sort((a, b) => a - b), [-50, 50]);
+});
+
+test('Firestore Emulator reconciles complete earning, spending and conversion history', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-ledger-reconcile-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `reconcile_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const occurredAt = '2026-11-11T12:00:00Z';
+  // Zero is an explicitly empty test fixture, not a production migration strategy.
+  await balanceRef.create({ userId, availableKCoins: 0 });
+  await db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
+    userId, awardId: 'seed', sourceType: 'challenge', sourceId: 'challenge1',
+    amount: 275, occurredAt, balanceRef,
+    ledgerRef: root.collection('rewardLedger').doc('earn_seed'),
+  }));
+  await db.runTransaction(tx => applyPitangaSpendInTransaction(tx, {
+    userId, spendId: 'reward1', sourceId: 'reward1', amount: 75,
+    occurredAt: '2026-11-11T12:01:00Z', balanceRef,
+    debitRef: root.collection('rewardLedger').doc('spend_reward1'),
+  }));
+  await db.runTransaction(tx => applyPitangaXpConversionInTransaction(tx, {
+    userId, requestId: 'convert1', requestedXp: 1,
+    occurredAt: '2026-11-11T12:02:00Z', balanceRef,
+    debitRef: root.collection('rewardLedger').doc('conversion_convert1'),
+    xpRef: root.collection('xpLedger').doc('conversion_convert1'),
+    receiptRef: root.collection('pitangaXpConversions').doc('convert1'),
+  }));
+  const inspection = await inspectPitangaBalanceAuthority(db, userId);
+  assert.equal(inspection.status, 'consistent');
+  assert.equal(inspection.ledgerBalance, 100);
+  assert.equal(inspection.entryCount, 3);
+  assert.equal((await root.collection('xpLedger').get()).size, 1);
+  // An out-of-band balance mutation must be detected, never silently adopted.
+  await balanceRef.update({ availableKCoins: 101 });
+  const divergent = await inspectPitangaBalanceAuthority(db, userId);
+  assert.equal(divergent.status, 'inconsistent');
+  assert.equal(divergent.ledgerBalance, 100);
+  assert.equal(divergent.projectedBalance, 101);
 });
