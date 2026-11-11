@@ -475,3 +475,52 @@ test('Firestore Emulator prevents guarded legacy writes after the fence is commi
   await assert.rejects(guardedWrite(), /PITANGA_LEGACY_WRITER_FENCED/);
   assert.equal((await ledgerRef.get()).exists, false);
 });
+
+test('Firestore Emulator serializes fence activation against a guarded legacy writer', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-fence-race-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `fence_race_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const fenceRef = db.doc('systemControl/pitangaLegacyWriterFence');
+  const ledgerRef = root.collection('rewardLedger').doc('earn_race');
+  await fenceRef.set({ status: 'open', epoch: userId });
+  const legacyWrite = db.runTransaction(async tx => {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, {
+      fenceRef, expectedEpoch: userId,
+    });
+    tx.create(ledgerRef, {
+      id: ledgerRef.id, userId, type: 'earn', economy: 'k_coin',
+      deltaKCoins: 1000, sourceType: 'challenge', sourceId: 'challenge1',
+      correlationId: 'race1', idempotencyKey: 'race1',
+      occurredAt: '2026-11-11T12:00:00Z',
+    });
+  });
+  const activateFence = db.runTransaction(async tx => {
+    const current = await tx.get(fenceRef);
+    assert.equal(current.data()?.status, 'open');
+    tx.update(fenceRef, { status: 'fenced', writersVerified: true });
+  });
+  const results = await Promise.allSettled([legacyWrite, activateFence]);
+  assert.equal(results[1].status, 'fulfilled', 'fence activation must commit');
+  const recorded = await ledgerRef.get();
+  const finalFence = await fenceRef.get();
+  assert.equal(finalFence.data()?.status, 'fenced');
+  if (results[0].status === 'rejected') {
+    assert.match(String(results[0].reason), /PITANGA_LEGACY_WRITER_FENCED|ABORTED|conflict|transaction/i);
+    assert.equal(recorded.exists, false);
+  } else {
+    assert.equal(recorded.exists, true, 'write may commit only before the fence');
+  }
+  await assert.rejects(db.runTransaction(async tx => {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, {
+      fenceRef, expectedEpoch: userId,
+    });
+    tx.create(root.collection('rewardLedger').doc('earn_late'), { userId });
+  }), /PITANGA_LEGACY_WRITER_FENCED/);
+  assert.equal((await root.collection('rewardLedger').doc('earn_late').get()).exists, false);
+});
