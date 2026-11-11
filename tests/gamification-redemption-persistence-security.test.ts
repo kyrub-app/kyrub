@@ -126,3 +126,40 @@ test('replay refuses voucher metadata inconsistent with the committed redemption
     transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
   }
 });
+
+test('consistent persisted redemption replays without writing new documents', async () => {
+  const id = plan.redemptionId;
+  const stored = new Map<string, Record<string, unknown>>([
+    [`users/${plan.userId}/rewardRedemptions/${id}`, {
+      redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
+      voucherCode: plan.voucherCode, validUntil: plan.validUntil, status: 'issued',
+      correlationId: plan.auditEvent.correlationId, idempotencyKey: plan.auditEvent.idempotencyKey,
+    }],
+    [`users/${plan.userId}/rewardVouchers/${id}`, {
+      redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
+      code: plan.voucherCode, validUntil: plan.validUntil, status: 'active',
+    }],
+    [`users/${plan.userId}/rewardAudit/${id}`, {
+      redemptionId: id, userId: plan.userId, type: 'reward_redemption_issued',
+      correlationId: plan.auditEvent.correlationId, idempotencyKey: plan.auditEvent.idempotencyKey,
+    }],
+    [`users/${plan.userId}/rewardLedger/${plan.debitEntry.id}`, {
+      ...plan.debitEntry, economy: 'k_coin',
+    }],
+  ]);
+  let writes = 0;
+  transactionHandler = async callback => callback({
+    get: async (ref: { path: string }) => ({
+      exists: stored.has(ref.path), data: () => stored.get(ref.path),
+    }),
+    create: () => { writes++; },
+  });
+  try {
+    const result = await api.persistKyrubRedemptionAtomically(plan);
+    assert.equal(result.redemptionId, id);
+    assert.equal(result.voucherCode, plan.voucherCode);
+    assert.equal(writes, 0);
+  } finally {
+    transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
+  }
+});
