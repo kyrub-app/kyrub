@@ -38,7 +38,8 @@ export const applyPitangaXpConversionInTransaction = async (
     if (previous?.userId !== input.userId ||
         previous?.requestId !== input.requestId ||
         previous?.requestedXp !== input.requestedXp ||
-        previous?.status !== 'committed') throw new Error('CONVERSION_IDEMPOTENCY_CONFLICT');
+        previous?.status !== 'committed' ||
+        previous?.occurredAt !== input.occurredAt) throw new Error('CONVERSION_IDEMPOTENCY_CONFLICT');
     if (!debit.exists || !xp.exists) throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
     const plan = planVoluntaryPitangaXpConversion(
       previous.availablePitangasBefore, input.requestedXp,
