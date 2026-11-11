@@ -70,3 +70,8 @@ O arquivo **presente em `main`** `server/gamification/redemptionRepository.ts` i
 A PR #1057 introduziu a operação autenticada `selos-kairubi-balance`, presente em `api/health.ts` na `main`, com rewrite `/api/selos-kairubi` em `vercel.json`. Ela verifica Firebase ID token, lê `adminDb.collection(\`users/${actor.uid}/rewardLedger\`).get()`, confere `entry.userId` e `entry.id` com o documento, valida cada lançamento com `assertKyrubRewardLedgerEntry` e calcula `balance: kyrubKCoinBalance(entries)`. A resposta pública usa `schemaVersion: 1` e `unit: 'selos_kairubi'` (legado). **Não renomear rota ou unidade da resposta sem inventariar consumidores e planejar versionamento.**
 
 O saldo observado é **derivado da soma do ledger**, não de um documento `availableKCoins`. O leitor é uma consulta independente, não uma operação transacional que reserva saldo; não pode ser usado isoladamente para autorizar débitos concorrentes. A primitiva de conversão permanece bloqueada até alinhar sua fonte de saldo à autoridade persistida e coordenar atomicamente resgate/conversão. Não confundir o nome legado `selos_kairubi` dessa API com pontos de fidelidade de lojas.
+
+
+## Consumidor de saldo confirmado e renomeação visual (11/11/2026)
+
+`src/components/tabs/KyrubTab.tsx` consome `/api/selos-kairubi`, verifica explicitamente `data.unit === 'selos_kairubi'` e apresenta o saldo no cartão Recompensas. Na PR #1128, somente o título visível `Selos Kairubi` foi alterado para **Pitangas**; o contrato da API e sua validação permanecem inalterados. Antes de versionar a rota/unidade, pesquisar todos os demais consumidores; não pressupor que esse seja o único.
