@@ -283,12 +283,14 @@ validation, draft creation, contextual publish/cancel, in-flight duplicate guard
 dev dependency; `npm run test:global-challenges` runs these tests alongside the
 Firestore Emulator suite, so Validate Kyrub covers both.
 
-The browser visual check could not be completed: local headless Chromium could
-not start under the workspace's socket restrictions, and the review browser could
-not reach the loopback fixture server. No production URL or sign-in was attempted.
-No desktop/mobile screenshot or hosted-runtime verification is claimed. Responsive
-Tailwind layout and accessible DOM behavior are implemented; final visual review
-on the authenticated target remains a review limitation.
+The initial loopback/browser limitation was resolved on 2026-11-11 using a
+fresh, disposable HTTPS Sandbox and the real administrative app/handler with
+Firestore Emulator. Desktop 1280 and mobile iframe viewports 390/320 were exercised
+in Chrome, with generated test identities only. The visual pass found and fixed
+offscreen details/focus and mobile form intrinsic-width overflow. Full evidence,
+precise authentication/browser limits and screenshots are in
+[GLOBAL_CHALLENGE_VISUAL_QA.md](GLOBAL_CHALLENGE_VISUAL_QA.md).
+This does not claim a physical-device, Google OAuth or production runtime test.
 
 The feature branch has its own explicit false `git.deploymentEnabled` rule, in
 addition to the API branch's block. Neither production flags nor other branch

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { afterEach, before, beforeEach, test } from 'node:test';
 import { JSDOM } from 'jsdom';
 import React, { act } from 'react';
@@ -86,6 +87,7 @@ test('list, filters, cursor navigation and details use authenticated GETs', asyn
   assert.match(container.textContent!, /Desafio item-0/); assert.doesNotMatch(container.textContent!, /Desafio item-1/);
   await click('Ver detalhes');
   assert.match(container.querySelector('[aria-label="Detalhes do desafio"]')!.textContent!, /Descrição item-0/);
+  assert.equal(document.activeElement, container.querySelector('[aria-label="Detalhes do desafio"] h3'));
   assert.equal(button('Publicar desafio'), undefined);
   assert.equal(calls.filter(c => c.init.method === 'POST').length, 0);
 });
@@ -159,4 +161,19 @@ test('client maps rate limits without retrying POST or changing the request iden
   failStatus = 429;
   await assert.rejects(createGlobalChallengeAdminClient(user).publish('same-id'), (error: any) => error instanceof GlobalChallengeApiError && error.retryAfter === 12);
   assert.equal(calls.length, 1); assert.equal(JSON.parse(calls[0].init.body as string).challengeId, 'same-id');
+});
+
+
+test('visual QA host refuses non-demo projects, remote emulators and real credential configuration before startup', () => {
+  const safeEnv = { ...process.env, KYRUB_VISUAL_QA: '1', FIREBASE_PROJECT_ID: 'demo-kyrub-control-plane',
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8088', FIREBASE_SERVICE_ACCOUNT_JSON: '', GOOGLE_APPLICATION_CREDENTIALS: '' };
+  for (const invalid of [{ KYRUB_VISUAL_QA: '0' }, { FIREBASE_PROJECT_ID: 'not-a-demo-project' },
+    { FIRESTORE_EMULATOR_HOST: 'remote.example.test:8088' }, { GOOGLE_APPLICATION_CREDENTIALS: 'forbidden-credential.json' }]) {
+    const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/qa/globalChallengeVisualServer.ts'], {
+      env: { ...safeEnv, ...invalid }, encoding: 'utf8', timeout: 10000,
+    });
+    assert.equal(result.status, 1);
+    assert.match(result.stderr, /QA_REQUIRES_DEMO_PROJECT_LOCAL_EMULATOR_AND_NO_CREDENTIALS/);
+    assert.doesNotMatch(result.stdout, /"ready":true/);
+  }
 });

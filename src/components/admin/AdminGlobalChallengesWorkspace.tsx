@@ -7,7 +7,7 @@ import { assertKyrubChallengeDefinition, type KyrubChallengeDefinition, type Kyr
 
 const statusLabels: Record<KyrubChallengeStatus, string> = { draft: 'Rascunho', published: 'Publicado', active: 'Ativo', ended: 'Encerrado', cancelled: 'Cancelado' };
 const modeLabels = { deterministic: 'Evento verificável', user_evidence: 'Evidência do usuário', feed_post: 'Publicação no feed', external_integration: 'Integração externa', community_review: 'Revisão da comunidade', manual_review: 'Revisão manual', kyrubia_assisted: 'Assistida pela Kyrubia' };
-const inputClass = 'mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400';
+const inputClass = 'mt-1 min-w-0 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400';
 const buttonClass = 'rounded-xl border border-slate-700 px-3 py-2 text-xs font-bold text-slate-200 hover:bg-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 disabled:opacity-50';
 const emptyForm = () => ({ id: `challenge_${crypto.randomUUID()}`, title: '', description: '', validationMode: 'deterministic', rewardXp: '0', rewardKCoins: '0', maxCompletionsPerUser: '1', maxCompletions: '', startsAt: '', endsAt: '' });
 const formatDate = (value?: string) => value ? new Date(value).toLocaleString('pt-BR') : 'Sem limite de data';
@@ -36,6 +36,13 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
   const mutation = useRef<AbortController | null>(null);
   const mounted = useRef(true);
   const errorRef = useRef<HTMLDivElement>(null);
+  const detailHeadingRef = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (detail && !detailLoading) {
+      detailHeadingRef.current?.focus();
+      detailHeadingRef.current?.scrollIntoView?.({ block: 'start' });
+    }
+  }, [detail, detailLoading]);
   const cursor = cursors.at(-1);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; mutation.current?.abort(); }; }, []);
   useEffect(() => { if (error) errorRef.current?.focus(); }, [error]);
@@ -104,7 +111,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
     {error && <div role="alert" ref={errorRef} tabIndex={-1} className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-sm text-red-200">{error}</div>}
     <p role="status" aria-live="polite" className="text-sm text-emerald-300">{notice || (busy ? 'Salvando…' : '')}</p>
     {showForm && <form id="global-challenge-form" onSubmit={create} className="rounded-2xl border border-slate-700 bg-slate-950/50 p-4">
-      <h3 className="mb-4 text-sm font-bold text-white">Criar rascunho global</h3><fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
+      <h3 className="mb-4 text-sm font-bold text-white">Criar rascunho global</h3><fieldset disabled={busy} className="grid min-w-0 grid-cols-1 gap-4 sm:grid-cols-2">
         <label className="text-xs text-slate-300">Identificador<input className={inputClass} required maxLength={128} pattern="[A-Za-z0-9_\-]+" value={form.id} onChange={event => field('id', event.target.value)} /></label>
         <label className="text-xs text-slate-300">Título<input className={inputClass} required maxLength={200} value={form.title} onChange={event => field('title', event.target.value)} /></label>
         <label className="text-xs text-slate-300 sm:col-span-2">Descrição<textarea className={inputClass} required maxLength={5000} rows={3} value={form.description} onChange={event => field('description', event.target.value)} /></label>
@@ -125,7 +132,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
     </div>
     {selectedId && <section aria-label="Detalhes do desafio" aria-busy={detailLoading} className="rounded-2xl border border-slate-700 p-4">
       {detailLoading && <p role="status" className="text-sm text-slate-400">Carregando detalhes…</p>}
-      {detail && <><h3 className="break-words text-base font-bold text-white">{detail.title}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{detail.description}</p>
+      {detail && <><h3 ref={detailHeadingRef} tabIndex={-1} className="scroll-mt-24 break-words text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{detail.title}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{detail.description}</p>
         <dl className="my-4 grid gap-3 text-xs text-slate-300 sm:grid-cols-2">{[['Identificador', detail.id], ['Estado', statusLabels[detail.status]], ['Validação', modeLabels[detail.validationMode]], ['XP previsto', detail.rewardXp], ['K-Coins previstos', detail.rewardKCoins], ['Conclusões por usuário', detail.maxCompletionsPerUser], ['Conclusões totais', detail.maxCompletions ?? 'Sem limite'], ['Início', formatDate(detail.startsAt)], ['Fim', formatDate(detail.endsAt)]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="break-all">{value}</dd></div>)}</dl>
         {detail.status === 'draft' && <button type="button" disabled={busy} className={`${buttonClass} border-emerald-500/40 text-emerald-200`} onClick={publish}>Publicar desafio</button>}
       </>}
