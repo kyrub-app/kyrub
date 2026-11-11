@@ -167,11 +167,12 @@ test('replay with mismatched correlation fails closed', async () => {
   assert.equal(writes.length, 0);
 });
 
-test('replay with altered timestamp is rejected', async () => {
+test('replay with fresh retry timestamp uses original committed receipt', async () => {
   const { refs, tx, writes } = makeTx(0, true);
-  await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
+  const result = await applyPitangaXpConversionInTransaction(tx as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:01Z',
-  } as never), /CONVERSION_IDEMPOTENCY_CONFLICT/);
+  } as never);
+  assert.equal(result.replay, true);
   assert.equal(writes.length, 0);
 });
 
