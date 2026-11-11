@@ -59,3 +59,45 @@ test('conflicting replay rejects', async () => {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 2, occurredAt: '2026-11-11T12:00:00Z',
   } as never), /CONVERSION_IDEMPOTENCY_CONFLICT/);
 });
+
+test('missing authoritative balance fails closed', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  const missingBalanceTx = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'balance'
+      ? { exists: false, data: () => undefined }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(missingBalanceTx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_BALANCE_NOT_INITIALIZED/);
+  assert.equal(writes.length, 0);
+});
+
+test('partial ledger state fails closed without additional writes', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  const partialTx = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'debit'
+      ? { exists: true, data: () => ({ deltaKCoins: -100 }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(partialTx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_PARTIAL_STATE/);
+  assert.equal(writes.length, 0);
+});
+
+test('inconsistent replay receipt fails closed', async () => {
+  const { refs, tx, writes } = makeTx(0, true);
+  const inconsistentTx = {
+    ...tx,
+    get: async (r: { id: string }) => r.id === 'xp'
+      ? { exists: true, data: () => ({ deltaXp: 2 }) }
+      : tx.get(r),
+  };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(inconsistentTx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
