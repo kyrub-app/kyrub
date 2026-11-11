@@ -61,6 +61,10 @@ export const applyPitangaXpConversionInTransaction = async (
         previous?.requestId !== input.requestId ||
         previous?.requestedXp !== input.requestedXp ||
         previous?.status !== 'committed') throw new Error('CONVERSION_IDEMPOTENCY_CONFLICT');
+    if (!Number.isSafeInteger(previous.availablePitangasBefore) ||
+        previous.availablePitangasBefore < 0) {
+      throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
+    }
     if (!debit.exists || !xp.exists) throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
     if (!Number.isFinite(Date.parse(previous.occurredAt))) throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
     const plan = planVoluntaryPitangaXpConversion(
