@@ -21,7 +21,7 @@ export interface KyrubRewardLedgerEntry {
   type: KyrubRewardLedgerEntryType;
   /** Signed K-Coin delta. Earn/reversal-credit are positive; redeem/expire/reversal-debit are negative. */
   deltaKCoins: number;
-  sourceType: 'challenge' | 'reward_redemption' | 'campaign' | 'admin_adjustment' | 'reversal';
+  sourceType: 'challenge' | 'reward_redemption' | 'conversion' | 'campaign' | 'admin_adjustment' | 'reversal';
   sourceId: string;
   correlationId: string;
   idempotencyKey: string;
