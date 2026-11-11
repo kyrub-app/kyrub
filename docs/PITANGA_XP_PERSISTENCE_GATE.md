@@ -34,3 +34,16 @@ Likewise, `economicLedger` tracks real-money marketplace activity and must never
 - The conversion debit must share the exact canonical global reward-ledger accounting domain. The XP credit must use `users/{uid}/xpLedger`, with sourceType `conversion`, and be visible to `readVerifiedKyrubXpTotal`.
 - Demonstrate actual Firestore Emulator transactions for two different request IDs spending the same 100 Pitangas, plus same-ID retries. One successful conversion, one insufficient-balance rejection, no negative balance or double credit.
 - Only after these checks: independent security review, then separately authorized merge and deploy.
+
+
+## Inventário de compatibilidade de nomenclatura (11/11/2026)
+
+- `shared/gamification.ts`: `KyrubRewardLedgerEntry` e campos legados `deltaKCoins`, `rewardKCoins`, `costKCoins`; aliases canônicos `KyrubPitangaLedgerEntry` e `kyrubPitangaBalance` foram adicionados sem regravar dados.
+- `shared/gamificationEconomies.ts` (introduzido pela PR #320): identificador técnico `k_coin` diferencia a moeda global de `kyrub_xp`, `store_loyalty_points` e `kyrubia_credits`. Não alterar esse discriminador em dados existentes sem inventário de todos os consumidores.
+- `server/gamification/xpLedgerRepository.ts`: ledger XP persistente confirmado; **não é** a autoridade do saldo de Pitangas.
+- `server/gamification/globalChallengeAdminRepository.ts`: grava definições de desafios em `global_challenges`; **não comprova** emissão nem débito de Pitangas.
+- A pesquisa de código do conector GitHub não retornou ocorrências nem de símbolos confirmados em arquivos conhecidos. Resultado vazio **não demonstra ausência de escritor**.
+
+### Critério para concluir a descoberta do escritor
+
+Localizar em código verificável (1) o caminho Firestore do ledger global, (2) o serviço que grava ganhos/resgates, (3) o controle de concorrência e saldo, (4) todas as leituras e projeções, (5) o identificador `k_coin` e os campos legados usados em dados persistidos. Somente então planejar migração de esquema e conectar a transação de Pitangas → XP. Não criar ledger ou saldo paralelo.
