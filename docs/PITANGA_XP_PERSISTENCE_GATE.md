@@ -63,3 +63,10 @@ O arquivo **presente em `main`** `server/gamification/redemptionRepository.ts` i
 `shared/gamificationRedemption.ts` recebe `currentBalanceKCoins` do chamador e verifica saldo **durante o planejamento**. `server/gamification/redemptionRepository.ts` grava débito/voucher/recibo em transação, mas **não relê saldo nem serializa com outro débito na mesma transação**. Portanto, a atomicidade de quatro documentos não equivale à proteção contra gasto simultâneo de Pitangas. É necessário auditar os chamadores e todas as operações de crédito antes de decidir a correção; não habilitar conversão enquanto resgate e conversão puderem gastar sobre visões diferentes do saldo.
 
 `shared/gamificationLedger.ts` define `createAuditableKCoinLedgerEntry`, um **construtor puro** de lançamento auditável; não grava ganhos. Aliases `Pitanga` adicionados para novo código, mantendo formato legado persistido.
+
+
+## Leitor canônico encontrado e contrato legado de API (11/11/2026)
+
+A PR #1057 introduziu a operação autenticada `selos-kairubi-balance`, presente em `api/health.ts` na `main`, com rewrite `/api/selos-kairubi` em `vercel.json`. Ela verifica Firebase ID token, lê `adminDb.collection(\`users/${actor.uid}/rewardLedger\`).get()`, confere `entry.userId` e `entry.id` com o documento, valida cada lançamento com `assertKyrubRewardLedgerEntry` e calcula `balance: kyrubKCoinBalance(entries)`. A resposta pública usa `schemaVersion: 1` e `unit: 'selos_kairubi'` (legado). **Não renomear rota ou unidade da resposta sem inventariar consumidores e planejar versionamento.**
+
+O saldo observado é **derivado da soma do ledger**, não de um documento `availableKCoins`. O leitor é uma consulta independente, não uma operação transacional que reserva saldo; não pode ser usado isoladamente para autorizar débitos concorrentes. A primitiva de conversão permanece bloqueada até alinhar sua fonte de saldo à autoridade persistida e coordenar atomicamente resgate/conversão. Não confundir o nome legado `selos_kairubi` dessa API com pontos de fidelidade de lojas.
