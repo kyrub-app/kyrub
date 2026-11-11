@@ -101,3 +101,24 @@ A árvore Git de `main` foi consultada recursivamente (1.935 entradas, `truncate
 - Antes de autorizar novos débitos, definir um ponto de serialização compartilhado por todos os escritores de créditos e débitos, incluindo resgate e conversão. Uma transação que lê somente o recibo do próprio resgate não protege contra outro débito concorrente.
 - Um eventual documento materializado de saldo exige inicialização reconciliada com o histórico, atualização atômica por **todos** os escritores e migração explicitamente controlada. Sem esses três requisitos, mantê-lo desativado.
 - Os testes de idempotência de resgate aprovados no CI não equivalem a testes de saldo sob concorrência. A integração da conversão permanece bloqueada até testes reais com emulador/Firestore.
+
+## Bloqueio operacional explícito de novos resgates (11/11/2026)
+
+A PR #1128 passou a rejeitar **novas** chamadas a `persistKyrubRedemptionAtomically` com
+`REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE` após verificar a inexistência de recibo,
+voucher, lançamento e auditoria anteriores. A leitura idempotente de uma operação
+previamente emitida e íntegra continua permitida. O bloqueio é intencional e não
+representa uma implementação de saldo transacional.
+
+**Impacto funcional:** enquanto a PR estiver nesse estado, qualquer fluxo que dependa
+desse repositório para emitir um novo voucher de recompensa ficará indisponível.
+Antes do merge, verificar todos os chamadores e confirmar que não há fluxo ativo
+de produção dependente dessa emissão. Não remover o bloqueio simplesmente para
+restaurar a emissão: primeiro implementar o saldo canônico e o bloqueio de
+concorrência compartilhado por ganhos, resgates e conversões.
+
+**Critério de remoção:** teste real no Firestore Emulator com dois pedidos
+independentes consumindo as mesmas 100 Pitangas (exatamente um deve vencer),
+além de resgate versus conversão concorrentes, replay idempotente, migração
+compatível com `rewardLedger` e confirmação de que nenhuma outra rotina de
+crédito/débito contorna a autoridade de saldo.
