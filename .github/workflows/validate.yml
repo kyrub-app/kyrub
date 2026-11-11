@@ -76,6 +76,7 @@ jobs:
           tests/pitanga-earn-transaction.test.ts
           tests/pitanga-spend-transaction.test.ts
           tests/pitanga-voucher-issuance-transaction.test.ts
+          tests/pitanga-migration-snapshot.test.ts
           tests/pitanga-balance-reconciliation.test.ts
           tests/pitanga-balance-authority-inspection.test.ts
           tests/global-challenge-publication.test.ts
