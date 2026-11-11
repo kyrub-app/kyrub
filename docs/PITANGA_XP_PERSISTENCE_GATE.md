@@ -89,3 +89,15 @@ No arquivo `firestore.rules` da `main`, não há regras explícitas nomeadas `re
 ## Revisão de escopo das regras Firestore (11/11/2026)
 
 `firestore.rules` da `main` contém `match /{document=**} { allow read, write: if false; }` no escopo raiz. As regras de `/users/{userId}` cobrem o documento do usuário e subcoleções explicitamente nomeadas (`tasks`, `favorites`, `savedItems`, `selections`, `skills`, `stores`), **não** `rewardLedger`. A regra recursiva permissiva `match /{allData=**}` está **dentro de** `/artifacts/{tenantId}`, portanto não se aplica a `users/{uid}/rewardLedger/{entryId}`. Pela inspeção estática, o cliente Firestore não tem permissão explícita para escrever diretamente no ledger global; o Admin SDK ignora regras de segurança e exige controle próprio de autorização. Confirmar com testes no emulador antes de tratar isso como garantia de produção.
+
+
+## Inventário estrutural confirmado pela árvore completa da main (11/11/2026)
+
+A árvore Git de `main` foi consultada recursivamente (1.935 entradas, `truncated: false`). Entre os arquivos de servidor de gamificação encontrados estão `globalChallengeAdminRepository.ts`, `redemptionRepository.ts` e `xpLedgerRepository.ts`. A administração de desafios globais cria e publica definições, mas não comprova emissão de Pitangas. `xpLedgerRepository.ts` escreve XP, não crédito de Pitangas. Não foi identificado, por esse inventário de nomes, um repositório dedicado à emissão global de Pitangas; **isso não prova inexistência de gravações em outras rotas**.
+
+### Decisão de integração segura
+
+- Preservar o `rewardLedger` como histórico verificável e fonte do saldo observado pelo endpoint legado; não iniciar uma segunda fonte de verdade `availableKCoins` apenas para conversão.
+- Antes de autorizar novos débitos, definir um ponto de serialização compartilhado por todos os escritores de créditos e débitos, incluindo resgate e conversão. Uma transação que lê somente o recibo do próprio resgate não protege contra outro débito concorrente.
+- Um eventual documento materializado de saldo exige inicialização reconciliada com o histórico, atualização atômica por **todos** os escritores e migração explicitamente controlada. Sem esses três requisitos, mantê-lo desativado.
+- Os testes de idempotência de resgate aprovados no CI não equivalem a testes de saldo sob concorrência. A integração da conversão permanece bloqueada até testes reais com emulador/Firestore.
