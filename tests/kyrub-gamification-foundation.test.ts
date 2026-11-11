@@ -145,3 +145,15 @@ test('reward balance is independent of Firestore document retrieval order', () =
     credit,
   ]), /saldo negativo/);
 });
+
+test('reward ledger chronology respects timezone offsets and rejects invalid timestamps', () => {
+  const credit = entry({ occurredAt: '2026-08-22T00:00:00+02:00' });
+  const debit = entry({
+    id: 'entry-2', type: 'redeem', deltaKCoins: -400,
+    sourceType: 'reward_redemption', sourceId: 'reward-1',
+    idempotencyKey: 'redeem:reward-1:user-1',
+    occurredAt: '2026-08-21T23:00:00Z',
+  });
+  assert.equal(kyrubKCoinBalance([debit, credit]), 600);
+  assert.throws(() => kyrubKCoinBalance([entry({ occurredAt: 'not-a-date' })]), /REWARD_LEDGER_DATE_INVALID/);
+});
