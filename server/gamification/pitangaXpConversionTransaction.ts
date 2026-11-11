@@ -1,5 +1,5 @@
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
-import { planVoluntaryPitangaXpConversion } from '../../shared/pitangaXpConversion.js';
+import { PITANGAS_PER_XP, planVoluntaryPitangaXpConversion } from '../../shared/pitangaXpConversion.js';
 
 /**
  * Atomic conversion primitive. This is NOT a public endpoint.
@@ -26,7 +26,7 @@ export const applyPitangaXpConversionInTransaction = async (
   if (!Number.isSafeInteger(input.requestedXp) || input.requestedXp < 1) {
     throw new Error('XP_CONVERSION_AMOUNT_INVALID');
   }
-  if (!Number.isSafeInteger(input.requestedXp * 100)) throw new Error('XP_CONVERSION_OVERFLOW');
+  if (!Number.isSafeInteger(input.requestedXp * PITANGAS_PER_XP)) throw new Error('XP_CONVERSION_OVERFLOW');
   // Defense in depth: reject cross-user and cross-economy references even when
   // a trusted server adapter supplies them. The balance and receipt collection
   // names are intentionally not assumed until the canonical writer is verified.
