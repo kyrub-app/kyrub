@@ -63,6 +63,7 @@ jobs:
           tests/gamification-redemption-persistence-security.test.ts
           tests/pitanga-xp-conversion-transaction.test.ts
           tests/pitanga-earn-transaction.test.ts
+          tests/pitanga-spend-transaction.test.ts
           tests/global-challenge-publication.test.ts
           tests/xp-ledger-persistence.test.ts
           tests/official-plan-pix.test.ts
