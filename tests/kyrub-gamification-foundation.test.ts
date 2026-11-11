@@ -157,3 +157,14 @@ test('reward ledger chronology respects timezone offsets and rejects invalid tim
   assert.equal(kyrubKCoinBalance([debit, credit]), 600);
   assert.throws(() => kyrubKCoinBalance([entry({ occurredAt: 'not-a-date' })]), /REWARD_LEDGER_DATE_INVALID/);
 });
+
+test('reward balance rejects arithmetic overflow instead of returning an unsafe amount', () => {
+  assert.throws(() => kyrubKCoinBalance([
+    entry({ deltaKCoins: Number.MAX_SAFE_INTEGER }),
+    entry({
+      id: 'entry-2', deltaKCoins: 1, sourceId: 'challenge-2',
+      idempotencyKey: 'reward:challenge-2:user-1',
+      occurredAt: '2026-08-23T00:00:00.000Z',
+    }),
+  ]), /REWARD_LEDGER_BALANCE_OVERFLOW/);
+});
