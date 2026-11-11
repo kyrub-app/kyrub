@@ -66,3 +66,34 @@ test('rejects duplicate ledger idempotency and negative historical balance', () 
     ...input, ledgerDocuments: [{ id: 'spend1', data: spend }],
   }), /saldo negativo/);
 });
+
+
+test('changing historical amount or event metadata changes the checkpoint digest', () => {
+  const original = buildPitangaMigrationSnapshot(input);
+  const amountChanged = buildPitangaMigrationSnapshot({
+    ...input, ledgerDocuments: [
+      { id: 'earn1', data: { ...earn, deltaKCoins: 1300 } },
+      { id: 'spend1', data: spend },
+    ],
+  });
+  assert.notEqual(original.ledgerSha256, amountChanged.ledgerSha256);
+  assert.equal(amountChanged.balance, 1100);
+  const metadataChanged = buildPitangaMigrationSnapshot({
+    ...input, ledgerDocuments: [
+      { id: 'earn1', data: { ...earn, correlationId: 'different' } },
+      { id: 'spend1', data: spend },
+    ],
+  });
+  assert.equal(metadataChanged.balance, original.balance);
+  assert.notEqual(metadataChanged.ledgerSha256, original.ledgerSha256);
+});
+
+test('empty historical ledger is zero only when explicitly complete and fenced', () => {
+  const snapshot = buildPitangaMigrationSnapshot({ ...input, ledgerDocuments: [] });
+  assert.equal(snapshot.balance, 0);
+  assert.equal(snapshot.entryCount, 0);
+  assert.match(snapshot.ledgerSha256, /^[a-f0-9]{64}$/);
+  assert.throws(() => buildPitangaMigrationSnapshot({
+    ...input, ledgerDocuments: [], completeLedgerVerified: false,
+  }), /PITANGA_MIGRATION_PRECONDITIONS_UNVERIFIED/);
+});
