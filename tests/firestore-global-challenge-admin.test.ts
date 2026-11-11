@@ -1,13 +1,18 @@
+import { getTransformedRoutes } from '@vercel/routing-utils';
+import { minimatch } from 'minimatch';
+import { parse as parseUrl } from 'node:url';
 import assert from 'node:assert/strict';
-import { after, before, test } from 'node:test';
-import { generateKeyPairSync, sign } from 'node:crypto';
+import { after, before, beforeEach, test } from 'node:test';
+import { createHash, generateKeyPairSync, sign } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import express from 'express';
 import type { Server } from 'node:http';
+import { getFirestore, type Transaction } from 'firebase-admin/firestore';
+import { GLOBAL_CHALLENGE_ACTOR_LIMIT, GLOBAL_CHALLENGE_INGRESS_LIMIT } from '../server/gamification/globalChallengeAdminRateLimit.js';
 import { adminDb } from '../server/firebaseAdmin.js';
-import handler from '../server/gamification/globalChallengeAdminHandler.js';
+import handler, { createGlobalChallengeAdminRouter, GLOBAL_CHALLENGE_PAYLOAD_BYTES } from '../server/gamification/globalChallengeAdminHandler.js';
 import serverlessHandler from '../api/admin/operations/health.js';
 import { createGlobalChallengeDraft } from '../server/gamification/globalChallengeAdminRepository.js';
 
@@ -51,12 +56,32 @@ before(async () => {
     if (!String(url).startsWith('http://127.0.0.1:')) throw new Error('UNEXPECTED_NETWORK_REQUEST');
     return nativeFetch(url, init);
   }) as typeof fetch;
-  // Let malformed JSON values reach the shared handler for runtime-validation coverage.
-  const app = express(); app.use(express.json({ strict: false }));
-  app.all('/api/admin/global-challenges', (req, res) => { void handler(req, res); });
+  const app = express();
+  app.use('/api/admin/global-challenges', createGlobalChallengeAdminRouter());
+  const config = JSON.parse(await readFile('vercel.json', 'utf8'));
+  assert.equal(config.rewrites[0].source, '/api/admin/global-challenges');
+  const compiled = getTransformedRoutes({ rewrites: [config.rewrites[0]] });
+  assert.equal(compiled.error, null);
+  // Local adapter for the official compiler's output. Query merging follows
+  // Vercel CLI 48.10.0 src/util/dev/router.ts (destination + incoming query).
+  // This tests configuration/handler integration; it is not a hosted edge test.
+  app.use('/vercel-offline', express.json({ limit: GLOBAL_CHALLENGE_PAYLOAD_BYTES }));
+  app.use('/vercel-offline', async (req, res) => {
+    const incoming = parseUrl(req.url, true);
+    const route = compiled.routes?.find(route => 'src' in route && new RegExp(route.src).test(incoming.pathname ?? '/'));
+    assert.ok(route && 'dest' in route && typeof route.dest === 'string');
+    const destination = parseUrl(route.dest, true);
+    assert.equal(destination.pathname, '/api/admin/operations/health');
+    const query = Object.assign(destination.query, incoming.query);
+    await serverlessHandler({ method: req.method, headers: req.headers, query: query as Record<string, string | string[]>, body: req.body }, res);
+  });
   server = await new Promise<Server>(resolve => { const listener = app.listen(0, '127.0.0.1', () => resolve(listener)); });
   const address = server.address(); assert.ok(address && typeof address !== 'string');
   base = `http://127.0.0.1:${address.port}/api/admin/global-challenges`;
+});
+beforeEach(async () => {
+  const key = createHash('sha256').update('admin').digest('hex');
+  await adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${key}`).delete();
 });
 after(async () => {
   globalThis.fetch = nativeFetch;
@@ -166,10 +191,10 @@ test('transaction independently rechecks current role; expired or corrupt drafts
 test('serverless multiplexer uses the same handler and contract', async () => {
   let status = 200; let body: any;
   const response = { setHeader() {}, status(value: number) { status = value; return this; }, json(value: unknown) { body = value; } };
-  await serverlessHandler({ method: 'POST', headers: { authorization: `Bearer ${token()}` },
+  await serverlessHandler({ method: 'POST', headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(JSON.stringify(draft('serverless')))) },
     query: { transport: 'global-challenges' }, body: draft('serverless') }, response);
   assert.equal(status, 201); assert.equal(body.challenge.status, 'draft');
-  await serverlessHandler({ method: 'POST', headers: { authorization: `Bearer ${token()}` },
+  await serverlessHandler({ method: 'POST', headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(JSON.stringify({ challengeId: 'serverless' }))) },
     query: { transport: 'global-challenges', operation: 'publish' }, body: { challengeId: 'serverless' } }, response);
   assert.equal(status, 200); assert.equal(body.challenge.status, 'published');
 });
@@ -181,5 +206,168 @@ test('browser rules forbid direct challenge/audit writes and self-assigned admin
     await assertFails(setDoc(doc(db, 'global_challenges/happy/audit/forged'), { actorId: uid }));
     await assertFails(setDoc(doc(db, `kyrub_admin/control_plane/admins/${uid}`), { uid, role: 'super_admin', status: 'active' }));
     await assertFails(getDoc(doc(db, 'global_challenges/happy')));
+    await assertFails(setDoc(doc(db, 'kyrub_admin/control_plane/rate_limits/global-challenges-forged'), { count: 0 }));
+    await assertFails(getDoc(doc(db, 'kyrub_admin/control_plane/rate_limits/global-challenges-forged')));
   }
+});
+
+
+test('revocation between verified authorization and Firestore reads, including SDK retries', async t => {
+  // Interpose only on the real SDK transaction callback. Reads, commit, rollback,
+  // locking and retries still use the actual Firestore Emulator and Admin SDK.
+  const db = getFirestore();
+  const originalRun = db.runTransaction.bind(db);
+  for (const operation of ['create', 'publish']) {
+    for (const mode of ['before-read', 'retry']) {
+      for (const change of ['demoted', 'disabled', 'deleted']) await t.test(`${operation}-${mode}-${change}`, async context => {
+        const uid = `${operation}-${mode}-${change}`;
+        const id = `revoke-${uid}`;
+        const profile = adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`);
+        await profile.set({ uid, role: 'super_admin', status: 'active' });
+        if (operation === 'publish') assert.equal((await request(draft(id))).status, 201);
+        let attempts = 0;
+        let staged = 0;
+        const revoke = () => change === 'deleted' ? profile.delete() :
+          profile.update(change === 'demoted' ? { role: 'operations' } : { status: 'disabled' });
+        const interception = context.mock.method(db, 'runTransaction', (callback: (tx: Transaction) => Promise<unknown>, options: object) =>
+          originalRun(async tx => {
+            let business = false;
+            const proxy = new Proxy(tx, { get(target, property) {
+              if (property === 'get') return async (ref: any) => {
+                if (ref.path === profile.path) {
+                  business = true; attempts++;
+                  // On a retry the SDK has already rolled back the first attempt,
+                  // so no pessimistic read lock remains when revocation commits.
+                  if (mode === 'before-read' || attempts === 2) await revoke();
+                }
+                return target.get(ref);
+              };
+              if (property === 'create' || property === 'update') return (...args: any[]) => {
+                staged++;
+                return (target[property] as Function).apply(target, args);
+              };
+              const value = Reflect.get(target, property, target);
+              return typeof value === 'function' ? value.bind(target) : value;
+            } });
+            const result = await callback(proxy);
+            if (business && mode === 'retry' && attempts === 1) {
+              // Deterministic retryable fault after business and audit writes
+              // have been staged, before commit. The SDK owns the retry loop.
+              throw Object.assign(new Error('TEST_TRANSACTION_ABORTED'), { code: 10 });
+            }
+            return result;
+          }, options));
+        try {
+          const result = await request(operation === 'create' ? draft(id) : { challengeId: id }, operation, token(uid));
+          assert.equal(result.status, 403, JSON.stringify(result));
+          assert.equal(attempts, mode === 'retry' ? 2 : 1);
+          assert.equal(staged, mode === 'retry' ? 2 : 0);
+        } finally { interception.mock.restore(); }
+        const stored = await adminDb.doc(`global_challenges/${id}`).get();
+        if (operation === 'create') assert.equal(stored.exists, false);
+        else {
+          assert.equal(stored.data()?.status, 'draft');
+          assert.equal(stored.data()?.publishedBy, undefined);
+          assert.equal(stored.data()?.publishedAt, undefined);
+        }
+        assert.equal(await auditCount(id), operation === 'create' ? 0 : 1);
+        assert.equal((await adminDb.doc(`global_challenges/${id}/audit/published`).get()).exists, false);
+      });
+    }
+  }
+});
+
+test('HTTP payload bound covers raw bytes, chunked bodies, parsed objects and malformed JSON', async () => {
+  const boundary = JSON.stringify(draft('payload-boundary'));
+  const accepted = await fetch(base, { method: 'POST', headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json' },
+    body: boundary.padEnd(GLOBAL_CHALLENGE_PAYLOAD_BYTES, ' ') });
+  assert.equal(accepted.status, 201);
+  const oversized = JSON.stringify({ ...draft('too-big'), description: 'a'.repeat(GLOBAL_CHALLENGE_PAYLOAD_BYTES) });
+  for (const body of [oversized, ' '.repeat(GLOBAL_CHALLENGE_PAYLOAD_BYTES) + JSON.stringify(draft('whitespace'))]) {
+    const response = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body });
+    assert.equal(response.status, 413); assert.equal((await response.json()).code, 'PAYLOAD_TOO_LARGE');
+  }
+  const chunked = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' },
+    body: new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode(oversized)); controller.close(); } }),
+    duplex: 'half' } as RequestInit);
+  assert.equal(chunked.status, 413);
+  const malformed = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{' });
+  assert.equal(malformed.status, 400); assert.equal(malformed.headers.get('cache-control'), 'no-store');
+  let status = 0; let body: any;
+  const response = { setHeader() {}, status(n: number) { status = n; return this; }, json(b: unknown) { body = b; } };
+  for (const [headers, payload, expected] of [
+    [{ 'content-type': 'application/json', 'content-length': '1' }, JSON.parse(oversized), 413],
+    [{ 'content-type': 'application/json', 'content-length': String(GLOBAL_CHALLENGE_PAYLOAD_BYTES + 1) }, {}, 413],
+    [{ 'content-type': 'application/json' }, {}, 411],
+    [{ 'content-type': 'text/plain', 'content-length': '2' }, {}, 415],
+  ] as const) {
+    await handler({ method: 'POST', headers, body: payload }, response);
+    assert.equal(status, expected, JSON.stringify(body));
+  }
+  assert.equal((await adminDb.doc('global_challenges/too-big').get()).exists, false);
+});
+
+test('distributed actor quota is shared by aliases, counts conflicts and resets after window', async () => {
+  const uid = 'quota-admin';
+  await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).set({ uid, role: 'super_admin', status: 'active' });
+  const key = createHash('sha256').update(uid).digest('hex');
+  const ref = adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${key}`);
+  // Start at limit minus one and contend for the last allowance. Each handler
+  // independently goes through the shared Firestore counter.
+  await ref.set({ count: GLOBAL_CHALLENGE_ACTOR_LIMIT - 1, resetAt: Date.now() + 60000 });
+  const results = await Promise.all(Array.from({ length: 4 }, (_, i) => request(draft(`quota-${i}`), 'create', token(uid))));
+  assert.deepEqual(results.map(x => x.status).sort(), [201, 429, 429, 429]);
+  assert.equal((await ref.get()).data()?.count, GLOBAL_CHALLENGE_ACTOR_LIMIT);
+  let status = 0; const headers: Record<string, string> = {};
+  const response = { setHeader(k: string, v: string) { headers[k] = v; }, status(n: number) { status = n; return this; }, json() {} };
+  const body = { challengeId: 'quota-0' };
+  await serverlessHandler({ method: 'POST', headers: { authorization: `Bearer ${token(uid)}`, 'content-type': 'application/json', 'content-length': String(JSON.stringify(body).length) },
+    query: { transport: 'global-challenges', operation: 'publish' }, body }, response);
+  assert.equal(status, 429); assert.ok(Number(headers['retry-after']) > 0);
+  await ref.set({ count: GLOBAL_CHALLENGE_ACTOR_LIMIT, resetAt: Date.now() - 1 });
+  assert.equal((await request(draft('quota-reset'), 'create', token(uid))).status, 201);
+  assert.equal((await ref.get()).data()?.count, 1);
+  assert.equal((await request(draft('quota-reset'), 'create', token(uid))).status, 409);
+  assert.equal((await ref.get()).data()?.count, 2);
+  await ref.set({ count: 'corrupt', resetAt: Date.now() + 60000 });
+  assert.equal((await request(draft('quota-corrupt'), 'create', token(uid))).status, 503);
+  assert.equal((await adminDb.doc('global_challenges/quota-corrupt').get()).exists, false);
+});
+
+test('compiled Vercel rewrite preserves operation=publish through local HTTP and the real multiplexer', async () => {
+  const rewriteBase = base.replace('/api/admin/global-challenges', '/vercel-offline/api/admin/global-challenges');
+  for (const operation of ['create', 'publish']) {
+    const body = operation === 'create' ? draft('compiled-rewrite') : { challengeId: 'compiled-rewrite' };
+    const response = await fetch(`${rewriteBase}?operation=${operation}`, { method: 'POST',
+      headers: { authorization: `Bearer ${token()}`, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    assert.equal(response.status, operation === 'create' ? 201 : 200, JSON.stringify(await response.clone().json()));
+    assert.equal((await response.json()).challenge.status, operation === 'create' ? 'draft' : 'published');
+  }
+  assert.equal((await adminDb.doc('global_challenges/compiled-rewrite').get()).data()?.status, 'published');
+  assert.equal(await auditCount('compiled-rewrite'), 2);
+});
+
+test('feature branch deploy block accounts for minimatch slash semantics', async () => {
+  const config = JSON.parse(await readFile('vercel.json', 'utf8'));
+  const branch = 'feat/global-challenge-admin-repository';
+  assert.equal(minimatch(branch, '*'), false);
+  const matches = Object.entries(config.git.deploymentEnabled).filter(([pattern]) => minimatch(branch, pattern));
+  assert.ok(matches.length > 0);
+  assert.equal(matches.some(([, allowed]) => allowed === true), false);
+  assert.equal(config.git.deploymentEnabled[branch], false);
+  assert.equal(config.git.deploymentEnabled.main, true);
+});
+
+test('ingress limit rejects unauthenticated floods without trusting forwarded headers', async () => {
+  // Last test: exercise the actual configured cap, with different fake source IPs.
+  let blocked = false;
+  for (let i = 0; i <= GLOBAL_CHALLENGE_INGRESS_LIMIT; i++) {
+    const response = await fetch(base, { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': `192.0.2.${i % 255}` }, body: '{}' });
+    if (response.status === 429) {
+      assert.ok(Number(response.headers.get('retry-after')) > 0);
+      blocked = true; break;
+    }
+    assert.equal(response.status, 401);
+  }
+  assert.equal(blocked, true);
 });

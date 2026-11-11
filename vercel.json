@@ -7,7 +7,8 @@
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,
-      "feat/order-release-policy": true
+      "feat/order-release-policy": true,
+      "feat/global-challenge-admin-repository": false
     }
   },
   "functions": {

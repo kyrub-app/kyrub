@@ -1,4 +1,4 @@
-import handleGlobalChallenges from './server/gamification/globalChallengeAdminHandler.js';
+import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
 import rateLimit from "express-rate-limit";
@@ -50,6 +50,7 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
+app.use('/api/admin/global-challenges', createGlobalChallengeAdminRouter());
 app.use(
   express.json({
     limit: "2mb",
@@ -58,8 +59,6 @@ app.use(
     },
   })
 );
-
-app.all('/api/admin/global-challenges', (req, res) => { void handleGlobalChallenges(req, res); });
 
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;

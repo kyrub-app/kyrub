@@ -23,6 +23,7 @@ Searched `server/admin`, `server/ai`, `server/gamification`, `shared/*Challenge*
   to the same handler; no additional Vercel function or collection was introduced.
 - The existing composed rules deny browser access to `global_challenges`, its audit
   descendants and writes to admin profiles. Emulator coverage verifies these denials.
+  The same default-deny boundary covers the server-only rate-limit records.
   No rules change/deployment is needed for this server-only API.
 - Store challenge services, reward issuance, XP/coin ledgers and payments are outside
   this change. The API does not grant rewards or accept completion evidence.
@@ -62,7 +63,9 @@ integers. Completion limits must be positive safe integers.
 Creation returns HTTP 201; publication returns 200. Both return `{ "challenge": ... }`.
 Unsupported methods return 405; invalid/missing/expired token 401; unauthorized role
 or unverified email 403; malformed input 400; missing challenge 404; duplicate
-creation or repeated publication 409; unexpected backend failure 503. Responses
+creation or repeated publication 409; missing payload length evidence 411; payload
+above 32 KiB 413; non-JSON content 415; quota exhaustion 429 (with `Retry-After`);
+unexpected backend failure 503. Responses
 have `Cache-Control: no-store`; backend exception details are not returned.
 
 ## Persistence and retries
@@ -79,7 +82,11 @@ effects. A client receiving an ambiguous network failure can retry the same ID:
 409 indicates the transition cannot be performed again; it does not issue another
 challenge/reward. This API deliberately does not return successful replay receipts.
 Audit failure aborts the entire transaction. Authority is re-read transactionally,
-so concurrent role changes cause retry/rejection rather than stale authorization.
+so a revocation committed before the business transaction reads authority prevents
+that write. On an ABORTED attempt, the SDK rolls back staged challenge/audit writes
+and re-reads the profile on retry. A revocation waiting behind a pessimistic read
+lock does not retroactively cancel an earlier transaction that commits first;
+Firestore's serial order determines which operation wins.
 
 ## Validation
 
@@ -97,10 +104,97 @@ Local validation also includes `npm run prebuild`, the related gamification test
 `npm --ignore-scripts run build`, serverless ESM normalization, `npm run lint`, and
 `scripts/check-vercel-function-budget.mjs`.
 
-## Remaining gates
+## HTTP protections and reuse
 
-Wait for the PR's `Application build` and `Validate Kyrub` checks and review the
-security/transaction changes before marking the draft ready. No merge is authorized.
+Search included `server.ts`, `server/fiscal/fiscalStoreOnboardingServerlessTransport.ts`,
+`server/integrations/storeConnectionsServerlessTransport.ts`, `api/admin`, and
+repository rate-limit/quota implementations. The existing 2 MB general Express
+parser did not protect this small write API appropriately, and existing rate
+middleware did not cover this endpoint. Reused Express JSON parsing and
+`express-rate-limit`'s MemoryStore; no new runtime dependency was introduced.
+
+| Protection | Bound | Enforcement |
+| --- | --- | --- |
+| Payload | 32,768 UTF-8 bytes | Dedicated Express parser before the general parser; shared handler checks wire-length evidence and serialized parsed body |
+| Ingress | 300 POSTs per 60 seconds per process | One constant MemoryStore key, before authentication; no spoofable forwarded-IP or token key |
+| Authenticated writes | 30 valid operation attempts per UID per 60 seconds | Firestore transaction shared across instances, creation/publication and both transports |
+
+Both quota responses return 429, `Retry-After` and no-store. The per-process ingress
+cap is a load guard, not a cross-instance DDoS guarantee. The UID quota is distributed,
+so a cold start or switching aliases cannot reset it. It counts valid duplicate and
+conflicting attempts as well as successful writes. Invalid inputs and unauthorized
+identities do not allocate UID records. The quota admission transaction precedes
+the business transaction: a denied/revoked business operation can consume quota,
+but cannot create a challenge/audit transition.
+
+The new `kyrub_admin/control_plane/rate_limits/global-challenges-<sha256(uid)>`
+record is necessary because no reusable distributed request limiter exists in the
+repository. It stores only count/resetAt, one document per administrator, and is
+server-only. Expired windows are reused; malformed persisted counters fail closed.
+No token or client IP is stored. It does not replace any business collection.
+
+On Express, byte limits include whitespace and chunked bodies and apply before
+parsing. Compressed bodies are refused by the dedicated parser. On the Vercel
+multiplexer, the platform parses JSON before this handler: the handler enforces
+Content-Length (or raw bytes if supplied) plus serialized-body size, and refuses
+pre-parsed bodies without length evidence with 411. This does not claim a 32 KiB
+pre-parser memory bound inside Vercel's runtime. There is no arbitrary change to
+the other transports' parser configuration.
+
+## Final security evidence
+
+The emulator suite now includes 12 revocation scenarios (create/publish × role
+reduction/disabled/deleted × before transactional read/after aborted first attempt).
+Tests interpose on the real SDK callback only to schedule the profile change and
+inject a deterministic retryable ABORTED error after both writes are staged. The
+actual SDK handles rollback and automatic retry against the emulator; no fake
+transaction store or manually invoked retry loop is used. Every retry case asserts
+two attempts, 403, no publication metadata and no new challenge/audit transition.
+The repository's authority check already met these requirements; no bypass or
+production test hook was added.
+
+HTTP tests cover a body exactly at the byte bound, oversized whitespace/chunked/
+parsed bodies, missing length evidence, invalid JSON/media type, concurrent quota
+admission, cross-transport quota sharing, expiry/reset, corrupt-counter fail-closed,
+conflict accounting and ingress floods with changing forged forwarding headers.
+
+The routing check reads the real `vercel.json` rewrite and compiles it with pinned
+`@vercel/routing-utils` 6.6.1. A loopback HTTP adapter applies the compiler output,
+merges destination and incoming query parameters using Vercel CLI's documented
+local-router source semantics, and invokes the real administrative multiplexer and
+handler. POST creation followed by `?operation=publish` produces draft then published
+state with exactly two audit entries. It is an offline configuration/handler
+integration test, not a hosted Vercel edge/runtime test. No production URL is used.
+The rewrite required no change. Routing tools and minimatch are dev dependencies.
+
+The earlier preview was consistent with minimatch semantics: `*` does not match a
+slash-containing branch such as `feat/global-challenge-admin-repository`; unspecified
+branches default to enabled. The PR now adds an explicit false rule for this exact
+branch, with a test that no matching rule permits a deploy. Other branch rules are
+preserved. Reference: https://vercel.com/docs/project-configuration/git-configuration
+Local router reference:
+https://github.com/vercel/vercel/blob/vercel%4048.10.0/packages/cli/src/util/dev/router.ts
+
+## Local validation results for security finalization
+
+| Check | Result |
+| --- | --- |
+| `npm run test:global-challenges` | 40 passed, zero failures/skips; includes the 12 revocation cases |
+| Related challenge/gamification regression suite | 45 passed |
+| `npm run prebuild` | 2,561 passed |
+| `npm run lint` | Passed |
+| `npm --ignore-scripts run build` | Passed; existing CJS `import.meta` and chunk-size warnings remain |
+| Function budget | 11 active, one reserved slot preserved |
+
+Local runtime: Node 24.22.1 and Java 21. CI uses the project's Node 22 runtime.
+CI status for the new commit is recorded in the PR rather than inferred from these
+local results. No merge, deploy, payment, store activation or production API access
+is part of this validation.
+
+## Review verdict and remaining gates
+
+The three requested security checks have automated coverage. With the emulator,
+build, TypeScript and updated CI passing, this API is ready for final code/security
+review. This is not authorization to merge or deploy. The PR remains a draft.
 Control Plane UI, public Recompensas integration and a real verified completion event
-are subsequent work. No UI or production runtime validation is claimed by this API
-change. The existing Vercel Git configuration disables this feature branch.
+remain separate work. No hosted-runtime or production validation is claimed.

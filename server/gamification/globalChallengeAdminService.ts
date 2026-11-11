@@ -1,3 +1,4 @@
+import { consumeGlobalChallengeActorLimit } from './globalChallengeAdminRateLimit.js';
 import { authorizeIntegrationReadiness } from '../admin/integrationReadinessService.js';
 import { createGlobalChallengeDraft, publishGlobalChallenge } from './globalChallengeAdminRepository.js';
 import { GlobalChallengeInputError, parseGlobalChallengeDraft } from './globalChallengeAdminValidation.js';
@@ -20,12 +21,17 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
   }
   const actor = await authorizeIntegrationReadiness(authorization);
   const occurredAt = new Date().toISOString();
-  if (operation === 'create') return createGlobalChallengeDraft(parseGlobalChallengeDraft(input), actor.uid, occurredAt);
+  if (operation === 'create') {
+    const challenge = parseGlobalChallengeDraft(input);
+    await consumeGlobalChallengeActorLimit(actor.uid);
+    return createGlobalChallengeDraft(challenge, actor.uid, occurredAt);
+  }
   if (operation === 'publish') {
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 ||
         !('challengeId' in input) || typeof input.challengeId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(input.challengeId)) {
       throw new GlobalChallengeInputError('CHALLENGE_INPUT_INVALID');
     }
+    await consumeGlobalChallengeActorLimit(actor.uid);
     return publishGlobalChallenge(input.challengeId, actor.uid, occurredAt);
   }
   throw new GlobalChallengeInputError('CHALLENGE_OPERATION_INVALID');
