@@ -127,3 +127,24 @@ test('invalid XP amount fails before any transaction reads', async () => {
   assert.equal(reads, 0);
   assert.equal(writes.length, 0);
 });
+
+test('275 Pitangas convert to 2 XP with 75 remaining', async () => {
+  const { refs, tx, writes } = makeTx(275);
+  const result = await applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, userId: 'user1', requestId: 'req2', requestedXp: 2, occurredAt: '2026-11-11T12:00:00Z',
+  } as never);
+  assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 200, remainingPitangas: 75, replay: false });
+  assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 75);
+  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -200);
+  assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 2);
+});
+
+test('unsafe XP conversion multiplication fails before transaction reads', async () => {
+  const { refs } = makeTx(100);
+  let reads = 0;
+  const tx = { get: async () => { reads++; throw new Error('SHOULD_NOT_READ'); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: Number.MAX_SAFE_INTEGER, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /XP_CONVERSION_OVERFLOW/);
+  assert.equal(reads, 0);
+});
