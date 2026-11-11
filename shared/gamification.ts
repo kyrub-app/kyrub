@@ -203,3 +203,9 @@ export const kyrubXpTotal = (entries: KyrubXpEntry[]): number => {
     return Math.max(0, total + entry.deltaXp);
   }, 0);
 };
+
+/** Canonical public/domain name. The legacy K-Coin fields remain the persisted wire format until the authoritative writer is inventoried. */
+export type KyrubPitangaLedgerEntry = KyrubRewardLedgerEntry;
+
+/** Canonical name for computing the global Pitanga balance; accepts legacy ledger entries without rewriting persisted data. */
+export const kyrubPitangaBalance: typeof kyrubKCoinBalance = kyrubKCoinBalance;
