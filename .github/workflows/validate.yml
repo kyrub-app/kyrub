@@ -76,6 +76,15 @@ jobs:
           tests/subscription-contract-renewal.test.ts
           tests/marketplace-payment-expiry-contract.test.ts
 
+      - name: Set up Java for isolated Firestore tests
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Global challenge API and transaction tests
+        run: npm run test:global-challenges
+
       - name: Prebuild validation
         run: npm run prebuild
 

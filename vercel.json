@@ -7,7 +7,8 @@
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,
-      "feat/order-release-policy": true
+      "feat/order-release-policy": true,
+      "feat/global-challenge-admin-repository": false
     }
   },
   "functions": {
@@ -23,6 +24,10 @@
     }
   },
   "rewrites": [
+    {
+      "source": "/api/admin/global-challenges",
+      "destination": "/api/admin/operations/health?transport=global-challenges"
+    },
     {
       "source": "/api/selos-kairubi",
       "destination": "/api/health?transport=selos-kairubi-balance"

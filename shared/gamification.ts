@@ -110,6 +110,19 @@ const assertSingleUser = (expectedUserId: string, candidateUserId: string, ledge
 export const assertKyrubChallengeDefinition = (
   challenge: KyrubChallengeDefinition
 ): KyrubChallengeDefinition => {
+  if (!challenge || typeof challenge !== 'object') throw new Error('CHALLENGE_INVALID');
+  if (typeof challenge.id !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(challenge.id)) throw new Error('CHALLENGE_ID_INVALID');
+  for (const [key, max] of [['title', 200], ['description', 5000]] as const) {
+    const value = challenge[key];
+    if (typeof value !== 'string' || !value.trim() || value.length > max) throw new Error('CHALLENGE_TEXT_INVALID');
+  }
+  if (!['draft', 'published', 'active', 'ended', 'cancelled'].includes(challenge.status)) throw new Error('CHALLENGE_STATUS_INVALID');
+  if (!['deterministic', 'user_evidence', 'feed_post', 'external_integration', 'community_review', 'manual_review', 'kyrubia_assisted'].includes(challenge.validationMode)) throw new Error('CHALLENGE_VALIDATION_MODE_INVALID');
+  if (!['kyrub', 'store', 'partner'].includes(challenge.sponsorType)) throw new Error('CHALLENGE_SPONSOR_INVALID');
+  for (const value of [challenge.startsAt, challenge.endsAt]) {
+    if (value !== undefined && (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value) || !Number.isFinite(Date.parse(value)))) throw new Error('CHALLENGE_DATE_INVALID');
+  }
+  if (challenge.startsAt && challenge.endsAt && Date.parse(challenge.endsAt) <= Date.parse(challenge.startsAt)) throw new Error('CHALLENGE_PERIOD_INVALID');
   nonEmpty(challenge.id, 'challenge.id');
   nonEmpty(challenge.title, 'challenge.title');
   integerAtLeast(challenge.rewardKCoins, 0, 'challenge.rewardKCoins');
