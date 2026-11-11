@@ -95,3 +95,11 @@ test('conversion rejects insufficient balance after migration checks', async () 
   await assert.rejects(result, /PITANGA_BALANCE_INSUFFICIENT/);
   assert.equal(writes.length, 0);
 });
+
+test('verified conversion cannot use a second receipt for the same request', async () => {
+  const { result, writes } = run(valid(), {
+    receiptRef: ref('users/user1/pitangaXpConversions/anotherReceipt'),
+  });
+  await assert.rejects(result, /CONVERSION_MIGRATION_REFERENCE_INVALID/);
+  assert.equal(writes.length, 0);
+});
