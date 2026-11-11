@@ -257,3 +257,31 @@ test('replay rejects tampered original balance in receipt', async () => {
   } as never), /PITANGA_BALANCE_INSUFFICIENT/);
   assert.equal(writes.length, 0);
 });
+
+test('conversion rejects a debit reference in another user account before reads', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  let reads = 0;
+  const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+    ...refs,
+    debitRef: { id: 'debit', path: 'users/user2/rewardLedger/debit',
+      parent: { path: 'users/user2/rewardLedger' } },
+    userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
+
+test('conversion rejects a debit reference in store loyalty points before reads', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  let reads = 0;
+  const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+    ...refs,
+    debitRef: { id: 'debit', path: 'users/user1/storeLoyaltyPoints/debit',
+      parent: { path: 'users/user1/storeLoyaltyPoints' } },
+    userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
