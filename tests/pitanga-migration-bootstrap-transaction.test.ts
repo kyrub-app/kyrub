@@ -79,3 +79,35 @@ test('rejects partial state and invalid document paths', async () => {
     balanceRef: ref('users/user2/pitangaBalance/balance'),
   }).result, /PITANGA_BOOTSTRAP_REFERENCE_INVALID/);
 });
+
+test('rejects invalid checkpoints before reading or writing', async () => {
+  for (const invalid of [
+    { ...checkpoint, userId: '../other' },
+    { ...checkpoint, balance: -1 },
+    { ...checkpoint, balance: 1.5 },
+    { ...checkpoint, entryCount: -1 },
+    { ...checkpoint, ledgerSha256: 'not-a-digest' },
+  ]) {
+    const { result, writes } = run({ fence }, { checkpoint: invalid });
+    await assert.rejects(result, /PITANGA_BOOTSTRAP_INPUT_INVALID/);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('does not overwrite an existing balance without a receipt', async () => {
+  const { result, writes } = run({
+    fence, balance: { userId: 'user1', availableKCoins: 900 },
+  });
+  await assert.rejects(result, /PITANGA_BOOTSTRAP_PARTIAL_STATE/);
+  assert.equal(writes.length, 0);
+});
+
+test('rejects a matching receipt with a different existing balance', async () => {
+  const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
+    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+  const { result, writes } = run({
+    fence, receipt, balance: { userId: 'user1', availableKCoins: 999 },
+  });
+  await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
+  assert.equal(writes.length, 0);
+});
