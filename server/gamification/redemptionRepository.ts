@@ -25,6 +25,12 @@ export interface PersistedKyrubRedemption {
 export const persistKyrubRedemptionAtomically = async (
   plan: KyrubRedemptionPlan
 ): Promise<PersistedKyrubRedemption> => {
+  // Reject path separators before interpolating user-controlled identifiers into Firestore paths.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(plan.userId) ||
+      !/^[A-Za-z0-9_-]{1,256}$/.test(plan.redemptionId) ||
+      !/^[A-Za-z0-9_-]{1,256}$/.test(plan.debitEntry.id)) {
+    throw new Error('REDEMPTION_PATH_INVALID');
+  }
   if (plan.debitEntry.userId !== plan.userId ||
       plan.debitEntry.type !== 'redeem' ||
       plan.debitEntry.sourceType !== 'reward_redemption' ||
