@@ -38,6 +38,9 @@ export const persistKyrubRedemptionAtomically = async (
       plan.debitEntry.id !== `${plan.redemptionId}_debit` ||
       plan.debitEntry.idempotencyKey !== `redeem:${plan.auditEvent.idempotencyKey}` ||
       plan.debitEntry.correlationId !== plan.auditEvent.correlationId ||
+      !Number.isFinite(Date.parse(plan.debitEntry.occurredAt)) ||
+      !Number.isFinite(Date.parse(plan.validUntil)) ||
+      Date.parse(plan.validUntil) <= Date.parse(plan.debitEntry.occurredAt) ||
       !Number.isSafeInteger(plan.debitEntry.deltaKCoins) ||
       plan.debitEntry.deltaKCoins >= 0) {
     throw new Error('REDEMPTION_DEBIT_INVALID');
