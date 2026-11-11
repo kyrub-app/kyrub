@@ -27,6 +27,21 @@ export const applyPitangaXpConversionInTransaction = async (
     throw new Error('XP_CONVERSION_AMOUNT_INVALID');
   }
   if (!Number.isSafeInteger(input.requestedXp * 100)) throw new Error('XP_CONVERSION_OVERFLOW');
+  // Prevent a future caller from accidentally mixing users, ledgers or receipts.
+  // The balance location is not yet canonical, so only its ownership is checked.
+  const userPrefix = `users/${input.userId}/`;
+  const expectedPaths = [
+    [input.balanceRef, 'pitangaBalance'],
+    [input.debitRef, 'rewardLedger'],
+    [input.xpRef, 'xpLedger'],
+    [input.receiptRef, 'pitangaXpConversions'],
+  ] as const;
+  for (const [reference, collection] of expectedPaths) {
+    if (reference.path !== `${userPrefix}${collection}/${reference.id}` ||
+        !/^[A-Za-z0-9_-]{1,256}$/.test(reference.id)) {
+      throw new Error('CONVERSION_REFERENCE_INVALID');
+    }
+  }
   // Never accept client-supplied Firestore paths: the trusted caller resolves these.
   // All transaction reads must precede writes.
   const [receipt, balance, debit, xp] = await Promise.all([
