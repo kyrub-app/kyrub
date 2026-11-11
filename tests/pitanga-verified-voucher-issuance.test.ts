@@ -97,3 +97,29 @@ test('verified migration still refuses insufficient balance', async () => {
   await assert.rejects(invoke(f), /PITANGA_VOUCHER_INSUFFICIENT_BALANCE/);
   assert.equal(f.writes.length, 0);
 });
+
+test('verified voucher replay is read-only after balance changes', async () => {
+  const initial = fixture(valid());
+  await invoke(initial);
+  const records = valid();
+  for (const write of initial.writes) {
+    if (write.op === 'create') records[write.path] = write.data as Record<string, unknown>;
+  }
+  records[refs.balanceRef.path] = {
+    ...records[refs.balanceRef.path],
+    availableKCoins: 700,
+  };
+  const replay = fixture(records);
+  assert.deepEqual(await invoke(replay), {
+    redemptionId: id, remainingPitangas: 700, replay: true,
+  });
+  assert.equal(replay.writes.length, 0);
+});
+
+test('partial existing voucher cannot be repaired by migration gate', async () => {
+  const records = valid();
+  records[refs.voucherRef.path] = { code: plan.voucherCode };
+  const f = fixture(records);
+  await assert.rejects(invoke(f), /PITANGA_VOUCHER_PARTIAL_STATE/);
+  assert.equal(f.writes.length, 0);
+});
