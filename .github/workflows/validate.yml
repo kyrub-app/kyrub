@@ -90,6 +90,14 @@ jobs:
       - name: Global challenge API and transaction tests
         run: npm run test:global-challenges
 
+      - name: Firestore Pitanga concurrency (emulator)
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.security.json
+          --project kyrub-security-test
+          --only firestore
+          "node --test --import tsx tests/firestore-pitanga-concurrency.test.ts"
+
       - name: Prebuild validation
         run: npm run prebuild
 
