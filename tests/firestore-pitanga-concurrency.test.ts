@@ -24,7 +24,7 @@ test('Firestore Emulator serializes competing spend and XP conversion on one bal
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 0 });
+  await balanceRef.create({ userId, availableKCoins: 0, migrationEpoch: 'emulator_epoch1' });
   await db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
     userId, awardId: 'initial', sourceType: 'challenge', sourceId: 'challenge1',
     amount: 1000, occurredAt, balanceRef,
@@ -65,7 +65,7 @@ test('Firestore Emulator permits only one of two independent XP conversions', as
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 1000 });
+  await balanceRef.create({ userId, availableKCoins: 1000, migrationEpoch: 'emulator_epoch1' });
   const convert = (requestId: string) => db.runTransaction(tx =>
     applyPitangaXpConversionInTransaction(tx, {
       userId, requestId, requestedXp: 1, occurredAt, balanceRef,
@@ -94,7 +94,7 @@ test('Firestore Emulator replays the same conversion without duplicating XP', as
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 1000 });
+  await balanceRef.create({ userId, availableKCoins: 1000, migrationEpoch: 'emulator_epoch1' });
   const run = (requestedXp: number) => db.runTransaction(tx =>
     applyPitangaXpConversionInTransaction(tx, {
       userId, requestId: 'sameRequest', requestedXp, occurredAt, balanceRef,
@@ -128,7 +128,7 @@ test('Firestore Emulator prevents two independent reward redemptions from double
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 100 });
+  await balanceRef.create({ userId, availableKCoins: 100, migrationEpoch: 'emulator_epoch1' });
   const spend = (spendId: string) => db.runTransaction(tx =>
     applyPitangaSpendInTransaction(tx, {
       userId, spendId, sourceId: spendId, amount: 100, occurredAt,
@@ -156,7 +156,7 @@ test('Firestore Emulator serializes an earn racing with a spend on the same bala
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 50 });
+  await balanceRef.create({ userId, availableKCoins: 50, migrationEpoch: 'emulator_epoch1' });
   const earn = db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
     userId, awardId: 'second', sourceType: 'challenge', sourceId: 'challenge2',
     amount: 50, occurredAt, balanceRef,
@@ -188,7 +188,7 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
   // Zero is an explicitly empty test fixture, not a production migration strategy.
-  await balanceRef.create({ userId, availableKCoins: 0 });
+  await balanceRef.create({ userId, availableKCoins: 0, migrationEpoch: 'emulator_epoch1' });
   await db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
     userId, awardId: 'seed', sourceType: 'challenge', sourceId: 'challenge1',
     amount: 1175, occurredAt, balanceRef,
@@ -301,7 +301,7 @@ test('Firestore Emulator serializes voucher issuance against XP conversion', asy
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
   const occurredAt = '2026-11-11T12:00:00Z';
-  await balanceRef.create({ userId, availableKCoins: 1000 });
+  await balanceRef.create({ userId, availableKCoins: 1000, migrationEpoch: 'emulator_epoch1' });
   const redemptionId = `redemption_${userId}_order1`;
   const plan = {
     redemptionId, userId, rewardId: 'gift1',
@@ -356,7 +356,7 @@ test('Firestore Emulator prevents two independent vouchers spending the same Pit
   const userId = `two_vouchers_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
   const root = db.collection('users').doc(userId);
   const balanceRef = root.collection('pitangaBalance').doc('balance');
-  await balanceRef.create({ userId, availableKCoins: 1000 });
+  await balanceRef.create({ userId, availableKCoins: 1000, migrationEpoch: 'emulator_epoch1' });
   const occurredAt = '2026-11-11T12:00:00Z';
   const redeem = (orderId: string) => {
     const redemptionId = `redemption_${userId}_${orderId}`;
