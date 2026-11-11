@@ -354,3 +354,15 @@ test('conversion rejects a shadow balance document before reads', async () => {
   assert.equal(reads, 0);
   assert.equal(writes.length, 0);
 });
+
+test('conversion replay returns current canonical balance after later earning', async () => {
+  const { refs, tx, writes } = makeTx(750, true);
+  const result = await applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1,
+    occurredAt: '2026-11-11T12:00:01Z',
+  } as never);
+  assert.deepEqual(result, {
+    xpCredited: 1, pitangasDebited: 1000, remainingPitangas: 750, replay: true,
+  });
+  assert.equal(writes.length, 0);
+});
