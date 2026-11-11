@@ -10,7 +10,7 @@ const makeTx = (balance: number, replay = false) => {
   ]);
   if (replay) {
     snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
-    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', sourceType: 'reward_redemption', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100 });
+    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100 });
     snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
   }
   const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
@@ -156,7 +156,7 @@ test('replay with mismatched correlation fails closed', async () => {
     get: async (r: { id: string }) => r.id === 'debit'
       ? { exists: true, data: () => ({
           id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
-          type: 'redeem', sourceType: 'reward_redemption', sourceId: 'req1',
+          type: 'redeem', sourceType: 'conversion', sourceId: 'req1',
           correlationId: 'another_request', deltaKCoins: -100,
         }) }
       : tx.get(r),
