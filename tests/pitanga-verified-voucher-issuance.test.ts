@@ -143,3 +143,15 @@ test('balance from a different user is rejected despite valid receipt', async ()
   await assert.rejects(invoke(f), /PITANGA_VOUCHER_MIGRATION_UNVERIFIED/);
   assert.equal(f.writes.length, 0);
 });
+
+test('invalid canonical balance fails before voucher primitive is called', async () => {
+  for (const amount of [-1, 1.5, '1200']) {
+    const records = valid();
+    records[refs.balanceRef.path] = {
+      ...records[refs.balanceRef.path], availableKCoins: amount,
+    };
+    const f = fixture(records);
+    await assert.rejects(invoke(f), /PITANGA_VOUCHER_MIGRATION_UNVERIFIED/);
+    assert.equal(f.writes.length, 0);
+  }
+});
