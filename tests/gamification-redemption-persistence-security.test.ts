@@ -4,9 +4,10 @@ import { build } from 'esbuild';
 import { buildKyrubRedemptionPlan } from '../shared/gamificationRedemption.js';
 
 let pathReads = 0;
+let transactionHandler: (callback: (tx: any) => Promise<unknown>) => Promise<unknown> = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
 const db = {
   doc: (path: string) => { pathReads++; return { path }; },
-  runTransaction: async () => { throw new Error('UNEXPECTED_TRANSACTION'); },
+  runTransaction: (callback: (tx: any) => Promise<unknown>) => transactionHandler(callback),
 };
 (globalThis as any).__redemptionSecurityDb = db;
 const bundle = await build({
@@ -82,12 +83,12 @@ test('replay refuses a persisted debit whose amount differs from the requested p
       create: () => { writes++; },
     }),
   };
-  (globalThis as any).__redemptionSecurityDb = replayDb;
+  transactionHandler = replayDb.runTransaction;
   try {
     await assert.rejects(api.persistKyrubRedemptionAtomically(plan), /REDEMPTION_LEDGER_INCONSISTENT/);
     assert.equal(writes, 0);
   } finally {
-    (globalThis as any).__redemptionSecurityDb = db;
+    transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
   }
 });
 
@@ -112,15 +113,12 @@ test('replay refuses voucher metadata inconsistent with the committed redemption
     ...plan.debitEntry, economy: 'k_coin',
   });
   let writes = 0;
-  (globalThis as any).__redemptionSecurityDb = {
-    doc: (path: string) => ({ path }),
-    runTransaction: async (callback: (tx: unknown) => Promise<unknown>) => callback({
+  transactionHandler = async (callback: (tx: unknown) => Promise<unknown>) => callback({
       get: async (ref: { path: string }) => ({
         exists: stored.has(ref.path), data: () => stored.get(ref.path),
       }),
       create: () => { writes++; },
-    }),
-  };
+    });
   try {
     await assert.rejects(api.persistKyrubRedemptionAtomically(plan), /REDEMPTION_ATOMIC_STATE_CONFLICT/);
     assert.equal(writes, 0);
