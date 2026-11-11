@@ -24,11 +24,21 @@ const patterns = [
   /pitangaXpConversions/i,
 ];
 const hits = [];
+const callsitePatterns = [
+  /\b(?:persistKyrubRedemptionAtomically|applyPitangaEarnInTransaction|applyPitangaSpendInTransaction|applyPitangaXpConversionInTransaction|issuePitangaVoucherInTransaction)\s*\(/g,
+];
+const callsites = [];
 for (const path of tracked) {
   const lines = readFileSync(path, 'utf8').split(/\r?\n/);
   for (let index = 0; index < lines.length; index++) {
     if (patterns.some(pattern => pattern.test(lines[index]))) {
       hits.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
+    }
+    for (const pattern of callsitePatterns) {
+      pattern.lastIndex = 0;
+      if (pattern.test(lines[index]) && !/\b(?:export\s+(?:const|function)|const\s+\w+\s*=|function\s+\w+)\b/.test(lines[index])) {
+        callsites.push({ path, line: index + 1, excerpt: lines[index].trim().slice(0, 240) });
+      }
     }
   }
 }
@@ -37,5 +47,6 @@ console.log(JSON.stringify({
   scope: 'tracked api/server/scripts/src JS/TS files',
   filesScanned: tracked.length,
   hits,
+  possibleCallsites: callsites,
   caveat: 'Lexical discovery only. Dynamic paths, aliases, generated code, external workers and Admin SDK writes require manual review.',
 }, null, 2));
