@@ -59,7 +59,7 @@ export const applyPitangaXpConversionInTransaction = async (
     idempotencyKey, occurredAt: input.occurredAt,
   });
   tx.create(input.xpRef, {
-    id: input.xpRef.id, userId: input.userId, sourceType: 'achievement',
+    id: input.xpRef.id, userId: input.userId, sourceType: 'conversion',
     sourceId: input.requestId, deltaXp: plan.xpToCredit,
     correlationId: input.requestId, idempotencyKey,
     occurredAt: input.occurredAt, economy: 'kyrub_xp',
