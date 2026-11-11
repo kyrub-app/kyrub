@@ -106,3 +106,31 @@ test('Firestore Emulator replays the same conversion without duplicating XP', as
   assert.equal((await root.collection('xpLedger').get()).size, 1);
   assert.equal((await root.collection('pitangaXpConversions').get()).size, 1);
 });
+
+test('Firestore Emulator prevents two independent reward redemptions from double-spending', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-spend-race-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `spend_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const occurredAt = '2026-11-11T12:00:00Z';
+  await balanceRef.create({ userId, availableKCoins: 100 });
+  const spend = (spendId: string) => db.runTransaction(tx =>
+    applyPitangaSpendInTransaction(tx, {
+      userId, spendId, sourceId: spendId, amount: 100, occurredAt,
+      balanceRef, debitRef: root.collection('rewardLedger').doc(`spend_${spendId}`),
+    }));
+  const outcomes = await Promise.allSettled([spend('rewardA'), spend('rewardB')]);
+  assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(x => x.status === 'rejected').length, 1);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 0);
+  const ledger = await root.collection('rewardLedger').get();
+  assert.equal(ledger.size, 1);
+  assert.equal(ledger.docs[0].data().deltaKCoins, -100);
+  assert.equal((await root.collection('xpLedger').get()).size, 0);
+});
