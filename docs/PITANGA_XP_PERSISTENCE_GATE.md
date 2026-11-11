@@ -19,3 +19,18 @@
 7. Keep Pix disabled and do not merge or deploy before independent review.
 
 The current pure planner in `shared/pitangaXpConversion.ts` is intentionally **not** a persistence implementation or a publicly callable conversion endpoint. The tests in this PR are source tests, not proof of emulator transaction safety.
+
+## Explicitly excluded: store loyalty points
+
+The existing `shared/storePoints.ts` and `tests/store-points-ledger.test.ts` implement **per-store customer loyalty points**, not the platform-wide Pitanga/K-Coin economy. Their entries are scoped to `storeId`, `customerId`, purchases, refunds and store rewards. The payment webhook uses `storePointLedgerPath`. **Never debit store loyalty points for Pitanga → XP conversion** and never infer a Pitanga balance from these entries.
+
+Likewise, `economicLedger` tracks real-money marketplace activity and must never fund a gamification conversion.
+
+## Concrete integration acceptance criteria
+
+- Locate a production writer of the **global** `KyrubRewardLedgerEntry` and its Firestore path. If none exists, first establish a single canonical global reward ledger and its authorized writer/reader; a type declaration or UI projection is insufficient evidence.
+- Confirm how the global ledger's available balance is serialized across simultaneous earns, spends, refunds and conversions. The transaction primitive currently assumes an `availableKCoins` balance document, but **no such canonical document has been verified**. Do not instantiate it by assumption.
+- In the final server adapter, derive user identity from a verified Firebase token and construct all document paths on the server. The primitive's caller-supplied references are trusted-code-only.
+- The conversion debit must share the exact canonical global reward-ledger accounting domain. The XP credit must use `users/{uid}/xpLedger`, with sourceType `conversion`, and be visible to `readVerifiedKyrubXpTotal`.
+- Demonstrate actual Firestore Emulator transactions for two different request IDs spending the same 100 Pitangas, plus same-ID retries. One successful conversion, one insufficient-balance rejection, no negative balance or double credit.
+- Only after these checks: independent security review, then separately authorized merge and deploy.
