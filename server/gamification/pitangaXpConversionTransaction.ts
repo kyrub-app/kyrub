@@ -23,6 +23,10 @@ export const applyPitangaXpConversionInTransaction = async (
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId)) throw new Error('CONVERSION_USER_INVALID');
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.requestId)) throw new Error('CONVERSION_REQUEST_INVALID');
   if (!Number.isFinite(Date.parse(input.occurredAt))) throw new Error('CONVERSION_DATE_INVALID');
+  if (!Number.isSafeInteger(input.requestedXp) || input.requestedXp < 1) {
+    throw new Error('XP_CONVERSION_AMOUNT_INVALID');
+  }
+  if (!Number.isSafeInteger(input.requestedXp * 100)) throw new Error('XP_CONVERSION_OVERFLOW');
   // Never accept client-supplied Firestore paths: the trusted caller resolves these.
   // All transaction reads must precede writes.
   const [receipt, balance, debit, xp] = await Promise.all([
@@ -42,11 +46,15 @@ export const applyPitangaXpConversionInTransaction = async (
     if (debit.data()?.userId !== input.userId ||
         debit.data()?.id !== input.debitRef.id ||
         debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
+        debit.data()?.type !== 'redeem' ||
+        debit.data()?.sourceType !== 'reward_redemption' ||
+        debit.data()?.sourceId !== input.requestId ||
         debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
         xp.data()?.userId !== input.userId ||
         xp.data()?.id !== input.xpRef.id ||
         xp.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         xp.data()?.sourceType !== 'conversion' ||
+        xp.data()?.sourceId !== input.requestId ||
         xp.data()?.deltaXp !== plan.xpToCredit) throw new Error('CONVERSION_LEDGER_INCONSISTENT');
     return { xpCredited: plan.xpToCredit, pitangasDebited: plan.pitangasToDebit,
       remainingPitangas: plan.remainingPitangas, replay: true };
