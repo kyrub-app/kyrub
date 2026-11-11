@@ -134,3 +134,34 @@ test('Firestore Emulator prevents two independent reward redemptions from double
   assert.equal(ledger.docs[0].data().deltaKCoins, -100);
   assert.equal((await root.collection('xpLedger').get()).size, 0);
 });
+
+test('Firestore Emulator serializes an earn racing with a spend on the same balance', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-earn-spend-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `earnspend_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const occurredAt = '2026-11-11T12:00:00Z';
+  await balanceRef.create({ userId, availableKCoins: 50 });
+  const earn = db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
+    userId, awardId: 'second', sourceType: 'challenge', sourceId: 'challenge2',
+    amount: 50, occurredAt, balanceRef,
+    ledgerRef: root.collection('rewardLedger').doc('earn_second'),
+  }));
+  const spend = db.runTransaction(tx => applyPitangaSpendInTransaction(tx, {
+    userId, spendId: 'reward50', sourceId: 'reward50',
+    amount: 50, occurredAt, balanceRef,
+    debitRef: root.collection('rewardLedger').doc('spend_reward50'),
+  }));
+  const outcomes = await Promise.allSettled([earn, spend]);
+  assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 2);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 50);
+  const ledger = await root.collection('rewardLedger').get();
+  assert.equal(ledger.size, 2);
+  assert.deepEqual(ledger.docs.map(doc => doc.data().deltaKCoins).sort((a, b) => a - b), [-50, 50]);
+});
