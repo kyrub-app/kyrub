@@ -2,7 +2,7 @@
 
 Disposable test host only; never import it into the product or deploy it as an API.
 It requires `KYRUB_VISUAL_QA=1`, project `demo-kyrub-control-plane`, a loopback
-Firestore Emulator and no service account/ADC file configuration. Startup rejects
+Firestore and Auth Emulators and no service account/ADC file configuration. Startup rejects
 other configurations before importing Firebase Admin. Guard rejection is covered
 by the existing UI test command.
 
@@ -13,11 +13,11 @@ npm run firestore:compose
 KYRUB_VISUAL_QA=1 FIREBASE_PROJECT_ID=demo-kyrub-control-plane \
   npx --yes firebase-tools@15.35.0 emulators:exec \
   --config firebase.security.json --project demo-kyrub-control-plane \
-  --only firestore 'node --import tsx scripts/qa/globalChallengeVisualServer.ts'
+  --only firestore,auth 'node --import tsx scripts/qa/globalChallengeVisualServer.ts'
 ```
 
 Open `/qa` on port 3000. Use a clean disposable emulator. The host seeds 26 fake
-definitions and creates a new test actor per page load. `/qa/receipt` reports the
+definitions and creates a new test identity in Auth Emulator and its administrative profile per page load. `/qa/receipt` reports the
 last successful mutation, audit action names and collection names, without tokens.
 The host intentionally exposes fixture sessions to its test browser, so it must
 remain disposable and contain only generated test data. Stop the host/emulator
@@ -26,7 +26,7 @@ when finished. No credentials or keys are persisted.
 The browser loads the real `AdminControlPlaneApp`, accordion, challenge workspace,
 HTTP client and compiled application CSS. The QA bundle substitutes only Firebase
 browser session/profile transport and unrelated workspaces. The real handler,
-JWT signature/project/expiry checks, profile authority, quotas, repository and
+JWT signature/project/expiry checks, profile authority, identity revocation lookup, quotas, repository and
 Firestore transactions execute against the emulator. RSA keys/certificate response
 are generated in memory. This is not a Google OAuth or production Firebase test.
 All browser connections are same-origin under CSP. Server fetch only permits the
@@ -47,3 +47,17 @@ Check keyboard focus, labels, alerts, busy and empty states. Measure both docume
 width and form/control bounds at 320 pixels; a hidden overflow must not be mistaken
 for a successful responsive layout. Native confirm screenshots are unavailable in
 the review browser, so record its text/type plus the resulting data state.
+
+
+Non-visual smoke check after building (same clean, disposable demo emulators):
+
+```sh
+FIREBASE_PROJECT_ID=demo-kyrub-control-plane \
+  npx --yes firebase-tools@15.35.0 emulators:exec \
+  --config firebase.security.json --project demo-kyrub-control-plane \
+  --only firestore,auth 'node --import tsx scripts/qa/globalChallengeHostSmoke.ts'
+```
+
+This starts the existing QA host, obtains its generated test session, verifies a
+real API list200, disables that identity through Auth Emulator and requires401
+from the same API/token. It never launches a browser or prints the token.

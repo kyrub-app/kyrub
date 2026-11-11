@@ -8,11 +8,12 @@ import { createHash, generateKeyPairSync, randomUUID, sign } from 'node:crypto';
 const projectId = 'demo-kyrub-control-plane';
 if (process.env.KYRUB_VISUAL_QA !== '1' || process.env.FIREBASE_PROJECT_ID !== projectId ||
     !/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') ||
+    !/^127\.0\.0\.1:\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST || '') ||
     process.env.FIREBASE_SERVICE_ACCOUNT_JSON || process.env.GOOGLE_APPLICATION_CREDENTIALS) {
   throw new Error('QA_REQUIRES_DEMO_PROJECT_LOCAL_EMULATOR_AND_NO_CREDENTIALS');
 }
 delete process.env.VERCEL;
-const { adminDb } = await import('../../server/firebaseAdmin.js');
+const { adminDb, adminAuth } = await import('../../server/firebaseAdmin.js');
 const { createGlobalChallengeAdminRouter } = await import('../../server/gamification/globalChallengeAdminHandler.js');
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
 const certificateUrl = 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com';
@@ -61,6 +62,12 @@ app.use((req, res, next) => { res.setHeader('cache-control', 'no-store'); res.se
 app.get('/qa/session', async (req, res) => {
   const run = typeof req.query.run === 'string' && /^[a-z0-9-]{1,50}$/.test(req.query.run) ? req.query.run : randomUUID();
   const scenario = String(req.query.case || 'normal'); const uid = `qa-${run}`;
+  try { await adminAuth.getUser(uid); }
+  catch (error) {
+    if ((error as { code?: string }).code !== 'auth/user-not-found') throw error;
+    try { await adminAuth.createUser({ uid, emailVerified: true }); }
+    catch (creation) { if ((creation as { code?: string }).code !== 'auth/uid-already-exists') throw creation; }
+  }
   const storedRole = scenario === '403' ? 'operations' : 'super_admin';
   const profile = { uid, email: 'superadmin@kyrub-qa.example.test', displayName: 'Super Admin de teste', role: storedRole, status: 'active', createdBy: 'qa-fixture', createdAt: new Date().toISOString() };
   await adminDb.doc(`kyrub_admin/control_plane/admins/${uid}`).set(profile);

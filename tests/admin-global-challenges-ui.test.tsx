@@ -166,9 +166,9 @@ test('client maps rate limits without retrying POST or changing the request iden
 
 test('visual QA host refuses non-demo projects, remote emulators and real credential configuration before startup', () => {
   const safeEnv = { ...process.env, KYRUB_VISUAL_QA: '1', FIREBASE_PROJECT_ID: 'demo-kyrub-control-plane',
-    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8088', FIREBASE_SERVICE_ACCOUNT_JSON: '', GOOGLE_APPLICATION_CREDENTIALS: '' };
+    FIRESTORE_EMULATOR_HOST: '127.0.0.1:8088', FIREBASE_AUTH_EMULATOR_HOST: '127.0.0.1:9099', FIREBASE_SERVICE_ACCOUNT_JSON: '', GOOGLE_APPLICATION_CREDENTIALS: '' };
   for (const invalid of [{ KYRUB_VISUAL_QA: '0' }, { FIREBASE_PROJECT_ID: 'not-a-demo-project' },
-    { FIRESTORE_EMULATOR_HOST: 'remote.example.test:8088' }, { GOOGLE_APPLICATION_CREDENTIALS: 'forbidden-credential.json' }]) {
+    { FIRESTORE_EMULATOR_HOST: 'remote.example.test:8088' }, { FIREBASE_AUTH_EMULATOR_HOST: 'remote.example.test:9099' }, { GOOGLE_APPLICATION_CREDENTIALS: 'forbidden-credential.json' }]) {
     const result = spawnSync(process.execPath, ['--import', 'tsx', 'scripts/qa/globalChallengeVisualServer.ts'], {
       env: { ...safeEnv, ...invalid }, encoding: 'utf8', timeout: 10000,
     });

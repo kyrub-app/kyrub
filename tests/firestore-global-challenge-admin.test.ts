@@ -457,6 +457,10 @@ test('Firebase Auth disable/delete/revocation reject still-signed tokens despite
         body: JSON.stringify(operation === 'create' ? draft(`${id}-blocked`) : { challengeId: id }) });
       assert.equal(response.status, 401, state + ':' + operation);
     }
+    for (const query of ['operation=list', `operation=get&challengeId=${id}`]) {
+      const response = await fetch(`${base}?${query}`, { headers: { authorization: `Bearer ${captured}` } });
+      assert.equal(response.status, 401, state + ':' + query);
+    }
     assert.equal((await adminDb.doc(`global_challenges/${id}-blocked`).get()).exists, false);
     assert.equal((await adminDb.doc(`global_challenges/${id}`).get()).data()?.status, 'draft');
     assert.equal(await auditCount(id), 1);
