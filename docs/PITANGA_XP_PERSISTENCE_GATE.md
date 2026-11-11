@@ -47,3 +47,12 @@ Likewise, `economicLedger` tracks real-money marketplace activity and must never
 ### Critério para concluir a descoberta do escritor
 
 Localizar em código verificável (1) o caminho Firestore do ledger global, (2) o serviço que grava ganhos/resgates, (3) o controle de concorrência e saldo, (4) todas as leituras e projeções, (5) o identificador `k_coin` e os campos legados usados em dados persistidos. Somente então planejar migração de esquema e conectar a transação de Pitangas → XP. Não criar ledger ou saldo paralelo.
+
+
+## Descoberta confirmada: escritor de resgate (11/11/2026)
+
+O arquivo **presente em `main`** `server/gamification/redemptionRepository.ts` implementa `persistKyrubRedemptionAtomically` e cria, numa transação Firestore, um débito em `users/{userId}/rewardLedger/{ledgerEntryId}`, além de `rewardRedemptions`, `rewardVouchers` e `rewardAudit`. O lançamento tem `economy: 'k_coin'` e usa os campos legados de `plan.debitEntry`. Histórico da implementação: PR #344.
+
+**Consequência obrigatória:** a primitiva atual `pitangaXpConversionTransaction.ts` ainda pressupõe um documento `balanceRef` com `availableKCoins`, que **não é usado por esse escritor de resgate**. Não conectar a primitiva, não introduzir esse saldo paralelo nem renomear `k_coin` ou `deltaKCoins` nos documentos persistidos antes de verificar todos os escritores e leitores. A descoberta é de um escritor de **débito**, não de emissão/ganho; tampouco comprova o cálculo autoritativo do saldo ou proteção contra gastos concorrentes entre resgate e conversão.
+
+**Próximo bloqueio:** localizar emissor/ganho global, leitores e projeção do saldo; definir serialização transacional única para resgate e conversão (e revalidar o débito de resgate contra saldo sob concorrência). Só depois ligar conversão e planejar migração dos campos.
