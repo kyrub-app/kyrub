@@ -12,7 +12,7 @@ const ref = (id: string) => {
 const makeTx = (balance: number, replay = false) => {
   const refs = { balanceRef: ref('balance'), debitRef: ref('debit'), xpRef: ref('xp'), receiptRef: ref('receipt') };
   const snapshots = new Map<string, Record<string, unknown>>([
-    ['balance', { userId: 'user1', availableKCoins: balance }],
+    ['balance', { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: balance }],
   ]);
   if (replay) {
     snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 1000, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
@@ -384,6 +384,23 @@ test('conversion replay rejects malformed original balance without writes', asyn
       ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1,
       occurredAt: '2026-11-11T12:00:01Z',
     } as never), /CONVERSION_RECEIPT_INCONSISTENT/);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('conversion rejects a non-migrated balance on new and replay requests', async () => {
+  for (const replay of [false, true]) {
+    const { refs, tx, writes } = makeTx(1000, replay);
+    const unverified = {
+      ...tx,
+      get: async (r: { id: string }) => r.id === 'balance'
+        ? { exists: true, data: () => ({ userId: 'user1', availableKCoins: 1000 }) }
+        : tx.get(r),
+    };
+    await assert.rejects(() => applyPitangaXpConversionInTransaction(unverified as never, {
+      ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1,
+      occurredAt: '2026-11-11T12:00:00Z',
+    } as never), replay ? /CONVERSION_REPLAY_BALANCE_UNAVAILABLE/ : /CONVERSION_BALANCE_NOT_INITIALIZED/);
     assert.equal(writes.length, 0);
   }
 });
