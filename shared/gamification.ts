@@ -191,6 +191,7 @@ export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => 
     }
     seen.add(entry.idempotencyKey);
     const next = balance + entry.deltaKCoins;
+    if (!Number.isSafeInteger(next)) throw new Error('REWARD_LEDGER_BALANCE_OVERFLOW');
     if (next < 0) throw new Error('O Reward Ledger não permite saldo negativo de K-Coins.');
     return next;
   }, 0);
