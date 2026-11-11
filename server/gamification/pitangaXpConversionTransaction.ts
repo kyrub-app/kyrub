@@ -52,7 +52,9 @@ export const applyPitangaXpConversionInTransaction = async (
     // A historical receipt cannot authorize replay if the shared spending
     // authority disappeared or was reassigned to another user.
     if (!balance.exists || balance.data()?.userId !== input.userId ||
-        !Number.isSafeInteger(balance.data()?.availableKCoins) ||
+        typeof balance.data()?.migrationEpoch !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch) ||
+      !Number.isSafeInteger(balance.data()?.availableKCoins) ||
         balance.data()!.availableKCoins < 0) {
       throw new Error('CONVERSION_REPLAY_BALANCE_UNAVAILABLE');
     }
@@ -93,7 +95,9 @@ export const applyPitangaXpConversionInTransaction = async (
       remainingPitangas: balance.data()!.availableKCoins as number, replay: true };
   }
   if (debit.exists || xp.exists) throw new Error('CONVERSION_PARTIAL_STATE');
-  if (!balance.exists || balance.data()?.userId !== input.userId) {
+  if (!balance.exists || balance.data()?.userId !== input.userId ||
+      typeof balance.data()?.migrationEpoch !== 'string' ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch)) {
     throw new Error('CONVERSION_BALANCE_NOT_INITIALIZED');
   }
   const available = balance.data()?.availableKCoins;
