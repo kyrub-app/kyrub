@@ -198,3 +198,41 @@ test('new redemption fails closed without shared transactional Pitanga balance a
     transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
   }
 });
+
+test('replay rejects a debit with a forged historical timestamp', async () => {
+  const id = plan.redemptionId;
+  const stored = new Map<string, Record<string, unknown>>([
+    [`users/${plan.userId}/rewardRedemptions/${id}`, {
+      redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
+      voucherCode: plan.voucherCode, validUntil: plan.validUntil, status: 'issued',
+      correlationId: plan.auditEvent.correlationId, idempotencyKey: plan.auditEvent.idempotencyKey,
+    }],
+    [`users/${plan.userId}/rewardVouchers/${id}`, {
+      redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
+      code: plan.voucherCode, validUntil: plan.validUntil, status: 'active',
+    }],
+    [`users/${plan.userId}/rewardAudit/${id}`, {
+      redemptionId: id, userId: plan.userId, type: 'reward_redemption_issued',
+      correlationId: plan.auditEvent.correlationId, idempotencyKey: plan.auditEvent.idempotencyKey,
+    }],
+    [`users/${plan.userId}/rewardLedger/${plan.debitEntry.id}`, {
+      ...plan.debitEntry, occurredAt: '2020-01-01T00:00:00Z', economy: 'k_coin',
+    }],
+  ]);
+  let writes = 0;
+  transactionHandler = async callback => callback({
+    get: async (ref: { path: string }) => ({
+      exists: stored.has(ref.path), data: () => stored.get(ref.path),
+    }),
+    create: () => { writes++; },
+  });
+  try {
+    await assert.rejects(
+      api.persistKyrubRedemptionAtomically(plan),
+      /REDEMPTION_LEDGER_INCONSISTENT/,
+    );
+    assert.equal(writes, 0);
+  } finally {
+    transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
+  }
+});
