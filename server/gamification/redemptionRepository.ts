@@ -69,6 +69,18 @@ export const persistKyrubRedemptionAtomically = async (
       if (!existing.every(snapshot => snapshot.exists)) {
         throw new Error('REDEMPTION_ATOMIC_STATE_CONFLICT');
       }
+      const recordedDebit = existingLedger.data();
+      if (recordedDebit?.id !== plan.debitEntry.id ||
+          recordedDebit?.userId !== plan.userId ||
+          recordedDebit?.economy !== 'k_coin' ||
+          recordedDebit?.type !== 'redeem' ||
+          recordedDebit?.sourceType !== 'reward_redemption' ||
+          recordedDebit?.sourceId !== plan.rewardId ||
+          recordedDebit?.correlationId !== plan.auditEvent.correlationId ||
+          recordedDebit?.idempotencyKey !== plan.debitEntry.idempotencyKey ||
+          recordedDebit?.deltaKCoins !== plan.debitEntry.deltaKCoins) {
+        throw new Error('REDEMPTION_LEDGER_INCONSISTENT');
+      }
       return current;
     }
 
