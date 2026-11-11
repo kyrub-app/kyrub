@@ -10,8 +10,8 @@ const makeTx = (balance: number, replay = false) => {
   ]);
   if (replay) {
     snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
-    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100 });
-    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
+    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -100 });
+    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', economy: 'kyrub_xp', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
   }
   const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
   const tx = {
@@ -33,6 +33,8 @@ test('stages balance update, debit, XP credit and receipt together', async () =>
   assert.equal(writes.length, 4);
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 0);
   assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -100);
+  assert.equal(writes.find(w => w.id === 'debit')?.value.economy, 'k_coin');
+  assert.equal(writes.find(w => w.id === 'xp')?.value.economy, 'kyrub_xp');
   assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 1);
   assert.equal(writes.find(w => w.id === 'xp')?.value.sourceType, 'conversion');
 });
