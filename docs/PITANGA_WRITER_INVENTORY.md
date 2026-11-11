@@ -35,3 +35,13 @@ This inventory records **inspected files only**, not a repository-wide proof tha
 The recursive branch file tree contains the expected global gamification modules, but **a filename inventory cannot prove absence of dynamically constructed ledger writes elsewhere**. A repository-wide symbol/path search plus call-graph review remains mandatory before cutover. No global challenge-completion-to-Pitanga-award endpoint was established by these inspections.
 
 **Important functional release condition:** `redemptionRepository.ts` intentionally rejects *new* voucher issuance. Shipping the current branch unchanged would preserve that restriction. A green CI result does not certify readiness for user-facing redemption.
+
+## CI lexical scan evidence — commit bde3c0e (11 November 2026)
+
+The GitHub Actions artifact `pitanga-ledger-access-inventory` from Validate Kyrub run `43083761584` was downloaded and inspected. Its JSON reports **1,005 tracked JS/TS files scanned** and **54 matching source lines**, distributed over 12 paths. This is an inventory of references, **not 54 writers**.
+
+Relevant global paths: `api/health.ts` (4 hits), `server/gamification/pitangaBalanceAuthorityInspection.ts` (10), `pitangaBalanceReconciliation.ts` (4), `pitangaEarnTransaction.ts` (5), `pitangaSpendTransaction.ts` (5), `pitangaXpConversionTransaction.ts` (5), and `redemptionRepository.ts` (7). The scanner itself contributes 7 self-matches. The remaining matches are store CRM/relationship/reward code and UI.
+
+**Finding:** among these lexical matches, no additional global Pitanga challenge-completion award writer was identified. This is *not* proof of absence: indirect imports, alternate names, dynamic paths, Cloud Functions and external workers require manual tracing.
+
+**Release gate:** verify callers of each global transaction primitive, review `api/health.ts` balance semantics, and replace fail-closed new voucher issuance only after the canonical balance migration/write fence is proven. Do not migrate or enable the public conversion API based solely on this scan.
