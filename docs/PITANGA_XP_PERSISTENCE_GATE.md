@@ -14,8 +14,8 @@
 2. Define one trusted authenticated server action taking a client-provided *conversion request ID* and requested XP amount, never trusting a client balance or a client UID.
 3. In one Firestore transaction, read authoritative spendable balance, verify sufficient Pitangas, create one debit entry with deterministic ID, and create one XP credit entry in the existing XP ledger. Firestore requires all reads before writes. Enforce a stable request receipt and compare immutable request parameters on retries.
 4. For concurrent requests, ensure the spendable balance is serialized via a transactionally updated balance/lock document or equivalent authoritative mechanism; simply summing a collection without a shared concurrency control is insufficient. Reject negatives, duplicate debits, overflow and cross-user access.
-5. Preserve historic XP independently from Pitanga redemption and reversals. Conversion is **never** triggered automatically when balance reaches 100.
-6. Validate emulator scenarios: 99/100/275 Pitangas; duplicate request ID with same/different payload; two simultaneous conversions against 100 Pitangas; cancellation/reversal; unauthenticated/other UID; partial failure; retry after ambiguous response; integer overflow.
+5. Preserve historic XP independently from Pitanga redemption and reversals. Conversion is **never** triggered automatically when balance reaches 1,000.
+6. Validate emulator scenarios: 999/1,000/2,075 Pitangas; duplicate request ID with same/different payload; two simultaneous conversions against 100 Pitangas; cancellation/reversal; unauthenticated/other UID; partial failure; retry after ambiguous response; integer overflow.
 7. Keep Pix disabled and do not merge or deploy before independent review.
 
 The current pure planner in `shared/pitangaXpConversion.ts` is intentionally **not** a persistence implementation or a publicly callable conversion endpoint. The tests in this PR are source tests, not proof of emulator transaction safety.
@@ -32,7 +32,7 @@ Likewise, `economicLedger` tracks real-money marketplace activity and must never
 - Confirm how the global ledger's available balance is serialized across simultaneous earns, spends, refunds and conversions. The transaction primitive currently assumes an `availableKCoins` balance document, but **no such canonical document has been verified**. Do not instantiate it by assumption.
 - In the final server adapter, derive user identity from a verified Firebase token and construct all document paths on the server. The primitive's caller-supplied references are trusted-code-only.
 - The conversion debit must share the exact canonical global reward-ledger accounting domain. The XP credit must use `users/{uid}/xpLedger`, with sourceType `conversion`, and be visible to `readVerifiedKyrubXpTotal`.
-- Demonstrate actual Firestore Emulator transactions for two different request IDs spending the same 100 Pitangas, plus same-ID retries. One successful conversion, one insufficient-balance rejection, no negative balance or double credit.
+- Demonstrate actual Firestore Emulator transactions for two different request IDs spending the same 1,000 Pitangas, plus same-ID retries. One successful conversion, one insufficient-balance rejection, no negative balance or double credit.
 - Only after these checks: independent security review, then separately authorized merge and deploy.
 
 
@@ -118,7 +118,7 @@ restaurar a emissão: primeiro implementar o saldo canônico e o bloqueio de
 concorrência compartilhado por ganhos, resgates e conversões.
 
 **Critério de remoção:** teste real no Firestore Emulator com dois pedidos
-independentes consumindo as mesmas 100 Pitangas (exatamente um deve vencer),
+independentes consumindo as mesmas 1.000 Pitangas (exatamente um deve vencer),
 além de resgate versus conversão concorrentes, replay idempotente, migração
 compatível com `rewardLedger` e confirmação de que nenhuma outra rotina de
 crédito/débito contorna a autoridade de saldo.
@@ -139,3 +139,10 @@ The test-only `users/{uid}/pitangaBalance/balance` reference is a **candidate**,
 8. Release the fence only after independent review and explicit merge/deploy authorization. If any invariant fails, keep issuance/conversion disabled and preserve the original ledger. No production Pix changes are in scope.
 
 **Current state:** the isolated transaction primitives and emulator tests do not implement this migration or fence. The read-only inspection service can identify projection drift but cannot certify a consistent snapshot while other writers are active. This is a deliberate release blocker, not a completed migration.
+
+## Updated product direction — 11 November 2026
+
+- **Voluntary conversion rate: 1,000 Pitangas for 1 XP** (replaces 100:1). XP remains independent and is not automatically converted.
+- The suggested **R$ 0.01 per Pitanga** is a *proposed reference value*, **not** a cash balance, guaranteed redemption, withdrawal right, fixed exchange rate, or financial liability. Commercial and legal terms require separate approval.
+- Possible XP milestone campaigns at **10, 50, 100, 500 and 1,000 XP** may offer physical gifts (e.g. LoRa communication devices, pitanga seedlings, NFC keychains, protective helmets or rain gear for delivery workers). These are ideas, **not active or promised benefits**. Eligibility, cumulative-versus-spendable XP, fulfillment, inventory, geography, privacy/consent, fraud controls, cost and campaign terms remain undecided.
+- No gift fulfillment, address collection, payout, public conversion endpoint or production migration is authorized by this design update.
