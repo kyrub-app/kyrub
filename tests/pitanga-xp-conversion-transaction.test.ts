@@ -404,3 +404,18 @@ test('conversion rejects a non-migrated balance on new and replay requests', asy
     assert.equal(writes.length, 0);
   }
 });
+
+test('conversion rejects a receipt redirected to another user collection before reads', async () => {
+  const { refs, tx, writes } = makeTx(1000);
+  let reads = 0;
+  const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+    ...refs,
+    receiptRef: { id: 'receipt', path: 'users/user1/rewardAudit/receipt',
+      parent: { path: 'users/user1/rewardAudit' } },
+    userId: 'user1', requestId: 'req1', requestedXp: 1,
+    occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
