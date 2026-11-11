@@ -60,7 +60,7 @@ test('rejects absent or mismatched fence without writes', async () => {
 });
 
 test('replay is read-only and requires matching receipt', async () => {
-  const balance = { userId: 'user1', availableKCoins: 1000 };
+  const balance = { userId: 'user1', availableKCoins: 1000, migrationEpoch: 'epoch1' };
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
     ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
   const { result, writes } = run({ fence, balance, receipt });
@@ -110,4 +110,17 @@ test('rejects a matching receipt with a different existing balance', async () =>
   });
   await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
   assert.equal(writes.length, 0);
+});
+
+test('rejects a replay with missing or mismatched balance migration epoch', async () => {
+  const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
+    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+  for (const balance of [
+    { userId: 'user1', availableKCoins: 1000 },
+    { userId: 'user1', availableKCoins: 1000, migrationEpoch: 'other' },
+  ]) {
+    const { result, writes } = run({ fence, balance, receipt });
+    await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
+    assert.equal(writes.length, 0);
+  }
 });
