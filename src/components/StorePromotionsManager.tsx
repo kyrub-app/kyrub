@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Product } from '../types';
 import type { StorePromotion, StorePromotionDiscountType } from '../utils/storePromotions';
 import { auth, db } from '../utils/firebase';
-import { doc, getDoc, serverTimestamp, setDoc } from 'firebase/firestore';
+import { doc, getDoc, runTransaction, serverTimestamp } from 'firebase/firestore';
 
 type ToastType = 'success' | 'error' | 'info';
 type Draft = {
@@ -207,9 +207,6 @@ export function StorePromotionsManager({
       }
       const postId = `coupon_${user.uid}_${storeId}_${promotion.id}`.replaceAll('/', '_').slice(0, 500);
       const reference = doc(db, 'social_posts', postId);
-      if ((await getDoc(reference)).exists()) {
-        throw new Error('Este cupom já foi compartilhado na Praça.');
-      }
       const discount = current.discountType === 'percentage'
         ? `${current.discountValue}% de desconto`
         : `R$ ${current.discountValue.toFixed(2)} de desconto`;
@@ -219,7 +216,7 @@ export function StorePromotionsManager({
         `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}`,
       ].join('\n');
       const nowIso = new Date().toISOString();
-      await setDoc(reference, {
+      const postData = {
         postId,
         sourcePostId: postId,
         authorId: user.uid,
@@ -236,6 +233,11 @@ export function StorePromotionsManager({
         createdAtIso: nowIso,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
+      };
+      await runTransaction(db, async transaction => {
+        const existingPost = await transaction.get(reference);
+        if (existingPost.exists()) throw new Error('Este cupom já foi compartilhado na Praça.');
+        transaction.set(reference, postData);
       });
       setSharingPromotion(null);
       triggerToast('Cupom compartilhado na Praça!', 'success');
