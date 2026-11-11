@@ -81,6 +81,20 @@ export const persistKyrubRedemptionAtomically = async (
           recordedDebit?.deltaKCoins !== plan.debitEntry.deltaKCoins) {
         throw new Error('REDEMPTION_LEDGER_INCONSISTENT');
       }
+      const recordedVoucher = existingVoucher.data();
+      const recordedAudit = existingAudit.data();
+      if (recordedVoucher?.redemptionId !== plan.redemptionId ||
+          recordedVoucher?.userId !== plan.userId ||
+          recordedVoucher?.rewardId !== plan.rewardId ||
+          recordedVoucher?.code !== current.voucherCode ||
+          recordedVoucher?.validUntil !== current.validUntil ||
+          recordedAudit?.redemptionId !== plan.redemptionId ||
+          recordedAudit?.userId !== plan.userId ||
+          recordedAudit?.correlationId !== plan.auditEvent.correlationId ||
+          recordedAudit?.idempotencyKey !== plan.auditEvent.idempotencyKey ||
+          recordedAudit?.type !== 'reward_redemption_issued') {
+        throw new Error('REDEMPTION_ATOMIC_STATE_CONFLICT');
+      }
       return current;
     }
 
