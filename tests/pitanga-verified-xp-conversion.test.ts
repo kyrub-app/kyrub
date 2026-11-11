@@ -9,8 +9,8 @@ const refs = {
   migrationReceiptRef: ref('users/user1/pitangaMigration/receipt'),
   fenceRef: ref('systemControl/pitangaLegacyWriterFence'),
   receiptRef: ref('users/user1/pitangaXpConversions/req1'),
-  debitRef: ref('users/user1/rewardLedger/req1_debit'),
-  xpRef: ref('users/user1/xpLedger/req1_xp'),
+  debitRef: ref('users/user1/rewardLedger/conversion_req1'),
+  xpRef: ref('users/user1/xpLedger/conversion_req1'),
 };
 const valid = (): Record<string, Record<string, unknown>> => ({
   [refs.balanceRef.path]: { userId: uid, availableKCoins: 2000, migrationEpoch: 'epoch1' },
@@ -102,4 +102,15 @@ test('verified conversion cannot use a second receipt for the same request', asy
   });
   await assert.rejects(result, /CONVERSION_MIGRATION_REFERENCE_INVALID/);
   assert.equal(writes.length, 0);
+});
+
+test('verified conversion rejects alternate debit or XP document for the same request', async () => {
+  for (const override of [
+    { debitRef: ref('users/user1/rewardLedger/alternate_debit') },
+    { xpRef: ref('users/user1/xpLedger/alternate_xp') },
+  ]) {
+    const { result, writes } = run(valid(), override);
+    await assert.rejects(result, /CONVERSION_MIGRATION_REFERENCE_INVALID/);
+    assert.equal(writes.length, 0);
+  }
 });
