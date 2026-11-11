@@ -39,7 +39,14 @@ export const applyPitangaXpConversionInTransaction = async (
     const plan = planVoluntaryPitangaXpConversion(
       previous.availablePitangasBefore, input.requestedXp,
     );
-    if (debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
+    if (debit.data()?.userId !== input.userId ||
+        debit.data()?.id !== input.debitRef.id ||
+        debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
+        debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
+        xp.data()?.userId !== input.userId ||
+        xp.data()?.id !== input.xpRef.id ||
+        xp.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
+        xp.data()?.sourceType !== 'conversion' ||
         xp.data()?.deltaXp !== plan.xpToCredit) throw new Error('CONVERSION_LEDGER_INCONSISTENT');
     return { xpCredited: plan.xpToCredit, pitangasDebited: plan.pitangasToDebit,
       remainingPitangas: plan.remainingPitangas, replay: true };
