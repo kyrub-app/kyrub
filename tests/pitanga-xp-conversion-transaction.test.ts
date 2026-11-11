@@ -10,8 +10,8 @@ const makeTx = (balance: number, replay = false) => {
   ]);
   if (replay) {
     snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 100, status: 'committed' });
-    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', deltaKCoins: -100 });
-    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', deltaXp: 1 });
+    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', sourceType: 'reward_redemption', sourceId: 'req1', deltaKCoins: -100 });
+    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', sourceId: 'req1', deltaXp: 1 });
   }
   const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
   const tx = {
@@ -114,5 +114,16 @@ test('replay with ledger belonging to another user is rejected', async () => {
   await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
     ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
   } as never), /CONVERSION_LEDGER_INCONSISTENT/);
+  assert.equal(writes.length, 0);
+});
+
+test('invalid XP amount fails before any transaction reads', async () => {
+  const { refs, writes } = makeTx(100);
+  let reads = 0;
+  const tx = { get: async () => { reads++; throw new Error('SHOULD_NOT_READ'); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 0, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /XP_CONVERSION_AMOUNT_INVALID/);
+  assert.equal(reads, 0);
   assert.equal(writes.length, 0);
 });
