@@ -339,3 +339,18 @@ test('conversion rejects receipt placed in reward ledger before reads', async ()
   assert.equal(reads, 0);
   assert.equal(writes.length, 0);
 });
+
+
+test('conversion rejects a shadow balance document before reads', async () => {
+  const { refs, writes } = makeTx(1000);
+  let reads = 0;
+  const tx = { get: async () => { reads++; throw new Error('SHOULD_NOT_READ'); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(tx as never, {
+    ...refs, balanceRef: { id: 'shadow', path: 'users/user1/pitangaBalance/shadow',
+      parent: { path: 'users/user1/pitangaBalance' } },
+    userId: 'user1', requestId: 'req1', requestedXp: 1,
+    occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
