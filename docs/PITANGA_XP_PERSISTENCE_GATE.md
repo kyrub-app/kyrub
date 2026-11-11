@@ -122,3 +122,20 @@ independentes consumindo as mesmas 100 Pitangas (exatamente um deve vencer),
 além de resgate versus conversão concorrentes, replay idempotente, migração
 compatível com `rewardLedger` e confirmação de que nenhuma outra rotina de
 crédito/débito contorna a autoridade de saldo.
+
+## Cutover protocol: no implicit initialization (11/11/2026)
+
+The test-only `users/{uid}/pitangaBalance/balance` reference is a **candidate**, not a production-approved canonical path. The live `/api/selos-kairubi` reader still derives its result from the entire `users/{uid}/rewardLedger` collection. The current redemption repository rejects new issuance until an authoritative shared balance is integrated. Do not interpret a passing emulator test as authorization to create a zero balance for an existing account.
+
+**Preconditions before any production cutover**
+
+1. Inventory every server and administrative writer of `users/{uid}/rewardLedger` (including reversal, expiry, manual adjustment and migration tools), and verify there are no client writes or bypasses. Record the exact commit and paths. If a writer cannot be enumerated, the cutover is blocked.
+2. Choose and document a single canonical balance path, its schema/version, authorization rules, and owner. Every earn, spend, conversion, reversal and expiry writer must atomically update that same document with its ledger entry. No independent legacy writer may remain.
+3. Establish a maintenance/fencing mechanism that actually prevents *all* legacy writes during bootstrap, not just a UI flag. An application-level flag is insufficient if a background worker or Admin SDK can bypass it. Verify enforcement for each writer and keep a rollback plan.
+4. Under the verified write fence, read the **complete** historical reward ledger, validate document IDs, ownership, idempotency, chronological nonnegative balance and safe integers, and compare any existing projection. Reject incomplete pagination, malformed entries, inconsistent projections or negative historical balances.
+5. Bootstrap the canonical balance with a deterministic migration receipt and a ledger digest/checkpoint, using a transaction or equivalent guarded protocol. Never silently overwrite an existing projection or initialize an account with historical entries to zero. If transaction limits prevent a single atomic bootstrap, use a verifiable fenced staged migration; do not claim atomicity.
+6. Reconcile the ledger and projection again before opening the fence. Confirm that all newly deployed writers use the same balance document and that the public reader cannot silently disagree with the spendable balance.
+7. Run Firestore Emulator races for earn/spend, spend/spend, spend/conversion and conversion/conversion; repeat same request IDs and conflicting payloads; verify reversals and expiries. Add an emulator cutover test with a pre-existing historical ledger and a concurrent legacy writer attempting to bypass the fence.
+8. Release the fence only after independent review and explicit merge/deploy authorization. If any invariant fails, keep issuance/conversion disabled and preserve the original ledger. No production Pix changes are in scope.
+
+**Current state:** the isolated transaction primitives and emulator tests do not implement this migration or fence. The read-only inspection service can identify projection drift but cannot certify a consistent snapshot while other writers are active. This is a deliberate release blocker, not a completed migration.
