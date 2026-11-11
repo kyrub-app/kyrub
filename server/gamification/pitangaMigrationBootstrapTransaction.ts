@@ -46,7 +46,8 @@ export const bootstrapPitangaBalanceInTransaction = async (
     }
     const b = balance.data();
     const r = receipt.data();
-    if (b?.userId !== uid || b?.availableKCoins !== checkpoint.balance ||
+    if (b?.userId !== uid || b?.migrationEpoch !== fenceEpoch ||
+        b?.availableKCoins !== checkpoint.balance ||
         r?.userId !== uid || r?.balance !== checkpoint.balance ||
         r?.entryCount !== checkpoint.entryCount ||
         r?.ledgerSha256 !== checkpoint.ledgerSha256 ||
