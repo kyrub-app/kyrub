@@ -285,3 +285,29 @@ test('conversion rejects a debit reference in store loyalty points before reads'
   assert.equal(reads, 0);
   assert.equal(writes.length, 0);
 });
+
+test('conversion rejects XP credit redirected into the Pitanga ledger', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  let reads = 0;
+  const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+    ...refs,
+    xpRef: { id: 'xp', path: 'users/user1/rewardLedger/xp',
+      parent: { path: 'users/user1/rewardLedger' } },
+    userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
+
+test('conversion rejects aliased references before transaction reads', async () => {
+  const { refs, tx, writes } = makeTx(100);
+  let reads = 0;
+  const guardedTx = { ...tx, get: async (r: { id: string }) => { reads++; return tx.get(r); } };
+  await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+    ...refs, receiptRef: refs.balanceRef,
+    userId: 'user1', requestId: 'req1', requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+  } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+  assert.equal(reads, 0);
+  assert.equal(writes.length, 0);
+});
