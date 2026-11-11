@@ -49,6 +49,8 @@ test('rejects forged debit provenance before any Firestore reference', async () 
     { userId: 'other' },
     { sourceType: 'conversion' },
     { sourceId: 'other-reward' },
+    { id: 'another-debit' },
+    { idempotencyKey: 'redeem:foreign-request' },
     { deltaKCoins: 1 },
   ]) {
     pathReads = 0;
