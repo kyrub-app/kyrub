@@ -8,6 +8,7 @@ import { applyPitangaXpConversionInTransaction } from '../server/gamification/pi
 import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBalanceAuthorityInspection.js';
 import { issuePitangaVoucherInTransaction } from '../server/gamification/pitangaVoucherIssuanceTransaction.js';
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
+import { verifyPitangaMigrationCheckpoint } from '../server/gamification/pitangaMigrationCheckpointVerification.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -225,6 +226,22 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   assert.equal(checkpoint.balance, 100);
   assert.equal(checkpoint.entryCount, 3);
   assert.match(checkpoint.ledgerSha256, /^[a-f0-9]{64}$/);
+  const verifyCheckpoint = async () => {
+    const fresh = await root.collection('rewardLedger').get();
+    const projection = await balanceRef.get();
+    return verifyPitangaMigrationCheckpoint({
+      checkpoint,
+      ledgerDocuments: fresh.docs.map(doc => ({
+        id: doc.id, data: doc.data() as never,
+      })),
+      completeLedgerVerified: true,
+      legacyWritersFenced: true,
+      existingProjection: {
+        userId, availableKCoins: projection.data()?.availableKCoins,
+      },
+    });
+  };
+  assert.equal((await verifyCheckpoint()).verified, true);
     // An out-of-band balance mutation must be detected, never silently adopted.
   await balanceRef.update({ availableKCoins: 101 });
   const divergent = await inspectPitangaBalanceAuthority(db, userId);
@@ -264,6 +281,9 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
     legacyWritersFenced: true,
   });
   assert.notEqual(changedDigest.ledgerSha256, checkpoint.ledgerSha256);
+  await assert.rejects(verifyCheckpoint(), /PITANGA_MIGRATION_PROJECTION_CONFLICT/);
+  await balanceRef.update({ availableKCoins: 101 });
+  await assert.rejects(verifyCheckpoint(), /PITANGA_CHECKPOINT_STALE/);
 
 });
 
