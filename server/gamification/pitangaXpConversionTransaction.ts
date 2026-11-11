@@ -46,6 +46,7 @@ export const applyPitangaXpConversionInTransaction = async (
     );
     if (debit.data()?.userId !== input.userId ||
         debit.data()?.correlationId !== input.requestId ||
+        debit.data()?.occurredAt !== input.occurredAt ||
         debit.data()?.id !== input.debitRef.id ||
         debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         debit.data()?.type !== 'redeem' ||
@@ -54,6 +55,7 @@ export const applyPitangaXpConversionInTransaction = async (
         debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
         xp.data()?.userId !== input.userId ||
         xp.data()?.correlationId !== input.requestId ||
+        xp.data()?.occurredAt !== input.occurredAt ||
         xp.data()?.id !== input.xpRef.id ||
         xp.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         xp.data()?.sourceType !== 'conversion' ||
