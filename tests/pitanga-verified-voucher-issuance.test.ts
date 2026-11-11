@@ -123,3 +123,23 @@ test('partial existing voucher cannot be repaired by migration gate', async () =
   await assert.rejects(invoke(f), /PITANGA_VOUCHER_PARTIAL_STATE/);
   assert.equal(f.writes.length, 0);
 });
+
+test('forged migration receipt digest is rejected without writes', async () => {
+  const records = valid();
+  records[refs.receiptRef.path] = {
+    ...records[refs.receiptRef.path], ledgerSha256: 'invalid',
+  };
+  const f = fixture(records);
+  await assert.rejects(invoke(f), /PITANGA_VOUCHER_MIGRATION_UNVERIFIED/);
+  assert.equal(f.writes.length, 0);
+});
+
+test('balance from a different user is rejected despite valid receipt', async () => {
+  const records = valid();
+  records[refs.balanceRef.path] = {
+    ...records[refs.balanceRef.path], userId: 'other',
+  };
+  const f = fixture(records);
+  await assert.rejects(invoke(f), /PITANGA_VOUCHER_MIGRATION_UNVERIFIED/);
+  assert.equal(f.writes.length, 0);
+});
