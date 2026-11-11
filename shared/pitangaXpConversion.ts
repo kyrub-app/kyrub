@@ -4,7 +4,7 @@
  * The trusted server must atomically debit reward balance and credit XP, using
  * one idempotency key and a durable transaction/outbox before exposing this action.
  */
-export const PITANGAS_PER_XP = 100 as const;
+export const PITANGAS_PER_XP = 1000 as const;
 
 export interface PitangaXpConversionPlan {
   pitangasToDebit: number;
