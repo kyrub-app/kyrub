@@ -7,6 +7,7 @@ import { applyPitangaSpendInTransaction } from '../server/gamification/pitangaSp
 import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
 import { inspectPitangaBalanceAuthority } from '../server/gamification/pitangaBalanceAuthorityInspection.js';
 import { issuePitangaVoucherInTransaction } from '../server/gamification/pitangaVoucherIssuanceTransaction.js';
+import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -207,7 +208,24 @@ test('Firestore Emulator reconciles complete earning, spending and conversion hi
   assert.equal(inspection.ledgerBalance, 100);
   assert.equal(inspection.entryCount, 3);
   assert.equal((await root.collection('xpLedger').get()).size, 1);
-  // An out-of-band balance mutation must be detected, never silently adopted.
+  // The snapshot is read-only evidence; test fixtures explicitly satisfy the
+  // completeness/fence inputs. This is NOT proof of a production write fence.
+  const historical = await root.collection('rewardLedger').get();
+  const checkpoint = buildPitangaMigrationSnapshot({
+    userId,
+    ledgerDocuments: historical.docs.map(doc => ({
+      id: doc.id, data: doc.data() as never,
+    })),
+    completeLedgerVerified: true,
+    legacyWritersFenced: true,
+    existingProjection: {
+      userId, availableKCoins: (await balanceRef.get()).data()?.availableKCoins,
+    },
+  });
+  assert.equal(checkpoint.balance, 100);
+  assert.equal(checkpoint.entryCount, 3);
+  assert.match(checkpoint.ledgerSha256, /^[a-f0-9]{64}$/);
+    // An out-of-band balance mutation must be detected, never silently adopted.
   await balanceRef.update({ availableKCoins: 101 });
   const divergent = await inspectPitangaBalanceAuthority(db, userId);
   assert.equal(divergent.status, 'inconsistent');
