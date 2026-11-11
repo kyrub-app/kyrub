@@ -99,3 +99,12 @@ test('cross-user ledger reference fails before transaction reads', async () => {
   assert.equal(m.reads, 0);
   assert.equal(m.writes.length, 0);
 });
+
+
+test('earning rejects a different balance document before reads', async () => {
+  const m = mock(100);
+  await assert.rejects(() => applyPitangaEarnInTransaction(m.tx as never, {
+    ...input, balanceRef: ref('pitangaBalance', 'shadow'),
+  } as never), /PITANGA_EARN_REFERENCE_INVALID/);
+  assert.equal(m.reads, 0);
+});
