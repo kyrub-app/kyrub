@@ -94,7 +94,7 @@ test('replay refuses a persisted debit whose amount differs from the requested p
   }
 });
 
-test('replay refuses voucher metadata inconsistent with the committed redemption', async () => {
+test('replay refuses an inactive voucher despite matching redemption metadata', async () => {
   const stored = new Map<string, Record<string, unknown>>();
   const id = plan.redemptionId;
   stored.set(`users/${plan.userId}/rewardRedemptions/${id}`, {
@@ -105,7 +105,7 @@ test('replay refuses voucher metadata inconsistent with the committed redemption
   });
   stored.set(`users/${plan.userId}/rewardVouchers/${id}`, {
     redemptionId: id, userId: plan.userId, rewardId: plan.rewardId,
-    code: 'FORGED', validUntil: plan.validUntil,
+    code: plan.voucherCode, validUntil: plan.validUntil, status: 'cancelled',
   });
   stored.set(`users/${plan.userId}/rewardAudit/${id}`, {
     redemptionId: id, userId: plan.userId, type: 'reward_redemption_issued',
