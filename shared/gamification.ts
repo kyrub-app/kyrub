@@ -173,8 +173,15 @@ export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => 
   let ledgerUserId = '';
   // Firestore collection reads are not guaranteed to arrive in event order.
   // Validate chronology deterministically before checking historical nonnegative balances.
-  const ordered = entries.map(assertKyrubRewardLedgerEntry).sort((a, b) =>
-    a.occurredAt.localeCompare(b.occurredAt) || a.id.localeCompare(b.id));
+  const ordered = entries.map(assertKyrubRewardLedgerEntry).sort((a, b) => {
+    const aTime = Date.parse(a.occurredAt);
+    const bTime = Date.parse(b.occurredAt);
+    if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) throw new Error('REWARD_LEDGER_DATE_INVALID');
+    return aTime - bTime || a.id.localeCompare(b.id);
+  });
+  if (ordered.some(entry => !Number.isFinite(Date.parse(entry.occurredAt)))) {
+    throw new Error('REWARD_LEDGER_DATE_INVALID');
+  }
   return ordered.reduce((balance, candidate) => {
     const entry = assertKyrubRewardLedgerEntry(candidate);
     if (!ledgerUserId) ledgerUserId = entry.userId;
