@@ -106,6 +106,9 @@ test('Firestore Emulator replays the same conversion without duplicating XP', as
   assert.equal((await root.collection('rewardLedger').get()).size, 1);
   assert.equal((await root.collection('xpLedger').get()).size, 1);
   assert.equal((await root.collection('pitangaXpConversions').get()).size, 1);
+  await balanceRef.delete();
+  await assert.rejects(() => run(1), /CONVERSION_REPLAY_BALANCE_UNAVAILABLE/);
+  assert.equal((await root.collection('xpLedger').get()).size, 1);
 });
 
 test('Firestore Emulator prevents two independent reward redemptions from double-spending', async (t) => {
