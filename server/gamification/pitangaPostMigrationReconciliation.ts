@@ -1,6 +1,7 @@
 import type { KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { kyrubKCoinBalance } from '../../shared/gamification.js';
 import { buildPitangaMigrationSnapshot } from './pitangaMigrationSnapshot.js';
+import { pitangaHistoricalMembershipDigest } from './pitangaHistoricalMembership.js';
 import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVerification.js';
 
 /**
@@ -12,6 +13,8 @@ import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVer
 export const reconcilePostMigrationPitangas = (input: {
   checkpoint: PitangaMigrationCheckpoint;
   historicalEntryIds: readonly string[];
+  /** Immutable digest read from a trusted migration receipt, not from a client. */
+  historicalMembershipSha256: string;
   ledgerDocuments: Array<{ id: string; data: KyrubRewardLedgerEntry }>;
   currentBalance: { userId: unknown; availableKCoins: unknown; migrationEpoch: unknown };
   fenceEpoch: string;
@@ -32,6 +35,12 @@ export const reconcilePostMigrationPitangas = (input: {
   if (ids.size !== historicalEntryIds.length || ids.size !== checkpoint.entryCount ||
       historicalEntryIds.some(id => !/^[A-Za-z0-9_-]{1,256}$/.test(id))) {
     throw new Error('PITANGA_RECONCILIATION_HISTORICAL_MEMBERSHIP_INVALID');
+  }
+  if (!/^[a-f0-9]{64}$/.test(input.historicalMembershipSha256) ||
+      pitangaHistoricalMembershipDigest({
+        userId: checkpoint.userId, entryIds: historicalEntryIds,
+      }) !== input.historicalMembershipSha256) {
+    throw new Error('PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH');
   }
   const documents = new Map<string, { id: string; data: KyrubRewardLedgerEntry }>();
   for (const doc of ledgerDocuments) {
