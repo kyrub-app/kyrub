@@ -178,3 +178,23 @@ test('persistence rejects forged redemption dates before touching Firestore', as
     assert.equal(pathReads, 0);
   }
 });
+
+test('new redemption fails closed without shared transactional Pitanga balance authority', async () => {
+  let writes = 0;
+  let reads = 0;
+  transactionHandler = async callback => callback({
+    get: async () => { reads++; return { exists: false, data: () => undefined }; },
+    create: () => { writes++; },
+    update: () => { writes++; },
+  });
+  try {
+    await assert.rejects(
+      api.persistKyrubRedemptionAtomically(plan),
+      /REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE/,
+    );
+    assert.equal(reads, 4);
+    assert.equal(writes, 0);
+  } finally {
+    transactionHandler = async () => { throw new Error('UNEXPECTED_TRANSACTION'); };
+  }
+});
