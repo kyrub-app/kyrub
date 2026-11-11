@@ -46,8 +46,10 @@ export const bootstrapPitangaBalanceInTransaction = async (
     }
     const b = balance.data();
     const r = receipt.data();
+    // The migration receipt is immutable; the live projection may legitimately
+    // change after migration. Never overwrite it or recreate the original grant.
     if (b?.userId !== uid || b?.migrationEpoch !== fenceEpoch ||
-        b?.availableKCoins !== checkpoint.balance ||
+        !Number.isSafeInteger(b?.availableKCoins) || b.availableKCoins < 0 ||
         r?.userId !== uid || r?.balance !== checkpoint.balance ||
         r?.entryCount !== checkpoint.entryCount ||
         r?.ledgerSha256 !== checkpoint.ledgerSha256 ||
