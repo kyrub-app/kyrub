@@ -366,3 +366,24 @@ test('conversion replay returns current canonical balance after later earning', 
   });
   assert.equal(writes.length, 0);
 });
+
+test('conversion replay rejects malformed original balance without writes', async () => {
+  for (const original of ['1000', 1000.5, -1]) {
+    const { refs, tx, writes } = makeTx(750, true);
+    const tampered = {
+      ...tx,
+      get: async (r: { id: string }) => r.id === 'receipt'
+        ? { exists: true, data: () => ({
+            userId: 'user1', requestId: 'req1', requestedXp: 1,
+            availablePitangasBefore: original, status: 'committed',
+            occurredAt: '2026-11-11T12:00:00Z',
+          }) }
+        : tx.get(r),
+    };
+    await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
+      ...refs, userId: 'user1', requestId: 'req1', requestedXp: 1,
+      occurredAt: '2026-11-11T12:00:01Z',
+    } as never), /CONVERSION_RECEIPT_INCONSISTENT/);
+    assert.equal(writes.length, 0);
+  }
+});
