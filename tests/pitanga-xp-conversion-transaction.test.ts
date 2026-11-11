@@ -2,7 +2,13 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
 
-const ref = (id: string) => ({ id });
+const ref = (id: string) => {
+  const collection = id === 'debit' ? 'rewardLedger'
+    : id === 'xp' ? 'xpLedger'
+    : id === 'receipt' ? 'pitangaXpConversions' : 'pitangaBalance';
+  const path = `users/user1/${collection}/${id}`;
+  return { id, path, parent: { path: `users/user1/${collection}` } };
+};
 const makeTx = (balance: number, replay = false) => {
   const refs = { balanceRef: ref('balance'), debitRef: ref('debit'), xpRef: ref('xp'), receiptRef: ref('receipt') };
   const snapshots = new Map<string, Record<string, unknown>>([
