@@ -12,8 +12,11 @@ const profile = { uid: 'admin', status: 'active', role: 'super_admin' } as Admin
 const user = { uid: 'admin', emailVerified: true, getIdToken: async () => 'test-only-token' } as Pick<User, 'uid' | 'emailVerified' | 'getIdToken'>;
 const response = (body: unknown, status = 200) => new Response(JSON.stringify(body), { status });
 
-test('preview gate excludes production and requires explicit administrative route', () => {
-  assert.equal(isFirebasePreflightPreview('admin.kyrub.com', '?kyrub_admin_preview=1'), false);
+test('diagnostic gate permits admin production and explicit Vercel preview only', () => {
+  assert.equal(isFirebasePreflightPreview('admin.kyrub.com', ''), true);
+  assert.equal(isFirebasePreflightPreview('admin.kyrub.com', '?kyrub_admin_preview=1'), true);
+  assert.equal(isFirebasePreflightPreview('www.kyrub.com', '?kyrub_admin_preview=1'), false);
+  assert.equal(isFirebasePreflightPreview('admin.kyrub.com.evil.test', '?kyrub_admin_preview=1'), false);
   assert.equal(isFirebasePreflightPreview('kyrub-branch.vercel.app', ''), false);
   assert.equal(isFirebasePreflightPreview('kyrub-branch.vercel.app', '?kyrub_admin_preview=1'), true);
 });
@@ -76,7 +79,7 @@ test('UI requires click, disables during execution, and introduces no effects or
   assert.match(component, /if \(locked.current\) return/);
   assert.doesNotMatch(component + helper, /useEffect|localStorage|sessionStorage|console\.|recordAdmin|addDoc|setDoc|updateDoc/);
 });
-test('rendered action is hidden outside preview and from inactive or non-super administrators; rendering never calls auth', () => {
+test('rendered action is available on admin production and preview only for active super admins; rendering never calls auth', () => {
   const previous = Object.getOwnPropertyDescriptor(globalThis, 'window');
   const render = (hostname: string, nextProfile: AdminProfile) => {
     Object.defineProperty(globalThis, 'window', { configurable: true, value: { location: { hostname, search: '?kyrub_admin_preview=1' } } });
@@ -86,7 +89,9 @@ test('rendered action is hidden outside preview and from inactive or non-super a
     }));
   };
   try {
-    assert.equal(render('admin.kyrub.com', profile), '');
+    assert.match(render('admin.kyrub.com', profile), /Executar préflight Firebase/);
+    assert.equal(render('www.kyrub.com', profile), '');
+    assert.equal(render('admin.kyrub.com', { ...profile, role: 'support' }), '');
     assert.equal(render('kyrub-branch.vercel.app', { ...profile, role: 'support' }), '');
     assert.equal(render('kyrub-branch.vercel.app', { ...profile, status: 'suspended' }), '');
     const html = render('kyrub-branch.vercel.app', profile);

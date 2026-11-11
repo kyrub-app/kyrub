@@ -9,7 +9,7 @@ const codes = new Set(['AUTH_REQUIRED', 'AUTH_INVALID', 'FORBIDDEN', 'AUTHORIZED
   'ADMIN_AUTH_UNAVAILABLE', 'FIREBASE_READ_FAILED', 'PREFLIGHT_TIMEOUT', 'PREFLIGHT_UNAVAILABLE', 'PREFLIGHT_MODULE_UNAVAILABLE', 'PREFLIGHT_MODULE_NOT_FOUND', 'PREFLIGHT_PACKAGE_RESOLUTION_FAILED', 'PREFLIGHT_REQUIRE_ESM', 'PREFLIGHT_UNKNOWN_FILE_EXTENSION', 'PREFLIGHT_UNSUPPORTED_DIR_IMPORT', 'PREFLIGHT_EXECUTION_FAILED', 'METHOD_NOT_ALLOWED']);
 
 export const isFirebasePreflightPreview = (hostname: string, search: string): boolean =>
-  hostname.endsWith('.vercel.app') && new URLSearchParams(search).get('kyrub_admin_preview') === '1';
+  hostname === 'admin.kyrub.com' || (hostname.endsWith('.vercel.app') && new URLSearchParams(search).get('kyrub_admin_preview') === '1');
 
 export const canRunFirebasePreflight = (user: Pick<User, 'uid' | 'emailVerified'> | null, profile: AdminProfile | null): boolean =>
   Boolean(user?.emailVerified && profile?.uid === user.uid && profile.status === 'active' && profile.role === 'super_admin');
