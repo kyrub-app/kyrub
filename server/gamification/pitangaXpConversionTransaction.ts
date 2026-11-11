@@ -38,15 +38,15 @@ export const applyPitangaXpConversionInTransaction = async (
     if (previous?.userId !== input.userId ||
         previous?.requestId !== input.requestId ||
         previous?.requestedXp !== input.requestedXp ||
-        previous?.status !== 'committed' ||
-        previous?.occurredAt !== input.occurredAt) throw new Error('CONVERSION_IDEMPOTENCY_CONFLICT');
+        previous?.status !== 'committed') throw new Error('CONVERSION_IDEMPOTENCY_CONFLICT');
     if (!debit.exists || !xp.exists) throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
+    if (!Number.isFinite(Date.parse(previous.occurredAt))) throw new Error('CONVERSION_RECEIPT_INCONSISTENT');
     const plan = planVoluntaryPitangaXpConversion(
       previous.availablePitangasBefore, input.requestedXp,
     );
     if (debit.data()?.userId !== input.userId ||
         debit.data()?.correlationId !== input.requestId ||
-        debit.data()?.occurredAt !== input.occurredAt ||
+        debit.data()?.occurredAt !== previous.occurredAt ||
         debit.data()?.id !== input.debitRef.id ||
         debit.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         debit.data()?.type !== 'redeem' ||
@@ -55,7 +55,7 @@ export const applyPitangaXpConversionInTransaction = async (
         debit.data()?.deltaKCoins !== -plan.pitangasToDebit ||
         xp.data()?.userId !== input.userId ||
         xp.data()?.correlationId !== input.requestId ||
-        xp.data()?.occurredAt !== input.occurredAt ||
+        xp.data()?.occurredAt !== previous.occurredAt ||
         xp.data()?.id !== input.xpRef.id ||
         xp.data()?.idempotencyKey !== `pitanga_xp_${input.requestId}` ||
         xp.data()?.sourceType !== 'conversion' ||
