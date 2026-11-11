@@ -45,3 +45,30 @@ Relevant global paths: `api/health.ts` (4 hits), `server/gamification/pitangaBal
 **Finding:** among these lexical matches, no additional global Pitanga challenge-completion award writer was identified. This is *not* proof of absence: indirect imports, alternate names, dynamic paths, Cloud Functions and external workers require manual tracing.
 
 **Release gate:** verify callers of each global transaction primitive, review `api/health.ts` balance semantics, and replace fail-closed new voucher issuance only after the canonical balance migration/write fence is proven. Do not migrate or enable the public conversion API based solely on this scan.
+
+
+## Operational write-fence coverage matrix (11 November 2026)
+
+This is a release-blocking **coverage map**, not a declaration that a fence exists.
+A lexical scan cannot certify that all production writers have been fenced.
+
+| Operation | Current entry point | Canonical balance lock | Production fence verified | Release status |
+| --- | --- | --- | --- | --- |
+| Global Pitanga earning | `applyPitangaEarnInTransaction` (isolated primitive; no confirmed challenge completion caller) | Candidate `users/{uid}/pitangaBalance/balance` | **No** | Blocked |
+| Global Pitanga spending | `applyPitangaSpendInTransaction` (isolated primitive) | Same candidate | **No** | Blocked |
+| Global voucher issuance | `issuePitangaVoucherInTransaction` (isolated primitive, not connected to public redemption) | Same candidate | **No** | Blocked |
+| Legacy voucher issuance | `persistKyrubRedemptionAtomically` | No authoritative balance for new issuance; explicitly fails closed | **No** | New issuance blocked; existing replay only |
+| Pitanga-to-XP conversion | `applyPitangaXpConversionInTransaction` (isolated primitive; no public endpoint) | Same candidate | **No** | Blocked |
+| Historical migration | Read-only snapshot/checkpoint verifiers | No write transaction or migration receipt | **No** | Blocked |
+| Store points and CRM rewards | Store-specific services and ledger | Separate economy | Not applicable to global Pitangas | Must remain separate |
+
+**Cutover acceptance criteria (all required):**
+
+1. Enumerate and trace actual production callers, including scheduled/background jobs and external integrations; identify the deployed versions and all Firestore mutation paths.
+2. Enforce a server-side write fence on **every** legacy global reward-ledger writer, including administrator tools, before beginning a historical snapshot. Prove stale deployed writers cannot bypass it.
+3. Capture a complete ledger at a verified fence epoch, validate every historical record and create a deterministic checkpoint. A caller-supplied `legacyWritersFenced: true` flag is **not evidence** of enforcement.
+4. Bootstrap the canonical balance and migration receipt atomically with idempotent conflict handling; recheck the checkpoint and fence epoch in the same controlled cutover.
+5. Switch **all** authorized earn/spend/voucher/conversion paths to the canonical transactional balance, with emulator race tests and a rollback/incident plan.
+6. Obtain independent review and explicit deployment approval. Do not infer readiness from green CI alone.
+
+**Current conclusion:** the read-only verifiers and concurrency tests improve confidence, but neither a production write fence nor an atomic historical bootstrap has been implemented. The PR must not be merged as a complete, user-facing rewards release.
