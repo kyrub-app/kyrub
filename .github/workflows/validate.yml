@@ -60,6 +60,7 @@ jobs:
           tests/kyrubia-operational-read-manual-bypass.test.ts
           tests/kyrubia-product-publication-by-id.test.ts
           tests/gamification-redemption-repository.test.ts
+          tests/gamification-redemption-persistence-security.test.ts
           tests/global-challenge-publication.test.ts
           tests/xp-ledger-persistence.test.ts
           tests/official-plan-pix.test.ts
