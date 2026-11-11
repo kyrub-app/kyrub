@@ -89,3 +89,29 @@ não autoriza merge, deploy, pagamentos ou alteração de flags de produção.
 
 A avaliação é apenas dessas fronteiras; não atribui aprovação às regras de outros
 módulos do repositório.
+
+
+## Integração revisada da interface #1126
+
+A branch foi reaplicada por rebase sobre a API corrigida, preservando os componentes
+visuais do commit27153e3. O host descartável exige agora Auth Emulator de loopback e
+provisiona a identidade Auth de teste antes de emitir a sessão; recusa Auth remoto,
+credenciais e projeto indevido antes de inicializar qualquer SDK.
+
+Os controles de identidade inválida também cobrem GET list/get, com o mesmo token
+aceito antes da alteração e perfil administrativo ainda ativo. Foram revistos
+DTO explícito, limite1..50, filtro de estado, cursor por ID e validação de filtro,
+respostas antigas/cancelamento, duplo clique, confirmação nativa, 401/403 limpando
+estado e erros de conflito/cota. Não há Firestore direto no client de desafios,
+role concedida pelo cliente ou chamada de emissão de recompensa.
+
+A revisão visual do27153e3 foi reaproveitada; não há mudança de interface nem nova
+sessão de navegador nesta revisão. A inspeção de código foi independente da
+implementação, com revisor separado e reconciliação dos seus achados/controles.
+
+
+Validação local da integração corrigida: **57 testes aprovados**, sem falhas/skips;
+**2561 testes do prebuild**, TypeScript e build aprovados. Smoke não visual do host
+com ambos emuladores: sessão de teste lista com200; a mesma sessão recebe401 após
+desabilitar identidade Auth. Script reproduzível em
+`scripts/qa/globalChallengeHostSmoke.ts`. O CI do head final é conferido na PR.

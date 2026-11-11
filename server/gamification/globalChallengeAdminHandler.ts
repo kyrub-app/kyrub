@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler } from 'express';
 import { consumeGlobalChallengeIngress, GlobalChallengeRateLimitError } from './globalChallengeAdminRateLimit.js';
-import { executeGlobalChallengeAdmin, mapGlobalChallengeAdminError } from './globalChallengeAdminService.js';
+import { executeGlobalChallengeAdmin, mapGlobalChallengeAdminError, queryGlobalChallengeAdmin } from './globalChallengeAdminService.js';
 
 type RequestLike = { method?: string; headers: Record<string, string | string[] | undefined>; query?: Record<string, unknown>; body?: unknown; rawBody?: Buffer };
 type ResponseLike = { setHeader(name: string, value: string): unknown; status(code: number): ResponseLike; json(body: unknown): unknown };
@@ -15,16 +15,21 @@ const admitIngress = async (request: object) => {
   admittedRequests.add(request);
 };
 
+
 export default async function handler(request: RequestLike, response: ResponseLike): Promise<void> {
   response.setHeader('cache-control', 'no-store');
-  if (request.method !== 'POST') {
-    response.setHeader('allow', 'POST');
+  if (request.method !== 'POST' && request.method !== 'GET') {
+    response.setHeader('allow', 'GET, POST');
     response.status(405).json({ code: 'METHOD_NOT_ALLOWED' });
     return;
   }
   const authorization = request.headers.authorization;
   try {
     await admitIngress(request);
+    if (request.method === 'GET') {
+      response.status(200).json(await queryGlobalChallengeAdmin(typeof authorization === 'string' ? authorization : '', request.query ?? {}));
+      return;
+    }
     const mediaType = request.headers['content-type'];
     if (typeof mediaType !== 'string' || !/^application\/json(?:\s*;|$)/i.test(mediaType)) {
       response.status(415).json({ code: 'JSON_REQUIRED' }); return;
@@ -67,6 +72,7 @@ export const createGlobalChallengeAdminRouter = () => {
       res.setHeader('retry-after', String(error.retryAfter));
       res.status(429).json({ code: 'GLOBAL_CHALLENGE_RATE_LIMITED' }); return;
     }
+
     const status = error?.status === 413 ? 413 : error?.status === 415 ? 415 : 400;
     res.status(status).json({ code: status === 413 ? 'PAYLOAD_TOO_LARGE' : status === 415 ? 'JSON_REQUIRED' : 'CHALLENGE_INPUT_INVALID' });
   };

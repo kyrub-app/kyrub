@@ -8,7 +8,8 @@
       "preview-*": true,
       "feat/profile-react-rebuild": true,
       "feat/order-release-policy": true,
-      "feat/global-challenge-admin-repository": false
+      "feat/global-challenge-admin-repository": false,
+      "feat/global-challenge-control-plane": false
     }
   },
   "functions": {

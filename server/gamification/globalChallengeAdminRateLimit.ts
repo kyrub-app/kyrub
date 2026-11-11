@@ -5,6 +5,7 @@ import { adminDb } from '../firebaseAdmin.js';
 export const GLOBAL_CHALLENGE_WINDOW_MS = 60_000;
 export const GLOBAL_CHALLENGE_INGRESS_LIMIT = 300;
 export const GLOBAL_CHALLENGE_ACTOR_LIMIT = 30;
+export const GLOBAL_CHALLENGE_READ_LIMIT = 60;
 const ingress = new MemoryStore();
 ingress.init({ windowMs: GLOBAL_CHALLENGE_WINDOW_MS } as Options);
 
@@ -23,9 +24,10 @@ export const consumeGlobalChallengeIngress = async () => {
 
 // MemoryStore alone resets on cold starts and does not coordinate instances.
 // Keep the authenticated actor's quota in the existing Control Plane namespace.
-export const consumeGlobalChallengeActorLimit = async (uid: string) => {
+export const consumeGlobalChallengeActorLimit = async (uid: string, kind: 'write' | 'read' = 'write') => {
   const key = createHash('sha256').update(uid).digest('hex');
-  const ref = adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${key}`);
+  const ref = adminDb.doc(`kyrub_admin/control_plane/rate_limits/global-challenges-${kind === 'read' ? 'read-' : ''}${key}`);
+  const limit = kind === 'read' ? GLOBAL_CHALLENGE_READ_LIMIT : GLOBAL_CHALLENGE_ACTOR_LIMIT;
   await adminDb.runTransaction(async tx => {
     const snapshot = await tx.get(ref);
     const data = snapshot.data();
@@ -33,7 +35,7 @@ export const consumeGlobalChallengeActorLimit = async (uid: string) => {
         !Number.isSafeInteger(data?.count) || data!.count < 0)) throw new Error('RATE_LIMIT_STATE_INVALID');
     const now = Date.now();
     const active = typeof data?.resetAt === 'number' && data.resetAt > now;
-    if (active && data!.count >= GLOBAL_CHALLENGE_ACTOR_LIMIT) {
+    if (active && data!.count >= limit) {
       throw new GlobalChallengeRateLimitError(Math.max(1, Math.ceil((data!.resetAt - now) / 1000)));
     }
     tx.set(ref, { count: active ? data!.count + 1 : 1, resetAt: active ? data!.resetAt : now + GLOBAL_CHALLENGE_WINDOW_MS });

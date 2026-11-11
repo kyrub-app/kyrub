@@ -1,10 +1,10 @@
 import { adminAuth } from '../firebaseAdmin.js';
 import { consumeGlobalChallengeActorLimit } from './globalChallengeAdminRateLimit.js';
 import { authorizeIntegrationReadiness } from '../admin/integrationReadinessService.js';
-import { createGlobalChallengeDraft, publishGlobalChallenge } from './globalChallengeAdminRepository.js';
-import { GlobalChallengeInputError, parseGlobalChallengeDraft } from './globalChallengeAdminValidation.js';
+import { createGlobalChallengeDraft, publishGlobalChallenge, getGlobalChallenge, listGlobalChallenges } from './globalChallengeAdminRepository.js';
+import { GlobalChallengeInputError, parseGlobalChallengeDraft, parseGlobalChallengeRead, projectGlobalChallenge } from './globalChallengeAdminValidation.js';
 
-export const executeGlobalChallengeAdmin = async (authorization: string, operation: string, input: unknown) => {
+const authorizeGlobalChallengeAdmin = async (authorization: string) => {
   const token = /^Bearer\s+(\S+)$/i.exec(authorization)?.[1];
   if (!token) throw new Error('AUTH_REQUIRED');
   // Reject malformed JWT objects before the shared verifier; its clock-skew
@@ -34,11 +34,24 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
     if ((error as { code?: string }).code === 'auth/user-not-found') throw new Error('AUTH_REQUIRED');
     throw error; // Auth backend failures fail closed and map to sanitized 503.
   }
+  return actor;
+};
+
+export const queryGlobalChallengeAdmin = async (authorization: string, query: Record<string, unknown>) => {
+  const actor = await authorizeGlobalChallengeAdmin(authorization);
+  const options = parseGlobalChallengeRead(query);
+  await consumeGlobalChallengeActorLimit(actor.uid, 'read');
+  if (options.operation === 'get') return { challenge: await getGlobalChallenge(options.challengeId, actor.uid) };
+  return listGlobalChallenges(options, actor.uid);
+};
+
+export const executeGlobalChallengeAdmin = async (authorization: string, operation: string, input: unknown) => {
+  const actor = await authorizeGlobalChallengeAdmin(authorization);
   const occurredAt = new Date().toISOString();
   if (operation === 'create') {
     const challenge = parseGlobalChallengeDraft(input);
     await consumeGlobalChallengeActorLimit(actor.uid);
-    return createGlobalChallengeDraft(challenge, actor.uid, occurredAt);
+    return projectGlobalChallenge(await createGlobalChallengeDraft(challenge, actor.uid, occurredAt));
   }
   if (operation === 'publish') {
     if (!input || typeof input !== 'object' || Array.isArray(input) || Object.keys(input).length !== 1 ||
@@ -46,7 +59,7 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
       throw new GlobalChallengeInputError('CHALLENGE_INPUT_INVALID');
     }
     await consumeGlobalChallengeActorLimit(actor.uid);
-    return publishGlobalChallenge(input.challengeId, actor.uid, occurredAt);
+    return projectGlobalChallenge(await publishGlobalChallenge(input.challengeId, actor.uid, occurredAt));
   }
   throw new GlobalChallengeInputError('CHALLENGE_OPERATION_INVALID');
 };

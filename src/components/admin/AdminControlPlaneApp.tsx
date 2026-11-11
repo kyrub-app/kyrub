@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Users } from 'lucide-react';
+import { BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Trophy, Users } from 'lucide-react';
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 import { getAdminPermissions, hasAdminPermission, loadAdminDashboardMetrics, recordAdminSessionAccess, subscribeToAdminProfile, type AdminDashboardMetric, type AdminProfile, type AdminRole } from '../../utils/adminControlPlane';
@@ -9,6 +9,9 @@ import AdminModulesWorkspace from './AdminModulesWorkspace';
 import AdminOfficialBillingPreflight from './AdminOfficialBillingPreflight';
 import AdminOfficialPlanRenewalAction from './AdminOfficialPlanRenewalAction';
 import AdminFirebasePreflight from './AdminFirebasePreflight';
+import AdminWorkspaceRecoveryBoundary from './AdminWorkspaceRecoveryBoundary';
+
+const GlobalChallenges = lazy(() => import('./AdminGlobalChallengesWorkspace'));
 
 const OfficialPlanGovernance = lazy(() => import('../store/OfficialStoreCommercialWorkspace'));
 
@@ -44,6 +47,7 @@ export default function AdminControlPlaneApp() {
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-plan-governance" title="Regras e limites dos planos" description="Versões, capacidades e concessões administrativas. Produtos e preços de venda são gerenciados na Loja Oficial." icon={ShieldCheck}><Suspense fallback={<p>Carregando regras dos planos…</p>}><OfficialPlanGovernance authenticatedUser={user} profile={profile}/></Suspense></AdminAccordionSection>}
       {canReadDirectory && <AdminAccordionSection id="admin-platform-directory" title="Plataforma & Tenants" description="Usuários, lojas, vínculos e infraestrutura administrativa dos tenants." icon={Users} badge="Control Plane"><AdminDirectoryWorkspace authenticatedUser={user} profile={profile}/></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-firebase-preflight" title="Diagnóstico Firebase" description="Verificação manual e somente leitura da credencial Firebase da plataforma." icon={ShieldCheck} badge="Super Admin"><AdminFirebasePreflight key={user.uid} user={user} profile={profile} /></AdminAccordionSection>}
+      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges" title="Desafios globais" description="Consulte desafios do Kyrub, crie rascunhos e publique com confirmação." icon={Trophy} badge="Super Admin"><Suspense fallback={<p role="status">Carregando desafios…</p>}><AdminWorkspaceRecoveryBoundary section="Desafios globais"><GlobalChallenges key={user.uid} user={user} profile={profile} /></AdminWorkspaceRecoveryBoundary></Suspense></AdminAccordionSection>}
       <AdminModulesWorkspace profile={profile} compactRoot />
     </div><section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"/><p className="text-[10px] leading-relaxed text-slate-500">O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Kyrub são executadas na Loja Oficial sem enfraquecer os gates server-side.</p></div></section></main>
   </div>;

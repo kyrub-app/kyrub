@@ -33,7 +33,7 @@ Searched `server/admin`, `server/ai`, `server/gamification`, `shared/*Challenge*
 
 ## Requests
 
-Both operations require `Authorization: Bearer <Firebase ID token>` and JSON.
+All operations require `Authorization: Bearer <Firebase ID token>`. POST mutations require JSON.
 
 `POST /api/admin/global-challenges` (or `?operation=create`):
 
@@ -119,10 +119,12 @@ middleware did not cover this endpoint. Reused Express JSON parsing and
 | Protection | Bound | Enforcement |
 | --- | --- | --- |
 | Payload | 32,768 UTF-8 bytes | Dedicated Express parser before the general parser; shared handler checks wire-length evidence and serialized parsed body |
-| Ingress | 300 POSTs per 60 seconds per process | One constant MemoryStore key, before authentication; no spoofable forwarded-IP or token key |
-| Authenticated writes | 30 valid operation attempts per UID per 60 seconds | Firestore transaction shared across instances, creation/publication and both transports |
+| Ingress | 300 GET/POST requests per 60 seconds per process | One constant MemoryStore key, before authentication; no spoofable forwarded-IP or token key |
+| Authenticated writes | 30 valid write attempts per UID per 60 seconds | Firestore transaction shared across instances, creation/publication and both transports |
 
-Both quota responses return 429, `Retry-After` and no-store. The per-process ingress
+Read operations have a separate quota of 60 valid requests per UID per 60 seconds,
+using `global-challenges-read-<sha256(uid)>` in the same rate-limit collection.
+Reads cannot exhaust the write budget. Both quota responses return 429, `Retry-After` and no-store. The per-process ingress
 cap is a load guard, not a cross-instance DDoS guarantee. The UID quota is distributed,
 so a cold start or switching aliases cannot reset it. It counts valid duplicate and
 conflicting attempts as well as successful writes. Invalid inputs and unauthorized
@@ -201,6 +203,107 @@ build, TypeScript and updated CI passing, this API is ready for final code/secur
 review. This is not authorization to merge or deploy. The PR remains a draft.
 Control Plane UI, public Recompensas integration and a real verified completion event
 remain separate work. No hosted-runtime or production validation is claimed.
+
+
+## Issue #1125 — Administrative query and Control Plane
+
+Branch: `feat/global-challenge-control-plane`, based on `e128888` from PR #1124.
+The query API and UI reuse that unmerged dependency; the new draft PR targets the
+API branch to keep its diff bounded. No merge/deploy is part of this work.
+
+### Read contract
+
+- `GET /api/admin/global-challenges` or `?operation=list`: list definitions.
+- Optional `status=draft|published|active|ended|cancelled`.
+- Optional `limit=1..50` (default 20) and opaque `cursor` (at most 512 characters).
+- Response: `{ items: KyrubChallengeDefinition[], nextCursor: string | null }`.
+- `GET /api/admin/global-challenges?operation=get&challengeId=<id>`:
+  response `{ challenge: KyrubChallengeDefinition }`, or 404.
+- Unknown/duplicate query values, invalid status/limit/ID/cursor and a cursor
+  reused with another status filter return 400. There is no arbitrary field/sort
+  parameter or offset scan.
+
+Authorization uses the same strict Firebase verifier and active Super Admin
+profile. Both detail and list re-read the profile in the Firestore transaction.
+Reads never change challenge state or append business audit/reward events; only
+the server-side rate-admission counters can change. GET needs no request body.
+The method allow-list is GET/POST. Both transports share the handler and quotas.
+
+Ordering is ascending Firestore document ID, using the existing single-field
+status index for equality filters. No new composite index/deployment is required.
+Cursor continuation uses the ID value rather than loading a cursor document;
+deleting that document does not break the next page. This is live pagination:
+concurrent insertions after the cursor can appear on later pages, while insertions
+before it require refreshing page one. It does not promise a frozen snapshot.
+
+List projections and the common response DTO whitelist definition fields;
+audit subcollections, creator/publisher IDs and unknown internal fields are not
+returned. The same DTO now sanitizes create/publish responses as well. A malformed
+stored definition fails closed rather than exposing arbitrary data.
+
+### Control Plane integration
+
+- `AdminGlobalChallengesWorkspace` is lazy loaded inside the existing
+  `AdminAccordionSection` in `AdminControlPlaneApp`.
+- `AdminModulesWorkspace` links to that section and shows availability only to
+  active Super Admin. The component also guards direct rendering by role/status;
+  the server remains the permission authority.
+- `adminGlobalChallenges.ts` follows the current Firebase getIdToken + authenticated
+  fetch pattern; it performs no client Firestore reads/writes and no automatic
+  mutation retries.
+- List, status filter, cursor next/previous, refresh, empty/loading/error states,
+  individual details, draft form and explicit contextual native confirmation
+  before publication are implemented. Non-drafts have no publish action.
+- Failed mutations retain the draft identifier and input; synchronous in-flight
+  guards block duplicate clicks. Stale/aborted reads cannot overwrite a newer
+  filter or logged-out/revoked session. 401/403 clear previously displayed data.
+- Labels, native controls, visible focus, focused role=alert and live operation
+  feedback support keyboard/screen-reader use. Dates are entered in local time
+  and transmitted as ISO timestamps. Reward amounts remain definitions only:
+  no XP, K-Coins or other benefits are issued by this UI.
+
+Reuse search covered the existing administrative app/modules, accordion, workspace
+components and authenticated admin clients, shared challenge contracts, repository,
+multiplexer and tests. No equivalent challenge listing or editor was found.
+The new client/component are confined to this feature, with common DTO/status/mode
+options in `shared/globalChallengeAdmin.ts`. No competing challenge write service,
+public catalog, rule set, runtime dependency or collection was introduced.
+
+### Validation evidence and limits
+
+The emulator suite checks unauthorized/missing/invalid/expired tokens on GET list
+and detail as well as mutations; pagination, ID ordering, status filtering, cursor
+validation/deletion, metadata redaction, not-found, read quota and role revocation.
+The original concurrency, write rollback and idempotency scenarios remain in place.
+
+DOM tests use React DOM and JSDOM with the real UI/client and a deterministic HTTP
+fixture. They exercise permission gating, list/filter/pagination/detail, form
+validation, draft creation, contextual publish/cancel, in-flight duplicate guards,
+401/403/409/429 feedback, focus and stale-request cancellation. JSDOM is a pinned
+dev dependency; `npm run test:global-challenges` runs these tests alongside the
+Firestore Emulator suite, so Validate Kyrub covers both.
+
+The initial loopback/browser limitation was resolved on 2026-11-11 using a
+fresh, disposable HTTPS Sandbox and the real administrative app/handler with
+Firestore Emulator. Desktop 1280 and mobile iframe viewports 390/320 were exercised
+in Chrome, with generated test identities only. The visual pass found and fixed
+offscreen details/focus and mobile form intrinsic-width overflow. Full evidence,
+precise authentication/browser limits and screenshots are in
+[GLOBAL_CHALLENGE_VISUAL_QA.md](GLOBAL_CHALLENGE_VISUAL_QA.md).
+This does not claim a physical-device, Google OAuth or production runtime test.
+
+The feature branch has its own explicit false `git.deploymentEnabled` rule, in
+addition to the API branch's block. Neither production flags nor other branch
+rules were changed. CI, API dependency review and final visual/security review
+must precede any separately authorized merge or deployment.
+
+
+Current local results for issue #1125: **49 tests passed** (41 API/emulator and 8
+React DOM/client tests), zero failures/skips. Prebuild: **2,561 passed**.
+TypeScript, application build and the 11-function budget also passed. Validate Kyrub
+now accepts this stacked PR's API base branch so its existing emulator command
+runs the new UI tests on Node 22 as well. Final CI run links are recorded in the
+PR and issue rather than inferred from the local runtime.
 
 
 ## Final independent review - 2026-11-11
