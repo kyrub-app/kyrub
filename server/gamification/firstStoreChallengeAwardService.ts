@@ -28,6 +28,8 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
     const data = store.data();
     const activatedAt = data?.activatedAt;
     const date = typeof activatedAt === 'string' ? new Date(activatedAt) : activatedAt?.toDate?.();
+    const eventCreatedAt = verifiedEvent.get('createdAt');
+    const eventDate = typeof eventCreatedAt === 'string' ? new Date(eventCreatedAt) : eventCreatedAt?.toDate?.();
     // A canonical store created before activation may not represent a first
     // store. The first-store marker must be asserted by the provisioning writer.
     if (!store.exists || data?.ownerId !== userId || data?.id !== canonicalStoreId ||
@@ -35,7 +37,9 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
         !verifiedEvent.exists || verifiedEvent.get('userId') !== userId ||
         verifiedEvent.get('storeId') !== canonicalStoreId ||
         verifiedEvent.get('id') !== 'first_store_created' ||
-        !(date instanceof Date) || !Number.isFinite(date.getTime())) {
+        !(date instanceof Date) || !Number.isFinite(date.getTime()) ||
+        !(eventDate instanceof Date) || !Number.isFinite(eventDate.getTime()) ||
+        Math.abs(eventDate.getTime() - date.getTime()) > 60_000) {
       throw new Error('FIRST_STORE_EVENT_UNVERIFIED');
     }
     if (!challenge.exists) throw new Error('FIRST_STORE_CHALLENGE_NOT_FOUND');
@@ -43,7 +47,7 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
       challenge: challenge.data() as Parameters<typeof awardVerifiedFirstStoreChallengeInTransaction>[1]['challenge'],
       event: {
         userId, storeId: canonicalStoreId,
-        createdAt: date.toISOString(), isFirstStore: true,
+        createdAt: eventDate.toISOString(), isFirstStore: true,
       },
       balanceRef: userRoot.collection('pitangaBalance').doc('balance'),
       pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
