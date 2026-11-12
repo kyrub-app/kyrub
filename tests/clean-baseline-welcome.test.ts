@@ -118,3 +118,43 @@ test('transaction rejects signed sessions predating the campaign even when accou
   })), /WELCOME_SIGNED_SESSION_INVALID/);
   assert.deepEqual(writes, []);
 });
+
+test('two concurrent welcome requests serialize to one credit and one ledger entry', async () => {
+  const documents = new Map<string, any>();
+  let version = 0;
+  const run = async () => {
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const startVersion = version;
+      const pending: { path: string; data: any }[] = [];
+      const tx: any = {
+        get: async (target: any) => {
+          if (target.query === 'ledger') {
+            return { empty: ![...documents.keys()].some(path => path.startsWith(`users/${uid}/rewardLedger/`)) };
+          }
+          const data = documents.get(target.path);
+          return { exists: data !== undefined, data: () => data };
+        },
+        create: (target: any, data: any) => pending.push({ path: target.path, data }),
+      };
+      // A signed initial session is verified by the trusted service before this call.
+      const result = await grantCleanBaselineWelcomeInTransaction(tx, inputs({
+        signedInitialSessionAt: occurredAt,
+      }));
+      // Simulate Firestore's optimistic transaction conflict and retry.
+      if (version !== startVersion) continue;
+      for (const write of pending) {
+        if (documents.has(write.path)) throw Error('duplicate document creation');
+        documents.set(write.path, write.data);
+      }
+      version++;
+      return result;
+    }
+    throw Error('transaction retries exhausted');
+  };
+  const results = await Promise.all([run(), run()]);
+  assert.equal(results.filter(result => !result.replay).length, 1);
+  assert.equal(results.filter(result => result.replay).length, 1);
+  assert.equal(documents.size, 2);
+  assert.equal(documents.get(`users/${uid}/pitangaBalance/balance`)?.availableKCoins, 1000);
+  assert.equal(documents.get(`users/${uid}/rewardLedger/${awardId}`)?.deltaKCoins, 1000);
+});
