@@ -15,6 +15,12 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
   if (process.env.KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED !== 'true') {
     throw Error('WELCOME_SIGNED_SESSION_DISABLED');
   }
+  // Never silently activate against an unexpected Firebase project.
+  const expectedProjectId = process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID?.trim();
+  const actualProjectId = auth.app.options.projectId;
+  if (!expectedProjectId || !actualProjectId || expectedProjectId !== actualProjectId) {
+    throw Error('WELCOME_FIREBASE_PROJECT_MISMATCH');
+  }
   const cutoff = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT?.trim();
   if (!cutoff || !Number.isFinite(Date.parse(cutoff))) {
     throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
