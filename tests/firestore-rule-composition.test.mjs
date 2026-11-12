@@ -223,3 +223,24 @@ test('private community groups are included in the deployed rules composition', 
     index.fields.some(field => field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS')
   ));
 });
+
+test('base rules explicitly deny client access to server-authoritative Pitanga and login receipts', () => {
+  const rules = readFileSync('firestore.rules', 'utf8');
+  for (const path of [
+    '/authEvents/{eventId}',
+    '/pitangaBalance/{balanceId}',
+    '/rewardLedger/{entryId}',
+    '/pitangaNewUserBootstrap/{receiptId}',
+    '/systemControl/pitangaLegacyWriterFence',
+  ]) {
+    const marker = `match ${path} {`;
+    const start = rules.indexOf(marker);
+    assert.ok(start >= 0, `missing protected rules path: ${path}`);
+    const body = rules.slice(start + marker.length, rules.indexOf('}', start));
+    assert.match(body, /allow read, write: if false;/, `missing explicit deny for ${path}`);
+  }
+  const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
+  assert.match(composer, /readFile\(basePath, 'utf8'\)/);
+  // This contract test does not establish absence of permissive overlapping
+  // match rules. Firestore emulator authorization tests are still required.
+});
