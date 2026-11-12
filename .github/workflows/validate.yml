@@ -87,6 +87,9 @@ jobs:
           tests/subscription-contract-renewal.test.ts
           tests/marketplace-payment-expiry-contract.test.ts
 
+      - name: Clean-baseline welcome unit tests
+        run: node --test --import tsx tests/clean-baseline-welcome.test.ts
+
       - name: Set up Java for isolated Firestore tests
         uses: actions/setup-java@v4
         with:
