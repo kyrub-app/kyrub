@@ -24,6 +24,8 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   // Firebase lastSignInTime changes on subsequent logins. For an existing
   // grant, replay using its immutable server ledger timestamp instead.
   const existingGrant = await ledgerRef.get();
+  // An existing ledger is only replayed after verifying its complete contents
+  // in the transaction. This read never authorizes a new grant.
   const occurredAt = existingGrant.exists ? existingGrant.get('occurredAt') : firstSignInAt;
   if (typeof occurredAt !== 'string') throw Error('WELCOME_LEDGER_TIMESTAMP_INVALID');
   return db.runTransaction(tx => awardFirstLoginWelcomeInTransaction(tx, {
