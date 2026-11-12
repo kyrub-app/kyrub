@@ -50,3 +50,24 @@ test('Firestore emulator grants 1000 Pitangas exactly once across concurrent tra
   assert.equal(ledger.size, 1);
   assert.equal(ledger.docs[0]?.data()?.deltaKCoins, 1000);
 });
+
+test('Firestore emulator preserves an existing historical balance without issuing welcome credits', async () => {
+  const root = db.collection('users').doc(uid);
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  await balanceRef.create({ userId: uid, availableKCoins: 375, initializedBy: 'historical' });
+  await assert.rejects(claim(), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
+  const saved = await balanceRef.get();
+  assert.equal(saved.data()?.availableKCoins, 375);
+  assert.equal((await root.collection('rewardLedger').get()).size, 0);
+});
+
+test('Firestore emulator preserves a pre-existing reward ledger without issuing welcome credits', async () => {
+  const root = db.collection('users').doc(uid);
+  const historicalRef = root.collection('rewardLedger').doc('historical_earn');
+  await historicalRef.create({ userId: uid, deltaKCoins: 25, type: 'earn' });
+  await assert.rejects(claim(), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
+  assert.equal((await root.collection('pitangaBalance').doc('balance').get()).exists, false);
+  const ledger = await root.collection('rewardLedger').get();
+  assert.equal(ledger.size, 1);
+  assert.equal(ledger.docs[0]?.id, 'historical_earn');
+});
