@@ -23,8 +23,7 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
     throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
   }
   const createdAt = user.metadata.creationTime;
-  const firstSignInAt = user.metadata.lastSignInTime;
-  if (!createdAt || !firstSignInAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
+  if (!createdAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
   if (!isWelcomeCampaignEligible(createdAt, effectiveAtRaw)) {
     throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
   }
@@ -35,7 +34,11 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   const existingGrant = await ledgerRef.get();
   // An existing ledger is only replayed after verifying its complete contents
   // in the transaction. This read never authorizes a new grant.
-  const occurredAt = existingGrant.exists ? existingGrant.get('occurredAt') : firstSignInAt;
+  // lastSignInTime is mutable and must never authorize a new first-login grant.
+  // Until an immutable server-verified first-login receipt is integrated,
+  // allow only replay of grants that already have a verified ledger entry.
+  if (!existingGrant.exists) throw Error('WELCOME_FIRST_LOGIN_PROOF_UNAVAILABLE');
+  const occurredAt = existingGrant.get('occurredAt');
   if (typeof occurredAt !== 'string') throw Error('WELCOME_LEDGER_TIMESTAMP_INVALID');
   return db.runTransaction(tx => awardFirstLoginWelcomeInTransaction(tx, {
     userId: uid,
