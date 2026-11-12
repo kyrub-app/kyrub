@@ -18,12 +18,12 @@ const input = {
   fenceEpoch: 'epoch_1',
   ...refs,
 } as unknown as Parameters<typeof initializeNewUserPitangaBalanceInTransaction>[1];
-function mockTx(options: { entries?: number; balance?: unknown; receipt?: unknown; fenced?: boolean } = {}) {
+function mockTx(options: { entries?: number; balance?: unknown; receipt?: unknown; fenced?: boolean; missingFence?: boolean } = {}) {
   const writes: Array<{ op: string; path: string }> = [];
   const tx = {
     get: async (ref: { path: string }) => {
       if (ref.path === refs.fenceRef.path) return {
-        exists: true, data: () => options.fenced === false
+        exists: options.missingFence !== true, data: () => options.fenced === false
           ? { status: 'open', epoch: 'epoch_1', writersVerified: false }
           : { status: 'fenced', epoch: 'epoch_1', writersVerified: true },
       };
@@ -85,4 +85,22 @@ test('partial or mismatched state never resets an existing balance', async () =>
     await assert.rejects(initializeNewUserPitangaBalanceInTransaction(tx, input), /CONFLICT/);
     assert.equal(writes.length, 0);
   }
+});
+
+test('missing fence document fails closed even if caller claims writers were fenced', async () => {
+  const { tx, writes } = mockTx({ missingFence: true });
+  await assert.rejects(
+    initializeNewUserPitangaBalanceInTransaction(tx, input),
+    /PITANGA_NEW_USER_BOOTSTRAP_FENCE_UNVERIFIED/,
+  );
+  assert.deepEqual(writes, []);
+});
+
+test('historical ledger with no canonical balance must not be reset to zero', async () => {
+  const { tx, writes } = mockTx({ entries: 1 });
+  await assert.rejects(
+    initializeNewUserPitangaBalanceInTransaction(tx, input),
+    /PITANGA_NEW_USER_BOOTSTRAP_HISTORICAL_LEDGER/,
+  );
+  assert.deepEqual(writes, []);
 });
