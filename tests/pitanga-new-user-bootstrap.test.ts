@@ -63,6 +63,7 @@ test('historical ledger or open fence fails closed', async () => {
 
 test('existing matching balance and receipt replay without writes', async () => {
   const { tx, writes } = mockTx({
+    entries: 1,
     balance: { userId: uid, availableKCoins: 1000 },
     receipt: { userId: uid, fenceEpoch: 'epoch_1', firebaseCreatedAt: input.firebaseCreatedAt },
   });
