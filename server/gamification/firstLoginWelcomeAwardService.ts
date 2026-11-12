@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { Auth } from 'firebase-admin/auth';
-import { FIRST_LOGIN_WELCOME_AWARD_ID } from './firstLoginWelcome.js';
+import { FIRST_LOGIN_WELCOME_AWARD_ID, isWelcomeCampaignEligible } from './firstLoginWelcome.js';
 import { awardFirstLoginWelcomeInTransaction } from './firstLoginWelcomeAwardTransaction.js';
 
 /**
@@ -19,12 +19,13 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   // Opt-in launch gate: an unset cutoff disables grants. This prevents
   // retroactive awards to historical accounts and accidental production launch.
   const effectiveAtRaw = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT?.trim();
-  const effectiveAt = effectiveAtRaw ? Date.parse(effectiveAtRaw) : NaN;
-  if (!Number.isFinite(effectiveAt)) throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
+  if (!effectiveAtRaw || !Number.isFinite(Date.parse(effectiveAtRaw))) {
+    throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
+  }
   const createdAt = user.metadata.creationTime;
   const firstSignInAt = user.metadata.lastSignInTime;
   if (!createdAt || !firstSignInAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
-  if (!Number.isFinite(Date.parse(createdAt)) || Date.parse(createdAt) < effectiveAt) {
+  if (!isWelcomeCampaignEligible(createdAt, effectiveAtRaw)) {
     throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
   }
   const root = db.collection('users').doc(uid);
