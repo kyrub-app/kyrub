@@ -16,9 +16,15 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw Error('WELCOME_USER_INVALID');
   const user = await auth.getUser(uid);
   if (user.uid !== uid || user.disabled) throw Error('WELCOME_AUTH_USER_INVALID');
+  // Opt-in launch gate: an unset cutoff disables grants. This prevents
+  // retroactive awards to historical accounts and accidental production launch.
+  const effectiveAtRaw = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT?.trim();
+  const effectiveAt = effectiveAtRaw ? Date.parse(effectiveAtRaw) : NaN;
+  if (!Number.isFinite(effectiveAt)) throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
   const createdAt = user.metadata.creationTime;
   const firstSignInAt = user.metadata.lastSignInTime;
   if (!createdAt || !firstSignInAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
+  if (Date.parse(createdAt) < effectiveAt) throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
   const root = db.collection('users').doc(uid);
   const ledgerRef = root.collection('rewardLedger').doc(`earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`);
   // Firebase lastSignInTime changes on subsequent logins. For an existing
