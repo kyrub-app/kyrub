@@ -36,5 +36,8 @@ export const bootstrapVerifiedPitangaBalanceInTransaction = async (
     completeLedgerVerified: true,
     legacyWritersFenced: input.legacyWritersFenced,
   });
-  return bootstrapPitangaBalanceInTransaction(tx, input);
+  return bootstrapPitangaBalanceInTransaction(tx, {
+    ...input,
+    historicalEntryIds: ledger.docs.map(doc => doc.id),
+  });
 };
