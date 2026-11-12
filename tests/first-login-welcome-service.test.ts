@@ -14,9 +14,9 @@ const makeRef = (path: string): any => {
     collection: (name: string) => ({ doc: (id: string) => makeRef(`${path}/${name}/${id}`) }),
   };
 };
-function harness(receipt?: unknown) {
+function harness(receipt?: unknown, options: { existingLedger?: unknown; balance?: number } = {}) {
   const writes: Array<{ op: string; path: string }> = [];
-  const balance = { userId: uid, availableKCoins: 0 };
+  const balance = { userId: uid, availableKCoins: options.balance ?? 0 };
   const db = {
     collection: (name: string) => ({ doc: (id: string) => makeRef(`${name}/${id}`) }),
     runTransaction: async (callback: (tx: any) => Promise<unknown>) => callback({
@@ -26,6 +26,9 @@ function harness(receipt?: unknown) {
         }
         if (ref.path.endsWith('/pitangaBalance/balance')) {
           return { exists: true, data: () => balance };
+        }
+        if (ref.path.endsWith('/rewardLedger/earn_first_login_welcome_v1')) {
+          return { exists: options.existingLedger !== undefined, data: () => options.existingLedger };
         }
         return { exists: false, data: () => undefined };
       },
@@ -92,6 +95,32 @@ test('welcome service refuses historical users before reading receipts', async (
     const { db, auth, writes } = harness(receipt);
     await assert.rejects(awardFirstLoginWelcomeForVerifiedUser(db, auth, uid), /HISTORICAL_USER_NOT_ELIGIBLE/);
     assert.deepEqual(writes, []);
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
+
+test('existing canonical welcome grant replays without a second credit', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  try {
+    const existingLedger = {
+      id: 'earn_first_login_welcome_v1',
+      userId: uid,
+      type: 'earn',
+      economy: 'k_coin',
+      deltaKCoins: 1000,
+      sourceType: 'campaign',
+      sourceId: 'first_login_welcome_v1',
+      correlationId: 'first_login_welcome_v1',
+      idempotencyKey: 'pitanga_earn_first_login_welcome_v1',
+      occurredAt,
+    };
+    const { db, auth, writes } = harness(receipt, { existingLedger, balance: 1350 });
+    assert.deepEqual(await awardFirstLoginWelcomeForVerifiedUser(db, auth, uid), {
+      balance: 1350, replay: true,
+    });
+    assert.deepEqual(writes, [], 'replaying an existing grant must not mutate the balance or ledger');
   } finally {
     if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
     else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
