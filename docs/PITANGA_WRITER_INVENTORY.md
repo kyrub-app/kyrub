@@ -146,3 +146,25 @@ exercises the pure redemption plan builder rather than invoking
 whether the server repository is invoked by another route, worker, or task.
 A repository-wide import/call graph plus runtime deployment evidence is still
 required. Do not describe the implementation as a proven active runtime writer.
+
+
+## Latest CI callsite inventory — run 43224213358 (12 November 2026)
+
+Downloaded and inspected the `pitanga-ledger-access-inventory` JSON artifact
+(ID `13947357041`) produced by the successful Validate Kyrub workflow at
+commit `dcc26e0`. It scanned **1,019 tracked JS/TS source files** and
+reported **24 possible mutation lines**. The scanner's
+`possibleCallsites` array contained only:
+
+1. `server/gamification/pitangaVerifiedVoucherIssuance.ts:53` —
+   `issuePitangaVoucherInTransaction(tx, input)`.
+2. `server/gamification/pitangaVerifiedXpConversion.ts:56` —
+   `applyPitangaXpConversionInTransaction(tx, input)`.
+
+No `persistKyrubRedemptionAtomically(...)` callsite was reported by this
+repository-wide lexical scan. **This is negative lexical evidence, not proof
+of runtime inactivity.** In particular, the scanner does not currently include
+`issueVerifiedPitangaVoucher` or indirect/dynamic invocation in its callsite
+pattern, and cannot inspect external workers or deployed function invocation
+logs. A definitive cutover still requires deployment/service-account
+inventory and production writer-permission enforcement.
