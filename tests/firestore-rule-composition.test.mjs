@@ -236,7 +236,7 @@ test('base rules explicitly deny client access to server-authoritative Pitanga a
     const marker = `match ${path} {`;
     const start = rules.indexOf(marker);
     assert.ok(start >= 0, `missing protected rules path: ${path}`);
-    const body = rules.slice(start + marker.length, rules.indexOf('}', start));
+    const body = rules.slice(start + marker.length, rules.indexOf('\n      }', start) >= 0 ? rules.indexOf('\n      }', start) : rules.indexOf('\n    }', start));
     assert.match(body, /allow read, write: if false;/, `missing explicit deny for ${path}`);
   }
   const composer = readFileSync('scripts/compose-firestore-rules.mjs', 'utf8');
