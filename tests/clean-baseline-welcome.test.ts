@@ -110,3 +110,11 @@ test('signed-session path refuses existing unrelated Pitanga history', async () 
     assert.equal(writes.length, 0);
   }
 });
+
+test('transaction rejects signed sessions predating the campaign even when account is new', async () => {
+  const { tx, writes } = harness();
+  await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs({
+    signedInitialSessionAt: '2026-11-11T23:50:00.000Z',
+  })), /WELCOME_SIGNED_SESSION_INVALID/);
+  assert.deepEqual(writes, []);
+});
