@@ -22,7 +22,7 @@ export const persistVerifiedKyrubXp = async (input: {
   const sourceId = safeId(input.sourceId, 'XP_SOURCE');
   const idempotencyKey = safeId(input.idempotencyKey, 'XP_IDEMPOTENCY');
   const correlationId = safeId(input.correlationId, 'XP_CORRELATION');
-  if (!['challenge', 'achievement', 'community', 'admin_adjustment'].includes(input.sourceType)) {
+  if (!['challenge', 'achievement', 'community', 'conversion', 'admin_adjustment'].includes(input.sourceType)) {
     throw new Error('XP_SOURCE_TYPE_INVALID');
   }
   if (!Number.isSafeInteger(input.deltaXp) || input.deltaXp <= 0) throw new Error('XP_DELTA_INVALID');

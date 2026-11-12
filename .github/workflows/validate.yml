@@ -49,6 +49,17 @@ jobs:
       - name: TypeScript
         run: npm run lint
 
+      - name: Inventory global Pitanga ledger access (read-only)
+        run: node scripts/qa/auditPitangaLedgerWriters.mjs > pitanga-ledger-access-inventory.json
+
+      - name: Preserve Pitanga ledger access inventory
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitanga-ledger-access-inventory
+          path: pitanga-ledger-access-inventory.json
+          if-no-files-found: error
+          retention-days: 7
+
       - name: Contract tests
         run: >-
           node --test --import tsx
@@ -60,6 +71,18 @@ jobs:
           tests/kyrubia-operational-read-manual-bypass.test.ts
           tests/kyrubia-product-publication-by-id.test.ts
           tests/gamification-redemption-repository.test.ts
+          tests/gamification-redemption-persistence-security.test.ts
+          tests/pitanga-xp-conversion-transaction.test.ts
+          tests/pitanga-earn-transaction.test.ts
+          tests/pitanga-spend-transaction.test.ts
+          tests/pitanga-voucher-issuance-transaction.test.ts
+          tests/pitanga-verified-voucher-issuance.test.ts tests/pitanga-verified-xp-conversion.test.ts tests/pitanga-post-migration-reconciliation.test.ts tests/pitanga-historical-manifest.test.ts tests/pitanga-historical-manifest-repository.test.ts
+          tests/pitanga-migration-snapshot.test.ts
+          tests/pitanga-migration-checkpoint-verification.test.ts
+          tests/pitanga-migration-bootstrap-transaction.test.ts
+          tests/pitanga-legacy-writer-fence.test.ts
+          tests/pitanga-balance-reconciliation.test.ts
+          tests/pitanga-balance-authority-inspection.test.ts
           tests/global-challenge-publication.test.ts
           tests/xp-ledger-persistence.test.ts
           tests/official-plan-pix.test.ts
@@ -84,6 +107,14 @@ jobs:
 
       - name: Global challenge API and transaction tests
         run: npm run test:global-challenges
+
+      - name: Firestore Pitanga concurrency (emulator)
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.security.json
+          --project kyrub-security-test
+          --only firestore
+          "node --test --import tsx tests/firestore-pitanga-concurrency.test.ts"
 
       - name: Prebuild validation
         run: npm run prebuild

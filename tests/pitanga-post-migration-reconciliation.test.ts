@@ -1,0 +1,122 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
+import { reconcilePostMigrationPitangas } from '../server/gamification/pitangaPostMigrationReconciliation.js';
+import { pitangaHistoricalMembershipDigest } from '../server/gamification/pitangaHistoricalMembership.js';
+import { buildPitangaHistoricalManifest } from '../server/gamification/pitangaHistoricalManifest.js';
+import type { KyrubRewardLedgerEntry } from '../shared/gamification.js';
+
+const entry = (id: string, deltaKCoins: number, occurredAt: string): { id: string; data: KyrubRewardLedgerEntry } => ({
+  id,
+  data: {
+    id, userId: 'user1', type: deltaKCoins > 0 ? 'earn' : 'redeem',
+    deltaKCoins, sourceType: deltaKCoins > 0 ? 'challenge' : 'conversion',
+    sourceId: id, correlationId: id, idempotencyKey: id, occurredAt,
+  },
+});
+const initial = [
+  entry('historical1', 3000, '2026-11-01T12:00:00Z'),
+  entry('historical2', 2000, '2026-11-02T12:00:00Z'),
+];
+const checkpoint = buildPitangaMigrationSnapshot({
+  userId: 'user1', ledgerDocuments: initial,
+  completeLedgerVerified: true, legacyWritersFenced: true,
+});
+const later = [
+  entry('earned_after', 2000, '2026-11-12T12:00:00Z'),
+  entry('converted_after', -3000, '2026-11-13T12:00:00Z'),
+];
+const input = () => ({
+  checkpoint, historicalEntryIds: ['historical1', 'historical2'],
+  migrationReceipt: { userId: 'user1', balance: checkpoint.balance, entryCount: checkpoint.entryCount,
+    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1',
+    historicalMembershipSha256: pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical1', 'historical2'] }) },
+  ledgerDocuments: [...initial, ...later],
+  currentBalance: { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: 4000 },
+  fenceEpoch: 'epoch1', completeLedgerVerified: true, legacyWritersFenced: true,
+});
+test('reconciles original 5000 Pitangas with later earning and 3 XP conversion', () => {
+  assert.deepEqual(reconcilePostMigrationPitangas(input()), {
+    verified: true, historicalBalance: 5000, postMigrationDelta: -1000, currentBalance: 4000,
+  });
+});
+test('rejects mutation to an immutable historical entry', () => {
+  const data = input();
+  data.ledgerDocuments = data.ledgerDocuments.map(doc => doc.id === 'historical1'
+    ? entry('historical1', 3001, '2026-11-01T12:00:00Z') : doc);
+  assert.throws(() => reconcilePostMigrationPitangas(data), /PITANGA_RECONCILIATION_HISTORICAL_CHANGED/);
+});
+test('rejects missing historical membership or missing historical document', () => {
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalEntryIds: ['historical1', 'historical1'],
+  }), /PITANGA_RECONCILIATION_HISTORICAL_MEMBERSHIP_INVALID/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), ledgerDocuments: [...initial.slice(0, 1), ...later],
+  }), /PITANGA_RECONCILIATION_HISTORICAL_ENTRY_MISSING/);
+});
+test('rejects out-of-band balance changes', () => {
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), currentBalance: { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: 4001 },
+  }), /PITANGA_RECONCILIATION_BALANCE_MISMATCH/);
+});
+test('rejects mismatched epoch, unverified fence and duplicate ledger document', () => {
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), currentBalance: { userId: 'user1', migrationEpoch: 'other', availableKCoins: 4000 },
+  }), /PITANGA_RECONCILIATION_PRECONDITIONS_INVALID/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), legacyWritersFenced: false,
+  }), /PITANGA_RECONCILIATION_PRECONDITIONS_INVALID/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), ledgerDocuments: [...input().ledgerDocuments, initial[0]],
+  }), /PITANGA_RECONCILIATION_LEDGER_SCOPE_INVALID/);
+});
+
+test('rejects historical IDs substituted after the cutover digest was committed', () => {
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalEntryIds: ['historical1', 'earned_after'],
+  }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), migrationReceipt: { ...input().migrationReceipt, historicalMembershipSha256: '0'.repeat(64) },
+  }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
+});
+test('historical membership digest is order independent and rejects duplicate IDs', () => {
+  assert.equal(
+    pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical2', 'historical1'] }),
+    input().migrationReceipt.historicalMembershipSha256,
+  );
+  assert.throws(() => pitangaHistoricalMembershipDigest({
+    userId: 'user1', entryIds: ['historical1', 'historical1'],
+  }), /PITANGA_HISTORICAL_MEMBERSHIP_INVALID/);
+});
+
+test('rejects a receipt from another user, epoch or historical checkpoint', () => {
+  for (const patch of [
+    { userId: 'other' }, { fenceEpoch: 'other' },
+    { balance: checkpoint.balance + 1 },
+    { entryCount: checkpoint.entryCount + 1 },
+    { ledgerSha256: '0'.repeat(64) },
+  ]) {
+    assert.throws(() => reconcilePostMigrationPitangas({
+      ...input(), migrationReceipt: { ...input().migrationReceipt, ...patch },
+    }), /PITANGA_RECONCILIATION_RECEIPT_MISMATCH/);
+  }
+});
+
+test('reconciliation accepts a verified chunk manifest bound to the migration receipt', () => {
+  const historicalManifest = buildPitangaHistoricalManifest({
+    userId: 'user1', fenceEpoch: 'epoch1', entryIds: ['historical1', 'historical2'],
+  });
+  assert.equal(reconcilePostMigrationPitangas({ ...input(), historicalManifest }).verified, true);
+});
+
+test('reconciliation rejects a tampered or wrong-epoch historical manifest', () => {
+  const historicalManifest = buildPitangaHistoricalManifest({
+    userId: 'user1', fenceEpoch: 'epoch1', entryIds: ['historical1', 'historical2'],
+  });
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalManifest: { ...historicalManifest, fenceEpoch: 'other' },
+  }), /PITANGA_MANIFEST_MISMATCH/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalManifest: { ...historicalManifest, chunks: [] },
+  }), /PITANGA_MANIFEST_MISMATCH/);
+});

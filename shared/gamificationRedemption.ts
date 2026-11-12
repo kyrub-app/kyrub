@@ -20,7 +20,10 @@ const required = (value: string, label: string): string => {
   return normalized;
 };
 
-const safeToken = (value: string): string => value.replace(/[^a-zA-Z0-9_-]/g, '_');
+const safeToken = (value: string, label: string): string => {
+  if (!/^[A-Za-z0-9_-]+$/.test(value)) throw new Error(`${label}_INVALID`);
+  return value;
+};
 
 export const buildKyrubRedemptionPlan = (input: {
   userId: string;
@@ -34,15 +37,20 @@ export const buildKyrubRedemptionPlan = (input: {
   const userId = required(input.userId, 'REDEMPTION_USER');
   const idempotencyKey = required(input.idempotencyKey, 'REDEMPTION_IDEMPOTENCY');
   const correlationId = required(input.correlationId, 'REDEMPTION_CORRELATION');
-  if (!Number.isSafeInteger(input.currentBalanceKCoins) || input.currentBalanceKCoins < input.reward.costKCoins) {
+  if (!Number.isSafeInteger(input.reward.costKCoins) || input.reward.costKCoins <= 0) {
+    throw new Error('REDEMPTION_COST_INVALID');
+  }
+  if (!Number.isSafeInteger(input.currentBalanceKCoins) || input.currentBalanceKCoins < 0 || input.currentBalanceKCoins < input.reward.costKCoins) {
     throw new Error('REDEMPTION_INSUFFICIENT_KCOINS');
   }
-  if (Date.parse(input.validUntil) <= Date.parse(input.occurredAt)) {
+  const occurredAt = Date.parse(input.occurredAt);
+  const validUntil = Date.parse(input.validUntil);
+  if (!Number.isFinite(occurredAt) || !Number.isFinite(validUntil) || validUntil <= occurredAt) {
     throw new Error('REDEMPTION_VALIDITY_INVALID');
   }
 
-  const redemptionId = `redemption_${safeToken(userId)}_${safeToken(idempotencyKey)}`;
-  const voucherCode = `KRB-${safeToken(input.reward.id).toUpperCase()}-${safeToken(idempotencyKey).toUpperCase()}`;
+  const redemptionId = `redemption_${safeToken(userId, 'REDEMPTION_USER')}_${safeToken(idempotencyKey, 'REDEMPTION_IDEMPOTENCY')}`;
+  const voucherCode = `KRB-${safeToken(input.reward.id, 'REDEMPTION_REWARD').toUpperCase()}-${safeToken(idempotencyKey, 'REDEMPTION_IDEMPOTENCY').toUpperCase()}`;
   const debitEntry: KyrubRewardLedgerEntry = {
     id: `${redemptionId}_debit`,
     userId,

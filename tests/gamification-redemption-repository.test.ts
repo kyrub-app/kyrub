@@ -37,3 +37,28 @@ test('redemption plan refuses overdraft before persistence', () => {
     occurredAt: '2026-08-23T12:00:00.000Z', validUntil: '2026-09-23T12:00:00.000Z',
   }), /REDEMPTION_INSUFFICIENT_KCOINS/);
 });
+
+
+test('redemption plan binds debit to user, reward and correlation', () => {
+  const plan = buildKyrubRedemptionPlan({
+    userId: 'user-1', reward, currentBalanceKCoins: 100,
+    idempotencyKey: 'idem-3', correlationId: 'corr-3',
+    occurredAt: '2026-08-23T12:00:00.000Z', validUntil: '2026-09-23T12:00:00.000Z',
+  });
+  assert.equal(plan.debitEntry.userId, plan.userId);
+  assert.equal(plan.debitEntry.sourceId, plan.rewardId);
+  assert.equal(plan.debitEntry.sourceType, 'reward_redemption');
+  assert.equal(plan.debitEntry.correlationId, plan.auditEvent.correlationId);
+  assert.equal(plan.debitEntry.deltaKCoins, -100);
+});
+
+test('redemption rejects identifiers that would collide under lossy normalization', () => {
+  const input = {
+    userId: 'user-1', reward, currentBalanceKCoins: 500,
+    idempotencyKey: 'idem-1', correlationId: 'corr-1',
+    occurredAt: '2026-08-23T12:00:00.000Z', validUntil: '2026-09-23T12:00:00.000Z',
+  };
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, idempotencyKey: 'idem/1' }), /REDEMPTION_IDEMPOTENCY_INVALID/);
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, userId: 'user/1' }), /REDEMPTION_USER_INVALID/);
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, reward: { ...reward, id: 'reward/1' } }), /REDEMPTION_REWARD_INVALID/);
+});

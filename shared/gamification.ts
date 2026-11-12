@@ -21,7 +21,7 @@ export interface KyrubRewardLedgerEntry {
   type: KyrubRewardLedgerEntryType;
   /** Signed K-Coin delta. Earn/reversal-credit are positive; redeem/expire/reversal-debit are negative. */
   deltaKCoins: number;
-  sourceType: 'challenge' | 'reward_redemption' | 'campaign' | 'admin_adjustment' | 'reversal';
+  sourceType: 'challenge' | 'reward_redemption' | 'conversion' | 'campaign' | 'admin_adjustment' | 'reversal';
   sourceId: string;
   correlationId: string;
   idempotencyKey: string;
@@ -33,7 +33,7 @@ export interface KyrubXpEntry {
   id: string;
   userId: string;
   deltaXp: number;
-  sourceType: 'challenge' | 'achievement' | 'community' | 'admin_adjustment';
+  sourceType: 'challenge' | 'achievement' | 'community' | 'conversion' | 'admin_adjustment';
   sourceId: string;
   correlationId: string;
   idempotencyKey: string;
@@ -171,7 +171,18 @@ export const assertKyrubRewardLedgerEntry = (
 export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => {
   const seen = new Set<string>();
   let ledgerUserId = '';
-  return entries.reduce((balance, candidate) => {
+  // Firestore collection reads are not guaranteed to arrive in event order.
+  // Validate chronology deterministically before checking historical nonnegative balances.
+  const ordered = entries.map(assertKyrubRewardLedgerEntry).sort((a, b) => {
+    const aTime = Date.parse(a.occurredAt);
+    const bTime = Date.parse(b.occurredAt);
+    if (!Number.isFinite(aTime) || !Number.isFinite(bTime)) throw new Error('REWARD_LEDGER_DATE_INVALID');
+    return aTime - bTime || a.id.localeCompare(b.id);
+  });
+  if (ordered.some(entry => !Number.isFinite(Date.parse(entry.occurredAt)))) {
+    throw new Error('REWARD_LEDGER_DATE_INVALID');
+  }
+  return ordered.reduce((balance, candidate) => {
     const entry = assertKyrubRewardLedgerEntry(candidate);
     if (!ledgerUserId) ledgerUserId = entry.userId;
     else assertSingleUser(ledgerUserId, entry.userId, 'Reward Ledger');
@@ -180,6 +191,7 @@ export const kyrubKCoinBalance = (entries: KyrubRewardLedgerEntry[]): number => 
     }
     seen.add(entry.idempotencyKey);
     const next = balance + entry.deltaKCoins;
+    if (!Number.isSafeInteger(next)) throw new Error('REWARD_LEDGER_BALANCE_OVERFLOW');
     if (next < 0) throw new Error('O Reward Ledger não permite saldo negativo de K-Coins.');
     return next;
   }, 0);
@@ -203,3 +215,9 @@ export const kyrubXpTotal = (entries: KyrubXpEntry[]): number => {
     return Math.max(0, total + entry.deltaXp);
   }, 0);
 };
+
+/** Canonical public/domain name. The legacy K-Coin fields remain the persisted wire format until the authoritative writer is inventoried. */
+export type KyrubPitangaLedgerEntry = KyrubRewardLedgerEntry;
+
+/** Canonical name for computing the global Pitanga balance; accepts legacy ledger entries without rewriting persisted data. */
+export const kyrubPitangaBalance: typeof kyrubKCoinBalance = kyrubKCoinBalance;

@@ -62,3 +62,20 @@ test('redemption cannot overdraw K-Coins', () => {
   };
   assert.throws(() => buildKyrubRedemptionPlan({ userId: 'u1', reward, currentBalanceKCoins: 499, idempotencyKey: 'idem-2', correlationId: 'corr-2', occurredAt: '2026-08-23T10:00:00.000Z', validUntil: '2026-09-23T10:00:00.000Z' }), /INSUFFICIENT_KCOINS/);
 });
+
+test('redemption plan rejects malformed validity dates and invalid costs', () => {
+  const reward: KyrubRewardDefinition = {
+    id: 'coffee', title: 'Café', description: 'Voucher', costKCoins: 500,
+    fundingType: 'store', storeId: 'store1',
+    benefit: { type: 'voucher', voucherTemplateId: 'v1' },
+  };
+  const input = {
+    userId: 'u1', reward, currentBalanceKCoins: 700,
+    idempotencyKey: 'idem-3', correlationId: 'corr-3',
+    occurredAt: '2026-08-23T10:00:00.000Z', validUntil: '2026-09-23T10:00:00.000Z',
+  };
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, occurredAt: 'not-a-date' }), /REDEMPTION_VALIDITY_INVALID/);
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, validUntil: 'not-a-date' }), /REDEMPTION_VALIDITY_INVALID/);
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, reward: { ...reward, costKCoins: 0 } }), /REDEMPTION_COST_INVALID/);
+  assert.throws(() => buildKyrubRedemptionPlan({ ...input, reward: { ...reward, costKCoins: Number.MAX_SAFE_INTEGER + 1 } }), /REDEMPTION_COST_INVALID/);
+});
