@@ -5,7 +5,8 @@ import { awardVerifiedFirstStoreChallengeInTransaction } from './firstStoreChall
 /**
  * Trusted-only integration adapter. Not called by a public route.
  * The canonical store and challenge are verified inside the same transaction
- * that writes both reward ledgers. An unbootstrapped Pitanga balance fails closed.
+ * that writes the reward receipt and XP ledger. This XP-only challenge
+ * never initializes or modifies the Pitanga balance.
  */
 export const awardFirstStoreChallengeForCanonicalStore = async (
   db: Firestore,
