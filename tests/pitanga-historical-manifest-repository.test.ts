@@ -76,3 +76,26 @@ test('recovers IDs from stored chunks only when receipt matches', async () => {
   delete records[chunkRefs[0].path];
   await assert.rejects(recover(), /PITANGA_MANIFEST_INCOMPLETE/);
 });
+
+test('rejects oversized migration manifests before any Firestore reads or writes', async () => {
+  let touched = false;
+  const tx = {
+    get: async () => { touched = true; throw new Error('unexpected read'); },
+    create: () => { touched = true; throw new Error('unexpected write'); },
+  };
+  await assert.rejects(persistPitangaHistoricalManifestInTransaction(tx as never, {
+    userId, fenceEpoch,
+    historicalEntryIds: Array.from({ length: 40100 }, (_, i) => `entry_${i}`),
+    chunkRefs: [],
+  }), /PITANGA_MANIFEST_TRANSACTION_TOO_LARGE/);
+  assert.equal(touched, false);
+});
+
+test('empty historical manifest has no chunk documents to persist', async () => {
+  const result = await persistPitangaHistoricalManifestInTransaction({
+    get: async () => { throw new Error('unexpected read'); },
+    create: () => { throw new Error('unexpected write'); },
+  } as never, { userId, fenceEpoch, historicalEntryIds: [], chunkRefs: [] });
+  assert.equal(result.entryCount, 0);
+  assert.equal(result.replay, false);
+});
