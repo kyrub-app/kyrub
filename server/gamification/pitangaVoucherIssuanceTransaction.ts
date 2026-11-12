@@ -29,6 +29,7 @@ export const issuePitangaVoucherInTransaction = async (
       plan.debitEntry.type !== 'redeem' ||
       plan.debitEntry.sourceType !== 'reward_redemption' ||
       plan.debitEntry.sourceId !== plan.rewardId ||
+      plan.auditEvent.type !== 'reward_redemption_planned' ||
       plan.debitEntry.idempotencyKey !== `redeem:${plan.auditEvent.idempotencyKey}` ||
       plan.debitEntry.correlationId !== plan.auditEvent.correlationId ||
       !Number.isFinite(Date.parse(plan.debitEntry.occurredAt)) ||
