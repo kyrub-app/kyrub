@@ -53,7 +53,7 @@ test('missing balance fails closed', async () => {
 test('replay preserves balance and does not duplicate debit', async () => {
   const m = mock(20, {
     id: 'spend_order1', userId: 'user1', type: 'redeem', economy: 'k_coin',
-    sourceType: 'reward_redemption', sourceId: 'reward1', deltaKCoins: -80,
+    sourceType: 'reward_redemption', sourceId: 'reward1', correlationId: 'order1', deltaKCoins: -80,
     idempotencyKey: 'pitanga_spend_order1', occurredAt: input.occurredAt,
   });
   assert.deepEqual(await applyPitangaSpendInTransaction(m.tx as never, input as never),
@@ -91,4 +91,16 @@ test('spending rejects a shadow balance document before reads', async () => {
       parent: { path: 'users/user1/pitangaBalance' } },
   } as never), /PITANGA_SPEND_REFERENCE_INVALID/);
   assert.equal(m.reads, 0);
+});
+
+test('replay with altered correlation ID is rejected without writes', async () => {
+  const m = mock(20, {
+    id: 'spend_order1', userId: 'user1', type: 'redeem', economy: 'k_coin',
+    sourceType: 'reward_redemption', sourceId: 'reward1', correlationId: 'other_order',
+    deltaKCoins: -80, idempotencyKey: 'pitanga_spend_order1',
+    occurredAt: input.occurredAt,
+  });
+  await assert.rejects(() => applyPitangaSpendInTransaction(m.tx as never, input as never),
+    /PITANGA_SPEND_IDEMPOTENCY_CONFLICT/);
+  assert.equal(m.writes.length, 0);
 });
