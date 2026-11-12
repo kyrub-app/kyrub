@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import { initializeNewUserPitangaBalanceInTransaction } from '../server/gamification/pitangaNewUserBootstrapTransaction.js';
 
 const uid = 'new_user_1';
+const ledgerQueryLimits: number[] = [];
 const refs = {
   fenceRef: { path: 'systemControl/pitangaLegacyWriterFence' },
-  ledgerRef: { path: `users/${uid}/rewardLedger`, limit: (_count: number) => ({ path: `users/${uid}/rewardLedger` }) },
+  ledgerRef: { path: `users/${uid}/rewardLedger`, limit: (count: number) => { ledgerQueryLimits.push(count); return { path: `users/${uid}/rewardLedger` }; } },
   balanceRef: { path: `users/${uid}/pitangaBalance/balance` },
   receiptRef: { path: `users/${uid}/pitangaNewUserBootstrap/receipt` },
 };
@@ -36,9 +37,11 @@ function mockTx(options: { entries?: number; balance?: unknown; receipt?: unknow
 }
 
 test('new user empty ledger creates exactly balance and immutable receipt', async () => {
+  ledgerQueryLimits.length = 0;
   const { tx, writes } = mockTx();
   assert.deepEqual(await initializeNewUserPitangaBalanceInTransaction(tx, input), { initialized: true, balance: 0 });
   assert.deepEqual(writes.map(w => w.path), [refs.balanceRef.path, refs.receiptRef.path]);
+  assert.deepEqual(ledgerQueryLimits, [1], 'ledger existence must be checked with a bounded query');
 });
 
 test('historical user and missing verified fence cannot initialize a balance', async () => {
