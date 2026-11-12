@@ -1,4 +1,9 @@
 /** Pure contract for a one-time welcome grant. No client-provided login counter is trusted. */
+export const isWelcomeCampaignEligible = (createdAt: string, effectiveAt: string | undefined): boolean => {
+  const created = Date.parse(createdAt);
+  const effective = effectiveAt ? Date.parse(effectiveAt) : NaN;
+  return Number.isFinite(created) && Number.isFinite(effective) && created >= effective;
+};
 export const FIRST_LOGIN_WELCOME_PITANGAS = 1000;
 export const FIRST_LOGIN_WELCOME_AWARD_ID = 'first_login_welcome_v1';
 
