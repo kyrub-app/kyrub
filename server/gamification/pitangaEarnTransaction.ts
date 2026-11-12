@@ -48,6 +48,7 @@ export const applyPitangaEarnInTransaction = async (
         previous?.economy !== 'k_coin' ||
         previous?.sourceType !== input.sourceType ||
         previous?.sourceId !== input.sourceId ||
+        previous?.correlationId !== input.awardId ||
         previous?.idempotencyKey !== idempotencyKey ||
         previous?.deltaKCoins !== input.amount ||
         previous?.occurredAt !== input.occurredAt) {
