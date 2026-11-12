@@ -433,6 +433,11 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     .sort(), [false, true]);
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
   assert.equal((await receiptRef.get()).data()?.ledgerSha256, checkpoint.ledgerSha256);
+  // The membership digest is persisted with the historical checkpoint.
+  const receiptData = (await receiptRef.get()).data();
+  assert.match(receiptData?.historicalMembershipSha256, /^[a-f0-9]{64}$/);
+  assert.equal(receiptData?.entryCount, 1);
+  assert.equal(receiptData?.balance, 1000);
   await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
     /PITANGA_CHECKPOINT_STALE/);
   // A late historical mutation is detected from the ledger read inside
