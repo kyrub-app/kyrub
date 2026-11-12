@@ -29,8 +29,8 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
       input.receiptRef.path !== `users/${uid}/challengeRewards/${awardId}`) {
     throw new Error('FIRST_STORE_REWARD_REFERENCE_INVALID');
   }
-  const [receipt, xpEntry] = await Promise.all([
-    tx.get(input.receiptRef), tx.get(input.xpLedgerRef),
+  const [receipt, xpEntry, pitangaEntry] = await Promise.all([
+    tx.get(input.receiptRef), tx.get(input.xpLedgerRef), tx.get(input.pitangaLedgerRef),
   ]);
   const expected = {
     userId: uid, storeId: plan.storeId, challengeId: plan.challengeId,
@@ -44,14 +44,13 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
       throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
     }
     if (plan.pitangas > 0) {
-      const pitanga = await tx.get(input.pitangaLedgerRef);
-      if (!pitanga.exists || pitanga.data()?.deltaKCoins !== plan.pitangas) {
+      if (!pitangaEntry.exists || pitangaEntry.data()?.deltaKCoins !== plan.pitangas) {
         throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
       }
     }
     return { replay: true, pitangas: plan.pitangas, xp: plan.xp };
   }
-  if (xpEntry.exists) throw new Error('FIRST_STORE_REWARD_PARTIAL_STATE');
+  if (xpEntry.exists || pitangaEntry.exists) throw new Error('FIRST_STORE_REWARD_PARTIAL_STATE');
   // The canonical Pitanga balance must already exist after verified migration.
   // This deliberately fails closed for un-migrated users.
   if (plan.pitangas > 0) {
