@@ -103,3 +103,35 @@ The downloaded `pitanga-ledger-access-inventory` artifact for commit `5771a2a` r
 **Reconciliation:** 4 + 1 + 1 + 1 + 3 + 6 + 4 = 20. This triage classifies the scanner's **matched lines only**; it is not a complete mutation call graph. The scanner misses methods invoked through aliases and operations split across multiple lines, and does not prove coverage of external/background writers. No new live global award writer is established by this artifact.
 
 **Blocking action:** inspect actual deployed callers and all rewardLedger writes, then enforce the legacy fence across them before activating historical migration. Do not merge solely because this artifact has been triaged.
+
+
+## Production commit comparison — 12 November 2026
+
+Read-only comparison against the Vercel production deployment on `main` at
+`6389794796d85af9c4c6142e316abfeb15ce6806` (deployment
+`dpl_CxMoSxkvcHfrdhQ6QddUMFQNHFWe`):
+
+- **Confirmed deployed legacy ledger writer:** `server/gamification/redemptionRepository.ts`,
+  `persistKyrubRedemptionAtomically`, calls `transaction.create(ledgerRef, ...)`
+  on `users/{uid}/rewardLedger/{redemptionId}_debit` when issuing a new voucher.
+  It does not acquire/update `users/{uid}/pitangaBalance/balance` and does
+  not read `systemControl/pitangaLegacyWriterFence`. Its deployed code can
+  therefore bypass the new branch's fence if left running at cutover.
+- **PR behavior differs materially:** the branch's `redemptionRepository.ts`
+  rejects new issuance with `REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE`,
+  preserving only validated replay. This must be explicitly approved as a
+  user-visible restriction or replaced with the verified atomic voucher path
+  after cutover; it must not be silently merged.
+- `server/gamification/globalChallengeAdminRepository.ts` at that production
+  SHA writes `global_challenges` definitions and audit subcollections, not
+  `users/{uid}/rewardLedger`. The admin handler is not evidence of a
+  deployed global award-credit writer.
+- The isolated `pitangaVoucherIssuanceService.ts` on this PR constructs
+  canonical references and invokes the migration-verified transactional gate,
+  but has **no public route** and does not fence the deployed legacy writer.
+
+**Release blocker:** enumerate and control every deployed writer (including
+background/external versions), then prove stale deployments cannot continue
+writing the legacy ledger. This comparison confirms one deployed writer,
+not exhaustive production writer coverage. No production fence or migration
+was activated by this investigation.
