@@ -126,3 +126,40 @@ test('existing canonical welcome grant replays without a second credit', async (
     else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
   }
 });
+
+test('conflicting historical welcome ledger cannot be replayed or credited again', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  try {
+    const validLedger = {
+      id: 'earn_first_login_welcome_v1',
+      userId: uid,
+      type: 'earn',
+      economy: 'k_coin',
+      deltaKCoins: 1000,
+      sourceType: 'campaign',
+      sourceId: 'first_login_welcome_v1',
+      correlationId: 'first_login_welcome_v1',
+      idempotencyKey: 'pitanga_earn_first_login_welcome_v1',
+      occurredAt,
+    };
+    for (const changed of [
+      { deltaKCoins: 2000 },
+      { userId: 'other_user' },
+      { sourceType: 'admin_adjustment' },
+      { occurredAt: '2026-11-12T12:00:02.000Z' },
+    ]) {
+      const { db, auth, writes } = harness(receipt, {
+        existingLedger: { ...validLedger, ...changed },
+        balance: 1350,
+      });
+      await assert.rejects(
+        awardFirstLoginWelcomeForVerifiedUser(db, auth, uid),
+        /PITANGA_EARN_IDEMPOTENCY_CONFLICT/,
+      );
+      assert.deepEqual(writes, [], 'a conflicting ledger must not change balances');
+    }
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
