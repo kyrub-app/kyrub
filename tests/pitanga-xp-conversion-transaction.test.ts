@@ -141,7 +141,7 @@ test('invalid XP amount fails before any transaction reads', async () => {
 test('2075 Pitangas convert to 2 XP with 75 remaining', async () => {
   const { refs, tx, writes } = makeTx(2075);
   const result = await applyPitangaXpConversionInTransaction(tx as never, {
-    ...refs, userId: 'user1', requestId: 'req2', requestedXp: 2, occurredAt: '2026-11-11T12:00:00Z',
+    ...refs, userId: 'user1', requestId: 'req1', requestedXp: 2, occurredAt: '2026-11-11T12:00:00Z',
   } as never);
   assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 2000, remainingPitangas: 75, replay: false });
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 75);
