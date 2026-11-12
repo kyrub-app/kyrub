@@ -66,3 +66,34 @@ test('welcome service checks receipt before recording a single canonical credit'
     else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
   }
 });
+
+test('welcome service rejects client-issued and mismatched receipts without credits', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  try {
+    for (const invalid of [
+      { ...receipt, issuer: 'client' },
+      { ...receipt, userId: 'another_user' },
+      { ...receipt, eventType: 'last_sign_in' },
+      { ...receipt, occurredAt: '2026-11-13T12:00:02.000Z' },
+    ]) {
+      const { db, auth, writes } = harness(invalid);
+      await assert.rejects(awardFirstLoginWelcomeForVerifiedUser(db, auth, uid), /RECEIPT_INVALID/);
+      assert.deepEqual(writes, []);
+    }
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
+
+test('welcome service refuses historical users before reading receipts', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-13T00:00:00.000Z';
+  try {
+    const { db, auth, writes } = harness(receipt);
+    await assert.rejects(awardFirstLoginWelcomeForVerifiedUser(db, auth, uid), /HISTORICAL_USER_NOT_ELIGIBLE/);
+    assert.deepEqual(writes, []);
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
