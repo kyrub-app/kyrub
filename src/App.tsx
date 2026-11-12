@@ -74,6 +74,12 @@ function WelcomeBonusClaimBridge() {
     let cancelled = false;
     const unsubscribe = onAuthStateChanged(auth, user => {
       if (!user) return;
+      // Avoid requesting an inactive campaign for known historical accounts.
+      // This is a client optimization only; server eligibility remains mandatory.
+      const cutoff = import.meta.env.VITE_KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+      if (typeof cutoff !== 'string' || !Number.isFinite(Date.parse(cutoff)) ||
+          !user.metadata.creationTime ||
+          Date.parse(user.metadata.creationTime) < Date.parse(cutoff)) return;
       void user.getIdToken().then(token => {
         if (cancelled) return;
         return fetch('/api/plan-control?op=onboarding.welcome.claim', {
