@@ -76,7 +76,7 @@ jobs:
           tests/pitanga-earn-transaction.test.ts
           tests/pitanga-spend-transaction.test.ts
           tests/pitanga-voucher-issuance-transaction.test.ts
-          tests/pitanga-verified-voucher-issuance.test.ts tests/pitanga-verified-xp-conversion.test.ts tests/pitanga-post-migration-reconciliation.test.ts
+          tests/pitanga-verified-voucher-issuance.test.ts tests/pitanga-verified-xp-conversion.test.ts tests/pitanga-post-migration-reconciliation.test.ts tests/pitanga-historical-manifest.test.ts
           tests/pitanga-migration-snapshot.test.ts
           tests/pitanga-migration-checkpoint-verification.test.ts
           tests/pitanga-migration-bootstrap-transaction.test.ts
