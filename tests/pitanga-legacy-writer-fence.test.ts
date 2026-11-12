@@ -21,6 +21,15 @@ test('legacy writer is permitted with no control document before migration', asy
   assert.equal(mock.reads, 1);
 });
 
+test('epoch-bound writer fails closed when fence document is missing', async () => {
+  const mock = transaction();
+  await assert.rejects(
+    assertLegacyPitangaWriterAllowedInTransaction(mock.tx, { fenceRef, expectedEpoch: 'epoch_1' }),
+    /PITANGA_LEGACY_FENCE_MISSING/,
+  );
+  assert.equal(mock.reads, 1);
+});
+
 test('legacy writer is permitted only for open control with matching epoch', async () => {
   const mock = transaction({ status: 'open', epoch: 'epoch_1' });
   await assertLegacyPitangaWriterAllowedInTransaction(mock.tx, { fenceRef, expectedEpoch: 'epoch_1' });
