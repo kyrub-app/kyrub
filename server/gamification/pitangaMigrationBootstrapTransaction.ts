@@ -1,5 +1,6 @@
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVerification.js';
+import { pitangaHistoricalMembershipDigest } from './pitangaHistoricalMembership.js';
 
 /**
  * Isolated bootstrap primitive; not wired to any API or migration job.
@@ -12,6 +13,7 @@ export const bootstrapPitangaBalanceInTransaction = async (
   input: {
     checkpoint: PitangaMigrationCheckpoint;
     fenceEpoch: string;
+    historicalEntryIds: readonly string[];
     balanceRef: DocumentReference;
     receiptRef: DocumentReference;
     fenceRef: DocumentReference;
@@ -26,6 +28,13 @@ export const bootstrapPitangaBalanceInTransaction = async (
       typeof fenceEpoch !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(fenceEpoch)) {
     throw new Error('PITANGA_BOOTSTRAP_INPUT_INVALID');
   }
+  if (!Array.isArray(input.historicalEntryIds) ||
+      input.historicalEntryIds.length !== checkpoint.entryCount) {
+    throw new Error('PITANGA_BOOTSTRAP_HISTORICAL_MEMBERSHIP_INVALID');
+  }
+  const historicalMembershipSha256 = pitangaHistoricalMembershipDigest({
+    userId: uid, entryIds: input.historicalEntryIds,
+  });
   const root = `users/${uid}`;
   if (input.balanceRef.path !== `${root}/pitangaBalance/balance` ||
       input.receiptRef.path !== `${root}/pitangaMigration/receipt` ||
@@ -53,6 +62,7 @@ export const bootstrapPitangaBalanceInTransaction = async (
         r?.userId !== uid || r?.balance !== checkpoint.balance ||
         r?.entryCount !== checkpoint.entryCount ||
         r?.ledgerSha256 !== checkpoint.ledgerSha256 ||
+        r?.historicalMembershipSha256 !== historicalMembershipSha256 ||
         r?.fenceEpoch !== fenceEpoch) {
       throw new Error('PITANGA_BOOTSTRAP_CONFLICT');
     }
@@ -66,6 +76,7 @@ export const bootstrapPitangaBalanceInTransaction = async (
     userId: uid, balance: checkpoint.balance,
     entryCount: checkpoint.entryCount,
     ledgerSha256: checkpoint.ledgerSha256,
+    historicalMembershipSha256,
     fenceEpoch,
   });
   return { balance: checkpoint.balance, replay: false };
