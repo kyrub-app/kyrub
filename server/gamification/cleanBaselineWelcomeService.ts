@@ -21,8 +21,15 @@ export const grantCleanBaselineWelcomeForVerifiedUser = async (
       process.env.KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED !== 'true') {
     throw Error('WELCOME_CLEAN_BASELINE_DISABLED');
   }
-  if (!process.env.FIRESTORE_EMULATOR_HOST ||
-      !/^(localhost|127\.0\.0|\[::1\]):[0-9]{1,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
+  const emulatorHost = process.env.FIRESTORE_EMULATOR_HOST;
+  const emulatorAddress = emulatorHost?.split(':');
+  const localHost = emulatorHost?.startsWith('[::1]:')
+    ? emulatorHost.slice(0, 5) === '[::1]'
+    : emulatorAddress?.[0] === 'localhost' || emulatorAddress?.[0] === '127.0.0.1';
+  const port = emulatorHost?.startsWith('[::1]:')
+    ? emulatorHost.slice(6) : emulatorAddress?.[1];
+  if (!localHost || !port || !/^[0-9]{1,5}$/.test(port) ||
+      Number(port) < 1 || Number(port) > 65535) {
     throw Error('WELCOME_CLEAN_BASELINE_EMULATOR_REQUIRED');
   }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw Error('WELCOME_USER_INVALID');
