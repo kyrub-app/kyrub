@@ -142,6 +142,8 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         activatedAt: FieldValue.serverTimestamp(),
+        // Only a newly created canonical store with no prior owned store qualifies.
+        firstStoreCreationVerified: ownerStores.empty,
       });
     } else if (previous == null) {
       tx.update(canonicalRef, { activatedAt: FieldValue.serverTimestamp() });
