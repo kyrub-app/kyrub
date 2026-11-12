@@ -195,6 +195,7 @@ export const verifyFirebaseIdToken = async (
   const uid = validateTokenClaims(payload, projectId);
   return {
     uid,
+    firebaseAuthTimeSeconds: requireNumericClaim(payload.auth_time, 'auth_time'),
     name:
       typeof payload.name === 'string' && payload.name.trim()
         ? payload.name.trim()
