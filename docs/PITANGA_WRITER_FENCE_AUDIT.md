@@ -23,6 +23,36 @@ Antes de conectar a emissão de recibos, comprovar a etapa de geração do arqui
 
 **Estado:** caminho de geração e execução em CI identificados; conteúdo do artefato composto, regras efetivamente publicadas e testes de autorização específicos do bônus ainda não verificados. Não confundir sucesso da composição com aprovação das permissões.
 
+## Inventário executado no CI — commit e0ba61f
+
+O workflow `Validate Kyrub` concluiu com sucesso e publicou o artefato
+`pitanga-writer-inventory` (run 43301006249, artifact 13981358434).
+A varredura examinou **1.014 arquivos de aplicação** e identificou
+**25 arquivos candidatos**, sem usar a busca de código do GitHub.
+
+Caminhos de mutação de economia canônica identificados por inspeção dos
+trechos de código no artefato:
+
+| Arquivo | Operação observada | Tratamento |
+| --- | --- | --- |
+| `pitangaEarnTransaction.ts` | `tx.update` do saldo, crédito e ledger | Escritor novo; verificar integração e isolamento |
+| `pitangaSpendTransaction.ts` | `tx.update` do saldo, débito e ledger | Escritor novo; verificar integração e isolamento |
+| `pitangaXpConversionTransaction.ts` | `tx.update` do saldo e conversão | Escritor novo; verificar integração e isolamento |
+| `pitangaVoucherIssuanceTransaction.ts` | `tx.update` do saldo e emissão | Escritor novo; verificar integração e isolamento |
+| `pitangaNewUserBootstrapTransaction.ts` | `tx.create` do saldo inicial | Escritor novo; depende do fence verificado |
+
+Os demais candidatos incluem adaptadores de serviço, migração,
+verificação de histórico, gamificação e referências de interface.
+A classificação acima **não prova que sejam os únicos escritores ativos**:
+a varredura estática não alcança Cloud Functions externas, jobs,
+credenciais administrativas, revisões implantadas ou mutações por caminhos
+dinâmicos. Não preencher `writersVerified=true` com base apenas nela.
+
+**Próxima ação delimitada:** confrontar os cinco caminhos de mutação
+com seus chamadores e com o deploy ativo; inventariar escritores fora
+deste repositório antes de autorizar o fence. Não reabrir auditoria
+transversal de outros módulos.
+
 ## Matriz de evidências exigidas por escritor
 
 Para cada escritor que altere `availableKCoins`, `rewardLedger`, conversões, resgates ou ajustes administrativos, registrar antes do corte:
