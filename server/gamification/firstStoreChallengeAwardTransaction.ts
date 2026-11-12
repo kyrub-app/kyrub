@@ -40,11 +40,17 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
   if (receipt.exists) {
     const recorded = receipt.data();
     if (Object.entries(expected).some(([key, value]) => recorded?.[key] !== value) ||
-        (plan.xp > 0 && (!xpEntry.exists || xpEntry.data()?.deltaXp !== plan.xp))) {
+        (plan.xp > 0 && (!xpEntry.exists || xpEntry.data()?.deltaXp !== plan.xp ||
+        xpEntry.data()?.userId !== uid || xpEntry.data()?.sourceId !== plan.challengeId ||
+        xpEntry.data()?.idempotencyKey !== awardId)) ||
+      (plan.xp === 0 && xpEntry.exists) ||
+      (plan.pitangas === 0 && pitangaEntry.exists)) {
       throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
     }
     if (plan.pitangas > 0) {
-      if (!pitangaEntry.exists || pitangaEntry.data()?.deltaKCoins !== plan.pitangas) {
+      if (!pitangaEntry.exists || pitangaEntry.data()?.deltaKCoins !== plan.pitangas ||
+          pitangaEntry.data()?.userId !== uid || pitangaEntry.data()?.sourceId !== plan.challengeId ||
+          pitangaEntry.data()?.idempotencyKey !== `pitanga_earn_${awardId}`) {
         throw new Error('FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT');
       }
     }
