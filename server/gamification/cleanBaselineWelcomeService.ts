@@ -22,7 +22,7 @@ export const grantCleanBaselineWelcomeForVerifiedUser = async (
     throw Error('WELCOME_CLEAN_BASELINE_DISABLED');
   }
   if (!process.env.FIRESTORE_EMULATOR_HOST ||
-      !/^(localhost|127\\.0\\.0|\\[::1\\]):[0-9]{1,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
+      !/^(localhost|127\.0\.0|\[::1\]):[0-9]{1,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
     throw Error('WELCOME_CLEAN_BASELINE_EMULATOR_REQUIRED');
   }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw Error('WELCOME_USER_INVALID');
