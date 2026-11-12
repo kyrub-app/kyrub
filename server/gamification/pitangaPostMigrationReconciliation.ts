@@ -47,7 +47,8 @@ export const reconcilePostMigrationPitangas = (input: {
       historicalEntryIds.some(id => !/^[A-Za-z0-9_-]{1,256}$/.test(id))) {
     throw new Error('PITANGA_RECONCILIATION_HISTORICAL_MEMBERSHIP_INVALID');
   }
-  if (!/^[a-f0-9]{64}$/.test(receipt.historicalMembershipSha256) ||
+  if (typeof receipt.historicalMembershipSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(receipt.historicalMembershipSha256) ||
       pitangaHistoricalMembershipDigest({
         userId: checkpoint.userId, entryIds: historicalEntryIds,
       }) !== receipt.historicalMembershipSha256) {
