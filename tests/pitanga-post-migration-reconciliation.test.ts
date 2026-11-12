@@ -27,7 +27,9 @@ const later = [
 ];
 const input = () => ({
   checkpoint, historicalEntryIds: ['historical1', 'historical2'],
-  historicalMembershipSha256: pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical1', 'historical2'] }),
+  migrationReceipt: { userId: 'user1', balance: checkpoint.balance, entryCount: checkpoint.entryCount,
+    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1',
+    historicalMembershipSha256: pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical1', 'historical2'] }) },
   ledgerDocuments: [...initial, ...later],
   currentBalance: { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: 4000 },
   fenceEpoch: 'epoch1', completeLedgerVerified: true, legacyWritersFenced: true,
@@ -73,15 +75,28 @@ test('rejects historical IDs substituted after the cutover digest was committed'
     ...input(), historicalEntryIds: ['historical1', 'earned_after'],
   }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
   assert.throws(() => reconcilePostMigrationPitangas({
-    ...input(), historicalMembershipSha256: '0'.repeat(64),
+    ...input(), migrationReceipt: { ...input().migrationReceipt, historicalMembershipSha256: '0'.repeat(64) },
   }), /PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH/);
 });
 test('historical membership digest is order independent and rejects duplicate IDs', () => {
   assert.equal(
     pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['historical2', 'historical1'] }),
-    input().historicalMembershipSha256,
+    input().migrationReceipt.historicalMembershipSha256,
   );
   assert.throws(() => pitangaHistoricalMembershipDigest({
     userId: 'user1', entryIds: ['historical1', 'historical1'],
   }), /PITANGA_HISTORICAL_MEMBERSHIP_INVALID/);
+});
+
+test('rejects a receipt from another user, epoch or historical checkpoint', () => {
+  for (const patch of [
+    { userId: 'other' }, { fenceEpoch: 'other' },
+    { balance: checkpoint.balance + 1 },
+    { entryCount: checkpoint.entryCount + 1 },
+    { ledgerSha256: '0'.repeat(64) },
+  ]) {
+    assert.throws(() => reconcilePostMigrationPitangas({
+      ...input(), migrationReceipt: { ...input().migrationReceipt, ...patch },
+    }), /PITANGA_RECONCILIATION_RECEIPT_MISMATCH/);
+  }
 });
