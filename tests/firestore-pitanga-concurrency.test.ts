@@ -447,6 +447,16 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
   assert.match(receiptData?.historicalMembershipSha256, /^[a-f0-9]{64}$/);
   assert.equal(receiptData?.entryCount, 1);
   assert.equal(receiptData?.balance, 1000);
+  // A replay must not silently accept a missing immutable manifest chunk.
+  const manifestRef = root.collection('pitangaMigrationManifest').doc(`${userId}_000000`);
+  const savedManifest = (await manifestRef.get()).data();
+  await manifestRef.delete();
+  await assert.rejects(bootstrap(), /PITANGA_BOOTSTRAP_MANIFEST_RECEIPT_CONFLICT/);
+  assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
+  assert.equal((await receiptRef.get()).data()?.historicalMembershipSha256,
+    receiptData?.historicalMembershipSha256);
+  await manifestRef.create(savedManifest!);
+  assert.equal((await bootstrap()).replay, true);
   await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
     /PITANGA_CHECKPOINT_STALE/);
   // A late historical mutation is detected from the ledger read inside
