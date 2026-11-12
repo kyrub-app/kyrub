@@ -15,6 +15,14 @@
 - O crédito falha de forma segura quando o saldo canônico não existe.
 - A criação da primeira loja registra evento verificável e tenta o prêmio de 2 XP sem bloquear o provisionamento.
 
+## Recibo permanente de primeiro login — estado de segurança
+
+- `server/gamification/firstLoginReceiptVerification.ts` valida, dentro da mesma transação do crédito, o recibo em `users/{uid}/authEvents/first_login_v1`.
+- `server/gamification/firstLoginReceiptWriter.ts` cria o recibo de forma idempotente, mas é **apenas uma primitiva isolada**: o parâmetro `trustedFirstLoginEvent` é uma afirmação do chamador, **não** uma autenticação criptográfica nem uma prova independente de primeiro login.
+- **Não expor o escritor por rota pública nem passar `trustedFirstLoginEvent: true` com base em token Firebase ID, `lastSignInTime`, `creationTime`, data enviada pelo cliente ou mero primeiro acesso a uma API.** Nenhum desses elementos comprova isoladamente o primeiro login.
+- Antes de conectar o escritor, implementar e auditar uma origem confiável de eventos de autenticação com prova de primeira ocorrência, deduplicação e controle de permissão de gravação em Firestore. Restringir a criação/edição do recibo ao serviço autorizado; validar regras Firestore e credenciais de serviço. Documentar como a origem distingue o primeiro login de logins posteriores e como trata eventos fora de ordem.
+- Até essa integração ser comprovada, **nenhum novo recibo deve ser emitido e nenhum novo crédito deve ser autorizado**. O CI verde não substitui a homologação de segurança.
+
 ## Bloqueios de ativação — não contornar
 
 1. **Inventário e bloqueio de escritores legados de Pitangas.** Verificar TODOS os escritores ativos e comprovar o fence efetivo. Um documento `systemControl/pitangaLegacyWriterFence` isolado não é prova suficiente.
