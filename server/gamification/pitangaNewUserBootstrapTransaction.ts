@@ -46,11 +46,14 @@ export const initializeNewUserPitangaBalanceInTransaction = async (
   if (balance.exists || receipt.exists) {
     if (!balance.exists || !receipt.exists ||
         balance.data()?.userId !== uid ||
+        balance.data()?.initializedBy !== 'verified_new_user' ||
+        balance.data()?.fenceEpoch !== input.fenceEpoch ||
         !Number.isSafeInteger(balance.data()?.availableKCoins) ||
         balance.data()!.availableKCoins < 0 ||
         receipt.data()?.userId !== uid ||
         receipt.data()?.fenceEpoch !== input.fenceEpoch ||
-        receipt.data()?.firebaseCreatedAt !== input.firebaseCreatedAt) {
+        receipt.data()?.firebaseCreatedAt !== input.firebaseCreatedAt ||
+        receipt.data()?.initialBalance !== 0) {
       throw Error('PITANGA_NEW_USER_BOOTSTRAP_CONFLICT');
     }
     return { initialized: false, balance: balance.data()!.availableKCoins };
