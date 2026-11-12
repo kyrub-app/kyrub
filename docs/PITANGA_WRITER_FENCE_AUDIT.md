@@ -17,11 +17,11 @@ A busca de código GitHub na branch padrão não retornou resultados nem para id
 
 ## Descoberta: regras efetivamente publicadas
 
-A configuração `firebase.json` referencia `.firebase/firestore.combined.rules` como arquivo de regras Firestore de deploy. Na inspeção desta branch, a leitura desse caminho retornou **404**. O arquivo `firestore.rules` existe, mas **não é suficiente** para provar as permissões efetivas do deploy.
+A configuração `firebase.json` referencia `.firebase/firestore.combined.rules` como arquivo de regras Firestore de deploy. Esse arquivo é **gerado**, não versionado: `npm run firestore:compose` executa `scripts/compose-firestore-rules.mjs`, que combina `firestore.rules` com os fragmentos listados no script e grava `.firebase/firestore.combined.rules`. O workflow `.github/workflows/validate.yml` executa essa composição e publica o resultado como artefato `composed-firestore-rules` (retenção de 3 dias). A ausência do arquivo gerado no GitHub, portanto, é esperada e **não é falha de configuração**. O arquivo `firestore.rules` isolado continua insuficiente para comprovar as permissões efetivas.
 
 Antes de conectar a emissão de recibos, comprovar a etapa de geração do arquivo combinado, inspecionar as regras resultantes e executar testes de autorização negando escrita de cliente em `users/{uid}/authEvents/first_login_v1`, `users/{uid}/pitangaBalance/balance`, `users/{uid}/rewardLedger/{entryId}` e `systemControl/pitangaLegacyWriterFence`. Validar também eventuais `match` sobrepostos, pois regras Firestore permissivas em qualquer `match` aplicável podem autorizar a operação. Regras de cliente não restringem escritas via Firebase Admin SDK; auditar separadamente credenciais e serviços administrativos.
 
-**Estado:** geração, regras resultantes e testes de autorização ainda não verificados. Não presumir que o 404 significa ausência de regras no ambiente publicado.
+**Estado:** caminho de geração e execução em CI identificados; conteúdo do artefato composto, regras efetivamente publicadas e testes de autorização específicos do bônus ainda não verificados. Não confundir sucesso da composição com aprovação das permissões.
 
 ## Matriz de evidências exigidas por escritor
 
