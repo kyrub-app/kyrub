@@ -47,6 +47,8 @@ export const applyVerifiedPitangaXpConversionInTransaction = async (
       !Number.isSafeInteger(r?.entryCount) || r.entryCount < 0 ||
       typeof r?.ledgerSha256 !== 'string' ||
       !/^[a-f0-9]{64}$/.test(r.ledgerSha256) ||
+      typeof r?.historicalMembershipSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(r.historicalMembershipSha256) ||
       f?.epoch !== b.migrationEpoch || f?.status !== 'fenced' ||
       f?.writersVerified !== true) {
     throw new Error('CONVERSION_MIGRATION_UNVERIFIED');
