@@ -25,7 +25,8 @@ export const verifyWelcomeInitialSession = (input: {
   const authenticated = input.authTimeSeconds * 1000;
   if (!Number.isFinite(created) || !Number.isFinite(effective) ||
       created < effective || authenticated < created - 60_000 ||
-      authenticated > created + 24 * 60 * 60 * 1000) {
+      authenticated > created + 24 * 60 * 60 * 1000 ||
+      authenticated < effective - 60_000) {
     throw Error('WELCOME_INITIAL_SESSION_INELIGIBLE');
   }
   return { occurredAt: new Date(authenticated).toISOString() };
