@@ -30,7 +30,7 @@ const refs = {
 const epoch = 'migration_1';
 const valid = (): Record<string, Record<string, unknown>> => ({
   [refs.balanceRef.path]: { userId: uid, migrationEpoch: epoch, availableKCoins: 1200 },
-  [refs.receiptRef.path]: { userId: uid, fenceEpoch: epoch, balance: 1200, entryCount: 1, ledgerSha256: 'a'.repeat(64) },
+  [refs.receiptRef.path]: { userId: uid, fenceEpoch: epoch, balance: 1200, entryCount: 1, ledgerSha256: 'a'.repeat(64), historicalMembershipSha256: 'b'.repeat(64) },
   [refs.fenceRef.path]: { status: 'fenced', epoch, writersVerified: true },
 });
 const fixture = (records: Record<string, Record<string, unknown>>) => {
