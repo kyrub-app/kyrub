@@ -20,11 +20,17 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   const firstSignInAt = user.metadata.lastSignInTime;
   if (!createdAt || !firstSignInAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
   const root = db.collection('users').doc(uid);
+  const ledgerRef = root.collection('rewardLedger').doc(`earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`);
+  // Firebase lastSignInTime changes on subsequent logins. For an existing
+  // grant, replay using its immutable server ledger timestamp instead.
+  const existingGrant = await ledgerRef.get();
+  const occurredAt = existingGrant.exists ? existingGrant.get('occurredAt') : firstSignInAt;
+  if (typeof occurredAt !== 'string') throw Error('WELCOME_LEDGER_TIMESTAMP_INVALID');
   return db.runTransaction(tx => awardFirstLoginWelcomeInTransaction(tx, {
     userId: uid,
     authUserCreatedAt: new Date(createdAt).toISOString(),
-    verifiedFirstSignInAt: new Date(firstSignInAt).toISOString(),
+    verifiedFirstSignInAt: new Date(occurredAt).toISOString(),
     balanceRef: root.collection('pitangaBalance').doc('balance'),
-    ledgerRef: root.collection('rewardLedger').doc(`earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`),
+    ledgerRef,
   }));
 };
