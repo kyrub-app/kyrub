@@ -20,6 +20,8 @@ import {
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { ensureFreePlanForStoreCreation } from '../server/actions/freeStoreProvisioningService.js';
+import { awardFirstLoginWelcomeForVerifiedUser } from '../server/gamification/firstLoginWelcomeAwardService.js';
+import { adminAuth, adminDb } from '../server/firebaseAdmin.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
 import { patchOfficialPlanRenewal } from '../server/admin/officialPlanRenewalPatch.js';
@@ -247,6 +249,16 @@ export default async function handler(
 
   try {
     switch (operation) {
+      case 'onboarding.welcome.claim': {
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        if (Object.keys(body).length !== 0) throw Error('WELCOME_INVALID_REQUEST');
+        const user = await authenticateConsultantRequest(authorization);
+        // Fail closed if canonical balance migration has not completed.
+        // Never manufacture a zero balance or report an uncommitted award.
+        const result = await awardFirstLoginWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
+        response.status(200).json({ awarded: !result.replay, balance: result.balance });
+        return;
+      }
       case 'store.free.ensure': {
         if (method !== 'POST') { methodNotAllowed(response); return; }
         if (Object.keys(body).length !== 0) throw Error('FREE_STORE_INVALID_REQUEST');
