@@ -425,6 +425,7 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     bootstrapVerifiedPitangaBalanceInTransaction(tx, {
       checkpoint: cp, fenceEpoch: userId, balanceRef, receiptRef, fenceRef,
       ledgerRef: root.collection('rewardLedger'), legacyWritersFenced: true,
+      manifestChunkRefs: [root.collection('pitangaMigrationManifest').doc(`${userId}_000000`)],
     }));
   const outcomes = await Promise.allSettled([bootstrap(), bootstrap()]);
   assert.equal(outcomes.filter(x => x.status === 'fulfilled').length, 2);
