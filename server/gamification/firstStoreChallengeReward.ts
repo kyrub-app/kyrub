@@ -33,9 +33,9 @@ export const planFirstStoreChallengeReward = (
       challenge.sponsorType !== 'kyrub' ||
       challenge.validationMode !== 'deterministic' ||
       challenge.maxCompletionsPerUser !== 1 ||
-      !Number.isSafeInteger(challenge.rewardKCoins) || challenge.rewardKCoins < 0 ||
+      !Number.isSafeInteger(challenge.rewardKCoins) || challenge.rewardKCoins !== 0 ||
       !Number.isSafeInteger(challenge.rewardXp) || challenge.rewardXp < 0 ||
-      (challenge.rewardKCoins === 0 && challenge.rewardXp === 0)) {
+      challenge.rewardXp !== 2) {
     throw new Error('FIRST_STORE_CHALLENGE_NOT_ELIGIBLE');
   }
   const created = Date.parse(event.createdAt);
