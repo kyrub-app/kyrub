@@ -2,6 +2,7 @@ import type { KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { kyrubKCoinBalance } from '../../shared/gamification.js';
 import { buildPitangaMigrationSnapshot } from './pitangaMigrationSnapshot.js';
 import { pitangaHistoricalMembershipDigest } from './pitangaHistoricalMembership.js';
+import { verifyPitangaHistoricalManifest, type PitangaHistoricalManifest } from './pitangaHistoricalManifest.js';
 import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVerification.js';
 
 /**
@@ -13,6 +14,8 @@ import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVer
 export const reconcilePostMigrationPitangas = (input: {
   checkpoint: PitangaMigrationCheckpoint;
   historicalEntryIds: readonly string[];
+  /** Optional independently retrieved chunk documents, checked against receipt. */
+  historicalManifest?: PitangaHistoricalManifest;
   /** Trusted immutable migration receipt, read from the canonical server path. */
   migrationReceipt: {
     userId: unknown; balance: unknown; entryCount: unknown;
@@ -41,6 +44,17 @@ export const reconcilePostMigrationPitangas = (input: {
       receipt?.ledgerSha256 !== checkpoint.ledgerSha256 ||
       receipt?.fenceEpoch !== fenceEpoch) {
     throw new Error('PITANGA_RECONCILIATION_RECEIPT_MISMATCH');
+  }
+  if (input.historicalManifest) {
+    const restoredIds = verifyPitangaHistoricalManifest(input.historicalManifest, {
+      userId: checkpoint.userId, fenceEpoch,
+      entryCount: checkpoint.entryCount,
+      membershipSha256: receipt.historicalMembershipSha256 as string,
+    });
+    if (pitangaHistoricalMembershipDigest({ userId: checkpoint.userId, entryIds: restoredIds }) !==
+        pitangaHistoricalMembershipDigest({ userId: checkpoint.userId, entryIds: historicalEntryIds })) {
+      throw new Error('PITANGA_RECONCILIATION_MANIFEST_MEMBERSHIP_MISMATCH');
+    }
   }
   const ids = new Set(historicalEntryIds);
   if (ids.size !== historicalEntryIds.length || ids.size !== checkpoint.entryCount ||
