@@ -16,7 +16,7 @@ const input = {
   legacyWritersFenced: true,
   fenceEpoch: 'epoch_1',
   ...refs,
-};
+} as unknown as Parameters<typeof initializeNewUserPitangaBalanceInTransaction>[1];
 function mockTx(options: { entries?: number; balance?: unknown; receipt?: unknown; fenced?: boolean } = {}) {
   const writes: Array<{ op: string; path: string }> = [];
   const tx = {
