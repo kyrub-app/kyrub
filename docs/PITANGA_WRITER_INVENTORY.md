@@ -111,12 +111,13 @@ Read-only comparison against the Vercel production deployment on `main` at
 `6389794796d85af9c4c6142e316abfeb15ce6806` (deployment
 `dpl_CxMoSxkvcHfrdhQ6QddUMFQNHFWe`):
 
-- **Confirmed deployed legacy ledger writer:** `server/gamification/redemptionRepository.ts`,
+- **Confirmed legacy ledger-writing implementation present in the deployed source:** `server/gamification/redemptionRepository.ts`,
   `persistKyrubRedemptionAtomically`, calls `transaction.create(ledgerRef, ...)`
   on `users/{uid}/rewardLedger/{redemptionId}_debit` when issuing a new voucher.
   It does not acquire/update `users/{uid}/pitangaBalance/balance` and does
-  not read `systemControl/pitangaLegacyWriterFence`. Its deployed code can
-  therefore bypass the new branch's fence if left running at cutover.
+  not read `systemControl/pitangaLegacyWriterFence`. If this function is reachable in a running deployment, its code can
+  bypass the new branch's fence at cutover. Runtime invocation and caller reachability
+  have **not** yet been established.
 - **PR behavior differs materially:** the branch's `redemptionRepository.ts`
   rejects new issuance with `REDEMPTION_BALANCE_AUTHORITY_UNAVAILABLE`,
   preserving only validated replay. This must be explicitly approved as a
@@ -132,6 +133,16 @@ Read-only comparison against the Vercel production deployment on `main` at
 
 **Release blocker:** enumerate and control every deployed writer (including
 background/external versions), then prove stale deployments cannot continue
-writing the legacy ledger. This comparison confirms one deployed writer,
-not exhaustive production writer coverage. No production fence or migration
+writing the legacy ledger. This comparison confirms one legacy write implementation in production source,
+not an observed runtime write or exhaustive production writer coverage. No production fence or migration
 was activated by this investigation.
+
+### Caller reachability follow-up — 12 November 2026
+
+At production SHA `6389794`, `src/components/tabs/KyrubTab.tsx` has no
+redemption-related references, and `tests/gamification-redemption-repository.test.ts`
+exercises the pure redemption plan builder rather than invoking
+`persistKyrubRedemptionAtomically`. These two checks do **not** establish
+whether the server repository is invoked by another route, worker, or task.
+A repository-wide import/call graph plus runtime deployment evidence is still
+required. Do not describe the implementation as a proven active runtime writer.
