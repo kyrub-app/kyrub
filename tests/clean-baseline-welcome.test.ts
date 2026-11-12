@@ -78,3 +78,35 @@ test('clean baseline rejects historical accounts, missing isolation and forged r
   await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs()), /RECEIPT_INVALID/);
   assert.deepEqual(writes, []);
 });
+
+test('signed Firebase session creates atomic welcome balance without legacy receipt', async () => {
+  const { tx, writes } = harness({ receipt: { ...receipt, issuer: 'client' } });
+  assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs({
+    signedInitialSessionAt: occurredAt,
+  })), { balance: 1000, replay: false });
+  assert.equal(writes.length, 2);
+  assert.equal((writes[1].data as any).occurredAt, occurredAt);
+});
+
+test('signed-session replay does not issue a second welcome award', async () => {
+  const { tx, writes } = harness({
+    balance: { userId: uid, availableKCoins: 1200 }, ledger: true, award,
+  });
+  assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs({
+    signedInitialSessionAt: '2026-11-12T12:05:00.000Z',
+  })), { balance: 1200, replay: true });
+  assert.equal(writes.length, 0);
+});
+
+test('signed-session path refuses existing unrelated Pitanga history', async () => {
+  for (const options of [
+    { balance: { userId: uid, availableKCoins: 10 } },
+    { ledger: true },
+  ]) {
+    const { tx, writes } = harness(options);
+    await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs({
+      signedInitialSessionAt: occurredAt,
+    })), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
+    assert.equal(writes.length, 0);
+  }
+});
