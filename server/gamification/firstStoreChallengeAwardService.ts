@@ -18,10 +18,13 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
   }
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_CHALLENGE_ID}`);
+  const verifiedEventRef = db.doc(`users/${userId}/verifiedStoreEvents/first_store_created`);
   const userRoot = db.collection('users').doc(userId);
   const awardId = `first_store_${userId}`;
   return db.runTransaction(async tx => {
-    const [store, challenge] = await Promise.all([tx.get(storeRef), tx.get(challengeRef)]);
+    const [store, challenge, verifiedEvent] = await Promise.all([
+      tx.get(storeRef), tx.get(challengeRef), tx.get(verifiedEventRef),
+    ]);
     const data = store.data();
     const activatedAt = data?.activatedAt;
     const date = typeof activatedAt === 'string' ? new Date(activatedAt) : activatedAt?.toDate?.();
@@ -29,6 +32,9 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
     // store. The first-store marker must be asserted by the provisioning writer.
     if (!store.exists || data?.ownerId !== userId || data?.id !== canonicalStoreId ||
         data?.firstStoreCreationVerified !== true ||
+        !verifiedEvent.exists || verifiedEvent.get('userId') !== userId ||
+        verifiedEvent.get('storeId') !== canonicalStoreId ||
+        verifiedEvent.get('id') !== 'first_store_created' ||
         !(date instanceof Date) || !Number.isFinite(date.getTime())) {
       throw new Error('FIRST_STORE_EVENT_UNVERIFIED');
     }
