@@ -180,6 +180,18 @@ test('client cannot forge first-login receipts or alter canonical Pitanga econom
     'systemControl/pitangaLegacyWriterFence',
   ];
   const payload = { userId: uid, issuer: 'trusted_auth_server', availableKCoins: 1000 };
+  // Independently exercise CREATE against absent documents. The seeded
+  // assertions below cover UPDATE/DELETE and must not replace this case.
+  for (const client of [
+    environment.unauthenticatedContext().firestore(),
+    environment.authenticatedContext(uid).firestore(),
+    environment.authenticatedContext('other-client').firestore(),
+    environment.authenticatedContext('admin-client', { role: 'admin' }).firestore(),
+  ]) {
+    for (const path of protectedPaths) {
+      await assertFails(setDoc(doc(client, path), payload));
+    }
+  }
   // Seed protected documents as the trusted server would. Without this,
   // updateDoc could fail simply because the document does not exist.
   await environment.withSecurityRulesDisabled(async context => {
