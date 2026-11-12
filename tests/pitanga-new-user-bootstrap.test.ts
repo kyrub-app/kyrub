@@ -104,3 +104,52 @@ test('historical ledger with no canonical balance must not be reset to zero', as
   );
   assert.deepEqual(writes, []);
 });
+
+test('repeated bootstrap preserves subsequent earnings and never writes', async () => {
+  for (const accumulated of [0, 1000, 1350, Number.MAX_SAFE_INTEGER]) {
+    const { tx, writes } = mockTx({
+      entries: 1,
+      balance: {
+        userId: uid,
+        availableKCoins: accumulated,
+        initializedBy: 'verified_new_user',
+        fenceEpoch: 'epoch_1',
+      },
+      receipt: {
+        userId: uid,
+        fenceEpoch: 'epoch_1',
+        firebaseCreatedAt: input.firebaseCreatedAt,
+        initialBalance: 0,
+      },
+    });
+    assert.deepEqual(await initializeNewUserPitangaBalanceInTransaction(tx, input), {
+      initialized: false,
+      balance: accumulated,
+    });
+    assert.deepEqual(writes, []);
+  }
+});
+
+test('bootstrap rejects invalid canonical balances without overwriting them', async () => {
+  for (const invalidBalance of [-1, 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    const { tx, writes } = mockTx({
+      balance: {
+        userId: uid,
+        availableKCoins: invalidBalance,
+        initializedBy: 'verified_new_user',
+        fenceEpoch: 'epoch_1',
+      },
+      receipt: {
+        userId: uid,
+        fenceEpoch: 'epoch_1',
+        firebaseCreatedAt: input.firebaseCreatedAt,
+        initialBalance: 0,
+      },
+    });
+    await assert.rejects(
+      initializeNewUserPitangaBalanceInTransaction(tx, input),
+      /PITANGA_NEW_USER_BOOTSTRAP_CONFLICT/,
+    );
+    assert.deepEqual(writes, []);
+  }
+});
