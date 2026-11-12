@@ -47,7 +47,7 @@ test('earning stages one balance update and one ledger credit', async () => {
 test('replaying an identical award does not create another credit', async () => {
   const m = mock(175, {
     id: 'earn_award1', userId: 'user1', type: 'earn', economy: 'k_coin',
-    sourceType: 'challenge', sourceId: 'challenge1', deltaKCoins: 100,
+    sourceType: 'challenge', sourceId: 'challenge1', correlationId: 'award1', deltaKCoins: 100,
     idempotencyKey: 'pitanga_earn_award1', occurredAt: input.occurredAt,
   });
   assert.deepEqual(await applyPitangaEarnInTransaction(m.tx as never, input as never),
@@ -107,4 +107,18 @@ test('earning rejects a different balance document before reads', async () => {
     ...input, balanceRef: ref('pitangaBalance', 'shadow'),
   } as never), /PITANGA_EARN_REFERENCE_INVALID/);
   assert.equal(m.reads, 0);
+});
+
+test('replaying an award with a mismatched correlation ID fails closed', async () => {
+  const m = mock(175, {
+    id: 'earn_award1', userId: 'user1', type: 'earn', economy: 'k_coin',
+    sourceType: 'challenge', sourceId: 'challenge1', correlationId: 'other_award',
+    deltaKCoins: 100, idempotencyKey: 'pitanga_earn_award1',
+    occurredAt: input.occurredAt,
+  });
+  await assert.rejects(
+    () => applyPitangaEarnInTransaction(m.tx as never, input as never),
+    /PITANGA_EARN_IDEMPOTENCY_CONFLICT/,
+  );
+  assert.equal(m.writes.length, 0);
 });
