@@ -178,3 +178,42 @@ test('welcome credit cannot silently bootstrap a missing canonical balance', asy
     else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
   }
 });
+
+test('welcome service rejects disabled Firebase accounts before any Firestore transaction', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  try {
+    const { db, writes } = harness(receipt);
+    let transactions = 0;
+    const guardedDb = {
+      ...db,
+      runTransaction: async () => { transactions += 1; throw Error('TRANSACTION_SHOULD_NOT_RUN'); },
+    } as any;
+    const disabledAuth = {
+      getUser: async () => ({ uid, disabled: true, metadata: { creationTime: createdAt } }),
+    } as any;
+    await assert.rejects(
+      awardFirstLoginWelcomeForVerifiedUser(guardedDb, disabledAuth, uid),
+      /WELCOME_AUTH_USER_INVALID/,
+    );
+    assert.equal(transactions, 0);
+    assert.deepEqual(writes, []);
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
+
+test('welcome service remains disabled without server campaign cutoff', async () => {
+  delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+  try {
+    const { db, auth, writes } = harness(receipt);
+    await assert.rejects(
+      awardFirstLoginWelcomeForVerifiedUser(db, auth, uid),
+      /WELCOME_CAMPAIGN_NOT_ENABLED/,
+    );
+    assert.deepEqual(writes, []);
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
