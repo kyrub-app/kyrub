@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { bootstrapPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationBootstrapTransaction.js';
+import { pitangaHistoricalMembershipDigest } from '../server/gamification/pitangaHistoricalMembership.js';
 
 const checkpoint = {
   userId: 'user1', balance: 1000, entryCount: 2,
@@ -35,10 +36,11 @@ const run = (data: {
   return {
     writes,
     result: bootstrapPitangaBalanceInTransaction(tx as never, {
-      checkpoint, fenceEpoch: 'epoch1', ...refs, ...override,
+      checkpoint, fenceEpoch: 'epoch1', historicalEntryIds: ['entry1', 'entry2'], ...refs, ...override,
     } as never),
   };
 };
+const membership = pitangaHistoricalMembershipDigest({ userId: 'user1', entryIds: ['entry1', 'entry2'] });
 const fence = { status: 'fenced', epoch: 'epoch1', writersVerified: true };
 
 test('creates balance and receipt atomically after verified fence', async () => {
@@ -62,13 +64,23 @@ test('rejects absent or mismatched fence without writes', async () => {
 test('replay is read-only and requires matching receipt', async () => {
   const balance = { userId: 'user1', availableKCoins: 1000, migrationEpoch: 'epoch1' };
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
-    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+    ledgerSha256: checkpoint.ledgerSha256, historicalMembershipSha256: membership, fenceEpoch: 'epoch1' };
   const { result, writes } = run({ fence, balance, receipt });
   assert.deepEqual(await result, { balance: 1000, replay: true });
   assert.equal(writes.length, 0);
   await assert.rejects(run({ fence, balance, receipt: {
     ...receipt, ledgerSha256: 'b'.repeat(64),
   } }).result, /PITANGA_BOOTSTRAP_CONFLICT/);
+});
+
+test('rejects changed historical membership on replay', async () => {
+  const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
+    ledgerSha256: checkpoint.ledgerSha256, historicalMembershipSha256: membership, fenceEpoch: 'epoch1' };
+  const { result, writes } = run({
+    fence, receipt, balance: { userId: 'user1', availableKCoins: 1000, migrationEpoch: 'epoch1' },
+  }, { historicalEntryIds: ['entry1', 'different'] });
+  await assert.rejects(result, /PITANGA_BOOTSTRAP_CONFLICT/);
+  assert.equal(writes.length, 0);
 });
 
 test('rejects partial state and invalid document paths', async () => {
@@ -104,7 +116,7 @@ test('does not overwrite an existing balance without a receipt', async () => {
 
 test('replay preserves a valid post-migration balance without regranting Pitangas', async () => {
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
-    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+    ledgerSha256: checkpoint.ledgerSha256, historicalMembershipSha256: membership, fenceEpoch: 'epoch1' };
   for (const current of [0, 999, 1000, 1750]) {
     const { result, writes } = run({
       fence, receipt, balance: { userId: 'user1', availableKCoins: current, migrationEpoch: 'epoch1' },
@@ -116,7 +128,7 @@ test('replay preserves a valid post-migration balance without regranting Pitanga
 
 test('replay rejects malformed live balance even with a valid historical receipt', async () => {
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
-    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+    ledgerSha256: checkpoint.ledgerSha256, historicalMembershipSha256: membership, fenceEpoch: 'epoch1' };
   for (const current of [-1, 1.5, '1000']) {
     const { result, writes } = run({
       fence, receipt, balance: { userId: 'user1', availableKCoins: current, migrationEpoch: 'epoch1' },
@@ -128,7 +140,7 @@ test('replay rejects malformed live balance even with a valid historical receipt
 
 test('rejects a replay with missing or mismatched balance migration epoch', async () => {
   const receipt = { userId: 'user1', balance: 1000, entryCount: 2,
-    ledgerSha256: checkpoint.ledgerSha256, fenceEpoch: 'epoch1' };
+    ledgerSha256: checkpoint.ledgerSha256, historicalMembershipSha256: membership, fenceEpoch: 'epoch1' };
   for (const balance of [
     { userId: 'user1', availableKCoins: 1000 },
     { userId: 'user1', availableKCoins: 1000, migrationEpoch: 'other' },
