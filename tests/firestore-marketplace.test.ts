@@ -9,6 +9,7 @@ import {
 import {
   collection,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   query,
@@ -167,4 +168,29 @@ test('another user cannot create or mutate the owner marketplace listing', async
       updatedAt: serverTimestamp(),
     })
   );
+});
+
+test('client cannot forge first-login receipts or alter canonical Pitanga economy', async () => {
+  const uid = 'welcome-client-a';
+  const protectedPaths = [
+    `users/${uid}/authEvents/first_login_v1`,
+    `users/${uid}/pitangaBalance/balance`,
+    `users/${uid}/rewardLedger/earn_first_login_welcome_v1`,
+    `users/${uid}/pitangaNewUserBootstrap/receipt`,
+    'systemControl/pitangaLegacyWriterFence',
+  ];
+  const payload = { userId: uid, issuer: 'trusted_auth_server', availableKCoins: 1000 };
+  for (const client of [
+    environment.unauthenticatedContext().firestore(),
+    environment.authenticatedContext(uid).firestore(),
+    environment.authenticatedContext('other-client').firestore(),
+    environment.authenticatedContext('admin-client', { role: 'admin' }).firestore(),
+  ]) {
+    for (const path of protectedPaths) {
+      const reference = doc(client, path);
+      await assertFails(setDoc(reference, payload));
+      await assertFails(updateDoc(reference, { availableKCoins: 999999 }));
+      await assertFails(deleteDoc(reference));
+    }
+  }
 });
