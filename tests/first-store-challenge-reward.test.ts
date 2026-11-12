@@ -9,16 +9,16 @@ const challenge: KyrubChallengeDefinition = {
   description: 'Crie sua primeira loja',
   status: 'published',
   validationMode: 'deterministic',
-  rewardKCoins: 1000,
+  rewardKCoins: 0,
   rewardXp: 2,
   maxCompletionsPerUser: 1,
   sponsorType: 'kyrub',
 };
 const event = { userId: 'user_1', storeId: 'store_1', createdAt: '2026-11-12T12:00:00.000Z', isFirstStore: true };
 
-test('plans independent Pitanga and XP rewards with stable user-level idempotency', () => {
+test('plans XP-only first-store reward with stable user-level idempotency', () => {
   const result = planFirstStoreChallengeReward(challenge, event);
-  assert.equal(result.pitangas, 1000);
+  assert.equal(result.pitangas, 0);
   assert.equal(result.xp, 2);
   assert.equal(result.idempotencyKey, 'first_store_user_1');
   assert.deepEqual(planFirstStoreChallengeReward(challenge, { ...event, storeId: 'store_2' }).idempotencyKey, result.idempotencyKey);
@@ -33,4 +33,8 @@ test('rejects non-published, non-deterministic and expired challenges', () => {
   assert.throws(() => planFirstStoreChallengeReward({ ...challenge, status: 'draft' }, event), /NOT_ELIGIBLE/);
   assert.throws(() => planFirstStoreChallengeReward({ ...challenge, validationMode: 'manual_review' }, event), /NOT_ELIGIBLE/);
   assert.throws(() => planFirstStoreChallengeReward({ ...challenge, endsAt: '2026-11-11T00:00:00.000Z' }, event), /OUTSIDE_WINDOW/);
+});
+
+test('rejects Pitangas on first-store challenge to avoid double welcome grant', () => {
+  assert.throws(() => planFirstStoreChallengeReward({ ...challenge, rewardKCoins: 1000 }, event), /NOT_ELIGIBLE/);
 });
