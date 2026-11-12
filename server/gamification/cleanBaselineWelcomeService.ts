@@ -9,7 +9,8 @@ import { grantCleanBaselineWelcomeInTransaction } from './cleanBaselineWelcomeTr
  * event. This service never manufactures login evidence.
  *
  * KYRUB_PITANGA_CLEAN_BASELINE_ENABLED is deliberately independent from
- * the public welcome campaign switch. Never enable in an existing ledger.
+ * the public welcome campaign switch. This temporary path is restricted to
+ * a Firestore emulator; flags alone must never enable it in production.
  */
 export const grantCleanBaselineWelcomeForVerifiedUser = async (
   db: Firestore,
@@ -19,6 +20,10 @@ export const grantCleanBaselineWelcomeForVerifiedUser = async (
   if (process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED !== 'true' ||
       process.env.KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED !== 'true') {
     throw Error('WELCOME_CLEAN_BASELINE_DISABLED');
+  }
+  if (!process.env.FIRESTORE_EMULATOR_HOST ||
+      !/^(localhost|127\\.0\\.0|\\[::1\\]):[0-9]{1,5}$/.test(process.env.FIRESTORE_EMULATOR_HOST)) {
+    throw Error('WELCOME_CLEAN_BASELINE_EMULATOR_REQUIRED');
   }
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw Error('WELCOME_USER_INVALID');
   const cutoff = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT?.trim();
