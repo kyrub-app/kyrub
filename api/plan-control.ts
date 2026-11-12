@@ -21,6 +21,7 @@ import {
 import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { ensureFreePlanForStoreCreation } from '../server/actions/freeStoreProvisioningService.js';
 import { awardFirstLoginWelcomeForVerifiedUser } from '../server/gamification/firstLoginWelcomeAwardService.js';
+import { grantCleanBaselineWelcomeForVerifiedUser } from '../server/gamification/cleanBaselineWelcomeService.js';
 import { adminAuth, adminDb } from '../server/firebaseAdmin.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
@@ -255,7 +256,9 @@ export default async function handler(
         const user = await authenticateConsultantRequest(authorization);
         // Fail closed if canonical balance migration has not completed.
         // Never manufacture a zero balance or report an uncommitted award.
-        const result = await awardFirstLoginWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
+        const result = process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED === 'true'
+          ? await grantCleanBaselineWelcomeForVerifiedUser(adminDb, adminAuth, user.uid)
+          : await awardFirstLoginWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
         response.status(200).json({ awarded: !result.replay, balance: result.balance });
         return;
       }
