@@ -50,6 +50,7 @@ export const applyPitangaSpendInTransaction = async (
         previous?.economy !== 'k_coin' ||
         previous?.sourceType !== 'reward_redemption' ||
         previous?.sourceId !== input.sourceId ||
+        previous?.correlationId !== input.spendId ||
         previous?.deltaKCoins !== -input.amount ||
         previous?.idempotencyKey !== idempotencyKey ||
         previous?.occurredAt !== input.occurredAt) {
