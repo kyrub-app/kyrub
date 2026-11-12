@@ -43,7 +43,6 @@ export const initializeNewUserPitangaBalanceInTransaction = async (
       fenceData?.epoch !== input.fenceEpoch) {
     throw Error('PITANGA_NEW_USER_BOOTSTRAP_FENCE_UNVERIFIED');
   }
-  if (!ledger.empty) throw Error('PITANGA_NEW_USER_BOOTSTRAP_HISTORICAL_LEDGER');
   if (balance.exists || receipt.exists) {
     if (!balance.exists || !receipt.exists ||
         balance.data()?.userId !== uid ||
@@ -56,6 +55,7 @@ export const initializeNewUserPitangaBalanceInTransaction = async (
     }
     return { initialized: false, balance: balance.data()!.availableKCoins };
   }
+  if (!ledger.empty) throw Error('PITANGA_NEW_USER_BOOTSTRAP_HISTORICAL_LEDGER');
   tx.create(input.balanceRef, { userId: uid, availableKCoins: 0, initializedBy: 'verified_new_user', fenceEpoch: input.fenceEpoch });
   tx.create(input.receiptRef, {
     userId: uid, firebaseCreatedAt: input.firebaseCreatedAt,
