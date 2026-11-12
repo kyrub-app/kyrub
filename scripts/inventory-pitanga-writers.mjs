@@ -28,7 +28,7 @@ for (const path of tracked) {
   }
   const matches = output.trim().split('\n').filter(Boolean);
   if (!matches.length) continue;
-  const mutation = matches.filter(line => /\b(setDoc|updateDoc|addDoc|deleteDoc|runTransaction|tx\.(set|update|create|delete)|\.set\\(|\.update\\(|\.create\\(|increment\\(|applyPitanga|award|spend|convert|redeem|issue|credit|debit)\b/i.test(line));
+  const mutation = matches.filter(line => /\b(setDoc|updateDoc|addDoc|deleteDoc|runTransaction|tx\.(set|update|create|delete)|\.set\(|\.update\(|\.create\(|increment\(|applyPitanga|award|spend|convert|redeem|issue|credit|debit)\b/i.test(line));
   candidates.push({ path, hits: matches.length, mutationHints: mutation.length, lines: matches });
 }
 candidates.sort((a, b) => b.mutationHints - a.mutationHints || b.hits - a.hits || a.path.localeCompare(b.path));
