@@ -15,6 +15,14 @@
 
 A busca de código GitHub na branch padrão não retornou resultados nem para identificadores presentes no repositório (`availableKCoins`, `pitangaBalance`, `onAuthStateChanged`). Portanto, **não é possível inferir ausência de escritores legados a partir dessa busca vazia**. A inspeção de todos os caminhos de escrita e seus deploys permanece aberta. Não definir `writersVerified=true` com base nesse resultado.
 
+## Descoberta: regras efetivamente publicadas
+
+A configuração `firebase.json` referencia `.firebase/firestore.combined.rules` como arquivo de regras Firestore de deploy. Na inspeção desta branch, a leitura desse caminho retornou **404**. O arquivo `firestore.rules` existe, mas **não é suficiente** para provar as permissões efetivas do deploy.
+
+Antes de conectar a emissão de recibos, comprovar a etapa de geração do arquivo combinado, inspecionar as regras resultantes e executar testes de autorização negando escrita de cliente em `users/{uid}/authEvents/first_login_v1`, `users/{uid}/pitangaBalance/balance`, `users/{uid}/rewardLedger/{entryId}` e `systemControl/pitangaLegacyWriterFence`. Validar também eventuais `match` sobrepostos, pois regras Firestore permissivas em qualquer `match` aplicável podem autorizar a operação. Regras de cliente não restringem escritas via Firebase Admin SDK; auditar separadamente credenciais e serviços administrativos.
+
+**Estado:** geração, regras resultantes e testes de autorização ainda não verificados. Não presumir que o 404 significa ausência de regras no ambiente publicado.
+
 ## Matriz de evidências exigidas por escritor
 
 Para cada escritor que altere `availableKCoins`, `rewardLedger`, conversões, resgates ou ajustes administrativos, registrar antes do corte:
