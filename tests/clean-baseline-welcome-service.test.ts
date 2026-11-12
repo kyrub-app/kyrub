@@ -9,12 +9,14 @@ const previous = {
   enabled: process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED,
   isolated: process.env.KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED,
   cutoff: process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT,
+  emulator: process.env.FIRESTORE_EMULATOR_HOST,
 };
 const restore = () => {
   for (const [key, value] of Object.entries({
     KYRUB_PITANGA_CLEAN_BASELINE_ENABLED: previous.enabled,
     KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED: previous.isolated,
     KYRUB_WELCOME_BONUS_EFFECTIVE_AT: previous.cutoff,
+    FIRESTORE_EMULATOR_HOST: previous.emulator,
   })) {
     if (value === undefined) delete process.env[key];
     else process.env[key] = value;
@@ -24,6 +26,7 @@ const configure = () => {
   process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED = 'true';
   process.env.KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED = 'true';
   process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
 };
 const ref = (path: string): any => ({
   path, id: path.split('/').at(-1),
@@ -90,6 +93,19 @@ test('clean baseline service rejects historical or disabled accounts and existin
     ]) {
       const { db, auth, writes } = harness(options);
       await assert.rejects(grantCleanBaselineWelcomeForVerifiedUser(db, auth, uid), /USER_INELIGIBLE|NOT_EMPTY/);
+      assert.deepEqual(writes, []);
+    }
+  } finally { restore(); }
+});
+
+test('clean baseline refuses production or remote Firestore even when flags are true', async () => {
+  try {
+    configure();
+    for (const host of [undefined, 'firestore.googleapis.com:443', '10.0.0.5:8080']) {
+      if (host === undefined) delete process.env.FIRESTORE_EMULATOR_HOST;
+      else process.env.FIRESTORE_EMULATOR_HOST = host;
+      const { db, auth, writes } = harness();
+      await assert.rejects(grantCleanBaselineWelcomeForVerifiedUser(db, auth, uid), /EMULATOR_REQUIRED/);
       assert.deepEqual(writes, []);
     }
   } finally { restore(); }
