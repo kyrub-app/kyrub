@@ -31,10 +31,10 @@ export const initializeNewUserPitangaBalanceInTransaction = async (
       input.receiptRef.path !== `users/${uid}/pitangaNewUserBootstrap/receipt`) {
     throw Error('PITANGA_NEW_USER_BOOTSTRAP_UNVERIFIED');
   }
-  // Read the entire historical ledger, not a limit(1) query. If anything
-  // exists, a separate verified migration is required.
+  // A query for an entire historical ledger is unbounded. Reject any
+  // account with a pre-existing ledger before initializing a new balance.
   const [fence, ledger, balance, receipt] = await Promise.all([
-    tx.get(input.fenceRef), tx.get(input.ledgerRef),
+    tx.get(input.fenceRef), tx.get(input.ledgerRef.limit(1)),
     tx.get(input.balanceRef), tx.get(input.receiptRef),
   ]);
   const fenceData = fence.data();
