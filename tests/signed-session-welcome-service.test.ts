@@ -30,7 +30,7 @@ const enabled = {
   KYRUB_PITANGA_WELCOME_PROJECT_ID: 'kyrub-test',
   KYRUB_WELCOME_BONUS_EFFECTIVE_AT: '2026-11-12T00:00:00.000Z',
 };
-const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt) => {
+const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt, fenceData?: Record<string, unknown>) => {
   let lookups = 0;
   let transactions = 0;
   const auth = {
@@ -41,10 +41,15 @@ const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt) => {
     },
   };
   const db = {
-    runTransaction: async () => {
+    runTransaction: async (callback: (tx: any) => Promise<unknown>) => {
       transactions++;
+      const tx = { get: async () => ({ exists: fenceData !== undefined, data: () => fenceData }) };
+      try { await callback(tx); } catch (error) {
+        if ((error as Error).message !== 'tx.get is not a function') throw error;
+      }
       return { balance: 1000, replay: false };
     },
+    doc: () => ({ path: 'systemControl/pitangaLegacyWriterFence' }),
     collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({}) }) }) }),
   };
   return { auth: auth as any, db: db as any, counts: () => ({ lookups, transactions }) };
@@ -93,11 +98,21 @@ test('welcome grant refuses mismatched token identity, historical account, and i
 
 test('eligible Firebase-signed session reaches one transaction only', async () => {
   await withEnv(enabled, async () => {
-    const m = mock();
+    const m = mock('kyrub-test', createdAt, { status: 'fenced', writersVerified: true, epoch: 'test-epoch' });
     assert.deepEqual(
       await grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', authTime),
       { balance: 1000, replay: false },
     );
     assert.deepEqual(m.counts(), { lookups: 1, transactions: 1 });
   });
+});
+
+test('welcome rejects absent or unverified legacy writer fence', async () => {
+  for (const fence of [undefined, { status: 'open', writersVerified: true, epoch: 'e1' }, { status: 'fenced', writersVerified: false, epoch: 'e1' }]) {
+    await withEnv(enabled, async () => {
+      const m = mock('kyrub-test', createdAt, fence);
+      await assert.rejects(grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', authTime), /WELCOME_LEGACY_WRITERS_NOT_VERIFIED/);
+      assert.equal(m.counts().transactions, 1);
+    });
+  }
 });
