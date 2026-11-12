@@ -15,6 +15,21 @@
 
 A busca de código GitHub na branch padrão não retornou resultados nem para identificadores presentes no repositório (`availableKCoins`, `pitangaBalance`, `onAuthStateChanged`). Portanto, **não é possível inferir ausência de escritores legados a partir dessa busca vazia**. A inspeção de todos os caminhos de escrita e seus deploys permanece aberta. Não definir `writersVerified=true` com base nesse resultado.
 
+## Matriz de evidências exigidas por escritor
+
+Para cada escritor que altere `availableKCoins`, `rewardLedger`, conversões, resgates ou ajustes administrativos, registrar antes do corte:
+
+| Campo | Evidência obrigatória |
+| --- | --- |
+| Origem | Arquivo/função/rota/job e ambiente de execução |
+| Mutação | Coleção/documento afetado e operação (`create`, `update`, `set`, transação) |
+| Proteção | Chamada ao guard no **mesmo** contexto transacional, antes da escrita, ou comprovação de desativação |
+| Deploy | Commit e versão efetivamente ativos no ambiente de produção |
+| Verificação | Teste de escrita permitida com fence `open` e rejeitada com `fencing`/`fenced` |
+| Responsável | Revisão independente e aprovação do inventário completo |
+
+**Critério de bloqueio:** qualquer escritor não identificado, não auditado ou com deploy não comprovado impede `writersVerified=true`. O helper, um teste isolado ou o documento de controle não substituem evidência operacional.
+
 ## Critérios objetivos de liberação
 
 1. Inventariar cada escritor legado de Pitangas (rotas, jobs, Cloud Functions, ações administrativas, conversões e resgates), identificando arquivo, operação, transação e deploy ativo.
