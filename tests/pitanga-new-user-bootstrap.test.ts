@@ -5,7 +5,7 @@ import { initializeNewUserPitangaBalanceInTransaction } from '../server/gamifica
 const uid = 'new_user_1';
 const refs = {
   fenceRef: { path: 'systemControl/pitangaLegacyWriterFence' },
-  ledgerRef: { path: `users/${uid}/rewardLedger` },
+  ledgerRef: { path: `users/${uid}/rewardLedger`, limit: (_count: number) => ({ path: `users/${uid}/rewardLedger` }) },
   balanceRef: { path: `users/${uid}/pitangaBalance/balance` },
   receiptRef: { path: `users/${uid}/pitangaNewUserBootstrap/receipt` },
 };
