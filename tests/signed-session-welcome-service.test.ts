@@ -45,7 +45,7 @@ const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt) => {
       transactions++;
       return { balance: 1000, replay: false };
     },
-    collection: () => ({ doc: () => ({}) }),
+    collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({}) }) }) }),
   };
   return { auth: auth as any, db: db as any, counts: () => ({ lookups, transactions }) };
 };
