@@ -19,7 +19,7 @@
 
 1. **Inventário e bloqueio de escritores legados de Pitangas.** Verificar TODOS os escritores ativos e comprovar o fence efetivo. Um documento `systemControl/pitangaLegacyWriterFence` isolado não é prova suficiente.
 2. **Migração/conciliação dos saldos existentes.** Reconstruir e verificar cada histórico com recibos e manifestos antes de criar saldos canônicos; não inicializar contas antigas com zero.
-3. **Provisionamento seguro de saldo para contas novas.** Implementar e testar um fluxo transacional separado, com prova de ausência de histórico, sem sobrescrever registros nem misturar com a migração legada. Até isso ocorrer, a tentativa de crédito deve retornar indisponível.
+3. **Provisionamento seguro de saldo para contas novas.** A primitiva isolada `server/gamification/pitangaNewUserBootstrapTransaction.ts` foi criada: exige conta posterior ao corte, fence verificado, ledger completo vazio e recibo imutável. **Ainda faltam testes transacionais, comprovação operacional do fence e integração controlada com o serviço de boas-vindas.** Até isso ocorrer, a tentativa de crédito deve retornar indisponível.
 4. **Elegibilidade de primeiro login.** Homologar contas criadas depois do corte, contas antigas, repetição de login, duas abas e concorrência. Metadados `lastSignInTime` são atualizados pelo Firebase e não representam, isoladamente, uma prova imutável do primeiro login.
 5. **Desafio administrativo.** Confirmar que `global_challenges/first_store_created` está publicado com `rewardXp: 2`, `rewardKCoins: 0`, modo determinístico, sponsor Kyrub e máximo de uma conclusão.
 6. **Observabilidade.** A UI atualmente não apresenta confirmação de crédito nem fila durável de reprocessamento; uma falha temporária pode exigir novo login para tentar novamente.
