@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { persistPitangaHistoricalManifestInTransaction } from '../server/gamification/pitangaHistoricalManifestRepository.js';
+import { persistPitangaHistoricalManifestInTransaction, recoverPitangaHistoricalManifestInTransaction } from '../server/gamification/pitangaHistoricalManifestRepository.js';
 
 const userId = 'user1';
 const fenceEpoch = 'epoch1';
@@ -52,4 +52,27 @@ test('rejects foreign chunk references before reads or writes', async () => {
   await assert.rejects(run([{ path: 'users/other/pitangaMigrationManifest/epoch1_000000' }, ...chunkRefs.slice(1)]),
     /PITANGA_MANIFEST_REFERENCE_INVALID/);
   assert.equal(writes.length, 0);
+});
+
+test('recovers IDs from stored chunks only when receipt matches', async () => {
+  const records: Record<string, Record<string, unknown>> = {};
+  const { run } = fixture(records);
+  const saved = await run();
+  const receiptRef = { path: `users/${userId}/pitangaMigration/receipt` };
+  records[receiptRef.path] = {
+    userId, fenceEpoch, entryCount: saved.entryCount,
+    historicalMembershipSha256: saved.membershipSha256,
+  };
+  const tx = { get: async (ref: { path: string }) => ({
+    exists: Object.hasOwn(records, ref.path), data: () => records[ref.path],
+  }) };
+  const recover = () => recoverPitangaHistoricalManifestInTransaction(tx as never, {
+    userId, fenceEpoch, receiptRef: receiptRef as never, chunkRefs: chunkRefs as never,
+  });
+  assert.deepEqual(await recover(), [...historicalEntryIds].sort());
+  records[receiptRef.path].historicalMembershipSha256 = '0'.repeat(64);
+  await assert.rejects(recover(), /PITANGA_MANIFEST_MEMBERSHIP_INVALID/);
+  records[receiptRef.path].historicalMembershipSha256 = saved.membershipSha256;
+  delete records[chunkRefs[0].path];
+  await assert.rejects(recover(), /PITANGA_MANIFEST_INCOMPLETE/);
 });
