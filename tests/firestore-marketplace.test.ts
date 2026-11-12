@@ -180,6 +180,14 @@ test('client cannot forge first-login receipts or alter canonical Pitanga econom
     'systemControl/pitangaLegacyWriterFence',
   ];
   const payload = { userId: uid, issuer: 'trusted_auth_server', availableKCoins: 1000 };
+  // Seed protected documents as the trusted server would. Without this,
+  // updateDoc could fail simply because the document does not exist.
+  await environment.withSecurityRulesDisabled(async context => {
+    const server = context.firestore();
+    for (const path of protectedPaths) {
+      await setDoc(doc(server, path), payload);
+    }
+  });
   for (const client of [
     environment.unauthenticatedContext().firestore(),
     environment.authenticatedContext(uid).firestore(),
@@ -188,7 +196,7 @@ test('client cannot forge first-login receipts or alter canonical Pitanga econom
   ]) {
     for (const path of protectedPaths) {
       const reference = doc(client, path);
-      await assertFails(setDoc(reference, payload));
+      await assertFails(setDoc(reference, { ...payload, availableKCoins: 777777 }));
       await assertFails(updateDoc(reference, { availableKCoins: 999999 }));
       await assertFails(deleteDoc(reference));
     }
