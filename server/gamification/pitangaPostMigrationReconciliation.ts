@@ -13,8 +13,11 @@ import type { PitangaMigrationCheckpoint } from './pitangaMigrationCheckpointVer
 export const reconcilePostMigrationPitangas = (input: {
   checkpoint: PitangaMigrationCheckpoint;
   historicalEntryIds: readonly string[];
-  /** Immutable digest read from a trusted migration receipt, not from a client. */
-  historicalMembershipSha256: string;
+  /** Trusted immutable migration receipt, read from the canonical server path. */
+  migrationReceipt: {
+    userId: unknown; balance: unknown; entryCount: unknown;
+    ledgerSha256: unknown; historicalMembershipSha256: unknown; fenceEpoch: unknown;
+  };
   ledgerDocuments: Array<{ id: string; data: KyrubRewardLedgerEntry }>;
   currentBalance: { userId: unknown; availableKCoins: unknown; migrationEpoch: unknown };
   fenceEpoch: string;
@@ -31,15 +34,23 @@ export const reconcilePostMigrationPitangas = (input: {
       (currentBalance.availableKCoins as number) < 0) {
     throw new Error('PITANGA_RECONCILIATION_PRECONDITIONS_INVALID');
   }
+  const receipt = input.migrationReceipt;
+  if (receipt?.userId !== checkpoint.userId ||
+      receipt?.balance !== checkpoint.balance ||
+      receipt?.entryCount !== checkpoint.entryCount ||
+      receipt?.ledgerSha256 !== checkpoint.ledgerSha256 ||
+      receipt?.fenceEpoch !== fenceEpoch) {
+    throw new Error('PITANGA_RECONCILIATION_RECEIPT_MISMATCH');
+  }
   const ids = new Set(historicalEntryIds);
   if (ids.size !== historicalEntryIds.length || ids.size !== checkpoint.entryCount ||
       historicalEntryIds.some(id => !/^[A-Za-z0-9_-]{1,256}$/.test(id))) {
     throw new Error('PITANGA_RECONCILIATION_HISTORICAL_MEMBERSHIP_INVALID');
   }
-  if (!/^[a-f0-9]{64}$/.test(input.historicalMembershipSha256) ||
+  if (!/^[a-f0-9]{64}$/.test(receipt.historicalMembershipSha256) ||
       pitangaHistoricalMembershipDigest({
         userId: checkpoint.userId, entryIds: historicalEntryIds,
-      }) !== input.historicalMembershipSha256) {
+      }) !== receipt.historicalMembershipSha256) {
     throw new Error('PITANGA_RECONCILIATION_MEMBERSHIP_DIGEST_MISMATCH');
   }
   const documents = new Map<string, { id: string; data: KyrubRewardLedgerEntry }>();
