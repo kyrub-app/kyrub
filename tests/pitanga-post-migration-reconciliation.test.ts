@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMigrationSnapshot.js';
 import { reconcilePostMigrationPitangas } from '../server/gamification/pitangaPostMigrationReconciliation.js';
 import { pitangaHistoricalMembershipDigest } from '../server/gamification/pitangaHistoricalMembership.js';
+import { buildPitangaHistoricalManifest } from '../server/gamification/pitangaHistoricalManifest.js';
 import type { KyrubRewardLedgerEntry } from '../shared/gamification.js';
 
 const entry = (id: string, deltaKCoins: number, occurredAt: string): { id: string; data: KyrubRewardLedgerEntry } => ({
@@ -99,4 +100,23 @@ test('rejects a receipt from another user, epoch or historical checkpoint', () =
       ...input(), migrationReceipt: { ...input().migrationReceipt, ...patch },
     }), /PITANGA_RECONCILIATION_RECEIPT_MISMATCH/);
   }
+});
+
+test('reconciliation accepts a verified chunk manifest bound to the migration receipt', () => {
+  const historicalManifest = buildPitangaHistoricalManifest({
+    userId: 'user1', fenceEpoch: 'epoch1', entryIds: ['historical1', 'historical2'],
+  });
+  assert.equal(reconcilePostMigrationPitangas({ ...input(), historicalManifest }).verified, true);
+});
+
+test('reconciliation rejects a tampered or wrong-epoch historical manifest', () => {
+  const historicalManifest = buildPitangaHistoricalManifest({
+    userId: 'user1', fenceEpoch: 'epoch1', entryIds: ['historical1', 'historical2'],
+  });
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalManifest: { ...historicalManifest, fenceEpoch: 'other' },
+  }), /PITANGA_MANIFEST_MISMATCH/);
+  assert.throws(() => reconcilePostMigrationPitangas({
+    ...input(), historicalManifest: { ...historicalManifest, chunks: [] },
+  }), /PITANGA_MANIFEST_MISMATCH/);
 });
