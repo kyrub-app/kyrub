@@ -41,3 +41,48 @@ export const persistPitangaHistoricalManifestInTransaction = async (
   manifest.chunks.forEach((chunk, index) => tx.create(input.chunkRefs[index], chunk));
   return { membershipSha256: manifest.membershipSha256, entryCount: manifest.entryCount, replay: false };
 };
+
+/**
+ * Read-only recovery from the canonical immutable migration receipt.
+ * Missing or inconsistent chunks fail closed; never reconstruct from dates.
+ */
+export const recoverPitangaHistoricalManifestInTransaction = async (
+  tx: Transaction,
+  input: {
+    userId: string; fenceEpoch: string; receiptRef: DocumentReference;
+    chunkRefs: readonly DocumentReference[];
+  },
+): Promise<string[]> => {
+  if (input.receiptRef.path !== `users/${input.userId}/pitangaMigration/receipt`) {
+    throw new Error('PITANGA_MANIFEST_RECEIPT_REFERENCE_INVALID');
+  }
+  const receipt = await tx.get(input.receiptRef);
+  const data = receipt.data();
+  if (!receipt.exists || data?.userId !== input.userId ||
+      data?.fenceEpoch !== input.fenceEpoch ||
+      !Number.isSafeInteger(data?.entryCount) || data.entryCount < 0 ||
+      typeof data?.historicalMembershipSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(data.historicalMembershipSha256)) {
+    throw new Error('PITANGA_MANIFEST_RECEIPT_INVALID');
+  }
+  const expectedChunks = Math.ceil(data.entryCount / 100);
+  if (input.chunkRefs.length !== expectedChunks ||
+      input.chunkRefs.some((ref, index) =>
+        ref.path !== `users/${input.userId}/pitangaMigrationManifest/${input.fenceEpoch}_${String(index).padStart(6, '0')}`)) {
+    throw new Error('PITANGA_MANIFEST_REFERENCE_INVALID');
+  }
+  const snapshots = await Promise.all(input.chunkRefs.map(ref => tx.get(ref)));
+  if (snapshots.some(snapshot => !snapshot.exists)) {
+    throw new Error('PITANGA_MANIFEST_INCOMPLETE');
+  }
+  return verifyPitangaHistoricalManifest({
+    userId: input.userId, fenceEpoch: input.fenceEpoch,
+    entryCount: data.entryCount, membershipSha256: data.historicalMembershipSha256,
+    chunks: snapshots.map(snapshot => snapshot.data() as {
+      index: number; entryIds: string[]; sha256: string;
+    }),
+  }, {
+    userId: input.userId, fenceEpoch: input.fenceEpoch,
+    entryCount: data.entryCount, membershipSha256: data.historicalMembershipSha256,
+  });
+};
