@@ -11,6 +11,7 @@ import { buildPitangaMigrationSnapshot } from '../server/gamification/pitangaMig
 import { verifyPitangaMigrationCheckpoint } from '../server/gamification/pitangaMigrationCheckpointVerification.js';
 import { bootstrapVerifiedPitangaBalanceInTransaction } from '../server/gamification/pitangaMigrationVerifiedBootstrap.js';
 import { assertLegacyPitangaWriterAllowedInTransaction } from '../server/gamification/pitangaLegacyWriterFence.js';
+import { convertVerifiedPitangasToXp } from '../server/gamification/pitangaXpConversionService.js';
 
 test('Firestore Emulator serializes competing spend and XP conversion on one balance', async (t) => {
   if (!process.env.FIRESTORE_EMULATOR_HOST) {
@@ -556,4 +557,54 @@ test('Firestore Emulator serializes fence activation against a guarded legacy wr
     tx.create(root.collection('rewardLedger').doc('earn_late'), { userId });
   }), /PITANGA_LEGACY_WRITER_FENCED/);
   assert.equal((await root.collection('rewardLedger').doc('earn_late').get()).exists, false);
+});
+
+test('Firestore Emulator converts via trusted service after verified migration and replays safely', async (t) => {
+  if (!process.env.FIRESTORE_EMULATOR_HOST) {
+    t.skip('requires FIRESTORE_EMULATOR_HOST; never connects to production');
+    return;
+  }
+  const app = initializeApp({ projectId: 'kyrub-security-test' }, `pitanga-service-${Date.now()}`);
+  t.after(async () => deleteApp(app));
+  const db = getFirestore(app);
+  const userId = `service_${Date.now()}_${Math.floor(Math.random() * 1e6)}`;
+  const root = db.collection('users').doc(userId);
+  const fenceEpoch = userId;
+  const occurredAt = '2026-11-11T12:00:00Z';
+  await db.doc('systemControl/pitangaLegacyWriterFence')
+    .set({ status: 'fenced', epoch: fenceEpoch, writersVerified: true });
+  const entry = {
+    id: 'earn_initial', userId, type: 'earn' as const,
+    deltaKCoins: 2000, sourceType: 'challenge' as const,
+    sourceId: 'challenge1', correlationId: 'initial',
+    idempotencyKey: 'initial', occurredAt,
+  };
+  await root.collection('rewardLedger').doc(entry.id).create(entry);
+  const checkpoint = buildPitangaMigrationSnapshot({
+    userId, ledgerDocuments: [{ id: entry.id, data: entry as never }],
+    completeLedgerVerified: true, legacyWritersFenced: true,
+  });
+  await db.runTransaction(tx => bootstrapVerifiedPitangaBalanceInTransaction(tx, {
+    checkpoint, fenceEpoch, ledgerRef: root.collection('rewardLedger'),
+    balanceRef: root.collection('pitangaBalance').doc('balance'),
+    receiptRef: root.collection('pitangaMigration').doc('receipt'),
+    fenceRef: db.doc('systemControl/pitangaLegacyWriterFence'),
+    legacyWritersFenced: true,
+    manifestChunkRefs: [root.collection('pitangaMigrationManifest').doc(`${fenceEpoch}_000000`)],
+  }));
+  const convert = (requestId: string) => convertVerifiedPitangasToXp(db, {
+    userId, requestId, requestedXp: 1, occurredAt,
+  });
+  const first = await convert('first');
+  assert.deepEqual(first, { xpCredited: 1, pitangasDebited: 1000,
+    remainingPitangas: 1000, replay: false });
+  const replay = await convert('first');
+  assert.equal(replay.replay, true);
+  assert.equal(replay.remainingPitangas, 1000);
+  const second = await convert('second');
+  assert.equal(second.remainingPitangas, 0);
+  await assert.rejects(convert('third'));
+  assert.equal((await root.collection('xpLedger').get()).size, 2);
+  assert.equal((await root.collection('pitangaXpConversions').get()).size, 2);
+  assert.equal((await root.collection('pitangaBalance').doc('balance').get()).data()?.availableKCoins, 0);
 });
