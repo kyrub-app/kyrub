@@ -14,7 +14,7 @@ const makeRef = (path: string): any => {
     collection: (name: string) => ({ doc: (id: string) => makeRef(`${path}/${name}/${id}`) }),
   };
 };
-function harness(receipt?: unknown, options: { existingLedger?: unknown; balance?: number } = {}) {
+function harness(receipt?: unknown, options: { existingLedger?: unknown; balance?: number; missingBalance?: boolean } = {}) {
   const writes: Array<{ op: string; path: string }> = [];
   const balance = { userId: uid, availableKCoins: options.balance ?? 0 };
   const db = {
@@ -25,7 +25,7 @@ function harness(receipt?: unknown, options: { existingLedger?: unknown; balance
           return { exists: receipt !== undefined, data: () => receipt };
         }
         if (ref.path.endsWith('/pitangaBalance/balance')) {
-          return { exists: true, data: () => balance };
+          return { exists: options.missingBalance !== true, data: () => balance };
         }
         if (ref.path.endsWith('/rewardLedger/earn_first_login_welcome_v1')) {
           return { exists: options.existingLedger !== undefined, data: () => options.existingLedger };
@@ -158,6 +158,21 @@ test('conflicting historical welcome ledger cannot be replayed or credited again
       );
       assert.deepEqual(writes, [], 'a conflicting ledger must not change balances');
     }
+  } finally {
+    if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
+  }
+});
+
+test('welcome credit cannot silently bootstrap a missing canonical balance', async () => {
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-12T00:00:00.000Z';
+  try {
+    const { db, auth, writes } = harness(receipt, { missingBalance: true });
+    await assert.rejects(
+      awardFirstLoginWelcomeForVerifiedUser(db, auth, uid),
+      /PITANGA_EARN_BALANCE_UNAVAILABLE/,
+    );
+    assert.deepEqual(writes, [], 'missing balances must never be reset or credited implicitly');
   } finally {
     if (oldCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
     else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = oldCutoff;
