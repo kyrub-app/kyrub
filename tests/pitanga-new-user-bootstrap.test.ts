@@ -64,8 +64,8 @@ test('historical ledger or open fence fails closed', async () => {
 test('existing matching balance and receipt replay without writes', async () => {
   const { tx, writes } = mockTx({
     entries: 1,
-    balance: { userId: uid, availableKCoins: 1000 },
-    receipt: { userId: uid, fenceEpoch: 'epoch_1', firebaseCreatedAt: input.firebaseCreatedAt },
+    balance: { userId: uid, availableKCoins: 1000, initializedBy: 'verified_new_user', fenceEpoch: 'epoch_1' },
+    receipt: { userId: uid, fenceEpoch: 'epoch_1', firebaseCreatedAt: input.firebaseCreatedAt, initialBalance: 0 },
   });
   assert.deepEqual(await initializeNewUserPitangaBalanceInTransaction(tx, input), { initialized: false, balance: 1000 });
   assert.equal(writes.length, 0);
@@ -76,6 +76,7 @@ test('partial or mismatched state never resets an existing balance', async () =>
     { balance: { userId: uid, availableKCoins: 1000 } },
     { receipt: { userId: uid, fenceEpoch: 'epoch_1', firebaseCreatedAt: input.firebaseCreatedAt } },
     { balance: { userId: uid, availableKCoins: 1000 }, receipt: { userId: uid, fenceEpoch: 'wrong', firebaseCreatedAt: input.firebaseCreatedAt } },
+    { balance: { userId: uid, availableKCoins: 1000, initializedBy: 'verified_new_user', fenceEpoch: 'epoch_1' }, receipt: { userId: uid, fenceEpoch: 'epoch_1', firebaseCreatedAt: input.firebaseCreatedAt, initialBalance: 1000 } },
   ]) {
     const { tx, writes } = mockTx(options);
     await assert.rejects(initializeNewUserPitangaBalanceInTransaction(tx, input), /CONFLICT/);
