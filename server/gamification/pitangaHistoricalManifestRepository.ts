@@ -16,6 +16,11 @@ export const persistPitangaHistoricalManifestInTransaction = async (
   const manifest = buildPitangaHistoricalManifest({
     userId: input.userId, fenceEpoch: input.fenceEpoch, entryIds: input.historicalEntryIds,
   });
+  // Firestore transactions have finite write limits; large migrations require
+  // a separate, explicitly designed staged protocol, not a partial commit.
+  if (manifest.chunks.length > 400) {
+    throw new Error('PITANGA_MANIFEST_TRANSACTION_TOO_LARGE');
+  }
   if (input.chunkRefs.length !== manifest.chunks.length ||
       input.chunkRefs.some((ref, index) =>
         ref.path !== `users/${input.userId}/pitangaMigrationManifest/${input.fenceEpoch}_${String(index).padStart(6, '0')}`)) {
@@ -27,7 +32,7 @@ export const persistPitangaHistoricalManifestInTransaction = async (
   if (existing !== 0 && existing !== snapshots.length) {
     throw new Error('PITANGA_MANIFEST_PARTIAL_STATE');
   }
-  if (existing === snapshots.length) {
+  if (existing === snapshots.length && snapshots.length > 0) {
     const stored = {
       ...manifest,
       chunks: snapshots.map(snapshot => snapshot.data() as (typeof manifest.chunks)[number]),
