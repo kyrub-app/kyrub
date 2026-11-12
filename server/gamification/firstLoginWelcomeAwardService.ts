@@ -2,6 +2,7 @@ import type { Firestore } from 'firebase-admin/firestore';
 import type { Auth } from 'firebase-admin/auth';
 import { FIRST_LOGIN_WELCOME_AWARD_ID, isWelcomeCampaignEligible } from './firstLoginWelcome.js';
 import { awardFirstLoginWelcomeInTransaction } from './firstLoginWelcomeAwardTransaction.js';
+import { verifyFirstLoginReceiptInTransaction } from './firstLoginReceiptVerification.js';
 
 /**
  * Trusted post-authentication handler. The caller MUST verify the Firebase ID
@@ -28,23 +29,22 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
     throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
   }
   const root = db.collection('users').doc(uid);
+  const createdAtIso = new Date(createdAt).toISOString();
+  const receiptRef = root.collection('authEvents').doc('first_login_v1');
   const ledgerRef = root.collection('rewardLedger').doc(`earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`);
-  // Firebase lastSignInTime changes on subsequent logins. For an existing
-  // grant, replay using its immutable server ledger timestamp instead.
-  const existingGrant = await ledgerRef.get();
-  // An existing ledger is only replayed after verifying its complete contents
-  // in the transaction. This read never authorizes a new grant.
-  // lastSignInTime is mutable and must never authorize a new first-login grant.
-  // Until an immutable server-verified first-login receipt is integrated,
-  // allow only replay of grants that already have a verified ledger entry.
-  if (!existingGrant.exists) throw Error('WELCOME_FIRST_LOGIN_PROOF_UNAVAILABLE');
-  const occurredAt = existingGrant.get('occurredAt');
-  if (typeof occurredAt !== 'string') throw Error('WELCOME_LEDGER_TIMESTAMP_INVALID');
-  return db.runTransaction(tx => awardFirstLoginWelcomeInTransaction(tx, {
-    userId: uid,
-    authUserCreatedAt: new Date(createdAt).toISOString(),
-    verifiedFirstSignInAt: new Date(occurredAt).toISOString(),
-    balanceRef: root.collection('pitangaBalance').doc('balance'),
-    ledgerRef,
-  }));
+  // Verify immutable proof and perform the award in the SAME transaction.
+  // No trusted receipt issuer is connected yet, so new grants remain blocked
+  // until that independently verified authentication integration is deployed.
+  return db.runTransaction(async tx => {
+    const receipt = await verifyFirstLoginReceiptInTransaction(tx, {
+      userId: uid, firebaseCreatedAt: createdAtIso, receiptRef,
+    });
+    return awardFirstLoginWelcomeInTransaction(tx, {
+      userId: uid,
+      authUserCreatedAt: createdAtIso,
+      verifiedFirstSignInAt: receipt.occurredAt,
+      balanceRef: root.collection('pitangaBalance').doc('balance'),
+      ledgerRef,
+    });
+  });
 };
