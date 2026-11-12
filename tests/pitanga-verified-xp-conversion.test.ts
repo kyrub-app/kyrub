@@ -15,7 +15,7 @@ const refs = {
 const valid = (): Record<string, Record<string, unknown>> => ({
   [refs.balanceRef.path]: { userId: uid, availableKCoins: 2000, migrationEpoch: 'epoch1' },
   [refs.migrationReceiptRef.path]: {
-    userId: uid, balance: 2000, entryCount: 2, ledgerSha256: 'a'.repeat(64), fenceEpoch: 'epoch1',
+    userId: uid, balance: 2000, entryCount: 2, ledgerSha256: 'a'.repeat(64), historicalMembershipSha256: 'b'.repeat(64), fenceEpoch: 'epoch1',
   },
   [refs.fenceRef.path]: { epoch: 'epoch1', status: 'fenced', writersVerified: true },
 });
@@ -111,6 +111,19 @@ test('verified conversion rejects alternate debit or XP document for the same re
   ]) {
     const { result, writes } = run(valid(), override);
     await assert.rejects(result, /CONVERSION_MIGRATION_REFERENCE_INVALID/);
+    assert.equal(writes.length, 0);
+  }
+});
+
+test('conversion refuses migration receipts without historical membership proof', async () => {
+  for (const invalid of [undefined, 'not-a-digest']) {
+    const records = valid();
+    records[refs.migrationReceiptRef.path] = {
+      ...records[refs.migrationReceiptRef.path],
+      historicalMembershipSha256: invalid,
+    };
+    const { result, writes } = run(records);
+    await assert.rejects(result, /CONVERSION_MIGRATION_UNVERIFIED/);
     assert.equal(writes.length, 0);
   }
 });
