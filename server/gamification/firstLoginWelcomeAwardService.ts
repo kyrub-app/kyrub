@@ -24,7 +24,9 @@ export const awardFirstLoginWelcomeForVerifiedUser = async (
   const createdAt = user.metadata.creationTime;
   const firstSignInAt = user.metadata.lastSignInTime;
   if (!createdAt || !firstSignInAt) throw Error('WELCOME_AUTH_METADATA_UNAVAILABLE');
-  if (Date.parse(createdAt) < effectiveAt) throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
+  if (!Number.isFinite(Date.parse(createdAt)) || Date.parse(createdAt) < effectiveAt) {
+    throw Error('WELCOME_HISTORICAL_USER_NOT_ELIGIBLE');
+  }
   const root = db.collection('users').doc(uid);
   const ledgerRef = root.collection('rewardLedger').doc(`earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`);
   // Firebase lastSignInTime changes on subsequent logins. For an existing
