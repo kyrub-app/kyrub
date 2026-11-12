@@ -2,30 +2,32 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
 
-const ref = (id: string) => {
-  const collection = id === 'debit' ? 'rewardLedger'
-    : id === 'xp' ? 'xpLedger'
-    : id === 'receipt' ? 'pitangaXpConversions' : 'pitangaBalance';
+const ref = (kind: string) => {
+  const collection = kind === 'debit' ? 'rewardLedger'
+    : kind === 'xp' ? 'xpLedger'
+    : kind === 'receipt' ? 'pitangaXpConversions' : 'pitangaBalance';
+  const id = kind === 'debit' || kind === 'xp' ? 'conversion_req1'
+    : kind === 'receipt' ? 'req1' : 'balance';
   const path = `users/user1/${collection}/${id}`;
   return { id, path, parent: { path: `users/user1/${collection}` } };
 };
 const makeTx = (balance: number, replay = false) => {
   const refs = { balanceRef: ref('balance'), debitRef: ref('debit'), xpRef: ref('xp'), receiptRef: ref('receipt') };
   const snapshots = new Map<string, Record<string, unknown>>([
-    ['balance', { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: balance }],
+    [refs.balanceRef.path, { userId: 'user1', migrationEpoch: 'epoch1', availableKCoins: balance }],
   ]);
   if (replay) {
-    snapshots.set('receipt', { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 1000, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
-    snapshots.set('debit', { id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -1000 });
-    snapshots.set('xp', { id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1', economy: 'kyrub_xp', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
+    snapshots.set(refs.receiptRef.path, { userId: 'user1', requestId: 'req1', requestedXp: 1, availablePitangasBefore: 1000, status: 'committed', occurredAt: '2026-11-11T12:00:00Z' });
+    snapshots.set(refs.debitRef.path, { id: refs.debitRef.id, userId: 'user1', idempotencyKey: 'pitanga_xp_req1', type: 'redeem', economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -1000 });
+    snapshots.set(refs.xpRef.path, { id: refs.xpRef.id, userId: 'user1', idempotencyKey: 'pitanga_xp_req1', economy: 'kyrub_xp', sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1 });
   }
-  const writes: Array<{ op: string; id: string; value: Record<string, unknown> }> = [];
+  const writes: Array<{ op: string; path: string; id: string; value: Record<string, unknown> }> = [];
   const tx = {
-    get: async (r: { id: string }) => ({
-      exists: snapshots.has(r.id), data: () => snapshots.get(r.id),
+    get: async (r: { path: string }) => ({
+      exists: snapshots.has(r.path), data: () => snapshots.get(r.path),
     }),
-    create: (r: { id: string }, value: Record<string, unknown>) => { writes.push({ op: 'create', id: r.id, value }); },
-    update: (r: { id: string }, value: Record<string, unknown>) => { writes.push({ op: 'update', id: r.id, value }); },
+    create: (r: { path: string; id: string }, value: Record<string, unknown>) => { writes.push({ op: 'create', path: r.path, id: r.id, value }); },
+    update: (r: { path: string; id: string }, value: Record<string, unknown>) => { writes.push({ op: 'update', path: r.path, id: r.id, value }); },
   };
   return { refs, tx, writes };
 };
@@ -38,11 +40,11 @@ test('stages balance update, debit, XP credit and receipt together', async () =>
   assert.deepEqual(result, { xpCredited: 1, pitangasDebited: 1000, remainingPitangas: 0, replay: false });
   assert.equal(writes.length, 4);
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 0);
-  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -1000);
-  assert.equal(writes.find(w => w.id === 'debit')?.value.economy, 'k_coin');
-  assert.equal(writes.find(w => w.id === 'xp')?.value.economy, 'kyrub_xp');
-  assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 1);
-  assert.equal(writes.find(w => w.id === 'xp')?.value.sourceType, 'conversion');
+  assert.equal(writes.find(w => w.path.includes('/rewardLedger/'))?.value.deltaKCoins, -1000);
+  assert.equal(writes.find(w => w.path.includes('/rewardLedger/'))?.value.economy, 'k_coin');
+  assert.equal(writes.find(w => w.path.includes('/xpLedger/'))?.value.economy, 'kyrub_xp');
+  assert.equal(writes.find(w => w.path.includes('/xpLedger/'))?.value.deltaXp, 1);
+  assert.equal(writes.find(w => w.path.includes('/xpLedger/'))?.value.sourceType, 'conversion');
 });
 
 test('same request replay does not stage additional writes', async () => {
@@ -87,7 +89,7 @@ test('partial ledger state fails closed without additional writes', async () => 
   const { refs, tx, writes } = makeTx(1000);
   const partialTx = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'debit'
+    get: async (r: { id: string }) => r.path === refs.debitRef.path
       ? { exists: true, data: () => ({ deltaKCoins: -1000 }) }
       : tx.get(r),
   };
@@ -101,7 +103,7 @@ test('inconsistent replay receipt fails closed', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const inconsistentTx = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'xp'
+    get: async (r: { id: string }) => r.path === refs.xpRef.path
       ? { exists: true, data: () => ({ deltaXp: 2 }) }
       : tx.get(r),
   };
@@ -115,8 +117,8 @@ test('replay with ledger belonging to another user is rejected', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const tampered = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'xp'
-      ? { exists: true, data: () => ({ id: 'xp', userId: 'other_user', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', deltaXp: 1 }) }
+    get: async (r: { id: string }) => r.path === refs.xpRef.path
+      ? { exists: true, data: () => ({ id: 'conversion_req1', userId: 'other_user', idempotencyKey: 'pitanga_xp_req1', sourceType: 'conversion', deltaXp: 1 }) }
       : tx.get(r),
   };
   await assert.rejects(() => applyPitangaXpConversionInTransaction(tampered as never, {
@@ -143,8 +145,8 @@ test('2075 Pitangas convert to 2 XP with 75 remaining', async () => {
   } as never);
   assert.deepEqual(result, { xpCredited: 2, pitangasDebited: 2000, remainingPitangas: 75, replay: false });
   assert.equal(writes.find(w => w.id === 'balance')?.value.availableKCoins, 75);
-  assert.equal(writes.find(w => w.id === 'debit')?.value.deltaKCoins, -2000);
-  assert.equal(writes.find(w => w.id === 'xp')?.value.deltaXp, 2);
+  assert.equal(writes.find(w => w.path.includes('/rewardLedger/'))?.value.deltaKCoins, -2000);
+  assert.equal(writes.find(w => w.path.includes('/xpLedger/'))?.value.deltaXp, 2);
 });
 
 test('unsafe XP conversion multiplication fails before transaction reads', async () => {
@@ -161,9 +163,9 @@ test('replay with mismatched correlation fails closed', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const mismatched = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'debit'
+    get: async (r: { id: string }) => r.path === refs.debitRef.path
       ? { exists: true, data: () => ({
-          id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          id: 'conversion_req1', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           type: 'redeem', sourceType: 'conversion', sourceId: 'req1',
           correlationId: 'another_request', deltaKCoins: -1000,
         }) }
@@ -188,9 +190,9 @@ test('replay with XP ledger timestamp mismatch is rejected', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const mismatched = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'xp'
+    get: async (r: { id: string }) => r.path === refs.xpRef.path
       ? { exists: true, data: () => ({
-          id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          id: 'conversion_req1', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           sourceType: 'conversion', sourceId: 'req1', correlationId: 'req1',
           occurredAt: '2026-11-11T12:00:01Z', deltaXp: 1,
         }) }
@@ -207,9 +209,9 @@ test('replay rejects a debit belonging to another economy', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const tampered = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'debit'
+    get: async (r: { id: string }) => r.path === refs.debitRef.path
       ? { exists: true, data: () => ({
-          id: 'debit', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          id: 'conversion_req1', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           type: 'redeem', economy: 'store_loyalty_points', sourceType: 'conversion',
           sourceId: 'req1', correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaKCoins: -1000,
         }) }
@@ -226,9 +228,9 @@ test('replay rejects XP credited to an incorrect economy', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const tampered = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'xp'
+    get: async (r: { id: string }) => r.path === refs.xpRef.path
       ? { exists: true, data: () => ({
-          id: 'xp', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
+          id: 'conversion_req1', userId: 'user1', idempotencyKey: 'pitanga_xp_req1',
           economy: 'k_coin', sourceType: 'conversion', sourceId: 'req1',
           correlationId: 'req1', occurredAt: '2026-11-11T12:00:00Z', deltaXp: 1,
         }) }
@@ -245,7 +247,7 @@ test('replay rejects tampered original balance in receipt', async () => {
   const { refs, tx, writes } = makeTx(0, true);
   const tampered = {
     ...tx,
-    get: async (r: { id: string }) => r.id === 'receipt'
+    get: async (r: { id: string }) => r.path === refs.receiptRef.path
       ? { exists: true, data: () => ({
           userId: 'user1', requestId: 'req1', requestedXp: 1,
           availablePitangasBefore: 99, status: 'committed', occurredAt: '2026-11-11T12:00:00Z',
@@ -372,7 +374,7 @@ test('conversion replay rejects malformed original balance without writes', asyn
     const { refs, tx, writes } = makeTx(750, true);
     const tampered = {
       ...tx,
-      get: async (r: { id: string }) => r.id === 'receipt'
+      get: async (r: { id: string }) => r.path === refs.receiptRef.path
         ? { exists: true, data: () => ({
             userId: 'user1', requestId: 'req1', requestedXp: 1,
             availablePitangasBefore: original, status: 'committed',
@@ -418,4 +420,23 @@ test('conversion rejects a receipt redirected to another user collection before 
   } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
   assert.equal(reads, 0);
   assert.equal(writes.length, 0);
+});
+
+test('rejects arbitrary conversion document IDs before Firestore reads', async () => {
+  const { refs, tx, writes } = makeTx(1000);
+  for (const field of ['debitRef', 'xpRef', 'receiptRef'] as const) {
+    const original = refs[field];
+    const altered = { ...original, id: 'wrong_id',
+      path: `${original.parent.path}/wrong_id` };
+    let reads = 0;
+    const guardedTx = { ...tx, get: async (r: { path: string }) => {
+      reads++; return tx.get(r);
+    } };
+    await assert.rejects(() => applyPitangaXpConversionInTransaction(guardedTx as never, {
+      ...refs, [field]: altered, userId: 'user1', requestId: 'req1',
+      requestedXp: 1, occurredAt: '2026-11-11T12:00:00Z',
+    } as never), /CONVERSION_REFERENCE_SCOPE_INVALID/);
+    assert.equal(reads, 0, `${field} must be rejected before reads`);
+    assert.equal(writes.length, 0);
+  }
 });
