@@ -6,8 +6,14 @@
 - `pitangaNewUserBootstrapTransaction.ts` exige documento `systemControl/pitangaLegacyWriterFence` com `status=fenced`, `writersVerified=true` e epoch correspondente, além da confirmação do chamador. Isso é uma pré-condição, **não uma prova independente** de que todos os escritores legados pararam.
 - `pitangaMigrationVerifiedBootstrap.ts` também exige comprovação externa do bloqueio. Não substitui inventário e revisão dos caminhos de escrita.
 - `pitangaEarnTransaction.ts` não cria saldo ausente: retorna erro, protegendo saldos históricos de reinicialização silenciosa.
-- `firstLoginWelcomeAwardService.ts` usa `Firebase Auth metadata.lastSignInTime`. Esse campo é atualizado a cada autenticação e **não comprova sozinho o primeiro login**. A regra de até 24 horas após criação da conta reduz a janela, mas não fornece prova imutável do evento.
+- `firstLoginWelcomeAwardService.ts` **não utiliza mais** `Firebase Auth metadata.lastSignInTime` para autorizar crédito. Ele exige recibo em `users/{uid}/authEvents/first_login_v1`, validado na mesma transação do lançamento. Esse recibo **ainda não possui emissor conectado**; portanto, não há fluxo completo de concessão automática.
+- `firstLoginReceiptWriter.ts` é uma primitiva isolada. `trustedFirstLoginEvent: true` **não prova** autenticidade; o futuro chamador precisa validar independentemente a origem, a primeira ocorrência e a identidade do evento. Não expor o escritor a solicitações de clientes ou a rotas que apenas validem ID token.
+- A validação de campos `issuer: trusted_auth_server` no recibo não constitui atestado criptográfico de proveniência. É obrigatório restringir permissões de gravação e auditar todos os caminhos administrativos capazes de escrever `authEvents`.
 - O bootstrap de novas contas ainda não é chamado pela API nem pelo login. A concessão de 1.000 Pitangas fica indisponível para contas sem saldo canônico pré-existente.
+
+## Limitação da inspeção de código
+
+A busca de código GitHub na branch padrão não retornou resultados nem para identificadores presentes no repositório (`availableKCoins`, `pitangaBalance`, `onAuthStateChanged`). Portanto, **não é possível inferir ausência de escritores legados a partir dessa busca vazia**. A inspeção de todos os caminhos de escrita e seus deploys permanece aberta. Não definir `writersVerified=true` com base nesse resultado.
 
 ## Critérios objetivos de liberação
 
