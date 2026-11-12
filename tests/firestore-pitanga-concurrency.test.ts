@@ -434,6 +434,14 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     .sort(), [false, true]);
   assert.equal((await balanceRef.get()).data()?.availableKCoins, 1000);
   assert.equal((await receiptRef.get()).data()?.ledgerSha256, checkpoint.ledgerSha256);
+  const manifestDocs = await root.collection('pitangaMigrationManifest').get();
+  assert.equal(manifestDocs.size, 1, 'concurrent bootstrap must create one immutable manifest');
+  assert.equal(manifestDocs.docs[0].data().entryIds.length, checkpoint.entryCount);
+  assert.equal((await receiptRef.get()).data()?.historicalMembershipSha256,
+    (await import('../server/gamification/pitangaHistoricalManifest.js'))
+      .buildPitangaHistoricalManifest({
+        userId, fenceEpoch: userId, entryIds: historical.docs.map(doc => doc.id),
+      }).membershipSha256);
   // The membership digest is persisted with the historical checkpoint.
   const receiptData = (await receiptRef.get()).data();
   assert.match(receiptData?.historicalMembershipSha256, /^[a-f0-9]{64}$/);
