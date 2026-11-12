@@ -35,7 +35,17 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     firebaseCreatedAt: createdAt, campaignEffectiveAt: cutoff,
   });
   const root = db.collection('users').doc(uid);
-  return db.runTransaction(tx => grantCleanBaselineWelcomeInTransaction(tx, {
+  return db.runTransaction(async tx => {
+    // A feature flag alone must never authorize live welcome credits. The
+    // migration fence is a necessary (not sufficient) release prerequisite.
+    const fence = await tx.get(db.doc('systemControl/pitangaLegacyWriterFence'));
+    const control = fence.data();
+    if (!fence.exists || control?.status !== 'fenced' ||
+        control?.writersVerified !== true ||
+        typeof control?.epoch !== 'string' || !control.epoch.trim()) {
+      throw Error('WELCOME_LEGACY_WRITERS_NOT_VERIFIED');
+    }
+    return grantCleanBaselineWelcomeInTransaction(tx, {
     userId: uid, firebaseCreatedAt: createdAt,
     campaignEffectiveAt: cutoff, isolatedCleanBaseline: true,
     signedInitialSessionAt: occurredAt,
@@ -43,5 +53,6 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     balanceRef: root.collection('pitangaBalance').doc('balance'),
     ledgerCollection: root.collection('rewardLedger'),
     awardRef: root.collection('rewardLedger').doc('earn_first_login_welcome_v1'),
-  }));
+    });
+  });
 };
