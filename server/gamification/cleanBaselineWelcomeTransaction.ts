@@ -3,10 +3,10 @@ import { FIRST_LOGIN_WELCOME_AWARD_ID, FIRST_LOGIN_WELCOME_PITANGAS, isWelcomeCa
 import { verifyFirstLoginReceiptInTransaction } from './firstLoginReceiptVerification.js';
 
 /**
- * Isolated clean-baseline onboarding primitive. Never call on an existing
- * production economy: the caller must establish an independently isolated
- * environment and a trusted first-login receipt before invoking this.
- * No public route calls this function.
+ * Clean-baseline onboarding primitive for newly created accounts only.
+ * A trusted caller must verify the Firebase-signed initial session or a
+ * server-authored receipt, and ensure the account has no prior Pitanga state.
+ * All writes are atomic and existing balances are never overwritten.
  */
 export const grantCleanBaselineWelcomeInTransaction = async (
   tx: Transaction,
@@ -34,6 +34,12 @@ export const grantCleanBaselineWelcomeInTransaction = async (
   }
 
   // All reads must precede writes; never overwrite existing balances.
+  if (input.signedInitialSessionAt !== undefined &&
+      (!Number.isFinite(Date.parse(input.signedInitialSessionAt)) ||
+       Date.parse(input.signedInitialSessionAt) < Date.parse(input.campaignEffectiveAt) - 60_000)) {
+    throw Error('WELCOME_SIGNED_SESSION_INVALID');
+  }
+
   const [receipt, balance, ledger, award] = await Promise.all([
     input.signedInitialSessionAt
       ? Promise.resolve({ occurredAt: input.signedInitialSessionAt })
