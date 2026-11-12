@@ -37,6 +37,9 @@ export const applyPitangaXpConversionInTransaction = async (
       input.debitRef.parent.path !== `users/${input.userId}/rewardLedger` ||
       input.xpRef.parent.path !== `users/${input.userId}/xpLedger` ||
       input.receiptRef.parent.path !== `users/${input.userId}/pitangaXpConversions` ||
+      input.receiptRef.id !== input.requestId ||
+      input.debitRef.id !== `conversion_${input.requestId}` ||
+      input.xpRef.id !== `conversion_${input.requestId}` ||
       [input.balanceRef, input.receiptRef].some(ref =>
         ref.parent.path === `users/${input.userId}/rewardLedger` ||
         ref.parent.path === `users/${input.userId}/xpLedger`) ||
