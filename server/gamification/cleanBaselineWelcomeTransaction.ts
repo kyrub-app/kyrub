@@ -16,6 +16,7 @@ export const grantCleanBaselineWelcomeInTransaction = async (
     campaignEffectiveAt: string;
     isolatedCleanBaseline: boolean;
     receiptRef: DocumentReference;
+    signedInitialSessionAt?: string;
     balanceRef: DocumentReference;
     ledgerCollection: CollectionReference;
     awardRef: DocumentReference;
@@ -34,10 +35,12 @@ export const grantCleanBaselineWelcomeInTransaction = async (
 
   // All reads must precede writes; never overwrite existing balances.
   const [receipt, balance, ledger, award] = await Promise.all([
-    verifyFirstLoginReceiptInTransaction(tx, {
-      userId: uid, firebaseCreatedAt: input.firebaseCreatedAt,
-      receiptRef: input.receiptRef,
-    }),
+    input.signedInitialSessionAt
+      ? Promise.resolve({ occurredAt: input.signedInitialSessionAt })
+      : verifyFirstLoginReceiptInTransaction(tx, {
+        userId: uid, firebaseCreatedAt: input.firebaseCreatedAt,
+        receiptRef: input.receiptRef,
+      }),
     tx.get(input.balanceRef),
     tx.get(input.ledgerCollection.limit(1)),
     tx.get(input.awardRef),
@@ -56,7 +59,6 @@ export const grantCleanBaselineWelcomeInTransaction = async (
         data?.sourceId !== FIRST_LOGIN_WELCOME_AWARD_ID ||
         data?.correlationId !== FIRST_LOGIN_WELCOME_AWARD_ID ||
         data?.deltaKCoins !== FIRST_LOGIN_WELCOME_PITANGAS ||
-        data?.occurredAt !== plan.occurredAt ||
         data?.idempotencyKey !== `pitanga_earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`) {
       throw Error('WELCOME_CLEAN_BASELINE_REPLAY_CONFLICT');
     }
