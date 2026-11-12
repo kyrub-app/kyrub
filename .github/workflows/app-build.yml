@@ -81,7 +81,9 @@ jobs:
 
       - name: Show failure log excerpt
         if: failure()
-        run: tail -n 160 build.log || true
+        run: |
+          grep -n -B 12 -A 35 -E 'not ok|error TS[0-9]+|AssertionError|testCodeFailure|ERR_TEST_FAILURE' build.log | tail -n 220 || true
+          tail -n 25 build.log || true
 
       - name: Upload failure log
         if: failure()
