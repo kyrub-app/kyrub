@@ -23,6 +23,42 @@
 - Antes de conectar o escritor, implementar e auditar uma origem confiável de eventos de autenticação com prova de primeira ocorrência, deduplicação e controle de permissão de gravação em Firestore. Restringir a criação/edição do recibo ao serviço autorizado; validar regras Firestore e credenciais de serviço. Documentar como a origem distingue o primeiro login de logins posteriores e como trata eventos fora de ordem.
 - Até essa integração ser comprovada, **nenhum novo recibo deve ser emitido e nenhum novo crédito deve ser autorizado**. O CI verde não substitui a homologação de segurança.
 
+## Decisão de simplificação — marco zero dos dados de teste
+
+O proprietário confirmou que a economia anterior de Pitangas foi usada em testes
+e autorizou planejar um reinício limpo, sem obrigação de migrar saldos fictícios.
+**Essa decisão não autoriza exclusão automática em produção.**
+
+Antes de implementar outro ledger, foram identificados no repositório:
+`shared/gamificationLedger.ts`, `shared/gamificationEconomies.ts`,
+`server/gamification/redemptionRepository.ts`,
+`server/gamification/pitangaEarnTransaction.ts`,
+`server/gamification/pitangaSpendTransaction.ts`,
+`server/gamification/pitangaNewUserBootstrapTransaction.ts`,
+`server/gamification/firstLoginReceiptWriter.ts` e
+`server/gamification/firstLoginWelcomeAwardService.ts`.
+Reutilizar esses contratos; não criar uma segunda economia paralela.
+
+Plano de execução delimitado:
+1. Classificar as coleções de Pitangas existentes e confirmar se há registros
+   de usuários reais ou transações não fictícias. Gerar manifesto com contagens
+   e IDs anonimizados antes de qualquer alteração.
+2. Em ambiente isolado, usar um namespace/base de teste limpa e criar o saldo
+   canônico de novas contas na mesma transação do crédito idempotente, sem
+   reinicializar saldos de contas preexistentes.
+3. Emitir o recibo de primeiro login somente por origem de autenticação
+   verificada no servidor, nunca por declaração do cliente.
+4. Homologar primeiro login, repetição, concorrência, histórico e primeira loja
+   (+2 XP), mantendo o bônus de 1.000 Pitangas separado do XP.
+5. Se a limpeza de produção for realmente necessária, apresentar previamente
+   o manifesto exato dos documentos a excluir e executar somente após
+   autorização específica, com cópia de segurança e plano de reversão.
+
+O antigo bloqueio de migração pode ser dispensado **apenas no novo namespace
+limpo e isolado**, após comprovar que não há escritores concorrentes nem dados
+reais. Não definir `writersVerified=true` por presunção e não alterar
+`systemControl/pitangaLegacyWriterFence` na produção atual.
+
 ## Bloqueios de ativação — não contornar
 
 1. **Inventário e bloqueio de escritores legados de Pitangas.** Verificar TODOS os escritores ativos e comprovar o fence efetivo. Um documento `systemControl/pitangaLegacyWriterFence` isolado não é prova suficiente.
