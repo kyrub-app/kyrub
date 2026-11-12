@@ -64,6 +64,34 @@ import {
 } from './utils/storePersistence';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
 
+/**
+ * Welcome claim is deliberately best-effort. Server-side cutoff and canonical
+ * balance checks decide eligibility; the browser never supplies an award amount.
+ * A deferred claim must not interrupt login or onboarding.
+ */
+function WelcomeBonusClaimBridge() {
+  useEffect(() => {
+    let cancelled = false;
+    const unsubscribe = onAuthStateChanged(auth, user => {
+      if (!user) return;
+      void user.getIdToken().then(token => {
+        if (cancelled) return;
+        return fetch('/api/plan-control?op=onboarding.welcome.claim', {
+          method: 'POST',
+          headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+          body: '{}',
+          cache: 'no-store',
+        });
+      }).catch(() => {
+        // A missing or unready canonical balance is expected before migration.
+        // Do not surface an unverified reward or block authentication.
+      });
+    });
+    return () => { cancelled = true; unsubscribe(); };
+  }, []);
+  return null;
+}
+
 function StorePersistenceBridge() {
   useEffect(() => {
     let cancelled = false;
@@ -196,6 +224,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <AppModalLayoutBridge />
       <KyrubAiConversationHeaderGuard />
       <StorePersistenceBridge />
+      <WelcomeBonusClaimBridge />
       <KyrubAuthoritativeReceiptBridge />
       <ProductCrossDeviceSyncBridge
         onCloudProductsApplied={refreshLegacyCache}
