@@ -457,6 +457,11 @@ test('Firestore Emulator bootstraps historical balance once and rejects competin
     receiptData?.historicalMembershipSha256);
   await manifestRef.create(savedManifest!);
   assert.equal((await bootstrap()).replay, true);
+  // A forged but present chunk must also fail closed against receipt membership.
+  await manifestRef.update({ entryIds: ['forged_historical_entry'] });
+  await assert.rejects(bootstrap(), /PITANGA_MANIFEST_CHUNK_INVALID/);
+  await manifestRef.set(savedManifest!);
+  assert.equal((await bootstrap()).replay, true);
   await assert.rejects(bootstrap({ ...checkpoint, ledgerSha256: 'b'.repeat(64) }),
     /PITANGA_CHECKPOINT_STALE/);
   // A late historical mutation is detected from the ledger read inside
