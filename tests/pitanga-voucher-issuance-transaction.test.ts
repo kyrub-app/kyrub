@@ -90,3 +90,15 @@ test('complete matching replay is read-only', async () => {
   const changed = { ...plan, voucherCode: 'DIFFERENT' };
   await assert.rejects(() => invoke(replay.tx, { plan: changed }), /PITANGA_VOUCHER_IDEMPOTENCY_CONFLICT/);
 });
+
+test('rejects voucher issuance with an unexpected audit event before reads', async () => {
+  const f = fixture(1200);
+  const invalidPlan = {
+    ...plan,
+    auditEvent: { ...plan.auditEvent, type: 'reward_redemption_issued' },
+  };
+  await assert.rejects(() => invoke(f.tx, { plan: invalidPlan }),
+    /PITANGA_VOUCHER_PLAN_INVALID/);
+  assert.equal(f.reads, 0);
+  assert.equal(f.writes.length, 0);
+});
