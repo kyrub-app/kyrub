@@ -43,9 +43,13 @@ const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt, fenceData?: R
   const db = {
     runTransaction: async (callback: (tx: any) => Promise<unknown>) => {
       transactions++;
-      const tx = { get: async () => ({ exists: fenceData !== undefined, data: () => fenceData }) };
+      let reads = 0;
+      const tx = { get: async () => {
+        if (++reads > 1) throw Error('MOCK_TRANSACTION_STOP');
+        return { exists: fenceData !== undefined, data: () => fenceData };
+      } };
       try { await callback(tx); } catch (error) {
-        if ((error as Error).message !== 'tx.get is not a function') throw error;
+        if ((error as Error).message !== 'MOCK_TRANSACTION_STOP') throw error;
       }
       return { balance: 1000, replay: false };
     },
