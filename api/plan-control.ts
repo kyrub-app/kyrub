@@ -830,6 +830,20 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'onboarding.welcome.claim') {
+      const code = error instanceof Error ? error.message : '';
+      const unauthorized = code === 'AUTH_REQUIRED' || code === 'AUTH_UNAVAILABLE' ||
+        /id-token|token-expired|invalid-token/i.test(code);
+      const invalid = code === 'WELCOME_INVALID_REQUEST' || code === 'WELCOME_USER_INVALID';
+      response.status(unauthorized ? 401 : invalid ? 400 : 503).json({
+        error: unauthorized ? 'Entre novamente para receber seu bônus.'
+          : invalid ? 'Solicitação de boas-vindas inválida.'
+          : 'Seu bônus ainda não pôde ser confirmado. Tente novamente mais tarde.',
+        code: unauthorized ? 'WELCOME_AUTH_REQUIRED'
+          : invalid ? 'WELCOME_INVALID_REQUEST' : 'WELCOME_AWARD_DEFERRED',
+      });
+      return;
+    }
     if (operation === 'store.free.ensure') {
       const code = error instanceof Error ? error.message : '';
       const unauthorized = code === 'FREE_STORE_AUTH_REQUIRED' ||
