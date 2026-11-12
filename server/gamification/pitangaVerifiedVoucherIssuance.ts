@@ -45,7 +45,9 @@ export const issueVerifiedPitangaVoucherInTransaction = async (
       !Number.isSafeInteger(r?.balance) || r.balance < 0 ||
       !Number.isSafeInteger(r?.entryCount) || r.entryCount < 0 ||
       typeof r?.ledgerSha256 !== 'string' ||
-      !/^[a-f0-9]{64}$/.test(r.ledgerSha256)) {
+      !/^[a-f0-9]{64}$/.test(r.ledgerSha256) ||
+      typeof r?.historicalMembershipSha256 !== 'string' ||
+      !/^[a-f0-9]{64}$/.test(r.historicalMembershipSha256)) {
     throw new Error('PITANGA_VOUCHER_MIGRATION_UNVERIFIED');
   }
   return issuePitangaVoucherInTransaction(tx, input);
