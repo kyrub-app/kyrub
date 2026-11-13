@@ -1,6 +1,6 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
-import { FIRST_STORE_PUBLISHED_CHALLENGE_ID } from './firstStorePublishedReward.js';
+import { FIRST_STORE_PUBLISHED_CHALLENGE_ID, planFirstStorePublishedReward } from './firstStorePublishedReward.js';
 import { awardVerifiedFirstStorePublicationInTransaction } from './firstStorePublishedAwardTransaction.js';
 
 /**
@@ -11,7 +11,7 @@ import { awardVerifiedFirstStorePublicationInTransaction } from './firstStorePub
 export async function publishFirstStoreAndAwardXp(
   db: Firestore,
   input: { authenticatedUserId: string; canonicalStoreId: string },
-): Promise<{ replay: boolean; pitangas: 0; xp: 2 }> {
+): Promise<{ replay: boolean; pitangas: 0; xp: 0 | 2 }> {
   const { authenticatedUserId: uid, canonicalStoreId } = input;
   // Capture the trusted timestamp once, outside transaction retries.
   const publishedAt = new Date().toISOString();
@@ -35,8 +35,7 @@ export async function publishFirstStoreAndAwardXp(
         store.get('ownerId') !== uid || store.get('firstStoreCreationVerified') !== true ||
         !primary.exists || primary.get('id') !== uid || primary.get('ownerId') !== uid ||
         (listing.exists && (listing.get('listingType') !== 'store' ||
-        listing.get('storeId') !== uid || listing.get('ownerId') !== uid)) ||
-        !challenge.exists) {
+        listing.get('storeId') !== uid || listing.get('ownerId') !== uid))) {
       throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
     }
     const existingFirstAt = store.get('firstPublishedAt');
@@ -47,15 +46,17 @@ export async function publishFirstStoreAndAwardXp(
           listing.get('publishedAt') !== existingFirstAt ||
           listing.get('publicationStatus') !== 'published' ||
           event.get('id') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID ||
-          event.get('status') !== 'pending' ||
+          !['pending', 'unrewarded'].includes(event.get('status')) ||
           event.get('isFirstPublication') !== true ||
           event.get('userId') !== uid || event.get('storeId') !== canonicalStoreId ||
           event.get('publishedAt') !== existingFirstAt ||
           event.get('challengeId') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID) {
         throw Error('FIRST_STORE_PUBLICATION_MARKER_CONFLICT');
       }
-      // A repeated first-publication request never changes the timestamp.
-      const result = await awardVerifiedFirstStorePublicationInTransaction(tx, {
+      // Never grant XP retroactively when the first publication was unrewarded.
+      if (event.get('status') === 'unrewarded') return { replay: true, pitangas: 0, xp: 0 };
+      if (!challenge.exists) throw Error('FIRST_STORE_PUBLICATION_REWARD_CONFIG_MISSING');
+      return awardVerifiedFirstStorePublicationInTransaction(tx, {
         challenge: challenge.data() as KyrubChallengeDefinition,
         event: { userId: uid, storeId: canonicalStoreId, publishedAt: existingFirstAt,
           isFirstPublication: true, isOwnerVerified: true, isMarketplaceVisible: true },
@@ -63,7 +64,6 @@ export async function publishFirstStoreAndAwardXp(
         xpLedgerRef: userRoot.collection('xpLedger').doc(`xp_${awardId}`),
         pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
       });
-      return result;
     }
     // A pre-published record without immutable server evidence is not a
     // verifiable first-publication transition. Never mint XP retroactively.
@@ -71,14 +71,28 @@ export async function publishFirstStoreAndAwardXp(
         (listing.exists && listing.get('publicationStatus') === 'published')) {
       throw Error('FIRST_STORE_PUBLICATION_PREEXISTING_UNVERIFIED');
     }
-    const result = await awardVerifiedFirstStorePublicationInTransaction(tx, {
-      challenge: challenge.data() as KyrubChallengeDefinition,
-      event: { userId: uid, storeId: canonicalStoreId, publishedAt,
-        isFirstPublication: true, isOwnerVerified: true, isMarketplaceVisible: true },
-      receiptRef: userRoot.collection('challengeRewards').doc(awardId),
-      xpLedgerRef: userRoot.collection('xpLedger').doc(`xp_${awardId}`),
-      pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
-    });
+    const publicationEvent = { userId: uid, storeId: canonicalStoreId, publishedAt,
+      isFirstPublication: true, isOwnerVerified: true, isMarketplaceVisible: true };
+    let eligible = false;
+    if (challenge.exists) {
+      try {
+        planFirstStorePublishedReward(challenge.data() as KyrubChallengeDefinition, publicationEvent);
+        eligible = true;
+      } catch (error) {
+        const code = error instanceof Error ? error.message : '';
+        if (!['FIRST_STORE_PUBLICATION_CHALLENGE_NOT_ELIGIBLE',
+          'FIRST_STORE_PUBLICATION_OUTSIDE_WINDOW'].includes(code)) throw error;
+      }
+    }
+    const result = eligible
+      ? await awardVerifiedFirstStorePublicationInTransaction(tx, {
+          challenge: challenge.data() as KyrubChallengeDefinition,
+          event: publicationEvent,
+          receiptRef: userRoot.collection('challengeRewards').doc(awardId),
+          xpLedgerRef: userRoot.collection('xpLedger').doc(`xp_${awardId}`),
+          pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
+        })
+      : { replay: false, pitangas: 0 as const, xp: 0 as const };
     tx.update(storeRef, { publicationStatus: 'published', firstPublishedAt: publishedAt });
     if (listing.exists) {
       tx.update(listingRef, { publicationStatus: 'published', publishedAt });
@@ -101,7 +115,7 @@ export async function publishFirstStoreAndAwardXp(
       id: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
       challengeId: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
       userId: uid, storeId: canonicalStoreId,
-      status: 'pending', isFirstPublication: true, publishedAt,
+      status: eligible ? 'pending' : 'unrewarded', isFirstPublication: true, publishedAt,
     });
     return result;
   });
