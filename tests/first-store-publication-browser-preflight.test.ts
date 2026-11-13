@@ -18,8 +18,8 @@ test('publication handler mounts locally only with emulator-only guard', () => {
   assert.match(action, /transport === 'first-store-publication'/);
   assert.match(server, /KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL === 'true'/);
   assert.match(server, /NODE_ENV !== 'production'/);
-  assert.match(server, /FIRESTORE_EMULATOR_HOST === '127\\.0\\.0\\.1:8088'/);
-  assert.match(server, /FIREBASE_AUTH_EMULATOR_HOST === '127\\.0\\.0\\.1:9099'/);
+  assert.ok(server.includes("FIRESTORE_EMULATOR_HOST === '127.0.0.1:8088'"));
+  assert.ok(server.includes("FIREBASE_AUTH_EMULATOR_HOST === '127.0.0.1:9099'"));
   assert.ok(server.includes("app.post('/api/action-execute'"));
 });
 
