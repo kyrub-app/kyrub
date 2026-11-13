@@ -226,3 +226,16 @@ test('trusted hide and republish preserve original timestamp and award only once
   assert.equal(listing.get('publishedAt').toDate().toISOString(), firstAt);
   assert.equal(xp.size, 1);
 });
+
+
+test('trusted publication, hide and republish synchronize existing tenant fallback', async () => {
+  const tenantRef = db.doc(`tenants/${uid}`);
+  await tenantRef.set({ id: uid, ownerId: uid, publicationStatus: 'paused' });
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  assert.equal((await tenantRef.get()).get('publicationStatus'), 'published');
+  await hideVerifiedFirstStorePublication(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  assert.equal((await tenantRef.get()).get('publicationStatus'), 'paused');
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  assert.equal((await tenantRef.get()).get('publicationStatus'), 'published');
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
+});
