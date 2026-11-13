@@ -10,11 +10,12 @@ import {
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 // Test-only opt-in. Never route a production build or real project to an emulator.
-const isolatedE2E = import.meta.env.DEV &&
-  import.meta.env.VITE_KYRUB_E2E_ISOLATED === 'true' &&
-  import.meta.env.VITE_KYRUB_E2E_PROJECT_ID === 'demo-global-challenges';
+const viteEnv = import.meta.env;
+const isolatedE2E = viteEnv?.DEV === true &&
+  viteEnv?.VITE_KYRUB_E2E_ISOLATED === 'true' &&
+  viteEnv?.VITE_KYRUB_E2E_PROJECT_ID === 'demo-global-challenges';
 
-if (import.meta.env.VITE_KYRUB_E2E_ISOLATED === 'true' && !isolatedE2E) {
+if (viteEnv?.VITE_KYRUB_E2E_ISOLATED === 'true' && !isolatedE2E) {
   throw new Error('E2E_ISOLATION_GUARD_FAILED');
 }
 
