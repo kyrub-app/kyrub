@@ -82,3 +82,11 @@ test('verified profile sync is gated and never falls back to timestamp-mutating 
   assert.match(modal, /trustedPublication && import\.meta\.env\.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true'/);
   assert.match(modal, /else if \(trustedPublication\) \{\s*marketplaceSynced = false;/);
 });
+
+
+test('verified profile sync never forces paused store to published in UI', () => {
+  const branch = modal.split("if (trustedPublication && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {")[1]?.split("} else if (trustedPublication) {")[0];
+  assert.ok(branch, 'trusted sync branch must exist');
+  assert.match(branch, /action: 'sync-profile'/);
+  assert.doesNotMatch(branch, /setCanonicalPublished\(true\)|setFallbackPublished\(true\)/);
+});
