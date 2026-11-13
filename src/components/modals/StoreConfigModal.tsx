@@ -328,8 +328,20 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           trustedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
         }
         if (trustedPublication) {
-          marketplaceSynced = false;
-          console.warn('Verified store marketplace profile refresh requires trusted synchronization.');
+          if (!privateProfileSynced) throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
+          const token = await user.getIdToken();
+          const response = await fetch('/api/action-execute?transport=first-store-publication', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ canonicalStoreId: canonicalId, action: 'sync-profile' }),
+          });
+          if (!response.ok) throw Error(`FIRST_STORE_PROFILE_SYNC_HTTP_${response.status}`);
+          const result: unknown = await response.json();
+          if (!result || typeof result !== 'object' || !('synced' in result) || result.synced !== true) {
+            throw Error('FIRST_STORE_PROFILE_SYNC_INVALID_RESPONSE');
+          }
+          setCanonicalPublished(true);
+          setFallbackPublished(true);
         } else {
           await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
