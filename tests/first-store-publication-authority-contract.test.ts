@@ -73,3 +73,9 @@ test('saving verified store profile cannot use legacy publication refresh that r
   assert.match(modal, /trustedPublication = typeof canonicalSnapshot\.data\(\)\?\.firstPublishedAt === 'string'/);
   assert.match(modal, /if \(trustedPublication\) \{[\s\S]*?action: 'sync-profile'[\s\S]*?\} else \{\s*await setStoreMarketplacePublication\(user, storeToSave, true\)/);
 });
+
+
+test('verified profile sync is gated and never falls back to timestamp-mutating legacy update', () => {
+  assert.match(modal, /trustedPublication && import\.meta\.env\.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true'/);
+  assert.match(modal, /else if \(trustedPublication\) \{\s*marketplaceSynced = false;/);
+});
