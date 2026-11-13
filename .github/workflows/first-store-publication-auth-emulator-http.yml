@@ -34,5 +34,7 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
+      - name: Compose Firestore security rules (fail closed)
+        run: npm run firestore:compose
       - name: Real HTTP authentication against isolated Firebase emulators
         run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore "node --test --import tsx tests/first-store-publication-auth-emulator-http.test.ts"
