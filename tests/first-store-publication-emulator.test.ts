@@ -29,7 +29,7 @@ beforeEach(async () => {
     }
   }
   for (const path of [
-    `stores/${canonicalId}`, `marketplace_listings/${listingId}`,
+    `stores/${canonicalId}`, `marketplace_listings/${listingId}`, `tenants/${uid}`,
     `global_challenges/first_store_published`,
     `users/${uid}/stores/${uid}`,
     `users/${uid}/verifiedStoreEvents/first_store_published`,
@@ -238,4 +238,40 @@ test('trusted publication, hide and republish synchronize existing tenant fallba
   await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
   assert.equal((await tenantRef.get()).get('publicationStatus'), 'published');
   assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
+});
+
+
+test('conflicting legacy tenant owner blocks publication atomically', async () => {
+  await db.doc(`tenants/${uid}`).set({ id: uid, ownerId: 'another_owner', publicationStatus: 'paused' });
+  await assert.rejects(() => publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), /FIRST_STORE_PUBLICATION_TENANT_CONFLICT/);
+  const [store, listing, xp, event] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(), db.doc(`marketplace_listings/${listingId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+    db.doc(`users/${uid}/verifiedStoreEvents/first_store_published`).get(),
+  ]);
+  assert.equal(store.get('publicationStatus'), 'paused');
+  assert.equal(listing.exists, false);
+  assert.equal(xp.size, 0);
+  assert.equal(event.exists, false);
+});
+
+test('repeated authenticated hide is idempotent and does not alter evidence', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const first = (await db.doc(`stores/${canonicalId}`).get()).get('firstPublishedAt');
+  for (let i = 0; i < 2; i++) {
+    assert.deepEqual(await hideVerifiedFirstStorePublication(db, {
+      authenticatedUserId: uid, canonicalStoreId: canonicalId,
+    }), { hidden: true });
+  }
+  const [store, listing, xp] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(), db.doc(`marketplace_listings/${listingId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(store.get('firstPublishedAt'), first);
+  assert.equal(store.get('publicationStatus'), 'paused');
+  assert.equal(listing.get('publicationStatus'), 'paused');
+  assert.equal(listing.get('publishedAt').toDate().toISOString(), first);
+  assert.equal(xp.size, 1);
 });
