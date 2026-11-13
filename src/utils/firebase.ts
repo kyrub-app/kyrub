@@ -18,8 +18,8 @@ const firebaseConfig = {
   appId: '1:636039448089:web:85a6c6620341bc5bcb8c88',
 };
 
-const isolatedE2E = import.meta.env.DEV &&
-  import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true';
+const isolatedE2E = import.meta.env?.DEV === true &&
+  import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true';
 if (isolatedE2E && (typeof window === 'undefined' ||
   !['localhost', '127.0.0.1'].includes(window.location.hostname))) {
   throw Error('FIREBASE_E2E_REQUIRES_LOCALHOST');
