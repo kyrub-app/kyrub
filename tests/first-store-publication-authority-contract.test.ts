@@ -90,3 +90,12 @@ test('verified profile sync never forces paused store to published in UI', () =>
   assert.match(branch, /action: 'sync-profile'/);
   assert.doesNotMatch(branch, /setCanonicalPublished\(true\)|setFallbackPublished\(true\)/);
 });
+
+
+test('verified publication never falls back to client writes after feature flag rollback', () => {
+  const publication = modal.split('const handlePublication = async (): Promise<void> => {')[1];
+  assert.ok(publication);
+  assert.match(publication, /FIRST_STORE_PUBLICATION_SERVER_ROLLOUT_DISABLED/);
+  assert.match(publication, /canonicalSnapshot\.data\(\)\?\.firstPublishedAt === 'string'/);
+  assert.match(publication, /throw Error\('FIRST_STORE_PUBLICATION_SERVER_ROLLOUT_DISABLED'\);[\s\S]*?await setStoreMarketplacePublication\(user, saveResult\.store, targetPublished\)/);
+});
