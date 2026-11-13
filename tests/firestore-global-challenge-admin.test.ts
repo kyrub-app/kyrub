@@ -541,6 +541,29 @@ test('emulator: canonical first-store event awards exactly 2 XP on repeated conc
     { userId: uid, canonicalStoreId: storeId })).replay, true);
 });
 
+test('emulator: legacy and mismatched first-store claims never write XP', async () => {
+  const uid = 'xp-legacy-user';
+  const storeId = 'xp-legacy-store';
+  const when = new Date('2026-11-13T08:00:00.000Z');
+  const root = adminDb.doc(`users/${uid}`);
+  const store = adminDb.doc(`stores/${storeId}`);
+  const event = root.collection('verifiedStoreEvents').doc('first_store_created');
+  await store.set({ id: storeId, ownerId: uid, activatedAt: when, firstStoreCreationVerified: false });
+  await event.set({ id: 'first_store_created', userId: uid, storeId, challengeId: 'first_store_created',
+    status: 'pending', createdAt: when });
+  const claim = () => awardFirstStoreChallengeForCanonicalStore(adminDb,
+    { userId: uid, canonicalStoreId: storeId });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  await store.update({ firstStoreCreationVerified: true });
+  await event.update({ storeId: 'another-store' });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  await event.update({ storeId, status: 'revoked' });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  assert.equal((await root.collection('xpLedger').get()).size, 0);
+  assert.equal((await root.collection('challengeRewards').get()).size, 0);
+  assert.equal((await root.collection('pitangaBalance').get()).size, 0);
+});
+
 test('ingress limit rejects unauthenticated floods without trusting forwarded headers', async () => {
   // Last test: exercise the actual configured cap, with different fake source IPs.
   let blocked = false;
