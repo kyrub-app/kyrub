@@ -3,6 +3,7 @@ import { createServer } from 'node:http';
 import { once } from 'node:events';
 import { after, test } from 'node:test';
 import { getAuth } from 'firebase-admin/auth';
+import { getFirestore } from 'firebase-admin/firestore';
 import { initializeApp, getApps } from 'firebase-admin/app';
 
 const expectedProject = 'kyrub-security-test';
@@ -71,4 +72,44 @@ test('emulator handler rejects missing bearer token', async () => {
   });
   assert.equal(response.status, 401);
   assert.equal((await response.json() as { error: string }).error, 'AUTH_REQUIRED');
+});
+
+
+test('authenticated HTTP publication grants 2 XP once, no Pitangas, and survives hide/republish', async () => {
+  const db = getFirestore(app);
+  const canonicalStoreId = 'fictional_http_publication_store';
+  const listingId = `s_${uid.length}_${uid}`;
+  const challengeRef = db.doc('global_challenges/first_store_published');
+  const storeRef = db.doc(`stores/${canonicalStoreId}`);
+  const listingRef = db.doc(`marketplace_listings/${listingId}`);
+  const profileRef = db.doc(`users/${uid}/stores/${uid}`);
+  const xpRef = db.doc(`users/${uid}/xpLedger/xp_first_store_${uid}`);
+  const pitangaRef = db.doc(`users/${uid}/rewardLedger/earn_first_store_${uid}`);
+  await Promise.all([
+    challengeRef.set({ id: 'first_store_published', title: 'Primeira publicação', description: 'Publique a primeira loja', status: 'published', validationMode: 'deterministic', sponsorType: 'kyrub', rewardKCoins: 0, rewardXp: 2, maxCompletionsPerUser: 1 }),
+    storeRef.set({ id: canonicalStoreId, ownerId: uid, firstStoreCreationVerified: true, publicationStatus: 'paused', plan: 'free' }),
+    profileRef.set({ id: uid, ownerId: uid, name: 'Loja fictícia HTTP', slug: 'loja-ficticia-http', plan: 'free' }),
+  ]);
+  const act = async (action: 'publish' | 'hide') => {
+    const response = await fetch(endpoint, {
+      method: 'POST', headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ action, canonicalStoreId }),
+    });
+    const payload = await response.json() as Record<string, unknown>;
+    assert.equal(response.status, 200, JSON.stringify(payload));
+    return payload;
+  };
+  assert.deepEqual(await act('publish'), { replay: false, pitangas: 0, xp: 2 });
+  assert.equal((await storeRef.get()).get('publicationStatus'), 'published');
+  assert.equal((await listingRef.get()).get('publicationStatus'), 'published');
+  assert.equal((await xpRef.get()).get('deltaXp'), 2);
+  assert.equal((await pitangaRef.get()).exists, false);
+  const firstPublishedAt = (await storeRef.get()).get('firstPublishedAt');
+  assert.deepEqual(await act('publish'), { replay: true, pitangas: 0, xp: 2 });
+  assert.deepEqual(await act('hide'), { hidden: true });
+  assert.equal((await listingRef.get()).get('publicationStatus'), 'paused');
+  assert.deepEqual(await act('publish'), { replay: true, pitangas: 0, xp: 2 });
+  assert.equal((await storeRef.get()).get('firstPublishedAt'), firstPublishedAt);
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
+  assert.equal((await pitangaRef.get()).exists, false);
 });
