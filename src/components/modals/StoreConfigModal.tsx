@@ -318,9 +318,23 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let marketplaceSynced = true;
     if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
       try {
-        await setStoreMarketplacePublication(user, storeToSave, true);
+        // A trusted first-publication timestamp is immutable. Legacy profile
+        // refresh rewrites publishedAt, so never use it for verified stores.
+        const privateSnapshot = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalId = privateSnapshot.data()?.canonicalStoreId;
+        let trustedPublication = false;
+        if (typeof canonicalId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(canonicalId)) {
+          const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalId));
+          trustedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
+        }
+        if (trustedPublication) {
+          marketplaceSynced = false;
+          console.warn('Verified store marketplace profile refresh requires trusted synchronization.');
+        } else {
+          await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
         setFallbackPublished(true);
+        }
       } catch (error) {
         marketplaceSynced = false;
         console.warn('Published store profile refresh is pending.', error);
