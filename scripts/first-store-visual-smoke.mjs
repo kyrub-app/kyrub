@@ -34,7 +34,22 @@ try {
     throw new Error('E2E_ISOLATION_GUARD_FAILED');
   }
   console.log('PASS: isolated application opens in Chromium; screenshot captured');
-  console.log('NOT TESTED: user registration, store creation UI, Free activation, XP award');
+  const testEmail = 'first-store-e2e-' + Date.now() + '@example.test';
+  const signInResult = await page.evaluate(async (email) => {
+    const [{ auth }, firebaseAuth] = await Promise.all([
+      import('/src/utils/firebase.ts'),
+      import('/node_modules/.vite/deps/firebase_auth.js'),
+    ]);
+    const created = await firebaseAuth.createUserWithEmailAndPassword(auth, email, 'TestOnlyPassword!12345');
+    return { uid: created.user.uid, email: created.user.email, projectId: auth.app.options.projectId };
+  }, testEmail);
+  if (signInResult.projectId !== 'demo-global-challenges' || !signInResult.uid || signInResult.email !== testEmail) {
+    throw new Error('E2E_TEST_ACCOUNT_NOT_ISOLATED');
+  }
+  console.log('PASS: fictional user registered in isolated Firebase Auth Emulator:', signInResult.uid);
+  await page.screenshot({ path: `${out}/authenticated-user.png`, fullPage: false });
+
+  console.log('NOT TESTED: store creation UI, Free activation, XP award');
 } catch (error) {
   console.error('Browser failure diagnostics:', JSON.stringify({ errors, failedRequests: failedRequests.slice(0, 30), violations }));
   try { await page.screenshot({ path: `${out}/failure.png`, timeout: 5000 }); } catch { /* preserve original error */ }
