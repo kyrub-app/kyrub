@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { publishFirstStoreAndAwardXp } from '../server/gamification/firstStorePublicationAuthority.js';
+import { hideVerifiedFirstStorePublication, publishFirstStoreAndAwardXp } from '../server/gamification/firstStorePublicationAuthority.js';
 
 const app = initializeApp({ projectId: 'kyrub-security-test' }, 'first-store-publication-emulator');
 const db: Firestore = getFirestore(app);
@@ -194,5 +194,35 @@ test('republication after hiding restores visibility without duplicate XP or tim
   assert.equal(listing.get('publicationStatus'), 'published');
   assert.equal(store.get('firstPublishedAt'), first);
   assert.equal(listing.get('publishedAt').toDate().toISOString(), first);
+  assert.equal(xp.size, 1);
+});
+
+
+test('trusted hide and republish preserve original timestamp and award only once', async () => {
+  const first = await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  });
+  assert.equal(first.xp, 2);
+  const firstAt = (await db.doc(`stores/${canonicalId}`).get()).get('firstPublishedAt');
+  assert.deepEqual(await hideVerifiedFirstStorePublication(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { hidden: true });
+  const [hiddenStore, hiddenListing] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(), db.doc(`marketplace_listings/${listingId}`).get(),
+  ]);
+  assert.equal(hiddenStore.get('publicationStatus'), 'paused');
+  assert.equal(hiddenListing.get('publicationStatus'), 'paused');
+  assert.equal(hiddenListing.get('publishedAt').toDate().toISOString(), firstAt);
+  await assert.rejects(() => hideVerifiedFirstStorePublication(db, {
+    authenticatedUserId: 'different_user', canonicalStoreId: canonicalId,
+  }), /FIRST_STORE_PUBLICATION_AUTHORITY_INVALID/);
+  assert.deepEqual(await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { replay: true, pitangas: 0, xp: 2 });
+  const [listing, xp] = await Promise.all([
+    db.doc(`marketplace_listings/${listingId}`).get(), db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(listing.get('publicationStatus'), 'published');
+  assert.equal(listing.get('publishedAt').toDate().toISOString(), firstAt);
   assert.equal(xp.size, 1);
 });
