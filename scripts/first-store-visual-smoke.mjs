@@ -20,6 +20,7 @@ await page.route('**/*', route => {
     violations.push(url.origin);
     return route.abort();
   }
+  return route.continue();
 });
 try {
   const response = await page.goto(origin, { waitUntil: 'commit', timeout: 30000 });
