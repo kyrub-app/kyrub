@@ -29,6 +29,9 @@ export async function publishFirstStoreAndAwardXp(
   const userRoot = db.collection('users').doc(uid);
   const eventRef = userRoot.collection('verifiedStoreEvents').doc(FIRST_STORE_PUBLISHED_CHALLENGE_ID);
   const awardId = `first_store_${uid}`;
+  const receiptRef = userRoot.collection('challengeRewards').doc(awardId);
+  const xpLedgerRef = userRoot.collection('xpLedger').doc(`xp_${awardId}`);
+  const pitangaLedgerRef = userRoot.collection('rewardLedger').doc(`earn_${awardId}`);
   return db.runTransaction(async tx => {
     const [store, listing, event, challenge, primary, tenant] = await Promise.all([
       tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(challengeRef), tx.get(primaryRef), tx.get(tenantRef),
@@ -72,7 +75,31 @@ export async function publishFirstStoreAndAwardXp(
         syncTenant();
         return { replay: true, pitangas: 0, xp: 0 };
       }
-      if (!challenge.exists) throw Error('FIRST_STORE_PUBLICATION_REWARD_CONFIG_MISSING');
+      if (!challenge.exists) {
+        // Existing verified rewards remain valid after the challenge is removed.
+        // Never mint an award from a missing configuration.
+        const [receipt, xpEntry, pitangaEntry] = await Promise.all([
+          tx.get(receiptRef), tx.get(xpLedgerRef), tx.get(pitangaLedgerRef),
+        ]);
+        const saved = receipt.data();
+        const ledger = xpEntry.data();
+        if (!receipt.exists || !xpEntry.exists || pitangaEntry.exists ||
+            saved?.userId !== uid || saved?.storeId !== canonicalStoreId ||
+            saved?.idempotencyKey !== awardId || saved?.xp !== 2 || saved?.pitangas !== 0 ||
+            !['first_store_published', 'first_store_created'].includes(saved?.challengeId) ||
+            saved?.occurredAt !== existingFirstAt ||
+            ledger?.userId !== uid || ledger?.deltaXp !== 2 ||
+            ledger?.economy !== 'kyrub_xp' || ledger?.sourceType !== 'challenge' ||
+            ledger?.sourceId !== saved?.challengeId ||
+            ledger?.correlationId !== awardId || ledger?.idempotencyKey !== awardId ||
+            ledger?.occurredAt !== existingFirstAt) {
+          throw Error('FIRST_STORE_PUBLICATION_REWARD_IDEMPOTENCY_CONFLICT');
+        }
+        if (store.get('publicationStatus') !== 'published') tx.update(storeRef, { publicationStatus: 'published' });
+        if (listing.get('publicationStatus') !== 'published') tx.update(listingRef, { publicationStatus: 'published' });
+        syncTenant();
+        return { replay: true, pitangas: 0, xp: 2 };
+      }
       const replayResult = await awardVerifiedFirstStorePublicationInTransaction(tx, {
         challenge: challenge.data() as KyrubChallengeDefinition,
         event: { userId: uid, storeId: canonicalStoreId, publishedAt: existingFirstAt,
