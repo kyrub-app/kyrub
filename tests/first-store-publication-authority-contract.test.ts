@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+const canonicalRules = readFileSync(new URL('../firestore.store-security.fragment.rules', import.meta.url), 'utf8');
 const modal = readFileSync(new URL('../src/components/modals/StoreConfigModal.tsx', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../server/gamification/firstStorePublicationAuthority.ts', import.meta.url), 'utf8');
 
@@ -59,4 +60,10 @@ test('Publish uses authenticated server authority behind an opt-in browser flag'
   assert.match(modal, /transport=first-store-publication/);
   assert.match(modal, /if \(!response\.ok\) throw/);
   assert.match(modal, /else \{\s*await setStoreMarketplacePublication\(user, saveResult\.store, targetPublished\)/);
+});
+
+
+test('browser cannot forge first-store creation or publication markers in canonical store', () => {
+  assert.match(canonicalRules, /!incoming\(\)\.keys\(\)\.hasAny\(\['firstStoreCreationVerified', 'firstPublishedAt'\]\)/);
+  assert.match(canonicalRules, /!incoming\(\)\.diff\(existing\(\)\)\.affectedKeys\(\)\.hasAny\(\[\s*'firstStoreCreationVerified', 'firstPublishedAt'/);
 });
