@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
+const modal = readFileSync(new URL('../src/components/modals/StoreConfigModal.tsx', import.meta.url), 'utf8');
 const source = readFileSync(new URL('../server/gamification/firstStorePublicationAuthority.ts', import.meta.url), 'utf8');
 
 test('publication authority is server-only and requires canonical owner and first-store marker', () => {
@@ -48,4 +49,14 @@ test('unrewarded first publication remains idempotent and cannot mint XP later',
   assert.match(source, /event\.get\('status'\) === 'unrewarded'/);
   assert.match(source, /xp: 0/);
   assert.match(source, /status: eligible \? 'pending' : 'unrewarded'/);
+});
+
+
+test('Publish uses authenticated server authority behind an opt-in browser flag', () => {
+  assert.match(modal, /VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED/);
+  assert.match(modal, /privateStore\.data\(\)\?\.canonicalStoreId/);
+  assert.match(modal, /user\.getIdToken\(\)/);
+  assert.match(modal, /transport=first-store-publication/);
+  assert.match(modal, /if \(!response\.ok\) throw/);
+  assert.match(modal, /else \{\s*await setStoreMarketplacePublication\(user, saveResult\.store, targetPublished\)/);
 });
