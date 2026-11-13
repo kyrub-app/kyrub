@@ -116,3 +116,25 @@ test('a different authenticated user cannot publish or receive first-store XP', 
   assert.equal(attackerXp.exists, false);
   assert.equal(ownerXp.exists, false);
 });
+
+
+test('missing marketplace listing on replay fails closed without duplicate XP', async () => {
+  await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  });
+  await db.doc(`marketplace_listings/${listingId}`).delete();
+  await assert.rejects(
+    publishFirstStoreAndAwardXp(db, {
+      authenticatedUserId: uid, canonicalStoreId: canonicalId,
+    }),
+    /FIRST_STORE_PUBLICATION_MARKER_CONFLICT/,
+  );
+  const [xp, receipt, listing] = await Promise.all([
+    db.collection(`users/${uid}/xpLedger`).get(),
+    db.collection(`users/${uid}/challengeRewards`).get(),
+    db.doc(`marketplace_listings/${listingId}`).get(),
+  ]);
+  assert.equal(xp.size, 1);
+  assert.equal(receipt.size, 1);
+  assert.equal(listing.exists, false);
+});
