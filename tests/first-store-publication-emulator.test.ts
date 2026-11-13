@@ -138,3 +138,35 @@ test('missing marketplace listing on replay fails closed without duplicate XP', 
   assert.equal(receipt.size, 1);
   assert.equal(listing.exists, false);
 });
+
+
+test('publication succeeds without a challenge and never grants XP retroactively', async () => {
+  await db.doc('global_challenges/first_store_published').delete();
+  assert.deepEqual(await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { replay: false, pitangas: 0, xp: 0 });
+  const [store, listing, event, xp] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(),
+    db.doc(`marketplace_listings/${listingId}`).get(),
+    db.doc(`users/${uid}/verifiedStoreEvents/first_store_published`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(store.get('publicationStatus'), 'published');
+  assert.equal(listing.get('publicationStatus'), 'published');
+  assert.equal(event.get('status'), 'unrewarded');
+  assert.equal(xp.size, 0);
+  await db.doc('global_challenges/first_store_published').set(challenge);
+  assert.deepEqual(await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { replay: true, pitangas: 0, xp: 0 });
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 0);
+});
+
+test('inactive challenge does not prevent first publication or grant XP', async () => {
+  await db.doc('global_challenges/first_store_published').set({ ...challenge, status: 'draft' });
+  assert.deepEqual(await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { replay: false, pitangas: 0, xp: 0 });
+  assert.equal((await db.doc(`marketplace_listings/${listingId}`).get()).get('publicationStatus'), 'published');
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 0);
+});
