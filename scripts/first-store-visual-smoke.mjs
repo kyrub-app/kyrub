@@ -9,7 +9,8 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 800 } });
 const violations = [];
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-await page.route('**/*', route => {\n  const request = route.request();
+await page.route('**/*', route => {
+  const request = route.request();
   const url = new URL(request.url());
   if (url.protocol === 'data:' || url.protocol === 'blob:') return route.continue();
   const allowedLocal = ['127.0.0.1', 'localhost'].includes(url.hostname);
