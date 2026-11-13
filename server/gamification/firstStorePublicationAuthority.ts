@@ -217,3 +217,54 @@ export async function hideVerifiedFirstStorePublication(
     return { hidden: true };
   });
 }
+
+
+/** Update public profile without changing publication status, timestamp or XP. */
+export async function syncVerifiedFirstStoreProfile(
+  db: Firestore,
+  input: { authenticatedUserId: string; canonicalStoreId: string },
+): Promise<{ synced: true }> {
+  const { authenticatedUserId: uid, canonicalStoreId } = input;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+    throw Error('FIRST_STORE_PUBLICATION_INVALID_INPUT');
+  }
+  const storeRef = db.doc(`stores/${canonicalStoreId}`);
+  const listingRef = db.doc(`marketplace_listings/s_${uid.length}_${uid}`);
+  const primaryRef = db.doc(`users/${uid}/stores/${uid}`);
+  const tenantRef = db.doc(`tenants/${uid}`);
+  const eventRef = db.doc(`users/${uid}/verifiedStoreEvents/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
+  return db.runTransaction(async tx => {
+    const [store, listing, primary, tenant, event] = await Promise.all([
+      tx.get(storeRef), tx.get(listingRef), tx.get(primaryRef), tx.get(tenantRef), tx.get(eventRef),
+    ]);
+    const firstAt = store.get('firstPublishedAt');
+    const listingAt = listing.get('publishedAt');
+    const listingIso = listingAt instanceof Timestamp ? listingAt.toDate().toISOString() : listingAt;
+    if (!store.exists || store.get('ownerId') !== uid || store.get('id') !== canonicalStoreId ||
+        store.get('firstStoreCreationVerified') !== true ||
+        !primary.exists || primary.get('ownerId') !== uid || primary.get('id') !== uid ||
+        !listing.exists || listing.get('ownerId') !== uid || listing.get('storeId') !== uid ||
+        listing.get('listingType') !== 'store' ||
+        !event.exists || event.get('userId') !== uid || event.get('storeId') !== canonicalStoreId ||
+        event.get('isFirstPublication') !== true || event.get('publishedAt') !== firstAt ||
+        typeof firstAt !== 'string' || listingIso !== firstAt ||
+        (tenant.exists && (tenant.get('id') !== uid || tenant.get('ownerId') !== uid))) {
+      throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
+    }
+    const p = primary.data()!;
+    if (typeof p.name !== 'string' || !p.name.trim() ||
+        typeof p.slug !== 'string' || !p.slug.trim()) {
+      throw Error('FIRST_STORE_PUBLICATION_PROFILE_INCOMPLETE');
+    }
+    const profile = {
+      name: p.name, slug: p.slug, description: p.description ?? '',
+      address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
+      primaryColor: p.primaryColor ?? '', keywords: p.keywords ?? [],
+      status: p.status ?? 'closed',
+    };
+    tx.update(listingRef, { ...profile, updatedAt: Timestamp.now() });
+    if (tenant.exists) tx.update(tenantRef, { ...profile, updatedAt: Timestamp.now() });
+    return { synced: true };
+  });
+}
