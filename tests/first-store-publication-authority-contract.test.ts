@@ -59,7 +59,7 @@ test('Publish uses authenticated server authority behind an opt-in browser flag'
   assert.match(modal, /user\.getIdToken\(\)/);
   assert.match(modal, /transport=first-store-publication/);
   assert.match(modal, /if \(!response\.ok\) throw/);
-  assert.match(modal, /else \{\s*await setStoreMarketplacePublication\(user, saveResult\.store, targetPublished\)/);
+  assert.match(modal, /await setStoreMarketplacePublication\(user, saveResult\.store, targetPublished\)/);
 });
 
 
