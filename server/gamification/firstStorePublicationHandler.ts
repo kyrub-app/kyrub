@@ -41,15 +41,23 @@ export async function handleFirstStorePublication(
     response.status(401).json({ error: 'AUTH_REQUIRED' });
     return;
   }
+  let uid: string;
   try {
     const identity = await verifyFirebaseIdToken(token);
+    uid = identity.uid;
+    if (!uid) throw Error('INVALID_FIREBASE_IDENTITY');
+  } catch {
+    response.status(401).json({ error: 'AUTH_INVALID' });
+    return;
+  }
+  try {
     const canonicalStoreId = id((request.body as Record<string, unknown> | null)?.canonicalStoreId);
     if (!canonicalStoreId) {
       response.status(400).json({ error: 'INVALID_CANONICAL_STORE_ID' });
       return;
     }
     const result = await publishFirstStoreAndAwardXp(adminDb, {
-      authenticatedUserId: identity.uid,
+      authenticatedUserId: uid,
       canonicalStoreId,
     });
     response.status(200).json(result);
