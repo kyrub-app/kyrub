@@ -6,7 +6,7 @@ trap 'mkdir -p artifacts/first-store-visual; cp /tmp/kyrub-e2e-server.log artifa
 for i in $(seq 1 120); do
   if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then
     echo 'Application health endpoint responded; starting browser smoke'
-    node scripts/first-store-visual-smoke.mjs
+    timeout 100s node scripts/first-store-visual-smoke.mjs
     exit $?
   fi
   sleep 2
