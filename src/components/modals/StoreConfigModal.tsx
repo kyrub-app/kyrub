@@ -445,6 +445,16 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         // Do not invoke client publication fallback after the trusted write.
         }
       } else {
+        // A previously verified store must never return to client-side writes
+        // after a feature-flag rollback: that path can rewrite publishedAt.
+        const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalStoreId: unknown = privateStore.data()?.canonicalStoreId;
+        if (typeof canonicalStoreId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+          const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalStoreId));
+          if (typeof canonicalSnapshot.data()?.firstPublishedAt === 'string') {
+            throw Error('FIRST_STORE_PUBLICATION_SERVER_ROLLOUT_DISABLED');
+          }
+        }
         await setStoreMarketplacePublication(user, saveResult.store, targetPublished);
       }
 
