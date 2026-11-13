@@ -17,6 +17,7 @@ import { adminDb, adminAuth } from '../server/firebaseAdmin.js';
 import handler, { createGlobalChallengeAdminRouter, GLOBAL_CHALLENGE_PAYLOAD_BYTES } from '../server/gamification/globalChallengeAdminHandler.js';
 import serverlessHandler from '../api/admin/operations/health.js';
 import { createGlobalChallengeDraft } from '../server/gamification/globalChallengeAdminRepository.js';
+import { awardFirstStoreChallengeForCanonicalStore } from '../server/gamification/firstStoreChallengeAwardService.js';
 
 if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '')) {
   throw new Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
@@ -505,6 +506,62 @@ test('malformed and oversized HTTP requests cannot bypass pre-parser ingress adm
     assert.equal(response.status, 400);
   }
   assert.equal(blocked, true, 'invalid JSON must consume the same admission budget');
+});
+
+test('emulator: canonical first-store event awards exactly 2 XP on repeated concurrent claims', async () => {
+  const uid = 'xp-emulator-user';
+  const storeId = 'xp-emulator-store';
+  const date = new Date('2026-11-13T08:00:00.000Z');
+  const root = adminDb.doc(`users/${uid}`);
+  const challengeRef = adminDb.doc('global_challenges/first_store_created');
+  const storeRef = adminDb.doc(`stores/${storeId}`);
+  const eventRef = root.collection('verifiedStoreEvents').doc('first_store_created');
+  const receiptRef = root.collection('challengeRewards').doc(`first_store_${uid}`);
+  const xpRef = root.collection('xpLedger').doc(`xp_first_store_${uid}`);
+  await Promise.all([
+    challengeRef.set({
+      id: 'first_store_created', title: 'Minha primeira loja', description: 'Crie sua primeira loja',
+      status: 'published', validationMode: 'deterministic', rewardKCoins: 0, rewardXp: 2,
+      maxCompletionsPerUser: 1, sponsorType: 'kyrub',
+    }),
+    storeRef.set({ id: storeId, ownerId: uid, activatedAt: date, firstStoreCreationVerified: true }),
+    eventRef.set({ id: 'first_store_created', userId: uid, storeId,
+      challengeId: 'first_store_created', status: 'pending', createdAt: date }),
+  ]);
+  const results = await Promise.all(Array.from({ length: 6 }, () =>
+    awardFirstStoreChallengeForCanonicalStore(adminDb, { userId: uid, canonicalStoreId: storeId })));
+  assert.equal(results.filter(x => !x.replay).length, 1);
+  assert.equal(results.filter(x => x.replay).length, 5);
+  assert.equal((await xpRef.get()).get('deltaXp'), 2);
+  assert.equal((await receiptRef.get()).get('xp'), 2);
+  assert.equal((await root.collection('xpLedger').get()).size, 1);
+  assert.equal((await root.collection('pitangaBalance').get()).size, 0);
+  assert.equal((await root.collection('rewardLedger').get()).size, 0);
+  assert.equal((await awardFirstStoreChallengeForCanonicalStore(adminDb,
+    { userId: uid, canonicalStoreId: storeId })).replay, true);
+});
+
+test('emulator: legacy and mismatched first-store claims never write XP', async () => {
+  const uid = 'xp-legacy-user';
+  const storeId = 'xp-legacy-store';
+  const when = new Date('2026-11-13T08:00:00.000Z');
+  const root = adminDb.doc(`users/${uid}`);
+  const store = adminDb.doc(`stores/${storeId}`);
+  const event = root.collection('verifiedStoreEvents').doc('first_store_created');
+  await store.set({ id: storeId, ownerId: uid, activatedAt: when, firstStoreCreationVerified: false });
+  await event.set({ id: 'first_store_created', userId: uid, storeId, challengeId: 'first_store_created',
+    status: 'pending', createdAt: when });
+  const claim = () => awardFirstStoreChallengeForCanonicalStore(adminDb,
+    { userId: uid, canonicalStoreId: storeId });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  await store.update({ firstStoreCreationVerified: true });
+  await event.update({ storeId: 'another-store' });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  await event.update({ storeId, status: 'revoked' });
+  await assert.rejects(claim(), /FIRST_STORE_EVENT_UNVERIFIED/);
+  assert.equal((await root.collection('xpLedger').get()).size, 0);
+  assert.equal((await root.collection('challengeRewards').get()).size, 0);
+  assert.equal((await root.collection('pitangaBalance').get()).size, 0);
 });
 
 test('ingress limit rejects unauthenticated floods without trusting forwarded headers', async () => {
