@@ -382,6 +382,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       // Opt-in migration: legacy publication remains unchanged until both
       // the browser and trusted server are explicitly enabled.
       if (targetPublished && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+        if (!saveResult.cloudSynced) {
+          throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
+        }
         const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
         const canonicalStoreId: unknown = privateStore.data()?.canonicalStoreId;
         if (typeof canonicalStoreId !== 'string' ||
