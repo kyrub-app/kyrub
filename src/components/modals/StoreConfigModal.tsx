@@ -379,11 +379,26 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
 
     try {
-      await setStoreMarketplacePublication(
-        user,
-        saveResult.store,
-        targetPublished
-      );
+      // Opt-in migration: legacy publication remains unchanged until both
+      // the browser and trusted server are explicitly enabled.
+      if (targetPublished && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+        const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalStoreId: unknown = privateStore.data()?.canonicalStoreId;
+        if (typeof canonicalStoreId !== 'string' ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+          throw Error('FIRST_STORE_PUBLICATION_CANONICAL_ID_UNAVAILABLE');
+        }
+        const token = await user.getIdToken();
+        const response = await fetch('/api/action-execute?transport=first-store-publication', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ canonicalStoreId }),
+        });
+        if (!response.ok) throw Error(`FIRST_STORE_PUBLICATION_HTTP_${response.status}`);
+        // Do not invoke client publication fallback after the trusted write.
+      } else {
+        await setStoreMarketplacePublication(user, saveResult.store, targetPublished);
+      }
 
       setCanonicalPublished(targetPublished);
       setFallbackPublished(targetPublished);
