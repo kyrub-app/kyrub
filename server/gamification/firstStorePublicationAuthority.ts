@@ -53,16 +53,14 @@ export async function publishFirstStoreAndAwardXp(
           event.get('challengeId') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID) {
         throw Error('FIRST_STORE_PUBLICATION_MARKER_CONFLICT');
       }
-      // Re-publication only restores visibility; immutable firstPublishedAt remains unchanged.
-      if (store.get('publicationStatus') !== 'published' ||
-          listing.get('publicationStatus') !== 'published') {
-        tx.update(storeRef, { publicationStatus: 'published' });
-        tx.update(listingRef, { publicationStatus: 'published' });
-      }
       // Never grant XP retroactively when the first publication was unrewarded.
-      if (event.get('status') === 'unrewarded') return { replay: true, pitangas: 0, xp: 0 };
+      if (event.get('status') === 'unrewarded') {
+        if (store.get('publicationStatus') !== 'published') tx.update(storeRef, { publicationStatus: 'published' });
+        if (listing.get('publicationStatus') !== 'published') tx.update(listingRef, { publicationStatus: 'published' });
+        return { replay: true, pitangas: 0, xp: 0 };
+      }
       if (!challenge.exists) throw Error('FIRST_STORE_PUBLICATION_REWARD_CONFIG_MISSING');
-      return awardVerifiedFirstStorePublicationInTransaction(tx, {
+      const replayResult = await awardVerifiedFirstStorePublicationInTransaction(tx, {
         challenge: challenge.data() as KyrubChallengeDefinition,
         event: { userId: uid, storeId: canonicalStoreId, publishedAt: existingFirstAt,
           isFirstPublication: true, isOwnerVerified: true, isMarketplaceVisible: true },
@@ -70,6 +68,9 @@ export async function publishFirstStoreAndAwardXp(
         xpLedgerRef: userRoot.collection('xpLedger').doc(`xp_${awardId}`),
         pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
       });
+      if (store.get('publicationStatus') !== 'published') tx.update(storeRef, { publicationStatus: 'published' });
+      if (listing.get('publicationStatus') !== 'published') tx.update(listingRef, { publicationStatus: 'published' });
+      return replayResult;
     }
     // A pre-published record without immutable server evidence is not a
     // verifiable first-publication transition. Never mint XP retroactively.
