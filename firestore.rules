@@ -17,6 +17,11 @@ service cloud.firestore {
     function hasRole(roleList) { return isSignedIn() && request.auth.token.role in roleList; }
     function isAdmin() { return isSignedIn() && request.auth.token.role == 'admin'; }
 
+    // The writer-fence control is managed exclusively by trusted servers.
+    match /systemControl/pitangaLegacyWriterFence {
+      allow read, write: if false;
+    }
+
     // --- Global User Directory ---
     match /users/{userId} {
       allow read: if isSignedIn();
@@ -64,6 +69,21 @@ service cloud.firestore {
               && incoming().email is string
               && incoming().photoUrl is string
               && incoming().isProfileVisible is bool;
+
+      // Server-authoritative gamification records: never writable from client SDK.
+      // Admin SDK bypasses rules and requires separate service-credential review.
+      match /authEvents/{eventId} {
+        allow read, write: if false;
+      }
+      match /pitangaBalance/{balanceId} {
+        allow read, write: if false;
+      }
+      match /rewardLedger/{entryId} {
+        allow read, write: if false;
+      }
+      match /pitangaNewUserBootstrap/{receiptId} {
+        allow read, write: if false;
+      }
 
       // Coleção interna de Notas / Tarefas individuais e compartilhadas
       match /tasks/{taskId} {

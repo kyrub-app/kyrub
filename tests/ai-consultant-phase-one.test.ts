@@ -157,6 +157,7 @@ test('Firebase ID token verification uses public certificates without admin cred
     const user = await verifyFirebaseIdToken(token, projectId);
     assert.deepEqual(user, {
       uid: 'user-verified',
+      firebaseAuthTimeSeconds: now - 10,
       name: 'Usuário Verificado',
       email: 'verified@example.com',
     });

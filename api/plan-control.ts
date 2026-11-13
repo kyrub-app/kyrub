@@ -20,6 +20,9 @@ import {
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { ensureFreePlanForStoreCreation } from '../server/actions/freeStoreProvisioningService.js';
+import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
+import { grantCleanBaselineWelcomeForVerifiedUser } from '../server/gamification/cleanBaselineWelcomeService.js';
+import { adminAuth, adminDb } from '../server/firebaseAdmin.js';
 import { loadPublicActivePlanCatalog } from '../server/admin/publicPlanCatalogService.js';
 import { assignOfficialPlanProduct, listOfficialPlanProducts } from '../server/admin/officialPlanProductManagement.js';
 import { patchOfficialPlanRenewal } from '../server/admin/officialPlanRenewalPatch.js';
@@ -247,6 +250,23 @@ export default async function handler(
 
   try {
     switch (operation) {
+      case 'onboarding.welcome.claim': {
+        if (method !== 'POST') { methodNotAllowed(response); return; }
+        if (Object.keys(body).length !== 0) throw Error('WELCOME_INVALID_REQUEST');
+        const user = await authenticateConsultantRequest(authorization);
+        // Fail closed if canonical balance migration has not completed.
+        // Never manufacture a zero balance or report an uncommitted award.
+        const signedEnabled = process.env.KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED === 'true';
+        const isolatedEnabled = process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED === 'true';
+        if (signedEnabled && isolatedEnabled) throw Error('WELCOME_CAMPAIGN_CONFIGURATION_CONFLICT');
+        if (!signedEnabled && !isolatedEnabled) throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
+        const result = signedEnabled
+          ? await grantSignedSessionWelcomeForVerifiedUser(adminDb, adminAuth, user.uid,
+            user.uid, user.firebaseAuthTimeSeconds ?? NaN)
+          : await grantCleanBaselineWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
+        response.status(200).json({ awarded: !result.replay, balance: result.balance });
+        return;
+      }
       case 'store.free.ensure': {
         if (method !== 'POST') { methodNotAllowed(response); return; }
         if (Object.keys(body).length !== 0) throw Error('FREE_STORE_INVALID_REQUEST');
@@ -818,6 +838,20 @@ export default async function handler(
         });
     }
   } catch (error) {
+    if (operation === 'onboarding.welcome.claim') {
+      const code = error instanceof Error ? error.message : '';
+      const unauthorized = code === 'AUTH_REQUIRED' || code === 'AUTH_UNAVAILABLE' ||
+        /id-token|token-expired|invalid-token/i.test(code);
+      const invalid = code === 'WELCOME_INVALID_REQUEST' || code === 'WELCOME_USER_INVALID';
+      response.status(unauthorized ? 401 : invalid ? 400 : 503).json({
+        error: unauthorized ? 'Entre novamente para receber seu bônus.'
+          : invalid ? 'Solicitação de boas-vindas inválida.'
+          : 'Seu bônus ainda não pôde ser confirmado. Tente novamente mais tarde.',
+        code: unauthorized ? 'WELCOME_AUTH_REQUIRED'
+          : invalid ? 'WELCOME_INVALID_REQUEST' : 'WELCOME_AWARD_DEFERRED',
+      });
+      return;
+    }
     if (operation === 'store.free.ensure') {
       const code = error instanceof Error ? error.message : '';
       const unauthorized = code === 'FREE_STORE_AUTH_REQUIRED' ||

@@ -79,6 +79,12 @@ jobs:
       - name: Validate normalized serverless TypeScript graph
         run: npm run lint >> build.log 2>&1
 
+      - name: Show failure log excerpt
+        if: failure()
+        run: |
+          grep -n -B 12 -A 35 -E 'not ok|error TS[0-9]+|AssertionError|testCodeFailure|ERR_TEST_FAILURE' build.log | tail -n 220 || true
+          tail -n 25 build.log || true
+
       - name: Upload failure log
         if: failure()
         uses: actions/upload-artifact@v4

@@ -9,6 +9,8 @@ export type AuthenticatedConsultantUser = {
   name: string;
   email: string;
   emailVerified?: boolean;
+  /** Firebase-signed auth_time claim, in Unix seconds; never client supplied. */
+  firebaseAuthTimeSeconds?: number;
 };
 
 export type ConsultantGenerationInput = {
