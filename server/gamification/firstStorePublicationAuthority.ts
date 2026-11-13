@@ -24,13 +24,14 @@ export async function publishFirstStoreAndAwardXp(
   const listingId = `s_${uid.length}_${uid}`;
   const listingRef = db.doc(`marketplace_listings/${listingId}`);
   const primaryRef = db.doc(`users/${uid}/stores/${uid}`);
+  const tenantRef = db.doc(`tenants/${uid}`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
   const userRoot = db.collection('users').doc(uid);
   const eventRef = userRoot.collection('verifiedStoreEvents').doc(FIRST_STORE_PUBLISHED_CHALLENGE_ID);
   const awardId = `first_store_${uid}`;
   return db.runTransaction(async tx => {
-    const [store, listing, event, challenge, primary] = await Promise.all([
-      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(challengeRef), tx.get(primaryRef),
+    const [store, listing, event, challenge, primary, tenant] = await Promise.all([
+      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(challengeRef), tx.get(primaryRef), tx.get(tenantRef),
     ]);
     if (!store.exists || store.get('id') !== canonicalStoreId ||
         store.get('ownerId') !== uid || store.get('firstStoreCreationVerified') !== true ||
@@ -39,6 +40,14 @@ export async function publishFirstStoreAndAwardXp(
         listing.get('storeId') !== uid || listing.get('ownerId') !== uid))) {
       throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
     }
+    if (tenant.exists && (tenant.get('id') !== uid || tenant.get('ownerId') !== uid)) {
+      throw Error('FIRST_STORE_PUBLICATION_TENANT_CONFLICT');
+    }
+    const syncTenant = () => {
+      if (tenant.exists && tenant.get('publicationStatus') !== 'published') {
+        tx.update(tenantRef, { publicationStatus: 'published', updatedAt: Timestamp.now() });
+      }
+    };
     const existingFirstAt = store.get('firstPublishedAt');
     if (existingFirstAt || event.exists) {
       if (typeof existingFirstAt !== 'string' || !event.exists ||
@@ -60,6 +69,7 @@ export async function publishFirstStoreAndAwardXp(
       if (event.get('status') === 'unrewarded') {
         if (store.get('publicationStatus') !== 'published') tx.update(storeRef, { publicationStatus: 'published' });
         if (listing.get('publicationStatus') !== 'published') tx.update(listingRef, { publicationStatus: 'published' });
+        syncTenant();
         return { replay: true, pitangas: 0, xp: 0 };
       }
       if (!challenge.exists) throw Error('FIRST_STORE_PUBLICATION_REWARD_CONFIG_MISSING');
@@ -73,6 +83,7 @@ export async function publishFirstStoreAndAwardXp(
       });
       if (store.get('publicationStatus') !== 'published') tx.update(storeRef, { publicationStatus: 'published' });
       if (listing.get('publicationStatus') !== 'published') tx.update(listingRef, { publicationStatus: 'published' });
+      syncTenant();
       return replayResult;
     }
     // A pre-published record without immutable server evidence is not a
@@ -123,6 +134,7 @@ export async function publishFirstStoreAndAwardXp(
         updatedAt: publicationTimestamp,
       });
     }
+    syncTenant();
     tx.create(eventRef, {
       id: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
       challengeId: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
@@ -147,9 +159,10 @@ export async function hideVerifiedFirstStorePublication(
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
   const listingRef = db.doc(`marketplace_listings/s_${uid.length}_${uid}`);
   const eventRef = db.doc(`users/${uid}/verifiedStoreEvents/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
+  const tenantRef = db.doc(`tenants/${uid}`);
   return db.runTransaction(async tx => {
-    const [store, listing, event] = await Promise.all([
-      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef),
+    const [store, listing, event, tenant] = await Promise.all([
+      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(tenantRef),
     ]);
     const firstAt = store.get('firstPublishedAt');
     const listingAt = listing.get('publishedAt');
@@ -161,7 +174,8 @@ export async function hideVerifiedFirstStorePublication(
         !event.exists || event.get('userId') !== uid ||
         event.get('storeId') !== canonicalStoreId ||
         event.get('isFirstPublication') !== true ||
-        event.get('publishedAt') !== firstAt || listingIso !== firstAt) {
+        event.get('publishedAt') !== firstAt || listingIso !== firstAt ||
+        (tenant.exists && (tenant.get('id') !== uid || tenant.get('ownerId') !== uid))) {
       throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
     }
     if (store.get('publicationStatus') !== 'paused') {
@@ -169,6 +183,9 @@ export async function hideVerifiedFirstStorePublication(
     }
     if (listing.get('publicationStatus') !== 'paused') {
       tx.update(listingRef, { publicationStatus: 'paused', updatedAt: Timestamp.now() });
+    }
+    if (tenant.exists && tenant.get('publicationStatus') !== 'paused') {
+      tx.update(tenantRef, { publicationStatus: 'paused', updatedAt: Timestamp.now() });
     }
     return { hidden: true };
   });
