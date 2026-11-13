@@ -20,7 +20,7 @@ test('publication handler mounts locally only with emulator-only guard', () => {
   assert.match(server, /NODE_ENV !== 'production'/);
   assert.match(server, /FIRESTORE_EMULATOR_HOST === '127\\.0\\.0\\.1:8088'/);
   assert.match(server, /FIREBASE_AUTH_EMULATOR_HOST === '127\\.0\\.0\\.1:9099'/);
-  assert.match(server, /app\\.post\\('\\/api\\/action-execute'/);
+  assert.ok(server.includes("app.post('/api/action-execute'"));
 });
 
 test('E2E release requires explicit emulator-only browser auth and server API wiring', () => {
