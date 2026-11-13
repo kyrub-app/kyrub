@@ -58,6 +58,12 @@ export async function publishFirstStoreAndAwardXp(
       });
       return result;
     }
+    // A pre-published record without immutable server evidence is not a
+    // verifiable first-publication transition. Never mint XP retroactively.
+    if (store.get('publicationStatus') === 'published' ||
+        listing.get('publicationStatus') === 'published') {
+      throw Error('FIRST_STORE_PUBLICATION_PREEXISTING_UNVERIFIED');
+    }
     const result = await awardVerifiedFirstStorePublicationInTransaction(tx, {
       challenge: challenge.data() as KyrubChallengeDefinition,
       event: { userId: uid, storeId: canonicalStoreId, publishedAt,
