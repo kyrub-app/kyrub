@@ -23,8 +23,8 @@ await page.route('**/*', route => {
 });
 try {
   const response = await page.goto(origin, { waitUntil: 'commit', timeout: 90000 });
-  await page.waitForLoadState('domcontentloaded', { timeout: 120000 });
-  await page.screenshot({ path: `${out}/initial-page.png`, fullPage: true });
+  await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
+  await page.screenshot({ path: `${out}/initial-page.png`, fullPage: false, timeout: 15000 });
   if (!response?.ok()) throw new Error(`APP_HTTP_${response?.status() ?? 'NO_RESPONSE'}`);
   await page.waitForTimeout(1500);
   console.log('Browser diagnostics:', JSON.stringify({ errors, failedRequests: failedRequests.slice(0, 20) }));
@@ -34,6 +34,10 @@ try {
   }
   console.log('PASS: isolated application opens in Chromium; screenshot captured');
   console.log('NOT TESTED: user registration, store creation UI, Free activation, XP award');
+} catch (error) {
+  console.error('Browser failure diagnostics:', JSON.stringify({ errors, failedRequests: failedRequests.slice(0, 30), violations }));
+  try { await page.screenshot({ path: `${out}/failure.png`, timeout: 5000 }); } catch { /* preserve original error */ }
+  throw error;
 } finally {
   await browser.close();
 }
