@@ -20,7 +20,6 @@ import {
 } from '../server/admin/paidPlanSubscriptionService.js';
 import { officialPlanPixAccount } from '../server/payments/officialPlanPixProvider.js';
 import { ensureFreePlanForStoreCreation } from '../server/actions/freeStoreProvisioningService.js';
-import { awardFirstLoginWelcomeForVerifiedUser } from '../server/gamification/firstLoginWelcomeAwardService.js';
 import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
 import { grantCleanBaselineWelcomeForVerifiedUser } from '../server/gamification/cleanBaselineWelcomeService.js';
 import { adminAuth, adminDb } from '../server/firebaseAdmin.js';
@@ -262,7 +261,7 @@ export default async function handler(
             user.uid, user.firebaseAuthTimeSeconds ?? NaN)
           : process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED === 'true'
             ? await grantCleanBaselineWelcomeForVerifiedUser(adminDb, adminAuth, user.uid)
-            : await awardFirstLoginWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
+            : (() => { throw Error('WELCOME_CAMPAIGN_NOT_ENABLED'); })();
         response.status(200).json({ awarded: !result.replay, balance: result.balance });
         return;
       }
