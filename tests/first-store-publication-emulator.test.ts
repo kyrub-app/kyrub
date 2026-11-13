@@ -170,3 +170,29 @@ test('inactive challenge does not prevent first publication or grant XP', async 
   assert.equal((await db.doc(`marketplace_listings/${listingId}`).get()).get('publicationStatus'), 'published');
   assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 0);
 });
+
+
+test('republication after hiding restores visibility without duplicate XP or timestamp changes', async () => {
+  await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  });
+  const first = (await db.doc(`stores/${canonicalId}`).get()).get('firstPublishedAt');
+  await Promise.all([
+    db.doc(`stores/${canonicalId}`).update({ publicationStatus: 'paused' }),
+    db.doc(`marketplace_listings/${listingId}`).update({ publicationStatus: 'paused' }),
+  ]);
+  const result = await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  });
+  assert.deepEqual(result, { replay: true, pitangas: 0, xp: 2 });
+  const [store, listing, xp] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(),
+    db.doc(`marketplace_listings/${listingId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(store.get('publicationStatus'), 'published');
+  assert.equal(listing.get('publicationStatus'), 'published');
+  assert.equal(store.get('firstPublishedAt'), first);
+  assert.equal(listing.get('publishedAt'), first);
+  assert.equal(xp.size, 1);
+});
