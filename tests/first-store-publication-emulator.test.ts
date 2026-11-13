@@ -96,3 +96,23 @@ test('prepublished client listing without server evidence does not earn XP', asy
   }), /PREEXISTING_UNVERIFIED/);
   assert.equal((await db.doc(`users/${uid}/xpLedger/xp_first_store_${uid}`).get()).exists, false);
 });
+
+test('a different authenticated user cannot publish or receive first-store XP', async () => {
+  const attacker = 'first_publication_attacker';
+  await assert.rejects(
+    publishFirstStoreAndAwardXp(db, {
+      authenticatedUserId: attacker, canonicalStoreId: canonicalId,
+    }),
+    /FIRST_STORE_PUBLICATION_AUTHORITY_INVALID/,
+  );
+  const [store, listing, attackerXp, ownerXp] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(),
+    db.doc(`marketplace_listings/${listingId}`).get(),
+    db.doc(`users/${attacker}/xpLedger/xp_first_store_${attacker}`).get(),
+    db.doc(`users/${uid}/xpLedger/xp_first_store_${uid}`).get(),
+  ]);
+  assert.equal(store.get('publicationStatus'), 'paused');
+  assert.equal(listing.exists, false);
+  assert.equal(attackerXp.exists, false);
+  assert.equal(ownerXp.exists, false);
+});
