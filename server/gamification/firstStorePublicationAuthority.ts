@@ -41,10 +41,10 @@ export async function publishFirstStoreAndAwardXp(
     const existingFirstAt = store.get('firstPublishedAt');
     if (existingFirstAt || event.exists) {
       if (typeof existingFirstAt !== 'string' || !event.exists ||
-          store.get('publicationStatus') !== 'published' ||
+          !['published', 'paused'].includes(store.get('publicationStatus')) ||
           !listing.exists ||
           listing.get('publishedAt') !== existingFirstAt ||
-          listing.get('publicationStatus') !== 'published' ||
+          !['published', 'paused'].includes(listing.get('publicationStatus')) ||
           event.get('id') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID ||
           !['pending', 'unrewarded'].includes(event.get('status')) ||
           event.get('isFirstPublication') !== true ||
@@ -52,6 +52,12 @@ export async function publishFirstStoreAndAwardXp(
           event.get('publishedAt') !== existingFirstAt ||
           event.get('challengeId') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID) {
         throw Error('FIRST_STORE_PUBLICATION_MARKER_CONFLICT');
+      }
+      // Re-publication only restores visibility; immutable firstPublishedAt remains unchanged.
+      if (store.get('publicationStatus') !== 'published' ||
+          listing.get('publicationStatus') !== 'published') {
+        tx.update(storeRef, { publicationStatus: 'published' });
+        tx.update(listingRef, { publicationStatus: 'published' });
       }
       // Never grant XP retroactively when the first publication was unrewarded.
       if (event.get('status') === 'unrewarded') return { replay: true, pitangas: 0, xp: 0 };
