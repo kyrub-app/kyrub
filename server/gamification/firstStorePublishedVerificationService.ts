@@ -21,14 +21,14 @@ export async function verifyFirstStorePublicationForReward(
   const eventRef = db.doc(`users/${userId}/verifiedStoreEvents/first_store_published`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
   // Deterministic store listing ID matches marketplacePaths.ts.
-  const listingId = `s_${canonicalStoreId.length}_${canonicalStoreId}`;
+  const listingId = `s_${userId.length}_${userId}`;
   const listingRef = db.doc(`marketplace_listings/${listingId}`);
   return db.runTransaction(async tx => {
     const [store, event, challenge, listings] = await Promise.all([
       tx.get(storeRef), tx.get(eventRef), tx.get(challengeRef), tx.get(listingRef),
     ]);
     const visibleListing = listings.exists && listings.get('listingType') === 'store' &&
-      listings.get('storeId') === canonicalStoreId &&
+      listings.get('storeId') === userId &&
       listings.get('ownerId') === userId &&
       listings.get('publicationStatus') === 'published';
     if (!visibleListing || !store.exists || !event.exists || !challenge.exists ||
