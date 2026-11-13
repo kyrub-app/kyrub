@@ -19,20 +19,11 @@ export async function verifyFirstStorePublicationForReward(
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
   const eventRef = db.doc(`users/${userId}/verifiedStoreEvents/first_store_published`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
-  const listingQuery = db.collection('marketplace_listings')
-    .where('storeId', '==', canonicalStoreId)
-    .where('publicationStatus', '==', 'published')
-    .limit(20);
-  return db.runTransaction(async tx => {
+  // Deterministic store listing ID matches marketplacePaths.ts.\n  const listingId = `s_${canonicalStoreId.length}_${canonicalStoreId}`;\n  const listingRef = db.doc(`marketplace_listings/${listingId}`);\n  return db.runTransaction(async tx => {
     const [store, event, challenge, listings] = await Promise.all([
-      tx.get(storeRef), tx.get(eventRef), tx.get(challengeRef), tx.get(listingQuery),
+      tx.get(storeRef), tx.get(eventRef), tx.get(challengeRef), tx.get(listingRef),
     ]);
-    const visibleListing = listings.docs.some(listing => {
-      const data = listing.data();
-      return data.listingType === 'store' && data.storeId === canonicalStoreId &&
-        data.publicationStatus === 'published';
-    });
-    if (!visibleListing || !store.exists || !event.exists || !challenge.exists ||
+    const visibleListing = listings.exists && listings.get('listingType') === 'store' &&\n      listings.get('storeId') === canonicalStoreId &&\n      listings.get('ownerId') === userId &&\n      listings.get('publicationStatus') === 'published';\n    if (!visibleListing || !store.exists || !event.exists || !challenge.exists ||
         store.get('id') !== canonicalStoreId ||
         store.get('ownerId') !== userId ||
         store.get('publicationStatus') !== 'published' ||
