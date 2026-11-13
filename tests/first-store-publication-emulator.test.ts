@@ -275,3 +275,34 @@ test('repeated authenticated hide is idempotent and does not alter evidence', as
   assert.equal(listing.get('publishedAt').toDate().toISOString(), first);
   assert.equal(xp.size, 1);
 });
+
+
+test('removing challenge after verified reward does not prevent hide or republish', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const firstAt = (await db.doc(`stores/${canonicalId}`).get()).get('firstPublishedAt');
+  await hideVerifiedFirstStorePublication(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  await db.doc('global_challenges/first_store_published').delete();
+  assert.deepEqual(await publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { replay: true, pitangas: 0, xp: 2 });
+  const [store, listing, xp, receipt] = await Promise.all([
+    db.doc(`stores/${canonicalId}`).get(), db.doc(`marketplace_listings/${listingId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(), db.collection(`users/${uid}/challengeRewards`).get(),
+  ]);
+  assert.equal(store.get('publicationStatus'), 'published');
+  assert.equal(listing.get('publicationStatus'), 'published');
+  assert.equal(store.get('firstPublishedAt'), firstAt);
+  assert.equal(xp.size, 1);
+  assert.equal(receipt.size, 1);
+});
+
+test('missing challenge with corrupted XP evidence fails closed', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  await hideVerifiedFirstStorePublication(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  await db.doc('global_challenges/first_store_published').delete();
+  await db.doc(`users/${uid}/xpLedger/xp_first_store_${uid}`).delete();
+  await assert.rejects(() => publishFirstStoreAndAwardXp(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), /FIRST_STORE_PUBLICATION_REWARD_IDEMPOTENCY_CONFLICT/);
+  assert.equal((await db.doc(`stores/${canonicalId}`).get()).get('publicationStatus'), 'paused');
+});
