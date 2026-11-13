@@ -88,6 +88,19 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   if (finalPlan !== 'free' && finalPlan !== 'pro' && finalPlan !== 'business') {
     throw Error('STORE_ACTIVATION_INVALID_PLAN');
   }
+  // Reward processing is best-effort and idempotent. An unpublished or absent
+  // challenge must never prevent store activation. A later authenticated retry
+  // of this command can process the persisted first-store event.
+  try {
+    const { awardFirstStoreChallengeForCanonicalStore } =
+      await import('../gamification/firstStoreChallengeAwardService.js');
+    await awardFirstStoreChallengeForCanonicalStore(adminDb, { userId: uid, canonicalStoreId });
+  } catch (error) {
+    console.error('FIRST_STORE_CHALLENGE_AWARD_DEFERRED', {
+      userId: uid, canonicalStoreId,
+      code: error instanceof Error ? error.message : 'UNKNOWN',
+    });
+  }
   return { ...provisioned, plan: finalPlan, canonicalStoreId };
 }
 
@@ -114,8 +127,11 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
   const canonicalId = existing?.id ??
     `store-${createHash('sha256').update(uid).digest('hex').slice(0, 24)}`;
   const canonicalRef = adminDb.doc(`stores/${canonicalId}`);
+  const firstStoreEventRef = adminDb.doc(`users/${uid}/verifiedStoreEvents/first_store_created`);
   await adminDb.runTransaction(async tx => {
-    const [personal, canonical] = await Promise.all([tx.get(privateRef), tx.get(canonicalRef)]);
+    const [personal, canonical, firstStoreEvent] = await Promise.all([
+      tx.get(privateRef), tx.get(canonicalRef), tx.get(firstStoreEventRef),
+    ]);
     if (!personal.exists || personal.get('ownerId') !== uid ||
         (personal.get('canonicalStoreId') && personal.get('canonicalStoreId') !== canonicalId) ||
         (canonical.exists && (canonical.get('ownerId') !== uid ||
@@ -135,6 +151,9 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
         throw Error('STORE_ACTIVATION_INVALID_EXISTING_MARKER');
       }
     }
+    if (!canonical.exists && ownerStores.empty && firstStoreEvent.exists) {
+      throw Error('STORE_ACTIVATION_FIRST_STORE_EVENT_CONFLICT');
+    }
     if (!canonical.exists) {
       tx.create(canonicalRef, {
         id: canonicalId, ownerId: uid, legacyTenantId: uid,
@@ -142,9 +161,20 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
         createdAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
         activatedAt: FieldValue.serverTimestamp(),
+        // Only a newly created canonical store with no prior owned store qualifies.
+        firstStoreCreationVerified: ownerStores.empty,
       });
     } else if (previous == null) {
       tx.update(canonicalRef, { activatedAt: FieldValue.serverTimestamp() });
+    }
+    // Persist an immutable server-only event with canonical creation. This is
+    // not a reward write and cannot block store creation on ledger migration.
+    if (!canonical.exists && ownerStores.empty) {
+      tx.create(firstStoreEventRef, {
+        id: 'first_store_created', userId: uid, storeId: canonicalId,
+        challengeId: 'first_store_created',
+        createdAt: FieldValue.serverTimestamp(), status: 'pending',
+      });
     }
     tx.set(privateRef, {
       canonicalStoreId: canonicalId,
