@@ -1,5 +1,5 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { adminDb } from '../firebaseAdmin.js';
+import { adminAuth, adminDb } from '../firebaseAdmin.js';
 import { hideVerifiedFirstStorePublication, publishFirstStoreAndAwardXp, syncVerifiedFirstStoreProfile } from './firstStorePublicationAuthority.js';
 
 type RequestLike = {
@@ -43,7 +43,19 @@ export async function handleFirstStorePublication(
   }
   let uid: string;
   try {
-    const identity = await verifyFirebaseIdToken(token);
+    const emulatorOnly =
+      process.env.NODE_ENV !== 'production' &&
+      process.env.KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL === 'true' &&
+      process.env.FIREBASE_AUTH_EMULATOR_HOST === '127.0.0.1:9099' &&
+      process.env.FIRESTORE_EMULATOR_HOST === '127.0.0.1:8088' &&
+      process.env.FIREBASE_PROJECT_ID === 'kyrub-security-test' &&
+      process.env.GCLOUD_PROJECT === 'kyrub-security-test' &&
+      process.env.GOOGLE_CLOUD_PROJECT === 'kyrub-security-test';
+    // Emulator tokens are unsigned. Only the emulator SDK may verify them,
+    // and only under the explicit local-only isolation guard above.
+    const identity = emulatorOnly
+      ? await adminAuth.verifyIdToken(token)
+      : await verifyFirebaseIdToken(token);
     uid = identity.uid;
     if (!uid) throw Error('INVALID_FIREBASE_IDENTITY');
   } catch {
