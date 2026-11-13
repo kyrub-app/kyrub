@@ -88,6 +88,12 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'first-store-publication') {
+    const publication = await import('../server/gamification/firstStorePublicationHandler.js');
+    await publication.handleFirstStorePublication(request, response);
+    return;
+  }
+
   if (transport === 'kyrubia-user-ai-chat') {
     try {
       const chat = await import('../server/ai/kyrubiaUserAiChatServerlessTransport.js');
