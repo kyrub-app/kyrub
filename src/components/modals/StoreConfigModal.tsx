@@ -342,6 +342,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           }
           setCanonicalPublished(true);
           setFallbackPublished(true);
+        } else if (trustedPublication) {
+          marketplaceSynced = false;
+          console.warn('Verified store profile sync is disabled until server rollout.');
         } else {
           await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
