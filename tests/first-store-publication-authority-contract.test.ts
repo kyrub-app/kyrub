@@ -71,7 +71,7 @@ test('browser cannot forge first-store creation or publication markers in canoni
 
 test('saving verified store profile cannot use legacy publication refresh that resets publishedAt', () => {
   assert.match(modal, /trustedPublication = typeof canonicalSnapshot\.data\(\)\?\.firstPublishedAt === 'string'/);
-  assert.match(modal, /if \(trustedPublication\) \{[\s\S]*?action: 'sync-profile'[\s\S]*?\} else \{\s*await setStoreMarketplacePublication\(user, storeToSave, true\)/);
+  assert.match(modal, /if \\(trustedPublication && import\\.meta\\.env\\.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true'\\) \\{[\\s\\S]*?action: 'sync-profile'[\\s\\S]*?\\} else if \\(trustedPublication\\) \\{[\\s\\S]*?\\} else \\{\\s*await setStoreMarketplacePublication\\(user, storeToSave, true\\)/);
 });
 
 
