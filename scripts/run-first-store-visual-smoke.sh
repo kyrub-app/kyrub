@@ -5,7 +5,13 @@ server_pid=$!
 trap 'mkdir -p artifacts/first-store-visual; cp /tmp/kyrub-e2e-server.log artifacts/first-store-visual/server.log 2>/dev/null || true; kill "$server_pid" 2>/dev/null || true' EXIT
 for i in $(seq 1 120); do
   if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then
-    echo 'Application health endpoint responded; starting browser smoke'
+    echo 'Application health endpoint responded; checking HTML response'
+    curl --max-time 20 -sS -D artifacts-headers.tmp -o artifacts-index.tmp http://127.0.0.1:3000/ || true
+    head -c 500 artifacts-headers.tmp || true
+    echo
+    head -c 300 artifacts-index.tmp || true
+    echo
+    echo 'Starting browser smoke'
     timeout 100s node scripts/first-store-visual-smoke.mjs
     exit $?
   fi
