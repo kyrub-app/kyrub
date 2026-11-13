@@ -67,3 +67,9 @@ test('browser cannot forge first-store creation or publication markers in canoni
   assert.match(canonicalRules, /!incoming\(\)\.keys\(\)\.hasAny\(\['firstStoreCreationVerified', 'firstPublishedAt'\]\)/);
   assert.match(canonicalRules, /!incoming\(\)\.diff\(existing\(\)\)\.affectedKeys\(\)\.hasAny\(\[\s*'firstStoreCreationVerified', 'firstPublishedAt'/);
 });
+
+
+test('saving verified store profile cannot use legacy publication refresh that resets publishedAt', () => {
+  assert.match(modal, /trustedPublication = typeof canonicalSnapshot\.data\(\)\?\.firstPublishedAt === 'string'/);
+  assert.match(modal, /if \(trustedPublication\) \{[\s\S]*?marketplaceSynced = false;[\s\S]*?\} else \{\s*await setStoreMarketplacePublication\(user, storeToSave, true\)/);
+});
