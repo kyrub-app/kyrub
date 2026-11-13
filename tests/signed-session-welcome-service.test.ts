@@ -8,6 +8,7 @@ const envKeys = [
   'KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED',
   'KYRUB_PITANGA_WELCOME_PROJECT_ID',
   'KYRUB_WELCOME_BONUS_EFFECTIVE_AT',
+  'KYRUB_PITANGA_WELCOME_FENCE_EPOCH',
 ] as const;
 
 const withEnv = async (values: Record<string, string | undefined>, fn: () => Promise<void>) => {
@@ -29,6 +30,7 @@ const enabled = {
   KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED: 'true',
   KYRUB_PITANGA_WELCOME_PROJECT_ID: 'kyrub-test',
   KYRUB_WELCOME_BONUS_EFFECTIVE_AT: '2026-11-12T00:00:00.000Z',
+  KYRUB_PITANGA_WELCOME_FENCE_EPOCH: 'test-epoch',
 };
 const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt, fenceData?: Record<string, unknown>) => {
   let lookups = 0;
@@ -119,4 +121,16 @@ test('welcome rejects absent or unverified legacy writer fence', async () => {
       assert.equal(m.counts().transactions, 1);
     });
   }
+});
+
+test('welcome rejects a stale fence epoch and missing epoch configuration', async () => {
+  await withEnv(enabled, async () => {
+    const m = mock('kyrub-test', createdAt, { status: 'fenced', writersVerified: true, epoch: 'old-epoch' });
+    await assert.rejects(grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', authTime), /WELCOME_LEGACY_WRITERS_NOT_VERIFIED/);
+  });
+  await withEnv({ ...enabled, KYRUB_PITANGA_WELCOME_FENCE_EPOCH: undefined }, async () => {
+    const m = mock();
+    await assert.rejects(grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', authTime), /WELCOME_FENCE_EPOCH_NOT_CONFIGURED/);
+    assert.equal(m.counts().transactions, 0);
+  });
 });
