@@ -6,6 +6,7 @@ on:
     paths:
       - 'src/utils/firebase.ts'
       - 'scripts/first-store-visual-smoke.mjs'
+      - 'scripts/run-first-store-visual-smoke.sh'
       - '.github/workflows/first-store-visual-smoke.yml'
       - 'firebase.security.json'
   workflow_dispatch:
@@ -52,6 +53,6 @@ jobs:
           name: first-store-visual-smoke-evidence
           path: |
             artifacts/first-store-visual/
-            /tmp/kyrub-e2e-server.log
+            artifacts/first-store-visual/server.log
           if-no-files-found: warn
           retention-days: 7
