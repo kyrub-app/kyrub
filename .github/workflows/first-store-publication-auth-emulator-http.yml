@@ -1,0 +1,38 @@
+name: First store publication Auth Emulator HTTP
+on:
+  pull_request:
+    paths:
+      - 'tests/first-store-publication-auth-emulator-http.test.ts'
+      - 'server/gamification/firstStorePublicationHandler.ts'
+      - 'server.ts'
+      - '.github/workflows/first-store-publication-auth-emulator-http.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  auth-emulator-http:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: kyrub-security-test
+      GCLOUD_PROJECT: kyrub-security-test
+      GOOGLE_CLOUD_PROJECT: kyrub-security-test
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'true'
+      KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Real HTTP authentication against isolated Firebase emulators
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore "node --test --import tsx tests/first-store-publication-auth-emulator-http.test.ts"
