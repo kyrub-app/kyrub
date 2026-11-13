@@ -44,8 +44,7 @@ jobs:
       - name: Prepare Firestore security rules
         run: npm run firestore:compose
       - name: Start isolated Firebase and run browser smoke
-        run: |
-          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-global-challenges --only firestore,auth,storage 'bash -c '\''set -e; npm run dev > /tmp/kyrub-e2e-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 90); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node scripts/first-store-visual-smoke.mjs'\'''
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-global-challenges --only firestore,auth,storage "bash scripts/run-first-store-visual-smoke.sh"
       - name: Upload screenshot and server logs
         if: always()
         uses: actions/upload-artifact@v4
