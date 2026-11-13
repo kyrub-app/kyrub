@@ -16,8 +16,7 @@ export async function publishFirstStoreAndAwardXp(
   // Capture the trusted timestamp once, outside transaction retries.
   const publishedAt = new Date().toISOString();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId) ||
-      false) {
+      !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
     throw Error('FIRST_STORE_PUBLICATION_INVALID_INPUT');
   }
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
