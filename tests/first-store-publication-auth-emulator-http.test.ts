@@ -30,8 +30,9 @@ const signIn = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com
   method: 'POST', headers: { 'content-type': 'application/json' },
   body: JSON.stringify({ token: customToken, returnSecureToken: true }),
 });
-assert.equal(signIn.status, 200, await signIn.text());
-const token = (await signIn.json() as { idToken?: string }).idToken;
+const signInBody = await signIn.text();
+assert.equal(signIn.status, 200, signInBody);
+const token = (JSON.parse(signInBody) as { idToken?: string }).idToken;
 assert.ok(token);
 assert.equal((await auth.verifyIdToken(token)).uid, uid);
 
