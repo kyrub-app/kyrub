@@ -25,3 +25,11 @@ test('Free provisioning must never grant XP during store creation', () => {
   const source = read('../server/actions/freeStoreProvisioningService.ts');
   assert.doesNotMatch(source, /awardFirstStoreChallengeForCanonicalStore\s*\(/);
 });
+
+test('primary marketplace listing maps to owner UID, not canonical store document ID', () => {
+  const source = read('../server/gamification/firstStorePublishedVerificationService.ts');
+  assert.match(source, /listingId = `s_\$\{userId\.length\}_\$\{userId\}`/);
+  assert.match(source, /listings\.get\('storeId'\) === userId/);
+  assert.match(source, /listings\.get\('ownerId'\) === userId/);
+  assert.match(source, /store\.get\('id'\) !== canonicalStoreId/);
+});
