@@ -38,3 +38,11 @@ test('rejects non-published, non-deterministic and expired challenges', () => {
 test('rejects Pitangas on first-store challenge to avoid double welcome grant', () => {
   assert.throws(() => planFirstStoreChallengeReward({ ...challenge, rewardKCoins: 1000 }, event), /NOT_ELIGIBLE/);
 });
+
+test('rejects invalid or inverted challenge eligibility windows', () => {
+  assert.throws(() => planFirstStoreChallengeReward({ ...challenge, startsAt: 'invalid' }, event), /OUTSIDE_WINDOW/);
+  assert.throws(() => planFirstStoreChallengeReward({ ...challenge, endsAt: 'invalid' }, event), /OUTSIDE_WINDOW/);
+  assert.throws(() => planFirstStoreChallengeReward({
+    ...challenge, startsAt: '2026-11-13T00:00:00.000Z', endsAt: '2026-11-12T00:00:00.000Z',
+  }, event), /OUTSIDE_WINDOW/);
+});
