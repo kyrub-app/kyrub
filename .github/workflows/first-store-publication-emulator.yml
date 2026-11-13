@@ -1,0 +1,26 @@
+name: First store publication emulator
+on:
+  pull_request:
+    paths:
+      - 'server/gamification/firstStorePublicationAuthority.ts'
+      - 'server/gamification/firstStorePublished*.ts'
+      - 'tests/first-store-publication-emulator.test.ts'
+      - '.github/workflows/first-store-publication-emulator.yml'
+  workflow_dispatch:
+jobs:
+  first-store-publication:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Run isolated Firestore Emulator test
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --test --test-concurrency=1 --import tsx tests/first-store-publication-emulator.test.ts"
