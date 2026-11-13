@@ -14,11 +14,13 @@ test('isolated browser preflight requires Auth and Firestore emulator configurat
   assert.ok(Number.isInteger(emulator.emulators.firestore.port));
 });
 
-test('publication handler is available in serverless API but not mounted in local server', () => {
+test('publication handler mounts locally only with emulator-only guard', () => {
   assert.match(action, /transport === 'first-store-publication'/);
-  // This test documents the missing integration; it must be replaced by a
-  // positive HTTP test before a browser E2E run can claim completion.
-  assert.doesNotMatch(server, /app\.(?:all|post|use)\(\s*['"]\/api\/action-execute/);
+  assert.match(server, /KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL === 'true'/);
+  assert.match(server, /NODE_ENV !== 'production'/);
+  assert.match(server, /FIRESTORE_EMULATOR_HOST === '127\\.0\\.0\\.1:8088'/);
+  assert.match(server, /FIREBASE_AUTH_EMULATOR_HOST === '127\\.0\\.0\\.1:9099'/);
+  assert.match(server, /app\\.post\\('\\/api\\/action-execute'/);
 });
 
 test('E2E release requires explicit emulator-only browser auth and server API wiring', () => {
