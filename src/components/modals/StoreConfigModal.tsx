@@ -395,6 +395,14 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           body: JSON.stringify({ canonicalStoreId }),
         });
         if (!response.ok) throw Error(`FIRST_STORE_PUBLICATION_HTTP_${response.status}`);
+        const publicationResult: unknown = await response.json();
+        if (!publicationResult || typeof publicationResult !== 'object' ||
+            !('replay' in publicationResult) || typeof publicationResult.replay !== 'boolean' ||
+            !('xp' in publicationResult) ||
+            (publicationResult.xp !== 0 && publicationResult.xp !== 2) ||
+            !('pitangas' in publicationResult) || publicationResult.pitangas !== 0) {
+          throw Error('FIRST_STORE_PUBLICATION_INVALID_RESPONSE');
+        }
         // Do not invoke client publication fallback after the trusted write.
       } else {
         await setStoreMarketplacePublication(user, saveResult.store, targetPublished);
