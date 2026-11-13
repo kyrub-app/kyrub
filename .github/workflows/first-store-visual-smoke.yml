@@ -1,0 +1,58 @@
+name: First-store visual smoke (isolated)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/utils/firebase.ts'
+      - 'scripts/first-store-visual-smoke.mjs'
+      - 'scripts/run-first-store-visual-smoke.sh'
+      - '.github/workflows/first-store-visual-smoke.yml'
+      - 'firebase.security.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-browser-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      FIREBASE_PROJECT_ID: demo-global-challenges
+      GCLOUD_PROJECT: demo-global-challenges
+      VITE_KYRUB_E2E_ISOLATED: 'true'
+      VITE_KYRUB_E2E_PROJECT_ID: demo-global-challenges
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIREBASE_STORAGE_EMULATOR_HOST: 127.0.0.1:9199
+      PORT: '3000'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Install dependencies and Chromium
+        run: |
+          npm ci
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Prepare Firestore security rules
+        run: npm run firestore:compose
+      - name: Start isolated Firebase and run browser smoke
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-global-challenges --only firestore,auth,storage "bash scripts/run-first-store-visual-smoke.sh"
+      - name: Upload screenshot and server logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-store-visual-smoke-evidence
+          path: |
+            artifacts/first-store-visual/
+            artifacts/first-store-visual/server.log
+          if-no-files-found: warn
+          retention-days: 7
