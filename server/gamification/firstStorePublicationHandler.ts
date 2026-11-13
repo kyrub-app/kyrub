@@ -1,6 +1,6 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
-import { publishFirstStoreAndAwardXp } from './firstStorePublicationAuthority.js';
+import { hideVerifiedFirstStorePublication, publishFirstStoreAndAwardXp } from './firstStorePublicationAuthority.js';
 
 type RequestLike = {
   method?: string;
@@ -56,10 +56,14 @@ export async function handleFirstStorePublication(
       response.status(400).json({ error: 'INVALID_CANONICAL_STORE_ID' });
       return;
     }
-    const result = await publishFirstStoreAndAwardXp(adminDb, {
-      authenticatedUserId: uid,
-      canonicalStoreId,
-    });
+    const action = (request.body as Record<string, unknown> | null)?.action;
+    if (action !== undefined && action !== 'publish' && action !== 'hide') {
+      response.status(400).json({ error: 'INVALID_PUBLICATION_ACTION' });
+      return;
+    }
+    const result = action === 'hide'
+      ? await hideVerifiedFirstStorePublication(adminDb, { authenticatedUserId: uid, canonicalStoreId })
+      : await publishFirstStoreAndAwardXp(adminDb, { authenticatedUserId: uid, canonicalStoreId });
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNKNOWN';
