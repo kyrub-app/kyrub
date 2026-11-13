@@ -256,12 +256,16 @@ export default async function handler(
         const user = await authenticateConsultantRequest(authorization);
         // Fail closed if canonical balance migration has not completed.
         // Never manufacture a zero balance or report an uncommitted award.
+        if (process.env.KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED !== 'true' &&
+            process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED !== 'true') {
+          throw Error('WELCOME_CAMPAIGN_NOT_ENABLED');
+        }
         const result = process.env.KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED === 'true'
           ? await grantSignedSessionWelcomeForVerifiedUser(adminDb, adminAuth, user.uid,
             user.uid, user.firebaseAuthTimeSeconds ?? NaN)
           : process.env.KYRUB_PITANGA_CLEAN_BASELINE_ENABLED === 'true'
             ? await grantCleanBaselineWelcomeForVerifiedUser(adminDb, adminAuth, user.uid)
-            : (() => { throw Error('WELCOME_CAMPAIGN_NOT_ENABLED'); })();
+            : await grantCleanBaselineWelcomeForVerifiedUser(adminDb, adminAuth, user.uid);
         response.status(200).json({ awarded: !result.replay, balance: result.balance });
         return;
       }
