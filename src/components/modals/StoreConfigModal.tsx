@@ -381,8 +381,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     try {
       // Opt-in migration: legacy publication remains unchanged until both
       // the browser and trusted server are explicitly enabled.
-      if (targetPublished && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
-        if (!saveResult.cloudSynced) {
+      if (import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+        if (targetPublished && !saveResult.cloudSynced) {
           throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
         }
         const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
@@ -391,22 +391,30 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
           throw Error('FIRST_STORE_PUBLICATION_CANONICAL_ID_UNAVAILABLE');
         }
+        const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalStoreId));
+        const verifiedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
+        if (!targetPublished && !verifiedPublication) {
+          // Legacy stores remain on the existing hide path until migrated.
+          await setStoreMarketplacePublication(user, saveResult.store, false);
+        } else {
         const token = await user.getIdToken();
         const response = await fetch('/api/action-execute?transport=first-store-publication', {
           method: 'POST',
           headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
-          body: JSON.stringify({ canonicalStoreId }),
+          body: JSON.stringify({ canonicalStoreId, action: targetPublished ? 'publish' : 'hide' }),
         });
         if (!response.ok) throw Error(`FIRST_STORE_PUBLICATION_HTTP_${response.status}`);
         const publicationResult: unknown = await response.json();
         if (!publicationResult || typeof publicationResult !== 'object' ||
-            !('replay' in publicationResult) || typeof publicationResult.replay !== 'boolean' ||
+            (targetPublished && (!('replay' in publicationResult) || typeof publicationResult.replay !== 'boolean' ||
             !('xp' in publicationResult) ||
             (publicationResult.xp !== 0 && publicationResult.xp !== 2) ||
-            !('pitangas' in publicationResult) || publicationResult.pitangas !== 0) {
+            !('pitangas' in publicationResult) || publicationResult.pitangas !== 0)) ||
+            (!targetPublished && (!('hidden' in publicationResult) || publicationResult.hidden !== true))) {
           throw Error('FIRST_STORE_PUBLICATION_INVALID_RESPONSE');
         }
         // Do not invoke client publication fallback after the trusted write.
+        }
       } else {
         await setStoreMarketplacePublication(user, saveResult.store, targetPublished);
       }
