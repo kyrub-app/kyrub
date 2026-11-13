@@ -34,6 +34,10 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     uid, tokenUid, authTimeSeconds: signedAuthTimeSeconds,
     firebaseCreatedAt: createdAt, campaignEffectiveAt: cutoff,
   });
+  const expectedFenceEpoch = process.env.KYRUB_PITANGA_WELCOME_FENCE_EPOCH?.trim();
+  if (!expectedFenceEpoch || !/^[A-Za-z0-9_-]{1,128}$/.test(expectedFenceEpoch)) {
+    throw Error('WELCOME_FENCE_EPOCH_NOT_CONFIGURED');
+  }
   const root = db.collection('users').doc(uid);
   return db.runTransaction(async tx => {
     // A feature flag alone must never authorize live welcome credits. The
@@ -42,7 +46,7 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     const control = fence.data();
     if (!fence.exists || control?.status !== 'fenced' ||
         control?.writersVerified !== true ||
-        typeof control?.epoch !== 'string' || !control.epoch.trim()) {
+        control?.epoch !== expectedFenceEpoch) {
       throw Error('WELCOME_LEGACY_WRITERS_NOT_VERIFIED');
     }
     return grantCleanBaselineWelcomeInTransaction(tx, {
