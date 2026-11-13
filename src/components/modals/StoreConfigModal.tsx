@@ -327,7 +327,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalId));
           trustedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
         }
-        if (trustedPublication) {
+        if (trustedPublication && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
           if (!privateProfileSynced) throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
           const token = await user.getIdToken();
           const response = await fetch('/api/action-execute?transport=first-store-publication', {
