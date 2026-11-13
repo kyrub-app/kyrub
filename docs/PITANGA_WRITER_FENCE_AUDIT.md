@@ -1,5 +1,12 @@
 # Pitangas — auditoria de bloqueios antes da ativação (PR #1130)
 
+## Atualização de segurança — PR #1130
+
+- A rota `onboarding.welcome.claim` **não seleciona mais** o serviço antigo baseado em recibo quando as flags estão desativadas: retorna `WELCOME_CAMPAIGN_NOT_ENABLED`. O serviço antigo permanece no repositório, mas não é acionado por essa rota.
+- O caminho de sessão assinada exige `KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED=true`, projeto Firebase correspondente, data de início válida, `auth_time` elegível, documento de fence com `status=fenced` e `writersVerified=true`, e `epoch` idêntico a `KYRUB_PITANGA_WELCOME_FENCE_EPOCH`.
+- O caminho `KYRUB_PITANGA_CLEAN_BASELINE_ENABLED` exige adicionalmente `KYRUB_PITANGA_CLEAN_BASELINE_ISOLATED=true` e emulador Firestore local. Não é caminho de produção.
+- **Nenhuma dessas flags ou verificações prova que todos os escritores antigos foram bloqueados.** A comprovação de deploys e escritores externos permanece pendente.
+
 ## Estado verificado no código
 
 - `pitangaLegacyWriterFence.ts` é **somente um guard reutilizável**. Seu comentário informa expressamente que instalar o helper não bloqueia escritores de produção. A pesquisa de código não confirmou adoção por todos os escritores legados.
