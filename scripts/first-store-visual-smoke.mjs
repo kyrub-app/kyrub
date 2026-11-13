@@ -22,7 +22,7 @@ await page.route('**/*', route => {
   }
 });
 try {
-  const response = await page.goto(origin, { waitUntil: 'commit', timeout: 90000 });
+  const response = await page.goto(origin, { waitUntil: 'commit', timeout: 30000 });
   await page.waitForLoadState('domcontentloaded', { timeout: 30000 });
   await page.screenshot({ path: `${out}/initial-page.png`, fullPage: false, timeout: 15000 });
   if (!response?.ok()) throw new Error(`APP_HTTP_${response?.status() ?? 'NO_RESPONSE'}`);
