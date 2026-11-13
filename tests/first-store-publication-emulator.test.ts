@@ -333,3 +333,35 @@ test('profile sync rejects a different owner without changing public data', asyn
   }), /FIRST_STORE_PUBLICATION_AUTHORITY_INVALID/);
   assert.equal((await db.doc(`marketplace_listings/${listingId}`).get()).get('name'), 'Loja teste');
 });
+
+
+test('profile sync while hidden preserves paused visibility and first publication', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  await hideVerifiedFirstStorePublication(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const before = await db.doc(`marketplace_listings/${listingId}`).get();
+  await db.doc(`users/${uid}/stores/${uid}`).update({ name: 'Loja oculta editada' });
+  await syncVerifiedFirstStoreProfile(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const [listing, store, xp] = await Promise.all([
+    db.doc(`marketplace_listings/${listingId}`).get(),
+    db.doc(`stores/${canonicalId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(listing.get('name'), 'Loja oculta editada');
+  assert.equal(listing.get('publicationStatus'), 'paused');
+  assert.equal(store.get('publicationStatus'), 'paused');
+  assert.deepEqual(listing.get('publishedAt'), before.get('publishedAt'));
+  assert.equal(xp.size, 1);
+});
+
+test('profile sync fails closed on conflicting tenant ownership', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const listingBefore = await db.doc(`marketplace_listings/${listingId}`).get();
+  await db.doc(`tenants/${uid}`).set({ id: uid, ownerId: 'another_owner', publicationStatus: 'published' });
+  await db.doc(`users/${uid}/stores/${uid}`).update({ name: 'Unauthorized public change' });
+  await assert.rejects(() => syncVerifiedFirstStoreProfile(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), /FIRST_STORE_PUBLICATION_AUTHORITY_INVALID/);
+  const listingAfter = await db.doc(`marketplace_listings/${listingId}`).get();
+  assert.equal(listingAfter.get('name'), listingBefore.get('name'));
+  assert.deepEqual(listingAfter.get('publishedAt'), listingBefore.get('publishedAt'));
+});
