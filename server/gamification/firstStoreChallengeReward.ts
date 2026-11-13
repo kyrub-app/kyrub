@@ -39,8 +39,14 @@ export const planFirstStoreChallengeReward = (
     throw new Error('FIRST_STORE_CHALLENGE_NOT_ELIGIBLE');
   }
   const created = Date.parse(event.createdAt);
-  if ((challenge.startsAt && created < Date.parse(challenge.startsAt)) ||
-      (challenge.endsAt && created >= Date.parse(challenge.endsAt))) {
+  const starts = challenge.startsAt ? Date.parse(challenge.startsAt) : undefined;
+  const ends = challenge.endsAt ? Date.parse(challenge.endsAt) : undefined;
+  // Invalid campaign dates must not silently bypass the eligibility window.
+  if ((starts !== undefined && !Number.isFinite(starts)) ||
+      (ends !== undefined && !Number.isFinite(ends)) ||
+      (starts !== undefined && ends !== undefined && starts >= ends) ||
+      (starts !== undefined && created < starts) ||
+      (ends !== undefined && created >= ends)) {
     throw new Error('FIRST_STORE_CHALLENGE_OUTSIDE_WINDOW');
   }
   return {
