@@ -313,6 +313,7 @@ if (process.env.NODE_ENV !== 'production' &&
     process.env.FIREBASE_AUTH_EMULATOR_HOST === '127.0.0.1:9099' &&
     process.env.GCLOUD_PROJECT === 'kyrub-security-test' &&
     process.env.GOOGLE_CLOUD_PROJECT === 'kyrub-security-test' &&
+    process.env.FIREBASE_PROJECT_ID === 'kyrub-security-test' &&
     process.env.KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
   app.post('/api/action-execute', async (request, response) => {
     if (request.query.transport !== 'first-store-publication') {
