@@ -1,6 +1,7 @@
 import type { Firestore } from 'firebase-admin/firestore';
 import { FIRST_STORE_PUBLISHED_CHALLENGE_ID, planFirstStorePublishedReward } from './firstStorePublishedReward.js';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
+import { awardVerifiedFirstStorePublicationInTransaction } from './firstStorePublishedAwardTransaction.js';
 
 /**
  * Server-only verification of persisted first-publication evidence.
@@ -10,7 +11,7 @@ import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
 export async function verifyFirstStorePublicationForReward(
   db: Firestore,
   input: { userId: string; canonicalStoreId: string },
-): Promise<ReturnType<typeof planFirstStorePublishedReward>> {
+): Promise<{ replay: boolean; pitangas: 0; xp: 2 }> {
   const { userId, canonicalStoreId } = input;
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(userId) ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
@@ -56,9 +57,19 @@ export async function verifyFirstStorePublicationForReward(
     if (!(canonicalDate instanceof Date) || canonicalDate.getTime() !== timestamp.getTime()) {
       throw new Error('FIRST_STORE_PUBLICATION_MARKER_CONFLICT');
     }
-    return planFirstStorePublishedReward(challenge.data() as KyrubChallengeDefinition, {
+    const verifiedEvent = {
       userId, storeId: canonicalStoreId, publishedAt: timestamp.toISOString(),
       isFirstPublication: true, isOwnerVerified: true, isMarketplaceVisible: true,
+    };
+    const challengeData = challenge.data() as KyrubChallengeDefinition;
+    planFirstStorePublishedReward(challengeData, verifiedEvent);
+    const userRoot = db.collection('users').doc(userId);
+    const awardId = `first_store_${userId}`;
+    return awardVerifiedFirstStorePublicationInTransaction(tx, {
+      challenge: challengeData, event: verifiedEvent,
+      receiptRef: userRoot.collection('challengeRewards').doc(awardId),
+      xpLedgerRef: userRoot.collection('xpLedger').doc(`xp_${awardId}`),
+      pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
     });
   });
 }
