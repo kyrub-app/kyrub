@@ -132,3 +132,44 @@ export async function publishFirstStoreAndAwardXp(
     return result;
   });
 }
+
+
+/** Hide a previously verified publication without changing its first-publication evidence. */
+export async function hideVerifiedFirstStorePublication(
+  db: Firestore,
+  input: { authenticatedUserId: string; canonicalStoreId: string },
+): Promise<{ hidden: true }> {
+  const { authenticatedUserId: uid, canonicalStoreId } = input;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
+      !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+    throw Error('FIRST_STORE_PUBLICATION_INVALID_INPUT');
+  }
+  const storeRef = db.doc(`stores/${canonicalStoreId}`);
+  const listingRef = db.doc(`marketplace_listings/s_${uid.length}_${uid}`);
+  const eventRef = db.doc(`users/${uid}/verifiedStoreEvents/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
+  return db.runTransaction(async tx => {
+    const [store, listing, event] = await Promise.all([
+      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef),
+    ]);
+    const firstAt = store.get('firstPublishedAt');
+    const listingAt = listing.get('publishedAt');
+    const listingIso = listingAt instanceof Timestamp ? listingAt.toDate().toISOString() : listingAt;
+    if (!store.exists || store.get('id') !== canonicalStoreId ||
+        store.get('ownerId') !== uid || store.get('firstStoreCreationVerified') !== true ||
+        !listing.exists || listing.get('ownerId') !== uid ||
+        listing.get('storeId') !== uid || listing.get('listingType') !== 'store' ||
+        !event.exists || event.get('userId') !== uid ||
+        event.get('storeId') !== canonicalStoreId ||
+        event.get('isFirstPublication') !== true ||
+        event.get('publishedAt') !== firstAt || listingIso !== firstAt) {
+      throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
+    }
+    if (store.get('publicationStatus') !== 'paused') {
+      tx.update(storeRef, { publicationStatus: 'paused' });
+    }
+    if (listing.get('publicationStatus') !== 'paused') {
+      tx.update(listingRef, { publicationStatus: 'paused', updatedAt: Timestamp.now() });
+    }
+    return { hidden: true };
+  });
+}
