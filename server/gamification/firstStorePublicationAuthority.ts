@@ -10,13 +10,14 @@ import { awardVerifiedFirstStorePublicationInTransaction } from './firstStorePub
  */
 export async function publishFirstStoreAndAwardXp(
   db: Firestore,
-  input: { authenticatedUserId: string; canonicalStoreId: string; publishedAt: string },
+  input: { authenticatedUserId: string; canonicalStoreId: string },
 ): Promise<{ replay: boolean; pitangas: 0; xp: 2 }> {
-  const { authenticatedUserId: uid, canonicalStoreId, publishedAt } = input;
+  const { authenticatedUserId: uid, canonicalStoreId } = input;
+  // Capture the trusted timestamp once, outside transaction retries.
+  const publishedAt = new Date().toISOString();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId) ||
-      !Number.isFinite(Date.parse(publishedAt)) ||
-      new Date(publishedAt).toISOString() !== publishedAt) {
+      false) {
     throw Error('FIRST_STORE_PUBLICATION_INVALID_INPUT');
   }
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
@@ -40,6 +41,8 @@ export async function publishFirstStoreAndAwardXp(
     const existingFirstAt = store.get('firstPublishedAt');
     if (existingFirstAt || event.exists) {
       if (typeof existingFirstAt !== 'string' || !event.exists ||
+          store.get('publicationStatus') !== 'published' ||
+          listing.get('publicationStatus') !== 'published' ||
           event.get('userId') !== uid || event.get('storeId') !== canonicalStoreId ||
           event.get('publishedAt') !== existingFirstAt ||
           event.get('challengeId') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID) {
