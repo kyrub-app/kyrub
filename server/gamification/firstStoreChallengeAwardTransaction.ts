@@ -42,6 +42,9 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
     if (Object.entries(expected).some(([key, value]) => recorded?.[key] !== value) ||
         (plan.xp > 0 && (!xpEntry.exists || xpEntry.data()?.deltaXp !== plan.xp ||
         xpEntry.data()?.userId !== uid || xpEntry.data()?.sourceId !== plan.challengeId ||
+        xpEntry.data()?.sourceType !== 'challenge' || xpEntry.data()?.economy !== 'kyrub_xp' ||
+        xpEntry.data()?.correlationId !== awardId ||
+        xpEntry.data()?.occurredAt !== input.event.createdAt ||
         xpEntry.data()?.idempotencyKey !== awardId)) ||
       (plan.xp === 0 && xpEntry.exists) ||
       (plan.pitangas === 0 && pitangaEntry.exists)) {
