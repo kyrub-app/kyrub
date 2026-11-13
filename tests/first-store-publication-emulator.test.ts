@@ -64,7 +64,7 @@ test('first publication atomically creates listing, evidence and exactly 2 XP', 
   assert.equal(store.get('publicationStatus'), 'published');
   assert.equal(listing.get('publicationStatus'), 'published');
   assert.equal(store.get('firstPublishedAt'), event.get('publishedAt'));
-  assert.equal(listing.get('publishedAt'), event.get('publishedAt'));
+  assert.equal(listing.get('publishedAt').toDate().toISOString(), event.get('publishedAt'));
   assert.equal(xp.get('deltaXp'), 2);
   assert.equal(receipt.get('xp'), 2);
   assert.equal(pitanga.exists, false);
@@ -193,6 +193,6 @@ test('republication after hiding restores visibility without duplicate XP or tim
   assert.equal(store.get('publicationStatus'), 'published');
   assert.equal(listing.get('publicationStatus'), 'published');
   assert.equal(store.get('firstPublishedAt'), first);
-  assert.equal(listing.get('publishedAt'), first);
+  assert.equal(listing.get('publishedAt').toDate().toISOString(), first);
   assert.equal(xp.size, 1);
 });
