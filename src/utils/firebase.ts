@@ -7,18 +7,22 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 // Test-only opt-in. Never route a production build or real project to an emulator.
 const isolatedE2E = import.meta.env.DEV &&
   import.meta.env.VITE_KYRUB_E2E_ISOLATED === 'true' &&
   import.meta.env.VITE_KYRUB_E2E_PROJECT_ID === 'demo-global-challenges';
 
+if (import.meta.env.VITE_KYRUB_E2E_ISOLATED === 'true' && !isolatedE2E) {
+  throw new Error('E2E_ISOLATION_GUARD_FAILED');
+}
+
 const firebaseConfig = {
   apiKey: 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U',
   authDomain: 'kyrub-b8d0e.firebaseapp.com',
   projectId: isolatedE2E ? 'demo-global-challenges' : 'kyrub-b8d0e',
-  storageBucket: 'kyrub-b8d0e.firebasestorage.app',
+  storageBucket: isolatedE2E ? 'demo-global-challenges.appspot.com' : 'kyrub-b8d0e.firebasestorage.app',
   messagingSenderId: '636039448089',
   appId: '1:636039448089:web:85a6c6620341bc5bcb8c88',
 };
@@ -32,6 +36,9 @@ if (isolatedE2E) {
   connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 }
 export const storage = getStorage(app);
+if (isolatedE2E) {
+  connectStorageEmulator(storage, '127.0.0.1', 9199);
+}
 
 const initializeOfflineFirstFirestore = () => {
   try {
