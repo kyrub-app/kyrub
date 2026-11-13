@@ -7,7 +7,7 @@ import {
   persistentLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
-import { getStorage } from 'firebase/storage';
+import { connectStorageEmulator, getStorage } from 'firebase/storage';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U',
@@ -25,7 +25,7 @@ if (isolatedE2E && (typeof window === 'undefined' ||
   throw Error('FIREBASE_E2E_REQUIRES_LOCALHOST');
 }
 const selectedConfig = isolatedE2E
-  ? { ...firebaseConfig, projectId: 'kyrub-security-test', authDomain: 'kyrub-security-test.firebaseapp.com', apiKey: 'fake-emulator-key', appId: '1:000000000000:web:fictional' }
+  ? { ...firebaseConfig, projectId: 'kyrub-security-test', authDomain: 'kyrub-security-test.firebaseapp.com', storageBucket: 'kyrub-security-test.firebasestorage.app', apiKey: 'fake-emulator-key', appId: '1:000000000000:web:fictional' }
   : firebaseConfig;
 
 const app = getApps().length === 0
@@ -35,6 +35,7 @@ const app = getApps().length === 0
 export const auth = getAuth(app);
 if (isolatedE2E) connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 export const storage = getStorage(app);
+if (isolatedE2E) connectStorageEmulator(storage, '127.0.0.1', 9199);
 
 const initializeOfflineFirstFirestore = () => {
   try {
