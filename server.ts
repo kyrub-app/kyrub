@@ -304,6 +304,26 @@ app.use(
   createKyrubActionExecutionRouter()
 );
 
+// Isolated browser E2E only: never mount the serverless publication handler
+// on the local Express server unless both Firebase emulators and the dedicated
+// test project are explicitly configured. Production continues using Vercel.
+if (process.env.NODE_ENV !== 'production' &&
+    process.env.KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL === 'true' &&
+    process.env.FIRESTORE_EMULATOR_HOST === '127.0.0.1:8088' &&
+    process.env.FIREBASE_AUTH_EMULATOR_HOST === '127.0.0.1:9099' &&
+    process.env.GCLOUD_PROJECT === 'kyrub-security-test' &&
+    process.env.GOOGLE_CLOUD_PROJECT === 'kyrub-security-test' &&
+    process.env.KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+  app.post('/api/action-execute', async (request, response) => {
+    if (request.query.transport !== 'first-store-publication') {
+      response.status(404).json({ error: 'UNKNOWN_TRANSPORT' });
+      return;
+    }
+    const { handleFirstStorePublication } = await import('./server/gamification/firstStorePublicationHandler.js');
+    await handleFirstStorePublication(request, response);
+  });
+}
+
 app.all(
   "/api/consultor-kyrub",
   consultantRateLimiter,
