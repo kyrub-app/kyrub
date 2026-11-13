@@ -2,9 +2,11 @@ name: First store publication emulator
 on:
   pull_request:
     paths:
+      - 'api/action-execute.ts'
+      - 'server/gamification/firstStorePublicationHandler.ts'
       - 'server/gamification/firstStorePublicationAuthority.ts'
       - 'server/gamification/firstStorePublished*.ts'
-      - 'tests/first-store-publication-emulator.test.ts'
+      - 'tests/first-store-publication*.test.ts'
       - '.github/workflows/first-store-publication-emulator.yml'
   workflow_dispatch:
 jobs:
