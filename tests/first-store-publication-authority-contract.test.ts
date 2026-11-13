@@ -1,0 +1,26 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+
+const source = readFileSync(new URL('../server/gamification/firstStorePublicationAuthority.ts', import.meta.url), 'utf8');
+
+test('publication authority is server-only and requires canonical owner and first-store marker', () => {
+  assert.match(source, /authenticatedUserId/);
+  assert.match(source, /store\.get\('ownerId'\) !== uid/);
+  assert.match(source, /firstStoreCreationVerified/);
+  assert.match(source, /listing\.get\('ownerId'\) !== uid/);
+});
+
+test('publication, verified event and XP share one Firestore transaction', () => {
+  assert.match(source, /db\.runTransaction/);
+  assert.match(source, /awardVerifiedFirstStorePublicationInTransaction\(tx/);
+  assert.match(source, /tx\.update\(storeRef/);
+  assert.match(source, /tx\.update\(listingRef/);
+  assert.match(source, /tx\.create\(eventRef/);
+});
+
+test('publication marker cannot be replaced by a second request', () => {
+  assert.match(source, /existingFirstAt \|\| event\.exists/);
+  assert.match(source, /FIRST_STORE_PUBLICATION_MARKER_CONFLICT/);
+  assert.match(source, /publishedAt: existingFirstAt/);
+});
