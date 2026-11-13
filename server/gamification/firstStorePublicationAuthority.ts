@@ -43,8 +43,9 @@ export async function publishFirstStoreAndAwardXp(
     if (existingFirstAt || event.exists) {
       if (typeof existingFirstAt !== 'string' || !event.exists ||
           store.get('publicationStatus') !== 'published' ||
+          !listing.exists ||
           listing.get('publishedAt') !== existingFirstAt ||
-          (!listing.exists || listing.get('publicationStatus') !== 'published') ||
+          listing.get('publicationStatus') !== 'published' ||
           event.get('id') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID ||
           event.get('status') !== 'pending' ||
           event.get('isFirstPublication') !== true ||
