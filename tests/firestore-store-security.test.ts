@@ -339,3 +339,23 @@ test('production updates production state but cannot change payment state', asyn
   const snapshot = await getDoc(reference);
   assert.equal(snapshot.data()?.status, 'preparing');
 });
+
+
+test('owner cannot forge first-store verification or first publication timestamp', async () => {
+  const owner = environment.authenticatedContext('owner-a').firestore();
+  await assertFails(setDoc(doc(owner, 'stores', STORE_ID), {
+    ...storeRecord(),
+    firstStoreCreationVerified: true,
+    createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+  }));
+  await seedStore();
+  await assertFails(updateDoc(doc(owner, 'stores', STORE_ID), {
+    firstStoreCreationVerified: true, updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(doc(owner, 'stores', STORE_ID), {
+    firstPublishedAt: '2026-11-13T00:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(doc(owner, 'stores', STORE_ID), {
+    name: 'Loja atualizada', updatedAt: serverTimestamp(),
+  }));
+});
