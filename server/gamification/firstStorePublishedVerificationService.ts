@@ -19,11 +19,11 @@ export async function verifyFirstStorePublicationForReward(
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
   const eventRef = db.doc(`users/${userId}/verifiedStoreEvents/first_store_published`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
-  return db.runTransaction(async tx => {
-    const [store, event, challenge] = await Promise.all([
-      tx.get(storeRef), tx.get(eventRef), tx.get(challengeRef),
+  const listingQuery = db.collection('marketplace_listings')\n    .where('storeId', '==', canonicalStoreId)\n    .where('publicationStatus', '==', 'published')\n    .limit(20);\n  return db.runTransaction(async tx => {
+    const [store, event, challenge, listings] = await Promise.all([
+      tx.get(storeRef), tx.get(eventRef), tx.get(challengeRef), tx.get(listingQuery),
     ]);
-    if (!store.exists || !event.exists || !challenge.exists ||
+    const visibleListing = listings.docs.some(listing => {\n      const data = listing.data();\n      return data.listingType === 'store' && data.storeId === canonicalStoreId &&\n        data.publicationStatus === 'published';\n    });\n    if (!visibleListing || !store.exists || !event.exists || !challenge.exists ||
         store.get('id') !== canonicalStoreId ||
         store.get('ownerId') !== userId ||
         store.get('publicationStatus') !== 'published' ||
