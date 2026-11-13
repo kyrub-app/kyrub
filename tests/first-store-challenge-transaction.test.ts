@@ -82,3 +82,18 @@ test('first-store XP rejects cross-user reference substitution before writes', a
   );
   assert.equal(f.counts().writes, 0);
 });
+
+test('first-store XP replay rejects altered ledger provenance', async () => {
+  for (const [field, value] of [
+    ['sourceType', 'manual'], ['economy', 'pitanga'], ['correlationId', 'other'],
+    ['occurredAt', '2026-11-01T00:00:00.000Z'],
+  ] as const) {
+    const f = fixture();
+    await f.grant();
+    const ledger = f.docs.get(refs.xpLedgerRef.path);
+    assert.ok(ledger);
+    ledger[field] = value;
+    await assert.rejects(f.grant(), /FIRST_STORE_REWARD_IDEMPOTENCY_CONFLICT/);
+    assert.equal(f.counts().writes, 2);
+  }
+});
