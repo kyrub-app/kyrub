@@ -38,6 +38,8 @@ export const awardFirstStoreChallengeForCanonicalStore = async (
         !verifiedEvent.exists || verifiedEvent.get('userId') !== userId ||
         verifiedEvent.get('storeId') !== canonicalStoreId ||
         verifiedEvent.get('id') !== 'first_store_created' ||
+        verifiedEvent.get('challengeId') !== FIRST_STORE_CHALLENGE_ID ||
+        verifiedEvent.get('status') !== 'pending' ||
         !(date instanceof Date) || !Number.isFinite(date.getTime()) ||
         !(eventDate instanceof Date) || !Number.isFinite(eventDate.getTime()) ||
         Math.abs(eventDate.getTime() - date.getTime()) > 60_000) {
