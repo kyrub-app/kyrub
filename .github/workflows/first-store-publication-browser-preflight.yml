@@ -1,0 +1,32 @@
+name: First store publication browser preflight
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'tests/first-store-publication-browser-preflight.test.ts'
+      - '.github/workflows/first-store-publication-browser-preflight.yml'
+      - 'server.ts'
+      - 'api/action-execute.ts'
+      - 'firebase.security.json'
+permissions:
+  contents: read
+jobs:
+  browser-preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      CI: 'true'
+      FIREBASE_PROJECT_ID: kyrub-security-test
+      GCLOUD_PROJECT: kyrub-security-test
+      GOOGLE_CLOUD_PROJECT: kyrub-security-test
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Validate emulator-only browser prerequisites (not E2E)
+        run: node --test --import tsx tests/first-store-publication-browser-preflight.test.ts
