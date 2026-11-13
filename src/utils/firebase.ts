@@ -1,6 +1,7 @@
 import { getApp, getApps, initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { connectAuthEmulator, getAuth } from 'firebase/auth';
 import {
+  connectFirestoreEmulator,
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
@@ -8,10 +9,15 @@ import {
 } from 'firebase/firestore';
 import { getStorage } from 'firebase/storage';
 
+// Test-only opt-in. Never route a production build or real project to an emulator.
+const isolatedE2E = import.meta.env.DEV &&
+  import.meta.env.VITE_KYRUB_E2E_ISOLATED === 'true' &&
+  import.meta.env.VITE_KYRUB_E2E_PROJECT_ID === 'demo-global-challenges';
+
 const firebaseConfig = {
   apiKey: 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U',
   authDomain: 'kyrub-b8d0e.firebaseapp.com',
-  projectId: 'kyrub-b8d0e',
+  projectId: isolatedE2E ? 'demo-global-challenges' : 'kyrub-b8d0e',
   storageBucket: 'kyrub-b8d0e.firebasestorage.app',
   messagingSenderId: '636039448089',
   appId: '1:636039448089:web:85a6c6620341bc5bcb8c88',
@@ -22,6 +28,9 @@ const app = getApps().length === 0
   : getApp();
 
 export const auth = getAuth(app);
+if (isolatedE2E) {
+  connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
+}
 export const storage = getStorage(app);
 
 const initializeOfflineFirstFirestore = () => {
@@ -43,3 +52,6 @@ const initializeOfflineFirstFirestore = () => {
 };
 
 export const db = initializeOfflineFirstFirestore();
+if (isolatedE2E) {
+  connectFirestoreEmulator(db, '127.0.0.1', 8088);
+}
