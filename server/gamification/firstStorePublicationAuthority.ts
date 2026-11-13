@@ -22,18 +22,20 @@ export async function publishFirstStoreAndAwardXp(
   const storeRef = db.doc(`stores/${canonicalStoreId}`);
   const listingId = `s_${uid.length}_${uid}`;
   const listingRef = db.doc(`marketplace_listings/${listingId}`);
+  const primaryRef = db.doc(`users/${uid}/stores/${uid}`);
   const challengeRef = db.doc(`global_challenges/${FIRST_STORE_PUBLISHED_CHALLENGE_ID}`);
   const userRoot = db.collection('users').doc(uid);
   const eventRef = userRoot.collection('verifiedStoreEvents').doc(FIRST_STORE_PUBLISHED_CHALLENGE_ID);
   const awardId = `first_store_${uid}`;
   return db.runTransaction(async tx => {
-    const [store, listing, event, challenge] = await Promise.all([
-      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(challengeRef),
+    const [store, listing, event, challenge, primary] = await Promise.all([
+      tx.get(storeRef), tx.get(listingRef), tx.get(eventRef), tx.get(challengeRef), tx.get(primaryRef),
     ]);
     if (!store.exists || store.get('id') !== canonicalStoreId ||
         store.get('ownerId') !== uid || store.get('firstStoreCreationVerified') !== true ||
-        !listing.exists || listing.get('listingType') !== 'store' ||
-        listing.get('storeId') !== uid || listing.get('ownerId') !== uid ||
+        !primary.exists || primary.get('id') !== uid || primary.get('ownerId') !== uid ||
+        (listing.exists && (listing.get('listingType') !== 'store' ||
+        listing.get('storeId') !== uid || listing.get('ownerId') !== uid)) ||
         !challenge.exists) {
       throw Error('FIRST_STORE_PUBLICATION_AUTHORITY_INVALID');
     }
@@ -41,7 +43,7 @@ export async function publishFirstStoreAndAwardXp(
     if (existingFirstAt || event.exists) {
       if (typeof existingFirstAt !== 'string' || !event.exists ||
           store.get('publicationStatus') !== 'published' ||
-          listing.get('publicationStatus') !== 'published' ||
+          (!listing.exists || listing.get('publicationStatus') !== 'published') ||
           event.get('userId') !== uid || event.get('storeId') !== canonicalStoreId ||
           event.get('publishedAt') !== existingFirstAt ||
           event.get('challengeId') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID) {
@@ -61,7 +63,7 @@ export async function publishFirstStoreAndAwardXp(
     // A pre-published record without immutable server evidence is not a
     // verifiable first-publication transition. Never mint XP retroactively.
     if (store.get('publicationStatus') === 'published' ||
-        listing.get('publicationStatus') === 'published') {
+        (listing.exists && listing.get('publicationStatus') === 'published')) {
       throw Error('FIRST_STORE_PUBLICATION_PREEXISTING_UNVERIFIED');
     }
     const result = await awardVerifiedFirstStorePublicationInTransaction(tx, {
@@ -73,7 +75,23 @@ export async function publishFirstStoreAndAwardXp(
       pitangaLedgerRef: userRoot.collection('rewardLedger').doc(`earn_${awardId}`),
     });
     tx.update(storeRef, { publicationStatus: 'published', firstPublishedAt: publishedAt });
-    tx.update(listingRef, { publicationStatus: 'published', publishedAt });
+    if (listing.exists) {
+      tx.update(listingRef, { publicationStatus: 'published', publishedAt });
+    } else {
+      const p = primary.data()!;
+      if (typeof p.name !== 'string' || !p.name.trim() ||
+          typeof p.slug !== 'string' || !p.slug.trim()) {
+        throw Error('FIRST_STORE_PUBLICATION_PROFILE_INCOMPLETE');
+      }
+      tx.create(listingRef, {
+        listingId, listingType: 'store', storeId: uid, ownerId: uid,
+        name: p.name, slug: p.slug, description: p.description ?? '',
+        address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
+        primaryColor: p.primaryColor ?? '', keywords: p.keywords ?? [],
+        status: p.status ?? 'closed', publicationStatus: 'published',
+        publishedAt, createdAt: publishedAt, updatedAt: publishedAt,
+      });
+    }
     tx.create(eventRef, {
       id: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
       challengeId: FIRST_STORE_PUBLISHED_CHALLENGE_ID,
