@@ -9,6 +9,17 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1365, height: 900 } });
   const errors = [];
+  const forbiddenFirebaseRequests = [];
+  await page.route('**/*', async route => {
+    const url = route.request().url();
+    if (/https?:\\/\\/(?:[^/]+\\.)?(?:googleapis\\.com|firebaseio\\.com|firebasestorage\\.app|firebaseapp\\.com)/i.test(url) &&
+        /(?:identitytoolkit|firestore|firebasestorage|securetoken|firebaseio)/i.test(url)) {
+      forbiddenFirebaseRequests.push(url.replace(/\\?.*$/, ''));
+      await route.abort('blockedbyclient');
+      return;
+    }
+    await route.continue();
+  });
   page.on('pageerror', error => errors.push(error.message));
   const health = await page.request.get(origin + '/api/health');
   assert.equal(health.status(), 200);
@@ -16,6 +27,20 @@ try {
   const response = await page.goto(origin + '/', { waitUntil: 'domcontentloaded', timeout: 30000 });
   assert.ok(response && response.status() < 400, 'The Kyrub browser entrypoint must render');
   await page.locator('body').waitFor({ state: 'visible', timeout: 15000 });
+  const browserFirebase = await page.evaluate(async () => {
+    const { auth, db, storage } = await import('/src/utils/firebase.ts');
+    return {
+      projectId: auth.app.options.projectId,
+      firestoreProject: db.app.options.projectId,
+      storageProject: storage.app.options.projectId,
+    };
+  });
+  assert.deepEqual(browserFirebase, {
+    projectId: 'kyrub-security-test',
+    firestoreProject: 'kyrub-security-test',
+    storageProject: 'kyrub-security-test',
+  });
+  assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser must never request production Firebase services');
   await page.screenshot({ path: 'playwright-kyrub-isolated-smoke.png', fullPage: true });
   const api = await page.request.post(origin + '/api/action-execute?transport=first-store-publication', {
     data: { action: 'publish', canonicalStoreId: 'fictional_browser_store' },
