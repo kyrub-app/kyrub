@@ -1,4 +1,4 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import { Timestamp, type Firestore } from 'firebase-admin/firestore';
 import type { KyrubChallengeDefinition } from '../../shared/gamification.js';
 import { FIRST_STORE_PUBLISHED_CHALLENGE_ID, planFirstStorePublishedReward } from './firstStorePublishedReward.js';
 import { awardVerifiedFirstStorePublicationInTransaction } from './firstStorePublishedAwardTransaction.js';
@@ -15,6 +15,7 @@ export async function publishFirstStoreAndAwardXp(
   const { authenticatedUserId: uid, canonicalStoreId } = input;
   // Capture the trusted timestamp once, outside transaction retries.
   const publishedAt = new Date().toISOString();
+  const publicationTimestamp = Timestamp.fromDate(new Date(publishedAt));
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid) ||
       !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
     throw Error('FIRST_STORE_PUBLICATION_INVALID_INPUT');
@@ -43,7 +44,9 @@ export async function publishFirstStoreAndAwardXp(
       if (typeof existingFirstAt !== 'string' || !event.exists ||
           !['published', 'paused'].includes(store.get('publicationStatus')) ||
           !listing.exists ||
-          listing.get('publishedAt') !== existingFirstAt ||
+          (listing.get('publishedAt') instanceof Timestamp
+            ? listing.get('publishedAt').toDate().toISOString() !== existingFirstAt
+            : listing.get('publishedAt') !== existingFirstAt) ||
           !['published', 'paused'].includes(listing.get('publicationStatus')) ||
           event.get('id') !== FIRST_STORE_PUBLISHED_CHALLENGE_ID ||
           !['pending', 'unrewarded'].includes(event.get('status')) ||
@@ -102,7 +105,8 @@ export async function publishFirstStoreAndAwardXp(
       : { replay: false, pitangas: 0 as const, xp: 0 as const };
     tx.update(storeRef, { publicationStatus: 'published', firstPublishedAt: publishedAt });
     if (listing.exists) {
-      tx.update(listingRef, { publicationStatus: 'published', publishedAt });
+      tx.update(listingRef, { publicationStatus: 'published', publishedAt: publicationTimestamp,
+        updatedAt: publicationTimestamp });
     } else {
       const p = primary.data()!;
       if (typeof p.name !== 'string' || !p.name.trim() ||
@@ -115,7 +119,8 @@ export async function publishFirstStoreAndAwardXp(
         address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
         primaryColor: p.primaryColor ?? '', keywords: p.keywords ?? [],
         status: p.status ?? 'closed', publicationStatus: 'published',
-        publishedAt, createdAt: publishedAt, updatedAt: publishedAt,
+        publishedAt: publicationTimestamp, createdAt: publicationTimestamp,
+        updatedAt: publicationTimestamp,
       });
     }
     tx.create(eventRef, {
