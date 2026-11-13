@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { after, before, beforeEach, test } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
-import { hideVerifiedFirstStorePublication, publishFirstStoreAndAwardXp } from '../server/gamification/firstStorePublicationAuthority.js';
+import { hideVerifiedFirstStorePublication, publishFirstStoreAndAwardXp, syncVerifiedFirstStoreProfile } from '../server/gamification/firstStorePublicationAuthority.js';
 
 const app = initializeApp({ projectId: 'kyrub-security-test' }, 'first-store-publication-emulator');
 const db: Firestore = getFirestore(app);
@@ -305,4 +305,31 @@ test('missing challenge with corrupted XP evidence fails closed', async () => {
     authenticatedUserId: uid, canonicalStoreId: canonicalId,
   }), /FIRST_STORE_PUBLICATION_REWARD_IDEMPOTENCY_CONFLICT/);
   assert.equal((await db.doc(`stores/${canonicalId}`).get()).get('publicationStatus'), 'paused');
+});
+
+
+test('authenticated public profile sync preserves original publication and XP', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  const firstAt = (await db.doc(`stores/${canonicalId}`).get()).get('firstPublishedAt');
+  await db.doc(`users/${uid}/stores/${uid}`).update({ name: 'Loja renovada', description: 'Descrição atualizada' });
+  assert.deepEqual(await syncVerifiedFirstStoreProfile(db, {
+    authenticatedUserId: uid, canonicalStoreId: canonicalId,
+  }), { synced: true });
+  const [listing, store, xp] = await Promise.all([
+    db.doc(`marketplace_listings/${listingId}`).get(), db.doc(`stores/${canonicalId}`).get(),
+    db.collection(`users/${uid}/xpLedger`).get(),
+  ]);
+  assert.equal(listing.get('name'), 'Loja renovada');
+  assert.equal(listing.get('description'), 'Descrição atualizada');
+  assert.equal(listing.get('publishedAt').toDate().toISOString(), firstAt);
+  assert.equal(store.get('firstPublishedAt'), firstAt);
+  assert.equal(xp.size, 1);
+});
+
+test('profile sync rejects a different owner without changing public data', async () => {
+  await publishFirstStoreAndAwardXp(db, { authenticatedUserId: uid, canonicalStoreId: canonicalId });
+  await assert.rejects(() => syncVerifiedFirstStoreProfile(db, {
+    authenticatedUserId: 'unauthorized_owner', canonicalStoreId: canonicalId,
+  }), /FIRST_STORE_PUBLICATION_AUTHORITY_INVALID/);
+  assert.equal((await db.doc(`marketplace_listings/${listingId}`).get()).get('name'), 'Loja teste');
 });
