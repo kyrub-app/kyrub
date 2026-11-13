@@ -340,8 +340,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
           if (!result || typeof result !== 'object' || !('synced' in result) || result.synced !== true) {
             throw Error('FIRST_STORE_PROFILE_SYNC_INVALID_RESPONSE');
           }
-          setCanonicalPublished(true);
-          setFallbackPublished(true);
+          // Profile synchronization does not publish a paused store. Preserve
+          // the existing visibility state rather than forcing the UI to published.
         } else if (trustedPublication) {
           marketplaceSynced = false;
           console.warn('Verified store profile sync is disabled until server rollout.');
