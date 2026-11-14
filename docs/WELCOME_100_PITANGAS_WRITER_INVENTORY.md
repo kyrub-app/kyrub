@@ -63,3 +63,9 @@ Revisão do código em `pitangaEarnTransaction.ts`, `pitangaSpendTransaction.ts`
 - **Fence**: o helper `assertLegacyPitangaWriterAllowedInTransaction` rejeita estados `fencing`/`fenced`, mas **não está conectado automaticamente** aos escritores. Documento ausente é permitido para compatibilidade anterior ao corte.
 
 **Consequência:** não se pode afirmar que o fence está efetivo só porque o helper existe ou porque `writersVerified` é verdadeiro. Antes do corte, localizar os chamadores e assegurar que cada caminho de escrita legado consulte o fence **na mesma transação e antes da mutação**, sem impedir a nova concessão isolada de boas-vindas. Esta auditoria é estática; não demonstra a revisão implantada.
+
+## Inspeção dos portões de conversão XP e emissão de voucher
+
+Os wrappers `pitangaVerifiedXpConversion.ts` e `pitangaVerifiedVoucherIssuance.ts` validam `migrationEpoch`, comprovante histórico e fence `fenced/writersVerified`. Portanto **rejeitam por construção** o saldo `initializedBy: 'verified_clean_baseline_welcome'` de um usuário novo, que corretamente não tem recibo de migração. Isso é um **bloqueio funcional de gasto/conversão** para os 100 créditos iniciais, não uma razão para fabricar comprovante histórico.
+
+A correção futura deve introduzir uma segunda modalidade de elegibilidade comprovada, vinculada ao recibo imutável de primeiro login, sem relaxar a validação das contas migradas e sem ativar endpoints antes de homologação. Os wrappers atuais permanecem fail-closed.
