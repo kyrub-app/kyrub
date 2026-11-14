@@ -94,8 +94,13 @@ try {
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
   // Navigate through the actual retailer interface instead of bypassing it.
-  await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 20000 });
-  await page.getByRole('button', { name: 'Acessar loja' }).click();
+  // Reload so the root auth listener and Renda tab mount with the signed-in
+  // emulator identity, rather than retaining the initial anonymous UI.
+  await page.reload({ waitUntil: 'domcontentloaded' });
+  const retailerEntry = page.locator('#kyrub-renda-acessar-loja-ofertas');
+  await retailerEntry.waitFor({ state: 'visible', timeout: 30000 });
+  await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 30000 });
+  await retailerEntry.click();
   await page.locator('#erp-main-header').waitFor({ state: 'visible', timeout: 15000 });
   await page.locator('#orange-house-config-btn').click();
   await page.getByText('Configurações da Loja', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
