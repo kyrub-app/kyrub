@@ -223,3 +223,31 @@ test('verified new-user spend rejects insufficient balance without partial debit
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
   assert.equal((await debitRef.get()).exists, false);
 });
+
+
+test('concurrent verified new-user spends cannot double-spend 100 Pitangas', async () => {
+  const uid = 'welcome_concurrent_spend';
+  const firstLoginReceiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-concurrent-spend', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const spend = (spendId: string) => db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, spendId, amount: 80,
+    sourceId: 'test_redemption', occurredAt: createdAt, balanceRef,
+    debitRef: db.doc(`users/${uid}/rewardLedger/spend_${spendId}`),
+    firstLoginReceiptRef, welcomeAwardRef,
+  }));
+  const outcomes = await Promise.allSettled([spend('concurrent_a'), spend('concurrent_b')]);
+  assert.equal(outcomes.filter(outcome => outcome.status === 'fulfilled').length, 1);
+  assert.equal(outcomes.filter(outcome => outcome.status === 'rejected').length, 1);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 20);
+  const [a, b] = await Promise.all([
+    db.doc(`users/${uid}/rewardLedger/spend_concurrent_a`).get(),
+    db.doc(`users/${uid}/rewardLedger/spend_concurrent_b`).get(),
+  ]);
+  assert.equal(Number(a.exists) + Number(b.exists), 1);
+});
