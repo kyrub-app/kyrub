@@ -56,12 +56,10 @@ test('trusted Firebase Auth creation event creates immutable receipt and replays
   });
 });
 
-test('rejects wrong project, non-Google registration and invalid trigger event IDs before writes', async () => {
+test('rejects wrong project, malformed UID and invalid trigger event IDs before writes', async () => {
   await withProject(async () => {
     for (const [candidate, trigger] of [
       [event, { ...context, projectId: 'another-project' }],
-      [{ ...event, providerData: [{ providerId: 'password' }] }, context],
-      [{ ...event, providerData: [] }, context],
       [event, { ...context, eventId: 'short' }],
       [{ ...event, uid: '../other' }, context],
       [{ ...event, uid: '' }, context],
@@ -95,5 +93,15 @@ test('registration trigger refuses historical accounts before any Firestore tran
       ...event, metadata: { creationTime: '2026-11-13T23:59:59.000Z' },
     }, context), /WELCOME_AUTH_TRIGGER_CAMPAIGN_INELIGIBLE/);
     assert.equal(h.count(), 0);
+  });
+});
+
+
+test('Auth creation receipt works before provider metadata is hydrated', async () => {
+  await withProject(async () => {
+    const h = harness();
+    assert.deepEqual(await recordWelcomeRegistrationFromTrustedAuthTrigger(h.db,
+      { ...event, providerData: [] }, context), { recorded: true });
+    assert.equal(h.documents.size, 1);
   });
 });
