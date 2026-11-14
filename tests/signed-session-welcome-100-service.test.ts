@@ -142,3 +142,26 @@ test('welcome rejects a stale fence epoch and missing epoch configuration', asyn
     assert.equal(m.counts().transactions, 0);
   });
 });
+
+test('valid signed session and verified fence still reject absent trusted first-login receipt', async () => {
+  await withEnv(enabled, async () => {
+    let reads = 0;
+    const m = mock();
+    const db = {
+      ...m.db,
+      runTransaction: async (callback: (tx: any) => Promise<unknown>) => callback({
+        get: async () => {
+          reads++;
+          return reads === 1
+            ? { exists: true, data: () => ({ status: 'fenced', writersVerified: true, epoch: 'test-epoch' }) }
+            : { exists: false, data: () => undefined };
+        },
+      }),
+    };
+    await assert.rejects(
+      grantSignedSessionWelcomeForVerifiedUser(db as any, m.auth, 'new-user', 'new-user', authTime),
+      /WELCOME_FIRST_LOGIN_RECEIPT_MISSING/,
+    );
+    assert.equal(reads, 2);
+  });
+});
