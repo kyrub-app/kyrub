@@ -32,6 +32,8 @@ export const verifyFirstLoginReceiptInTransaction = async (
       receipt?.eventType !== 'first_login' ||
       receipt?.schemaVersion !== 1 ||
       receipt?.issuer !== 'trusted_auth_server' ||
+      typeof receipt?.sourceEventId !== 'string' ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(receipt.sourceEventId) ||
       receipt?.firebaseCreatedAt !== new Date(created).toISOString() ||
       !Number.isFinite(first) || first < created ||
       first - created > 24 * 60 * 60 * 1000) {
