@@ -31,7 +31,7 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     throw Error('WELCOME_AUTH_USER_INVALID');
   }
   const createdAt = new Date(user.metadata.creationTime).toISOString();
-  const { occurredAt } = verifyWelcomeInitialSession({
+  verifyWelcomeInitialSession({
     uid, tokenUid, authTimeSeconds: signedAuthTimeSeconds,
     firebaseCreatedAt: createdAt, campaignEffectiveAt: cutoff,
   });
@@ -59,7 +59,6 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
     return grantCleanBaselineWelcomeInTransaction(tx, {
     userId: uid, firebaseCreatedAt: createdAt,
     campaignEffectiveAt: cutoff, isolatedCleanBaseline: true,
-    signedInitialSessionAt: occurredAt,
     receiptRef: root.collection('authEvents').doc('first_login_v1'),
     balanceRef: root.collection('pitangaBalance').doc('balance'),
     ledgerCollection: root.collection('rewardLedger'),
