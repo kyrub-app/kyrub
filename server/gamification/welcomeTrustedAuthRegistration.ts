@@ -36,6 +36,12 @@ export const recordWelcomeRegistrationFromTrustedAuthTrigger = async (
   if (!Number.isFinite(cutoffMs) || createdMs < cutoffMs) {
     throw Error('WELCOME_AUTH_TRIGGER_CAMPAIGN_INELIGIBLE');
   }
+  // Only a registration event may issue this receipt. An Auth onCreate
+  // delivery can be delayed; event time is not a substitute for creationTime.
+  // Reject malformed UID before deriving a Firestore document path.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(event.uid)) {
+    throw Error('WELCOME_AUTH_TRIGGER_UID_INVALID');
+  }
   const createdAt = new Date(createdMs).toISOString();
   const receiptRef = db.doc(`users/${event.uid}/authEvents/first_login_v1`);
   return db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
