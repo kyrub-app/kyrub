@@ -17,6 +17,8 @@ on:
       - 'tests/clean-baseline-welcome-100.test.ts'
       - 'tests/signed-session-welcome-100-service.test.ts'
       - 'tests/welcome-100-firestore-emulator.test.ts'
+      - 'tests/welcome-trusted-receipt-emulator.test.ts'
+      - 'tests/first-login-receipt-writer.test.ts'
       - 'tests/welcome-firebase-session.test.ts'
       - 'tests/welcome-authenticated-grant.test.ts'
       - '.github/workflows/welcome-100-pitangas-contracts.yml'
@@ -56,4 +58,4 @@ jobs:
           --config firebase.security.json
           --project kyrub-security-test
           --only firestore
-          "node --test --test-concurrency=1 --import tsx tests/welcome-100-firestore-emulator.test.ts"
+          "node --test --test-concurrency=1 --import tsx tests/welcome-100-firestore-emulator.test.ts tests/welcome-trusted-receipt-emulator.test.ts"
