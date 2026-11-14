@@ -1,5 +1,13 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 
+/** Validates the provider claim only AFTER signature verification by the caller. */
+export const assertGoogleSignInProviderClaim = (firebaseClaim: unknown): void => {
+  if (!firebaseClaim || typeof firebaseClaim !== 'object' ||
+      (firebaseClaim as Record<string, unknown>).sign_in_provider !== 'google.com') {
+    throw Error('WELCOME_GOOGLE_SIGN_IN_REQUIRED');
+  }
+};
+
 /**
  * A verified Firebase ID token is the sole source of auth_time.
  * Never accept a timestamp supplied separately by the browser.
@@ -22,11 +30,7 @@ export const verifyWelcomeFirebaseSession = async (
   const data = claims as Record<string, unknown>;
   // Linked Google providerData is insufficient: the current sign-in itself
   // must be Google, as attested by the cryptographically verified ID token.
-  const firebaseClaim = data.firebase;
-  if (!firebaseClaim || typeof firebaseClaim !== 'object' ||
-      (firebaseClaim as Record<string, unknown>).sign_in_provider !== 'google.com') {
-    throw Error('WELCOME_GOOGLE_SIGN_IN_REQUIRED');
-  }
+  assertGoogleSignInProviderClaim(data.firebase);
   if (data.sub !== verified.uid ||
       !Number.isSafeInteger(data.auth_time) ||
       (data.auth_time as number) <= 0) {
