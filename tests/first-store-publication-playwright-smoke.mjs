@@ -70,7 +70,13 @@ try {
   await Promise.all([
     db.doc('global_challenges/first_store_published').set({ id: 'first_store_published', title: 'Primeira publicação', description: 'Publique a primeira loja', status: 'published', validationMode: 'deterministic', sponsorType: 'kyrub', rewardKCoins: 0, rewardXp: 2, maxCompletionsPerUser: 1 }),
     db.doc(`stores/${canonicalStoreId}`).set({ id: canonicalStoreId, ownerId: uid, firstStoreCreationVerified: true, publicationStatus: 'paused', plan: 'free' }),
-    db.doc(`users/${uid}/stores/${uid}`).set({ id: uid, ownerId: uid, name: 'Loja Chromium', slug: 'loja-chromium', plan: 'free', canonicalStoreId }),
+    db.doc(`users/${uid}/stores/${uid}`).set({
+      id: uid, ownerId: uid, ownerEmail: 'chromium-publication@example.invalid',
+      name: 'Loja Chromium', slug: 'loja-chromium', description: '', logo: '',
+      banner: '', primaryColor: '#0f766e', plan: 'free', keywords: [],
+      offerImages: [], address: '', contact: '', status: 'open',
+      createdAt: new Date(), updatedAt: new Date(), canonicalStoreId,
+    }),
   ]);
   // Creating a Free store must not grant publication XP before publication.
   const beforePublication = await db.doc(`stores/${canonicalStoreId}`).get();
