@@ -56,7 +56,7 @@ test('trusted receipt plus verified session grants exactly 100 once with concurr
   const receiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
   await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
     userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
-    trustedFirstLoginEvent: true, receiptRef,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-welcome-test', receiptRef,
   }));
   const result = await Promise.all(Array.from({ length: 3 }, () =>
     grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime)));
