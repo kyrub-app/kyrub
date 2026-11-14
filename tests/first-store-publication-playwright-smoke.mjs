@@ -97,7 +97,7 @@ try {
   // Reload so the root auth listener and Renda tab mount with the signed-in
   // emulator identity, rather than retaining the initial anonymous UI.
   await page.reload({ waitUntil: 'domcontentloaded' });
-  const retailerEntry = page.locator('#kyrub-renda-acessar-loja-ofertas');
+  const retailerEntry = page.locator('#btn-criar-loja-ofertas');
   await retailerEntry.waitFor({ state: 'visible', timeout: 30000 });
   await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 30000 });
   await retailerEntry.click();
