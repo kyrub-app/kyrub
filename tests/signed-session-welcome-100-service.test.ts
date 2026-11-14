@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
 
 const createdAt = '2026-11-12T12:00:00.000Z';
-const authTime = Date.parse('2026-11-12T12:00:30.000Z') / 100;
+const authTime = Date.parse('2026-11-12T12:00:30.000Z') / 1000;
 const envKeys = [
   'KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED',
   'KYRUB_PITANGA_WELCOME_PROJECT_ID',
