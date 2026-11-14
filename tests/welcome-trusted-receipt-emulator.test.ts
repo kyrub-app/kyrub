@@ -20,7 +20,7 @@ const previous = Object.fromEntries(envNames.map(key => [key, process.env[key]])
 const auth = {
   app: { options: { projectId } },
   getUser: async (uid: string) => ({
-    uid, disabled: false, metadata: { creationTime: createdAt },
+    uid, disabled: false, providerData: [{ providerId: 'google.com' }], metadata: { creationTime: createdAt },
   }),
 };
 
