@@ -3,6 +3,8 @@ import { recordVerifiedFirstLoginInTransaction } from './firstLoginReceiptWriter
 
 /**
  * Adapter for an independently deployed Firebase Auth user-creation trigger.
+ * Auth onCreate may fire before providerData is populated. The subsequent
+ * verified signed session must prove Google sign-in before any credit.
  * NEVER expose this function through HTTP or call it from a browser.
  * The eventId must come from the trusted trigger context, not request data.
  *
@@ -20,9 +22,6 @@ export const recordWelcomeRegistrationFromTrustedAuthTrigger = async (
   const expectedProjectId = process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID?.trim();
   if (!expectedProjectId || context.projectId !== expectedProjectId) {
     throw Error('WELCOME_AUTH_TRIGGER_PROJECT_MISMATCH');
-  }
-  if (!event.providerData?.some(provider => provider.providerId === 'google.com')) {
-    throw Error('WELCOME_AUTH_TRIGGER_GOOGLE_PROVIDER_REQUIRED');
   }
   if (!event.metadata?.creationTime || !Number.isFinite(Date.parse(event.metadata.creationTime))) {
     throw Error('WELCOME_AUTH_TRIGGER_CREATED_AT_INVALID');
