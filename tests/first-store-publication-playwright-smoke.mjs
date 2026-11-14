@@ -142,7 +142,18 @@ try {
     assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser publication must not call production Firebase');
     return result.payload;
   };
-  assert.deepEqual(await authenticatedPublish('publish'), { replay: false, pitangas: 0, xp: 2 });
+  // The first publication must originate from the actual Store Configuration
+  // button, not a direct test-only API invocation.
+  const firstPublicationResponse = page.waitForResponse(response =>
+    response.url().includes('/api/action-execute?transport=first-store-publication') &&
+    response.request().method() === 'POST',
+    { timeout: 20000 },
+  );
+  await page.getByTestId('store-publication-toggle').click();
+  const uiPublicationResponse = await firstPublicationResponse;
+  assert.equal(uiPublicationResponse.status(), 200, await uiPublicationResponse.text());
+  assert.deepEqual(await uiPublicationResponse.json(), { replay: false, pitangas: 0, xp: 2 });
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1, 'Actual UI publication must award exactly one XP ledger entry');
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
   assert.deepEqual(await authenticatedPublish('hide'), { hidden: true });
   const hiddenSnapshot = await db.doc(`stores/${canonicalStoreId}`).get();
