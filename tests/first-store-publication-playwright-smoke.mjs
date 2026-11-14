@@ -98,7 +98,19 @@ try {
   // emulator identity, rather than retaining the initial anonymous UI.
   await page.reload({ waitUntil: 'domcontentloaded' });
   const retailerEntry = page.locator('#btn-criar-loja-ofertas');
-  await retailerEntry.waitFor({ state: 'visible', timeout: 30000 });
+  try {
+    await retailerEntry.waitFor({ state: 'visible', timeout: 12000 });
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      url: location.href,
+      title: document.title,
+      body: document.body.innerText.slice(0, 3000),
+      buttons: [...document.querySelectorAll('button')].slice(0, 35).map(button => ({
+        id: button.id, text: button.innerText.slice(0, 80),
+      })),
+    }));
+    throw new Error('Retailer navigation entry absent: ' + JSON.stringify(diagnostic), { cause: error });
+  }
   await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 30000 });
   await retailerEntry.click();
   await page.locator('#erp-main-header').waitFor({ state: 'visible', timeout: 15000 });
