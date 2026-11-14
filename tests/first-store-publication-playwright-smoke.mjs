@@ -9,6 +9,10 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1365, height: 900 } });
   const errors = [];
+  const browserWarnings = [];
+  page.on('console', message => {
+    if (message.type() === 'warning' || message.type() === 'error') browserWarnings.push(message.text());
+  });
   const forbiddenFirebaseRequests = [];
   await page.route('**/*', async route => {
     const url = route.request().url();
@@ -165,7 +169,7 @@ try {
       })(),
     }));
     throw new Error('ERP publication click produced no trusted API response: ' + JSON.stringify({
-      diagnostic, pageErrors: errors, forbiddenFirebaseRequests,
+      diagnostic, pageErrors: errors, browserWarnings: browserWarnings.slice(-20), forbiddenFirebaseRequests,
     }), { cause: error });
   }
   assert.equal(uiPublicationResponse.status(), 200, await uiPublicationResponse.text());
