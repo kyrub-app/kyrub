@@ -2,6 +2,7 @@ import type { Auth } from 'firebase-admin/auth';
 import type { Firestore } from 'firebase-admin/firestore';
 import { verifyWelcomeInitialSession } from './welcomeInitialSession.js';
 import { grantCleanBaselineWelcomeInTransaction } from './cleanBaselineWelcomeTransaction.js';
+import { verifyFirstLoginReceiptInTransaction } from './firstLoginReceiptVerification.js';
 
 /**
  * Production candidate, OFF by default. The HTTP boundary MUST pass the UID
@@ -49,6 +50,12 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
         control?.epoch !== expectedFenceEpoch) {
       throw Error('WELCOME_LEGACY_WRITERS_NOT_VERIFIED');
     }
+    // A signed session proves authentication, not that this was the first login.
+    // Require independently issued first-login evidence before any credit.
+    await verifyFirstLoginReceiptInTransaction(tx, {
+      userId: uid, firebaseCreatedAt: createdAt,
+      receiptRef: root.collection('authEvents').doc('first_login_v1'),
+    });
     return grantCleanBaselineWelcomeInTransaction(tx, {
     userId: uid, firebaseCreatedAt: createdAt,
     campaignEffectiveAt: cutoff, isolatedCleanBaseline: true,
