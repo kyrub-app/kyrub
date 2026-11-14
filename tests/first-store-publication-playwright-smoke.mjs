@@ -98,10 +98,9 @@ try {
   // emulator identity, rather than retaining the initial anonymous UI.
   await page.reload({ waitUntil: 'domcontentloaded' });
   const fullAppEntry = page.locator('#renda-entry-open-full-app');
-  if (await fullAppEntry.isVisible()) {
-    await fullAppEntry.click();
-    await page.waitForURL('**/?app=1', { timeout: 15000 });
-  }
+  await fullAppEntry.waitFor({ state: 'visible', timeout: 15000 });
+  await fullAppEntry.click();
+  await page.waitForURL(url => url.searchParams.get('app') === '1', { timeout: 15000 });
   assert.equal(new URL(page.url()).searchParams.get('app'), '1', 'Full Kyrub dashboard must be entered through the Renda landing');
   const retailerEntry = page.locator('#btn-criar-loja-ofertas');
   try {
