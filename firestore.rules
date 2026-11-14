@@ -196,6 +196,7 @@ service cloud.firestore {
           && request.resource.data.id == userId
           && request.resource.data.ownerId == userId
           && request.resource.data.plan == 'free'
+          && !request.resource.data.keys().hasAny(['canonicalStoreId'])
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time;
 
