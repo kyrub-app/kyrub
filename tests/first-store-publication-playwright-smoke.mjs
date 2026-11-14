@@ -64,6 +64,12 @@ try {
     db.doc(`stores/${canonicalStoreId}`).set({ id: canonicalStoreId, ownerId: uid, firstStoreCreationVerified: true, publicationStatus: 'paused', plan: 'free' }),
     db.doc(`users/${uid}/stores/${uid}`).set({ id: uid, ownerId: uid, name: 'Loja Chromium', slug: 'loja-chromium', plan: 'free' }),
   ]);
+  // Creating a Free store must not grant publication XP before publication.
+  const beforePublication = await db.doc(`stores/${canonicalStoreId}`).get();
+  assert.equal(beforePublication.data()?.plan, 'free');
+  assert.equal(beforePublication.data()?.publicationStatus, 'paused');
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 0);
+  assert.equal((await db.doc(`users/${uid}/rewardLedger/earn_first_store_${uid}`).get()).exists, false);
   const customToken = await auth.createCustomToken(uid);
   const signIn = await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithCustomToken?key=fake-emulator-key', {
     method: 'POST', headers: { 'content-type': 'application/json' },
@@ -107,6 +113,10 @@ try {
   assert.deepEqual(await authenticatedPublish('publish'), { replay: false, pitangas: 0, xp: 2 });
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
   assert.deepEqual(await authenticatedPublish('hide'), { hidden: true });
+  const hiddenSnapshot = await db.doc(`stores/${canonicalStoreId}`).get();
+  assert.equal(hiddenSnapshot.data()?.publicationStatus, 'paused');
+  assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
+
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
   // Verify the final canonical document using the same emulator-backed admin
   // client that seeded this fictional store. Avoid mixing duplicate Vite SDK
