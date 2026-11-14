@@ -30,6 +30,11 @@ export const grantSignedSessionWelcomeForVerifiedUser = async (
   if (user.uid !== uid || user.disabled || !user.metadata.creationTime) {
     throw Error('WELCOME_AUTH_USER_INVALID');
   }
+  // Welcome bonus is reserved for first registration through Google sign-in.
+  // A Firebase session alone also exists for password, anonymous and other providers.
+  if (!user.providerData.some(provider => provider.providerId === 'google.com')) {
+    throw Error('WELCOME_GOOGLE_PROVIDER_REQUIRED');
+  }
   const createdAt = new Date(user.metadata.creationTime).toISOString();
   verifyWelcomeInitialSession({
     uid, tokenUid, authTimeSeconds: signedAuthTimeSeconds,
