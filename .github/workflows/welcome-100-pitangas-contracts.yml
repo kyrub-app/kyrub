@@ -9,6 +9,7 @@ on:
       - 'server/gamification/firstLoginReceiptVerification.ts'
       - 'server/gamification/firstLoginReceiptWriter.ts'
       - 'server/gamification/welcomeTrustedAuthRegistration.ts'
+      - 'scripts/inventory-pitanga-writers.mjs'
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
       - 'server/gamification/signedSessionWelcomeService.ts'
       - 'server/gamification/welcomeFirebaseSession.ts'
@@ -62,3 +63,20 @@ jobs:
           --project kyrub-security-test
           --only firestore
           "node --test --test-concurrency=1 --import tsx tests/welcome-100-firestore-emulator.test.ts tests/welcome-trusted-receipt-emulator.test.ts"
+
+  pitanga-writer-inventory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Enumerate tracked Pitanga writer candidates (audit only)
+        run: node scripts/inventory-pitanga-writers.mjs > pitanga-writer-inventory.txt
+      - name: Publish inventory as review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitanga-writer-inventory
+          path: pitanga-writer-inventory.txt
+          retention-days: 14
