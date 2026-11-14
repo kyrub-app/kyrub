@@ -73,6 +73,20 @@ try {
   assert.equal(signIn.status, 200, signInText);
   const idToken = JSON.parse(signInText).idToken;
   assert.ok(idToken);
+  // Authenticate inside the actual browser Firebase SDK, not only Playwright's API client.
+  const browserSignIn = await page.evaluate(async (emulatorCustomToken) => {
+    const { auth } = await import('/src/utils/firebase.ts');
+    const { signInWithCustomToken } = await import('/node_modules/.vite/deps/firebase_auth.js');
+    const credentials = await signInWithCustomToken(auth, emulatorCustomToken);
+    return { uid: credentials.user.uid, projectId: credentials.user.auth.app.options.projectId };
+  }, customToken);
+  assert.deepEqual(browserSignIn, { uid, projectId: 'kyrub-security-test' });
+  const browserIdentity = await page.evaluate(async () => {
+    const { auth } = await import('/src/utils/firebase.ts');
+    return { uid: auth.currentUser?.uid, projectId: auth.app.options.projectId };
+  });
+  assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
+  assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
   const authenticatedPublish = async (action) => {
     const result = await page.request.post(origin + '/api/action-execute?transport=first-store-publication', {
       headers: { authorization: `Bearer ${idToken}` },
