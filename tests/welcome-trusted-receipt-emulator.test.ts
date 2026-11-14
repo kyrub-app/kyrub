@@ -251,3 +251,30 @@ test('concurrent verified new-user spends cannot double-spend 100 Pitangas', asy
   ]);
   assert.equal(Number(a.exists) + Number(b.exists), 1);
 });
+
+
+test('concurrent replay of same verified spend remains one debit', async () => {
+  const uid = 'welcome_concurrent_replay';
+  const firstLoginReceiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  const debitRef = db.doc(`users/${uid}/rewardLedger/spend_same_request`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-concurrent-replay', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const input = {
+    userId: uid, firebaseCreatedAt: createdAt, spendId: 'same_request', amount: 60,
+    sourceId: 'test_redemption', occurredAt: createdAt, balanceRef, debitRef,
+    firstLoginReceiptRef, welcomeAwardRef,
+  };
+  const outcomes = await Promise.all([
+    db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, input)),
+    db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, input)),
+  ]);
+  assert.equal(outcomes.filter(outcome => outcome.replay === false).length, 1);
+  assert.equal(outcomes.filter(outcome => outcome.replay === true).length, 1);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 40);
+  assert.equal((await debitRef.get()).get('deltaKCoins'), -60);
+});
