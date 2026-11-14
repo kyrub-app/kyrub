@@ -27,3 +27,9 @@ Status: **BLOCKED for production activation**. This inventory is a code-level re
 ## Current validation
 
 The isolated Firestore Emulator tests exercise atomic welcome credit, concurrent replay, and refusal to overwrite existing balances or historical ledgers. They do **not** prove all legacy writers are fenced, nor do they exercise the actual Firebase Auth registration callback.
+
+## Additional compatibility finding — spending of welcome credits
+
+The verified XP conversion and voucher issuance wrappers (`pitangaVerifiedXpConversion.ts` and `pitangaVerifiedVoucherIssuance.ts`) require a historical migration receipt and `migrationEpoch` on the balance. The new-account welcome transaction intentionally creates neither. Therefore, a user granted 100 welcome Pitangas **cannot yet spend or convert them through these verified wrappers**. Do not represent the welcome balance as fully redeemable until a separately audited clean-baseline eligibility path is implemented and tested; do not fabricate a migration receipt.
+
+The server-side conversion and voucher adapters currently expose no public routes. This is a **release blocker for usable rewards**, separate from one-time credit correctness.
