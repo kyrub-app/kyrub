@@ -20,6 +20,13 @@ export const verifyWelcomeFirebaseSession = async (
   }
   if (!claims || typeof claims !== 'object') throw Error('WELCOME_SIGNED_AUTH_TIME_INVALID');
   const data = claims as Record<string, unknown>;
+  // Linked Google providerData is insufficient: the current sign-in itself
+  // must be Google, as attested by the cryptographically verified ID token.
+  const firebaseClaim = data.firebase;
+  if (!firebaseClaim || typeof firebaseClaim !== 'object' ||
+      (firebaseClaim as Record<string, unknown>).sign_in_provider !== 'google.com') {
+    throw Error('WELCOME_GOOGLE_SIGN_IN_REQUIRED');
+  }
   if (data.sub !== verified.uid ||
       !Number.isSafeInteger(data.auth_time) ||
       (data.auth_time as number) <= 0) {
