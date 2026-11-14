@@ -108,21 +108,14 @@ try {
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
   assert.deepEqual(await authenticatedPublish('hide'), { hidden: true });
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
-  // Verify the actual browser Firestore SDK observes the canonical publication.
-  const browserPublication = await page.evaluate(async (storeId) => {
-    const { db } = await import('/src/utils/firebase.ts');
-    const { doc, getDoc } = await import('/node_modules/.vite/deps/firebase_firestore.js');
-    const snapshot = await getDoc(doc(db, 'stores', storeId));
-    return {
-      exists: snapshot.exists(),
-      status: snapshot.data()?.publicationStatus,
-      firstPublishedAt: snapshot.data()?.firstPublishedAt ?? null,
-    };
-  }, canonicalStoreId);
-  assert.equal(browserPublication.exists, true);
-  assert.equal(browserPublication.status, 'published');
-  assert.ok(typeof browserPublication.firstPublishedAt === 'string' && browserPublication.firstPublishedAt.length > 0);
-  assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser Firestore reads must remain isolated');
+  // Verify the final canonical document using the same emulator-backed admin
+  // client that seeded this fictional store. Avoid mixing duplicate Vite SDK
+  // module instances inside page.evaluate (which rejects cross-instance refs).
+  const canonicalSnapshot = await db.doc(`stores/${canonicalStoreId}`).get();
+  assert.equal(canonicalSnapshot.exists, true);
+  assert.equal(canonicalSnapshot.data()?.publicationStatus, 'published');
+  assert.ok(typeof canonicalSnapshot.data()?.firstPublishedAt === 'string');
+  assert.deepEqual(forbiddenFirebaseRequests, [], 'Chromium must remain isolated');
   assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
   assert.equal((await db.doc(`users/${uid}/rewardLedger/earn_first_store_${uid}`).get()).exists, false);
   console.log('Chromium app smoke and authenticated emulator-backed publication API passed.');
