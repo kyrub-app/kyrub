@@ -16,7 +16,6 @@ export const grantCleanBaselineWelcomeInTransaction = async (
     campaignEffectiveAt: string;
     isolatedCleanBaseline: boolean;
     receiptRef: DocumentReference;
-    signedInitialSessionAt?: string;
     balanceRef: DocumentReference;
     ledgerCollection: CollectionReference;
     awardRef: DocumentReference;
@@ -34,19 +33,11 @@ export const grantCleanBaselineWelcomeInTransaction = async (
   }
 
   // All reads must precede writes; never overwrite existing balances.
-  if (input.signedInitialSessionAt !== undefined &&
-      (!Number.isFinite(Date.parse(input.signedInitialSessionAt)) ||
-       Date.parse(input.signedInitialSessionAt) < Date.parse(input.campaignEffectiveAt) - 60_000)) {
-    throw Error('WELCOME_SIGNED_SESSION_INVALID');
-  }
-
   const [receipt, balance, ledger, award] = await Promise.all([
-    input.signedInitialSessionAt
-      ? Promise.resolve({ occurredAt: input.signedInitialSessionAt })
-      : verifyFirstLoginReceiptInTransaction(tx, {
-        userId: uid, firebaseCreatedAt: input.firebaseCreatedAt,
-        receiptRef: input.receiptRef,
-      }),
+    verifyFirstLoginReceiptInTransaction(tx, {
+      userId: uid, firebaseCreatedAt: input.firebaseCreatedAt,
+      receiptRef: input.receiptRef,
+    }),
     tx.get(input.balanceRef),
     tx.get(input.ledgerCollection.limit(1)),
     tx.get(input.awardRef),
