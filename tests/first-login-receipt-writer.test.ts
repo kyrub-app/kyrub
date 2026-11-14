@@ -37,6 +37,12 @@ test('exact replay is idempotent', async () => {
   assert.equal(writes.length, 0);
 });
 
+test('same account with different source event ID conflicts rather than rewriting receipt', async () => {
+  const { tx, writes } = mock({ ...receipt, sourceEventId: 'auth-create-other-event' });
+  await assert.rejects(recordVerifiedFirstLoginInTransaction(tx, base), /RECEIPT_CONFLICT/);
+  assert.equal(writes.length, 0);
+});
+
 test('different event timestamp conflicts rather than rewriting receipt', async () => {
   const { tx, writes } = mock({ ...receipt, occurredAt: '2026-11-12T12:00:02.000Z' });
   await assert.rejects(recordVerifiedFirstLoginInTransaction(tx, base), /RECEIPT_CONFLICT/);
@@ -47,6 +53,8 @@ test('untrusted source, wrong reference and invalid time never create receipts',
   for (const patch of [
     { trustedFirstLoginEvent: false },
     { sourceEventId: '' },
+    { sourceEventId: 'invalid event id' },
+    { sourceEventId: 'short' },
     { receiptRef: { path: 'users/other/authEvents/first_login_v1' } as any },
     { occurredAt: '2026-11-12T11:59:59.000Z' },
     { occurredAt: '2026-11-13T12:00:02.000Z' },
