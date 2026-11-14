@@ -35,10 +35,14 @@ const harness = () => {
 
 const withProject = async (run: () => Promise<void>) => {
   const previous = process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID;
+  const previousCutoff = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
   process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID = projectId;
+  process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = '2026-11-14T00:00:00.000Z';
   try { await run(); } finally {
     if (previous === undefined) delete process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID;
     else process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID = previous;
+    if (previousCutoff === undefined) delete process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT;
+    else process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT = previousCutoff;
   }
 };
 
@@ -77,5 +81,16 @@ test('conflicting source event cannot replace first registration receipt', async
       /WELCOME_FIRST_LOGIN_RECEIPT_CONFLICT/,
     );
     assert.equal(h.documents.size, 1);
+  });
+});
+
+
+test('registration trigger refuses historical accounts before any Firestore transaction', async () => {
+  await withProject(async () => {
+    const h = harness();
+    await assert.rejects(recordWelcomeRegistrationFromTrustedAuthTrigger(h.db, {
+      ...event, metadata: { creationTime: '2026-11-13T23:59:59.000Z' },
+    }, context), /WELCOME_AUTH_TRIGGER_CAMPAIGN_INELIGIBLE/);
+    assert.equal(h.count(), 0);
   });
 });
