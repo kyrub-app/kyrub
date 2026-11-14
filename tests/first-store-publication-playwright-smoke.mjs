@@ -10,6 +10,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1365, height: 900 } });
   const errors = [];
   const browserWarnings = [];
+  const failedRequests = [];
+  page.on('response', response => {
+    if (response.status() >= 400) failedRequests.push({ status: response.status(), url: response.url().slice(0, 240) });
+  });
   page.on('console', message => {
     if (message.type() === 'warning' || message.type() === 'error') browserWarnings.push(message.text());
   });
@@ -169,7 +173,7 @@ try {
       })(),
     }));
     throw new Error('ERP publication click produced no trusted API response: ' + JSON.stringify({
-      diagnostic, pageErrors: errors, browserWarnings: browserWarnings.slice(-20), forbiddenFirebaseRequests,
+      diagnostic, pageErrors: errors, browserWarnings: browserWarnings.filter(message => /Store kept locally|Store hours|permission|FirebaseError|sync/i.test(message)).slice(-20), failedRequests: failedRequests.slice(-35), forbiddenFirebaseRequests,
     }), { cause: error });
   }
   assert.equal(uiPublicationResponse.status(), 200, await uiPublicationResponse.text());
