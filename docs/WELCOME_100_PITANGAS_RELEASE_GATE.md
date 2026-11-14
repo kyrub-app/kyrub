@@ -42,3 +42,7 @@ Repository inspection found no Firebase Auth lifecycle trigger or deployed Funct
 The receipt is now bound to a stable source event ID, and the consumer validates that binding. This improves replay auditing but does **not** authenticate the source event itself.
 
 **Next implementation gate:** select and provision a supported server-side Firebase Auth user-creation event source; validate event authenticity and Firebase project/UID, reject historical or duplicate identities, then write the immutable receipt through the existing transaction primitive. Exercise actual event delivery and retries in an isolated environment before connecting any HTTP claim route. Do not enable the welcome campaign while this integration is absent.
+
+## Repository-wide legacy writer discovery
+
+Run `node scripts/inventory-pitanga-writers.mjs` from a checked-out PR #1135 branch to enumerate tracked `api/`, `server/`, `src/`, and `functions/` Pitanga references and mutation hints. The script was selectively ported from the unmerged PR #1130. Its output is **candidate evidence only**: classify each write site, check all deployed revisions and external jobs, and verify transactional fence enforcement before marking `writersVerified: true`. Do not infer production readiness from a clean script run.
