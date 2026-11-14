@@ -150,7 +150,21 @@ try {
     { timeout: 20000 },
   );
   await page.getByTestId('store-publication-toggle').click();
-  const uiPublicationResponse = await firstPublicationResponse;
+  let uiPublicationResponse;
+  try {
+    uiPublicationResponse = await firstPublicationResponse;
+  } catch (error) {
+    const diagnostic = await page.evaluate(() => ({
+      body: document.body.innerText.slice(-3500),
+      publicationButton: (() => {
+        const button = document.querySelector('[data-testid="store-publication-toggle"]');
+        return button ? { text: button.textContent, disabled: button.disabled, ariaLabel: button.getAttribute('aria-label') } : null;
+      })(),
+    }));
+    throw new Error('ERP publication click produced no trusted API response: ' + JSON.stringify({
+      diagnostic, pageErrors: errors, forbiddenFirebaseRequests,
+    }), { cause: error });
+  }
   assert.equal(uiPublicationResponse.status(), 200, await uiPublicationResponse.text());
   assert.deepEqual(await uiPublicationResponse.json(), { replay: false, pitangas: 0, xp: 2 });
   assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1, 'Actual UI publication must award exactly one XP ledger entry');
