@@ -62,7 +62,7 @@ try {
   await Promise.all([
     db.doc('global_challenges/first_store_published').set({ id: 'first_store_published', title: 'Primeira publicação', description: 'Publique a primeira loja', status: 'published', validationMode: 'deterministic', sponsorType: 'kyrub', rewardKCoins: 0, rewardXp: 2, maxCompletionsPerUser: 1 }),
     db.doc(`stores/${canonicalStoreId}`).set({ id: canonicalStoreId, ownerId: uid, firstStoreCreationVerified: true, publicationStatus: 'paused', plan: 'free' }),
-    db.doc(`users/${uid}/stores/${uid}`).set({ id: uid, ownerId: uid, name: 'Loja Chromium', slug: 'loja-chromium', plan: 'free' }),
+    db.doc(`users/${uid}/stores/${uid}`).set({ id: uid, ownerId: uid, name: 'Loja Chromium', slug: 'loja-chromium', plan: 'free', canonicalStoreId }),
   ]);
   // Creating a Free store must not grant publication XP before publication.
   const beforePublication = await db.doc(`stores/${canonicalStoreId}`).get();
@@ -93,6 +93,16 @@ try {
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
+  // Navigate through the actual retailer interface instead of bypassing it.
+  await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 20000 });
+  await page.getByRole('button', { name: 'Acessar loja' }).click();
+  await page.locator('#erp-main-header').waitFor({ state: 'visible', timeout: 15000 });
+  await page.locator('#orange-house-config-btn').click();
+  await page.getByText('Configurações da Loja', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
+  await page.getByTestId('store-publication-toggle').waitFor({ state: 'visible', timeout: 15000 });
+  assert.equal(await page.getByTestId('store-publication-toggle').getAttribute('aria-label'), 'Publicar loja no marketplace');
+  assert.deepEqual(forbiddenFirebaseRequests, [], 'Retailer interface must remain emulator-isolated');
+
   // Exercise the authenticated endpoint from Chromium's page context with the
   // browser Firebase SDK token, not the separate Playwright request context.
   const authenticatedPublish = async (action) => {
