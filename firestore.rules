@@ -137,7 +137,8 @@ service cloud.firestore {
             'createdAt',
             'updatedAt',
             'lat',
-            'lng'
+            'lng',
+            'canonicalStoreId'
           ]);
         }
 
@@ -150,6 +151,15 @@ service cloud.firestore {
               && data.lat <= 90
               && data.lng >= -180
               && data.lng <= 180
+          );
+        }
+
+        function hasValidCanonicalStoreLink(data) {
+          return !data.keys().hasAny(['canonicalStoreId']) || (
+            data.canonicalStoreId is string
+            && data.canonicalStoreId.size() > 0
+            && data.canonicalStoreId.size() <= 128
+            && data.canonicalStoreId.matches('^[A-Za-z0-9_-]+$')
           );
         }
 
@@ -173,7 +183,8 @@ service cloud.firestore {
             && data.updatedAt is timestamp
             && data.plan in ['free', 'pro', 'business']
             && data.status in ['open', 'delayed', 'closed']
-            && hasValidUserStoreCoordinates(data);
+            && hasValidUserStoreCoordinates(data)
+            && hasValidCanonicalStoreLink(data);
         }
 
         allow get: if isUserStoreOwner(userId, storeId);
@@ -196,6 +207,7 @@ service cloud.firestore {
           && request.resource.data.id == resource.data.id
           && request.resource.data.ownerId == resource.data.ownerId
           && request.resource.data.createdAt == resource.data.createdAt
+          && request.resource.data.get('canonicalStoreId', null) == resource.data.get('canonicalStoreId', null)
           && request.resource.data.plan == resource.data.plan
           && request.resource.data.updatedAt == request.time
           && request.resource.data
