@@ -1,0 +1,36 @@
+name: Welcome 100 Pitangas isolated contracts
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/gamification/firstLoginWelcome.ts'
+      - 'server/gamification/welcomeInitialSession.ts'
+      - 'server/gamification/firstLoginReceiptVerification.ts'
+      - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
+      - 'tests/first-login-welcome-100-contract.test.ts'
+      - 'tests/welcome-initial-session-100-contract.test.ts'
+      - 'tests/clean-baseline-welcome-100.test.ts'
+      - '.github/workflows/welcome-100-pitangas-contracts.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  isolated-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - name: Run isolated welcome contract and transaction tests
+        run: >-
+          node --test --import tsx
+          tests/first-login-welcome-100-contract.test.ts
+          tests/welcome-initial-session-100-contract.test.ts
+          tests/clean-baseline-welcome-100.test.ts
