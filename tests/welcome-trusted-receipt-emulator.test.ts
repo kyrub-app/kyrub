@@ -5,6 +5,7 @@ import { getFirestore } from 'firebase-admin/firestore';
 import { recordVerifiedFirstLoginInTransaction } from '../server/gamification/firstLoginReceiptWriter.js';
 import { recordWelcomeRegistrationFromTrustedAuthTrigger } from '../server/gamification/welcomeTrustedAuthRegistration.js';
 import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
+import { verifyCleanBaselineSpendingEligibilityInTransaction } from '../server/gamification/cleanBaselineSpendingEligibility.js';
 
 const projectId = 'kyrub-security-test';
 const app = initializeApp({ projectId }, 'welcome-receipt-emulator');
@@ -116,4 +117,27 @@ test('trusted registration cannot credit a user with historical ledger but missi
   );
   assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).exists, false);
   assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 1);
+});
+
+
+test('new-user balance has independently verified spending eligibility without migration receipt', async () => {
+  const uid = 'welcome_spending_eligible';
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-spending-eligible',
+    receiptRef: db.doc(`users/${uid}/authEvents/first_login_v1`),
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const refs = {
+    userId: uid, firebaseCreatedAt: createdAt,
+    receiptRef: db.doc(`users/${uid}/authEvents/first_login_v1`),
+    balanceRef: db.doc(`users/${uid}/pitangaBalance/balance`),
+    welcomeAwardRef: db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`),
+  };
+  assert.deepEqual(await db.runTransaction(tx => verifyCleanBaselineSpendingEligibilityInTransaction(tx, refs)),
+    { availablePitangas: 100 });
+  assert.equal((await db.doc(`users/${uid}/pitangaMigration/receipt`).get()).exists, false);
+  await db.doc(`users/${uid}/pitangaBalance/balance`).update({ migrationEpoch: 'forged' });
+  await assert.rejects(db.runTransaction(tx => verifyCleanBaselineSpendingEligibilityInTransaction(tx, refs)),
+    /WELCOME_SPENDING_BASELINE_UNVERIFIED/);
 });
