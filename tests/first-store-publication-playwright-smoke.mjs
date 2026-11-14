@@ -142,6 +142,9 @@ try {
     assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser publication must not call production Firebase');
     return result.payload;
   };
+  // The fictional Firestore seed does not populate the local ERP profile form.
+  // Complete the required store name through the real UI before publishing.
+  await page.locator('[data-store-profile-field="name"]').fill('Loja Chromium');
   // The first publication must originate from the actual Store Configuration
   // button, not a direct test-only API invocation.
   const firstPublicationResponse = page.waitForResponse(response =>
