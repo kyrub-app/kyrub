@@ -146,7 +146,8 @@ test('two concurrent welcome requests serialize to one credit and one ledger ent
   const results = await Promise.all([run(), run()]);
   assert.equal(results.filter(result => !result.replay).length, 1);
   assert.equal(results.filter(result => result.replay).length, 1);
-  assert.equal(documents.size, 2);
+  // One pre-existing trusted receipt plus the two newly created reward documents.
+  assert.equal(documents.size, 3);
   assert.equal(documents.get(`users/${uid}/pitangaBalance/balance`)?.availableKCoins, 100);
   assert.equal(documents.get(`users/${uid}/rewardLedger/${awardId}`)?.deltaKCoins, 100);
 });
