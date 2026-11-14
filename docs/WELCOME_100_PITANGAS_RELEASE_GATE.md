@@ -33,3 +33,12 @@ The isolated Firestore Emulator tests exercise atomic welcome credit, concurrent
 The verified XP conversion and voucher issuance wrappers (`pitangaVerifiedXpConversion.ts` and `pitangaVerifiedVoucherIssuance.ts`) require a historical migration receipt and `migrationEpoch` on the balance. The new-account welcome transaction intentionally creates neither. Therefore, a user granted 100 welcome Pitangas **cannot yet spend or convert them through these verified wrappers**. Do not represent the welcome balance as fully redeemable until a separately audited clean-baseline eligibility path is implemented and tested; do not fabricate a migration receipt.
 
 The server-side conversion and voucher adapters currently expose no public routes. This is a **release blocker for usable rewards**, separate from one-time credit correctness.
+
+
+## Authentication event integration decision (2026-11-14)
+
+Repository inspection found no Firebase Auth lifecycle trigger or deployed Functions source in the tracked `main` tree. The existing `firstLoginReceiptWriter.ts` is a **transaction primitive, not an event issuer**: its `trustedFirstLoginEvent` argument and `sourceEventId` must only be supplied by a separately authenticated server event. A browser claim, ID token, matching creation timestamp, or arbitrary server call that forwards client data does **not** satisfy this requirement.
+
+The receipt is now bound to a stable source event ID, and the consumer validates that binding. This improves replay auditing but does **not** authenticate the source event itself.
+
+**Next implementation gate:** select and provision a supported server-side Firebase Auth user-creation event source; validate event authenticity and Firebase project/UID, reject historical or duplicate identities, then write the immutable receipt through the existing transaction primitive. Exercise actual event delivery and retries in an isolated environment before connecting any HTTP claim route. Do not enable the welcome campaign while this integration is absent.
