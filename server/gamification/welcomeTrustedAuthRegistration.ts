@@ -18,8 +18,7 @@ export const recordWelcomeRegistrationFromTrustedAuthTrigger = async (
   context: { eventId: string; projectId: string },
 ): Promise<{ recorded: boolean }> => {
   const expectedProjectId = process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID?.trim();
-  if (!expectedProjectId || context.projectId !== expectedProjectId ||
-      db.app.options.projectId !== expectedProjectId) {
+  if (!expectedProjectId || context.projectId !== expectedProjectId) {
     throw Error('WELCOME_AUTH_TRIGGER_PROJECT_MISMATCH');
   }
   if (!event.providerData?.some(provider => provider.providerId === 'google.com')) {
