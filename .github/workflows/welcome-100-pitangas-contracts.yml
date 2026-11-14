@@ -13,6 +13,7 @@ on:
       - 'tests/welcome-initial-session-100-contract.test.ts'
       - 'tests/clean-baseline-welcome-100.test.ts'
       - 'tests/signed-session-welcome-100-service.test.ts'
+      - 'tests/welcome-100-firestore-emulator.test.ts'
       - '.github/workflows/welcome-100-pitangas-contracts.yml'
   workflow_dispatch:
 
@@ -29,6 +30,10 @@ jobs:
         with:
           node-version: '22'
           cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
       - run: npm ci
       - name: Run isolated welcome contract and transaction tests
         run: >-
@@ -37,3 +42,10 @@ jobs:
           tests/welcome-initial-session-100-contract.test.ts
           tests/clean-baseline-welcome-100.test.ts
           tests/signed-session-welcome-100-service.test.ts
+      - name: Verify atomic welcome grant against isolated Firestore Emulator
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.security.json
+          --project kyrub-security-test
+          --only firestore
+          "node --test --test-concurrency=1 --import tsx tests/welcome-100-firestore-emulator.test.ts"
