@@ -10,12 +10,14 @@ on:
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
       - 'server/gamification/signedSessionWelcomeService.ts'
       - 'server/gamification/welcomeFirebaseSession.ts'
+      - 'server/gamification/welcomeAuthenticatedGrant.ts'
       - 'tests/first-login-welcome-100-contract.test.ts'
       - 'tests/welcome-initial-session-100-contract.test.ts'
       - 'tests/clean-baseline-welcome-100.test.ts'
       - 'tests/signed-session-welcome-100-service.test.ts'
       - 'tests/welcome-100-firestore-emulator.test.ts'
       - 'tests/welcome-firebase-session.test.ts'
+      - 'tests/welcome-authenticated-grant.test.ts'
       - '.github/workflows/welcome-100-pitangas-contracts.yml'
   workflow_dispatch:
 
@@ -45,6 +47,7 @@ jobs:
           tests/clean-baseline-welcome-100.test.ts
           tests/signed-session-welcome-100-service.test.ts
           tests/welcome-firebase-session.test.ts
+          tests/welcome-authenticated-grant.test.ts
       - name: Verify atomic welcome grant against isolated Firestore Emulator
         run: >-
           npx --yes firebase-tools emulators:exec
