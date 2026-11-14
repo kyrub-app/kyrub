@@ -63,6 +63,9 @@ test('rejects wrong project, non-Google registration and invalid trigger event I
       [{ ...event, providerData: [{ providerId: 'password' }] }, context],
       [{ ...event, providerData: [] }, context],
       [event, { ...context, eventId: 'short' }],
+      [{ ...event, uid: '../other' }, context],
+      [{ ...event, uid: '' }, context],
+      [{ ...event, uid: 'x'.repeat(129) }, context],
     ] as const) {
       const h = harness();
       await assert.rejects(recordWelcomeRegistrationFromTrustedAuthTrigger(h.db, candidate, trigger));
