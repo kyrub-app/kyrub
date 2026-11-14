@@ -100,3 +100,20 @@ test('trusted registration receipt never overwrites pre-existing Pitanga balance
   assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).get('availableKCoins'), 35);
   assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 0);
 });
+
+
+test('trusted registration cannot credit a user with historical ledger but missing balance', async () => {
+  const uid = 'welcome_adapter_historical_ledger';
+  await db.doc(`users/${uid}/rewardLedger/earn_legacy_reward`).set({
+    id: 'earn_legacy_reward', userId: uid, type: 'earn', deltaKCoins: 15,
+  });
+  await recordWelcomeRegistrationFromTrustedAuthTrigger(db, {
+    uid, metadata: { creationTime: createdAt }, providerData: [{ providerId: 'google.com' }],
+  }, { projectId, eventId: 'auth-create-historical-ledger-1' });
+  await assert.rejects(
+    grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime),
+    /WELCOME_CLEAN_BASELINE_NOT_EMPTY/,
+  );
+  assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).exists, false);
+  assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 1);
+});
