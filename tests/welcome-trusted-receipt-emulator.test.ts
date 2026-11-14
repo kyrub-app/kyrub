@@ -278,3 +278,28 @@ test('concurrent replay of same verified spend remains one debit', async () => {
   assert.equal((await balanceRef.get()).get('availableKCoins'), 40);
   assert.equal((await debitRef.get()).get('deltaKCoins'), -60);
 });
+
+
+test('same spend identifier with different amount fails without altering original debit', async () => {
+  const uid = 'welcome_spend_conflict';
+  const firstLoginReceiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  const debitRef = db.doc(`users/${uid}/rewardLedger/spend_conflict_request`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-spend-conflict', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const input = {
+    userId: uid, firebaseCreatedAt: createdAt, spendId: 'conflict_request', amount: 30,
+    sourceId: 'test_redemption', occurredAt: createdAt, balanceRef, debitRef,
+    firstLoginReceiptRef, welcomeAwardRef,
+  };
+  await db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, input));
+  await assert.rejects(db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, {
+    ...input, amount: 45,
+  })), /PITANGA_SPEND_IDEMPOTENCY_CONFLICT/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 70);
+  assert.equal((await debitRef.get()).get('deltaKCoins'), -30);
+});
