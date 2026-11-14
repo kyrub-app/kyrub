@@ -8,9 +8,11 @@ on:
       - 'server/gamification/welcomeInitialSession.ts'
       - 'server/gamification/firstLoginReceiptVerification.ts'
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
+      - 'server/gamification/signedSessionWelcomeService.ts'
       - 'tests/first-login-welcome-100-contract.test.ts'
       - 'tests/welcome-initial-session-100-contract.test.ts'
       - 'tests/clean-baseline-welcome-100.test.ts'
+      - 'tests/signed-session-welcome-100-service.test.ts'
       - '.github/workflows/welcome-100-pitangas-contracts.yml'
   workflow_dispatch:
 
@@ -34,3 +36,4 @@ jobs:
           tests/first-login-welcome-100-contract.test.ts
           tests/welcome-initial-session-100-contract.test.ts
           tests/clean-baseline-welcome-100.test.ts
+          tests/signed-session-welcome-100-service.test.ts
