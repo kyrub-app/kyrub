@@ -7,11 +7,11 @@ const receiptRef = { path: `users/${uid}/authEvents/first_login_v1` } as any;
 const base = {
   userId: uid, firebaseCreatedAt: '2026-11-12T12:00:00.000Z',
   occurredAt: '2026-11-12T12:00:01.000Z',
-  trustedFirstLoginEvent: true, receiptRef,
+  trustedFirstLoginEvent: true, sourceEventId: 'auth-create-user-1', receiptRef,
 };
 const receipt = {
   userId: uid, eventType: 'first_login', schemaVersion: 1,
-  issuer: 'trusted_auth_server', firebaseCreatedAt: base.firebaseCreatedAt,
+  issuer: 'trusted_auth_server', sourceEventId: base.sourceEventId, firebaseCreatedAt: base.firebaseCreatedAt,
   occurredAt: base.occurredAt,
 };
 function mock(existing?: unknown) {
@@ -46,6 +46,7 @@ test('different event timestamp conflicts rather than rewriting receipt', async 
 test('untrusted source, wrong reference and invalid time never create receipts', async () => {
   for (const patch of [
     { trustedFirstLoginEvent: false },
+    { sourceEventId: '' },
     { receiptRef: { path: 'users/other/authEvents/first_login_v1' } as any },
     { occurredAt: '2026-11-12T11:59:59.000Z' },
     { occurredAt: '2026-11-13T12:00:02.000Z' },
