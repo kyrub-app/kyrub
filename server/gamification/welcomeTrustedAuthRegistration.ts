@@ -30,7 +30,13 @@ export const recordWelcomeRegistrationFromTrustedAuthTrigger = async (
   if (!/^[A-Za-z0-9_-]{8,128}$/.test(context.eventId)) {
     throw Error('WELCOME_AUTH_TRIGGER_EVENT_ID_INVALID');
   }
-  const createdAt = new Date(event.metadata.creationTime).toISOString();
+  const cutoff = process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT?.trim();
+  const cutoffMs = cutoff ? Date.parse(cutoff) : NaN;
+  const createdMs = Date.parse(event.metadata.creationTime);
+  if (!Number.isFinite(cutoffMs) || createdMs < cutoffMs) {
+    throw Error('WELCOME_AUTH_TRIGGER_CAMPAIGN_INELIGIBLE');
+  }
+  const createdAt = new Date(createdMs).toISOString();
   const receiptRef = db.doc(`users/${event.uid}/authEvents/first_login_v1`);
   return db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
     userId: event.uid,
