@@ -56,7 +56,15 @@ const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt, fenceData?: R
       return { balance: 100, replay: false };
     },
     doc: () => ({ path: 'systemControl/pitangaLegacyWriterFence' }),
-    collection: () => ({ doc: () => ({ collection: () => ({ doc: () => ({}) }) }) }),
+    collection: (name: string) => ({
+      doc: (uid: string) => ({
+        collection: (child: string) => ({
+          path: `${name}/${uid}/${child}`,
+          doc: (id: string) => ({ path: `${name}/${uid}/${child}/${id}`, id }),
+          limit: () => ({ query: 'ledger' }),
+        }),
+      }),
+    }),
   };
   return { auth: auth as any, db: db as any, counts: () => ({ lookups, transactions }) };
 };
