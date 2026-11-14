@@ -593,6 +593,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             <button
               type="button"
               onClick={() => void handlePublication()}
+              data-testid="store-publication-toggle"
+              aria-label={isPublished ? 'Ocultar loja do marketplace' : 'Publicar loja no marketplace'}
               disabled={isSaving || isPublishing}
               className={`font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isPublished ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30' : 'bg-teal-500 hover:bg-teal-600 text-slate-950'}`}
             >
