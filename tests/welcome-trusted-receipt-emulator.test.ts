@@ -202,3 +202,24 @@ test('verified new-user balance can spend atomically once, then replay safely', 
     { remainingPitangas: 75, replay: true });
   assert.equal((await balanceRef.get()).get('availableKCoins'), 75);
 });
+
+
+test('verified new-user spend rejects insufficient balance without partial debit', async () => {
+  const uid = 'welcome_spend_insufficient';
+  const firstLoginReceiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  const debitRef = db.doc(`users/${uid}/rewardLedger/spend_too_much`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-insufficient', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  await assert.rejects(db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, spendId: 'too_much', amount: 101,
+    sourceId: 'test_redemption', occurredAt: createdAt, balanceRef, debitRef,
+    firstLoginReceiptRef, welcomeAwardRef,
+  })), /PITANGA_SPEND_INSUFFICIENT_BALANCE/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+  assert.equal((await debitRef.get()).exists, false);
+});
