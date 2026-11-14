@@ -12,8 +12,9 @@ try {
   const forbiddenFirebaseRequests = [];
   await page.route('**/*', async route => {
     const url = route.request().url();
-    if (/https?:\\/\\/(?:[^/]+\\.)?(?:googleapis\\.com|firebaseio\\.com|firebasestorage\\.app|firebaseapp\\.com)/i.test(url) &&
-        /(?:identitytoolkit|firestore|firebasestorage|securetoken|firebaseio)/i.test(url)) {
+    const parsed = new URL(url);
+    const remoteFirebase = ['identitytoolkit.googleapis.com', 'securetoken.googleapis.com', 'firestore.googleapis.com', 'firebasestorage.googleapis.com'].includes(parsed.hostname) || parsed.hostname.endsWith('.firebaseio.com') || parsed.hostname.endsWith('.firebasestorage.app');
+    if (remoteFirebase) {
       forbiddenFirebaseRequests.push(url.replace(/\\?.*$/, ''));
       await route.abort('blockedbyclient');
       return;
