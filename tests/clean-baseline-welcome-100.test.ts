@@ -79,13 +79,10 @@ test('clean baseline rejects historical accounts, missing isolation and forged r
   assert.deepEqual(writes, []);
 });
 
-test('signed Firebase session creates atomic welcome balance without legacy receipt', async () => {
+test('signed session cannot bypass invalid trusted receipt', async () => {
   const { tx, writes } = harness({ receipt: { ...receipt, issuer: 'client' } });
-  assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs({
-    signedInitialSessionAt: occurredAt,
-  })), { balance: 100, replay: false });
-  assert.equal(writes.length, 2);
-  assert.equal((writes[1].data as any).occurredAt, occurredAt);
+  await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs()), /RECEIPT_INVALID/);
+  assert.equal(writes.length, 0);
 });
 
 test('signed-session replay does not issue a second welcome award', async () => {
@@ -93,7 +90,7 @@ test('signed-session replay does not issue a second welcome award', async () => 
     balance: { userId: uid, availableKCoins: 1200 }, ledger: true, award,
   });
   assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs({
-    signedInitialSessionAt: '2026-11-12T12:05:00.000Z',
+    
   })), { balance: 1200, replay: true });
   assert.equal(writes.length, 0);
 });
@@ -105,17 +102,17 @@ test('signed-session path refuses existing unrelated Pitanga history', async () 
   ]) {
     const { tx, writes } = harness(options);
     await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs({
-      signedInitialSessionAt: occurredAt,
+      
     })), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
     assert.equal(writes.length, 0);
   }
 });
 
-test('transaction rejects signed sessions predating the campaign even when account is new', async () => {
+test('transaction rejects account created before campaign', async () => {
   const { tx, writes } = harness();
   await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs({
-    signedInitialSessionAt: '2026-11-11T23:50:00.000Z',
-  })), /WELCOME_SIGNED_SESSION_INVALID/);
+    campaignEffectiveAt: '2026-11-13T00:00:00.000Z',
+  })), /WELCOME_CLEAN_BASELINE_UNVERIFIED/);
   assert.deepEqual(writes, []);
 });
 
@@ -138,7 +135,7 @@ test('two concurrent welcome requests serialize to one credit and one ledger ent
       };
       // A signed initial session is verified by the trusted service before this call.
       const result = await grantCleanBaselineWelcomeInTransaction(tx, inputs({
-        signedInitialSessionAt: occurredAt,
+        
       }));
       // Simulate Firestore's optimistic transaction conflict and retry.
       if (version !== startVersion) continue;
