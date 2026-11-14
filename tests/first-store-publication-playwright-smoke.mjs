@@ -87,14 +87,22 @@ try {
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
+  // Exercise the authenticated endpoint from Chromium's page context with the
+  // browser Firebase SDK token, not the separate Playwright request context.
   const authenticatedPublish = async (action) => {
-    const result = await page.request.post(origin + '/api/action-execute?transport=first-store-publication', {
-      headers: { authorization: `Bearer ${idToken}` },
-      data: { action, canonicalStoreId },
-    });
-    const payload = await result.json();
-    assert.equal(result.status(), 200, JSON.stringify(payload));
-    return payload;
+    const result = await page.evaluate(async ({ action, canonicalStoreId }) => {
+      const { auth } = await import('/src/utils/firebase.ts');
+      const token = await auth.currentUser.getIdToken();
+      const response = await fetch('/api/action-execute?transport=first-store-publication', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, canonicalStoreId }),
+      });
+      return { status: response.status, payload: await response.json() };
+    }, { action, canonicalStoreId });
+    assert.equal(result.status, 200, JSON.stringify(result.payload));
+    assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser publication must not call production Firebase');
+    return result.payload;
   };
   assert.deepEqual(await authenticatedPublish('publish'), { replay: false, pitangas: 0, xp: 2 });
   assert.deepEqual(await authenticatedPublish('publish'), { replay: true, pitangas: 0, xp: 2 });
