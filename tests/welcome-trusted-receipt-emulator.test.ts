@@ -86,3 +86,17 @@ test('isolated Auth registration adapter and signed session converge on one welc
   assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).get('availableKCoins'), 100);
   assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 1);
 });
+
+
+test('trusted registration receipt never overwrites pre-existing Pitanga balance', async () => {
+  const uid = 'welcome_adapter_existing_balance';
+  await db.doc(`users/${uid}/pitangaBalance/balance`).set({ userId: uid, availableKCoins: 35 });
+  await recordWelcomeRegistrationFromTrustedAuthTrigger(db, {
+    uid, metadata: { creationTime: createdAt }, providerData: [{ providerId: 'google.com' }],
+  }, { projectId, eventId: 'auth-create-existing-balance-1' });
+  await assert.rejects(
+    grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime),
+  );
+  assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).get('availableKCoins'), 35);
+  assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 0);
+});
