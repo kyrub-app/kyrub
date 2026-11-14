@@ -11,11 +11,15 @@ const cutoff = '2026-11-14T00:00:00.000Z';
 before(() => assert.ok(process.env.FIRESTORE_EMULATOR_HOST, 'Firestore Emulator is mandatory'));
 after(async () => deleteApp(app));
 
-const grant = (uid: string) => {
+const grant = async (uid: string) => {
+  const receiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  await receiptRef.set({ userId: uid, eventType: 'first_login', schemaVersion: 1,
+    issuer: 'trusted_auth_server', sourceEventId: `auth-create-${uid}`,
+    firebaseCreatedAt: createdAt, occurredAt: createdAt });
   const root = db.collection('users').doc(uid);
   return db.runTransaction(tx => grantCleanBaselineWelcomeInTransaction(tx, {
     userId: uid, firebaseCreatedAt: createdAt, campaignEffectiveAt: cutoff,
-    isolatedCleanBaseline: true, signedInitialSessionAt: createdAt,
+    isolatedCleanBaseline: true,
     receiptRef: root.collection('authEvents').doc('first_login_v1'),
     balanceRef: root.collection('pitangaBalance').doc('balance'),
     ledgerCollection: root.collection('rewardLedger'),
