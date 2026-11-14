@@ -13,7 +13,7 @@ export const recordWelcomeRegistrationFromTrustedAuthTrigger = async (
   event: {
     uid: string;
     metadata?: { creationTime?: string };
-    providerData?: Array<{ providerId?: string }>;
+    providerData?: ReadonlyArray<{ readonly providerId?: string }>;
   },
   context: { eventId: string; projectId: string },
 ): Promise<{ recorded: boolean }> => {
