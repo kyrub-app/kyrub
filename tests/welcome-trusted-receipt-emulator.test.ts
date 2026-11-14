@@ -3,6 +3,7 @@ import { after, before, test } from 'node:test';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { recordVerifiedFirstLoginInTransaction } from '../server/gamification/firstLoginReceiptWriter.js';
+import { recordWelcomeRegistrationFromTrustedAuthTrigger } from '../server/gamification/welcomeTrustedAuthRegistration.js';
 import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
 
 const projectId = 'kyrub-security-test';
@@ -62,6 +63,26 @@ test('trusted receipt plus verified session grants exactly 100 once with concurr
     grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime)));
   assert.equal(result.filter(x => !x.replay).length, 1);
   assert.equal(result.filter(x => x.replay).length, 2);
+  assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).get('availableKCoins'), 100);
+  assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 1);
+});
+
+
+test('isolated Auth registration adapter and signed session converge on one welcome credit', async () => {
+  const uid = 'welcome_adapter_e2e';
+  const event = {
+    uid, metadata: { creationTime: createdAt },
+    providerData: [{ providerId: 'google.com' }],
+  };
+  const context = { projectId, eventId: 'auth-create-adapter-e2e-1' };
+  const receipts = await Promise.all(Array.from({ length: 3 }, () =>
+    recordWelcomeRegistrationFromTrustedAuthTrigger(db, event, context)));
+  assert.equal(receipts.filter(x => x.recorded).length, 1);
+  assert.equal(receipts.filter(x => !x.recorded).length, 2);
+  const credits = await Promise.all(Array.from({ length: 3 }, () =>
+    grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime)));
+  assert.equal(credits.filter(x => !x.replay).length, 1);
+  assert.equal(credits.filter(x => x.replay).length, 2);
   assert.equal((await db.doc(`users/${uid}/pitangaBalance/balance`).get()).get('availableKCoins'), 100);
   assert.equal((await db.collection(`users/${uid}/rewardLedger`).get()).size, 1);
 });
