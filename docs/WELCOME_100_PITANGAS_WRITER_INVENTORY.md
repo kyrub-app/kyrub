@@ -53,3 +53,13 @@ A regra atual é **2 XP e 0 Pitangas pela primeira publicação**. Não habilita
 2. Inventariar Cloud Functions externas, tarefas agendadas, scripts operacionais e credenciais Admin SDK que não aparecem no repositório.
 3. Não definir `writersVerified: true` com base apenas neste inventário. Exigir evidências dos bloqueios em todos os escritores implantados.
 4. Não ativar o bônus de boas-vindas antes da validação do gatilho Auth real, do caminho de gasto para saldo novo e dos testes isolados.
+
+## Inspeção direta: primitives de crédito, débito e fence
+
+Revisão do código em `pitangaEarnTransaction.ts`, `pitangaSpendTransaction.ts` e `pitangaLegacyWriterFence.ts`:
+
+- **Crédito**: exige saldo canônico preexistente, valida referências, valores positivos e registro idempotente; não inicializa saldo ausente. Não consulta o documento `systemControl/pitangaLegacyWriterFence` diretamente.
+- **Débito**: exige saldo canônico e saldo suficiente, valida registro idempotente; também não consulta o fence diretamente.
+- **Fence**: o helper `assertLegacyPitangaWriterAllowedInTransaction` rejeita estados `fencing`/`fenced`, mas **não está conectado automaticamente** aos escritores. Documento ausente é permitido para compatibilidade anterior ao corte.
+
+**Consequência:** não se pode afirmar que o fence está efetivo só porque o helper existe ou porque `writersVerified` é verdadeiro. Antes do corte, localizar os chamadores e assegurar que cada caminho de escrita legado consulte o fence **na mesma transação e antes da mutação**, sem impedir a nova concessão isolada de boas-vindas. Esta auditoria é estática; não demonstra a revisão implantada.
