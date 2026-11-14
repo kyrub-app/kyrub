@@ -39,7 +39,7 @@ const mock = (projectId = 'kyrub-test', userCreatedAt = createdAt, fenceData?: R
     app: { options: { projectId } },
     getUser: async (uid: string) => {
       lookups++;
-      return { uid, disabled: false, metadata: { creationTime: userCreatedAt } };
+      return { uid, disabled: false, providerData: [{ providerId: 'google.com' }], metadata: { creationTime: userCreatedAt } };
     },
   };
   const db = {
@@ -163,5 +163,15 @@ test('valid signed session and verified fence still reject absent trusted first-
       /WELCOME_FIRST_LOGIN_RECEIPT_MISSING/,
     );
     assert.equal(reads, 2);
+  });
+});
+
+
+test('welcome rejects non-Google Firebase accounts before opening transaction', async () => {
+  await withEnv(enabled, async () => {
+    const m = mock();
+    m.auth.getUser = async (uid: string) => ({ uid, disabled: false, providerData: [{ providerId: 'password' }], metadata: { creationTime: createdAt } });
+    await assert.rejects(grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', authTime), /WELCOME_GOOGLE_PROVIDER_REQUIRED/);
+    assert.equal(m.counts().transactions, 0);
   });
 });
