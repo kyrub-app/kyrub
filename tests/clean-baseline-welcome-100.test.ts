@@ -7,7 +7,7 @@ const createdAt = '2026-11-12T12:00:00.000Z';
 const occurredAt = '2026-11-12T12:00:01.000Z';
 const awardId = 'earn_first_login_welcome_v1';
 const ref = (path: string): any => ({ path, id: path.split('/').at(-1), parent: { path: path.split('/').slice(0, -1).join('/') } });
-const receipt = { userId: uid, eventType: 'first_login', schemaVersion: 1, issuer: 'trusted_auth_server', firebaseCreatedAt: createdAt, occurredAt };
+const receipt = { userId: uid, eventType: 'first_login', schemaVersion: 1, issuer: 'trusted_auth_server', sourceEventId: 'auth-create-new-user-1', firebaseCreatedAt: createdAt, occurredAt };
 const award = {
   id: awardId, userId: uid, type: 'earn', economy: 'k_coin', deltaKCoins: 100,
   sourceType: 'campaign', sourceId: 'first_login_welcome_v1',
