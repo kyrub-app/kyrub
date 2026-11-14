@@ -89,9 +89,7 @@ test('signed-session replay does not issue a second welcome award', async () => 
   const { tx, writes } = harness({
     balance: { userId: uid, availableKCoins: 1200 }, ledger: true, award,
   });
-  assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs({
-    
-  })), { balance: 1200, replay: true });
+  assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs()), { balance: 1200, replay: true });
   assert.equal(writes.length, 0);
 });
 
@@ -101,9 +99,7 @@ test('signed-session path refuses existing unrelated Pitanga history', async () 
     { ledger: true },
   ]) {
     const { tx, writes } = harness(options);
-    await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs({
-      
-    })), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
+    await assert.rejects(grantCleanBaselineWelcomeInTransaction(tx, inputs()), /WELCOME_CLEAN_BASELINE_NOT_EMPTY/);
     assert.equal(writes.length, 0);
   }
 });
@@ -118,6 +114,7 @@ test('transaction rejects account created before campaign', async () => {
 
 test('two concurrent welcome requests serialize to one credit and one ledger entry', async () => {
   const documents = new Map<string, any>();
+  documents.set(`users/${uid}/authEvents/first_login_v1`, receipt);
   let version = 0;
   const run = async () => {
     for (let attempt = 0; attempt < 5; attempt++) {
@@ -134,9 +131,7 @@ test('two concurrent welcome requests serialize to one credit and one ledger ent
         create: (target: any, data: any) => pending.push({ path: target.path, data }),
       };
       // A signed initial session is verified by the trusted service before this call.
-      const result = await grantCleanBaselineWelcomeInTransaction(tx, inputs({
-        
-      }));
+      const result = await grantCleanBaselineWelcomeInTransaction(tx, inputs());
       // Simulate Firestore's optimistic transaction conflict and retry.
       if (version !== startVersion) continue;
       for (const write of pending) {
