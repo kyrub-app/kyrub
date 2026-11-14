@@ -12,12 +12,15 @@ export const recordVerifiedFirstLoginInTransaction = async (
     firebaseCreatedAt: string;
     occurredAt: string;
     trustedFirstLoginEvent: boolean;
+    /** Must be supplied only by a server-side verified identity lifecycle handler. */
+    sourceEventId: string;
     receiptRef: DocumentReference;
   },
 ): Promise<{ recorded: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId) ||
       input.receiptRef.path !== `users/${input.userId}/authEvents/first_login_v1` ||
-      input.trustedFirstLoginEvent !== true) {
+      input.trustedFirstLoginEvent !== true ||
+      !/^[A-Za-z0-9_-]{8,128}$/.test(input.sourceEventId)) {
     throw Error('WELCOME_FIRST_LOGIN_ISSUER_UNVERIFIED');
   }
   const created = Date.parse(input.firebaseCreatedAt);
@@ -31,6 +34,7 @@ export const recordVerifiedFirstLoginInTransaction = async (
     eventType: 'first_login',
     schemaVersion: 1,
     issuer: 'trusted_auth_server',
+    sourceEventId: input.sourceEventId,
     firebaseCreatedAt: new Date(created).toISOString(),
     occurredAt: new Date(occurred).toISOString(),
   };
