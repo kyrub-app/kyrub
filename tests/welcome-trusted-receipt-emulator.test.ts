@@ -159,3 +159,21 @@ test('new-user spending eligibility rejects altered welcome award', async () => 
     /WELCOME_SPENDING_BASELINE_UNVERIFIED/);
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
 });
+
+
+test('new-user spending eligibility rejects forged first-login receipt provenance', async () => {
+  const uid = 'welcome_spending_forged_receipt';
+  const receiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-forged-receipt', receiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  await receiptRef.update({ issuer: 'client_browser' });
+  await assert.rejects(db.runTransaction(tx => verifyCleanBaselineSpendingEligibilityInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, receiptRef, balanceRef, welcomeAwardRef,
+  })), /WELCOME_FIRST_LOGIN_RECEIPT_INVALID/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+});
