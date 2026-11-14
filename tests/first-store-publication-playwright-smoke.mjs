@@ -97,6 +97,10 @@ try {
   // Reload so the root auth listener and Renda tab mount with the signed-in
   // emulator identity, rather than retaining the initial anonymous UI.
   await page.reload({ waitUntil: 'domcontentloaded' });
+  const fullAppEntry = page.locator('#renda-entry-open-full-app');
+  if (await fullAppEntry.isVisible()) {
+    await fullAppEntry.click();
+  }
   const retailerEntry = page.locator('#btn-criar-loja-ofertas');
   try {
     await retailerEntry.waitFor({ state: 'visible', timeout: 12000 });
