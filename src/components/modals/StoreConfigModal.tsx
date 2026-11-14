@@ -318,9 +318,38 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let marketplaceSynced = true;
     if (refreshPublishedMarketplace && await resolvePublishedState(user.uid)) {
       try {
-        await setStoreMarketplacePublication(user, storeToSave, true);
+        // A trusted first-publication timestamp is immutable. Legacy profile
+        // refresh rewrites publishedAt, so never use it for verified stores.
+        const privateSnapshot = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalId = privateSnapshot.data()?.canonicalStoreId;
+        let trustedPublication = false;
+        if (typeof canonicalId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(canonicalId)) {
+          const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalId));
+          trustedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
+        }
+        if (trustedPublication && import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+          if (!privateProfileSynced) throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
+          const token = await user.getIdToken();
+          const response = await fetch('/api/action-execute?transport=first-store-publication', {
+            method: 'POST',
+            headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+            body: JSON.stringify({ canonicalStoreId: canonicalId, action: 'sync-profile' }),
+          });
+          if (!response.ok) throw Error(`FIRST_STORE_PROFILE_SYNC_HTTP_${response.status}`);
+          const result: unknown = await response.json();
+          if (!result || typeof result !== 'object' || !('synced' in result) || result.synced !== true) {
+            throw Error('FIRST_STORE_PROFILE_SYNC_INVALID_RESPONSE');
+          }
+          // Profile synchronization does not publish a paused store. Preserve
+          // the existing visibility state rather than forcing the UI to published.
+        } else if (trustedPublication) {
+          marketplaceSynced = false;
+          console.warn('Verified store profile sync is disabled until server rollout.');
+        } else {
+          await setStoreMarketplacePublication(user, storeToSave, true);
         setCanonicalPublished(true);
         setFallbackPublished(true);
+        }
       } catch (error) {
         marketplaceSynced = false;
         console.warn('Published store profile refresh is pending.', error);
@@ -379,11 +408,55 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     }
 
     try {
-      await setStoreMarketplacePublication(
-        user,
-        saveResult.store,
-        targetPublished
-      );
+      // Opt-in migration: legacy publication remains unchanged until both
+      // the browser and trusted server are explicitly enabled.
+      if (import.meta.env.VITE_KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+        if (targetPublished && !saveResult.cloudSynced) {
+          throw Error('FIRST_STORE_PUBLICATION_PRIVATE_SYNC_PENDING');
+        }
+        const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalStoreId: unknown = privateStore.data()?.canonicalStoreId;
+        if (typeof canonicalStoreId !== 'string' ||
+            !/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+          throw Error('FIRST_STORE_PUBLICATION_CANONICAL_ID_UNAVAILABLE');
+        }
+        const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalStoreId));
+        const verifiedPublication = typeof canonicalSnapshot.data()?.firstPublishedAt === 'string';
+        if (!targetPublished && !verifiedPublication) {
+          // Legacy stores remain on the existing hide path until migrated.
+          await setStoreMarketplacePublication(user, saveResult.store, false);
+        } else {
+        const token = await user.getIdToken();
+        const response = await fetch('/api/action-execute?transport=first-store-publication', {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+          body: JSON.stringify({ canonicalStoreId, action: targetPublished ? 'publish' : 'hide' }),
+        });
+        if (!response.ok) throw Error(`FIRST_STORE_PUBLICATION_HTTP_${response.status}`);
+        const publicationResult: unknown = await response.json();
+        if (!publicationResult || typeof publicationResult !== 'object' ||
+            (targetPublished && (!('replay' in publicationResult) || typeof publicationResult.replay !== 'boolean' ||
+            !('xp' in publicationResult) ||
+            (publicationResult.xp !== 0 && publicationResult.xp !== 2) ||
+            !('pitangas' in publicationResult) || publicationResult.pitangas !== 0)) ||
+            (!targetPublished && (!('hidden' in publicationResult) || publicationResult.hidden !== true))) {
+          throw Error('FIRST_STORE_PUBLICATION_INVALID_RESPONSE');
+        }
+        // Do not invoke client publication fallback after the trusted write.
+        }
+      } else {
+        // A previously verified store must never return to client-side writes
+        // after a feature-flag rollback: that path can rewrite publishedAt.
+        const privateStore = await getDoc(doc(db, 'users', user.uid, 'stores', user.uid));
+        const canonicalStoreId: unknown = privateStore.data()?.canonicalStoreId;
+        if (typeof canonicalStoreId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+          const canonicalSnapshot = await getDoc(doc(db, 'stores', canonicalStoreId));
+          if (typeof canonicalSnapshot.data()?.firstPublishedAt === 'string') {
+            throw Error('FIRST_STORE_PUBLICATION_SERVER_ROLLOUT_DISABLED');
+          }
+        }
+        await setStoreMarketplacePublication(user, saveResult.store, targetPublished);
+      }
 
       setCanonicalPublished(targetPublished);
       setFallbackPublished(targetPublished);
@@ -520,6 +593,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             <button
               type="button"
               onClick={() => void handlePublication()}
+              data-testid="store-publication-toggle"
+              aria-label={isPublished ? 'Ocultar loja do marketplace' : 'Publicar loja no marketplace'}
               disabled={isSaving || isPublishing}
               className={`font-black px-5 py-2 rounded-xl text-xs uppercase tracking-wider cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed ${isPublished ? 'bg-slate-800 hover:bg-slate-700 text-amber-300 border border-amber-500/30' : 'bg-teal-500 hover:bg-teal-600 text-slate-950'}`}
             >

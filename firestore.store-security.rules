@@ -160,12 +160,16 @@ service cloud.firestore {
       allow create: if signedIn()
         && incoming().id == storeId
         && incoming().ownerId == request.auth.uid
+        && !incoming().keys().hasAny(['firstStoreCreationVerified', 'firstPublishedAt'])
         && incoming().publicationStatus in ['paused', 'published']
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
       allow update: if ownerOrManager(storeId)
         && immutableStoreIdentity()
+        && !incoming().diff(existing()).affectedKeys().hasAny([
+          'firstStoreCreationVerified', 'firstPublishedAt'
+        ])
         && incoming().updatedAt == request.time;
 
       allow delete: if false;

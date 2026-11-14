@@ -88,19 +88,8 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   if (finalPlan !== 'free' && finalPlan !== 'pro' && finalPlan !== 'business') {
     throw Error('STORE_ACTIVATION_INVALID_PLAN');
   }
-  // Reward processing is best-effort and idempotent. An unpublished or absent
-  // challenge must never prevent store activation. A later authenticated retry
-  // of this command can process the persisted first-store event.
-  try {
-    const { awardFirstStoreChallengeForCanonicalStore } =
-      await import('../gamification/firstStoreChallengeAwardService.js');
-    await awardFirstStoreChallengeForCanonicalStore(adminDb, { userId: uid, canonicalStoreId });
-  } catch (error) {
-    console.error('FIRST_STORE_CHALLENGE_AWARD_DEFERRED', {
-      userId: uid, canonicalStoreId,
-      code: error instanceof Error ? error.message : 'UNKNOWN',
-    });
-  }
+  // Creating or activating a store does not grant XP. The first verified
+  // marketplace publication is a separate server-authoritative event.
   return { ...provisioned, plan: finalPlan, canonicalStoreId };
 }
 

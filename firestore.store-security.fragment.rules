@@ -172,6 +172,8 @@
       allow create: if isSignedIn()
         && incoming().id == storeId
         && incoming().ownerId == request.auth.uid
+        // Trusted creation/publication evidence belongs exclusively to the server.
+        && !incoming().keys().hasAny(['firstStoreCreationVerified', 'firstPublishedAt'])
         && storeId != request.auth.uid
         && incoming().publicationStatus in ['paused', 'published']
         && incoming().migrationStatus in ['registry_only', 'dual_write', 'canonical']
@@ -180,6 +182,9 @@
 
       allow update: if storeSecOwnerOrManager(storeId)
         && storeSecImmutableStoreIdentity()
+        && !incoming().diff(existing()).affectedKeys().hasAny([
+          'firstStoreCreationVerified', 'firstPublishedAt'
+        ])
         && incoming().updatedAt == request.time;
 
       allow delete: if false;
