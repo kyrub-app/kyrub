@@ -11,6 +11,8 @@ on:
       - 'server/gamification/welcomeTrustedAuthRegistration.ts'
       - 'scripts/inventory-pitanga-writers.mjs'
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
+      - 'server/gamification/pitangaLegacyWriterFence.ts'
+      - 'tests/pitanga-legacy-writer-fence.test.ts'
       - 'server/gamification/signedSessionWelcomeService.ts'
       - 'server/gamification/welcomeFirebaseSession.ts'
       - 'server/gamification/welcomeAuthenticatedGrant.ts'
@@ -51,6 +53,7 @@ jobs:
           tests/first-login-welcome-100-contract.test.ts
           tests/welcome-initial-session-100-contract.test.ts
           tests/clean-baseline-welcome-100.test.ts
+          tests/pitanga-legacy-writer-fence.test.ts
           tests/signed-session-welcome-100-service.test.ts
           tests/welcome-firebase-session.test.ts
           tests/welcome-authenticated-grant.test.ts
