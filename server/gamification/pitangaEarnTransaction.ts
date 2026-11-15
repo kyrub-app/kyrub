@@ -1,3 +1,4 @@
+import { assertLegacyPitangaWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 
 /**
@@ -17,6 +18,8 @@ export const applyPitangaEarnInTransaction = async (
     occurredAt: string;
     balanceRef: DocumentReference;
     ledgerRef: DocumentReference;
+    /** Supply only for explicitly audited legacy callers. */
+    legacyFenceRef?: DocumentReference;
   },
 ): Promise<{ balance: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId) ||
@@ -36,6 +39,7 @@ export const applyPitangaEarnInTransaction = async (
       input.ledgerRef.id !== `earn_${input.awardId}`) {
     throw new Error('PITANGA_EARN_REFERENCE_INVALID');
   }
+  if (input.legacyFenceRef) await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   const [balance, entry] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.ledgerRef),
   ]);
