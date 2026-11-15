@@ -11,6 +11,7 @@ import { applyCleanBaselineVerifiedXpConversionInTransaction } from '../server/g
 import { issueCleanBaselineVerifiedPitangaVoucherInTransaction } from '../server/gamification/cleanBaselineVerifiedVoucherIssuance.js';
 import { buildKyrubRedemptionPlan } from '../shared/gamificationRedemption.js';
 import { applyPitangaEarnInTransaction } from '../server/gamification/pitangaEarnTransaction.js';
+import { applyPitangaXpConversionInTransaction } from '../server/gamification/pitangaXpConversionTransaction.js';
 
 const projectId = 'kyrub-security-test';
 const app = initializeApp({ projectId }, 'welcome-receipt-emulator');
@@ -527,4 +528,19 @@ test('fenced legacy credit is denied while verified clean-baseline spend succeed
   })), { remainingPitangas: 70, replay: false });
   assert.equal((await balanceRef.get()).get('availableKCoins'), 70);
   assert.equal((await db.doc(`users/${uid}/rewardLedger/earn_legacy_blocked`).get()).exists, false);
+});
+
+test('bare clean-baseline flag cannot bypass XP conversion provenance', async () => {
+  const uid = 'welcome_bare_flag_rejected';
+  const root = `users/${uid}`;
+  await assert.rejects(db.runTransaction(tx => applyPitangaXpConversionInTransaction(tx, {
+    userId: uid, requestId: 'bare_flag', requestedXp: 1, occurredAt: createdAt,
+    verifiedCleanBaseline: true,
+    legacyFenceRef: db.doc('systemControl/pitangaLegacyWriterFence'),
+    balanceRef: db.doc(`${root}/pitangaBalance/balance`),
+    debitRef: db.doc(`${root}/rewardLedger/conversion_bare_flag`),
+    xpRef: db.doc(`${root}/xpLedger/conversion_bare_flag`),
+    receiptRef: db.doc(`${root}/pitangaXpConversions/bare_flag`),
+  })), /CONVERSION_CLEAN_BASELINE_AUTHORITY_INVALID/);
+  assert.equal((await db.doc(`${root}/pitangaXpConversions/bare_flag`).get()).exists, false);
 });
