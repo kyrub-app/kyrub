@@ -1,3 +1,4 @@
+import { assertLegacyPitangaWriterAllowedInTransaction, assertPitangaCleanBaselineWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { PITANGAS_PER_XP, planVoluntaryPitangaXpConversion } from '../../shared/pitangaXpConversion.js';
 
@@ -18,6 +19,12 @@ export const applyPitangaXpConversionInTransaction = async (
     debitRef: DocumentReference;
     xpRef: DocumentReference;
     receiptRef: DocumentReference;
+    /** Only after independently verified clean-baseline eligibility in this transaction. */
+    verifiedCleanBaseline?: true;
+    /** Audited legacy callers may opt in to the cutover fence. */
+    legacyFenceRef: DocumentReference;
+    cleanBaselineEvidence?: { firebaseCreatedAt: string; firstLoginReceiptRef: DocumentReference; welcomeAwardRef: DocumentReference };
+    migratedEvidence?: { migrationReceiptRef: DocumentReference };
   },
 ): Promise<{ xpCredited: number; pitangasDebited: number; remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId)) throw new Error('CONVERSION_USER_INVALID');
@@ -46,8 +53,54 @@ export const applyPitangaXpConversionInTransaction = async (
       new Set(references.map(ref => ref.path)).size !== references.length) {
     throw new Error('CONVERSION_REFERENCE_SCOPE_INVALID');
   }
+  if (input.migratedEvidence && (input.cleanBaselineEvidence || input.verifiedCleanBaseline === true)) {
+    throw new Error('CONVERSION_AUTHORITY_CONFLICT');
+  }
+  // A caller-controlled flag must never substitute for transactional provenance.
+  if ((input.verifiedCleanBaseline === true) !== (input.cleanBaselineEvidence !== undefined)) {
+    throw new Error('CONVERSION_CLEAN_BASELINE_AUTHORITY_INVALID');
+  }
   // Never accept client-supplied Firestore paths: the trusted caller resolves these.
   // All transaction reads must precede writes.
+  if (input.cleanBaselineEvidence) {
+    await assertPitangaCleanBaselineWriterAllowedInTransaction(tx, {
+      userId: input.userId,
+      firebaseCreatedAt: input.cleanBaselineEvidence.firebaseCreatedAt,
+      balanceRef: input.balanceRef,
+      firstLoginReceiptRef: input.cleanBaselineEvidence.firstLoginReceiptRef,
+      welcomeAwardRef: input.cleanBaselineEvidence.welcomeAwardRef,
+      fenceRef: input.legacyFenceRef,
+    });
+  } else if (input.migratedEvidence) {
+    if (input.migratedEvidence.migrationReceiptRef.path !==
+        `users/${input.userId}/pitangaMigration/receipt` ||
+        input.legacyFenceRef.path !== 'systemControl/pitangaLegacyWriterFence') {
+      throw new Error('CONVERSION_MIGRATION_REFERENCE_INVALID');
+    }
+    const [fence, migration, projection] = await Promise.all([
+      tx.get(input.legacyFenceRef),
+      tx.get(input.migratedEvidence.migrationReceiptRef),
+      tx.get(input.balanceRef),
+    ]);
+    const f = fence.data();
+    const m = migration.data();
+    const b = projection.data();
+    if (!fence.exists || !migration.exists || !projection.exists ||
+        f?.status !== 'fenced' || f?.writersVerified !== true ||
+        typeof f?.epoch !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(f.epoch) ||
+        m?.userId !== input.userId || b?.userId !== input.userId ||
+        m?.fenceEpoch !== f.epoch || b?.migrationEpoch !== f.epoch ||
+        !Number.isSafeInteger(m?.balance) || m.balance < 0 ||
+        !Number.isSafeInteger(m?.entryCount) || m.entryCount < 0 ||
+        typeof m?.ledgerSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(m.ledgerSha256) ||
+        typeof m?.historicalMembershipSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(m.historicalMembershipSha256) ||
+        !Number.isSafeInteger(b?.availableKCoins) || b.availableKCoins < 0) {
+      throw new Error('CONVERSION_MIGRATION_UNVERIFIED');
+    }
+  } else {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  }
   const [receipt, balance, debit, xp] = await Promise.all([
     tx.get(input.receiptRef), tx.get(input.balanceRef),
     tx.get(input.debitRef), tx.get(input.xpRef),
@@ -56,8 +109,9 @@ export const applyPitangaXpConversionInTransaction = async (
     // A historical receipt cannot authorize replay if the shared spending
     // authority disappeared or was reassigned to another user.
     if (!balance.exists || balance.data()?.userId !== input.userId ||
-        typeof balance.data()?.migrationEpoch !== 'string' ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch) ||
+        !(input.verifiedCleanBaseline === true
+          ? balance.data()?.initializedBy === 'verified_clean_baseline_welcome' && balance.data()?.migrationEpoch === undefined
+          : typeof balance.data()?.migrationEpoch === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch)) ||
       !Number.isSafeInteger(balance.data()?.availableKCoins) ||
         balance.data()!.availableKCoins < 0) {
       throw new Error('CONVERSION_REPLAY_BALANCE_UNAVAILABLE');
@@ -100,8 +154,9 @@ export const applyPitangaXpConversionInTransaction = async (
   }
   if (debit.exists || xp.exists) throw new Error('CONVERSION_PARTIAL_STATE');
   if (!balance.exists || balance.data()?.userId !== input.userId ||
-      typeof balance.data()?.migrationEpoch !== 'string' ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch)) {
+      !(input.verifiedCleanBaseline === true
+          ? balance.data()?.initializedBy === 'verified_clean_baseline_welcome' && balance.data()?.migrationEpoch === undefined
+          : typeof balance.data()?.migrationEpoch === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch))) {
     throw new Error('CONVERSION_BALANCE_NOT_INITIALIZED');
   }
   const available = balance.data()?.availableKCoins;

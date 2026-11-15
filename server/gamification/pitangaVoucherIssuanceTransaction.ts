@@ -1,3 +1,4 @@
+import { assertLegacyPitangaWriterAllowedInTransaction, assertPitangaCleanBaselineWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { KyrubRedemptionPlan } from '../../shared/gamificationRedemption.js';
 
@@ -15,6 +16,10 @@ export const issuePitangaVoucherInTransaction = async (
     voucherRef: DocumentReference;
     debitRef: DocumentReference;
     auditRef: DocumentReference;
+    /** Audited legacy callers may opt in to the cutover fence. */
+    legacyFenceRef: DocumentReference;
+    cleanBaselineEvidence?: { firebaseCreatedAt: string; firstLoginReceiptRef: DocumentReference; welcomeAwardRef: DocumentReference };
+    migratedEvidence?: { migrationReceiptRef: DocumentReference };
   },
 ): Promise<{ redemptionId: string; remainingPitangas: number; replay: boolean }> => {
   const { plan } = input;
@@ -44,6 +49,45 @@ export const issuePitangaVoucherInTransaction = async (
       input.debitRef.path !== `${root}/rewardLedger/${plan.debitEntry.id}` ||
       input.auditRef.path !== `${root}/rewardAudit/${plan.redemptionId}`) {
     throw new Error('PITANGA_VOUCHER_REFERENCE_INVALID');
+  }
+  if (input.cleanBaselineEvidence && input.migratedEvidence) throw new Error('PITANGA_VOUCHER_AUTHORITY_CONFLICT');
+  if (input.cleanBaselineEvidence) {
+    await assertPitangaCleanBaselineWriterAllowedInTransaction(tx, {
+      userId: plan.userId,
+      firebaseCreatedAt: input.cleanBaselineEvidence.firebaseCreatedAt,
+      balanceRef: input.balanceRef,
+      firstLoginReceiptRef: input.cleanBaselineEvidence.firstLoginReceiptRef,
+      welcomeAwardRef: input.cleanBaselineEvidence.welcomeAwardRef,
+      fenceRef: input.legacyFenceRef,
+    });
+  } else if (input.migratedEvidence) {
+    if (input.migratedEvidence.migrationReceiptRef.path !== `${root}/pitangaMigration/receipt` ||
+        input.legacyFenceRef.path !== 'systemControl/pitangaLegacyWriterFence') {
+      throw new Error('PITANGA_VOUCHER_MIGRATION_REFERENCE_INVALID');
+    }
+    const [fence, migration, projection] = await Promise.all([
+      tx.get(input.legacyFenceRef),
+      tx.get(input.migratedEvidence.migrationReceiptRef),
+      tx.get(input.balanceRef),
+    ]);
+    const f = fence.data();
+    const m = migration.data();
+    const b = projection.data();
+    if (!fence.exists || !migration.exists || !projection.exists ||
+        f?.status !== 'fenced' || f?.writersVerified !== true ||
+        typeof f?.epoch !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(f.epoch) ||
+        m?.userId !== uid || b?.userId !== uid ||
+        m?.fenceEpoch !== f.epoch || b?.migrationEpoch !== f.epoch ||
+        !Number.isSafeInteger(m?.balance) || m.balance < 0 ||
+        !Number.isSafeInteger(m?.entryCount) || m.entryCount < 0 ||
+        typeof m?.ledgerSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(m.ledgerSha256) ||
+        typeof m?.historicalMembershipSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(m.historicalMembershipSha256) ||
+        !Number.isSafeInteger(b?.availableKCoins) || b.availableKCoins < 0) {
+      throw new Error('PITANGA_VOUCHER_MIGRATION_UNVERIFIED');
+    }
+  } else {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   }
   const [balance, redemption, voucher, debit, audit] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.redemptionRef),

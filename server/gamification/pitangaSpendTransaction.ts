@@ -1,3 +1,4 @@
+import { assertLegacyPitangaWriterAllowedInTransaction, assertPitangaCleanBaselineWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 
 /**
@@ -14,6 +15,9 @@ export const applyPitangaSpendInTransaction = async (
     occurredAt: string;
     balanceRef: DocumentReference;
     debitRef: DocumentReference;
+    /** Supply only for explicitly audited legacy callers. */
+    legacyFenceRef: DocumentReference;
+    cleanBaselineEvidence?: { firebaseCreatedAt: string; firstLoginReceiptRef: DocumentReference; welcomeAwardRef: DocumentReference };
   },
 ): Promise<{ remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId) ||
@@ -31,6 +35,18 @@ export const applyPitangaSpendInTransaction = async (
       input.debitRef.id !== `spend_${input.spendId}` ||
       input.balanceRef.path === input.debitRef.path) {
     throw new Error('PITANGA_SPEND_REFERENCE_INVALID');
+  }
+  if (input.cleanBaselineEvidence) {
+    await assertPitangaCleanBaselineWriterAllowedInTransaction(tx, {
+      userId: input.userId,
+      firebaseCreatedAt: input.cleanBaselineEvidence.firebaseCreatedAt,
+      balanceRef: input.balanceRef,
+      firstLoginReceiptRef: input.cleanBaselineEvidence.firstLoginReceiptRef,
+      welcomeAwardRef: input.cleanBaselineEvidence.welcomeAwardRef,
+      fenceRef: input.legacyFenceRef,
+    });
+  } else {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   }
   const [balance, debit] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.debitRef),

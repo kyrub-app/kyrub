@@ -4,6 +4,7 @@
   "git": {
     "deploymentEnabled": {
       "*": false,
+      "fix/gamification-activation-delivery": false,
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,
@@ -25,6 +26,10 @@
     }
   },
   "rewrites": [
+    {
+      "source": "/api/pitangas",
+      "destination": "/api/health?transport=pitanga-account"
+    },
     {
       "source": "/api/admin/global-challenges",
       "destination": "/api/admin/operations/health?transport=global-challenges"
