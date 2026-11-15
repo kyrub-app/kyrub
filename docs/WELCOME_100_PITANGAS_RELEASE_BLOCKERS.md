@@ -1,5 +1,7 @@
 # PR #1135 — Fechamento por bloqueios reais (14/11/2026)
 
+> Histórico de 14/11. Para a classificação atual, integração Auth e pendências delimitadas, consulte [WELCOME_100_PITANGAS_FINAL_INTEGRATION.md](WELCOME_100_PITANGAS_FINAL_INTEGRATION.md). A afirmação abaixo de que as primitivas não chamam a guarda foi superada no SHA 89a8ed4; não é um bloqueio atual do código.
+
 ## Resultado verificável
 
 - CI do commit `90844973f641583643ba720ad8344848e5b4d244`: seis verificações aprovadas.

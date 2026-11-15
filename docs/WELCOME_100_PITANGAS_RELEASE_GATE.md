@@ -2,6 +2,8 @@
 
 Status: **BLOCKED for production activation**. This inventory is a code-level review, not evidence that every deployed writer has been fenced.
 
+Current source classification and Auth integration: [WELCOME_100_PITANGAS_FINAL_INTEGRATION.md](WELCOME_100_PITANGAS_FINAL_INTEGRATION.md). Historical statements below about missing primitive guards and missing clean-baseline wrappers have been superseded by the current PR code; the production coverage gate remains in force.
+
 ## Verified canonical primitives (main)
 
 | Module | Canonical balance | Behavior | Fence coverage |

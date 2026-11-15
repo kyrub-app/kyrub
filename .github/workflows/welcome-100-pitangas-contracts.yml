@@ -9,6 +9,11 @@ on:
       - 'server/gamification/firstLoginReceiptVerification.ts'
       - 'server/gamification/firstLoginReceiptWriter.ts'
       - 'server/gamification/welcomeTrustedAuthRegistration.ts'
+      - 'server/gamification/welcomeAuthCreatedHandler.ts'
+      - 'functions/**'
+      - 'firebase.welcome.json'
+      - 'scripts/build-welcome-functions.mjs'
+      - 'tests/welcome-auth-created-emulator.test.ts'
       - 'scripts/inventory-pitanga-writers.mjs'
       - 'scripts/audit-canonical-pitanga-callers.mjs'
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
@@ -80,6 +85,38 @@ jobs:
           --project kyrub-security-test
           --only firestore
           "node --test --test-concurrency=1 --import tsx tests/welcome-100-firestore-emulator.test.ts tests/welcome-trusted-receipt-emulator.test.ts"
+
+  auth-created-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GCLOUD_PROJECT: demo-kyrub-welcome
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+      KYRUB_PITANGA_WELCOME_PROJECT_ID: demo-kyrub-welcome
+      KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED: 'true'
+      KYRUB_WELCOME_BONUS_EFFECTIVE_AT: '2026-11-15T00:00:00.000Z'
+      KYRUB_PITANGA_WELCOME_FENCE_EPOCH: welcome-emulator-only
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npx tsc --project functions/tsconfig.json
+      - run: npm run firestore:compose
+      - run: node scripts/build-welcome-functions.mjs
+      - name: Verify automatic registration credit and authenticated replay in isolated emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --test-concurrency=1 --import tsx tests/welcome-auth-created-emulator.test.ts"
 
   pitanga-writer-inventory:
     runs-on: ubuntu-latest

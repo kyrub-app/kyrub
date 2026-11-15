@@ -175,3 +175,14 @@ test('welcome rejects non-Google Firebase accounts before opening transaction', 
     assert.equal(m.counts().transactions, 0);
   });
 });
+
+test('signed-session entry cannot use the trigger-only path with missing auth_time', async () => {
+  await withEnv(enabled, async () => {
+    const m = mock();
+    await assert.rejects(
+      grantSignedSessionWelcomeForVerifiedUser(m.db, m.auth, 'new-user', 'new-user', undefined as never),
+      /WELCOME_INITIAL_SESSION_UNVERIFIED/,
+    );
+    assert.equal(m.counts().transactions, 0);
+  });
+});

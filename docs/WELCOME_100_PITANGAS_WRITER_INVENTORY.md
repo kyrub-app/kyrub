@@ -1,5 +1,7 @@
 # KYRUB — Inventário inicial dos escritores de Pitangas
 
+> Inventário histórico. A classificação atual dos 35 candidatos e seis chamadas está em [WELCOME_100_PITANGAS_FINAL_INTEGRATION.md](WELCOME_100_PITANGAS_FINAL_INTEGRATION.md). As primitivas atuais já chamam a guarda transacional; prova de revisão implantada continua separada.
+
 Fonte: artefato `pitanga-writer-inventory` da execução GitHub Actions [43646798965](https://github.com/kyrub-app/kyrub/actions/runs/43646798965). O scanner analisou **1.022 arquivos** e apontou **31 candidatos**. Esta é uma classificação inicial por função do código, não uma comprovação de escritores implantados nem de bloqueios em produção.
 
 ## Escritores transacionais que exigem inspeção de bloqueio
