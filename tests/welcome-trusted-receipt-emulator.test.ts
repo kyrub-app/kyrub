@@ -8,6 +8,8 @@ import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification
 import { verifyCleanBaselineSpendingEligibilityInTransaction } from '../server/gamification/cleanBaselineSpendingEligibility.js';
 import { applyCleanBaselineVerifiedSpendInTransaction } from '../server/gamification/cleanBaselineVerifiedSpend.js';
 import { applyCleanBaselineVerifiedXpConversionInTransaction } from '../server/gamification/cleanBaselineVerifiedXpConversion.js';
+import { issueCleanBaselineVerifiedPitangaVoucherInTransaction } from '../server/gamification/cleanBaselineVerifiedVoucherIssuance.js';
+import { buildKyrubRedemptionPlan } from '../shared/gamificationRedemption.js';
 
 const projectId = 'kyrub-security-test';
 const app = initializeApp({ projectId }, 'welcome-receipt-emulator');
@@ -415,4 +417,68 @@ test('clean-baseline conversion atomically debits 1000 Pitangas and credits one 
   assert.equal((await xpRef.get()).get('deltaXp'), 1);
   assert.equal((await receiptRef.get()).get('status'), 'committed');
   assert.equal((await root.collection('xpLedger').get()).size, 1);
+});
+
+
+test('verified new-user voucher issuance is atomic and idempotent under concurrent retries', async () => {
+  const uid = 'welcome_voucher_success';
+  const root = db.collection('users').doc(uid);
+  const firstLoginReceiptRef = root.collection('authEvents').doc('first_login_v1');
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const welcomeAwardRef = root.collection('rewardLedger').doc('earn_first_login_welcome_v1');
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-voucher-success', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const plan = buildKyrubRedemptionPlan({
+    userId: uid, reward: { id: 'welcome_voucher', costKCoins: 40 } as never,
+    currentBalanceKCoins: 100, idempotencyKey: 'voucher_once', correlationId: 'voucher_once',
+    occurredAt: createdAt, validUntil: '2026-12-14T12:00:00.000Z',
+  });
+  const input = {
+    plan, firebaseCreatedAt: createdAt, balanceRef, firstLoginReceiptRef, welcomeAwardRef,
+    redemptionRef: root.collection('rewardRedemptions').doc(plan.redemptionId),
+    voucherRef: root.collection('rewardVouchers').doc(plan.redemptionId),
+    debitRef: root.collection('rewardLedger').doc(plan.debitEntry.id),
+    auditRef: root.collection('rewardAudit').doc(plan.redemptionId),
+  };
+  const results = await Promise.all(Array.from({ length: 3 }, () =>
+    db.runTransaction(tx => issueCleanBaselineVerifiedPitangaVoucherInTransaction(tx, input))));
+  assert.equal(results.filter(x => !x.replay).length, 1);
+  assert.equal(results.filter(x => x.replay).length, 2);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 60);
+  assert.equal((await input.voucherRef.get()).get('status'), 'active');
+  assert.equal((await input.debitRef.get()).get('deltaKCoins'), -40);
+  assert.equal((await root.collection('rewardVouchers').get()).size, 1);
+});
+
+test('verified new-user voucher rejects insufficient balance without partial writes', async () => {
+  const uid = 'welcome_voucher_insufficient';
+  const root = db.collection('users').doc(uid);
+  const firstLoginReceiptRef = root.collection('authEvents').doc('first_login_v1');
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const welcomeAwardRef = root.collection('rewardLedger').doc('earn_first_login_welcome_v1');
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-voucher-insufficient', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  const plan = buildKyrubRedemptionPlan({
+    userId: uid, reward: { id: 'expensive_voucher', costKCoins: 150 } as never,
+    currentBalanceKCoins: 150, idempotencyKey: 'voucher_overdraw', correlationId: 'voucher_overdraw',
+    occurredAt: createdAt, validUntil: '2026-12-14T12:00:00.000Z',
+  });
+  const input = {
+    plan, firebaseCreatedAt: createdAt, balanceRef, firstLoginReceiptRef, welcomeAwardRef,
+    redemptionRef: root.collection('rewardRedemptions').doc(plan.redemptionId),
+    voucherRef: root.collection('rewardVouchers').doc(plan.redemptionId),
+    debitRef: root.collection('rewardLedger').doc(plan.debitEntry.id),
+    auditRef: root.collection('rewardAudit').doc(plan.redemptionId),
+  };
+  await assert.rejects(db.runTransaction(tx => issueCleanBaselineVerifiedPitangaVoucherInTransaction(tx, input)),
+    /PITANGA_VOUCHER_INSUFFICIENT_BALANCE/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+  for (const ref of [input.redemptionRef, input.voucherRef, input.debitRef, input.auditRef])
+    assert.equal((await ref.get()).exists, false);
 });
