@@ -50,5 +50,5 @@ export const issueVerifiedPitangaVoucherInTransaction = async (
       !/^[a-f0-9]{64}$/.test(r.historicalMembershipSha256)) {
     throw new Error('PITANGA_VOUCHER_MIGRATION_UNVERIFIED');
   }
-  return issuePitangaVoucherInTransaction(tx, input);
+  return issuePitangaVoucherInTransaction(tx, { ...input, legacyFenceRef: input.fenceRef });
 };
