@@ -93,3 +93,20 @@ jobs:
           name: pitanga-writer-inventory
           path: pitanga-writer-inventory.txt
           retention-days: 14
+
+  pitanga-release-gate:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Block release on unclassified canonical writer call sites
+        run: node scripts/audit-canonical-pitanga-callers.mjs
+      - name: Block release until deployed and external writers are independently verified
+        run: |
+          echo 'BLOCKED: repository audit does not establish deployed revision or external writer coverage.'
+          echo 'Do not set writersVerified=true or enable the welcome campaign.'
+          exit 1
