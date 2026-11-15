@@ -18,6 +18,8 @@ export const applyPitangaXpConversionInTransaction = async (
     debitRef: DocumentReference;
     xpRef: DocumentReference;
     receiptRef: DocumentReference;
+    /** Only after independently verified clean-baseline eligibility in this transaction. */
+    verifiedCleanBaseline?: true;
   },
 ): Promise<{ xpCredited: number; pitangasDebited: number; remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId)) throw new Error('CONVERSION_USER_INVALID');
@@ -56,8 +58,9 @@ export const applyPitangaXpConversionInTransaction = async (
     // A historical receipt cannot authorize replay if the shared spending
     // authority disappeared or was reassigned to another user.
     if (!balance.exists || balance.data()?.userId !== input.userId ||
-        typeof balance.data()?.migrationEpoch !== 'string' ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch) ||
+        !(input.verifiedCleanBaseline === true
+          ? balance.data()?.initializedBy === 'verified_clean_baseline_welcome' && balance.data()?.migrationEpoch === undefined
+          : typeof balance.data()?.migrationEpoch === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch)) ||
       !Number.isSafeInteger(balance.data()?.availableKCoins) ||
         balance.data()!.availableKCoins < 0) {
       throw new Error('CONVERSION_REPLAY_BALANCE_UNAVAILABLE');
@@ -100,8 +103,9 @@ export const applyPitangaXpConversionInTransaction = async (
   }
   if (debit.exists || xp.exists) throw new Error('CONVERSION_PARTIAL_STATE');
   if (!balance.exists || balance.data()?.userId !== input.userId ||
-      typeof balance.data()?.migrationEpoch !== 'string' ||
-      !/^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch)) {
+      !(input.verifiedCleanBaseline === true
+          ? balance.data()?.initializedBy === 'verified_clean_baseline_welcome' && balance.data()?.migrationEpoch === undefined
+          : typeof balance.data()?.migrationEpoch === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(balance.data()!.migrationEpoch))) {
     throw new Error('CONVERSION_BALANCE_NOT_INITIALIZED');
   }
   const available = balance.data()?.availableKCoins;
