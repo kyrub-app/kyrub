@@ -26,5 +26,5 @@ export const applyCleanBaselineVerifiedXpConversionInTransaction = async (
     balanceRef: input.balanceRef,
     welcomeAwardRef: input.welcomeAwardRef,
   });
-  return applyPitangaXpConversionInTransaction(tx, { ...input, verifiedCleanBaseline: true, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence') });
+  return applyPitangaXpConversionInTransaction(tx, { ...input, verifiedCleanBaseline: true, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence'), cleanBaselineEvidence: { firebaseCreatedAt: input.firebaseCreatedAt, firstLoginReceiptRef: input.firstLoginReceiptRef, welcomeAwardRef: input.welcomeAwardRef } });
 };
