@@ -499,3 +499,32 @@ test('legacy earn writer with fence reference is denied before mutation when fen
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
   assert.equal((await ledgerRef.get()).exists, false);
 });
+
+
+test('fenced legacy credit is denied while verified clean-baseline spend succeeds', async () => {
+  const uid = 'welcome_fence_separation';
+  const firstLoginReceiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const welcomeAwardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  const fenceRef = db.doc('systemControl/pitangaLegacyWriterFence');
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-fence-separation',
+    receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  await assert.rejects(db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
+    userId: uid, awardId: 'legacy_blocked', sourceType: 'campaign',
+    sourceId: 'legacy_reward', amount: 50, occurredAt: createdAt,
+    balanceRef, ledgerRef: db.doc(`users/${uid}/rewardLedger/earn_legacy_blocked`),
+    legacyFenceRef: fenceRef,
+  })), /PITANGA_LEGACY_WRITER_FENCED/);
+  const debitRef = db.doc(`users/${uid}/rewardLedger/spend_fence_separation`);
+  assert.deepEqual(await db.runTransaction(tx => applyCleanBaselineVerifiedSpendInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, spendId: 'fence_separation',
+    amount: 30, sourceId: 'test_redemption', occurredAt: createdAt,
+    balanceRef, debitRef, firstLoginReceiptRef, welcomeAwardRef,
+  })), { remainingPitangas: 70, replay: false });
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 70);
+  assert.equal((await db.doc(`users/${uid}/rewardLedger/earn_legacy_blocked`).get()).exists, false);
+});
