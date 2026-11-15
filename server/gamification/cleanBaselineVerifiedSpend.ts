@@ -25,5 +25,5 @@ export const applyCleanBaselineVerifiedSpendInTransaction = async (
     balanceRef: input.balanceRef,
     welcomeAwardRef: input.welcomeAwardRef,
   });
-  return applyPitangaSpendInTransaction(tx, { ...input, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence') });
+  return applyPitangaSpendInTransaction(tx, { ...input, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence'), cleanBaselineEvidence: { firebaseCreatedAt: input.firebaseCreatedAt, firstLoginReceiptRef: input.firstLoginReceiptRef, welcomeAwardRef: input.welcomeAwardRef } });
 };
