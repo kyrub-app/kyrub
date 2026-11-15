@@ -6,6 +6,8 @@ import StoreConnectionsPortalBridge from './StoreConnectionsPortalBridge';
 
 interface OperationalDualWriteBridgeProps {
   legacyStoreId: string;
+  /** Only the legacy retailer shell owns the DOM host for this portal. */
+  mountLegacyConnectionsPortal?: boolean;
   notify: (
     message: string,
     type?: 'success' | 'error' | 'info' | 'warning'
@@ -32,6 +34,7 @@ const isPermissionDenied = (error: Error): boolean => {
 export const OperationalDualWriteBridge = ({
   legacyStoreId,
   notify,
+  mountLegacyConnectionsPortal = true,
 }: OperationalDualWriteBridgeProps) => {
   const notifyRef = useRef(notify);
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
@@ -162,7 +165,7 @@ export const OperationalDualWriteBridge = ({
     };
   }, [legacyStoreId]);
 
-  if (!currentUser || currentUser.uid !== legacyStoreId) return null;
+  if (!mountLegacyConnectionsPortal || !currentUser || currentUser.uid !== legacyStoreId) return null;
 
   return (
     <StoreConnectionsPortalBridge

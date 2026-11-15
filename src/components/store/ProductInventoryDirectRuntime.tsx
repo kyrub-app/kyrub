@@ -266,6 +266,7 @@ export function ProductInventoryDirectRuntime({
   return (
     <>
       <OperationalDualWriteBridge
+        mountLegacyConnectionsPortal={false}
         legacyStoreId={activeRetailerId}
         notify={triggerToast}
       />
