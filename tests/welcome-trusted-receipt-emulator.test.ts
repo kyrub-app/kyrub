@@ -373,3 +373,46 @@ test('clean-baseline XP conversion rejects insufficient welcome balance atomical
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
   for (const ref of [receiptRef, debitRef, xpRef]) assert.equal((await ref.get()).exists, false);
 });
+
+
+test('clean-baseline conversion atomically debits 1000 Pitangas and credits one XP only once', async () => {
+  const uid = 'welcome_xp_success';
+  const root = db.collection('users').doc(uid);
+  const firstLoginReceiptRef = root.collection('authEvents').doc('first_login_v1');
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const welcomeAwardRef = root.collection('rewardLedger').doc('earn_first_login_welcome_v1');
+  const requestId = 'xp_success';
+  const receiptRef = root.collection('pitangaXpConversions').doc(requestId);
+  const debitRef = root.collection('rewardLedger').doc(`conversion_${requestId}`);
+  const xpRef = root.collection('xpLedger').doc(`conversion_${requestId}`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-xp-success', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  // Isolated fixture: 900 additional Pitangas earned through the canonical ledger.
+  await db.runTransaction(async tx => {
+    const balance = await tx.get(balanceRef);
+    assert.equal(balance.get('availableKCoins'), 100);
+    tx.update(balanceRef, { availableKCoins: 1000 });
+    tx.create(root.collection('rewardLedger').doc('earn_fixture_900'), {
+      id: 'earn_fixture_900', userId: uid, type: 'earn', economy: 'k_coin',
+      deltaKCoins: 900, sourceType: 'challenge', sourceId: 'fixture_900',
+      correlationId: 'fixture_900', idempotencyKey: 'pitanga_earn_fixture_900', occurredAt: createdAt,
+    });
+  });
+  const input = {
+    userId: uid, firebaseCreatedAt: createdAt, requestId, requestedXp: 1,
+    occurredAt: createdAt, balanceRef, receiptRef, debitRef, xpRef,
+    firstLoginReceiptRef, welcomeAwardRef,
+  };
+  const results = await Promise.all(Array.from({ length: 3 }, () =>
+    db.runTransaction(tx => applyCleanBaselineVerifiedXpConversionInTransaction(tx, input))));
+  assert.equal(results.filter(result => !result.replay).length, 1);
+  assert.equal(results.filter(result => result.replay).length, 2);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 0);
+  assert.equal((await debitRef.get()).get('deltaKCoins'), -1000);
+  assert.equal((await xpRef.get()).get('deltaXp'), 1);
+  assert.equal((await receiptRef.get()).get('status'), 'committed');
+  assert.equal((await root.collection('xpLedger').get()).size, 1);
+});
