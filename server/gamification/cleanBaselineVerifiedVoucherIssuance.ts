@@ -10,7 +10,6 @@ export const issueCleanBaselineVerifiedPitangaVoucherInTransaction = async (
     plan: KyrubRedemptionPlan;
     firebaseCreatedAt: string;
     balanceRef: DocumentReference;
-    legacyFenceRef: DocumentReference;
     firstLoginReceiptRef: DocumentReference;
     welcomeAwardRef: DocumentReference;
     redemptionRef: DocumentReference;
@@ -26,5 +25,5 @@ export const issueCleanBaselineVerifiedPitangaVoucherInTransaction = async (
     balanceRef: input.balanceRef,
     welcomeAwardRef: input.welcomeAwardRef,
   });
-  return issuePitangaVoucherInTransaction(tx, input);
+  return issuePitangaVoucherInTransaction(tx, { ...input, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence') });
 };
