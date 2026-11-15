@@ -10,6 +10,7 @@ export const issueCleanBaselineVerifiedPitangaVoucherInTransaction = async (
     plan: KyrubRedemptionPlan;
     firebaseCreatedAt: string;
     balanceRef: DocumentReference;
+    legacyFenceRef: DocumentReference;
     firstLoginReceiptRef: DocumentReference;
     welcomeAwardRef: DocumentReference;
     redemptionRef: DocumentReference;
