@@ -27,3 +27,14 @@ Atualização de 15/11/2026: consultas autenticadas adicionais a Cloud Asset, Lo
 **BLOCKED**: deployed/external writer coverage is unverified. Do not set `writersVerified=true`, activate the 100-Pitanga welcome campaign, merge or deploy this PR on the basis of isolated CI alone. Existing CI emulator results demonstrate the isolated transaction behavior only.
 
 No production data or flags were changed during this review.
+
+## Prepared key attestation (continuation of PR #1137)
+
+`docs/FIREBASE_WRITER_KEY_ATTESTATION.md` documents the new offline challenge,
+workload signing and public-key verification utility. It uses the existing
+Firebase credential variable without exposing its value or changing application
+routes. Fourteen targeted tests cover proof verification, deployment metadata
+consistency, tampering, expiry, key substitution, input limits and sanitized
+errors. It is prepared code, not an executed production attestation. A signature
+proves key possession only; provider execution evidence and coverage of every
+external consumer remain mandatory. The release decision above remains blocked.
