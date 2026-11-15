@@ -1,4 +1,4 @@
-import { assertLegacyPitangaWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
+import { assertLegacyPitangaWriterAllowedInTransaction, assertPitangaCleanBaselineWriterAllowedInTransaction } from './pitangaLegacyWriterFence.js';
 import type { DocumentReference, Transaction } from 'firebase-admin/firestore';
 import type { KyrubRedemptionPlan } from '../../shared/gamificationRedemption.js';
 
@@ -18,6 +18,7 @@ export const issuePitangaVoucherInTransaction = async (
     auditRef: DocumentReference;
     /** Audited legacy callers may opt in to the cutover fence. */
     legacyFenceRef: DocumentReference;
+    cleanBaselineEvidence?: { firebaseCreatedAt: string; firstLoginReceiptRef: DocumentReference; welcomeAwardRef: DocumentReference };
   },
 ): Promise<{ redemptionId: string; remainingPitangas: number; replay: boolean }> => {
   const { plan } = input;
@@ -48,7 +49,18 @@ export const issuePitangaVoucherInTransaction = async (
       input.auditRef.path !== `${root}/rewardAudit/${plan.redemptionId}`) {
     throw new Error('PITANGA_VOUCHER_REFERENCE_INVALID');
   }
-  await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  if (input.cleanBaselineEvidence) {
+    await assertPitangaCleanBaselineWriterAllowedInTransaction(tx, {
+      userId: plan.userId,
+      firebaseCreatedAt: input.cleanBaselineEvidence.firebaseCreatedAt,
+      balanceRef: input.balanceRef,
+      firstLoginReceiptRef: input.cleanBaselineEvidence.firstLoginReceiptRef,
+      welcomeAwardRef: input.cleanBaselineEvidence.welcomeAwardRef,
+      fenceRef: input.legacyFenceRef,
+    });
+  } else {
+    await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  }
   const [balance, redemption, voucher, debit, audit] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.redemptionRef),
     tx.get(input.voucherRef), tx.get(input.debitRef), tx.get(input.auditRef),
