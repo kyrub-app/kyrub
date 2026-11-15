@@ -52,6 +52,10 @@ export const applyPitangaXpConversionInTransaction = async (
       new Set(references.map(ref => ref.path)).size !== references.length) {
     throw new Error('CONVERSION_REFERENCE_SCOPE_INVALID');
   }
+  // A caller-controlled flag must never substitute for transactional provenance.
+  if ((input.verifiedCleanBaseline === true) !== (input.cleanBaselineEvidence !== undefined)) {
+    throw new Error('CONVERSION_CLEAN_BASELINE_AUTHORITY_INVALID');
+  }
   // Never accept client-supplied Firestore paths: the trusted caller resolves these.
   // All transaction reads must precede writes.
   if (input.cleanBaselineEvidence) {
