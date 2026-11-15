@@ -10,6 +10,7 @@ import { applyCleanBaselineVerifiedSpendInTransaction } from '../server/gamifica
 import { applyCleanBaselineVerifiedXpConversionInTransaction } from '../server/gamification/cleanBaselineVerifiedXpConversion.js';
 import { issueCleanBaselineVerifiedPitangaVoucherInTransaction } from '../server/gamification/cleanBaselineVerifiedVoucherIssuance.js';
 import { buildKyrubRedemptionPlan } from '../shared/gamificationRedemption.js';
+import { applyPitangaEarnInTransaction } from '../server/gamification/pitangaEarnTransaction.js';
 
 const projectId = 'kyrub-security-test';
 const app = initializeApp({ projectId }, 'welcome-receipt-emulator');
@@ -481,4 +482,20 @@ test('verified new-user voucher rejects insufficient balance without partial wri
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
   for (const ref of [input.redemptionRef, input.voucherRef, input.debitRef, input.auditRef])
     assert.equal((await ref.get()).exists, false);
+});
+
+
+test('legacy earn writer with fence reference is denied before mutation when fenced', async () => {
+  const uid = 'legacy_fenced_earn';
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  const ledgerRef = db.doc(`users/${uid}/rewardLedger/earn_legacy_fence_test`);
+  const fenceRef = db.doc('systemControl/pitangaLegacyWriterFence');
+  await balanceRef.set({ userId: uid, availableKCoins: 100 });
+  await assert.rejects(db.runTransaction(tx => applyPitangaEarnInTransaction(tx, {
+    userId: uid, awardId: 'legacy_fence_test', sourceType: 'challenge',
+    sourceId: 'legacy_fence_test', amount: 25, occurredAt: createdAt,
+    balanceRef, ledgerRef, legacyFenceRef: fenceRef,
+  })), /PITANGA_LEGACY_WRITER_FENCED/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+  assert.equal((await ledgerRef.get()).exists, false);
 });
