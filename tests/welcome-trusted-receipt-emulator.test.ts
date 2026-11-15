@@ -328,3 +328,22 @@ test('same spend identifier with different source fails without changing origina
   assert.equal((await balanceRef.get()).get('availableKCoins'), 80);
   assert.equal((await debitRef.get()).get('sourceId'), 'redemption_original');
 });
+
+
+test('welcome replay rejects a tampered original award instead of treating it as success', async () => {
+  const uid = 'welcome_replay_tampered_award';
+  const receiptRef = db.doc(`users/${uid}/authEvents/first_login_v1`);
+  const awardRef = db.doc(`users/${uid}/rewardLedger/earn_first_login_welcome_v1`);
+  const balanceRef = db.doc(`users/${uid}/pitangaBalance/balance`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-replay-tamper', receiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  await awardRef.update({ occurredAt: '2026-11-14T12:01:00.000Z' });
+  await assert.rejects(
+    grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime),
+    /WELCOME_CLEAN_BASELINE_REPLAY_CONFLICT/,
+  );
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+});
