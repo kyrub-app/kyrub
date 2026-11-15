@@ -8,8 +8,9 @@
     "api/attest.mjs": "b80e4c52b72063a9f915f7dd1fb9292b8591b86b90ac72e5609b37881f0ab787",
     "lib/firebase-key-attestation.mjs": "eb1e5adea78f63a527a9db8a9a4df9f2916abde69af4e185557b97406bcd7581",
     "lib/operator-public.pem": "bfb8cc957fae7304059011842bff8e7d1c2a1af324d3fcbf60743dc5dbfa4e9e",
-    "package.json": "841c69cbb7a0e5bcebd94366605cd6062a3b3b2833c9c8a5655cde9d45491c76",
-    "vercel.json": "ec882ca05c8ccc67201505918cd788c9b9c61a5bb98dd4d8f7f2de98e7802054",
-    "public/index.html": "19ab1b01cd31a5e31446a7627cffd11c379cf2dcc760c0100a7fd7419549119a"
-  }
+    "package.json": "bf744fc737f4a71de42b5b3e9758c5243764bc00ba323278f95a4fb03f1b9e9c",
+    "vercel.json": "a57987ca638b0826db7cbdd7da2be31a56913e5135522b325a10d439a632eeca",
+    "public/index.html": "e2a300167ace2a85ccf4a3d2ccacd48bcc709caa2b837c426ee2a0a59fb6f3df"
+  },
+  "hashRepresentation": "Git blob bytes (LF); independent of Windows checkout CRLF"
 }
