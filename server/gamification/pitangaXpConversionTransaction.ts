@@ -22,7 +22,7 @@ export const applyPitangaXpConversionInTransaction = async (
     /** Only after independently verified clean-baseline eligibility in this transaction. */
     verifiedCleanBaseline?: true;
     /** Audited legacy callers may opt in to the cutover fence. */
-    legacyFenceRef?: DocumentReference;
+    legacyFenceRef: DocumentReference;
   },
 ): Promise<{ xpCredited: number; pitangasDebited: number; remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId)) throw new Error('CONVERSION_USER_INVALID');
@@ -53,7 +53,7 @@ export const applyPitangaXpConversionInTransaction = async (
   }
   // Never accept client-supplied Firestore paths: the trusted caller resolves these.
   // All transaction reads must precede writes.
-  if (input.legacyFenceRef) await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   const [receipt, balance, debit, xp] = await Promise.all([
     tx.get(input.receiptRef), tx.get(input.balanceRef),
     tx.get(input.debitRef), tx.get(input.xpRef),
