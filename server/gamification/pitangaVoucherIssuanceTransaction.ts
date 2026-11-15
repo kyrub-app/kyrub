@@ -17,7 +17,7 @@ export const issuePitangaVoucherInTransaction = async (
     debitRef: DocumentReference;
     auditRef: DocumentReference;
     /** Audited legacy callers may opt in to the cutover fence. */
-    legacyFenceRef?: DocumentReference;
+    legacyFenceRef: DocumentReference;
   },
 ): Promise<{ redemptionId: string; remainingPitangas: number; replay: boolean }> => {
   const { plan } = input;
@@ -48,7 +48,7 @@ export const issuePitangaVoucherInTransaction = async (
       input.auditRef.path !== `${root}/rewardAudit/${plan.redemptionId}`) {
     throw new Error('PITANGA_VOUCHER_REFERENCE_INVALID');
   }
-  if (input.legacyFenceRef) await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   const [balance, redemption, voucher, debit, audit] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.redemptionRef),
     tx.get(input.voucherRef), tx.get(input.debitRef), tx.get(input.auditRef),
