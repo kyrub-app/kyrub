@@ -12,6 +12,7 @@ export const applyCleanBaselineVerifiedXpConversionInTransaction = async (
     requestedXp: number;
     occurredAt: string;
     balanceRef: DocumentReference;
+    legacyFenceRef: DocumentReference;
     receiptRef: DocumentReference;
     debitRef: DocumentReference;
     xpRef: DocumentReference;
