@@ -13,7 +13,6 @@ export const applyCleanBaselineVerifiedSpendInTransaction = async (
     sourceId: string;
     occurredAt: string;
     balanceRef: DocumentReference;
-    legacyFenceRef: DocumentReference;
     debitRef: DocumentReference;
     firstLoginReceiptRef: DocumentReference;
     welcomeAwardRef: DocumentReference;
@@ -26,5 +25,5 @@ export const applyCleanBaselineVerifiedSpendInTransaction = async (
     balanceRef: input.balanceRef,
     welcomeAwardRef: input.welcomeAwardRef,
   });
-  return applyPitangaSpendInTransaction(tx, input);
+  return applyPitangaSpendInTransaction(tx, { ...input, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence') });
 };
