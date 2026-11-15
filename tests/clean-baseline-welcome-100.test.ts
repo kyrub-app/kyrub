@@ -48,7 +48,7 @@ test('clean baseline creates exactly one balance and one welcome ledger entry', 
 });
 
 test('clean baseline replays an existing award without writes', async () => {
-  const { tx, writes } = harness({ balance: { userId: uid, availableKCoins: 1250 }, ledger: true, award });
+  const { tx, writes } = harness({ balance: { userId: uid, availableKCoins: 1250, initializedBy: 'verified_clean_baseline_welcome' }, ledger: true, award });
   assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs()), { balance: 1250, replay: true });
   assert.deepEqual(writes, []);
 });
@@ -87,7 +87,7 @@ test('signed session cannot bypass invalid trusted receipt', async () => {
 
 test('signed-session replay does not issue a second welcome award', async () => {
   const { tx, writes } = harness({
-    balance: { userId: uid, availableKCoins: 1200 }, ledger: true, award,
+    balance: { userId: uid, availableKCoins: 1200, initializedBy: 'verified_clean_baseline_welcome' }, ledger: true, award,
   });
   assert.deepEqual(await grantCleanBaselineWelcomeInTransaction(tx, inputs()), { balance: 1200, replay: true });
   assert.equal(writes.length, 0);
