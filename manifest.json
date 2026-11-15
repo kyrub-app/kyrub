@@ -1,0 +1,15 @@
+{
+  "purpose": "Authorized isolated preview; never production",
+  "sourcePreparationCommit": "5d564c07a2b47c15ecf7f06a320ec078cd71de7e",
+  "canonicalSignerCommit": "6d817040fd9a4c85767c289c46e2454e4e07169b",
+  "branch": "diagnostic/firebase-attestation-20261115",
+  "operatorAuthentication": "Ed25519 domain-separated short-lived signed request; private key local only",
+  "files": {
+    "api/attest.mjs": "b80e4c52b72063a9f915f7dd1fb9292b8591b86b90ac72e5609b37881f0ab787",
+    "lib/firebase-key-attestation.mjs": "eb1e5adea78f63a527a9db8a9a4df9f2916abde69af4e185557b97406bcd7581",
+    "lib/operator-public.pem": "bfb8cc957fae7304059011842bff8e7d1c2a1af324d3fcbf60743dc5dbfa4e9e",
+    "package.json": "841c69cbb7a0e5bcebd94366605cd6062a3b3b2833c9c8a5655cde9d45491c76",
+    "vercel.json": "ec882ca05c8ccc67201505918cd788c9b9c61a5bb98dd4d8f7f2de98e7802054",
+    "public/index.html": "19ab1b01cd31a5e31446a7627cffd11c379cf2dcc760c0100a7fd7419549119a"
+  }
+}

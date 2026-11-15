@@ -1,0 +1,1 @@
+{"version":2,"framework":null,"buildCommand":"","installCommand":"","outputDirectory":"public","ignoreCommand":"exit 1","git":{"deploymentEnabled":{"*":false,"main":false,"diagnostic/firebase-attestation-20261115":true}},"functions":{"api/attest.mjs":{"includeFiles":"lib/**","maxDuration":10}}}
