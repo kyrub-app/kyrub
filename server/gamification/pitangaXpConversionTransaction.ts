@@ -24,6 +24,7 @@ export const applyPitangaXpConversionInTransaction = async (
     /** Audited legacy callers may opt in to the cutover fence. */
     legacyFenceRef: DocumentReference;
     cleanBaselineEvidence?: { firebaseCreatedAt: string; firstLoginReceiptRef: DocumentReference; welcomeAwardRef: DocumentReference };
+    migratedEvidence?: { migrationReceiptRef: DocumentReference };
   },
 ): Promise<{ xpCredited: number; pitangasDebited: number; remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId)) throw new Error('CONVERSION_USER_INVALID');
@@ -52,6 +53,9 @@ export const applyPitangaXpConversionInTransaction = async (
       new Set(references.map(ref => ref.path)).size !== references.length) {
     throw new Error('CONVERSION_REFERENCE_SCOPE_INVALID');
   }
+  if (input.migratedEvidence && (input.cleanBaselineEvidence || input.verifiedCleanBaseline === true)) {
+    throw new Error('CONVERSION_AUTHORITY_CONFLICT');
+  }
   // A caller-controlled flag must never substitute for transactional provenance.
   if ((input.verifiedCleanBaseline === true) !== (input.cleanBaselineEvidence !== undefined)) {
     throw new Error('CONVERSION_CLEAN_BASELINE_AUTHORITY_INVALID');
@@ -67,6 +71,33 @@ export const applyPitangaXpConversionInTransaction = async (
       welcomeAwardRef: input.cleanBaselineEvidence.welcomeAwardRef,
       fenceRef: input.legacyFenceRef,
     });
+  } else if (input.migratedEvidence) {
+    if (input.migratedEvidence.migrationReceiptRef.path !==
+        `users/${input.userId}/pitangaMigration/receipt` ||
+        input.legacyFenceRef.path !== 'systemControl/pitangaLegacyWriterFence') {
+      throw new Error('CONVERSION_MIGRATION_REFERENCE_INVALID');
+    }
+    const [fence, migration, projection] = await Promise.all([
+      tx.get(input.legacyFenceRef),
+      tx.get(input.migratedEvidence.migrationReceiptRef),
+      tx.get(input.balanceRef),
+    ]);
+    const f = fence.data();
+    const m = migration.data();
+    const b = projection.data();
+    if (!fence.exists || !migration.exists || !projection.exists ||
+        f?.status !== 'fenced' || f?.writersVerified !== true ||
+        typeof f?.epoch !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(f.epoch) ||
+        m?.userId !== input.userId || b?.userId !== input.userId ||
+        m?.fenceEpoch !== f.epoch || b?.migrationEpoch !== f.epoch ||
+        !Number.isSafeInteger(m?.balance) || m.balance < 0 ||
+        !Number.isSafeInteger(m?.entryCount) || m.entryCount < 0 ||
+        typeof m?.ledgerSha256 !== 'string' || !/^[a-f0-9]{64}$/.test(m.ledgerSha256) ||
+        typeof m?.historicalMembershipSha256 !== 'string' ||
+        !/^[a-f0-9]{64}$/.test(m.historicalMembershipSha256) ||
+        !Number.isSafeInteger(b?.availableKCoins) || b.availableKCoins < 0) {
+      throw new Error('CONVERSION_MIGRATION_UNVERIFIED');
+    }
   } else {
     await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   }
