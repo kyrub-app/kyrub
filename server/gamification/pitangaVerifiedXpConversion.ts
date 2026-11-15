@@ -53,5 +53,5 @@ export const applyVerifiedPitangaXpConversionInTransaction = async (
       f?.writersVerified !== true) {
     throw new Error('CONVERSION_MIGRATION_UNVERIFIED');
   }
-  return applyPitangaXpConversionInTransaction(tx, input);
+  return applyPitangaXpConversionInTransaction(tx, { ...input, legacyFenceRef: input.fenceRef });
 };
