@@ -13,6 +13,7 @@ export const applyCleanBaselineVerifiedSpendInTransaction = async (
     sourceId: string;
     occurredAt: string;
     balanceRef: DocumentReference;
+    legacyFenceRef: DocumentReference;
     debitRef: DocumentReference;
     firstLoginReceiptRef: DocumentReference;
     welcomeAwardRef: DocumentReference;
