@@ -29,11 +29,11 @@ for (const path of tracked) {
       // The primitive may be called by a verified provenance wrapper, which
       // must be reviewed separately. No inference from optional flags.
       usages.push({ path, line, primitive });
-      const surrounding = source.slice(match.index, match.index + 1500);
-      if (!surrounding.includes('legacyFenceRef') &&
-          !/cleanBaselineVerified|pitangaVerified/i.test(path)) {
-        issues.push({ path, line, primitive, reason: 'No legacyFenceRef at call site; manual classification required' });
-      }
+      // A textual mention of legacyFenceRef (including comments) does NOT
+      // prove that the caller passes a live fence or that deployed writers obey it.
+      // Every call remains unclassified until a separate reviewed manifest
+      // identifies its authority, deployment and transaction boundary.
+      issues.push({ path, line, primitive, reason: 'Call site requires independently reviewed writer classification and deployed fence proof' });
     }
   }
 }
