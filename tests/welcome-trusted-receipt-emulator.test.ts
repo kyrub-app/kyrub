@@ -7,6 +7,7 @@ import { recordWelcomeRegistrationFromTrustedAuthTrigger } from '../server/gamif
 import { grantSignedSessionWelcomeForVerifiedUser } from '../server/gamification/signedSessionWelcomeService.js';
 import { verifyCleanBaselineSpendingEligibilityInTransaction } from '../server/gamification/cleanBaselineSpendingEligibility.js';
 import { applyCleanBaselineVerifiedSpendInTransaction } from '../server/gamification/cleanBaselineVerifiedSpend.js';
+import { applyCleanBaselineVerifiedXpConversionInTransaction } from '../server/gamification/cleanBaselineVerifiedXpConversion.js';
 
 const projectId = 'kyrub-security-test';
 const app = initializeApp({ projectId }, 'welcome-receipt-emulator');
@@ -346,4 +347,29 @@ test('welcome replay rejects a tampered original award instead of treating it as
     /WELCOME_CLEAN_BASELINE_REPLAY_CONFLICT/,
   );
   assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+});
+
+
+test('clean-baseline XP conversion rejects insufficient welcome balance atomically', async () => {
+  const uid = 'welcome_xp_insufficient';
+  const root = db.collection('users').doc(uid);
+  const firstLoginReceiptRef = root.collection('authEvents').doc('first_login_v1');
+  const balanceRef = root.collection('pitangaBalance').doc('balance');
+  const welcomeAwardRef = root.collection('rewardLedger').doc('earn_first_login_welcome_v1');
+  const requestId = 'xp_insufficient';
+  const receiptRef = root.collection('pitangaXpConversions').doc(requestId);
+  const debitRef = root.collection('rewardLedger').doc(`conversion_${requestId}`);
+  const xpRef = root.collection('xpLedger').doc(`conversion_${requestId}`);
+  await db.runTransaction(tx => recordVerifiedFirstLoginInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, occurredAt: createdAt,
+    trustedFirstLoginEvent: true, sourceEventId: 'auth-create-xp-insufficient', receiptRef: firstLoginReceiptRef,
+  }));
+  await grantSignedSessionWelcomeForVerifiedUser(db, auth as never, uid, uid, authTime);
+  await assert.rejects(db.runTransaction(tx => applyCleanBaselineVerifiedXpConversionInTransaction(tx, {
+    userId: uid, firebaseCreatedAt: createdAt, requestId, requestedXp: 1,
+    occurredAt: createdAt, balanceRef, receiptRef, debitRef, xpRef,
+    firstLoginReceiptRef, welcomeAwardRef,
+  })), /PITANGA_BALANCE_INSUFFICIENT/);
+  assert.equal((await balanceRef.get()).get('availableKCoins'), 100);
+  for (const ref of [receiptRef, debitRef, xpRef]) assert.equal((await ref.get()).exists, false);
 });
