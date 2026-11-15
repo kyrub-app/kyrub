@@ -16,7 +16,7 @@ export const applyPitangaSpendInTransaction = async (
     balanceRef: DocumentReference;
     debitRef: DocumentReference;
     /** Supply only for explicitly audited legacy callers. */
-    legacyFenceRef?: DocumentReference;
+    legacyFenceRef: DocumentReference;
   },
 ): Promise<{ remainingPitangas: number; replay: boolean }> => {
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.userId) ||
@@ -35,7 +35,7 @@ export const applyPitangaSpendInTransaction = async (
       input.balanceRef.path === input.debitRef.path) {
     throw new Error('PITANGA_SPEND_REFERENCE_INVALID');
   }
-  if (input.legacyFenceRef) await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
+  await assertLegacyPitangaWriterAllowedInTransaction(tx, { fenceRef: input.legacyFenceRef });
   const [balance, debit] = await Promise.all([
     tx.get(input.balanceRef), tx.get(input.debitRef),
   ]);
