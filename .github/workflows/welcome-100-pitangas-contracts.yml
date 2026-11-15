@@ -10,6 +10,7 @@ on:
       - 'server/gamification/firstLoginReceiptWriter.ts'
       - 'server/gamification/welcomeTrustedAuthRegistration.ts'
       - 'scripts/inventory-pitanga-writers.mjs'
+      - 'scripts/audit-canonical-pitanga-callers.mjs'
       - 'server/gamification/cleanBaselineWelcomeTransaction.ts'
       - 'server/gamification/pitangaLegacyWriterFence.ts'
       - 'tests/pitanga-legacy-writer-fence.test.ts'
@@ -77,6 +78,15 @@ jobs:
           node-version: '22'
       - name: Enumerate tracked Pitanga writer candidates (audit only)
         run: node scripts/inventory-pitanga-writers.mjs > pitanga-writer-inventory.txt
+      - name: Audit canonical writer call sites (report outstanding blockers)
+        run: |
+          node scripts/audit-canonical-pitanga-callers.mjs > pitanga-canonical-callers.json || echo 'Canonical writer audit reports unresolved call sites; review artifact before release.'
+      - name: Publish canonical writer audit as review artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pitanga-canonical-callers
+          path: pitanga-canonical-callers.json
+          retention-days: 14
       - name: Publish inventory as review artifact
         uses: actions/upload-artifact@v4
         with:
