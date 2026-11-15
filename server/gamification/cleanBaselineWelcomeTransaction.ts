@@ -49,14 +49,18 @@ export const grantCleanBaselineWelcomeInTransaction = async (
   if (award.exists) {
     const data = award.data();
     if (!balance.exists || balance.data()?.userId !== uid ||
+        balance.data()?.initializedBy !== 'verified_clean_baseline_welcome' ||
+        balance.data()?.migrationEpoch !== undefined ||
         !Number.isSafeInteger(balance.data()?.availableKCoins) ||
         balance.data()!.availableKCoins < 0 ||
+        data?.id !== input.awardRef.id ||
         data?.userId !== uid || data?.type !== 'earn' ||
         data?.economy !== 'k_coin' || data?.sourceType !== 'campaign' ||
         data?.sourceId !== FIRST_LOGIN_WELCOME_AWARD_ID ||
         data?.correlationId !== FIRST_LOGIN_WELCOME_AWARD_ID ||
         data?.deltaKCoins !== FIRST_LOGIN_WELCOME_PITANGAS ||
-        data?.idempotencyKey !== `pitanga_earn_${FIRST_LOGIN_WELCOME_AWARD_ID}`) {
+        data?.idempotencyKey !== `pitanga_earn_${FIRST_LOGIN_WELCOME_AWARD_ID}` ||
+        data?.occurredAt !== plan.occurredAt) {
       throw Error('WELCOME_CLEAN_BASELINE_REPLAY_CONFLICT');
     }
     return { balance: balance.data()!.availableKCoins, replay: true };
