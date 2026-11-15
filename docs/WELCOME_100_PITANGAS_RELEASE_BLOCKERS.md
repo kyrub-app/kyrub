@@ -21,9 +21,9 @@
 
 **Aceite:** inventário de cada escritor ativo e seus chamadores; instalação/validação do bloqueio em todas as rotas transacionais aplicáveis, sem interromper a publicação da loja (2 XP); evidência de que nenhuma versão ativa pode escrever por fora; somente então marcar `writersVerified: true`.
 
-### 3. Conversão XP e emissão de vouchers para novos usuários — PENDENTE
+### 3. Conversão XP e emissão de vouchers para novos usuários — IMPLEMENTAÇÃO ISOLADA, INTEGRAÇÃO PENDENTE
 
-`pitangaXpConversionTransaction.ts` exige `migrationEpoch` no saldo tanto no primeiro uso quanto no replay. O fluxo de vouchers também passa por verificadores históricos. O saldo legítimo de novo usuário possui `initializedBy: 'verified_clean_baseline_welcome'` e **não** possui `migrationEpoch`. A primitiva de gasto isolada não equivale à integração das conversões e vouchers.
+`pitangaXpConversionTransaction.ts` exige `migrationEpoch` no saldo tanto no primeiro uso quanto no replay. O fluxo de vouchers também passa por verificadores históricos. O saldo legítimo de novo usuário possui `initializedBy: 'verified_clean_baseline_welcome'` e **não** possui `migrationEpoch`. A primitiva de gasto isolada não equivale à integração das conversões e vouchers. Foram adicionadas `cleanBaselineVerifiedXpConversion.ts` e `cleanBaselineVerifiedVoucherIssuance.ts`, ambas sem endpoint público. A conversão de 1.000 Pitangas para 1 XP passou nos testes isolados de concorrência (CI `fedf4f0`); a emissão de voucher ainda precisa de teste de integração em emulador e aprovação da CI.
 
 **Aceite:** autoridade de saldo limpo verificada transacionalmente nos fluxos reais de conversão e vouchers, com testes de débito/XP/cupom atômicos e idempotentes. Nunca criar recibo histórico fictício.
 
