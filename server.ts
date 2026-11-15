@@ -376,6 +376,11 @@ app.get(
     proxyPublicGoogleDriveImage(req.query.fileId, res)
 );
 
+app.all('/api/pitangas', async (req, res) => {
+  const { handlePitangaAccountRequest } = await import('./server/gamification/pitangaAccountHandler.js');
+  await handlePitangaAccountRequest(req, res);
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });

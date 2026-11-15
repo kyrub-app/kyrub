@@ -352,7 +352,7 @@ export function KyrubTab(props: KyrubTabProps) {
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
         <section aria-label="Recompensas" className="mb-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100">
           <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
-          <PitangaAccount />
+          <PitangaAccount key={socialFeed.currentUserId || 'signed-out'} />
           <div className="mt-5 border-t border-slate-800 pt-5">
             <h3 className="text-lg font-bold">Desafios e conquistas</h3>
             <div className="mt-3 rounded-2xl bg-slate-800 p-4 text-sm text-slate-300">

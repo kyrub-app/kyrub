@@ -81,16 +81,8 @@ export default async function handler(
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
   if (transport === 'pitanga-account') {
-    const [{ handlePitangaAccount }, { readPitangaAccount, convertPitangaAccount }, { adminDb }, { verifyFirebaseIdToken }] = await Promise.all([
-      import('../server/gamification/pitangaAccountHandler.js'),
-      import('../server/gamification/pitangaAccountService.js'),
-      import('../server/firebaseAdmin.js'), import('../server/ai/consultantAuth.js'),
-    ]);
-    await handlePitangaAccount(request, response, {
-      verify: verifyFirebaseIdToken,
-      read: uid => readPitangaAccount(adminDb, uid),
-      convert: (uid, input) => convertPitangaAccount(adminDb, uid, input),
-    });
+    const { handlePitangaAccountRequest } = await import('../server/gamification/pitangaAccountHandler.js');
+    await handlePitangaAccountRequest(request, response);
     return;
   }
 

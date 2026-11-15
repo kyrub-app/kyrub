@@ -6,6 +6,21 @@ type Dependencies = {
   convert(uid: string, input: { requestId: string; requestedXp: number }): Promise<unknown>;
 };
 
+/** Shared production/local entry point; dependency failures also fail closed. */
+export async function handlePitangaAccountRequest(req: KyrubMcpHttpRequest, res: KyrubMcpHttpResponse) {
+  try {
+    const [{ readPitangaAccount, convertPitangaAccount }, { adminDb }, { verifyFirebaseIdToken }] = await Promise.all([
+      import('./pitangaAccountService.js'), import('../firebaseAdmin.js'), import('../ai/consultantAuth.js'),
+    ]);
+    await handlePitangaAccount(req, res, { verify: verifyFirebaseIdToken,
+      read: uid => readPitangaAccount(adminDb, uid), convert: (uid, input) => convertPitangaAccount(adminDb, uid, input),
+    });
+  } catch {
+    res.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    res.status(503).json({ error: 'PITANGA_ACCOUNT_UNAVAILABLE' });
+  }
+}
+
 export async function handlePitangaAccount(req: KyrubMcpHttpRequest, res: KyrubMcpHttpResponse, deps: Dependencies) {
   res.setHeader('Cache-Control', 'private, no-store, max-age=0');
   const method = (req.method ?? 'GET').toUpperCase();
