@@ -12,7 +12,6 @@ export const applyCleanBaselineVerifiedXpConversionInTransaction = async (
     requestedXp: number;
     occurredAt: string;
     balanceRef: DocumentReference;
-    legacyFenceRef: DocumentReference;
     receiptRef: DocumentReference;
     debitRef: DocumentReference;
     xpRef: DocumentReference;
@@ -27,5 +26,5 @@ export const applyCleanBaselineVerifiedXpConversionInTransaction = async (
     balanceRef: input.balanceRef,
     welcomeAwardRef: input.welcomeAwardRef,
   });
-  return applyPitangaXpConversionInTransaction(tx, { ...input, verifiedCleanBaseline: true });
+  return applyPitangaXpConversionInTransaction(tx, { ...input, verifiedCleanBaseline: true, legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence') });
 };
