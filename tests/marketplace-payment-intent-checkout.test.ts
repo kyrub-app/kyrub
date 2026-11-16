@@ -2,6 +2,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import './mercado-pago-current-main-contract.test';
+import { buildProductConfigurationSelection } from '../src/utils/productCustomization';
+import type { Product } from '../src/types';
+import { priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct } from '../server/payments/marketplaceItemPricing';
+import { parseCatalogCustomizationDefaults, resolveCatalogCustomization } from '../src/utils/catalogCustomizationInheritance';
 
 const drawerSource = readFileSync(
   'src/components/modals/B2CCartDrawer.tsx',
@@ -40,6 +44,108 @@ const materializationSource = readFileSync(
   'src/utils/paymentOrderMaterialization.ts',
   'utf8'
 );
+
+
+test('authoritative pricing for configured cart items ignores forged browser amounts', () => {
+  const product = {
+    id: 'meal', name: 'Refeição', description: '', price: 30, image: '',
+    category: 'Almoço > Pratos', stock: 8, supplierId: 'owner',
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 8 }],
+    }],
+  } as Product;
+  const selection = buildProductConfigurationSelection(product, { extras: ['cheese'] });
+  const catalog: MarketplaceCatalogPricingProduct[] = [{
+    id: product.id, name: product.name, price: product.price, image: product.image,
+    category: product.category, isService: false, isComplimentary: false,
+    storePointsPerUnit: 0, optionGroups: product.optionGroups!, quickNotes: [],
+  }];
+  const items = priceMarketplaceCheckoutItems(catalog, [{
+    productId: selection.id, quantity: 2, note: '',
+    selectedOptions: [{ groupId: 'extras', choiceId: 'cheese' }],
+    selectedQuickNotes: [], customerNote: '',
+    price: 0.01,
+  } as Parameters<typeof priceMarketplaceCheckoutItems>[1][number]]);
+  assert.equal(items[0].sourceProductId, 'meal');
+  assert.equal(items[0].productId, selection.id);
+  assert.equal(items[0].unitPrice, 38);
+  assert.equal(items[0].total, 76);
+});
+
+test('server refuses selected extras not in published groups or missing required choices', () => {
+  const catalog: MarketplaceCatalogPricingProduct[] = [{
+    id: 'meal', name: 'Refeição', price: 30, image: '', category: 'Almoço',
+    isService: false, isComplimentary: false, storePointsPerUnit: 0,
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 7 }],
+    }],
+    quickNotes: [],
+  }];
+  const entry = (productId: string, choiceId: string) => [{
+    productId, quantity: 1, selectedOptions: [{ groupId: 'extras', choiceId }],
+    selectedQuickNotes: [], customerNote: '',
+  }];
+  assert.throws(() =>
+    priceMarketplaceCheckoutItems(catalog, entry('meal::options=extras:fake', 'fake')),
+    /CHECKOUT_ITEM_CONFIGURATION_INVALID/);
+  assert.throws(() =>
+    priceMarketplaceCheckoutItems(catalog, entry('meal', 'cheese')),
+    /CHECKOUT_ITEM_CONFIGURATION_INVALID/);
+  assert.throws(() =>
+    priceMarketplaceCheckoutItems(catalog, entry('meal', 'fake')),
+    /CHECKOUT_ITEM_CONFIGURATION_INVALID/);
+  assert.throws(() =>
+    priceMarketplaceCheckoutItems(catalog, [{
+      productId: 'meal', quantity: 1, selectedOptions: [],
+      selectedQuickNotes: [], customerNote: '',
+    }]), /CHECKOUT_ITEM_CONFIGURATION_INVALID/);
+  assert.throws(() =>
+    priceMarketplaceCheckoutItems(catalog, [{
+      productId: 'withdrawn', quantity: 1, selectedOptions: [],
+      selectedQuickNotes: [], customerNote: '',
+    }]), /CHECKOUT_PRODUCT_NOT_AVAILABLE/);
+});
+
+test('server respects published category-wide customization defaults and surcharges', () => {
+  const defaults = parseCatalogCustomizationDefaults([{
+    path: 'Almoço > Pratos',
+    quickNotes: ['Sem sal'],
+    optionGroups: [{
+      id: 'sauce', name: 'Molho', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'hot', name: 'Picante', priceDelta: 4 }],
+    }],
+  }]);
+  const resolved = resolveCatalogCustomization({
+    category: 'Almoço > Pratos > Executivo',
+    optionGroups: undefined, quickNotes: undefined,
+  }, defaults);
+  assert.equal(resolved.optionGroups[0].choices[0].priceDelta, 4);
+  assert.deepEqual(resolved.quickNotes, ['Sem sal']);
+  const priced = priceMarketplaceCheckoutItems([{
+    id: 'meal', name: 'Refeição', price: 20, image: '',
+    category: 'Almoço > Pratos > Executivo',
+    isService: false, isComplimentary: false, storePointsPerUnit: 0,
+    ...resolved,
+  }], [{
+    productId: 'meal::options=sauce:hot', quantity: 1,
+    selectedOptions: [{ groupId: 'sauce', choiceId: 'hot' }],
+    selectedQuickNotes: [], customerNote: '',
+  }]);
+  assert.equal(priced[0].unitPrice, 24);
+});
+
+test('configured coupons target source product while discount allocation targets actual order line', () => {
+  assert.match(checkoutClientSource, /selectedOptions: \(item\.product\.selectedOptions/);
+  assert.match(checkoutClientSource, /choiceId: option\.choiceId/);
+  assert.doesNotMatch(checkoutClientSource, /price: item\.product\.price/);
+  assert.match(intentRouterSource, /priceMarketplaceCheckoutItems\(catalog, items\)/);
+  assert.match(intentRouterSource, /productId: item\.sourceProductId/);
+  assert.match(intentRouterSource, /\.map\(item => item\.productId\)/);
+  assert.match(intentRouterSource, /resolveCatalogCustomization\(product, defaults\)/);
+  assert.match(intentRouterSource, /item\.productId\.split\('::', 1\)\[0\]/);
+});
 
 test('delivery and pickup materialize an unpaid approval-gated order without creating Pix before merchant acceptance', () => {
   assert.match(
@@ -99,7 +205,7 @@ test('verified first-store checkout uses the same published canonical catalog as
   assert.match(intentRouterSource, /canonicalStore\.get\('ownerId'\) !== publicStoreId/);
   assert.match(intentRouterSource, /canonicalStore\.get\('publicationStatus'\) !== 'published'/);
   assert.match(intentRouterSource, /projectVerifiedFirstStoreCatalogOffers\(/);
-  assert.match(intentRouterSource, /if \(verifiedFirstStoreCatalog !== null\) return verifiedFirstStoreCatalog;/);
+  assert.match(intentRouterSource, /const products = verifiedFirstStoreCatalog \?\? catalogProducts\(tenant\?\.publicProducts\)/);
   assert.match(intentRouterSource, /return catalogProducts\(tenant\?\.publicProducts\)/);
   assert.match(storefront, /projectVerifiedFirstStoreCatalogOffers\(canonicalProducts\.docs, verifiedFirstStoreId, storeId\)/);
   assert.match(storefront, /data\.publicationStatus !== 'published'/);
@@ -111,8 +217,8 @@ test('backend reconstructs marketplace totals from the published store catalog',
   assert.match(intentRouterSource, /tenant\?\.publicationStatus !== 'published'/);
   assert.match(intentRouterSource, /catalogProducts\(tenant\?\.publicProducts\)/);
   assert.match(intentRouterSource, /const catalog = await loadPublishedCatalog\(input\.storeId\)/);
-  assert.match(intentRouterSource, /product\.price \* item\.quantity/);
-  assert.match(intentRouterSource, /unitPrice: product\.price/);
+  assert.match(intentRouterSource, /priceMarketplaceCheckoutItems\(catalog, items\)/);
+  assert.match(readFileSync('server/payments/marketplaceItemPricing.ts', 'utf8'), /unitPrice,/);
   assert.match(intentRouterSource, /CHECKOUT_PRODUCT_NOT_AVAILABLE/);
 });
 

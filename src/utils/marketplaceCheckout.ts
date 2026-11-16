@@ -87,6 +87,11 @@ const cartRequestItems = (
   productId: item.product.id,
   quantity: item.quantity,
   note: itemNotes[item.product.id]?.trim() ?? '',
+  // Send only option identity. Prices are reconstructed from the store catalog.
+  selectedOptions: (item.product.selectedOptions ?? item.selectedOptions ?? [])
+    .map(option => ({ groupId: option.groupId, choiceId: option.choiceId })),
+  selectedQuickNotes: item.product.selectedQuickNotes ?? item.selectedQuickNotes ?? [],
+  customerNote: (item.product as typeof item.product & { customerNote?: string }).customerNote ?? '',
 }));
 
 const checkoutFingerprint = (
