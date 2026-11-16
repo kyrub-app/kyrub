@@ -54,6 +54,17 @@ try {
       },
       contractDiscounts: [{ months: 1, discountPercent: 0 }],
     }),
+    db.doc('social_posts/official-business-pilot-praça').set({
+      postId: 'official-business-pilot-praça',
+      sourcePostId: 'official-business-pilot-praça',
+      authorId: 'official-fake-owner', authorName: 'Kyrub Oficial',
+      authorAvatar: '', content: '🎟️ Business piloto · Cupom: BIZ1',
+      publicationType: 'feed', visibility: 'public',
+      taggedUsers: [], taggedUserIds: [], mediaUrls: [], audienceIds: [],
+      storePromotion: { storeId: STORE, promotionId: PROMO },
+      createdAtIso: iso(stamp), createdAt: new Date(stamp),
+      updatedAt: new Date(stamp),
+    }),
     db.doc('stores/' + STORE + '/promotions/' + PROMO).set({
       id: PROMO, storeId: STORE, code: 'BIZ1',
       title: 'Business piloto', badge: 'PILOTO',
@@ -126,9 +137,9 @@ try {
     else throw Error('UNEXPECTED_PLAN_CONTROL:' + op);
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
   });
-  // Start at the *real* storefront, not the unrelated marketplace landing.
-  // Authenticate with Firebase Auth Emulator and reload the same public route.
-  await page.goto(origin + '/@kyrub-oficial?coupon=BIZ1', { waitUntil: 'domcontentloaded' });
+  // Start in the real app with the Firebase Auth Emulator. The buyer must
+  // click the live Praça coupon card, not type its URL into the address bar.
+  await page.goto(origin + '/?app=1', { waitUntil: 'domcontentloaded' });
   const customToken = await adminAuth.createCustomToken(fakeUid);
   const login = await page.evaluate(async token => {
     const { auth } = await import('/src/utils/firebase.ts');
@@ -138,6 +149,24 @@ try {
   }, customToken);
   assert.deepEqual(login, { uid: fakeUid, projectId });
   await page.reload({ waitUntil: 'domcontentloaded' });
+  const pracaButton = page.getByRole('button', { name: 'Praça', exact: true });
+  await pracaButton.waitFor({ state: 'visible', timeout: 20000 });
+  await pracaButton.click();
+  const couponLink = page.getByRole('link', { name: 'Aproveitar cupom BIZ1 na loja' });
+  await couponLink.waitFor({ state: 'visible', timeout: 20000 });
+  assert.equal(
+    new URL(await couponLink.getAttribute('href'), origin).pathname,
+    '/@kyrub-oficial',
+    'the real social card must link directly to the canonical Official Store',
+  );
+  assert.equal(
+    new URL(await couponLink.getAttribute('href'), origin).searchParams.get('coupon'),
+    'BIZ1',
+  );
+  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
+  await couponLink.click();
+  await page.waitForURL(url => url.pathname === '/@kyrub-oficial'
+    && url.searchParams.get('coupon') === 'BIZ1', { timeout: 20000 });
   const section = page.locator('#official-plan-contract-section');
   await section.waitFor({ state: 'visible', timeout: 20000 });
   await section.getByText('Cupom da Praça BIZ1 identificado').waitFor({ timeout: 15000 });
