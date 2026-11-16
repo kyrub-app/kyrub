@@ -274,6 +274,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [showLocalImport, setShowLocalImport] = useState(() =>
     hasLocalCommunityPrototype()
   );
+  const communitySubscriptionVersion = useRef(0);
   const mountRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchListenerRef = useRef<((event: Event) => void) | null>(null);
@@ -470,32 +471,35 @@ export function ProfileCommunitiesCloudBridge() {
   }, []);
 
   useEffect(() => {
-    if (!selectedCommunityId) {
-      setPosts([]);
-      setDebates([]);
-      setMembers([]);
-      return;
-    }
+    const version = ++communitySubscriptionVersion.current;
+    setPosts([]);
+    setDebates([]);
+    setMembers([]);
+    if (!selectedCommunityId) return;
+    // Ignore late callbacks from a community that is no longer selected.
+    const isCurrent = () => communitySubscriptionVersion.current === version;
     const report = (value: Error) => {
+      if (!isCurrent()) return;
       console.warn('Não foi possível sincronizar a comunidade.', value);
       setMessage('Algumas informações da comunidade não puderam ser carregadas.');
     };
     const unsubscribePosts = subscribeCommunityPosts(
       selectedCommunityId,
-      setPosts,
+      values => { if (isCurrent()) setPosts(values); },
       report
     );
     const unsubscribeDebates = subscribeCommunityDebates(
       selectedCommunityId,
-      setDebates,
+      values => { if (isCurrent()) setDebates(values); },
       report
     );
     const unsubscribeMembers = subscribeCommunityMemberships(
       selectedCommunityId,
-      setMembers,
+      values => { if (isCurrent()) setMembers(values); },
       report
     );
     return () => {
+      ++communitySubscriptionVersion.current;
       unsubscribePosts();
       unsubscribeDebates();
       unsubscribeMembers();
@@ -592,6 +596,12 @@ export function ProfileCommunitiesCloudBridge() {
   const pendingMembers = members.filter(member => member.status === 'pending');
 
   const openCommunity = (community: CloudCommunity) => {
+    // Clear the previous community immediately, before the next snapshot arrives.
+    ++communitySubscriptionVersion.current;
+    setPosts([]);
+    setDebates([]);
+    setMembers([]);
+    setComments([]);
     setSelectedCommunityId(community.id);
     setPageTab('wall');
     setSelectedDebateId('');

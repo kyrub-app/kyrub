@@ -62,3 +62,14 @@ test('Firestore and Storage compose dedicated community authorization', () => {
   assert.match(compose, /firestore\.communities\.fragment\.rules/);
   assert.match(storage, /match \/community-covers\/\{communityId\}/);
 });
+
+test('switching communities clears the previous wall and rejects late snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const communitySubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const version = \+\+communitySubscriptionVersion\.current/);
+  assert.match(component, /const isCurrent = \(\) => communitySubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setPosts\(values\); \}/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setDebates\(values\); \}/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
+  assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+setComments\(\[\]\);/);
+});
