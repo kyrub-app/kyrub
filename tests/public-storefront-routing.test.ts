@@ -108,6 +108,34 @@ test('resumed storefront cart preserves configured products and reprices current
   assert.equal(original.price, 20);
 });
 
+
+test('saved configured item remains in cart when public catalog omits customization metadata', () => {
+  const source = {
+    id: 'coffee', name: 'Café', description: '', price: 15,
+    image: '', stock: 6, category: 'Bebidas', supplierId: 'owner',
+    optionGroups: [{
+      id: 'milk', name: 'Leite', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'oat', name: 'Aveia', priceDelta: 5 }],
+    }],
+    quickNotes: ['Sem gelo'],
+  } as Product;
+  const saved = buildProductConfigurationSelection(
+    source, { milk: ['oat'] }, ['Sem gelo']
+  );
+  const currentPublicOffer = {
+    id: 'coffee', name: 'Café', description: '', price: 18,
+    image: '', stock: 3, category: 'Bebidas', supplierId: 'owner',
+  } as Product;
+  const result = reconcilePublishedStorefrontCart(
+    [{ product: saved, quantity: 2 }], [currentPublicOffer]
+  );
+  assert.equal(result.length, 1);
+  assert.equal(result[0].product.id, saved.id);
+  assert.equal(result[0].product.price, 20, 'do not invent a new option price without metadata');
+  assert.equal(result[0].product.stock, 3, 'refresh safe availability data');
+  assert.equal(result[0].quantity, 2);
+});
+
 test('resumed storefront cart rejects withdrawn configuration choices rather than silently changing them', () => {
   const product = {
     id: 'meal', name: 'Refeição', description: '', price: 20,

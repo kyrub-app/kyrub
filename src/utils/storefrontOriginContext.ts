@@ -127,6 +127,18 @@ export const reconcilePublishedStorefrontCart = (
       (item.product.selectedQuickNotes?.length ?? 0) > 0;
     if (!configured) return [{ ...item, product }];
 
+    // Public projections may omit customization metadata when product choices
+    // are supplied by legacy store-wide defaults. Without that authoritative
+    // metadata, keep the buyer's selection and existing displayed price;
+    // never fabricate a new option price or discard a still-published item.
+    const choicesUnknown = (item.product.selectedOptions?.length ?? 0) > 0 &&
+      product.optionGroups === undefined;
+    const quickNotesUnknown = (item.product.selectedQuickNotes?.length ?? 0) > 0 &&
+      product.quickNotes === undefined;
+    if (choicesUnknown || quickNotesUnknown) {
+      return [{ ...item, product: { ...item.product, stock: product.stock } }];
+    }
+
     // Keep a configured cart line only if all selected choices/notes remain
     // valid in the current catalog. Reprice through the same PDV builder.
     const selectedIds: Record<string, string[]> = {};
