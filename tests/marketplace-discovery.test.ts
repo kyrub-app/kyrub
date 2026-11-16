@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { projectCanonicalOffers } from '../server/payments/marketplaceDiscoveryService';
 import {
   buildMarketplaceStoreDiscoverySignal,
   compareMarketplaceForYouSignals,
@@ -137,4 +138,40 @@ describe('marketplace discovery', () => {
     assert.match(source, /signalByStoreId\.get\(store\.id\)\?\.forYou/);
     assert.doesNotMatch(source, /orders\.some\(order => order\.storeId/);
   });
+  test('canonical storefront never publishes a fictitious zero-price offer from incomplete listings', () => {
+    const listing = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      data: () => ({
+        listingType: 'offer',
+        publicationStatus: 'published',
+        storeId: 'store-a',
+        offerId: id,
+        productId: id,
+        name: 'Item ' + id,
+        price: 25,
+        stock: 5,
+        isService: false,
+        ...overrides,
+      }),
+    }) as unknown as Parameters<typeof projectCanonicalOffers>[0][number];
+
+    const offers = projectCanonicalOffers([
+      listing('valid'),
+      listing('no-price', { price: undefined }),
+      listing('text-price', { price: '25' }),
+      listing('negative-price', { price: -1 }),
+      listing('no-stock', { stock: undefined }),
+      listing('negative-stock', { stock: -2 }),
+      listing('wrong-store', { storeId: 'store-b' }),
+      listing('draft', { publicationStatus: 'draft' }),
+      listing('service', { price: 60, stock: undefined, isService: true }),
+    ], 'store-a', new Map());
+
+    assert.deepEqual(offers.map(offer => offer.id), ['valid', 'service']);
+    assert.equal(offers[0].price, 25);
+    assert.equal(offers[0].stock, 5);
+    assert.equal(offers[1].price, 60);
+    assert.equal(offers[1].stock, 0);
+  });
+
 });

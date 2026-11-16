@@ -149,7 +149,7 @@ const projectLegacyPublicOffers = (
   });
 };
 
-const projectCanonicalOffers = (
+export const projectCanonicalOffers = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
   productById: ReadonlyMap<string, Record<string, unknown>>
@@ -168,15 +168,25 @@ const projectCanonicalOffers = (
     const name = clean(data.name);
     if (!offerId || !name) return [];
 
+    // Never turn absent/invalid commercial fields into a fictitious R$ 0,00
+    // offer. Services have no stock requirement; physical products do.
+    const price = data.price;
+    const stock = data.stock;
+    const isService = data.isService === true;
+    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 ||
+        (!isService && (typeof stock !== 'number' || !Number.isFinite(stock) || stock < 0))) {
+      return [];
+    }
+
     const imageUrls = stringList(data.imageUrls);
     return [{
       id: offerId,
       name,
       description: clean(data.description),
-      price: Math.max(0, finiteNumber(data.price)),
+      price,
       image: imageUrls[0] ?? clean(data.image),
-      stock: Math.max(0, Math.floor(finiteNumber(data.stock))),
-      isService: data.isService === true,
+      stock: isService ? 0 : Math.floor(stock as number),
+      isService,
       category: clean(data.category),
       supplierId: storeId,
       ...projectSubscriptionFields(productById.get(clean(data.productId) || offerId) ?? {}),
