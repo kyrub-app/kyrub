@@ -1,3 +1,5 @@
+import type { DeliveryCargo, CourierVehicleType } from '../../shared/deliveryVehicleCompatibility.js';
+
 /** Safe public subset of an ERP delivery opportunity; buyer route details remain private. */
 export interface PublicKyrubDeliveryOfferInput {
   id: string;
@@ -6,6 +8,9 @@ export interface PublicKyrubDeliveryOfferInput {
   orderStatus: string;
   distance: number;
   payment: number;
+  cargo: DeliveryCargo | null;
+  cargoReady: boolean;
+  allowedVehicles: CourierVehicleType[];
 }
 export const PUBLIC_KYRUB_DESTINATION_LABEL = 'Destino exato liberado após o aceite';
 
@@ -21,5 +26,8 @@ export const buildPublicKyrubDeliveryOffer = (input: PublicKyrubDeliveryOfferInp
     orderStatus: input.orderStatus,
     distance: Number.isFinite(input.distance) && input.distance > 0 ? input.distance : 0,
     payment: Number.isFinite(input.payment) && input.payment > 0 ? input.payment : 0,
+    cargo: input.cargo,
+    cargoReady: input.cargoReady,
+    allowedVehicles: input.allowedVehicles,
   };
 };
