@@ -102,6 +102,9 @@ try {
   await page.route(url => url.pathname === '/api/plan-control', async route => {
     const request = route.request();
     const op = new URL(request.url()).searchParams.get('op');
+    // Unrelated panels can issue their own existing billing requests.
+    // Intercept only the three official prepaid operations under test.
+    if (!op?.startsWith('official.prepaid.')) return route.continue();
     const body = request.postDataJSON();
     recorded.push({ op, body, authorization: request.headers().authorization });
     let response;
