@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { buildOfficialPromotionAcceptedTerms } from '../server/payments/officialPlanPromotionAcceptedTerms.js';
-import { resolveOfficialPromotionalCheckoutAmount } from '../server/payments/officialPlanPromotionCheckoutAmount.js';
+import { assertNoUnintegratedOfficialPromotion, resolveOfficialPromotionalCheckoutAmount } from '../server/payments/officialPlanPromotionCheckoutAmount.js';
 import type { StorePromotion } from '../src/utils/storePromotions.js';
 
 const promotion: StorePromotion = {
@@ -45,4 +45,15 @@ test('fails closed for wrong buyer, product, months, base price or provider amou
   for (const candidate of bad) {
     assert.throws(() => resolveOfficialPromotionalCheckoutAmount(candidate), /MISMATCH/);
   }
+});
+
+test('canonical Pix acceptance and issuance reject unintegrated promotional snapshots', () => {
+  assert.doesNotThrow(() => assertNoUnintegratedOfficialPromotion({}));
+  assert.doesNotThrow(() => assertNoUnintegratedOfficialPromotion({ promotionAcceptedTerms: null }));
+  assert.throws(() => assertNoUnintegratedOfficialPromotion({
+    promotionAcceptedTerms: { payableMinor: 100 },
+  }), /OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED/);
+  assert.throws(() => assertNoUnintegratedOfficialPromotion({
+    promotionAcceptedTerms: {},
+  }), /OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED/);
 });
