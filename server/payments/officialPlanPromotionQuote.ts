@@ -3,7 +3,7 @@ import { isPromotionCurrentlyAvailable, isPromotionEligibleForBuyer, normalizeSt
 /**
  * Pure pricing guard for an isolated official-plan promotion.
  * This does NOT authorize payment creation, redemption or a production pilot.
- * The caller must load the promotion and authoritative plan quote on the server.
+ * The caller must load the promotion from the Official Store ERP's\n * stores/{storeId}/promotions collection and the authoritative plan quote\n * on the server. Never create a parallel Control Plane coupon.
  */
 export function quoteOfficialPlanPromotion(input: {
   promotion: StorePromotion;
