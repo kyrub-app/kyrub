@@ -23,11 +23,9 @@ export function verifyIsolatedOfficialPlanPromotionPix(input: {
     quote: { months: 1 | 3 | 6 | 12; totalMinor: number } };
   accepted: OfficialPromotionAcceptedTerms;
   confirmation: IsolatedOfficialPixConfirmation;
-  emulatorHost: string | undefined;
-  isolatedFlag: string | undefined;
 }) {
-  if (!/^(localhost|127\.0\.0\.1):\d+$/.test(input.emulatorHost ?? '') ||
-      input.isolatedFlag !== 'true') {
+  if (!/^(localhost|127\.0\.0\.1):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '') ||
+      process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST !== 'true') {
     throw new Error('OFFICIAL_PROMOTION_EMULATOR_REQUIRED');
   }
   const payment = input.confirmation;
