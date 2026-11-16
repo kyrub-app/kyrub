@@ -31,6 +31,8 @@ import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPane
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
+import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
+import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -51,6 +53,10 @@ type PublicStorefrontResponse = {
   };
   offers: Product[];
 };
+
+// Presentation hint only. The API separately verifies the authoritative official
+// store/product mapping before any quote, acceptance or payment.
+const OFFICIAL_KYRUB_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -113,6 +119,12 @@ const resolveMovementMetadata = (
 };
 
 export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
+  const sharedCouponCode = typeof window === 'undefined' ? ''
+    : (new URLSearchParams(window.location.search).get('coupon') ?? '').trim().toUpperCase().slice(0, 48);
+  const [couponPromotion, setCouponPromotion] = useState<PublicMarketplacePromotion | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [selectedOfficialPlanId, setSelectedOfficialPlanId] = useState('');
+  const [selectedPlanMonths, setSelectedPlanMonths] = useState<1 | 3 | 6 | 12>(1);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [authLoading, setAuthLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(true);
@@ -202,6 +214,27 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   }, [slug]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!store?.id || store.id !== OFFICIAL_KYRUB_STORE_ID || !sharedCouponCode) {
+      setCouponPromotion(null);
+      setCouponLoading(false);
+      return;
+    }
+    // Public discovery is only a UI hint; the official billing API validates
+    // the ERP coupon and the exact product/price again on the server.
+    setCouponPromotion(null);
+    setCouponLoading(true);
+    void listMarketplacePromotions(store.id).then(promotions => {
+      if (!cancelled) setCouponPromotion(promotions.find(promotion => promotion.code === sharedCouponCode) ?? null);
+    }).catch(() => {
+      if (!cancelled) setCouponPromotion(null);
+    }).finally(() => {
+      if (!cancelled) setCouponLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [store?.id, sharedCouponCode]);
+
+  useEffect(() => {
     saveStorefrontCart(slug, cart);
   }, [cart, slug]);
 
@@ -240,6 +273,12 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   };
 
   const handleAddToCart = (product: Product): void => {
+    if (store?.id === OFFICIAL_KYRUB_STORE_ID && product.saleModality?.mode === 'subscription') {
+      // Official plans are contracts, not ordinary B2C cart items.
+      setSelectedOfficialPlanId(product.id);
+      document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
     setCart(current => {
       const existing = current.find(item => item.product.id === product.id);
       if (existing) {
@@ -325,6 +364,20 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     activeKdsOrderCount,
     Boolean(user)
   );
+  const isOfficialStore = store.id === OFFICIAL_KYRUB_STORE_ID;
+  const officialPlanProducts = isOfficialStore
+    ? publicProducts.filter(product => product.saleModality?.mode === 'subscription')
+    : [];
+  const eligibleCouponPlans = sharedCouponCode && couponPromotion
+    ? officialPlanProducts.filter(product => couponPromotion.productIds.includes(product.id))
+    : [];
+  const availablePlanProducts = sharedCouponCode
+    ? eligibleCouponPlans : officialPlanProducts;
+  const selectedOfficialPlan = availablePlanProducts.find(product => product.id === selectedOfficialPlanId) ??
+    (sharedCouponCode ? availablePlanProducts[0] ?? null : null);
+  const couponForOfficialPlan = isOfficialStore && eligibleCouponPlans.length > 0;
+  const couponForRetail = Boolean(sharedCouponCode) &&
+    (!isOfficialStore || (couponPromotion !== null && !couponForOfficialPlan));
 
   return (
     <div
