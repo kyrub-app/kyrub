@@ -207,13 +207,16 @@ try {
   try {
     await couponLink.click({ timeout: 20000 });
   } catch (error) {
-    console.error('PRAÇA_CLICK_AFTER_RENDER_DIAGNOSTIC', JSON.stringify(
-      await page.evaluate(() => ({
+    console.error('PRAÇA_CLICK_AFTER_RENDER_DIAGNOSTIC', JSON.stringify({
+      screen: await page.evaluate(() => ({
         route: location.pathname,
         pracaVisible: !!document.querySelector('#praca-tab-container'),
         appText: document.body.innerText.slice(-1300),
-      }))
-    ));
+        clientErrors: window.__kyrubTestClientErrors || [],
+      })),
+      consoleErrors: consoleErrors.slice(-12),
+      pageErrors,
+    }));
     throw error;
   }
   await page.waitForURL(url => url.pathname === '/@kyrub-oficial'
