@@ -199,12 +199,18 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
       });
     }
     const acceptedAt = now();
-    tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest, status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
+    tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest,
+      ...(d.promotionAcceptedTerms ? { acceptedPromotionDigest: d.promotionAcceptedTerms.termsDigest } : {}),
+      status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
     return { status: 'accepted' };
   });
 }
 
 function validatePayment(payment: any, d: any) {
+  if (d.promotionAcceptedTerms &&
+      d.acceptedPromotionDigest !== d.promotionAcceptedTerms.termsDigest) {
+    throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+  }
   const cents = payment?.transaction_amount * 100;
   if (!/^\d{1,32}$/.test(String(payment?.id)) || payment.currency_id !== 'BRL' || payment.payment_method_id !== 'pix' ||
     String(payment.collector_id) !== d.collectorId || payment.external_reference !== reference(d.checkoutId) ||
@@ -265,7 +271,8 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
     allowPilotOffer(d, buyer.uid);
     if (d.promotionAcceptedTerms &&
-        (current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest ||
+        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest ||
          couponReservation?.get('status') !== 'reserved' ||
          couponReservation.get('buyerUid') !== buyer.uid ||
          couponReservation.get('promotionId') !== d.promotionAcceptedTerms.promotionId ||
@@ -339,6 +346,11 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
       tx.get(entitlementRef(uid)),
     ]);
+    if (d.promotionAcceptedTerms &&
+        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest)) {
+      throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+    }
     if (current.get('providerPaymentId') !== String(payment.id) ||
         current.get('offerDigest') !== digest(d.offer) ||
         current.get('acceptedOfferDigest') !== current.get('offerDigest') ||
@@ -632,6 +644,11 @@ async function materialize(d: any, payment: any) {
       d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null), tx.get(entitlementRef(uid)),
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
     ]);
+    if (d.promotionAcceptedTerms &&
+        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest)) {
+      throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+    }
     if (current.get('providerPaymentId') !== String(payment.id) || current.get('offerDigest') !== digest(d.offer) ||
       current.get('acceptedOfferDigest') !== current.get('offerDigest') || current.get('acceptedBy') !== uid ||
       current.get('requestDigest') !== hash(current.get('requestBody')) || current.get('collectorId') !== d.collectorId) throw Error('OFFICIAL_PIX_ACCEPTANCE_CHANGED');
