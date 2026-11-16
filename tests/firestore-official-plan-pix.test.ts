@@ -618,6 +618,20 @@ test('a second buyer reclaims an expired never-issued coupon and contracts Busin
     const issued = await api.checkoutOfficialPlanPix({ authorization: 'buyer-2', checkoutId: second.checkoutId });
     assert.equal(issued.state, 'awaiting_payment');
     assert.equal(payment.transaction_amount, 1);
+    // Once a Pix exists, an elapsed reservation timer is not permission to
+    // recycle the coupon, even when another buyer tries to accept it.
+    const pending = (await db.collection('stores/official-store/promotionReservations')
+      .where('status', '==', 'reserved').get()).docs[0];
+    await pending.ref.update({ expiresAt: new Date(Date.now() - 1000).toISOString() });
+    const newAttempt = await api.quoteOfficialPlanPix({ authorization: 'buyer',
+      storeId: 'official-store', productId: 'business', selectedMonths: 1, promotionCode: 'SECOND' });
+    await assert.rejects(
+      api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: newAttempt.checkoutId, acceptedTotalMinor: 100 }),
+      /OFFICIAL_PROMOTION_LIMIT/,
+      'a waiting Pix keeps the one-use coupon reserved despite an elapsed timer',
+    );
+    assert.equal((await promoRef.get()).get('reservedCount'), 1);
+    assert.equal((await pending.ref.get()).get('status'), 'reserved');
     payment = { ...payment, status: 'approved', status_detail: 'accredited', date_approved: new Date().toISOString() };
     const confirmed = await api.reconcileOfficialPlanPix({ authorization: 'buyer-2', checkoutId: second.checkoutId });
     assert.equal(confirmed.state, 'activated');
