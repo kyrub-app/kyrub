@@ -34,6 +34,8 @@ test('emulator-only simulated Pix approves exact Business R$1 snapshot', () => {
   const result = verifyIsolatedOfficialPlanPromotionPix(input);
   assert.equal(result.paidMinor, 100);
   assert.equal(result.simulated, true);
+  delete process.env.FIRESTORE_EMULATOR_HOST;
+  delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
 });
 test('simulated Pix rejects production, pending, wrong buyer, checkout and amount', () => {
   process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
