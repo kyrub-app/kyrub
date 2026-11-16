@@ -1,4 +1,10 @@
 import { createHash } from 'node:crypto';
+import {
+  assessDeliveryCargo,
+  courierVehicleDocumentEligibility,
+  isCourierVehicleType,
+  type CourierVehicleType,
+} from '../../shared/deliveryVehicleCompatibility.js';
 import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import type { DecodedIdToken } from 'firebase-admin/auth';
@@ -122,6 +128,26 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
     return;
   }
+  if (message.startsWith('VEHICLE_NOT_ELIGIBLE:')) {
+    response.status(403).json({
+      code: 'VEHICLE_NOT_ELIGIBLE',
+      error: message.slice('VEHICLE_NOT_ELIGIBLE:'.length).trim(),
+    });
+    return;
+  }
+  if (message === 'DELIVERY_CARGO_INCOMPLETE'
+    || message === 'DELIVERY_VEHICLE_NOT_COMPATIBLE'
+    || message === 'DELIVERY_PAYMENT_MISSING') {
+    response.status(409).json({
+      code: message,
+      error: message === 'DELIVERY_CARGO_INCOMPLETE'
+        ? 'A loja ainda precisa classificar peso, dimensões e tipo da carga.'
+        : message === 'DELIVERY_VEHICLE_NOT_COMPATIBLE'
+          ? 'A carga não é compatível com esse veículo.'
+          : 'A remuneração da entrega ainda não está definida.',
+    });
+    return;
+  }
   if (message === 'DELIVERY_BUYER_CONFIRMATION_FORBIDDEN') {
     response.status(403).json({
       error: 'Somente o comprador deste pedido pode confirmar o recebimento.',
@@ -191,6 +217,11 @@ export const publishKyrubDeliveryOpportunity = async (
         loadAuthoritativeDeliveryResponsibilityPolicy(nowIso),
         loadAuthoritativeDeliveryCustomerArrivalPolicy(nowIso),
       ]);
+  const cargoAssessment = assessDeliveryCargo(
+    existing.exists && clean(existing.data()?.status) !== 'available'
+      ? existing.data()?.cargo
+      : order.deliveryCargo
+  );
   const customerGeofenceSnapshot =
     destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'resolved' &&
     destinationResolutionSnapshot.customerDestinationResolutionSnapshot &&
@@ -214,6 +245,9 @@ export const publishKyrubDeliveryOpportunity = async (
     to: deliveryAddress,
     distance: finite(order.distance),
     payment: finite(order.deliveryFee),
+    cargo: cargoAssessment.cargo,
+    cargoReady: cargoAssessment.ready,
+    allowedVehicles: cargoAssessment.allowedVehicles,
     status: existing.exists ? clean(existing.data()?.status) || 'available' : 'available',
     requestedBy: tenantId,
     acceptedBy: clean(existing.data()?.acceptedBy),
@@ -280,6 +314,9 @@ export const publishKyrubDeliveryOpportunity = async (
       orderStatus,
       distance: finite(order.distance),
       payment: finite(order.deliveryFee),
+      cargo: cargoAssessment.cargo,
+      cargoReady: cargoAssessment.ready,
+      allowedVehicles: cargoAssessment.allowedVehicles,
     }),
     createdAt: existing.exists ? existing.data()?.createdAt ?? now : now,
     updatedAt: FieldValue.serverTimestamp(),
@@ -303,19 +340,22 @@ export const publishKyrubDeliveryOpportunity = async (
 export const updateKyrubDeliveryStatus = async (
   deliveryId: string,
   status: DeliveryOperationalStatus,
-  actor: AuthenticatedActor
+  actor: AuthenticatedActor,
+  requestedVehicle?: unknown
 ): Promise<void> => {
   const normalizedId = validateDeliveryId(deliveryId);
   const deliveryReference = adminDb.doc(deliveryPath(normalizedId));
   const claimReference = adminDb.doc(claimPath(normalizedId));
   const scheduleReference = adminDb.doc(escalationQueuePath(normalizedId));
   const publicOfferReference = adminDb.doc(publicOfferPath(normalizedId));
+  const identityReference = adminDb.doc(`identity_verifications/${actor.uid}`);
 
   await adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, scheduleSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, scheduleSnapshot, identitySnapshot] = await Promise.all([
       transaction.get(deliveryReference),
       transaction.get(claimReference),
       transaction.get(scheduleReference),
+      transaction.get(identityReference),
     ]);
     if (!deliverySnapshot.exists) {
       throw new Error('Esta entrega não foi encontrada.');
@@ -334,12 +374,34 @@ export const updateKyrubDeliveryStatus = async (
       if (currentStatus !== 'available') {
         throw new Error('Esta entrega já foi aceita.');
       }
+      // The vehicle is a requested modality, not authority: check the reviewed
+      // identity and seller-declared cargo inside the same acceptance transaction.
+      if (!isCourierVehicleType(requestedVehicle)) {
+        throw new Error('VEHICLE_NOT_ELIGIBLE: Selecione bicicleta, moto ou carro.');
+      }
+      const vehicle: CourierVehicleType = requestedVehicle;
+      const identity = identitySnapshot.data() as Record<string, unknown> | undefined;
+      const vehicleEligibility = courierVehicleDocumentEligibility(identity, vehicle);
+      if (!vehicleEligibility.eligible) {
+        throw new Error(`VEHICLE_NOT_ELIGIBLE: ${vehicleEligibility.reason}`);
+      }
+      const assessedCargo = assessDeliveryCargo(delivery.cargo);
+      if (!assessedCargo.ready || delivery.cargoReady !== true) {
+        throw new Error('DELIVERY_CARGO_INCOMPLETE');
+      }
+      if (!assessedCargo.allowedVehicles.includes(vehicle)) {
+        throw new Error('DELIVERY_VEHICLE_NOT_COMPATIBLE');
+      }
+      if (finite(delivery.payment) <= 0) {
+        throw new Error('DELIVERY_PAYMENT_MISSING');
+      }
 
       transaction.create(claimReference, {
         id: normalizedId,
         deliveryJobId: normalizedId,
         courierId: actor.uid,
         courierName: actor.name,
+        vehicleType: vehicle,
         status: 'accepted',
         acceptedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
@@ -349,6 +411,7 @@ export const updateKyrubDeliveryStatus = async (
         status: 'accepted',
         acceptedBy: actor.uid,
         acceptedByName: actor.name,
+        vehicleType: vehicle,
         acceptedAt: FieldValue.serverTimestamp(),
         fallbackStatus: 'accepted_by_kyrub',
         updatedAt: FieldValue.serverTimestamp(),
@@ -585,7 +648,7 @@ export const createDeliveryOpportunityRouter = (): Router => {
     try {
       const actor = await authenticatedActor(request);
       const status = parseOperationalStatus(request.body?.status);
-      await updateKyrubDeliveryStatus(request.params.deliveryId, status, actor);
+      await updateKyrubDeliveryStatus(request.params.deliveryId, status, actor, request.body?.vehicleType);
       response.status(204).end();
     } catch (error) {
       errorResponse(response, error);
