@@ -18,6 +18,7 @@ import { preparePrepaidOrderMirror } from './marketplaceOrderPaymentSettlementSe
 import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
+import { projectVerifiedFirstStoreCatalogOffers } from './marketplaceDiscoveryService.js';
 import {
   mapMercadoPagoWebhookError,
   processMercadoPagoWebhook,
@@ -173,7 +174,62 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
   });
 };
 
+/**
+ * A verified first store publishes its public listing under the owner's UID,
+ * but its ERP products are held in an independent canonical stores/{id} path.
+ * The checkout must read the same published projection as the storefront,
+ * rather than trusting an absent/stale legacy tenant mirror.
+ *
+ * Null means this is not a verified first-store identity: keep legacy checkout
+ * semantics unchanged. Publication/identity conflicts fail closed.
+ */
+const loadVerifiedFirstStorePublishedCatalog = async (
+  publicStoreId: string
+): Promise<CatalogProduct[] | null> => {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(publicStoreId)) return null;
+  const listingId = `s_${publicStoreId.length}_${publicStoreId}`;
+  const listing = await adminDb.doc(`marketplace_listings/${listingId}`).get();
+  if (!listing.exists) return null;
+
+  if (listing.get('listingType') !== 'store' ||
+      listing.get('storeId') !== publicStoreId ||
+      listing.get('ownerId') !== publicStoreId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (listing.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const privateStore = await adminDb.doc(`users/${publicStoreId}/stores/${publicStoreId}`).get();
+  const canonicalStoreId = clean(privateStore.get('canonicalStoreId'));
+  if (!canonicalStoreId || canonicalStoreId === publicStoreId) return null;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+
+  const canonicalStore = await adminDb.doc(`stores/${canonicalStoreId}`).get();
+  if (!canonicalStore.exists ||
+      canonicalStore.get('ownerId') !== publicStoreId ||
+      canonicalStore.get('legacyTenantId') !== publicStoreId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (canonicalStore.get('firstStoreCreationVerified') !== true) return null;
+  if (canonicalStore.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const canonicalProducts = await adminDb.collection('stores')
+    .doc(canonicalStoreId).collection('products')
+    .where('publicationStatus', '==', 'published').limit(250).get();
+  return catalogProducts(projectVerifiedFirstStoreCatalogOffers(
+    canonicalProducts.docs, canonicalStoreId, publicStoreId
+  ));
+};
+
 const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> => {
+  const verifiedFirstStoreCatalog = await loadVerifiedFirstStorePublishedCatalog(storeId);
+  if (verifiedFirstStoreCatalog !== null) return verifiedFirstStoreCatalog;
+
   const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
   const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
   if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {

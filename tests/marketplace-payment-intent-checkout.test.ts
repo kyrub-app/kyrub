@@ -87,6 +87,24 @@ test('checkout client sends only item identity and quantity, not authoritative p
   assert.match(checkoutClientSource, /method: 'pix'/);
 });
 
+
+test('verified first-store checkout uses the same published canonical catalog as the public storefront', () => {
+  const storefront = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
+
+  assert.match(intentRouterSource, /loadVerifiedFirstStorePublishedCatalog/);
+  assert.match(intentRouterSource, /marketplace_listings\/\$\{listingId\}/);
+  assert.match(intentRouterSource, /listing\.get\('publicationStatus'\) !== 'published'/);
+  assert.match(intentRouterSource, /users\/\$\{publicStoreId\}\/stores\/\$\{publicStoreId\}/);
+  assert.match(intentRouterSource, /canonicalStore\.get\('firstStoreCreationVerified'\) !== true/);
+  assert.match(intentRouterSource, /canonicalStore\.get\('ownerId'\) !== publicStoreId/);
+  assert.match(intentRouterSource, /canonicalStore\.get\('publicationStatus'\) !== 'published'/);
+  assert.match(intentRouterSource, /projectVerifiedFirstStoreCatalogOffers\(/);
+  assert.match(intentRouterSource, /if \(verifiedFirstStoreCatalog !== null\) return verifiedFirstStoreCatalog;/);
+  assert.match(intentRouterSource, /return catalogProducts\(tenant\?\.publicProducts\)/);
+  assert.match(storefront, /projectVerifiedFirstStoreCatalogOffers\(canonicalProducts\.docs, verifiedFirstStoreId, storeId\)/);
+  assert.match(storefront, /data\.publicationStatus !== 'published'/);
+});
+
 test('backend reconstructs marketplace totals from the published store catalog', () => {
   assert.match(intentRouterSource, /const loadPublishedCatalog = async/);
   assert.match(intentRouterSource, /adminDb\.doc\(`tenants\/\$\{storeId\}`\)/);
