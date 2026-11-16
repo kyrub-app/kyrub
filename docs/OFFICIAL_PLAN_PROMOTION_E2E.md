@@ -48,3 +48,6 @@ O novo leitor somente-consulta `quoteOfficialPlanPromotionFromErp` verifica a de
 `verifyIsolatedOfficialPlanPromotionPix` exige `FIRESTORE_EMULATOR_HOST` em localhost/127.0.0.1 e flag explícita `true`. Valida o identificador de checkout, vínculo ao comprador, BRL/Pix, status aprovado e valor de 100 centavos contra o snapshot do Business mensal. O módulo é puro e **não grava contratos, não chama Mercado Pago e não autoriza concessão de benefícios**. Os testes unitários verificam rejeição de execução não isolada, pagamento pendente, valor diferente e identidade divergente.
 
 Pendente: conectar cotação/reserva/simulação/finalização ao fluxo de checkout no Firebase Emulator, criar contrato fictício e validar os efeitos no entitlement. Não usar retorno desse verificador como comprovante real de pagamento.
+
+## Teste encadeado de regras comerciais (não E2E Firebase)
+`tests/official-plan-promotion-commercial-chain.test.ts` encadeia cotação do cupom do ERP, snapshot aceito de R$1, verificação do valor e confirmação Pix fictícia aprovada, rejeitando a tentativa de cobrar R$397. A configuração de isolamento é lida do ambiente do servidor e restaurada após o teste. Este teste **não acessa Firestore Emulator**, não executa a interface, não cria contrato nem concede Business. É validação unitária integrada dos módulos puros, não evidência de E2E.
