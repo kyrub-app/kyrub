@@ -183,19 +183,25 @@ try {
     await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
     throw error;
   }
-  assert.equal(
-    new URL(await couponLink.getAttribute('href'), origin).pathname,
-    '/@kyrub-oficial',
-    'the real social card must link directly to the canonical Official Store',
-  );
-  assert.equal(
-    new URL(await couponLink.getAttribute('href'), origin).searchParams.get('coupon'),
-    'BIZ1',
-  );
-  // Do not take a full-page screenshot between resolving the link and
-  // clicking it: asynchronous LegacyApp refresh can remount the social tab.
-  // This still requires a genuine DOM click through the real Praça card.
-  await couponLink.click({ timeout: 15000 });
+  // Inspect the real rendered anchor just once, then click it through
+  // Playwright. Product-sync may remount its parent between awaits.
+  const sharedHref = await couponLink.getAttribute('href', { timeout: 15000 });
+  const target = new URL(sharedHref, origin);
+  assert.equal(target.pathname, '/@kyrub-oficial',
+    'the real social card must open the canonical Official Store');
+  assert.equal(target.searchParams.get('coupon'), 'BIZ1');
+  try {
+    await couponLink.click({ timeout: 20000 });
+  } catch (error) {
+    console.error('PRAÇA_CLICK_AFTER_RENDER_DIAGNOSTIC', JSON.stringify(
+      await page.evaluate(() => ({
+        route: location.pathname,
+        pracaVisible: !!document.querySelector('#praca-tab-container'),
+        appText: document.body.innerText.slice(-1300),
+      }))
+    ));
+    throw error;
+  }
   await page.waitForURL(url => url.pathname === '/@kyrub-oficial'
     && url.searchParams.get('coupon') === 'BIZ1', { timeout: 20000 });
   const section = page.locator('#official-plan-contract-section');
