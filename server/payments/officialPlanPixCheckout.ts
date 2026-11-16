@@ -18,7 +18,11 @@ import { officialPlanPixAccount, officialPlanPixRequest, verifyOfficialPlanPixSi
 import type { ContractTermMonths } from '../../shared/subscriptionContractOffers.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { parseOfficialPlanRewards } from '../../shared/officialPlanRewards.js';
-import { assertNoUnintegratedOfficialPromotion } from './officialPlanPromotionCheckoutAmount.js';
+import { resolveOfficialPromotionalCheckoutAmount } from './officialPlanPromotionCheckoutAmount.js';
+import { resolveOfficialPlanPromotionCodeFromErp } from './officialPlanPromotionErpReader.js';
+import { buildOfficialPromotionAcceptedTerms } from './officialPlanPromotionAcceptedTerms.js';
+import { reserveOfficialPlanPromotionWithinTransaction } from './officialPlanPromotionReservation.js';
+import { finalizeOfficialPlanPromotionReservation } from './officialPlanPromotionFinalization.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -32,6 +36,27 @@ const slotRef = (uid: string) => adminDb.doc(`${ROOT}/store_subscriptions/${uid}
 const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
 const pilotRef = () => adminDb.doc(`${ROOT}/official_plan_pix_pilot/one_shot`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
+const isolatedOfficialPromotionEnabled = () =>
+  /^(127\\.0\\.0\\.1|localhost):\\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') &&
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST === 'true';
+/** This is the production checkout's amount authority, including any server-priced ERP coupon. */
+const officialPixChargeMinor = (d: any): number => {
+  if (!d.promotionAcceptedTerms) return d.offer.quote.totalMinor;
+  return resolveOfficialPromotionalCheckoutAmount({
+    buyerUid: d.buyerId, offer: d.offer, accepted: d.promotionAcceptedTerms,
+    providerAmountMinor: d.promotionAcceptedTerms.payableMinor,
+  }).payableMinor;
+};
+const publicOfficialPixQuote = (d: any) => {
+  const accepted = d.promotionAcceptedTerms;
+  return accepted ? { ...d.offer.quote, totalMinor: officialPixChargeMinor(d),
+    originalTotalMinor: d.offer.quote.totalMinor, promotionDiscountMinor: accepted.discountMinor,
+    promotionCode: accepted.code } : d.offer.quote;
+};
+const promotionReservationRef = (d: any) => adminDb.doc(
+  `stores/${d.offer.storeId}/promotionReservations/${hash('official-plan-promotion:' + d.checkoutId)}`
+);
+
 // Fail closed whenever live creation is enabled. Pilot mode restricts issuance
 // to one authenticated user and one canonical Pro/month offer.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
@@ -39,6 +64,11 @@ const allowPilotOffer = (d: any, uid: string) => {
   gate();
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
+  // The exact same canonical flow can be exercised for one discounted Business
+  // contract in the local emulator. This exception is impossible in production.
+  if (d.promotionAcceptedTerms && isolatedOfficialPromotionEnabled() &&
+      d.offer.plan === 'business' && d.offer.quote.months === 1 &&
+      officialPixChargeMinor(d) === 100) return;
   // The published Official Store product, not a compiled pilot price, owns the charge.
   // The accepted offer is revalidated against the canonical product before issuance.
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
@@ -88,15 +118,22 @@ async function offer(storeId: string, productId: string, months: ContractTermMon
     ownerUserId: official.ownerUserId, legacyStoreId: official.legacyStoreId, quote, rewards, points };
 }
 
-export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths }) {
+export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths; promotionCode?: string }) {
   const buyer = await authenticateConsultantRequest(input.authorization);
   if (!valid(input.storeId) || !valid(input.productId) || ![1, 3, 6, 12].includes(input.selectedMonths)) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
+  if (input.promotionCode && (!isolatedOfficialPromotionEnabled() ||
+      typeof input.promotionCode !== 'string' || input.promotionCode.length > 48)) {
+    throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+  }
   // Reopen an unresolved attempt with its original accepted terms, even after the catalog changes.
   const slot = await slotRef(buyer.uid).get();
   if (slot.get('officialPixCheckoutId') && blockedSlot(slot.data())) {
     const d = (await checkoutRef(slot.get('officialPixCheckoutId')).get()).data();
-    if (d?.buyerId !== buyer.uid || d?.offer.storeId !== input.storeId || d?.offer.productId !== input.productId) throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
-    return { checkoutId: slot.get('officialPixCheckoutId'), quote: d.offer.quote, status: d.status };
+    if (d?.buyerId !== buyer.uid || d?.offer.storeId !== input.storeId || d?.offer.productId !== input.productId ||
+        (input.promotionCode && d.promotionAcceptedTerms?.code !== input.promotionCode)) {
+      throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+    }
+    return { checkoutId: slot.get('officialPixCheckoutId'), quote: publicOfficialPixQuote(d), status: d.status };
   }
   if (blockedSlot(slot.data())) throw Error('OFFICIAL_PIX_EXISTING_SUBSCRIPTION');
   const [snapshot, owned, legacy, entitlement] = await Promise.all([
@@ -112,11 +149,23 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     hasLegacyStore: legacy.exists,
   });
   if (liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVE_ENTITLEMENT');
+  const promoted = input.promotionCode ? await resolveOfficialPlanPromotionCodeFromErp({
+    officialStoreId: snapshot.storeId, officialProductId: snapshot.productId,
+    buyerUid: buyer.uid, contractTotalMinor: snapshot.quote.totalMinor,
+    code: input.promotionCode,
+  }) : null;
+  const promotionAcceptedTerms = promoted ? buildOfficialPromotionAcceptedTerms({
+    promotion: promoted.promotion, officialStoreId: snapshot.storeId,
+    officialProductId: snapshot.productId, buyerUid: buyer.uid,
+    months: snapshot.quote.months, contractTotalMinor: snapshot.quote.totalMinor,
+  }) : null;
   const checkoutId = randomBytes(32).toString('hex');
-  await checkoutRef(checkoutId).create({ checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
-    ...buyerStore,
-    offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
-  return { checkoutId, quote: snapshot.quote, status: 'quoted' };
+  const quoted = { checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
+    ...buyerStore, offer: snapshot, offerDigest: digest(snapshot),
+    ...(promotionAcceptedTerms ? { promotionAcceptedTerms } : {}),
+    status: 'quoted', quotedAt: now() };
+  await checkoutRef(checkoutId).create(quoted);
+  return { checkoutId, quote: publicOfficialPixQuote(quoted), status: 'quoted' };
 }
 
 async function load(authorization: string, checkoutId: string) {
@@ -131,12 +180,19 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
   const { buyer } = await load(input.authorization, input.checkoutId);
   return adminDb.runTransaction(async tx => {
     const r = checkoutRef(input.checkoutId), doc = await tx.get(r), d = doc.data()!;
-    // Do not record acceptance of a full-price offer when promotional terms
-    // are present but not yet propagated through the canonical financial flow.
-    assertNoUnintegratedOfficialPromotion(d);
-    if (d.buyerId !== buyer.uid || d.offer.quote.totalMinor !== input.acceptedTotalMinor || digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
+    if (d.buyerId !== buyer.uid || officialPixChargeMinor(d) !== input.acceptedTotalMinor ||
+        digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
     if (d.acceptedAt) return { status: 'already_accepted' };
     if (d.status !== 'quoted') throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
+    if (d.promotionAcceptedTerms) {
+      if (!isolatedOfficialPromotionEnabled()) throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+      await reserveOfficialPlanPromotionWithinTransaction(tx, {
+        checkoutId: input.checkoutId, buyerUid: buyer.uid,
+        officialStoreId: d.offer.storeId, officialProductId: d.offer.productId,
+        promotionId: d.promotionAcceptedTerms.promotionId,
+        contractTotalMinor: d.offer.quote.totalMinor,
+      });
+    }
     const acceptedAt = now();
     tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest, status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
     return { status: 'accepted' };
@@ -147,7 +203,7 @@ function validatePayment(payment: any, d: any) {
   const cents = payment?.transaction_amount * 100;
   if (!/^\d{1,32}$/.test(String(payment?.id)) || payment.currency_id !== 'BRL' || payment.payment_method_id !== 'pix' ||
     String(payment.collector_id) !== d.collectorId || payment.external_reference !== reference(d.checkoutId) ||
-    !Number.isSafeInteger(Math.round(cents)) || Math.abs(cents - Math.round(cents)) > 1e-6 || Math.round(cents) !== d.offer.quote.totalMinor ||
+    !Number.isSafeInteger(Math.round(cents)) || Math.abs(cents - Math.round(cents)) > 1e-6 || Math.round(cents) !== officialPixChargeMinor(d) ||
     Number(payment.transaction_amount_refunded ?? 0) !== 0 ||
     (process.env.VERCEL_ENV === 'production' && payment.live_mode !== true)) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
 }
@@ -164,9 +220,6 @@ async function bind(d: any, paymentId: string) {
 export async function checkoutOfficialPlanPix(input: { authorization: string; checkoutId: string }) {
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
-  // A coupon snapshot is not yet supported by the canonical Pix issuance,
-  // ledger and contract path. Never silently charge the undiscounted price.
-  assertNoUnintegratedOfficialPromotion(d);
   allowPilotOffer(d, buyer.uid);
   // Pre-store checkout remains disabled by default. A separate explicit launch flag
   // permits only the existing one-buyer, one-shot Pro pilot (enforced by allowPilotOffer).
@@ -191,20 +244,29 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   if (url.protocol !== 'https:') throw Error('OFFICIAL_PIX_WEBHOOK_URL_INVALID');
   url.pathname = '/api/plan-control'; url.search = ''; url.hash = '';
   url.searchParams.set('op', 'official.prepaid.webhook'); url.searchParams.set('checkoutId', d.checkoutId);
-  const body = JSON.stringify({ transaction_amount: d.offer.quote.totalMinor / 100, payment_method_id: 'pix',
+  const body = JSON.stringify({ transaction_amount: officialPixChargeMinor(d) / 100, payment_method_id: 'pix',
     payer: { email: buyer.email }, description: d.offer.productName, notification_url: url.toString(),
     date_of_expiration: d.expiresAt, external_reference: reference(d.checkoutId) });
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId), slot = slotRef(buyer.uid);
-    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot] = await Promise.all([
+    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot, couponReservation] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
       tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
       tx.get(pilotRef()),
+      d.promotionAcceptedTerms ? tx.get(promotionReservationRef(d)) : Promise.resolve(null),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
     allowPilotOffer(d, buyer.uid);
+    if (d.promotionAcceptedTerms &&
+        (current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest ||
+         couponReservation?.get('status') !== 'reserved' ||
+         couponReservation.get('buyerUid') !== buyer.uid ||
+         couponReservation.get('promotionId') !== d.promotionAcceptedTerms.promotionId ||
+         Date.parse(couponReservation.get('expiresAt')) <= Date.now())) {
+      throw Error('OFFICIAL_PIX_PROMOTION_RESERVATION_REQUIRED');
+    }
     if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
     if ((d.buyerStoreId ? buyerStore?.get('ownerId') !== buyer.uid : d.buyerStoreProvisioningRequired !== true) || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
