@@ -24,9 +24,10 @@ const input = {
   offer: { storeId: 'official', productId: 'business',
     quote: { months: 1 as const, totalMinor: 39700 } },
   accepted,
+  providerAmountMinor: 100,
 };
 test('Business canonical R$397 and ERP discount R$396 yields exactly R$1', () => {
-  const result = resolveOfficialPromotionalCheckoutAmount({ ...input, providerAmountMinor: 100 });
+  const result = resolveOfficialPromotionalCheckoutAmount(input);
   assert.equal(result.originalTotalMinor, 39700);
   assert.equal(result.discountMinor, 39600);
   assert.equal(result.payableMinor, 100);
