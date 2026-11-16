@@ -51,6 +51,10 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
       `stores/${input.officialStoreId}/promotionBuyerReservations/${input.promotionId}_${buyerKey(reservation.get('buyerUid'))}`
     );
     const buyer = await tx.get(buyerRef);
+    if (!buyer.exists || buyer.get('buyerUid') !== reservation.get('buyerUid') ||
+        buyer.get('promotionId') !== input.promotionId) {
+      throw new Error('OFFICIAL_PROMOTION_BUYER_COUNTER_CONFLICT');
+    }
     const status = reservation.get('status');
     const finalStatus = input.outcome === 'redeem' ? 'redeemed' : 'released';
     if (status === finalStatus) return { status: 'already_finalized' as const };
@@ -64,6 +68,10 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
           accepted.promotionId !== input.promotionId ||
           accepted.buyerUid !== reservation.get('buyerUid') ||
           accepted.officialProductId !== reservation.get('productId') ||
+          accepted.officialStoreId !== input.officialStoreId ||
+          checkout.get('offer')?.storeId !== input.officialStoreId ||
+          checkout.get('offer')?.productId !== reservation.get('productId') ||
+          checkout.get('offer')?.quote?.totalMinor !== accepted.originalTotalMinor ||
           checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
           !checkout.get('providerPaymentId')) {
         throw new Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
@@ -93,9 +101,13 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
       updates.redemptionCount = redeemed + 1;
     }
     tx.update(promotionRef, updates);
+    const redeemedByBuyer = buyer.get('redemptionCount') ?? 0;
+    if (!Number.isSafeInteger(redeemedByBuyer) || redeemedByBuyer < 0) {
+      throw new Error('OFFICIAL_PROMOTION_COUNTER_CONFLICT');
+    }
     tx.update(buyerRef, {
       reservationCount: buyerCount - 1,
-      redemptionCount: (buyer.get('redemptionCount') ?? 0) + (input.outcome === 'redeem' ? 1 : 0),
+      redemptionCount: redeemedByBuyer + (input.outcome === 'redeem' ? 1 : 0),
     });
     tx.update(reservationRef, { status: finalStatus, finalizedAt: (input.now ?? new Date()).toISOString() });
     return { status: finalStatus };
