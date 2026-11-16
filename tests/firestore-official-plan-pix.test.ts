@@ -358,9 +358,11 @@ test('ERP Business coupon uses the REAL official Pix checkout, contract and bene
     const accepted = await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 });
     assert.equal(accepted.status, 'accepted');
     assert.equal((await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 })).status, 'already_accepted');
+    const reopened = await api.quoteOfficialPlanPix(quoteInput);
+    assert.equal(reopened.checkoutId, q.checkoutId, 'an accepted coupon must reopen its existing checkout');
     await assert.rejects(
       api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: competingQuote.checkoutId, acceptedTotalMinor: 100 }),
-      /OFFICIAL_PROMOTION_LIMIT|OFFICIAL_PROMOTION_BUYER_LIMIT/,
+      /OFFICIAL_PROMOTION_LIMIT|OFFICIAL_PROMOTION_BUYER_LIMIT|OFFICIAL_PIX_EXISTING_CHECKOUT/,
       'the second checkout may not reserve the same one-use coupon',
     );
     const reserved = await db.doc('stores/official-store/promotions/business-pilot').get();
@@ -464,6 +466,89 @@ test('canonical rejected Pix releases ERP reservation without redeeming or grant
     assert.equal((await db.collection('stores/official-store/promotionReservations').get()).docs[0].get('status'), 'released');
     assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
     assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).exists, false);
+    assert.equal(posts, 1);
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+  }
+});
+
+test('abandoned accepted ERP coupon expires atomically, but an issued Pix keeps its reservation', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0; payment = undefined; loseProviderResponse = false; ambiguousSearch = false;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  const root = 'kyrub_admin/control_plane', stamp = Date.now();
+  await Promise.all([
+    db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+    db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+    db.doc('stores/buyer-store').set({ ownerId: 'buyer', plan: 'free' }),
+    db.doc('users/buyer/stores/buyer').set({ plan: 'free' }),
+    db.doc('stores/official-store/products/business').set({
+      name: 'Business', price: 397, publicationStatus: 'published', storePointsPerUnit: 0,
+      saleModality: { schemaVersion: 1, mode: 'subscription', subscription: {
+        schemaVersion: 1, autoRenew: false, billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+      } },
+      contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    }),
+    db.doc(root + '/official_plan_products/business').set({
+      canonicalStoreId: 'official-store', productId: 'business',
+      planId: 'business', status: 'active', rewards: { xp: 0 },
+    }),
+    db.doc('stores/official-store/promotions/expirable-promo').set({
+      id: 'expirable-promo', storeId: 'official-store', code: 'EXPIRETEST',
+      title: 'Expirable Business coupon', badge: 'TEST', discountType: 'fixed',
+      discountValue: 396, productIds: ['business'], eligibility: { mode: 'public' },
+      active: true, startsAt: new Date(stamp - 86400000).toISOString(),
+      endsAt: new Date(stamp + 86400000).toISOString(),
+      maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
+      createdBy: 'owner', createdVia: 'manual', actionId: 'expire-test',
+      createdAt: new Date(stamp).toISOString(), updatedAt: new Date(stamp).toISOString(),
+    }),
+  ]);
+  const quoteInput = { authorization: 'buyer', storeId: 'official-store',
+    productId: 'business', selectedMonths: 1 as const, promotionCode: 'EXPIRETEST' };
+  const promoRef = db.doc('stores/official-store/promotions/expirable-promo');
+  try {
+    const original = await api.quoteOfficialPlanPix(quoteInput);
+    await api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: original.checkoutId, acceptedTotalMinor: 100 });
+    const priorReservations = await db.collection('stores/official-store/promotionReservations').get();
+    assert.equal(priorReservations.size, 1);
+    assert.equal((await promoRef.get()).get('reservedCount'), 1);
+    const past = new Date(Date.now() - 1000).toISOString();
+    await Promise.all([
+      db.doc(root + '/plan_pix_checkouts/' + original.checkoutId).update({ expiresAt: past }),
+      priorReservations.docs[0].ref.update({ expiresAt: past }),
+    ]);
+    const fresh = await api.quoteOfficialPlanPix(quoteInput);
+    assert.notEqual(fresh.checkoutId, original.checkoutId, 'unissued abandoned checkout must not be reused');
+    assert.equal((await db.doc(root + '/plan_pix_checkouts/' + original.checkoutId).get()).get('status'), 'expired');
+    assert.equal(priorReservations.docs[0].id && (await priorReservations.docs[0].ref.get()).get('status'), 'released');
+    assert.equal((await promoRef.get()).get('reservedCount'), 0);
+    assert.equal((await promoRef.get()).get('redemptionCount'), 0);
+    assert.equal((await db.doc(root + '/store_subscriptions/buyer').get()).get('officialPromotionReservationCheckoutId'), null);
+    assert.equal(posts, 0, 'expiry before issuance cannot create a payment');
+    await api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: fresh.checkoutId, acceptedTotalMinor: 100 });
+    const issued = await api.checkoutOfficialPlanPix({ authorization: 'buyer', checkoutId: fresh.checkoutId });
+    assert.equal(issued.state, 'awaiting_payment');
+    assert.equal(posts, 1);
+    const activeReservation = (await db.collection('stores/official-store/promotionReservations')
+      .where('status','==','reserved').get()).docs[0];
+    assert.ok(activeReservation);
+    await Promise.all([
+      db.doc(root + '/plan_pix_checkouts/' + fresh.checkoutId).update({ expiresAt: past }),
+      activeReservation.ref.update({ expiresAt: past }),
+    ]);
+    const reopened = await api.quoteOfficialPlanPix(quoteInput);
+    assert.equal(reopened.checkoutId, fresh.checkoutId, 'issued Pix may not be replaced by another promotional quote');
+    assert.equal((await promoRef.get()).get('reservedCount'), 1,
+      'reservation cannot be released while provider payment is unresolved');
+    assert.equal((await activeReservation.ref.get()).get('status'), 'reserved');
+    assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
     assert.equal(posts, 1);
   } finally {
     delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
