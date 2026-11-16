@@ -61,3 +61,12 @@ A reserva agora lê `plan_pix_checkouts/{checkoutId}` **dentro da mesma transaç
 `attachIsolatedOfficialPromotionToCheckout` é um adaptador interno que exige `FIRESTORE_EMULATOR_HOST` local e `KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST=true`. Ele consulta o checkout oficial persistido, exige mesmo comprador, status `quoted`, oferta consistente e designação da Loja Oficial. Na transação Firestore, lê a promoção criada no ERP, recalcula a cotação canônica e persiste `promotionAcceptedTerms` com digest. Repetição com mesmo snapshot é idempotente; divergência falha fechada. Não é endpoint público, não cria cobrança, não ativa Business.
 
 A reserva pode agora encontrar o snapshot esperado em checkout fictício do emulador. Ainda faltam testes Firebase Emulator de ponta a ponta, integração de um checkout isolado que consuma esses módulos e criação do contrato/entitlement simulado. O checkout real permanece sem suporte a cupom Business.
+
+## Teste transacional Firestore Emulator
+Novo teste `tests/firestore-official-plan-promotion-isolated.test.ts` usa transações reais no emulador, com banco `demo-kyrub-official-promotion`, sem acessar produção. Exercita anexação idempotente do snapshot, quatro reservas concorrentes do mesmo checkout, bloqueio de checkout sem aceite, rejeição de resgate sem confirmação e quatro finalizações concorrentes com exatamente um consumo de cupom.
+
+Executar localmente em ambiente isolado com Firebase Emulator:
+```bash
+KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST=true npx firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-official-promotion --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-official-plan-promotion-isolated.test.ts"
+```
+A atualização do checkout para `activated` nesse teste é um **fixture simulado**, não a execução real do reconciliador Pix nem a concessão de Business. O teste ainda não foi executado/atestado no emulador nesta sessão; aprovação de build não comprova a execução do teste transacional. A integração de contrato e entitlement continua pendente.
