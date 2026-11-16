@@ -23,12 +23,14 @@ import {
 } from './deliveryResponsibilityPolicyService.js';
 import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
 import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
+import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.js';
 import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
   loadAuthoritativeDeliveryCustomerArrivalPolicy,
 } from './deliveryCustomerArrivalPolicyService.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
+const PUBLIC_DELIVERY_OFFERS_COLLECTION = 'hub/renda/deliveryOffers';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 const DELIVERY_ESCALATION_QUEUE = 'deliveryEscalationQueue';
 const ESCALATION_COLLECTION = 'adminLogisticsEscalations';
@@ -88,6 +90,8 @@ const deliveryJobId = (tenantId: string, orderId: string): string =>
 
 const deliveryPath = (deliveryId: string): string =>
   `${DELIVERY_COLLECTION}/${deliveryId}`;
+const publicOfferPath = (deliveryId: string): string =>
+  `${PUBLIC_DELIVERY_OFFERS_COLLECTION}/${deliveryId}`;
 const claimPath = (deliveryId: string): string =>
   `${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`;
 const escalationQueuePath = (deliveryId: string): string =>
@@ -266,6 +270,18 @@ export const publishKyrubDeliveryOpportunity = async (
 
   const batch = adminDb.batch();
   batch.set(reference, payload, { merge: true });
+  batch.set(adminDb.doc(publicOfferPath(id)), {
+    ...buildPublicKyrubDeliveryOffer({
+      id,
+      storeName: clean(store?.name),
+      status: String(payload.status),
+      orderStatus,
+      distance: finite(order.distance),
+      payment: finite(order.deliveryFee),
+    }),
+    createdAt: existing.exists ? existing.data()?.createdAt ?? now : now,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
   if (!existingSchedule.exists) {
     batch.create(scheduleReference, {
       id,
@@ -291,6 +307,7 @@ export const updateKyrubDeliveryStatus = async (
   const deliveryReference = adminDb.doc(deliveryPath(normalizedId));
   const claimReference = adminDb.doc(claimPath(normalizedId));
   const scheduleReference = adminDb.doc(escalationQueuePath(normalizedId));
+  const publicOfferReference = adminDb.doc(publicOfferPath(normalizedId));
 
   await adminDb.runTransaction(async transaction => {
     const [deliverySnapshot, claimSnapshot, scheduleSnapshot] = await Promise.all([
@@ -325,6 +342,7 @@ export const updateKyrubDeliveryStatus = async (
         acceptedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      transaction.set(publicOfferReference, { status: 'accepted', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       transaction.update(deliveryReference, {
         status: 'accepted',
         acceptedBy: actor.uid,
@@ -362,6 +380,7 @@ export const updateKyrubDeliveryStatus = async (
         collectedAt: FieldValue.serverTimestamp(),
         updatedAt: FieldValue.serverTimestamp(),
       });
+      transaction.set(publicOfferReference, { status: 'delivering', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
       transaction.update(deliveryReference, {
         status: 'delivering',
         collectedAt: FieldValue.serverTimestamp(),
@@ -382,6 +401,7 @@ export const updateKyrubDeliveryStatus = async (
       deliveredAt: FieldValue.serverTimestamp(),
       updatedAt: FieldValue.serverTimestamp(),
     });
+    transaction.set(publicOfferReference, { status: 'done', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     transaction.update(deliveryReference, {
       status: 'done',
       deliveredAt: FieldValue.serverTimestamp(),

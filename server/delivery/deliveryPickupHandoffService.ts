@@ -8,6 +8,7 @@ import {
 import type { DeliveryOperationalEvent } from '../../shared/deliveryOperationalResponsibility.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
+const PUBLIC_DELIVERY_OFFERS_COLLECTION = 'hub/renda/deliveryOffers';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 const DELIVERY_TRACKING_COLLECTION = 'deliveryTracking';
 const DELIVERY_PICKUP_SECRET_COLLECTION = 'deliveryPickupSecrets';
@@ -191,6 +192,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
   if (!/^\d{6}$/.test(handoffCode)) throw new Error('Informe o código de coleta de 6 dígitos.');
 
   const deliveryRef = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
+  const publicOfferRef = adminDb.doc(`${PUBLIC_DELIVERY_OFFERS_COLLECTION}/${deliveryId}`);
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const secretRef = adminDb.doc(`${DELIVERY_PICKUP_SECRET_COLLECTION}/${deliveryId}`);
@@ -300,6 +302,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     };
     transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
     transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, paidWaitingEvidence, collectedAt, pickupConfirmedOperationalEventId: pickupEventId, updatedAt: FieldValue.serverTimestamp() });
+    transaction.set(publicOfferRef, { status: 'delivering', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     transaction.delete(secretRef);
     return { ok: true, deliveryId, status: 'delivering' };
   });

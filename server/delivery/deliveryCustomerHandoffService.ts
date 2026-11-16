@@ -12,6 +12,7 @@ import { buildDeliveryPaidWaitingObligationId } from '../../shared/deliveryPaidW
 import type { StoreEconomicLedgerEntry } from '../../shared/storeEconomicLedger.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
+const PUBLIC_DELIVERY_OFFERS_COLLECTION = 'hub/renda/deliveryOffers';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 const DELIVERY_TRACKING_COLLECTION = 'deliveryTracking';
 const DELIVERY_COMPLETION_COLLECTION = 'deliveryCompletions';
@@ -186,6 +187,7 @@ export const confirmBuyerReceivedDelivery = async (input: {
   const deliveryId = validId(input.deliveryId, 'A entrega');
   const buyerId = validId(input.buyerId, 'O comprador');
   const deliveryRef = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
+  const publicOfferRef = adminDb.doc(`${PUBLIC_DELIVERY_OFFERS_COLLECTION}/${deliveryId}`);
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const completionRef = adminDb.doc(`${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}`);
@@ -351,6 +353,7 @@ export const confirmBuyerReceivedDelivery = async (input: {
       confirmedByBuyerId: buyerId,
       confirmedAt,
     };
+    transaction.set(publicOfferRef, { status: 'done', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     transaction.update(deliveryRef, {
       status: 'done',
       customerHandoff,
