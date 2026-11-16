@@ -206,7 +206,7 @@ test('verified first-store checkout uses the same published canonical catalog as
   assert.match(intentRouterSource, /canonicalStore\.get\('publicationStatus'\) !== 'published'/);
   assert.match(intentRouterSource, /projectVerifiedFirstStoreCatalogOffers\(/);
   assert.match(intentRouterSource, /const products = verifiedFirstStoreCatalog \?\? catalogProducts\(tenant\?\.publicProducts\)/);
-  assert.match(intentRouterSource, /return catalogProducts\(tenant\?\.publicProducts\)/);
+  assert.match(intentRouterSource, /const products = verifiedFirstStoreCatalog \?\? catalogProducts\(tenant\?\.publicProducts\)/);
   assert.match(storefront, /projectVerifiedFirstStoreCatalogOffers\(canonicalProducts\.docs, verifiedFirstStoreId, storeId\)/);
   assert.match(storefront, /data\.publicationStatus !== 'published'/);
 });

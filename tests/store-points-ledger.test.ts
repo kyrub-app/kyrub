@@ -155,7 +155,9 @@ test('checkout snapshots points server-side and browser never declares the award
 
   assert.doesNotMatch(checkoutClient, /storePointsPerUnit/);
   assert.match(router, /normalizeStorePointsPerUnit\(record\.storePointsPerUnit\)/);
-  assert.match(router, /storePointsPerUnit: product\.storePointsPerUnit/);
+  const pricing = readFileSync('server/payments/marketplaceItemPricing.ts', 'utf8');
+  assert.match(router, /priceMarketplaceCheckoutItems\(catalog, items\)/);
+  assert.match(pricing, /storePointsPerUnit: product\.storePointsPerUnit/);
   assert.match(webhook, /buildStorePointPurchaseEntry/);
   assert.match(webhook, /storePointLedgerPath/);
   assert.match(webhook, /pointLedgerExists/);
