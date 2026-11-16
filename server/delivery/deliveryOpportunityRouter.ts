@@ -223,11 +223,14 @@ export const publishKyrubDeliveryOpportunity = async (
         loadAuthoritativeDeliveryResponsibilityPolicy(nowIso),
         loadAuthoritativeDeliveryCustomerArrivalPolicy(nowIso),
       ]);
-  const cargoAssessment = assessDeliveryCargo(
-    existing.exists && clean(existing.data()?.status) !== 'available'
-      ? existing.data()?.cargo
-      : order.deliveryCargo
-  );
+  const existingCargo = assessDeliveryCargo(existing.data()?.cargo);
+  const currentOrderCargo = assessDeliveryCargo(order.deliveryCargo);
+  // Retain the last verified seller declaration if another ERP writer sends
+  // an older order representation without cargo while an offer is available.
+  const cargoAssessment = existing.exists && (
+    clean(existing.data()?.status) !== 'available'
+      || (!currentOrderCargo.ready && existingCargo.ready)
+  ) ? existingCargo : currentOrderCargo;
   const customerGeofenceSnapshot =
     destinationResolutionSnapshot?.customerDestinationResolutionSnapshotStatus === 'resolved' &&
     destinationResolutionSnapshot.customerDestinationResolutionSnapshot &&
