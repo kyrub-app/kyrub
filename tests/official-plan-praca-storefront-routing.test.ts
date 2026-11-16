@@ -35,11 +35,11 @@ test('existing contract card renders original price, ERP discount and final acce
     plugins: [{
       name: 'fake-auth-and-billing-network',
       setup(compiler) {
-        compiler.onResolve({ filter: /(?:^|\/)(firebase|storeSubscription)\.js$/ }, args => ({
+        compiler.onResolve({ filter: /(?:^|\/)(firebase|storeSubscription)(?:\.js)?$/ }, args => ({
           path: args.path, namespace: 'fake-network',
         }));
         compiler.onLoad({ filter: /.*/, namespace: 'fake-network' }, args => ({
-          contents: args.path.endsWith('firebase.js')
+          contents: /(?:^|\/)(?:firebase)(?:\.js)?$/.test(args.path)
             ? 'export const auth={currentUser:null};'
             : [
               'export const quoteInitialPrepaidSubscription=async()=>{throw Error("NETWORK_NOT_ALLOWED")};',
