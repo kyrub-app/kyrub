@@ -64,12 +64,18 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   await assert.rejects(api.finalizeOfficialPlanPromotionReservation({
     checkoutId, officialStoreId: storeId, promotionId, outcome: 'redeem',
   }), /PAYMENT_NOT_CONFIRMED/);
-  // Emulator-only test fixture simulates the persisted result of an already
-  // reconciled payment; it does NOT represent an actual Mercado Pago callback.
-  await checkoutRef.update({
-    status: 'activated', acceptedOfferDigest: 'original-offer-digest',
-    providerPaymentId: 'simulated-pix-001',
-  });
+  await checkoutRef.update({ acceptedOfferDigest: 'original-offer-digest' });
+  const confirmation = { paymentId: 'simulated-pix-001', checkoutId, buyerUid,
+    amountMinor: 100, currency: 'BRL', method: 'pix', status: 'approved' };
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, confirmation: { ...confirmation, amountMinor: 39700 },
+  }), /PAYMENT_MISMATCH/);
+  const confirmations = await Promise.all(Array.from({ length: 4 }, () =>
+    api.confirmIsolatedOfficialPromotionPix({ checkoutId, buyerUid, confirmation })));
+  assert.equal(confirmations.filter((x: any) => x.status === 'confirmed').length, 1);
+  assert.equal(confirmations.filter((x: any) => x.status === 'already_confirmed').length, 3);
+  assert.equal((await checkoutRef.get()).get('providerPaidMinor'), 100);
+  assert.equal((await checkoutRef.get()).get('status'), 'paid_pending_activation');
   const finalized = await Promise.all(Array.from({ length: 4 }, () =>
     api.finalizeOfficialPlanPromotionReservation({
       checkoutId, officialStoreId: storeId, promotionId, outcome: 'redeem',
