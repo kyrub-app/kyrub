@@ -1,4 +1,5 @@
 import type { DeliveryJob } from '../types';
+import { assessDeliveryCargo, isCourierVehicleType } from '../../shared/deliveryVehicleCompatibility';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -23,6 +24,7 @@ export const sanitizeDeliveryCache = (value: unknown): DeliveryJob[] => {
     const id = clean(data.id);
     const status = clean(data.status);
     if (!id || !['available', 'accepted', 'delivering', 'done'].includes(status)) return [];
+    const cargoAssessment = assessDeliveryCargo(data.cargo);
     return [{
       id,
       from: clean(data.from),
@@ -37,6 +39,10 @@ export const sanitizeDeliveryCache = (value: unknown): DeliveryJob[] => {
       source: 'kyrub-order',
       acceptedByName: clean(data.acceptedByName) || undefined,
       orderStatus: clean(data.orderStatus),
+      cargo: cargoAssessment.cargo,
+      cargoReady: data.cargoReady === true && cargoAssessment.ready,
+      allowedVehicles: cargoAssessment.allowedVehicles,
+      vehicleType: isCourierVehicleType(data.vehicleType) ? data.vehicleType : undefined,
     } as LegacyDelivery];
   });
 };
