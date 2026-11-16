@@ -13,7 +13,6 @@ const digest = (checkoutId: string) =>
 export async function activateIsolatedPromotionalBusiness(input: {
   checkoutId: string;
   buyerUid: string;
-  paidAt: string;
 }) {
   if (!/^(localhost|127\.0\.0\.1):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '') ||
       process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST !== 'true') {
@@ -21,9 +20,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
   }
   if (!/^[a-f0-9]{64}$/.test(input.checkoutId) ||
       !/^[a-zA-Z0-9_-]{1,128}$/.test(input.buyerUid) ||
-      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(input.paidAt) ||
-      !Number.isFinite(Date.parse(input.paidAt)) ||
-      new Date(input.paidAt).toISOString() !== new Date(input.paidAt).toISOString()) {
+      false) {
     throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
   }
   const checkoutRef = adminDb.doc(`${ROOT}/plan_pix_checkouts/${input.checkoutId}`);
@@ -38,6 +35,12 @@ export async function activateIsolatedPromotionalBusiness(input: {
         checkout.get('simulatedPayment') !== true ||
         !checkout.get('providerPaymentId')) {
       throw Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
+    }
+    const paidAt = checkout.get('providerPaidAt');
+    if (typeof paidAt !== 'string' ||
+        !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$/.test(paidAt) ||
+        !Number.isFinite(Date.parse(paidAt))) {
+      throw Error('OFFICIAL_PROMOTION_PAYMENT_DATE_REQUIRED');
     }
     const offer = checkout.get('offer');
     const accepted = checkout.get('promotionAcceptedTerms');
@@ -75,7 +78,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
     if (contract.exists) {
       if (contract.get('paymentId') !== checkout.get('providerPaymentId') ||
           contract.get('buyerUid') !== input.buyerUid ||
-          contract.get('startsAt') !== input.paidAt ||
+          contract.get('startsAt') !== paidAt ||
           contract.get('termsDigest') !== accepted.termsDigest) {
         throw Error('OFFICIAL_PROMOTION_CONTRACT_CONFLICT');
       }
@@ -84,7 +87,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
     if (entitlement.exists && entitlement.get('checkoutId') !== input.checkoutId) {
       throw Error('OFFICIAL_PROMOTION_ACTIVE_PLAN_CONFLICT');
     }
-    const endsAt = new Date(input.paidAt);
+    const endsAt = new Date(paidAt);
     endsAt.setUTCMonth(endsAt.getUTCMonth() + 1);
     const record = {
       checkoutId: input.checkoutId, buyerUid: input.buyerUid, planId: 'business',
@@ -92,7 +95,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
       paymentId: checkout.get('providerPaymentId'),
       originalTotalMinor: 39700, paidMinor: 100, months: 1,
       promotionId: accepted.promotionId, termsDigest: accepted.termsDigest,
-      startsAt: input.paidAt, endsAt: endsAt.toISOString(), simulated: true,
+      startsAt: paidAt, endsAt: endsAt.toISOString(), simulated: true,
     };
     tx.create(contractRef, record);
     tx.set(entitlementRef, record);
