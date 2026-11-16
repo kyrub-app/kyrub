@@ -184,19 +184,7 @@ export const publishKyrubDeliveryOpportunity = async (
   tenantId: string,
   orderId: string
 ): Promise<Record<string, unknown>> => {
-  const orderSnapshot = await adminDb.doc(orderPath(tenantId, orderId)).get();
-  const order = orderSnapshot.data() as Record<string, unknown> | undefined;
-  if (!orderSnapshot.exists || !order) throw new Error('Pedido não encontrado.');
-  if (order.fulfillmentType !== 'delivery') {
-    throw new Error('Este pedido não é uma entrega.');
-  }
-  if (clean(order.deliveryProvider) !== 'kyrub') {
-    throw new Error('Este pedido está configurado para entregador próprio.');
-  }
-  const orderStatus = clean(order.status);
-  if (!['preparing', 'ready', 'out_for_delivery'].includes(orderStatus)) {
-    throw new Error('O pedido ainda não iniciou o preparo para entrega.');
-  }
+  const orderReference = adminDb.doc(orderPath(tenantId, orderId));
 
   const storeSnapshot = await adminDb.doc(`users/${tenantId}/stores/${tenantId}`).get();
   const store = storeSnapshot.data() as Record<string, unknown> | undefined;
@@ -206,10 +194,21 @@ export const publishKyrubDeliveryOpportunity = async (
   // Read canonical state inside the transaction. A concurrent courier claim
   // must never be reverted to "available" by a delayed publication callback.
   return adminDb.runTransaction(async transaction => {
-    const [existing, existingSchedule] = await Promise.all([
+    const [orderSnapshot, existing, existingSchedule] = await Promise.all([
+      transaction.get(orderReference),
       transaction.get(reference),
       transaction.get(scheduleReference),
     ]);
+  const order = orderSnapshot.data() as Record<string, unknown> | undefined;
+  if (!orderSnapshot.exists || !order) throw new Error('Pedido não encontrado.');
+  if (order.fulfillmentType !== 'delivery') throw new Error('Este pedido não é uma entrega.');
+  if (clean(order.deliveryProvider) !== 'kyrub') {
+    throw new Error('Este pedido está configurado para entregador próprio.');
+  }
+  const orderStatus = clean(order.status);
+  if (!['preparing', 'ready', 'out_for_delivery'].includes(orderStatus)) {
+    throw new Error('O pedido ainda não iniciou o preparo para entrega.');
+  }
   const now = Timestamp.now();
   const nowIso = now.toDate().toISOString();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
