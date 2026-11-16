@@ -58,6 +58,23 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
         reservation.get('payableMinor') !== verified.paidMinor) {
       throw Error('OFFICIAL_PROMOTION_RESERVATION_REQUIRED');
     }
+    // A simulated provider payment ID must never finance two distinct checkouts.
+    const paymentKey = createHash('sha256').update(verified.simulatedPaymentId).digest('hex');
+    const claimRef = adminDb.doc(`kyrub_admin/control_plane/isolated_promotion_payment_claims/${paymentKey}`);
+    const claim = await tx.get(claimRef);
+    if (claim.exists) {
+      if (claim.get('checkoutId') !== input.checkoutId ||
+          claim.get('buyerUid') !== input.buyerUid) {
+        throw Error('OFFICIAL_PROMOTION_PAYMENT_REUSED');
+      }
+      throw Error('OFFICIAL_PROMOTION_PAYMENT_CLAIM_CONFLICT');
+    }
+    tx.create(claimRef, {
+      checkoutId: input.checkoutId, buyerUid: input.buyerUid,
+      paymentId: verified.simulatedPaymentId,
+      amountMinor: verified.paidMinor, paidAt: input.paidAt,
+      simulated: true,
+    });
     tx.update(ref, {
       status: 'paid_pending_activation',
       providerPaymentId: verified.simulatedPaymentId,
