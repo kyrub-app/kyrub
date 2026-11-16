@@ -17,9 +17,21 @@ export const NEXT_ARTIFACT_SECTION_HEADER =
   '    // --- Kyrub Social Connections & Feed ---';
 
 const SECURE_DELIVERY_RULES = `    // --- Guia Renda: Entregas Solicitadas/Disponíveis ---
-    // Esta coleção é uma projeção server-authoritative. O Firebase Admin SDK
-    // publica e atualiza as oportunidades sem passar pelas regras de cliente.
+    // Os registros canônicos contêm endereço, geofence, dados do comprador
+    // e outras informações privadas. Nunca permita listagem global.
     match /hub/renda/deliveries/{deliveryId} {
+      allow read: if isSignedIn()
+        && (
+          resource.data.get('storeId', '') == request.auth.uid
+          || resource.data.get('buyerId', '') == request.auth.uid
+          || resource.data.get('acceptedBy', '') == request.auth.uid
+        );
+      allow create, update, delete: if false;
+    }
+
+    // Mural de ofertas: documento público deliberadamente reduzido.
+    // Somente o Admin SDK pode escrever; clientes só podem ler.
+    match /hub/renda/deliveryOffers/{deliveryId} {
       allow read: if isSignedIn();
       allow create, update, delete: if false;
     }`;
