@@ -1485,6 +1485,13 @@ if (newMomentPublishToPraca) {
           <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900 py-3 px-6 flex justify-around items-center backdrop-blur-lg shadow-2xl">
             <button
               onClick={() => {
+                // Persist before triggering the keyed app refresh. A React
+                // effect alone can be skipped if the product-sync bridge
+                // unmounts this instance immediately after the click.
+                const uid = auth.currentUser?.uid;
+                if (uid) retainedWorkspaceTabByUser.set(uid, {
+                  activeTab: 'kyrub', socialSubTab: 'usuarios', pracaFilter: 'recentes',
+                });
                 setSocialSubTab('usuarios');
                 setPracaFilter('recentes');
                 setActiveTab('kyrub');
