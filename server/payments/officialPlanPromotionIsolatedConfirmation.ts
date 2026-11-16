@@ -10,12 +10,17 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
   checkoutId: string;
   buyerUid: string;
   confirmation: IsolatedOfficialPixConfirmation;
+  paidAt: string;
 }) {
   if (!/^(localhost|127\.0\.0\.1):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '') ||
       process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST !== 'true') {
     throw new Error('OFFICIAL_PROMOTION_EMULATOR_REQUIRED');
   }
-  if (!/^[a-f0-9]{64}$/.test(input.checkoutId)) throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
+  if (!/^[a-f0-9]{64}$/.test(input.checkoutId) ||
+      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$/.test(input.paidAt) ||
+      !Number.isFinite(Date.parse(input.paidAt))) {
+    throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
+  }
   const ref = adminDb.doc(`kyrub_admin/control_plane/plan_pix_checkouts/${input.checkoutId}`);
   return adminDb.runTransaction(async tx => {
     const checkout = await tx.get(ref);
@@ -33,7 +38,8 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
     if (existingPayment) {
       if (existingPayment !== verified.simulatedPaymentId ||
           checkout.get('providerPaidMinor') !== verified.paidMinor ||
-          checkout.get('simulatedPayment') !== true) {
+          checkout.get('simulatedPayment') !== true ||
+          checkout.get('providerPaidAt') !== input.paidAt) {
         throw Error('OFFICIAL_PROMOTION_PAYMENT_REPLAY_CONFLICT');
       }
       return { status: 'already_confirmed' as const, ...verified };
@@ -56,6 +62,7 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
       status: 'paid_pending_activation',
       providerPaymentId: verified.simulatedPaymentId,
       providerPaidMinor: verified.paidMinor,
+      providerPaidAt: input.paidAt,
       simulatedPayment: true,
     });
     return { status: 'confirmed' as const, ...verified };
