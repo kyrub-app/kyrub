@@ -55,6 +55,7 @@ type SellerCargoOrder = {
 
 type CargoDraft = {
   kind: CourierCargoKind;
+  requiresSpecialHandling: boolean;
   weightKg: string;
   lengthCm: string;
   widthCm: string;
@@ -62,7 +63,7 @@ type CargoDraft = {
 };
 
 const EMPTY_CARGO: CargoDraft = {
-  kind: 'parcel', weightKg: '', lengthCm: '', widthCm: '', heightCm: '',
+  kind: 'parcel', requiresSpecialHandling: false, weightKg: '', lengthCm: '', widthCm: '', heightCm: '',
 };
 
 export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
@@ -210,6 +211,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
     setCargoDraft(cargo
       ? {
           kind: cargo.kind,
+          requiresSpecialHandling: false,
           weightKg: String(cargo.weightKg),
           lengthCm: String(cargo.lengthCm),
           widthCm: String(cargo.widthCm),
@@ -228,7 +230,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
       lengthCm: Number(cargoDraft.lengthCm),
       widthCm: Number(cargoDraft.widthCm),
       heightCm: Number(cargoDraft.heightCm),
-      requiresSpecialHandling: false,
+      requiresSpecialHandling: cargoDraft.requiresSpecialHandling as false,
     };
     const assessed = assessDeliveryCargo(cargo);
     if (!assessed.ready) {
@@ -407,6 +409,14 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                         </label>
                       ))}
                     </div>
+                    <label className="flex items-center gap-2 text-[9px] text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={cargoDraft.requiresSpecialHandling}
+                        onChange={event => setCargoDraft(previous => ({...previous,requiresSpecialHandling:event.target.checked}))}
+                      />
+                      Esta carga exige transporte especial (refrigerado, perigoso, frágil ou outro)
+                    </label>
                     <p className="text-[9px] text-slate-500">
                       Informe peso e medidas do pacote embalado. Limites são operacionais do piloto, não certificação legal do veículo.
                     </p>
