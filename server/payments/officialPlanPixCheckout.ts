@@ -38,7 +38,8 @@ const pilotRef = () => adminDb.doc(`${ROOT}/official_plan_pix_pilot/one_shot`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
 const isolatedOfficialPromotionEnabled = () =>
   /^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') &&
-  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST === 'true';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST === 'true' &&
+  process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN === 'isolated-platform-token';
 /** This is the production checkout's amount authority, including any server-priced ERP coupon. */
 const officialPixChargeMinor = (d: any): number => {
   if (!d.promotionAcceptedTerms) return d.offer.quote.totalMinor;
@@ -66,9 +67,12 @@ const allowPilotOffer = (d: any, uid: string) => {
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
   // The exact same canonical flow can be exercised for one discounted Business
   // contract in the local emulator. This exception is impossible in production.
-  if (d.promotionAcceptedTerms && isolatedOfficialPromotionEnabled() &&
-      d.offer.plan === 'business' && d.offer.quote.months === 1 &&
-      officialPixChargeMinor(d) === 100) return;
+  if (d.promotionAcceptedTerms) {
+    if (isolatedOfficialPromotionEnabled() &&
+        d.offer.plan === 'business' && d.offer.quote.months === 1 &&
+        officialPixChargeMinor(d) === 100) return;
+    throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+  }
   // The published Official Store product, not a compiled pilot price, owns the charge.
   // The accepted offer is revalidated against the canonical product before issuance.
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
@@ -121,8 +125,9 @@ async function offer(storeId: string, productId: string, months: ContractTermMon
 export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths; promotionCode?: string }) {
   const buyer = await authenticateConsultantRequest(input.authorization);
   if (!valid(input.storeId) || !valid(input.productId) || ![1, 3, 6, 12].includes(input.selectedMonths)) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
-  if (input.promotionCode && (!isolatedOfficialPromotionEnabled() ||
-      typeof input.promotionCode !== 'string' || input.promotionCode.length > 48)) {
+  if (input.promotionCode !== undefined && (!isolatedOfficialPromotionEnabled() ||
+      typeof input.promotionCode !== 'string' || !input.promotionCode ||
+      input.promotionCode.length > 48)) {
     throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
   }
   // Reopen an unresolved attempt with its original accepted terms, even after the catalog changes.
