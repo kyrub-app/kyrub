@@ -6,6 +6,19 @@ const ROOT = 'kyrub_admin/control_plane';
 const digest = (checkoutId: string) =>
   createHash('sha256').update('official-plan-promotion:' + checkoutId).digest('hex');
 
+/** UTC calendar-month expiration, clamping the day for short months. */
+export function calculateIsolatedBusinessExpiry(paidAt: string): Date {
+  const start = new Date(paidAt);
+  if (!Number.isFinite(start.getTime())) throw Error('OFFICIAL_PROMOTION_PAYMENT_DATE_REQUIRED');
+  const endsAt = new Date(start);
+  const originalDay = start.getUTCDate();
+  endsAt.setUTCDate(1);
+  endsAt.setUTCMonth(endsAt.getUTCMonth() + 1);
+  const lastDay = new Date(Date.UTC(endsAt.getUTCFullYear(), endsAt.getUTCMonth() + 1, 0)).getUTCDate();
+  endsAt.setUTCDate(Math.min(originalDay, lastDay));
+  return endsAt;
+}
+
 /**
  * Emulator-only Business entitlement projection for E2E. It is deliberately
  * separate from the real plan activation service and cannot touch production.
@@ -86,14 +99,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
     if (entitlement.exists && entitlement.get('checkoutId') !== input.checkoutId) {
       throw Error('OFFICIAL_PROMOTION_ACTIVE_PLAN_CONFLICT');
     }
-    // Clamp the calendar day when the following month is shorter.
-    const start = new Date(paidAt);
-    const endsAt = new Date(start);
-    const originalDay = start.getUTCDate();
-    endsAt.setUTCDate(1);
-    endsAt.setUTCMonth(endsAt.getUTCMonth() + 1);
-    const lastDay = new Date(Date.UTC(endsAt.getUTCFullYear(), endsAt.getUTCMonth() + 1, 0)).getUTCDate();
-    endsAt.setUTCDate(Math.min(originalDay, lastDay));
+    const endsAt = calculateIsolatedBusinessExpiry(paidAt);
     const record = {
       checkoutId: input.checkoutId, buyerUid: input.buyerUid, planId: 'business',
       storeId: offer.storeId, productId: offer.productId,
