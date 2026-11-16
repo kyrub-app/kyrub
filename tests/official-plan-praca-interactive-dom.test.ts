@@ -90,6 +90,8 @@ test('Praça deep link quotes, accepts and opens official Business Pix without a
     entryPoints:['src/components/PublicStorefrontApp.tsx'], bundle:true,
     platform:'node', format:'esm', packages:'external', write:false,
     plugins:[{name:'isolated-firebase-and-marketplace',setup(b) {
+      // Virtual UI stubs still use the *installed* React runtime.
+      b.onResolve({filter:/^react$/},()=>({path:'react',external:true}));
       b.onResolve({filter:/.*/},args=>{
         const p=args.path.replace(/\\.js$/, '');
         const key = p==='firebase/auth' ? 'firebase/auth'
