@@ -128,6 +128,13 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
     return;
   }
+  if (message.startsWith('DELIVERY_CARGO_INVALID:')) {
+    response.status(400).json({
+      code: 'DELIVERY_CARGO_INVALID',
+      error: message.slice('DELIVERY_CARGO_INVALID:'.length).trim(),
+    });
+    return;
+  }
   if (message.startsWith('VEHICLE_NOT_ELIGIBLE:')) {
     response.status(403).json({
       code: 'VEHICLE_NOT_ELIGIBLE',
@@ -335,6 +342,71 @@ export const publishKyrubDeliveryOpportunity = async (
   }
     return { ...payload, created: !existing.exists };
   });
+};
+
+/**
+ * The store, not a courier or buyer, declares cargo for its own ERP order.
+ * This operation never assigns a courier and cannot rewrite an accepted job.
+ */
+export const classifyKyrubDeliveryOrderCargo = async (
+  tenantId: string,
+  orderId: string,
+  declaredCargo: unknown
+): Promise<{ ready: boolean; allowedVehicles: CourierVehicleType[] }> => {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(orderId)) {
+    throw new Error('Pedido inválido.');
+  }
+  const assessment = assessDeliveryCargo(declaredCargo);
+  if (!assessment.ready || !assessment.cargo) {
+    throw new Error('DELIVERY_CARGO_INVALID: ' + assessment.reason);
+  }
+  const orderReference = adminDb.doc(orderPath(tenantId, orderId));
+  const id = deliveryJobId(tenantId, orderId);
+  const deliveryReference = adminDb.doc(deliveryPath(id));
+  const claimReference = adminDb.doc(claimPath(id));
+  const publicReference = adminDb.doc(publicOfferPath(id));
+
+  await adminDb.runTransaction(async transaction => {
+    const [orderSnapshot, deliverySnapshot, claimSnapshot] = await Promise.all([
+      transaction.get(orderReference),
+      transaction.get(deliveryReference),
+      transaction.get(claimReference),
+    ]);
+    const order = orderSnapshot.data() as Record<string, unknown> | undefined;
+    if (!order || order.fulfillmentType !== 'delivery' || clean(order.deliveryProvider) !== 'kyrub') {
+      throw new Error('Pedido Kyrub Entregas não encontrado.');
+    }
+    if (!['preparing', 'ready', 'out_for_delivery'].includes(clean(order.status))) {
+      throw new Error('Pedido não está em uma etapa de entrega classificável.');
+    }
+    if (claimSnapshot.exists || (deliverySnapshot.exists
+      && clean(deliverySnapshot.data()?.status) !== 'available')) {
+      throw new Error('Não é possível alterar a carga de uma entrega já aceita.');
+    }
+    transaction.update(orderReference, {
+      deliveryCargo: assessment.cargo,
+      deliveryCargoDeclaredBy: tenantId,
+      deliveryCargoDeclaredAt: FieldValue.serverTimestamp(),
+    });
+    if (deliverySnapshot.exists) {
+      transaction.update(deliveryReference, {
+        cargo: assessment.cargo,
+        cargoReady: true,
+        allowedVehicles: assessment.allowedVehicles,
+        updatedAt: FieldValue.serverTimestamp(),
+      });
+      transaction.set(publicReference, {
+        cargo: assessment.cargo,
+        cargoReady: true,
+        allowedVehicles: assessment.allowedVehicles,
+        updatedAt: FieldValue.serverTimestamp(),
+      }, { merge: true });
+    }
+  });
+
+  // Existing publication flow keeps the canonical and public offer in sync.
+  await publishKyrubDeliveryOpportunity(tenantId, orderId);
+  return { ready: true, allowedVehicles: assessment.allowedVehicles };
 };
 
 export const updateKyrubDeliveryStatus = async (
@@ -568,6 +640,20 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(
         await publishKyrubDeliveryOpportunity(tenantId, request.params.orderId)
       );
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/orders/:orderId/cargo', async (request, response) => {
+    try {
+      const tenantId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await classifyKyrubDeliveryOrderCargo(
+        tenantId,
+        request.params.orderId,
+        request.body?.cargo
+      ));
     } catch (error) {
       errorResponse(response, error);
     }
