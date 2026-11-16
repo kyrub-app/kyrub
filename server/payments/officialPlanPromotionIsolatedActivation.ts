@@ -37,7 +37,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
     }
     const paidAt = checkout.get('providerPaidAt');
     if (typeof paidAt !== 'string' ||
-        !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$/.test(paidAt) ||
+        !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(paidAt) ||
         !Number.isFinite(Date.parse(paidAt))) {
       throw Error('OFFICIAL_PROMOTION_PAYMENT_DATE_REQUIRED');
     }
