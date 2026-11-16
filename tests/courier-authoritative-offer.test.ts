@@ -55,3 +55,10 @@ test('GPS restore waits for a confirmed authorized assignment and drops stale lo
   assert.match(tracking, /localStorage\.removeItem\('kyrub_courier_last_position'\)/);
   assert.doesNotMatch(tracking, /localStorage\.setItem\([^\n]*kyrub_courier_last_position/);
 });
+
+test('ERP delivery cannot be marked done locally without buyer confirmation', () => {
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx', 'utf8');
+  assert.match(modal, /job && isCanonicalCourierDelivery\(job\)/);
+  assert.match(modal, /a entrega só termina após confirmação do cliente/i);
+  assert.match(modal, /Confirme a chegada no painel de rastreio/);
+});

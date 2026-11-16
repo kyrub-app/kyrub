@@ -137,6 +137,11 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   };
 
   const handleAdvanceDelivery = (jobId: string, nextStatus: 'delivering' | 'done') => {
+    const job = deliveries.find(delivery => delivery.id === jobId);
+    if (job && isCanonicalCourierDelivery(job)) {
+      triggerToast('Entregas do ERP são concluídas após registrar a chegada e obter confirmação do comprador.', 'warning');
+      return;
+    }
     setDeliveries(prev =>
       prev.map(d => {
         if (d.id !== jobId) return d;
@@ -364,6 +369,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                             ) : (
                               <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'delivering')} disabled={waitingForKitchen} className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">{waitingForKitchen ? 'Aguardar pronto' : 'Coletar Pacote'}</button>
                             )
+                          ) : isCanonicalCourierDelivery(job) ? (
+                            <span className="max-w-[12rem] text-right text-[9px] leading-relaxed text-cyan-300">Confirme a chegada no painel de rastreio. A entrega só termina após confirmação do cliente.</span>
                           ) : (
                             <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'done')} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Concluir Entrega</button>
                           )}
