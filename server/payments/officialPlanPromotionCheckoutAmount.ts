@@ -15,7 +15,7 @@ export function resolveOfficialPromotionalCheckoutAmount(input: {
     quote: { months: 1 | 3 | 6 | 12; totalMinor: number };
   };
   accepted: OfficialPromotionAcceptedTerms;
-  providerAmountMinor?: number;
+  providerAmountMinor: number;
 }) {
   const { offer, accepted } = input;
   if (!Number.isSafeInteger(offer.quote.totalMinor) || offer.quote.totalMinor < 1 ||
@@ -29,7 +29,7 @@ export function resolveOfficialPromotionalCheckoutAmount(input: {
     officialStoreId: offer.storeId,
     officialProductId: offer.productId,
     months: offer.quote.months,
-    paidMinor: input.providerAmountMinor ?? accepted.payableMinor,
+    paidMinor: input.providerAmountMinor,
     termsDigest: accepted.termsDigest,
   });
   return Object.freeze({
