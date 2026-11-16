@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Crosshair, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CourierGoogleMap } from './CourierGoogleMap';
@@ -133,7 +133,7 @@ export function CourierLiveTrackingBridge() {
       }
 
       unsubscribeDeliveries = onSnapshot(
-        collection(db, DELIVERY_COLLECTION_PATH),
+        query(collection(db, DELIVERY_COLLECTION_PATH), where('acceptedBy', '==', user.uid)),
         snapshot => {
           const next = snapshot.docs.flatMap(document => {
             const data = document.data() as Record<string, unknown>;
