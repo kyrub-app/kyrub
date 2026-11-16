@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { projectCanonicalOffers } from '../server/payments/marketplaceDiscoveryService';
+import { projectCanonicalOffers, projectLegacyPublicOffers } from '../server/payments/marketplaceDiscoveryService';
 import {
   buildMarketplaceStoreDiscoverySignal,
   compareMarketplaceForYouSignals,
@@ -138,6 +138,22 @@ describe('marketplace discovery', () => {
     assert.match(source, /signalByStoreId\.get\(store\.id\)\?\.forYou/);
     assert.doesNotMatch(source, /orders\.some\(order => order\.storeId/);
   });
+  test('legacy storefront preserves paid services without physical stock but rejects incomplete products', () => {
+    const offers = projectLegacyPublicOffers([
+      { id: 'service-no-stock', name: 'Aula individual', price: 80, isService: true, category: 'Educação' },
+      { id: 'service-negative-stock', name: 'Consultoria', price: 90, stock: -50, isService: true, category: 'Serviços' },
+      { id: 'physical-no-stock', name: 'Caderno', price: 12, isService: false, category: 'Papelaria' },
+      { id: 'physical-stock', name: 'Caneta', price: 8, stock: 3, isService: false, category: 'Papelaria' },
+      { id: 'service-no-price', name: 'Serviço incompleto', isService: true, category: 'Serviços' },
+    ], 'store-legacy');
+
+    assert.deepEqual(offers.map(offer => offer.id), [
+      'service-no-stock', 'service-negative-stock', 'physical-stock',
+    ]);
+    assert.deepEqual(offers.map(offer => offer.stock), [0, 0, 3]);
+    assert.ok(offers.every(offer => offer.supplierId === 'store-legacy'));
+  });
+
   test('canonical storefront never publishes a fictitious zero-price offer from incomplete listings', () => {
     const listing = (id: string, overrides: Record<string, unknown> = {}) => ({
       id,

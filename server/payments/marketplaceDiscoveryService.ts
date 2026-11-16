@@ -103,7 +103,7 @@ const projectSubscriptionFields = (data: Record<string, unknown>) => {
   return { saleModality, ...(contractDiscounts ? { contractDiscounts } : {}) };
 };
 
-const projectLegacyPublicOffers = (
+export const projectLegacyPublicOffers = (
   value: unknown,
   storeId: string
 ): PublicStorefrontSnapshot['offers'] => {
@@ -120,6 +120,7 @@ const projectLegacyPublicOffers = (
     const category = clean(data.category);
     const price = data.price;
     const stock = data.stock;
+    const isService = data.isService === true;
 
     if (
       !id ||
@@ -127,9 +128,8 @@ const projectLegacyPublicOffers = (
       typeof price !== 'number' ||
       !Number.isFinite(price) ||
       price < 0 ||
-      typeof stock !== 'number' ||
-      !Number.isFinite(stock) ||
-      stock < 0
+      (!isService && (typeof stock !== 'number' ||
+        !Number.isFinite(stock) || stock < 0))
     ) {
       return [];
     }
@@ -140,8 +140,9 @@ const projectLegacyPublicOffers = (
       description: clean(data.description),
       price,
       image: clean(data.image),
-      stock: data.isService === true ? 0 : Math.floor(stock),
-      isService: data.isService === true,
+      // Legacy services may have no physical inventory field at all.
+      stock: isService ? 0 : Math.floor(stock as number),
+      isService,
       category,
       supplierId: storeId,
       ...projectSubscriptionFields(data),
