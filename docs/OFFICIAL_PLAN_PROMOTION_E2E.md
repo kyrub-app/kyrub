@@ -1,0 +1,23 @@
+# E2E terceiro usuário — integração promocional oficial (isolada)
+
+## Estado comprovado
+- #1122 integrada: Praça -> `/@slug?coupon=CODE` -> carrinho B2C, não checkout de planos oficiais.
+- #1110 integrada: vigência do plano a partir da confirmação do Pix; preservar regra.
+- #1137 aberta: bônus 100 Pitangas e conversão 1000:1 aguardam atestação de escritores; não habilitar.
+- #1138 (esta PR): cotação pura de cupom Business, sem alteração de checkout, cobranças ou produção.
+
+## Lacuna de integração e invariantes
+`quoteOfficialPlanPix` recebe loja/produto/meses, e `offer()` calcula `quote.totalMinor` pelo catálogo autoritativo. `acceptOfficialPlanPix` exige `acceptedTotalMinor === d.offer.quote.totalMinor`. `checkoutOfficialPlanPix` reconfirma a oferta e envia exatamente `d.offer.quote.totalMinor` ao provedor; `validatePayment` compara esse mesmo valor. Os registros financeiros também usam esse total.
+
+**Não substituir somente o valor enviado ao provedor**: isso quebraria o vínculo entre aceitação, pagamento, contrato e ledger. Para aceitar cupom oficial será necessário um único snapshot de preço final assinado/digerido pelo servidor e propagado consistentemente por todas essas etapas.
+
+## Integração futura, sem habilitar produção
+1. Aceitar `promotionId` ou código apenas como referência; resolver no servidor contra `stores/{officialStoreId}/promotions`, confirmar loja/produto oficiais, janela, elegibilidade e limites. O UID vem do token.
+2. Calcular preço-base autoritativo e desconto com `quoteOfficialPlanPromotion`; manter preço-base e valor final separados no snapshot imutável, vinculados a `offerDigest`.
+3. No aceite e na reserva transacional, revalidar cupom e limites por comprador, impedir concorrência e consumo duplicado, com referência determinística ao checkout. Nunca consumir cupom por simples visualização.
+4. Enviar somente o total aceito ao provedor simulado; validar o mesmo valor no callback, contrato, pagamento, ledger, CRM e entitlement. Replays não podem consumir cupom novamente.
+5. Executar no emulador: terceiro UID fictício, publicação da loja -> 2 XP, Praça -> cupom Business -> quote R$ 1,00 -> aceite -> Pix simulado -> contrato e benefício vigentes no instante da confirmação; replays e concorrência sem duplicação.
+6. Falhas obrigatórias: cupom vencido, esgotado, outra loja/produto/UID, mudança entre quote e aceite, pagamento divergente, reuso e disputa de último resgate.
+
+## Gates que permanecem
+O piloto financeiro real atual permite somente Pro mensal integral; não expandir para Business ou descontos sem revisão independente e autorização. `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED` continua desligada; não mexer em credenciais, `writersVerified`, Pitangas, XP ou dados reais. Esta PR não deve ser mergeada nem publicada por sua existência. A função de cotação pura não autoriza emissão nem comprova o E2E.
