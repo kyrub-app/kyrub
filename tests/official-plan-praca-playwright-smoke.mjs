@@ -149,13 +149,16 @@ try {
   }, customToken);
   assert.deepEqual(login, { uid: fakeUid, projectId });
   await page.reload({ waitUntil: 'domcontentloaded' });
+  // Full-app bootstrap can remount LegacyApp while synchronizing products.
+  // Click the real Praça navigation only after that initial mount settles.
+  await page.locator('#root-app-container').waitFor({ state: 'visible', timeout: 20000 });
+  await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
+  await page.waitForTimeout(1200);
+  await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
   const pracaButton = page.getByRole('button', { name: 'Praça', exact: true });
   await pracaButton.waitFor({ state: 'visible', timeout: 20000 });
   await pracaButton.click();
-  await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
-  // Capture the social card before interacting with the link. Full-page
-  // screenshots can trigger re-layout: always re-locate afterwards.
-  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
+  await page.locator('#praca-tab-container').waitFor({ state: 'visible', timeout: 15000 });
   const couponLink = page.getByRole('link', { name: 'Aproveitar cupom BIZ1 na loja' });
   try {
     await couponLink.waitFor({ state: 'visible', timeout: 20000 });
@@ -180,6 +183,7 @@ try {
     await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
     throw error;
   }
+  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
   assert.equal(
     new URL(await couponLink.getAttribute('href'), origin).pathname,
     '/@kyrub-oficial',
