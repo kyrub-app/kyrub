@@ -12,7 +12,7 @@ A PR usa as funções e documentos de `server/payments/officialPlanPixCheckout.t
 
 ## Evidência validada em GitHub Actions
 
-Workflow `Official plan canonical Firestore E2E`, na suíte já existente `tests/firestore-official-plan-pix.test.ts`, **6 testes aprovados e 0 falhas** no commit `6bcadd5f` (execução 43868139642).
+Workflow `Official plan canonical Firestore E2E`, na suíte já existente `tests/firestore-official-plan-pix.test.ts`, **9 testes aprovados e 0 falhas** no commit `4f7ce29c` (execução 43871143302).
 
 O cenário Business promocional verifica:
 - Preço-base R$ 397,00, desconto ERP R$ 396,00, Pix simulado R$ 1,00.
@@ -23,15 +23,20 @@ O cenário Business promocional verifica:
 - Ledger financeiro com pagamento de R$ 1,00, entitlement Business ativo e vigência iniciada em `date_approved`.
 - Resgate único do cupom e liberação do contador de reservas.
 - Rejeição financeira devolve a reserva sem registrar contrato nem benefício.
+- Reserva aceita sem Pix expira em transação atômica e devolve capacidade; o próprio comprador reabre uma nova cotação.
+- Um **segundo comprador** consegue recuperar uma reserva abandonada do mesmo cupom, sem ultrapassar o limite global.
+- Reservas com Pix já emitido **não são liberadas** apenas por prazo, mesmo quando outro comprador disputa o cupom.
+- Business pago **antes de criar loja** inicia a vigência na confirmação Pix; criação posterior da loja não rebaixa o benefício para Free.
 
-Os quatro outros testes da suíte existente cobrem corrida e recuperação de Pix, replays de efeitos, comprador sem loja e criação Free idempotente. Os testes unitários de descontos/termos e os testes existentes do agendador canônico complementam essa cobertura.
+Os testes anteriores da suíte existente cobrem corrida e recuperação de Pix, replays de efeitos, comprador sem loja e criação Free idempotente. Os testes unitários de descontos/termos e os testes existentes do agendador canônico complementam essa cobertura.
 
 ## Limites e pendências para lançamento
 
 - **Isolamento obrigatório:** Business com cupom R$ 1,00 só é permitido com Firestore Emulator em localhost, `KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST=true`, token fictício `isolated-platform-token` e gates de piloto. Produção mantém somente o piloto Pro sem desconto, e o checkout real permanece desativado até autorização.
 - Não testar com pagamento real, não habilitar flags produtivas, não efetuar merge/deploy.
 - Ainda falta o roteamento visual da Praça/vitrine para `official.prepaid.quote` com `promotionCode` (o caminho atual `?coupon=CODE` do carrinho B2C não pode vender planos oficiais).
-- Falta fechamento seguro de **reservas abandonadas e expiradas** cujo resultado Pix ainda não foi emitido ou já é terminal; nunca liberar reservas de pagamentos em estado desconhecido.
+- **Recuperação de reservas:** `quoteOfficialPlanPix` reabre reservas válidas do mesmo comprador ou expira atomicamente a cotação não emitida; `acceptOfficialPlanPix` recupera reservas expiradas de outros compradores quando há nova demanda, usando a consulta indexada em `promotionReservations` (até 125 candidatos por chamada). A confirmação de Pix rejeitado devolve a reserva. **Pagamentos `bound`, `in_flight` ou `outcome_unknown` não são liberados por tempo**: exigem resultado financeiro verificável.
+- O mecanismo é **sob demanda**, não uma varredura agendada de todas as campanhas; limpeza operacional global sem novos compradores ainda não foi implementada. O índice composto está declarado em `firestore.indexes.json` para futura implantação autorizada.
 - Falta validar a jornada de primeiro login (100 Pitangas, dependente da PR #1137), publicação da primeira loja (2 XP) e clique no cupom pela interface.
 - Antes de remover o gate isolado, exigir revisão independente do cálculo, do recebedor, da idempotência e dos contratos canônicos.
 
