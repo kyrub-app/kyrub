@@ -80,7 +80,7 @@ test('full Kyrub panel opens on Renda and storefront handoff skips the external 
     /useState<ActiveMainTab>\([\s\S]*?retainedWorkspaceTabByUser\.get\(auth\.currentUser\?\.uid \?\? ''\)\?\.activeTab \?\? 'renda'/
   );
   assert.match(legacyAppSource, /type ActiveMainTab = 'perfil' \| 'renda' \| 'kyrub' \| 'cairubia'/);
-  assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.set\(authenticatedUserId/);
+  assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.set\(uid/);
   assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
   assert.match(
     publicStorefrontSource,
