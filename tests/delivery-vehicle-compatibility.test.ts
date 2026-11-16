@@ -57,5 +57,26 @@ test('the server—not the interface—must enforce the vehicle and cargo before
   assert.match(router,/transaction\.create\(claimReference/);
   assert.match(router,/VEHICLE_NOT_ELIGIBLE|DELIVERY_CARGO_INCOMPLETE/);
   assert.match(router,/vehicleType: vehicle/);
-  assert.match(router,/vehicleType: request\.body\?\.vehicleType/);
+  assert.match(router,/request\.body\?\.vehicleType/);
+  assert.match(router,/router\.post\('\/orders\/:orderId\/cargo'/);
+  assert.match(router,/transaction\.get\(claimReference\)/);
+  assert.match(router,/claimSnapshot\.exists \|\| \(deliverySnapshot\.exists/);
+  assert.match(router,/transaction\.update\(orderReference/);
+  assert.match(router,/transaction\.update\(deliveryReference/);
+  assert.match(router,/deliveryCargoDeclaredBy: tenantId/);
+  assert.match(router,/DELIVERY_PAYMENT_MISSING/);
+});
+
+
+test('delivery cargo cannot be silently changed by client acceptance payload', () => {
+  const source = readFileSync('src/utils/deliveryOpportunities.ts','utf8');
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
+  const projection = readFileSync('server/delivery/deliveryPublicOfferProjection.ts','utf8');
+  assert.match(source,/JSON\.stringify\(\{ status,.*vehicleType/);
+  assert.doesNotMatch(source,/JSON\.stringify\(\{ status, cargo/);
+  assert.match(modal,/classifyKyrubDeliveryOrderCargo\(selectedOrderId, cargo, user\)/);
+  assert.match(modal,/courierVehicleDocumentEligibility/);
+  assert.match(modal,/assessDeliveryCargo\(job\.cargo\)/);
+  assert.match(projection,/cargoReady: input\.cargoReady/);
+  assert.doesNotMatch(projection,/buyerId|deliveryAddress|buyerName/);
 });
