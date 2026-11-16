@@ -75,6 +75,12 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
     api.confirmIsolatedOfficialPromotionPix({ checkoutId, buyerUid, paidAt: '2026-11-16T12:00:00.000Z', confirmation })));
   assert.equal(confirmations.filter((x: any) => x.status === 'confirmed').length, 1);
   assert.equal(confirmations.filter((x: any) => x.status === 'already_confirmed').length, 3);
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, paidAt: '2026-11-17T12:00:00.000Z', confirmation,
+  }), /PAYMENT_REPLAY_CONFLICT/, 'replayed payment cannot change its approval time');
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, paidAt: 'not-a-date', confirmation,
+  }), /INVALID_INPUT/, 'invalid provider approval time must fail closed');
   assert.equal((await checkoutRef.get()).get('providerPaidMinor'), 100);
   assert.equal((await checkoutRef.get()).get('status'), 'paid_pending_activation');
   const paidAt = '2026-11-16T12:00:00.000Z';
