@@ -31,6 +31,9 @@ import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPane
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
+import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
+import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
+import { OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -51,6 +54,8 @@ type PublicStorefrontResponse = {
   };
   offers: Product[];
 };
+
+// Reuse the shared canonical identity; the server verifies it again before payment.
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -113,6 +118,12 @@ const resolveMovementMetadata = (
 };
 
 export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
+  const sharedCouponCode = typeof window === 'undefined' ? ''
+    : (new URLSearchParams(window.location.search).get('coupon') ?? '').trim().toUpperCase().slice(0, 48);
+  const [couponPromotion, setCouponPromotion] = useState<PublicMarketplacePromotion | null>(null);
+  const [couponLoading, setCouponLoading] = useState(false);
+  const [selectedOfficialPlanId, setSelectedOfficialPlanId] = useState('');
+  const [selectedPlanMonths, setSelectedPlanMonths] = useState<1 | 3 | 6 | 12>(1);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [authLoading, setAuthLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(true);
@@ -202,6 +213,37 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   }, [slug]);
 
   useEffect(() => {
+    let cancelled = false;
+    if (!store?.id || store.id !== OFFICIAL_STORE_CANONICAL_ID || !sharedCouponCode) {
+      setCouponPromotion(null);
+      setCouponLoading(false);
+      return;
+    }
+    // Public discovery is only a UI hint; the official billing API validates
+    // the ERP coupon and the exact product/price again on the server.
+    setCouponPromotion(null);
+    setCouponLoading(true);
+    void listMarketplacePromotions(store.id).then(promotions => {
+      if (!cancelled) setCouponPromotion(promotions.find(promotion => promotion.code === sharedCouponCode) ?? null);
+    }).catch(() => {
+      if (!cancelled) setCouponPromotion(null);
+    }).finally(() => {
+      if (!cancelled) setCouponLoading(false);
+    });
+    return () => { cancelled = true; };
+  }, [store?.id, sharedCouponCode]);
+
+  useEffect(() => {
+    if (store?.id !== OFFICIAL_STORE_CANONICAL_ID) return;
+    // Previously saved retail carts must not carry official plan contracts
+    // into the generic marketplace checkout after this routing change.
+    setCart(previous => {
+      const retailOnly = previous.filter(item => !isOfficialPlanProductId(item.product.id));
+      return retailOnly.length === previous.length ? previous : retailOnly;
+    });
+  }, [store?.id]);
+
+  useEffect(() => {
     saveStorefrontCart(slug, cart);
   }, [cart, slug]);
 
@@ -240,6 +282,12 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   };
 
   const handleAddToCart = (product: Product): void => {
+    if (store?.id === OFFICIAL_STORE_CANONICAL_ID && isOfficialPlanProductId(product.id)) {
+      // Official plans are contracts, not ordinary B2C cart items.
+      setSelectedOfficialPlanId(product.id);
+      document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
+      return;
+    }
     setCart(current => {
       const existing = current.find(item => item.product.id === product.id);
       if (existing) {
@@ -325,6 +373,20 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     activeKdsOrderCount,
     Boolean(user)
   );
+  const isOfficialStore = store.id === OFFICIAL_STORE_CANONICAL_ID;
+  const officialPlanProducts = isOfficialStore
+    ? publicProducts.filter(product => isOfficialPlanProductId(product.id) && product.saleModality?.mode === 'subscription')
+    : [];
+  const eligibleCouponPlans = sharedCouponCode && couponPromotion
+    ? officialPlanProducts.filter(product => couponPromotion.productIds.includes(product.id))
+    : [];
+  const availablePlanProducts = sharedCouponCode
+    ? eligibleCouponPlans : officialPlanProducts;
+  const selectedOfficialPlan = availablePlanProducts.find(product => product.id === selectedOfficialPlanId) ??
+    (sharedCouponCode ? availablePlanProducts[0] ?? null : null);
+  const couponForOfficialPlan = isOfficialStore && eligibleCouponPlans.length > 0;
+  const couponForRetail = Boolean(sharedCouponCode) &&
+    (!isOfficialStore || (couponPromotion !== null && !couponForOfficialPlan));
 
   return (
     <div
@@ -444,9 +506,19 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
       {user && <BuyerDeliveryTrackingBridge storeId={store.id} buyerId={user.uid} />}
 
-      {typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('coupon') && (
+      {isOfficialStore && sharedCouponCode && couponLoading && (
+        <p role="status" className="mx-auto mt-3 max-w-5xl rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
+          Conferindo o cupom da Praça…
+        </p>
+      )}
+      {isOfficialStore && sharedCouponCode && !couponLoading && !couponPromotion && (
+        <p role="alert" className="mx-auto mt-3 max-w-5xl rounded-xl border border-amber-500/30 p-3 text-xs text-amber-200">
+          O cupom {sharedCouponCode} não está disponível. Nenhum valor será cobrado por esse código.
+        </p>
+      )}
+      {couponForRetail && (
         <div className="mx-auto mt-3 flex w-full max-w-5xl flex-wrap items-center justify-between gap-2 rounded-2xl border border-orange-500/40 bg-orange-500/10 p-3 text-xs text-orange-100">
-          <span>Cupom da Praça: <strong className="font-mono">{new URLSearchParams(window.location.search).get('coupon')?.slice(0, 48)}</strong>. Adicione um produto participante ao carrinho e valide o desconto no checkout.</span>
+          <span>Cupom da Praça: <strong className="font-mono">{sharedCouponCode}</strong>. Adicione um produto participante ao carrinho e valide o desconto no checkout.</span>
           {cart.length > 0 && (
             <button type="button" onClick={() => setIsCartOpen(true)} className="rounded-full bg-white px-4 py-2 font-black text-slate-950">
               Ir para o carrinho
@@ -455,6 +527,74 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         </div>
       )}
       <main className="mx-auto w-full max-w-5xl p-3 pb-10 sm:p-5">
+        {isOfficialStore && officialPlanProducts.length > 0 && (
+          <section id="official-plan-contract-section" data-official-plan-route="canonical-prepaid"
+            className="mb-5 rounded-3xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-5">
+            <span className="font-mono text-[10px] font-black uppercase tracking-widest text-cyan-300">
+              Planos da Kyrub Oficial
+            </span>
+            <h2 className="mt-1 text-lg font-black text-white">Contratação pré-paga de planos</h2>
+            <p className="mt-2 text-xs leading-5 text-slate-300">
+              Planos são contratados pelo checkout oficial, com aceite de contrato e Pix único. Não entram no carrinho de produtos e serviços.
+            </p>
+            {couponForOfficialPlan && (
+              <p className="mt-3 text-xs font-semibold text-emerald-300">
+                Cupom da Praça {sharedCouponCode} identificado. O valor e a elegibilidade serão confirmados pelo servidor antes do aceite.
+              </p>
+            )}
+            {sharedCouponCode && !couponLoading && !couponForOfficialPlan && (
+              <p role="status" className="mt-3 text-xs text-amber-300">
+                Esse cupom não corresponde a uma oferta de plano disponível nesta vitrine. Não será ignorado para cobrar o preço integral.
+              </p>
+            )}
+            {availablePlanProducts.length > 0 && (
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <label className="text-xs font-semibold text-slate-300">
+                  Plano
+                  <select value={selectedOfficialPlan?.id ?? ''} aria-label="Selecionar plano Kyrub"
+                    onChange={event => setSelectedOfficialPlanId(event.target.value)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 p-2 text-white">
+                    {!selectedOfficialPlan && <option value="">Escolha um plano</option>}
+                    {availablePlanProducts.map(product => (
+                      <option key={product.id} value={product.id}>{product.name}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="text-xs font-semibold text-slate-300">
+                  Duração do contrato
+                  <select value={selectedPlanMonths} aria-label="Selecionar período de contratação"
+                    onChange={event => setSelectedPlanMonths(Number(event.target.value) as 1 | 3 | 6 | 12)}
+                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 p-2 text-white">
+                    <option value={1}>1 mês</option>
+                    <option value={3}>3 meses</option>
+                    <option value={6}>6 meses</option>
+                    <option value={12}>12 meses</option>
+                  </select>
+                </label>
+              </div>
+            )}
+            {selectedOfficialPlan && (
+              user ? (
+                <InitialPrepaidSubscriptionCheckout
+                  key={JSON.stringify([store.id, selectedOfficialPlan.id, selectedPlanMonths, sharedCouponCode, user.uid])}
+                  storeId={store.id}
+                  productId={selectedOfficialPlan.id}
+                  selectedMonths={selectedPlanMonths}
+                  billingAuthority="platform"
+                  promotionCode={couponForOfficialPlan ? sharedCouponCode : undefined}
+                />
+              ) : (
+                <div className="mt-4 rounded-xl border border-slate-700 bg-slate-950 p-3">
+                  <p className="text-xs text-slate-300">Entre com sua conta Kyrub para consultar e aceitar o contrato oficial.</p>
+                  <button type="button" onClick={() => void handleGoogleLogin()} disabled={loginPending}
+                    className="mt-3 min-h-11 rounded-xl bg-white px-4 text-xs font-bold text-slate-950 disabled:opacity-60">
+                    {loginPending ? 'Entrando…' : 'Continuar com Google'}
+                  </button>
+                </div>
+              )
+            )}
+          </section>
+        )}
         {user ? (
           <StorefrontPanel
             catalogSource="published-api"

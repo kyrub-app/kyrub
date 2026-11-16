@@ -1,0 +1,63 @@
+name: Official plan Praça Chromium E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/LegacyApp.tsx'
+      - 'src/components/PublicStorefrontApp.tsx'
+      - 'src/components/InitialPrepaidSubscriptionCheckout.tsx'
+      - 'src/components/StorePromotionsManager.tsx'
+      - 'src/utils/storeSubscription.ts'
+      - 'src/utils/marketplaceCheckout.ts'
+      - 'server/payments/paymentIntentRouter.ts'
+      - 'server/payments/marketplaceDiscoveryService.ts'
+      - 'server/payments/storePromotionManagementRouter.ts'
+      - 'tests/official-plan-praca-playwright-smoke.mjs'
+      - '.github/workflows/official-plan-praca-playwright.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  chromium:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      PORT: '3000'
+      FIREBASE_PROJECT_ID: kyrub-security-test
+      GCLOUD_PROJECT: kyrub-security-test
+      GOOGLE_CLOUD_PROJECT: kyrub-security-test
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      VITE_KYRUB_FIREBASE_EMULATOR_E2E: 'true'
+      KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Install Chromium using the repository's existing Playwright runner pattern
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Test published Official Store and ERP promotion through real browser and local API
+        run: |
+          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '\''npm run dev > /tmp/kyrub-official-praça-browser.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/official-plan-praca-playwright-smoke.mjs'\'''
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: kyrub-official-praça-isolated-chromium
+          path: |
+            playwright-official-praça-mural.png
+            playwright-official-praça-desktop.png
+            playwright-official-praça-mobile.png
+          if-no-files-found: ignore
+          retention-days: 3

@@ -1,0 +1,60 @@
+name: Official plan + gamification cross-PR isolated E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'tests/official-plan-gamification-joined-e2e.mjs'
+      - 'server/payments/officialPlanPixCheckout.ts'
+      - 'server/payments/officialPlanPromotion*.ts'
+      - 'server/actions/freeStoreProvisioningService.ts'
+      - '.github/workflows/official-plan-gamification-cross-pr-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  cross-pr-canonical-journey:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: demo-kyrub-pix
+      GCLOUD_PROJECT: demo-kyrub-pix
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-pix
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Overlay PR 1137 temporarily in disposable CI workspace (never push or commit)
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin 3ba801678b81fb3950aca9cfbef1399c85971bb4
+          git -c user.name='Kyrub CI Fixture' -c user.email='ci-fixture@example.invalid' \
+            merge --no-commit --no-ff 3ba801678b81fb3950aca9cfbef1399c85971bb4
+          test -f server/gamification/cleanBaselineWelcomeTransaction.ts
+          test -f server/payments/officialPlanPixCheckout.ts
+          test -f tests/official-plan-gamification-joined-e2e.mjs
+          echo 'Synthetic overlay for test only; no commit or remote merge.'
+      - run: npm ci
+      - name: Verify combined PRs compile together without changing main
+        run: npx tsc --noEmit
+      - run: npm run firestore:compose
+      - name: Single-buyer welcome → Free → publication XP → official Business R$1
+        run: >-
+          npx --yes firebase-tools@15.35.0 emulators:exec
+          --config firebase.security.json
+          --project demo-kyrub-pix --only firestore
+          "node --test --test-concurrency=1 --import tsx tests/official-plan-gamification-joined-e2e.mjs"
