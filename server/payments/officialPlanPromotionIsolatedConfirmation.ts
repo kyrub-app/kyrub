@@ -17,7 +17,7 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
     throw new Error('OFFICIAL_PROMOTION_EMULATOR_REQUIRED');
   }
   if (!/^[a-f0-9]{64}$/.test(input.checkoutId) ||
-      !/^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d{3})?Z$/.test(input.paidAt) ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(input.paidAt) ||
       !Number.isFinite(Date.parse(input.paidAt))) {
     throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
   }
