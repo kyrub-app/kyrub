@@ -71,3 +71,24 @@ test('Firestore canonical delivery is never globally readable by a signed-in acc
   assert.match(rules, /match \/hub\/renda\/deliveryOffers\/\{deliveryId\}/);
   assert.match(rules, /allow create, update, delete: if false/);
 });
+
+test('local cache sanitizes previously stored exact destinations and nested private fields', async () => {
+  const { sanitizeDeliveryCache } = await import('../src/utils/courierDeliveryCache');
+  const original = {
+    id: 'order-abc', source: 'kyrub-order', status: 'accepted',
+    from: 'Loja Exemplo', to: 'Rua do Comprador, 999',
+    distance: 3, payment: 11, acceptedBy: 'courier-uid',
+    buyerId: 'buyer-secret', customerName: 'Pessoa Secreta',
+    customerGeofenceSnapshot: { latitude: -23.6, longitude: -46.7 },
+  };
+  const sanitized = sanitizeDeliveryCache([original, { ...original, id: 'del-1', source: 'manual' }]);
+  assert.equal(sanitized.length, 1);
+  assert.equal(sanitized[0]?.id, 'order-abc');
+  assert.equal(sanitized[0]?.acceptedBy, 'courier-uid');
+  assert.doesNotMatch(JSON.stringify(sanitized), /Rua do Comprador|buyer-secret|Pessoa Secreta|latitude|longitude|customerGeofenceSnapshot/);
+  assert.deepEqual(sanitizeDeliveryCache(null), []);
+  assert.deepEqual(sanitizeDeliveryCache({}), []);
+  const legacy = source('src/LegacyApp.tsx');
+  assert.match(legacy, /sanitizeDeliveryCache\(JSON\.parse\(saved\)/);
+  assert.match(legacy, /JSON\.stringify\(sanitizeDeliveryCache\(deliveries\)\)/);
+});
