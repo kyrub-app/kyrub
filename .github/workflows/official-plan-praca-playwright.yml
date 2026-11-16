@@ -3,6 +3,7 @@ on:
   pull_request:
     branches: [main]
     paths:
+      - 'src/LegacyApp.tsx'
       - 'src/components/PublicStorefrontApp.tsx'
       - 'src/components/InitialPrepaidSubscriptionCheckout.tsx'
       - 'src/components/StorePromotionsManager.tsx'
