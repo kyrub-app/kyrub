@@ -5,7 +5,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { loadPrepaidPaymentConfirmation, resolvePrepaidOrderMirrorStoreId } from '../payments/marketplaceOrderPaymentSettlementService.js';
+import { loadPrepaidPaymentConfirmation, resolvePrepaidOrderMirrorStoreId, assertPrepaidStoreMirrorIdentity } from '../payments/marketplaceOrderPaymentSettlementService.js';
 import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy.js';
 import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import {
