@@ -96,9 +96,21 @@ try {
 
   page = await browser.newPage({ viewport: { width: 1365, height: 900 } });
   const pageErrors = [];
+  const clientErrors = [];
+  const consoleErrors = [];
   const externalFirebase = [];
   const recorded = [];
+  // React's AppErrorBoundary catches rendering exceptions, so Playwright's
+  // pageerror event alone does not expose failures in the recovery screen.
+  await page.addInitScript(() => {
+    window.__kyrubTestClientErrors = [];
+    window.addEventListener('kyrub:client-error', event =>
+      window.__kyrubTestClientErrors.push(event.detail));
+  });
   page.on('pageerror', error => pageErrors.push(error.message));
+  page.on('console', message => {
+    if (message.type() === 'error') consoleErrors.push(message.text().slice(0, 1200));
+  });
   await page.route('**/*', async route => {
     const requestUrl = new URL(route.request().url());
     if (['identitytoolkit.googleapis.com', 'securetoken.googleapis.com',
@@ -175,8 +187,10 @@ try {
     }));
     const seed = await db.doc('social_posts/official-business-pilot-praça').get();
     const publicPromoAgain = await fetch(origin + '/api/store-promotions/public/' + STORE + '/' + PROMO);
+    const boundaryErrors = await page.evaluate(() => window.__kyrubTestClientErrors || []);
     console.error('PRAÇA_COUPON_DIAGNOSTIC', JSON.stringify({
-      screen, pageErrors, externalFirebase, seeded: seed.exists,
+      screen, pageErrors, clientErrors: boundaryErrors,
+      consoleErrors: consoleErrors.slice(-12), externalFirebase, seeded: seed.exists,
       publicPromoStatus: publicPromoAgain.status,
       publicPromoBody: await publicPromoAgain.text(),
     }));
