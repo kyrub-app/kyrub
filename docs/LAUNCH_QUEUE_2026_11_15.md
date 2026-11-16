@@ -1,6 +1,6 @@
 # Fila de lançamento recuperada — 15/11/2026
 
-Base inspecionada: main `5fc6c53233bfc05dd7025111aae90530f9d46bc2`.
+Base atualizada: main `008c6078435a312e05358a583ece6b148614a04e`, com a PR #1136 integrada. Atualização exclusiva da branch `fix/gamification-activation-delivery`; sem merge na main ou deploy.
 
 ## Preservar as entregas e evidências existentes
 
@@ -9,7 +9,7 @@ Base inspecionada: main `5fc6c53233bfc05dd7025111aae90530f9d46bc2`.
 - Gamificação é obrigatória para liberar o uso do app já publicado, que já tem usuários reais: 100 Pitangas no primeiro cadastro Google elegível, 2 XP na primeira publicação, saldos/extratos e conversão voluntária 1000:1. #1135 não é pós-lançamento. A entrega fix/gamification-activation-delivery consolida o código da #1135 e conecta conversão/extrato. Ativação continua dependente de evidência dos escritores implantados e autorização; não alterar writersVerified ou saldos.
 - #1130/#1132/#1128 são trabalhos anteriores isolados; não retomá-los automaticamente como próxima base.
 
-## #1136 preservada em PR separada — parte da #765
+## #1136 integrada na main e preservada nesta atualização — parte da #765
 
 Produtos & Estoque usa ProductInventoryDirectRuntime, cujo host é `erp-product-inventory-workspace`. OperationalDualWriteBridge também montava StoreConnectionsPortalBridge, que procura `kyrub-product-inventory-workspace-host` e tenta novamente a cada 80 ms. O host pertence à interface antiga e não aparece no módulo direto.
 
@@ -27,4 +27,4 @@ Rollback desta mudança: reverter o commit da PR. Não há migração, alteraç�
 
 ## Entrega de ativação da gamificação
 
-Consultar GAMIFICATION_ACTIVATION_DELIVERY.md. A #1136 permanece separada, com sua correção de inventário e testes; esta entrega recupera e corrige a fila, sem copiar alterações não relacionadas à gamificação. #1135 é substituída como proposta de integração por esta entrega consolidada; nenhuma das PRs anteriores foi fechada, alterada ou integrada.
+Consultar GAMIFICATION_ACTIVATION_DELIVERY.md. A #1136 foi integrada à main em `008c6078435a312e05358a583ece6b148614a04e`; esta branch incorpora a main preservando integralmente a correção de inventário e seus testes. A rota `/api/pitangas`, o bloqueio de deploy automático da branch de gamificação e as configurações existentes de produção permanecem preservados. #1135 é substituída como proposta de integração por esta entrega consolidada; a #1135 permanece preservada e não foi fechada ou alterada por esta atualização.
