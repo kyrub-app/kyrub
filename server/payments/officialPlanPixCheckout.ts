@@ -22,7 +22,7 @@ import { resolveOfficialPromotionalCheckoutAmount } from './officialPlanPromotio
 import { resolveOfficialPlanPromotionCodeFromErp } from './officialPlanPromotionErpReader.js';
 import { buildOfficialPromotionAcceptedTerms } from './officialPlanPromotionAcceptedTerms.js';
 import { reserveOfficialPlanPromotionWithinTransaction } from './officialPlanPromotionReservation.js';
-import { finalizeOfficialPlanPromotionReservation } from './officialPlanPromotionFinalization.js';
+import { finalizeOfficialPlanPromotionReservation, reclaimExpiredUnissuedOfficialPromotionReservations } from './officialPlanPromotionFinalization.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -209,7 +209,14 @@ async function load(authorization: string, checkoutId: string) {
 }
 
 export async function acceptOfficialPlanPix(input: { authorization: string; checkoutId: string; acceptedTotalMinor: number }) {
-  const { buyer } = await load(input.authorization, input.checkoutId);
+  const { buyer, d: quoted } = await load(input.authorization, input.checkoutId);
+  if (quoted.promotionAcceptedTerms) {
+    if (!isolatedOfficialPromotionEnabled()) throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    await reclaimExpiredUnissuedOfficialPromotionReservations({
+      officialStoreId: quoted.offer.storeId,
+      promotionId: quoted.promotionAcceptedTerms.promotionId,
+    });
+  }
   return adminDb.runTransaction(async tx => {
     const r = checkoutRef(input.checkoutId), buyerSlot = slotRef(buyer.uid);
     const [doc, currentSlot] = await Promise.all([tx.get(r), tx.get(buyerSlot)]);
