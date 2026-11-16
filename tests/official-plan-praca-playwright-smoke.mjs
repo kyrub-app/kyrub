@@ -153,7 +153,29 @@ try {
   await pracaButton.waitFor({ state: 'visible', timeout: 20000 });
   await pracaButton.click();
   const couponLink = page.getByRole('link', { name: 'Aproveitar cupom BIZ1 na loja' });
-  await couponLink.waitFor({ state: 'visible', timeout: 20000 });
+  try {
+    await couponLink.waitFor({ state: 'visible', timeout: 20000 });
+  } catch (error) {
+    const screen = await page.evaluate(() => ({
+      url: location.href,
+      app: document.querySelector('#root-app-container')?.textContent?.slice(0, 400),
+      praca: document.querySelector('#praca-tab-container')?.textContent?.slice(0, 2000),
+      cards: [...document.querySelectorAll('a')].map(a => ({
+        href: a.getAttribute('href'), ariaLabel: a.getAttribute('aria-label'),
+        text: a.textContent?.slice(0, 90),
+      })).filter(a => a.href?.includes('coupon') || a.text?.includes('cupom')),
+      errors: document.body.innerText.slice(-1300),
+    }));
+    const seed = await db.doc('social_posts/official-business-pilot-praça').get();
+    const publicPromoAgain = await fetch(origin + '/api/store-promotions/public/' + STORE + '/' + PROMO);
+    console.error('PRAÇA_COUPON_DIAGNOSTIC', JSON.stringify({
+      screen, pageErrors, externalFirebase, seeded: seed.exists,
+      publicPromoStatus: publicPromoAgain.status,
+      publicPromoBody: await publicPromoAgain.text(),
+    }));
+    await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
+    throw error;
+  }
   assert.equal(
     new URL(await couponLink.getAttribute('href'), origin).pathname,
     '/@kyrub-oficial',
