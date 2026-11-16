@@ -83,6 +83,14 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   }), /INVALID_INPUT/, 'invalid provider approval time must fail closed');
   assert.equal((await checkoutRef.get()).get('providerPaidMinor'), 100);
   assert.equal((await checkoutRef.get()).get('status'), 'paid_pending_activation');
+  for (const [start, expiry] of [
+    ['2026-01-31T12:34:56.000Z', '2026-02-28T12:34:56.000Z'],
+    ['2028-01-31T12:34:56.000Z', '2028-02-29T12:34:56.000Z'],
+    ['2026-03-31T12:34:56.000Z', '2026-04-30T12:34:56.000Z'],
+    ['2026-12-31T12:34:56.000Z', '2027-01-31T12:34:56.000Z'],
+  ]) {
+    assert.equal(api.calculateIsolatedBusinessExpiry(start).toISOString(), expiry);
+  }
   const paidAt = '2026-11-16T12:00:00.000Z';
   const activations = await Promise.all(Array.from({ length: 4 }, () =>
     api.activateIsolatedPromotionalBusiness({ checkoutId, buyerUid })));
