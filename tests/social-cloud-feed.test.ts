@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import type { SocialPost } from '../src/types';
+import { selectPublicSquarePosts } from '../src/utils/publicSquareFeed';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const bridgeSource = readFileSync(
@@ -50,7 +52,8 @@ test('Praça reads posts, likes and comments in realtime', () => {
   assert.match(hookSource, /addComment/);
   assert.match(kyrubSource, /usePublicSocialFeed/);
   assert.match(kyrubSource, /<PublicSocialFeedPanel/);
-  assert.match(kyrubSource, /posts=\{socialFeed\.posts\}/);
+  assert.match(kyrubSource, /<PublicSocialFeedPanel[\s\S]*?posts=\{squarePosts\}/);
+  assert.match(kyrubSource, /<LegacyKyrubTab[\s\S]*?posts=\{socialFeed\.posts\}/);
 });
 
 test('public feed cards expose realtime likes and comments', () => {
@@ -65,4 +68,40 @@ test('Firebase deploy configuration includes social Firestore and Storage securi
   assert.equal(firebaseConfig.storage.rules, 'storage.rules');
   assert.match(storageRules, /request\.auth\.uid == userId/);
   assert.match(storageRules, /request\.resource\.contentType\.matches\('image\/\.\*'\)/);
+});
+
+test('Praça shows public publications only; private posts and connected Status stay scoped', () => {
+  const now = Date.parse('2026-11-16T15:00:00Z');
+  const post = (
+    id: string,
+    visibility: SocialPost['visibility'],
+    publicationType: SocialPost['publicationType'] = 'feed'
+  ): SocialPost => ({
+    id,
+    user: 'Kairubido',
+    avatar: '',
+    time: 'Agora mesmo',
+    content: id,
+    likes: 0,
+    visibility,
+    publicationType,
+    authorId: 'author',
+    createdAt: new Date(now - 1000).toISOString(),
+  });
+  const shared = [
+    post('public-feed', 'public'),
+    post('private-timeline', 'private'),
+    post('connected-status', 'connections', 'status'),
+    post('public-status', 'public', 'status'),
+    { ...post('expired-public-status', 'public', 'status'), createdAt: new Date(now - 24 * 60 * 60 * 1000).toISOString() },
+    { ...post('invalid-time-status', 'public', 'status'), createdAt: '' },
+    post('own-private-post', 'private'),
+    post('legacy-without-visibility', undefined),
+  ];
+  const square = selectPublicSquarePosts(shared, now);
+  assert.deepEqual(square.map(item => item.id), ['public-feed', 'public-status']);
+  assert.equal(shared.length, 8, 'personal/connected feeds are not mutated');
+  assert.match(kyrubSource, /selectPublicSquarePosts\(socialFeed\.posts, squareNow\)/);
+  assert.match(kyrubSource, /setInterval\(\(\) => setSquareNow\(Date\.now\(\)\), 60_000\)/);
+  assert.match(kyrubSource, /posts=\{squarePosts\}/);
 });
