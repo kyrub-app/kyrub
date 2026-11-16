@@ -43,3 +43,8 @@ O novo leitor somente-consulta `quoteOfficialPlanPromotionFromErp` verifica a de
 `resolveOfficialPromotionalCheckoutAmount` compara o preço total original do catálogo oficial com o snapshot imutável aceito do cupom ERP. Para o piloto mensal Business: 39.700 centavos originais, 39.600 centavos de desconto, 100 centavos pagáveis. O teste `official-plan-promotion-checkout-amount.test.ts` cobre valor correto e divergências de comprador, produto, prazo, preço, desconto e valor informado pelo provedor.
 
 **Não está integrado ao checkout de produção.** `officialPlanPixCheckout.ts` continua deliberadamente restrito ao piloto Pro sem desconto e sem aceitação de Business R$1. A próxima integração precisa ser limitada ao Firebase Emulator, com simulação de pagamento sem chamada ao Mercado Pago, e só depois de testes transacionais poderá ser avaliada para produção. Não alterar `allowPilotOffer` para liberar Business em produção.
+
+## Verificador Pix simulado isolado
+`verifyIsolatedOfficialPlanPromotionPix` exige `FIRESTORE_EMULATOR_HOST` em localhost/127.0.0.1 e flag explícita `true`. Valida o identificador de checkout, vínculo ao comprador, BRL/Pix, status aprovado e valor de 100 centavos contra o snapshot do Business mensal. O módulo é puro e **não grava contratos, não chama Mercado Pago e não autoriza concessão de benefícios**. Os testes unitários verificam rejeição de execução não isolada, pagamento pendente, valor diferente e identidade divergente.
+
+Pendente: conectar cotação/reserva/simulação/finalização ao fluxo de checkout no Firebase Emulator, criar contrato fictício e validar os efeitos no entitlement. Não usar retorno desse verificador como comprovante real de pagamento.
