@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
+  arrayUnion,
   collection,
   doc,
   limit,
@@ -100,6 +101,9 @@ export default function AdminIdentityVerificationWorkspace() {
 
   const ordered = useMemo(
     () => [...records].sort((left, right) => {
+      const leftPending = left.status === 'approved' && left.profileExpansion?.status === 'submitted';
+      const rightPending = right.status === 'approved' && right.profileExpansion?.status === 'submitted';
+      if (leftPending !== rightPending) return leftPending ? -1 : 1;
       const weight = (status: VerificationStatus) => ({
         submitted: 0,
         under_review: 1,
@@ -118,6 +122,10 @@ export default function AdminIdentityVerificationWorkspace() {
     record: IdentityVerificationRecord,
     status: 'under_review' | 'approved' | 'rejected'
   ) => {
+    if (record.status === 'approved') {
+      setMessage('Este cadastro já está aprovado. Analise apenas a solicitação adicional.');
+      return;
+    }
     const reason = status === 'rejected'
       ? window.prompt('Explique objetivamente o que precisa ser corrigido:')?.trim()
       : '';
@@ -144,6 +152,41 @@ export default function AdminIdentityVerificationWorkspace() {
     } catch (error) {
       console.error('Identity verification review failed.', error);
       setMessage('Não foi possível atualizar esta análise.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const reviewExpansion = async (
+    record: IdentityVerificationRecord,
+    decision: 'approved' | 'rejected'
+  ) => {
+    const expansion = record.profileExpansion;
+    if (!user || record.status !== 'approved' || expansion?.status !== 'submitted') return;
+    const reason = decision === 'rejected'
+      ? window.prompt('Indique por que a nova modalidade precisa ser corrigida:')?.trim()
+      : '';
+    if (decision === 'rejected' && !reason) return;
+    setBusyId(record.uid);
+    setMessage('');
+    try {
+      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, record.uid), {
+        ...(decision === 'approved' ? {
+          approvedProfiles: arrayUnion(expansion.profile),
+          requestedProfiles: arrayUnion(expansion.profile),
+        } : {}),
+        'profileExpansion.status': decision,
+        'profileExpansion.reviewReason': reason || '',
+        'profileExpansion.reviewedBy': user.uid,
+        'profileExpansion.reviewedAt': serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      });
+      setMessage(decision === 'approved'
+        ? 'Nova modalidade aprovada, sem alterar as habilitações anteriores.'
+        : 'Correção solicitada somente para a nova modalidade.');
+    } catch (error) {
+      console.error('Additional courier profile review failed.', error);
+      setMessage('Não foi possível concluir a análise da nova modalidade.');
     } finally {
       setBusyId('');
     }
@@ -254,12 +297,72 @@ export default function AdminIdentityVerificationWorkspace() {
                 )}
               </div>
 
+              {record.profileExpansion && (
+                <section className="mt-3 space-y-2 rounded-2xl border border-teal-500/20 bg-teal-500/5 p-3">
+                  <p className="text-[9px] font-black uppercase text-teal-200">
+                    Ampliação: {profileLabel(record.profileExpansion.profile)} · {
+                      record.profileExpansion.status === 'submitted' ? 'Aguardando análise'
+                        : record.profileExpansion.status === 'approved' ? 'Aprovada' : 'Correção necessária'
+                    }
+                  </p>
+                  {record.profileExpansion.profile === 'motorized_courier' && (
+                    <p className="text-[9px] text-slate-400">
+                      CNH categoria {record.profileExpansion.cnhCategory} · EAR declarado: {
+                        record.profileExpansion.cnhHasEar ? 'sim' : 'não'
+                      }
+                    </p>
+                  )}
+                  <div className="flex flex-wrap gap-2">
+                    {record.profileExpansion.documentPaths.map((path, index) => (
+                      <button
+                        key={path}
+                        type="button"
+                        onClick={() => void openFile(path)}
+                        className="rounded-xl border border-slate-700 px-3 py-2 text-[9px] text-slate-200"
+                      >
+                        <FileBadge className="mr-1 inline h-3.5 w-3.5" />
+                        CNH adicional {index + 1}
+                      </button>
+                    ))}
+                  </div>
+                  {record.profileExpansion.reviewReason && (
+                    <p className="text-[9px] text-red-300">{record.profileExpansion.reviewReason}</p>
+                  )}
+                </section>
+              )}
+
               {record.reviewReason && (
                 <p className="mt-3 rounded-xl border border-red-500/20 bg-red-500/5 p-3 text-[9px] text-red-200">
                   {record.reviewReason}
                 </p>
               )}
 
+              {record.status === 'approved' ? (
+                record.profileExpansion?.status === 'submitted' ? (
+                  <div className="mt-4 grid grid-cols-2 gap-2 border-t border-slate-900 pt-3">
+                    <button
+                      type="button"
+                      disabled={busyId === record.uid}
+                      onClick={() => void reviewExpansion(record, 'rejected')}
+                      className="rounded-xl border border-red-500/20 px-3 py-2 text-[9px] text-red-300 disabled:opacity-50"
+                    >
+                      Corrigir nova modalidade
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busyId === record.uid}
+                      onClick={() => void reviewExpansion(record, 'approved')}
+                      className="rounded-xl bg-emerald-500 px-3 py-2 text-[9px] font-black text-slate-950 disabled:opacity-50"
+                    >
+                      Aprovar nova modalidade
+                    </button>
+                  </div>
+                ) : (
+                  <p className="mt-4 border-t border-slate-900 pt-3 text-[9px] text-slate-500">
+                    Aprovações existentes preservadas; não há nova solicitação aguardando análise.
+                  </p>
+                )
+              ) : (
               <div className="mt-4 grid grid-cols-3 gap-2 border-t border-slate-900 pt-3">
                 <button
                   type="button"
@@ -286,6 +389,7 @@ export default function AdminIdentityVerificationWorkspace() {
                   <BadgeCheck className="h-3.5 w-3.5" /> Aprovar
                 </button>
               </div>
+              )}
             </article>
           ))}
 
