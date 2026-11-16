@@ -81,6 +81,7 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
           checkout.get('offer')?.productId !== reservation.get('productId') ||
           checkout.get('offer')?.quote?.totalMinor !== accepted.originalTotalMinor ||
           checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
+          checkout.get('acceptedPromotionDigest') !== accepted.termsDigest ||
           !verifiedPayment?.exists ||
           verifiedPayment.get('status') !== 'paid' ||
           verifiedPayment.get('method') !== 'pix' ||
