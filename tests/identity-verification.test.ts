@@ -6,6 +6,9 @@ import {
   formatCpf,
   isValidCpf,
   workEligibility,
+  courierVerificationSummary,
+  openIdentityVerification,
+  IDENTITY_VERIFICATION_OPEN_EVENT,
 } from '../src/utils/identityVerification';
 
 test('CPF validation rejects repeated digits and accepts a valid check digit', () => {
@@ -49,4 +52,49 @@ test('profile verification is separated from public profile editing and gates wo
   assert.match(rules, /match \/identity_verifications\/\{userId\}/);
   assert.match(rules, /match \/user_security\/\{userId\}/);
   assert.match(storage, /identity-verification\/\{userId\}/);
+});
+
+
+test('courier onboarding uses the same private verification and never treats other approvals as courier approval', () => {
+  const base = emptyIdentityVerification('user-2');
+  assert.equal(courierVerificationSummary(base).canAccept, false);
+  assert.equal(courierVerificationSummary({ ...base, status: 'submitted' }).label, 'Em análise');
+  assert.equal(courierVerificationSummary({ ...base, status: 'rejected' }).canAccept, false);
+  assert.equal(courierVerificationSummary({
+    ...base, status: 'approved', approvedProfiles: ['freelancer'],
+  }).canAccept, false);
+  assert.equal(courierVerificationSummary({
+    ...base, status: 'approved', approvedProfiles: ['bicycle_courier'],
+  }).canAccept, true);
+  assert.equal(courierVerificationSummary({
+    ...base, status: 'approved', approvedProfiles: ['motorized_courier'],
+  }).canAccept, true);
+});
+
+test('Meu Perfil and Renda open the same canonical verification without a simulated document approval', () => {
+  const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
+  const profile = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+  const verification = readFileSync('src/components/ProfileVerificationBridge.tsx', 'utf8');
+
+  assert.match(renda, /doc\(db, IDENTITY_VERIFICATION_COLLECTION, user\.uid\)/);
+  assert.match(renda, /openIdentityVerification\('conta'\)/);
+  assert.match(profile, /openIdentityVerification\('documentos'\)/);
+  assert.doesNotMatch(profile, /startDocumentSimulation|Preparar documento para análise/);
+  assert.match(verification, /IDENTITY_VERIFICATION_OPEN_EVENT, openFromEvent/);
+  assert.match(verification, /TABS\.some\(tab => tab\.id === section\)/);
+});
+
+test('identity verification opens an explicit section when requested', () => {
+  const previousWindow = (globalThis as { window?: unknown }).window;
+  let event: Event | null = null;
+  (globalThis as { window?: unknown }).window = {
+    dispatchEvent: (next: Event) => { event = next; return true; },
+  };
+  try {
+    openIdentityVerification('documentos');
+    assert.equal(event?.type, IDENTITY_VERIFICATION_OPEN_EVENT);
+    assert.equal((event as CustomEvent<{ section: string }> | null)?.detail?.section, 'documentos');
+  } finally {
+    (globalThis as { window?: unknown }).window = previousWindow;
+  }
 });
