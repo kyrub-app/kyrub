@@ -153,3 +153,58 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
     return { status: finalStatus };
   });
 }
+
+/**
+ * Demand-driven recovery: when another buyer accepts a coupon, reclaim only
+ * expired, never-issued reservations. Bound, in-flight and uncertain Pix remain
+ * reserved until the verified provider outcome is known.
+ *
+ * The query is bounded to 5 x 25 candidate documents per invocation. The
+ * Firestore composite index is declared in firestore.indexes.json.
+ */
+export async function reclaimExpiredUnissuedOfficialPromotionReservations(input: {
+  officialStoreId: string;
+  promotionId: string;
+  now?: Date;
+}) {
+  if (![input.officialStoreId, input.promotionId].every(valid)) {
+    throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
+  }
+  const timestamp = input.now ?? new Date();
+  if (!Number.isFinite(timestamp.getTime())) throw Error('OFFICIAL_PROMOTION_INVALID_DATE');
+  let cursor: FirebaseFirestore.QueryDocumentSnapshot | undefined;
+  let released = 0;
+  for (let page = 0; page < 5; page++) {
+    let query = adminDb.collection(`stores/${input.officialStoreId}/promotionReservations`)
+      .where('promotionId', '==', input.promotionId)
+      .where('status', '==', 'reserved')
+      .where('expiresAt', '<=', timestamp.toISOString())
+      .orderBy('expiresAt', 'asc')
+      .limit(25);
+    if (cursor) query = query.startAfter(cursor);
+    const docs = await query.get();
+    if (docs.empty) break;
+    for (const reservation of docs.docs) {
+      try {
+        const outcome = await finalizeOfficialPlanPromotionReservation({
+          checkoutId: reservation.get('checkoutId'),
+          officialStoreId: input.officialStoreId, promotionId: input.promotionId,
+          outcome: 'expire_unissued', now: timestamp,
+        });
+        if (outcome.status === 'released') released++;
+      } catch (error) {
+        if (error instanceof Error && [
+          'OFFICIAL_PROMOTION_UNISSUED_EXPIRY_FORBIDDEN',
+          'OFFICIAL_PROMOTION_FINALIZATION_CONFLICT',
+        ].includes(error.message)) {
+          // Never use a timeout to override an in-flight or unknown payment.
+          continue;
+        }
+        throw error;
+      }
+    }
+    cursor = docs.docs[docs.docs.length - 1];
+    if (docs.size < 25) break;
+  }
+  return { released };
+}
