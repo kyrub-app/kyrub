@@ -93,6 +93,7 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   assert.equal(contract.get('planId'), 'business');
   assert.equal(contract.get('paidMinor'), 100);
   assert.equal(contract.get('startsAt'), paidAt);
+  assert.equal(contract.get('endsAt'), '2026-12-16T12:00:00.000Z');
   assert.equal(entitlement.get('checkoutId'), checkoutId);
   assert.equal((await db.collection(`${root}/isolated_promotion_contracts`).get()).size, 1);
   const finalized = await Promise.all(Array.from({ length: 4 }, () =>
