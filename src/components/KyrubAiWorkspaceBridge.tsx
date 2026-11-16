@@ -43,6 +43,7 @@ import {
   titleFromFirstRequest,
   type KyrubAiLocalConversation,
 } from '../ai/conversationStore';
+import { KYRUBIA_LEARNING_TRACKS, type KyrubiaLearningTrack } from '../ai/kyrubiaLearningTracks';
 import {
   KyrubAiAttachmentPicker,
   KyrubAiAttachmentSummary,
@@ -253,11 +254,15 @@ export function KyrubAiWorkspaceBridge() {
     setFailedConversationId('');
   };
 
-  const startEducatorConversation = () => {
-    const conversation = createKyrubAiConversation(EDUCATOR_TOPIC, EDUCATOR_TOPIC);
+  const startEducatorConversation = (track?: KyrubiaLearningTrack) => {
+    const conversation = createKyrubAiConversation(
+      EDUCATOR_TOPIC,
+      track?.title ?? EDUCATOR_TOPIC
+    );
     setConversations(current => [conversation, ...current]);
     setActiveConversationId(conversation.id);
-    setDraft('');
+    // Prepare a transparent user-editable request; never enroll or send automatically.
+    setDraft(track?.starterPrompt ?? '');
     setPendingAttachmentFiles([]);
     setErrorMessage('');
     setFailedConversationId('');
@@ -521,9 +526,29 @@ export function KyrubAiWorkspaceBridge() {
               <section className="rounded-3xl border border-violet-500/20 bg-violet-500/5 p-4">
                 <BookOpen className="h-6 w-6 text-violet-300" />
                 <h3 className="mt-3 text-sm font-black text-white">Sua trilha continua entre conversas</h3>
-                <p className="mt-2 text-xs leading-relaxed text-slate-400">A Kyrubia pode organizar uma trilha de estudo, acompanhar sua evolução e retomar o aprendizado de onde você parou. O caminho é aprender, praticar, desenvolver habilidade e, quando fizer sentido para você, perceber oportunidades relacionadas ao que aprendeu.</p>
+                <p className="mt-2 text-xs leading-relaxed text-slate-400">A Kyrubia organiza seus estudos e permite retomar as conversas de aprendizagem. As aulas, matrículas, certificados e o progresso da plataforma externa ainda dependem de integração própria.</p>
               </section>
-              <button type="button" onClick={startEducatorConversation} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-xs font-black text-white"><Plus className="h-4 w-4" />Começar nova trilha</button>
+              <section className="mt-5 space-y-2" aria-label="Trilhas de aprendizagem">
+                <h3 className="text-xs font-black uppercase tracking-wide text-slate-400">Escolha um objetivo de aprendizagem</h3>
+                {KYRUBIA_LEARNING_TRACKS.map(track => (
+                  <button
+                    key={track.id}
+                    type="button"
+                    onClick={() => startEducatorConversation(track)}
+                    className="flex w-full min-h-16 items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left transition-colors hover:border-violet-500/40"
+                    aria-label={`Iniciar trilha ${track.title}`}
+                  >
+                    <BookOpen className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
+                    <span className="min-w-0 flex-1">
+                      <strong className="block text-xs text-white">{track.title}</strong>
+                      <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">{track.description}</span>
+                    </span>
+                    <Plus className="h-4 w-4 shrink-0 text-violet-300" aria-hidden="true" />
+                  </button>
+                ))}
+                <p className="text-[10px] leading-relaxed text-slate-500">O pedido aparece no chat para você revisar antes de enviar. Escolher uma trilha não realiza matrícula nem contratação.</p>
+              </section>
+              <button type="button" onClick={() => startEducatorConversation()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-xs font-black text-white"><Plus className="h-4 w-4" />Começar nova trilha</button>
               {educatorConversations.length > 0 && (
                 <section className="mt-6">
                   <h3 className="text-xs font-black uppercase tracking-wide text-slate-400">Continuar aprendendo</h3>
