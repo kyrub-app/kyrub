@@ -55,6 +55,7 @@ jobs:
         with:
           name: kyrub-official-praça-isolated-chromium
           path: |
+            playwright-official-praça-mural.png
             playwright-official-praça-desktop.png
             playwright-official-praça-mobile.png
           if-no-files-found: ignore
