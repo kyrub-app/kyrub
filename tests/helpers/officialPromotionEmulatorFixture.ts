@@ -7,7 +7,7 @@ export async function loadOfficialPromotionEmulatorFixture(db: unknown) {
   (globalThis as any).__officialPromotionEmulatorDb = db;
   const bundle = await build({
     stdin: {
-      contents: "export * from './server/payments/officialPlanPromotionIsolatedAttach.ts'; export * from './server/payments/officialPlanPromotionReservation.ts'; export * from './server/payments/officialPlanPromotionFinalization.ts'; export * from './server/payments/officialPlanPromotionIsolatedConfirmation.ts';",
+      contents: "export * from './server/payments/officialPlanPromotionIsolatedAttach.ts'; export * from './server/payments/officialPlanPromotionReservation.ts'; export * from './server/payments/officialPlanPromotionFinalization.ts'; export * from './server/payments/officialPlanPromotionIsolatedConfirmation.ts'; export * from './server/payments/officialPlanPromotionIsolatedActivation.ts';",
       resolveDir: process.cwd(), sourcefile: 'official-promotion-emulator-entry.ts', loader: 'ts',
     },
     bundle: true, platform: 'node', format: 'esm', write: false,
