@@ -52,6 +52,7 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
           prior.originalTotalMinor !== input.contractTotalMinor) {
         throw new Error('OFFICIAL_PROMOTION_RESERVATION_CONFLICT');
       }
+      if (prior.status !== 'reserved') throw new Error('OFFICIAL_PROMOTION_RESERVATION_FINALIZED');
       return { reservationId: reservationRef.id, payableMinor: prior.payableMinor,
         discountMinor: prior.discountMinor, status: 'already_reserved' as const };
     }
@@ -79,6 +80,7 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
       originalTotalMinor: quote.originalTotalMinor, discountMinor: quote.discountMinor,
       payableMinor: quote.payableMinor, status: 'reserved',
       reservedAt: (input.now ?? new Date()).toISOString(),
+      expiresAt: new Date((input.now ?? new Date()).getTime() + 30 * 60_000).toISOString(),
     });
     tx.set(buyerReservationRef, { buyerUid: input.buyerUid, promotionId: input.promotionId,
       reservationCount: buyerCount + 1 }, { merge: true });
