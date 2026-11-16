@@ -141,6 +141,33 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     return { checkoutId: slot.get('officialPixCheckoutId'), quote: publicOfficialPixQuote(d), status: d.status };
   }
   if (blockedSlot(slot.data())) throw Error('OFFICIAL_PIX_EXISTING_SUBSCRIPTION');
+  // The existing billing slot locates any still-reserved ERP coupon. Never
+  // discard it without checking that provider issuance has not started.
+  const reservedCheckoutId = slot.get('officialPromotionReservationCheckoutId');
+  if (reservedCheckoutId) {
+    checkId(reservedCheckoutId);
+    const previous = (await checkoutRef(reservedCheckoutId).get()).data();
+    if (!previous || previous.buyerId !== buyer.uid || !previous.promotionAcceptedTerms) {
+      throw Error('OFFICIAL_PROMOTION_RESERVED_CHECKOUT_CONFLICT');
+    }
+    if (previous.status === 'accepted' &&
+        Number.isFinite(Date.parse(previous.expiresAt)) &&
+        Date.parse(previous.expiresAt) <= Date.now()) {
+      await finalizeOfficialPlanPromotionReservation({
+        checkoutId: reservedCheckoutId, officialStoreId: previous.offer.storeId,
+        promotionId: previous.promotionAcceptedTerms.promotionId, outcome: 'expire_unissued',
+      });
+    } else {
+      if (previous.status !== 'accepted' ||
+          previous.offer.storeId !== input.storeId ||
+          previous.offer.productId !== input.productId ||
+          previous.offer.quote.months !== input.selectedMonths ||
+          previous.promotionAcceptedTerms.code !== input.promotionCode) {
+        throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+      }
+      return { checkoutId: reservedCheckoutId, quote: publicOfficialPixQuote(previous), status: previous.status };
+    }
+  }
   const [snapshot, owned, legacy, entitlement] = await Promise.all([
     offer(input.storeId, input.productId, input.selectedMonths),
     adminDb.collection('stores').where('ownerId', '==', buyer.uid).get(),
@@ -184,11 +211,17 @@ async function load(authorization: string, checkoutId: string) {
 export async function acceptOfficialPlanPix(input: { authorization: string; checkoutId: string; acceptedTotalMinor: number }) {
   const { buyer } = await load(input.authorization, input.checkoutId);
   return adminDb.runTransaction(async tx => {
-    const r = checkoutRef(input.checkoutId), doc = await tx.get(r), d = doc.data()!;
+    const r = checkoutRef(input.checkoutId), buyerSlot = slotRef(buyer.uid);
+    const [doc, currentSlot] = await Promise.all([tx.get(r), tx.get(buyerSlot)]);
+    const d = doc.data()!;
     if (d.buyerId !== buyer.uid || officialPixChargeMinor(d) !== input.acceptedTotalMinor ||
         digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
     if (d.acceptedAt) return { status: 'already_accepted' };
     if (d.status !== 'quoted') throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
+    const reservedByBuyer = currentSlot.get('officialPromotionReservationCheckoutId');
+    if (reservedByBuyer && reservedByBuyer !== input.checkoutId) {
+      throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+    }
     if (d.promotionAcceptedTerms) {
       if (!isolatedOfficialPromotionEnabled()) throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
       await reserveOfficialPlanPromotionWithinTransaction(tx, {
@@ -202,6 +235,9 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
     tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest,
       ...(d.promotionAcceptedTerms ? { acceptedPromotionDigest: d.promotionAcceptedTerms.termsDigest } : {}),
       status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
+    if (d.promotionAcceptedTerms) {
+      tx.set(buyerSlot, { officialPromotionReservationCheckoutId: input.checkoutId }, { merge: true });
+    }
     return { status: 'accepted' };
   });
 }
@@ -268,10 +304,15 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       tx.get(pilotRef()),
       d.promotionAcceptedTerms ? tx.get(promotionReservationRef(d)) : Promise.resolve(null),
     ]);
-    if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
+    if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) ||
+        liveEntitlement(entitlement.data()) ||
+        Date.parse(current.get('expiresAt')) <= Date.now()) {
+      throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
+    }
     allowPilotOffer(d, buyer.uid);
     if (d.promotionAcceptedTerms &&
-        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+        (lock.get('officialPromotionReservationCheckoutId') !== d.checkoutId ||
+         current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
          current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest ||
          couponReservation?.get('status') !== 'reserved' ||
          couponReservation.get('buyerUid') !== buyer.uid ||
