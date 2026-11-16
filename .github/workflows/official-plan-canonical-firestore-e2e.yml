@@ -1,0 +1,37 @@
+name: Official plan canonical Firestore E2E
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/payments/officialPlanPixCheckout.ts'
+      - 'server/payments/officialPlanPromotion*.ts'
+      - 'api/plan-control.ts'
+      - 'tests/firestore-official-plan-pix.test.ts'
+      - 'tests/helpers/officialPlanPixFixture.ts'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.github/workflows/official-plan-canonical-firestore-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-official-pix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Exercise existing canonical checkout, ERP coupon and real contract repositories
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-pix --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-official-plan-pix.test.ts"
