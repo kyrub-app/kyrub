@@ -51,3 +51,8 @@ Pendente: conectar cotação/reserva/simulação/finalização ao fluxo de check
 
 ## Teste encadeado de regras comerciais (não E2E Firebase)
 `tests/official-plan-promotion-commercial-chain.test.ts` encadeia cotação do cupom do ERP, snapshot aceito de R$1, verificação do valor e confirmação Pix fictícia aprovada, rejeitando a tentativa de cobrar R$397. A configuração de isolamento é lida do ambiente do servidor e restaurada após o teste. Este teste **não acessa Firestore Emulator**, não executa a interface, não cria contrato nem concede Business. É validação unitária integrada dos módulos puros, não evidência de E2E.
+
+## Vínculo obrigatório da reserva ao checkout
+A reserva agora lê `plan_pix_checkouts/{checkoutId}` **dentro da mesma transação Firestore**, exige `checkoutId` hexadecimal de 64 caracteres, `buyerId`, loja, produto e preço original iguais aos dados do checkout e estado `quoted` ou `accepted`. Exige também `promotionAcceptedTerms` persistido e seu digest válido, com desconto e total iguais à cotação atual do ERP. Isso evita que um identificador arbitrário reserve o cupom sem uma oferta persistida.
+
+**Dependência ainda não atendida:** o checkout atual não grava `promotionAcceptedTerms`, portanto a reserva falha fechada até que a integração isolada passe a persistir o snapshot no checkout. A ordem de integração deve ser cotar oferta oficial -> persistir aceite promocional validado -> reservar no mesmo contexto transacional/fluxo -> simular Pix -> reconciliar -> conceder contrato e consumir cupom. Nenhuma dessas alterações deve abrir o piloto Business no provedor real.
