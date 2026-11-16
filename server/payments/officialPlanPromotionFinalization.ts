@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { assertOfficialPromotionPaymentMatches } from './officialPlanPromotionAcceptedTerms.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const valid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
@@ -67,6 +68,14 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
           !checkout.get('providerPaymentId')) {
         throw new Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
       }
+      assertOfficialPromotionPaymentMatches(accepted, {
+        buyerUid: reservation.get('buyerUid'),
+        officialStoreId: input.officialStoreId,
+        officialProductId: reservation.get('productId'),
+        months: accepted.months,
+        paidMinor: reservation.get('payableMinor'),
+        termsDigest: accepted.termsDigest,
+      });
     } else if (!['expired', 'cancelled', 'rejected'].includes(checkoutStatus)) {
       // A timed-out reservation cannot be released while the Pix outcome is unknown.
       throw new Error('OFFICIAL_PROMOTION_CHECKOUT_NOT_TERMINAL');
