@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import type { SocialPost } from '../src/types';
+import { selectPublicSquarePosts } from '../src/utils/publicSquareFeed';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const bridgeSource = readFileSync(
@@ -50,7 +52,8 @@ test('Praça reads posts, likes and comments in realtime', () => {
   assert.match(hookSource, /addComment/);
   assert.match(kyrubSource, /usePublicSocialFeed/);
   assert.match(kyrubSource, /<PublicSocialFeedPanel/);
-  assert.match(kyrubSource, /posts=\{socialFeed\.posts\}/);
+  assert.match(kyrubSource, /<PublicSocialFeedPanel[\s\S]*?posts=\{squarePosts\}/);
+  assert.match(kyrubSource, /<LegacyKyrubTab[\s\S]*?posts=\{socialFeed\.posts\}/);
 });
 
 test('public feed cards expose realtime likes and comments', () => {
@@ -65,4 +68,35 @@ test('Firebase deploy configuration includes social Firestore and Storage securi
   assert.equal(firebaseConfig.storage.rules, 'storage.rules');
   assert.match(storageRules, /request\.auth\.uid == userId/);
   assert.match(storageRules, /request\.resource\.contentType\.matches\('image\/\.\*'\)/);
+});
+
+test('Praça shows public publications only; private posts and connected Status stay scoped', () => {
+  const post = (
+    id: string,
+    visibility: SocialPost['visibility'],
+    publicationType: SocialPost['publicationType'] = 'feed'
+  ): SocialPost => ({
+    id,
+    user: 'Kairubido',
+    avatar: '',
+    time: 'Agora mesmo',
+    content: id,
+    likes: 0,
+    visibility,
+    publicationType,
+    authorId: 'author',
+  });
+  const shared = [
+    post('public-feed', 'public'),
+    post('private-timeline', 'private'),
+    post('connected-status', 'connections', 'status'),
+    post('public-status', 'public', 'status'),
+    post('own-private-post', 'private'),
+    post('legacy-without-visibility', undefined),
+  ];
+  const square = selectPublicSquarePosts(shared);
+  assert.deepEqual(square.map(item => item.id), ['public-feed', 'public-status']);
+  assert.equal(shared.length, 6, 'personal/connected feeds are not mutated');
+  assert.match(kyrubSource, /selectPublicSquarePosts\(socialFeed\.posts\)/);
+  assert.match(kyrubSource, /posts=\{squarePosts\}/);
 });
