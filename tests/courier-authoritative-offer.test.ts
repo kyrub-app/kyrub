@@ -37,7 +37,8 @@ test('real acceptance is an atomic server action, never a local optimistic claim
   assert.match(modal, /isAssignedCourierDelivery\(d, auth\.currentUser\?\.uid\)/);
   assert.match(modal, /disabled=\{acceptingDeliveryId !== null\}/);
   assert.doesNotMatch(modal, /status: 'accepted', acceptedBy: profileName/);
-  assert.match(bridge, /acceptedBy: clean\(data\.acceptedBy\) \|\| undefined/);
+  assert.match(bridge, /acceptedBy: user\.uid/);
+  assert.match(bridge, /where\('acceptedBy', '==', user\.uid\)/);
   assert.match(bridge, /acceptedByName: clean\(data\.acceptedByName\)/);
   assert.match(renda, /isAvailableCourierOffer/);
   assert.match(router, /transaction\.create\(claimReference/);

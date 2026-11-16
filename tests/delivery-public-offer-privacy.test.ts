@@ -33,7 +33,9 @@ test('public offer lifecycle mirrors server-owned acceptance, pickup and buyer c
   const router = source('server/delivery/deliveryOpportunityRouter.ts');
   const pickup = source('server/delivery/deliveryPickupHandoffService.ts');
   const handoff = source('server/delivery/deliveryCustomerHandoffService.ts');
-  assert.match(router, /batch\.set\(adminDb\.doc\(publicOfferPath\(id\)\)/);
+  assert.match(router, /transaction\.set\(adminDb\.doc\(publicOfferPath\(id\)\)/);
+  assert.match(router, /transaction\.get\(reference\)/);
+  assert.doesNotMatch(router, /batch\.set\(reference, payload/);
   assert.match(router, /buildPublicKyrubDeliveryOffer/);
   assert.match(router, /transaction\.set\(publicOfferReference, \{ status: 'accepted'/);
   assert.match(pickup, /transaction\.set\(publicOfferRef, \{ status: 'delivering'/);

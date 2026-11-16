@@ -170,10 +170,13 @@ export const publishKyrubDeliveryOpportunity = async (
   const id = deliveryJobId(tenantId, orderId);
   const reference = adminDb.doc(deliveryPath(id));
   const scheduleReference = adminDb.doc(escalationQueuePath(id));
-  const [existing, existingSchedule] = await Promise.all([
-    reference.get(),
-    scheduleReference.get(),
-  ]);
+  // Read canonical state inside the transaction. A concurrent courier claim
+  // must never be reverted to "available" by a delayed publication callback.
+  return adminDb.runTransaction(async transaction => {
+    const [existing, existingSchedule] = await Promise.all([
+      transaction.get(reference),
+      transaction.get(scheduleReference),
+    ]);
   const now = Timestamp.now();
   const nowIso = now.toDate().toISOString();
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
@@ -268,9 +271,8 @@ export const publishKyrubDeliveryOpportunity = async (
     updatedAt: FieldValue.serverTimestamp(),
   };
 
-  const batch = adminDb.batch();
-  batch.set(reference, payload, { merge: true });
-  batch.set(adminDb.doc(publicOfferPath(id)), {
+  transaction.set(reference, payload, { merge: true });
+  transaction.set(adminDb.doc(publicOfferPath(id)), {
     ...buildPublicKyrubDeliveryOffer({
       id,
       storeName: clean(store?.name),
@@ -283,7 +285,7 @@ export const publishKyrubDeliveryOpportunity = async (
     updatedAt: FieldValue.serverTimestamp(),
   });
   if (!existingSchedule.exists) {
-    batch.create(scheduleReference, {
+    transaction.create(scheduleReference, {
       id,
       deliveryJobId: id,
       sourceOrderId: orderId,
@@ -294,8 +296,8 @@ export const publishKyrubDeliveryOpportunity = async (
       updatedAt: FieldValue.serverTimestamp(),
     });
   }
-  await batch.commit();
-  return { ...payload, created: !existing.exists };
+    return { ...payload, created: !existing.exists };
+  });
 };
 
 export const updateKyrubDeliveryStatus = async (
