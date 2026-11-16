@@ -46,6 +46,55 @@ export const IDENTITY_VERIFICATION_COLLECTION = 'identity_verifications';
 export const IDENTITY_VERIFICATION_OPEN_EVENT = 'kyrub-open-identity-verification';
 export const IDENTITY_CONSENT_VERSION = '2026-08-01';
 
+export type IdentityVerificationSection = 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
+
+// Both Meu Perfil and Renda → Entregas open the same private identity record.
+export const openIdentityVerification = (section: IdentityVerificationSection = 'conta'): void => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(IDENTITY_VERIFICATION_OPEN_EVENT, {
+    detail: { section },
+  }));
+};
+
+export const courierVerificationSummary = (
+  record: IdentityVerificationRecord | null
+): { label: string; description: string; canAccept: boolean } => {
+  if (!record || record.status === 'draft') {
+    return {
+      label: 'Cadastro pendente',
+      description: 'Escolha sua modalidade e envie os documentos no cadastro de identidade.',
+      canAccept: false,
+    };
+  }
+  if (record.status === 'submitted' || record.status === 'under_review') {
+    return {
+      label: 'Em análise',
+      description: 'Você pode consultar oportunidades; aceitar exige aprovação da equipe.',
+      canAccept: false,
+    };
+  }
+  if (record.status === 'rejected') {
+    return {
+      label: 'Correção necessária',
+      description: 'Consulte o motivo da revisão na sua área privada de verificação.',
+      canAccept: false,
+    };
+  }
+  const courierApproved = record.approvedProfiles.includes('bicycle_courier')
+    || record.approvedProfiles.includes('motorized_courier');
+  return courierApproved
+    ? {
+        label: 'Entregador aprovado',
+        description: 'Aceites dependem ainda das regras específicas do pedido e do veículo.',
+        canAccept: true,
+      }
+    : {
+        label: 'Outra atividade aprovada',
+        description: 'A aprovação atual não inclui entregas. Uma nova modalidade requer análise.',
+        canAccept: false,
+      };
+};
+
 const onlyDigits = (value: string): string => value.replace(/\D/g, '');
 
 export const formatCpf = (value: string): string => {
