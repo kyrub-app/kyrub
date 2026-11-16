@@ -9,6 +9,7 @@ import {
   courierVerificationSummary,
   openIdentityVerification,
   IDENTITY_VERIFICATION_OPEN_EVENT,
+  mapIdentityVerification,
 } from '../src/utils/identityVerification';
 
 test('CPF validation rejects repeated digits and accepts a valid check digit', () => {
@@ -97,4 +98,21 @@ test('identity verification opens an explicit section when requested', () => {
   } finally {
     (globalThis as { window?: unknown }).window = previousWindow;
   }
+});
+
+
+test('additional courier review remains separate from existing work approval', () => {
+  const base = emptyIdentityVerification('user-3');
+  const approved = { ...base, status: 'approved' as const, approvedProfiles: ['freelancer' as const] };
+  const pending = mapIdentityVerification('user-3', {
+    ...approved,
+    profileExpansion: {
+      profile: 'bicycle_courier', status: 'submitted',
+      documentPaths: [], cnhCategory: '', cnhHasEar: false,
+      submittedAt: '', reviewedAt: null, reviewedBy: '', reviewReason: '',
+    },
+  });
+  assert.equal(workEligibility(pending, 'apply_freelance').allowed, true);
+  assert.equal(workEligibility(pending, 'accept_delivery').allowed, false);
+  assert.equal(courierVerificationSummary(pending).label, 'Habilitação em análise');
 });
