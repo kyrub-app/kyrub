@@ -3,6 +3,7 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 import type { DeliveryJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
+import { assessDeliveryCargo, isCourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
 
 const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
 const PUBLIC_OFFERS_PATH = 'hub/renda/deliveryOffers';
@@ -107,6 +108,7 @@ export function KyrubDeliveryOpportunityBridge({
           publicJobs = snapshot.docs.flatMap(document => {
             const data = document.data() as Record<string, unknown>;
             if (clean(data.source) !== 'kyrub-order' || clean(data.status) !== 'available') return [];
+            const assessedCargo = assessDeliveryCargo(data.cargo);
             return [{
               id: clean(data.id) || document.id,
               from: clean(data.from),
@@ -117,6 +119,9 @@ export function KyrubDeliveryOpportunityBridge({
               requestedBy: clean(data.requestedBy),
               source: 'kyrub-order' as const,
               orderStatus: clean(data.orderStatus),
+              cargo: assessedCargo.cargo,
+              cargoReady: data.cargoReady === true && assessedCargo.ready,
+              allowedVehicles: assessedCargo.allowedVehicles,
             } satisfies OperationalDeliveryJob];
           });
           refreshCache();
@@ -151,6 +156,10 @@ export function KyrubDeliveryOpportunityBridge({
               acceptedByName: clean(data.acceptedByName) || undefined,
               source: 'kyrub-order' as const,
               orderStatus: clean(data.orderStatus),
+              cargo: assessDeliveryCargo(data.cargo).cargo,
+              cargoReady: data.cargoReady === true,
+              allowedVehicles: assessDeliveryCargo(data.cargo).allowedVehicles,
+              vehicleType: isCourierVehicleType(data.vehicleType) ? data.vehicleType : undefined,
             } satisfies OperationalDeliveryJob];
           });
           refreshCache();
