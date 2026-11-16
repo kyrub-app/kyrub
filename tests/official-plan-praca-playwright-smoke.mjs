@@ -154,7 +154,7 @@ try {
   ]);
   assert.equal(recorded[1].body.acceptedTotalMinor, 100);
   assert.equal(recorded[2].body.checkoutId, 'a'.repeat(64));
-  assert.equal(await page.locator('text=FAKE-PIX-NOT-PAYABLE').count() > 0, true);
+  assert.equal(await section.getByRole('textbox', { name: 'Pix copia e cola' }).inputValue(), 'FAKE-PIX-NOT-PAYABLE');
   await page.screenshot({ path: 'playwright-official-praça-desktop.png', fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await section.waitFor({ state: 'visible' });
