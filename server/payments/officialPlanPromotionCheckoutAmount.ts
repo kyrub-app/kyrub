@@ -40,3 +40,15 @@ export function resolveOfficialPromotionalCheckoutAmount(input: {
     acceptedTermsDigest: accepted.termsDigest,
   });
 }
+
+/**
+ * Canonical checkout guard: until discounted prices are persisted and
+ * reconciled end-to-end, no acceptance or Pix issuance may ignore a coupon.
+ */
+export function assertNoUnintegratedOfficialPromotion(checkout: {
+  promotionAcceptedTerms?: unknown;
+}): void {
+  if (checkout.promotionAcceptedTerms != null) {
+    throw new Error('OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED');
+  }
+}
