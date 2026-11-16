@@ -8,6 +8,12 @@ on:
       - 'server/payments/officialPlanPromotion*.ts'
       - 'api/plan-control.ts'
       - 'tests/firestore-official-plan-pix.test.ts'
+      - 'tests/official-plan-praca-storefront-routing.test.ts'
+      - 'src/components/PublicStorefrontApp.tsx'
+      - 'src/components/InitialPrepaidSubscriptionCheckout.tsx'
+      - 'src/components/StorePromotionsManager.tsx'
+      - 'src/utils/storeSubscription.ts'
+      - 'shared/officialPlanCanonicalDisplay.ts'
       - 'tests/helpers/officialPlanPixFixture.ts'
       - 'package.json'
       - 'package-lock.json'
@@ -32,6 +38,8 @@ jobs:
           distribution: temurin
           java-version: '21'
       - run: npm ci
+      - name: Test Praça coupon handoff and render the existing plan contract card
+        run: node --test --import tsx tests/official-plan-praca-storefront-routing.test.ts
       - run: npm run firestore:compose
       - name: Exercise existing canonical checkout, ERP coupon and real contract repositories
         run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-kyrub-pix --only firestore "node --test --test-concurrency=1 --import tsx tests/firestore-official-plan-pix.test.ts"
