@@ -35,7 +35,9 @@ test('real acceptance is an atomic server action, never a local optimistic claim
   assert.match(modal, /await updateKyrubDeliveryOpportunityStatus\(job\.id, 'accepted', user, selectedVehicleType\)/);
   assert.match(modal, /deliveries\.filter\(isAvailableCourierOffer\)/);
   assert.match(modal, /isAssignedCourierDelivery\(d, auth\.currentUser\?\.uid\)/);
-  assert.match(modal, /disabled=\{acceptingDeliveryId !== null\}/);
+  assert.match(modal, /disabled=\{acceptingDeliveryId !== null \|\| !identityLoaded/);
+  assert.match(modal, /courierVehicleDocumentEligibility\(courierIdentity/);
+  assert.match(modal, /job\.cargoReady !== true/);
   assert.doesNotMatch(modal, /status: 'accepted', acceptedBy: profileName/);
   assert.match(bridge, /acceptedBy: user\.uid/);
   assert.match(bridge, /where\('acceptedBy', '==', user\.uid\)/);
