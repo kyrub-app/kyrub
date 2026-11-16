@@ -9,18 +9,16 @@ const reservationId = (checkoutId: string) =>
 const buyerKey = (uid: string) => createHash('sha256').update(uid).digest('hex');
 
 /**
- * Isolated reservation lifecycle. The official checkout must become the source
- * of truth before this helper can be called in any real payment flow.
- *
- * Releasing requires a persisted terminal unpaid checkout; consuming requires
- * a persisted paid checkout and matching accepted amount. Caller-supplied
- * payment status is never trusted.
+ * Canonical ERP coupon lifecycle. Payment status and coupon terms are read
+ * from the official checkout and its canonical payment document.
+ * A never-issued quote may expire only before provider issuance starts.
+ * An outcome-unknown Pix must never be released by a clock timeout.
  */
 export async function finalizeOfficialPlanPromotionReservation(input: {
   checkoutId: string;
   officialStoreId: string;
   promotionId: string;
-  outcome: 'redeem' | 'release';
+  outcome: 'redeem' | 'release' | 'expire_unissued';
   now?: Date;
 }) {
   if (![input.checkoutId, input.officialStoreId, input.promotionId].every(valid)) {
@@ -50,7 +48,8 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
     const buyerRef = adminDb.doc(
       `stores/${input.officialStoreId}/promotionBuyerReservations/${input.promotionId}_${buyerKey(reservation.get('buyerUid'))}`
     );
-    const buyer = await tx.get(buyerRef);
+    const slotRef = adminDb.doc(`${ROOT}/store_subscriptions/${reservation.get('buyerUid')}`);
+    const [buyer, slot] = await Promise.all([tx.get(buyerRef), tx.get(slotRef)]);
     if (!buyer.exists || buyer.get('buyerUid') !== reservation.get('buyerUid') ||
         buyer.get('promotionId') !== input.promotionId) {
       throw new Error('OFFICIAL_PROMOTION_BUYER_COUNTER_CONFLICT');
@@ -60,7 +59,26 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
     if (status === finalStatus) return { status: 'already_finalized' as const };
     if (status !== 'reserved') throw new Error('OFFICIAL_PROMOTION_FINALIZATION_CONFLICT');
     const checkoutStatus = checkout.get('status');
-    if (input.outcome === 'redeem') {
+    const timestamp = input.now ?? new Date();
+    if (!Number.isFinite(timestamp.getTime())) throw Error('OFFICIAL_PROMOTION_INVALID_DATE');
+    if (input.outcome === 'expire_unissued') {
+      const accepted = checkout.get('promotionAcceptedTerms');
+      if (checkoutStatus !== 'accepted' ||
+          !accepted || accepted.promotionId !== input.promotionId ||
+          accepted.termsDigest !== checkout.get('acceptedPromotionDigest') ||
+          checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
+          !Number.isFinite(Date.parse(checkout.get('expiresAt'))) ||
+          !Number.isFinite(Date.parse(reservation.get('expiresAt'))) ||
+          Date.parse(checkout.get('expiresAt')) > timestamp.getTime() ||
+          Date.parse(reservation.get('expiresAt')) > timestamp.getTime() ||
+          checkout.get('requestBody') || checkout.get('requestDigest') ||
+          checkout.get('collectorId') || checkout.get('providerPaymentId') ||
+          checkout.get('contractId') || checkout.get('subscriptionId') ||
+          slot.get('officialPixCheckoutId') === input.checkoutId) {
+        // The checkout or the provider request may already be in flight.
+        throw Error('OFFICIAL_PROMOTION_UNISSUED_EXPIRY_FORBIDDEN');
+      }
+    } else if (input.outcome === 'redeem') {
       const accepted = checkout.get('promotionAcceptedTerms');
       const providerPaymentId = checkout.get('providerPaymentId');
       // The canonical payment document is created by the existing Mercado Pago
@@ -125,7 +143,13 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
       reservationCount: buyerCount - 1,
       redemptionCount: redeemedByBuyer + (input.outcome === 'redeem' ? 1 : 0),
     });
-    tx.update(reservationRef, { status: finalStatus, finalizedAt: (input.now ?? new Date()).toISOString() });
+    tx.update(reservationRef, { status: finalStatus, finalizedAt: timestamp.toISOString() });
+    if (slot.get('officialPromotionReservationCheckoutId') === input.checkoutId) {
+      tx.set(slotRef, { officialPromotionReservationCheckoutId: null }, { merge: true });
+    }
+    if (input.outcome === 'expire_unissued') {
+      tx.update(checkoutRef, { status: 'expired', expiredAt: timestamp.toISOString() });
+    }
     return { status: finalStatus };
   });
 }
