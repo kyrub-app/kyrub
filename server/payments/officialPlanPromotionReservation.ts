@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
 import { normalizeStorePromotion, type StorePromotion } from '../../src/utils/storePromotions.js';
 import { quoteOfficialPlanPromotion } from './officialPlanPromotionQuote.js';
+import { assertOfficialPromotionPaymentMatches } from './officialPlanPromotionAcceptedTerms.js';
 
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 const reservationId = (checkoutId: string) =>
