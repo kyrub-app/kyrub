@@ -225,6 +225,19 @@ const getUserStoreCreateInput = (
   return input;
 };
 
+type ActiveMainTab = 'perfil' | 'renda' | 'kyrub' | 'cairubia';
+type ActiveSocialTab = 'lojas' | 'usuarios';
+type ActivePracaFilter = 'recentes' | 'favoritos' | 'conectados';
+type RetainedWorkspaceTab = {
+  activeTab: ActiveMainTab;
+  socialSubTab: ActiveSocialTab;
+  pracaFilter: ActivePracaFilter;
+};
+// LegacyApp has a keyed remount after cloud product synchronization. Keep the
+// current user's navigation in memory across that *internal* remount only;
+// never write it to the ledger, database, or browser persistence.
+const retainedWorkspaceTabByUser = new Map<string, RetainedWorkspaceTab>();
+
 export default function App() {
   const isAdminSubdomain = typeof window !== 'undefined' && (
     window.location.hostname === 'admin.kyrub.com' ||
@@ -262,7 +275,9 @@ export default function App() {
   const [userCoords, setUserCoords] = useState<{ lat: number; lng: number } | null>(null);
 
   // Mobile Bottom Navigation
-  const [activeTab, setActiveTab] = useState<'perfil' | 'renda' | 'kyrub' | 'cairubia'>('renda');
+  const [activeTab, setActiveTab] = useState<ActiveMainTab>(
+    () => retainedWorkspaceTabByUser.get(auth.currentUser?.uid ?? '')?.activeTab ?? 'renda'
+  );
 
   // Slide-overs & ERP Overlays
   const [isWalletOpen, setIsWalletOpen] = useState(false);
@@ -451,12 +466,23 @@ export default function App() {
   // Social Sub-tab, GPS Slider Filter and Search states
   const [radiusKm, setRadiusKm] = useState(10);
   const [searchQuery, setSearchQuery] = useState('');
-  const [socialSubTab, setSocialSubTab] = useState<'lojas' | 'usuarios'>('lojas');
+  const [socialSubTab, setSocialSubTab] = useState<ActiveSocialTab>(
+    () => retainedWorkspaceTabByUser.get(auth.currentUser?.uid ?? '')?.socialSubTab ?? 'lojas'
+  );
 
   // New states for restructure
   const [isProfileVisible, setIsProfileVisible] = useState(true);
   const [ofertasFilter, setOfertasFilter] = useState<'todas' | 'novas' | 'favoritas' | 'cliente'>('todas');
-  const [pracaFilter, setPracaFilter] = useState<'recentes' | 'favoritos' | 'conectados'>('recentes');
+  const [pracaFilter, setPracaFilter] = useState<ActivePracaFilter>(
+    () => retainedWorkspaceTabByUser.get(auth.currentUser?.uid ?? '')?.pracaFilter ?? 'recentes'
+  );
+
+  useEffect(() => {
+    if (!isLoggedIn || !authenticatedUserId) return;
+    retainedWorkspaceTabByUser.set(authenticatedUserId, {
+      activeTab, socialSubTab, pracaFilter,
+    });
+  }, [isLoggedIn, authenticatedUserId, activeTab, socialSubTab, pracaFilter]);
   const [conectadosSubTab, setConectadosSubTab] = useState<'sugestoes' | 'solicitacoes'>('sugestoes');
 
   // Private chat state
@@ -1279,6 +1305,8 @@ if (newMomentPublishToPraca) {
           <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
             <button
               onClick={async () => {
+                const signingOutUid = auth.currentUser?.uid;
+                if (signingOutUid) retainedWorkspaceTabByUser.delete(signingOutUid);
                 try {
                   await signOut(auth);
                   setIsLoggedIn(false);
