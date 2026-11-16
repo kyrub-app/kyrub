@@ -79,3 +79,20 @@ test('the clean shell preserves authoritative and multimodal Kyrubia runtime pat
   assert.match(workspace, /lastTurnContext: result\.turnContext/);
   assert.match(workspace, /selectedOfferedIntentId/);
 });
+
+test('Educadora reuses Kyrubia chat for the three learning paths without automatic enrolment', () => {
+  const tracks = readFileSync('src/ai/kyrubiaLearningTracks.ts', 'utf8');
+  assert.match(workspace, /KYRUBIA_LEARNING_TRACKS\.map\(track =>/);
+  assert.match(workspace, /onClick=\{\(\) => startEducatorConversation\(track\)\}/);
+  assert.match(workspace, /track\?\.title \?\? EDUCATOR_TOPIC/);
+  assert.match(workspace, /setDraft\(track\?\.starterPrompt \?\? ''\)/);
+  assert.match(workspace, /Começar nova trilha/);
+  assert.match(workspace, /Escolher uma trilha não realiza matrícula nem contratação/);
+  for (const name of [
+    'Aprender para gerar renda',
+    'Aprender a empreender',
+    'Aprender a usar o Kyrub',
+  ]) assert.ok(tracks.includes(name));
+  assert.doesNotMatch(tracks, /enrollCourse|purchaseCourse|issueCertificate/);
+  assert.doesNotMatch(workspace, /requestReply\(conversation,.*starterPrompt/);
+});
