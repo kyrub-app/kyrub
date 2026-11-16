@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { reconcilePublishedStorefrontCart } from '../src/utils/storefrontOriginContext';
+import { buildProductConfigurationSelection } from '../src/utils/productCustomization';
 import type { Product } from '../src/types';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
@@ -73,6 +74,60 @@ test('resumed storefront cart drops withdrawn products and refreshes server-pric
   assert.equal(saved[0].product.price, 19);
   assert.match(publicStorefrontSource,
     /setCart\(previous => reconcilePublishedStorefrontCart\(previous, payload\.offers\)\)/);
+});
+
+
+test('resumed storefront cart preserves configured products and reprices current option choices', () => {
+  const original = {
+    id: 'meal', name: 'Refeição', description: '', price: 20,
+    image: '', stock: 8, category: 'Refeições', supplierId: 'owner',
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 5 }],
+    }],
+    quickNotes: ['Sem cebola'],
+  } as Product;
+  const configured = buildProductConfigurationSelection(
+    original, { extras: ['cheese'] }, ['Sem cebola'], 'entregar quente'
+  );
+  const refreshed = {
+    ...original, price: 30,
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 8 }],
+    }],
+  } as Product;
+  const reconciled = reconcilePublishedStorefrontCart([
+    { product: configured, quantity: 2 },
+  ], [refreshed]);
+  assert.equal(reconciled.length, 1);
+  assert.equal(reconciled[0].product.id, configured.id);
+  assert.equal(reconciled[0].product.price, 38);
+  assert.equal(reconciled[0].quantity, 2);
+  assert.equal(reconciled[0].product.selectedOptions?.[0]?.priceDelta, 8);
+  assert.equal(original.price, 20);
+});
+
+test('resumed storefront cart rejects withdrawn configuration choices rather than silently changing them', () => {
+  const product = {
+    id: 'meal', name: 'Refeição', description: '', price: 20,
+    image: '', stock: 5, category: 'Refeições', supplierId: 'owner',
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 5 }],
+    }],
+  } as Product;
+  const configured = buildProductConfigurationSelection(product, { extras: ['cheese'] });
+  const changed = {
+    ...product,
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'salad', name: 'Salada', priceDelta: 3 }],
+    }],
+  } as Product;
+  assert.deepEqual(reconcilePublishedStorefrontCart([
+    { product: configured, quantity: 1 },
+  ], [changed]), []);
 });
 
 test('resumed storefront cart becomes empty when the store has no published offers', () => {

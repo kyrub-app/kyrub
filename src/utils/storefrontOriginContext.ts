@@ -1,4 +1,5 @@
 import type { CartItem, Product } from '../types';
+import { buildProductConfigurationSelection } from './productCustomization';
 
 const ORIGIN_KEY = 'kyrub_storefront_origin_v1';
 const CART_PREFIX = 'kyrub_storefront_cart_v1:';
@@ -116,8 +117,42 @@ export const reconcilePublishedStorefrontCart = (
 ): CartItem[] => {
   const current = new Map(publishedOffers.map(product => [product.id, product]));
   return cart.flatMap(item => {
-    const product = current.get(item.product.id);
-    return product ? [{ ...item, product }] : [];
+    const originalId = item.product.id;
+    const sourceId = item.product.sourceProductId ?? originalId.split('::', 1)[0];
+    const product = current.get(sourceId);
+    if (!product) return [];
+
+    const configured = originalId !== sourceId ||
+      (item.product.selectedOptions?.length ?? 0) > 0 ||
+      (item.product.selectedQuickNotes?.length ?? 0) > 0;
+    if (!configured) return [{ ...item, product }];
+
+    // Keep a configured cart line only if all selected choices/notes remain
+    // valid in the current catalog. Reprice through the same PDV builder.
+    const selectedIds: Record<string, string[]> = {};
+    for (const option of item.product.selectedOptions ?? []) {
+      (selectedIds[option.groupId] ??= []).push(option.choiceId);
+    }
+    try {
+      const refreshed = buildProductConfigurationSelection(
+        product,
+        selectedIds,
+        item.product.selectedQuickNotes ?? [],
+        (item.product as Product & { customerNote?: string }).customerNote ?? ''
+      );
+      // A changed key means one or more choices/notes were removed or altered.
+      // Never silently convert a configured purchase into a different item.
+      if (refreshed.id !== originalId) return [];
+      return [{
+        ...item, product: refreshed,
+        ...(item.unitPrice !== undefined ? { unitPrice: refreshed.unitPrice } : {}),
+        ...(item.selectedOptions !== undefined ? { selectedOptions: refreshed.selectedOptions } : {}),
+        ...(item.selectedQuickNotes !== undefined ? { selectedQuickNotes: refreshed.selectedQuickNotes } : {}),
+        ...(item.customizationSummary !== undefined ? { customizationSummary: refreshed.customizationSummary } : {}),
+      }];
+    } catch {
+      return [];
+    }
   });
 };
 
