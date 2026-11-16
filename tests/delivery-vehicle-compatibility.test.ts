@@ -27,7 +27,7 @@ test('food and objects require explicit seller-declared physical cargo data', ()
 test('motorized registration is not automatic authorization for every vehicle', () => {
   const motorized = {
     status: 'approved', approvedProfiles:['motorized_courier'],
-    documentPaths:['cnh'], cnhCategory:'A', cnhHasEar:true,
+    documentType:'cnh', documentPaths:['cnh'], cnhCategory:'A', cnhHasEar:true,
   };
   assert.equal(courierVehicleDocumentEligibility(motorized,'motorcycle').eligible, true);
   assert.equal(courierVehicleDocumentEligibility(motorized,'car').eligible, false);
@@ -37,6 +37,7 @@ test('motorized registration is not automatic authorization for every vehicle', 
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'AB'},'car').eligible, true);
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhHasEar:false},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,documentPaths:[]},'motorcycle').eligible,false);
+  assert.equal(courierVehicleDocumentEligibility({...motorized,documentType:'cin'},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,status:'under_review'},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility(motorized,'bicycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({status:'approved',approvedProfiles:['bicycle_courier']},'bicycle').eligible,true);
