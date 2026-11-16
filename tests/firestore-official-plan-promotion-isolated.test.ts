@@ -79,6 +79,28 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   assert.equal(paymentClaims.size, 1, 'concurrent callbacks claim provider payment only once');
   assert.equal(paymentClaims.docs[0].get('checkoutId'), checkoutId);
   assert.equal(paymentClaims.docs[0].get('amountMinor'), 100);
+  // A second accepted checkout cannot claim the first checkout's provider payment ID.
+  // Seed only the second checkout/reservation: the promotion itself has a one-use cap.
+  const reusedCheckoutId = 'e'.repeat(64);
+  const accepted = (await checkoutRef.get()).get('promotionAcceptedTerms');
+  await Promise.all([
+    db.doc(`${root}/plan_pix_checkouts/${reusedCheckoutId}`).set({
+      checkoutId: reusedCheckoutId, buyerId: buyerUid, offer,
+      offerDigest: 'second-offer-digest', acceptedOfferDigest: 'second-offer-digest',
+      promotionAcceptedTerms: accepted, status: 'accepted',
+    }),
+    db.doc(`stores/${storeId}/promotionReservations/${(await import('node:crypto')).createHash('sha256').update('official-plan-promotion:' + reusedCheckoutId).digest('hex')}`).set({
+      checkoutId: reusedCheckoutId, buyerUid, promotionId,
+      payableMinor: 100, status: 'reserved',
+    }),
+  ]);
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId: reusedCheckoutId, buyerUid, paidAt: '2026-11-16T12:00:00.000Z',
+    confirmation: { ...confirmation, checkoutId: reusedCheckoutId },
+  }), /PAYMENT_REUSED/, 'one provider payment cannot confirm two checkouts');
+  assert.equal((await db.collection(`${root}/isolated_promotion_payment_claims`).get()).size, 1);
+  assert.equal((await db.doc(`${root}/plan_pix_checkouts/${reusedCheckoutId}`).get()).get('status'), 'accepted');
+
   await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
     checkoutId, buyerUid, paidAt: '2026-11-17T12:00:00.000Z', confirmation,
   }), /PAYMENT_REPLAY_CONFLICT/, 'replayed payment cannot change its approval time');
