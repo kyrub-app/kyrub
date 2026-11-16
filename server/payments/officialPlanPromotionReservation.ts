@@ -63,8 +63,11 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
     });
     const quote = quoteOfficialPlanPromotion({ ...input, promotion, now: input.now });
     const buyerCount = Number(buyerDoc.get('reservationCount') ?? 0);
+    const buyerRedeemed = Number(buyerDoc.get('redemptionCount') ?? 0);
     if (!Number.isSafeInteger(buyerCount) || buyerCount < 0 ||
-        (promotion.maxRedemptionsPerBuyer > 0 && buyerCount >= promotion.maxRedemptionsPerBuyer)) {
+        !Number.isSafeInteger(buyerRedeemed) || buyerRedeemed < 0 ||
+        (promotion.maxRedemptionsPerBuyer > 0 &&
+          buyerCount + buyerRedeemed >= promotion.maxRedemptionsPerBuyer)) {
       throw new Error('OFFICIAL_PROMOTION_BUYER_LIMIT');
     }
     // Counter includes pending reservations, preventing concurrent oversell.
