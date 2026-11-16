@@ -36,6 +36,9 @@ export async function confirmIsolatedOfficialPromotionPix(input: {
     });
     const existingPayment = checkout.get('providerPaymentId');
     if (existingPayment) {
+      if (!['paid_pending_activation', 'activated'].includes(checkout.get('status'))) {
+        throw Error('OFFICIAL_PROMOTION_PAYMENT_STATE_CONFLICT');
+      }
       if (existingPayment !== verified.simulatedPaymentId ||
           checkout.get('providerPaidMinor') !== verified.paidMinor ||
           checkout.get('simulatedPayment') !== true ||
