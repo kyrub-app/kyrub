@@ -199,7 +199,7 @@ export const loadMerchantPrepaidRenewalPaymentStatus = async (input: {
 
 export interface InitialPrepaidSubscriptionQuote {
   checkoutId: string;
-  quote: SubscriptionContractOffer;
+  quote: SubscriptionContractOffer & { originalTotalMinor?: number; promotionDiscountMinor?: number; promotionCode?: string };
   status?: 'quoted' | 'accepted' | 'bound' | 'in_flight' | 'outcome_unknown' | 'activated';
 }
 
@@ -217,9 +217,10 @@ export interface InitialPrepaidSubscriptionPaymentState {
 
 /** Freeze commercial terms on the server before explicit buyer acceptance. */
 export const quoteInitialPrepaidSubscription = async (input: {
-  storeId: string; productId: string; selectedMonths: ContractTermMonths; billingAuthority?: 'platform';
+  storeId: string; productId: string; selectedMonths: ContractTermMonths; billingAuthority?: 'platform'; promotionCode?: string;
 }): Promise<InitialPrepaidSubscriptionQuote> => post(input.billingAuthority === 'platform' ? 'official.prepaid.quote' : 'merchant.prepaid-initial.quote', {
   storeId: input.storeId.trim(), productId: input.productId.trim(), selectedMonths: input.selectedMonths,
+  ...(input.billingAuthority === 'platform' && input.promotionCode ? { promotionCode: input.promotionCode.trim().toUpperCase() } : {}),
 });
 
 /** Explicit buyer acceptance of the exact server quote; no payment creation. */
