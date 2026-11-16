@@ -34,6 +34,7 @@ try {
     db.doc('marketplace_listings/official-browser-store').set({
       listingType: 'store', storeId: STORE, slug: 'kyrub-oficial',
       publicationStatus: 'published', name: 'Kyrub Oficial', status: 'open',
+      keywords: [], categories: [], description: 'Planos oficiais Kyrub',
     }),
     db.doc('marketplace_listings/official-browser-business').set({
       listingType: 'offer', storeId: STORE, productId: BUSINESS, offerId: BUSINESS,
@@ -125,7 +126,9 @@ try {
     else throw Error('UNEXPECTED_PLAN_CONTROL:' + op);
     await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(response) });
   });
-  await page.goto(origin + '/', { waitUntil: 'domcontentloaded' });
+  // Start at the *real* storefront, not the unrelated marketplace landing.
+  // Authenticate with Firebase Auth Emulator and reload the same public route.
+  await page.goto(origin + '/@kyrub-oficial?coupon=BIZ1', { waitUntil: 'domcontentloaded' });
   const customToken = await adminAuth.createCustomToken(fakeUid);
   const login = await page.evaluate(async token => {
     const { auth } = await import('/src/utils/firebase.ts');
@@ -134,7 +137,7 @@ try {
     return { uid: result.user.uid, projectId: auth.app.options.projectId };
   }, customToken);
   assert.deepEqual(login, { uid: fakeUid, projectId });
-  await page.goto(origin + '/@kyrub-oficial?coupon=BIZ1', { waitUntil: 'domcontentloaded' });
+  await page.reload({ waitUntil: 'domcontentloaded' });
   const section = page.locator('#official-plan-contract-section');
   await section.waitFor({ state: 'visible', timeout: 20000 });
   await section.getByText('Cupom da Praça BIZ1 identificado').waitFor({ timeout: 15000 });
