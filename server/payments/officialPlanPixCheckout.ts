@@ -130,6 +130,9 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
   const { buyer } = await load(input.authorization, input.checkoutId);
   return adminDb.runTransaction(async tx => {
     const r = checkoutRef(input.checkoutId), doc = await tx.get(r), d = doc.data()!;
+    // Do not record acceptance of a full-price offer when promotional terms
+    // are present but not yet propagated through the canonical financial flow.
+    if (d.promotionAcceptedTerms) throw Error('OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED');
     if (d.buyerId !== buyer.uid || d.offer.quote.totalMinor !== input.acceptedTotalMinor || digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
     if (d.acceptedAt) return { status: 'already_accepted' };
     if (d.status !== 'quoted') throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
