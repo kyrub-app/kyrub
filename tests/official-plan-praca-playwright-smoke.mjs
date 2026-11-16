@@ -152,6 +152,10 @@ try {
   const pracaButton = page.getByRole('button', { name: 'Praça', exact: true });
   await pracaButton.waitFor({ state: 'visible', timeout: 20000 });
   await pracaButton.click();
+  await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
+  // Capture the social card before interacting with the link. Full-page
+  // screenshots can trigger re-layout: always re-locate afterwards.
+  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
   const couponLink = page.getByRole('link', { name: 'Aproveitar cupom BIZ1 na loja' });
   try {
     await couponLink.waitFor({ state: 'visible', timeout: 20000 });
@@ -185,8 +189,9 @@ try {
     new URL(await couponLink.getAttribute('href'), origin).searchParams.get('coupon'),
     'BIZ1',
   );
-  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
-  await couponLink.click();
+  // The real user action must originate from the social feed, not a
+  // programmatic navigation to the storefront.
+  await couponLink.click({ timeout: 15000 });
   await page.waitForURL(url => url.pathname === '/@kyrub-oficial'
     && url.searchParams.get('coupon') === 'BIZ1', { timeout: 20000 });
   const section = page.locator('#official-plan-contract-section');
