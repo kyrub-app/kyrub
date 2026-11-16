@@ -55,9 +55,10 @@ import {
   type IdentityVerificationRecord,
   type VerificationProfile,
   type WorkAction,
+  type IdentityVerificationSection,
 } from '../utils/identityVerification';
 
-type Tab = 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
+type Tab = IdentityVerificationSection;
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 const PROFILE_OPTIONS: Array<{
@@ -194,8 +195,9 @@ export function ProfileVerificationBridge() {
   }, [open, user]);
 
   useEffect(() => {
-    const openFromEvent = () => {
-      setActiveTab('conta');
+    const openFromEvent = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: Tab }>).detail?.section;
+      setActiveTab(section && TABS.some(tab => tab.id === section) ? section : 'conta');
       setOpen(true);
     };
     window.addEventListener(IDENTITY_VERIFICATION_OPEN_EVENT, openFromEvent);
@@ -242,7 +244,7 @@ export function ProfileVerificationBridge() {
       event.preventDefault();
       event.stopPropagation();
       if ('stopImmediatePropagation' in event) event.stopImmediatePropagation();
-      setActiveTab('documentos');
+      setActiveTab(action === 'accept_delivery' ? 'conta' : 'documentos');
       setOpen(true);
       showToast(result.reason, 'warning');
     };
