@@ -321,7 +321,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
   const paymentId = `official_pix_${payment.id}`;
   const canonical: CanonicalPayment = {
     id: paymentId, storeId, orderId: contractId, buyerId: uid,
-    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100,
+    paymentIntentId: d.checkoutId, amount: officialPixChargeMinor(d) / 100,
     currency: 'BRL', method: 'pix', context: 'pos', status: 'paid',
     provider: 'mercado-pago', providerPaymentId: String(payment.id),
     idempotencyKey: d.checkoutId, createdAt: paidAt, updatedAt: paidAt,
@@ -349,7 +349,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       if (existingBinding.get('contractPath') !== contractRef.path ||
           existingBinding.get('providerPaymentId') !== String(payment.id) ||
           existingSubscription.get('buyerId') !== uid ||
-          existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor ||
+          existingContract.get('totalPaidMinor') !== officialPixChargeMinor(d) ||
           existingContract.get('paidAt') !== paidAt ||
           existingContract.get('providerPaymentId') !== String(payment.id) ||
           existingSubscription.get('providerPaymentId') !== String(payment.id) ||
@@ -381,8 +381,16 @@ async function materializePendingStoreActivation(d: any, payment: any) {
     tx.create(contractRef, {
       contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId,
       customerId: uid, productId: d.offer.productId, months: d.offer.quote.months,
-      totalPaidMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
-      discountPercent: d.offer.quote.discountPercent, acceptedAt: d.acceptedAt,
+      totalPaidMinor: officialPixChargeMinor(d), monthlyBasePriceMinor: d.offer.priceMinor,
+      discountPercent: d.offer.quote.discountPercent,
+      ...(d.promotionAcceptedTerms ? { promotion: {
+        promotionId: d.promotionAcceptedTerms.promotionId, code: d.promotionAcceptedTerms.code,
+        originalTotalMinor: d.promotionAcceptedTerms.originalTotalMinor,
+        discountMinor: d.promotionAcceptedTerms.discountMinor,
+        payableMinor: d.promotionAcceptedTerms.payableMinor,
+        termsDigest: d.promotionAcceptedTerms.termsDigest,
+      } } : {}),
+      acceptedAt: d.acceptedAt,
       paidAt, state: 'paid_pending_activation', startsAt: null, expiresAt: null,
       providerPaymentId: String(payment.id),
     });
@@ -391,7 +399,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId,
       productId: d.offer.productId, productName: d.offer.productName,
       collectionMode: 'prepaid', contractedMonths: d.offer.quote.months,
-      amountMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      amountMinor: officialPixChargeMinor(d), monthlyBasePriceMinor: d.offer.priceMinor,
       currency: 'BRL', saleModality: d.offer.saleModality,
       provider: 'mercado_pago', providerSubscriptionId: '',
       providerStatus: 'authorized', state: 'paid_pending_activation',
@@ -406,7 +414,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
     tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), {
       contractId, storeId, subscriptionId: id, buyerId: uid,
       productId: d.offer.productId, startsAt: null, expiresAt: null,
-      providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor,
+      providerPaymentId: String(payment.id), paidAmountMinor: officialPixChargeMinor(d),
       state: 'paid_pending_activation',
     });
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
@@ -421,6 +429,11 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       startsAt: null, contractExpiresAt: null, effectsStatus: 'pending',
     });
   });
+  if (d.promotionAcceptedTerms) {
+    await finalizeOfficialPlanPromotionReservation({ checkoutId: d.checkoutId,
+      officialStoreId: d.offer.storeId, promotionId: d.promotionAcceptedTerms.promotionId,
+      outcome: 'redeem' });
+  }
   // Read after the transaction: a concurrent store activation may have
   // advanced this same contract while the provider callback was running.
   const settled = await checkoutRef(d.checkoutId).get();
@@ -602,7 +615,7 @@ async function materialize(d: any, payment: any) {
   const bindingRef = adminDb.doc(`prepaidRenewalPaymentBindings/${hash('mercado_pago:' + payment.id)}`);
   const paymentId = `official_pix_${payment.id}`;
   const canonical: CanonicalPayment = { id: paymentId, storeId, orderId: contractId, buyerId: uid,
-    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100, currency: 'BRL', method: 'pix', context: 'pos',
+    paymentIntentId: d.checkoutId, amount: officialPixChargeMinor(d) / 100, currency: 'BRL', method: 'pix', context: 'pos',
     status: 'paid', provider: 'mercado-pago', providerPaymentId: String(payment.id), idempotencyKey: d.checkoutId,
     createdAt: startsAt, updatedAt: startsAt, paidAt: startsAt, refundedAt: '' };
   const pointEntry = buildStorePointPurchaseEntry({ storeId, customerId: uid, orderId: contractId, paymentId,
@@ -620,7 +633,7 @@ async function materialize(d: any, payment: any) {
     if (binding.exists) {
       if (binding.get('contractPath') !== contractRef.path || binding.get('providerPaymentId') !== String(payment.id) ||
         current.get('status') !== 'activated' || existingContract.get('startsAt') !== startsAt || existingContract.get('expiresAt') !== expiresAt ||
-        existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
+        existingContract.get('totalPaidMinor') !== officialPixChargeMinor(d) || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
       return;
     }
     if (slot.get('officialPixCheckoutId') !== d.checkoutId ||
@@ -634,12 +647,19 @@ async function materialize(d: any, payment: any) {
     // All reads precede writes. The immutable provider binding gates every commercial effect.
     tx.create(bindingRef, { provider: 'mercado_pago', providerPaymentId: String(payment.id), storeId, subscriptionId: id, contractId, contractPath: contractRef.path });
     tx.create(contractRef, { contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId, customerId: uid,
-      productId: d.offer.productId, months: d.offer.quote.months, totalPaidMinor: d.offer.quote.totalMinor,
+      productId: d.offer.productId, months: d.offer.quote.months, totalPaidMinor: officialPixChargeMinor(d),
       monthlyBasePriceMinor: d.offer.priceMinor, discountPercent: d.offer.quote.discountPercent,
+      ...(d.promotionAcceptedTerms ? { promotion: {
+        promotionId: d.promotionAcceptedTerms.promotionId, code: d.promotionAcceptedTerms.code,
+        originalTotalMinor: d.promotionAcceptedTerms.originalTotalMinor,
+        discountMinor: d.promotionAcceptedTerms.discountMinor,
+        payableMinor: d.promotionAcceptedTerms.payableMinor,
+        termsDigest: d.promotionAcceptedTerms.termsDigest,
+      } } : {}),
       acceptedAt: d.acceptedAt, startsAt, expiresAt, providerPaymentId: String(payment.id) });
     tx.create(subscriptionRef, { schemaVersion: 1, id, storeId, buyerId: uid, buyerEmail: d.buyerEmail,
       ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId, productId: d.offer.productId, productName: d.offer.productName,
-      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months, amountMinor: d.offer.quote.totalMinor,
+      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months, amountMinor: officialPixChargeMinor(d),
       monthlyBasePriceMinor: d.offer.priceMinor, currency: 'BRL',
       saleModality: { ...d.offer.saleModality, subscription: { ...d.offer.saleModality.subscription, autoRenew: false } },
       provider: 'mercado_pago', providerSubscriptionId: '', providerStatus: 'authorized', state: 'active', checkoutUrl: '',
@@ -648,7 +668,7 @@ async function materialize(d: any, payment: any) {
       providerPaymentOccurredAt: startsAt, paymentConfirmedAt: startsAt, createdAt: startsAt, updatedAt: startsAt, activatedAt: startsAt,
       cancelledAt: '', startsAt, expiresAt, initialContractId: contractId, billingAuthority: 'platform' });
     tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), { contractId, storeId, subscriptionId: id,
-      buyerId: uid, productId: d.offer.productId, startsAt, expiresAt, providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor, state: 'paid' });
+      buyerId: uid, productId: d.offer.productId, startsAt, expiresAt, providerPaymentId: String(payment.id), paidAmountMinor: officialPixChargeMinor(d), state: 'paid' });
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
     applyStoreEconomicLedgerPaymentPlan(tx, finance);
     if (pointEntry) tx.create(adminDb.doc(`${root}/storePointLedger/${Buffer.from(pointEntry.id).toString('base64url')}`), pointEntry);
@@ -663,6 +683,11 @@ async function materialize(d: any, payment: any) {
       actorId: 'kyrub_billing', actorRole: 'system', targetType: 'store', targetId: uid, nextPlan: d.offer.plan,
       providerPaymentId: String(payment.id), checkoutId: d.checkoutId, source: 'server', createdAt: startsAt });
   });
+  if (d.promotionAcceptedTerms) {
+    await finalizeOfficialPlanPromotionReservation({ checkoutId: d.checkoutId,
+      officialStoreId: d.offer.storeId, promotionId: d.promotionAcceptedTerms.promotionId,
+      outcome: 'redeem' });
+  }
   // Retry-safe projections use their canonical owners; a failed projection does not create another payment.
   if (d.offer.rewards.xp > 0) await persistVerifiedKyrubXp({ userId: uid, sourceType: 'achievement', sourceId: d.offer.productId,
     deltaXp: d.offer.rewards.xp, correlationId: d.checkoutId, idempotencyKey: `official_${d.checkoutId}`, occurredAt: startsAt });
