@@ -88,3 +88,19 @@ test('switching debates resets the comment composer and ignores late debate snap
   assert.match(component, /openDebate\(debate\.id\)/);
   assert.match(component, /onClick=\{closeDebate\}/);
 });
+
+test('private group navigation rejects stale messages and cross-community membership snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const groupDirectorySubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const groupMessageSubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /group\.communityId === selectedCommunityId/);
+  assert.match(component, /group\.memberIds\.includes\(user\.uid\)/);
+  assert.match(component, /const isCurrent = \(\) => groupMessageSubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setGroupMessages\(values\); \}/);
+  assert.match(component, /const isCurrent = \(\) => groupDirectorySubscriptionVersion\.current === version/);
+  assert.match(component, /setMyCommunityGroups\(values\.filter\(group => group\.communityId === selectedCommunityId\)\)/);
+  assert.match(component, /const closeGroupsModal = \(\) => \{[\s\S]*?setActiveGroupChatId\(''\);[\s\S]*?setGroupMessages\(\[\]\);/);
+  assert.match(component, /const toggleGroupConversation = \(groupId: string\) => \{[\s\S]*?setGroupMessages\(\[\]\);[\s\S]*?setGroupMessageDraft\(''\);/);
+  assert.match(component, /onClick=\{\(\) => toggleGroupConversation\(group\.id\)\}/);
+  assert.match(component, /const openCommunity = \(community: CloudCommunity\) => \{[\s\S]*?closeGroupsModal\(\);/);
+});
