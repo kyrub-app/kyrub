@@ -7,7 +7,6 @@ import { CourierGoogleMap } from './CourierGoogleMap';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 const TRACKING_STORAGE_KEY = 'kyrub_courier_tracking_delivery_id';
-const LAST_POSITION_STORAGE_KEY = 'kyrub_courier_last_position';
 const MIN_SEND_INTERVAL_MS = 5_000;
 
 interface AssignedDelivery {
@@ -32,35 +31,6 @@ interface LocationUpdateResult {
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
-
-const parseStoredPosition = (): CourierPosition | null => {
-  try {
-    const parsed = JSON.parse(
-      localStorage.getItem(LAST_POSITION_STORAGE_KEY) ?? 'null'
-    ) as Partial<CourierPosition> | null;
-    if (
-      !parsed ||
-      typeof parsed.latitude !== 'number' ||
-      typeof parsed.longitude !== 'number' ||
-      typeof parsed.accuracy !== 'number'
-    ) {
-      return null;
-    }
-    return {
-      latitude: parsed.latitude,
-      longitude: parsed.longitude,
-      accuracy: parsed.accuracy,
-      heading: typeof parsed.heading === 'number' ? parsed.heading : null,
-      speed: typeof parsed.speed === 'number' ? parsed.speed : null,
-      clientCapturedAt:
-        typeof parsed.clientCapturedAt === 'number'
-          ? parsed.clientCapturedAt
-          : Date.now(),
-    };
-  } catch {
-    return null;
-  }
-};
 
 const postLocation = async (
   deliveryId: string,
@@ -136,10 +106,11 @@ const stopRemoteTracking = async (deliveryId: string): Promise<void> => {
 
 export function CourierLiveTrackingBridge() {
   const [assignedDeliveries, setAssignedDeliveries] = useState<AssignedDelivery[]>([]);
+  const [assignedDeliveriesLoaded, setAssignedDeliveriesLoaded] = useState(false);
   const [trackingDeliveryId, setTrackingDeliveryId] = useState(
     () => localStorage.getItem(TRACKING_STORAGE_KEY) ?? ''
   );
-  const [position, setPosition] = useState<CourierPosition | null>(parseStoredPosition);
+  const [position, setPosition] = useState<CourierPosition | null>(null);
   const [trackingError, setTrackingError] = useState('');
   const [panelDismissed, setPanelDismissed] = useState(false);
   const [storeArrivalDetected, setStoreArrivalDetected] = useState(false);
@@ -147,8 +118,6 @@ export function CourierLiveTrackingBridge() {
   const [pickupBusy, setPickupBusy] = useState(false);
   const [pickupError, setPickupError] = useState('');
   const watchIdRef = useRef<number | null>(null);
-  const lastSentAtRef = useRef(0);
-  const sendingRef = useRef(false);
 
   useEffect(() => {
     let unsubscribeDeliveries = () => undefined;
@@ -156,7 +125,12 @@ export function CourierLiveTrackingBridge() {
       unsubscribeDeliveries();
       unsubscribeDeliveries = () => undefined;
       setAssignedDeliveries([]);
-      if (!user) return;
+      setAssignedDeliveriesLoaded(false);
+      setPosition(null);
+      if (!user) {
+        setAssignedDeliveriesLoaded(true);
+        return;
+      }
 
       unsubscribeDeliveries = onSnapshot(
         collection(db, DELIVERY_COLLECTION_PATH),
@@ -178,10 +152,14 @@ export function CourierLiveTrackingBridge() {
             } satisfies AssignedDelivery];
           });
           setAssignedDeliveries(next);
+          setAssignedDeliveriesLoaded(true);
           setPanelDismissed(false);
         },
         error => {
           console.warn('Entregas atribuídas indisponíveis para rastreio.', error);
+          // A failed subscription does not prove the assignment ended.
+          setAssignedDeliveriesLoaded(false);
+          setAssignedDeliveries([]);
         }
       );
     });
@@ -191,12 +169,20 @@ export function CourierLiveTrackingBridge() {
     };
   }, []);
 
+  useEffect(() => {
+    // Remove precise coordinates stored by older releases; do not persist them across users.
+    localStorage.removeItem('kyrub_courier_last_position');
+  }, []);
+
   const activeDelivery = useMemo(
     () =>
       assignedDeliveries.find(delivery => delivery.id === trackingDeliveryId) ??
       assignedDeliveries[0] ??
       null,
     [assignedDeliveries, trackingDeliveryId]
+  );
+  const trackingAuthorized = assignedDeliveriesLoaded && assignedDeliveries.some(
+    delivery => delivery.id === trackingDeliveryId
   );
 
   useEffect(() => {
@@ -207,8 +193,9 @@ export function CourierLiveTrackingBridge() {
 
   useEffect(() => {
     if (
+      assignedDeliveriesLoaded &&
       trackingDeliveryId &&
-      !assignedDeliveries.some(delivery => delivery.id === trackingDeliveryId)
+      !trackingAuthorized
     ) {
       const completedTrackingId = trackingDeliveryId;
       localStorage.removeItem(TRACKING_STORAGE_KEY);
@@ -220,18 +207,23 @@ export function CourierLiveTrackingBridge() {
       }
       void stopRemoteTracking(completedTrackingId);
     }
-  }, [assignedDeliveries, trackingDeliveryId]);
+  }, [assignedDeliveriesLoaded, trackingAuthorized, trackingDeliveryId]);
 
   useEffect(() => {
-    if (!trackingDeliveryId) return;
+    if (!trackingDeliveryId || !trackingAuthorized) return;
     if (!navigator.geolocation) {
       setTrackingError('Este aparelho não disponibiliza geolocalização.');
       return;
     }
 
+    let cancelled = false;
+    let lastSentAt = 0;
+    let sending = false;
+    setPosition(null);
     setTrackingError('');
     watchIdRef.current = navigator.geolocation.watchPosition(
       current => {
+        if (cancelled) return;
         const next: CourierPosition = {
           latitude: current.coords.latitude,
           longitude: current.coords.longitude,
@@ -247,24 +239,24 @@ export function CourierLiveTrackingBridge() {
           clientCapturedAt: current.timestamp,
         };
         setPosition(next);
-        localStorage.setItem(LAST_POSITION_STORAGE_KEY, JSON.stringify(next));
 
         const now = Date.now();
         if (
-          sendingRef.current ||
-          now - lastSentAtRef.current < MIN_SEND_INTERVAL_MS
+          sending ||
+          now - lastSentAt < MIN_SEND_INTERVAL_MS
         ) {
           return;
         }
-        sendingRef.current = true;
-        lastSentAtRef.current = now;
+        sending = true;
+        lastSentAt = now;
         void postLocation(trackingDeliveryId, next)
           .then(result => {
-            if (result.arrivalDetected) {
+            if (!cancelled && result.arrivalDetected) {
               setStoreArrivalDetected(true);
             }
           })
           .catch(error => {
+            if (cancelled) return;
             setTrackingError(
               error instanceof Error
                 ? error.message
@@ -272,10 +264,11 @@ export function CourierLiveTrackingBridge() {
             );
           })
           .finally(() => {
-            sendingRef.current = false;
+            sending = false;
           });
       },
       error => {
+        if (cancelled) return;
         setTrackingError(
           error.code === error.PERMISSION_DENIED
             ? 'Permissão de localização negada. Ative-a nas configurações do navegador.'
@@ -290,12 +283,13 @@ export function CourierLiveTrackingBridge() {
     );
 
     return () => {
+      cancelled = true;
       if (watchIdRef.current !== null) {
         navigator.geolocation.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
       }
     };
-  }, [trackingDeliveryId]);
+  }, [trackingDeliveryId, trackingAuthorized]);
 
   const enableTracking = (): void => {
     if (!activeDelivery) return;
