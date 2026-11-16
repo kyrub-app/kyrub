@@ -408,3 +408,64 @@ test('ERP Business coupon uses the REAL official Pix checkout, contract and bene
     delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
   }
 });
+
+test('canonical rejected Pix releases ERP reservation without redeeming or granting Business', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0; payment = undefined; loseProviderResponse = false; ambiguousSearch = false;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  const root = 'kyrub_admin/control_plane', stamp = Date.now();
+  await Promise.all([
+    db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+    db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+    db.doc('stores/buyer-store').set({ ownerId: 'buyer', plan: 'free' }),
+    db.doc('users/buyer/stores/buyer').set({ plan: 'free' }),
+    db.doc('stores/official-store/products/business').set({
+      name: 'Business', price: 397, publicationStatus: 'published', storePointsPerUnit: 0,
+      saleModality: { schemaVersion: 1, mode: 'subscription', subscription: {
+        schemaVersion: 1, autoRenew: false, billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+      } },
+      contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    }),
+    db.doc(root + '/official_plan_products/business').set({
+      canonicalStoreId: 'official-store', productId: 'business',
+      planId: 'business', status: 'active', rewards: { xp: 0 },
+    }),
+    db.doc('stores/official-store/promotions/rejected-pix-promo').set({
+      id: 'rejected-pix-promo', storeId: 'official-store', code: 'REJECTTEST',
+      title: 'Business reject test', badge: 'TEST', discountType: 'fixed',
+      discountValue: 396, productIds: ['business'], eligibility: { mode: 'public' },
+      active: true, startsAt: new Date(stamp - 86400000).toISOString(),
+      endsAt: new Date(stamp + 86400000).toISOString(),
+      maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
+      createdBy: 'owner', createdVia: 'manual', actionId: 'reject-test',
+      createdAt: new Date(stamp).toISOString(), updatedAt: new Date(stamp).toISOString(),
+    }),
+  ]);
+  try {
+    const q = await api.quoteOfficialPlanPix({ authorization: 'buyer',
+      storeId: 'official-store', productId: 'business', selectedMonths: 1, promotionCode: 'REJECTTEST' });
+    const input = { authorization: 'buyer', checkoutId: q.checkoutId };
+    await api.acceptOfficialPlanPix({ ...input, acceptedTotalMinor: 100 });
+    assert.equal((await db.doc('stores/official-store/promotions/rejected-pix-promo').get()).get('reservedCount'), 1);
+    const issued = await api.checkoutOfficialPlanPix(input);
+    assert.equal(issued.state, 'awaiting_payment');
+    payment = { ...payment, status: 'rejected', status_detail: 'cc_rejected_other_reason' };
+    const rejected = await api.reconcileOfficialPlanPix(input);
+    assert.equal(rejected.state, 'rejected');
+    const promotion = await db.doc('stores/official-store/promotions/rejected-pix-promo').get();
+    assert.equal(promotion.get('reservedCount'), 0);
+    assert.equal(promotion.get('redemptionCount'), 0);
+    assert.equal((await db.collection('stores/official-store/promotionReservations').get()).docs[0].get('status'), 'released');
+    assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
+    assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).exists, false);
+    assert.equal(posts, 1);
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+  }
+});
