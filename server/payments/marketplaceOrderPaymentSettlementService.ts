@@ -48,6 +48,47 @@ export const assertPrepaidStoreMirrorIdentity = async (transaction: Transaction,
   }
 };
 
+
+/**
+ * First-store activation records the canonical link in the personal store,
+ * not necessarily in the optional legacy tenant document. Resolve that link
+ * only after checking both identities in the same Firestore transaction.
+ * An unrelated legacy store still uses its existing legacy-only workflow.
+ */
+export const resolvePrepaidOrderMirrorStoreId = async (
+  transaction: Transaction,
+  publicStoreId: string,
+  tenantCanonicalStoreId: string
+): Promise<string> => {
+  if (tenantCanonicalStoreId) {
+    await assertPrepaidStoreMirrorIdentity(transaction, publicStoreId, tenantCanonicalStoreId);
+    return tenantCanonicalStoreId;
+  }
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(publicStoreId)) return '';
+  const personal = await transaction.get(
+    adminDb.doc(`users/${publicStoreId}/stores/${publicStoreId}`)
+  );
+  if (!personal.exists) return '';
+  if (personal.get('ownerId') !== publicStoreId ||
+      (personal.get('id') && personal.get('id') !== publicStoreId)) {
+    throw Error('PAYMENT_ORDER_SETTLEMENT_STORE_MISMATCH');
+  }
+  const canonicalStoreId = clean(personal.get('canonicalStoreId'));
+  if (!canonicalStoreId) return '';
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId) ||
+      canonicalStoreId === publicStoreId) {
+    throw Error('PAYMENT_ORDER_SETTLEMENT_STORE_MISMATCH');
+  }
+  const store = await transaction.get(adminDb.doc(`stores/${canonicalStoreId}`));
+  if (!store.exists ||
+      store.get('id') !== canonicalStoreId ||
+      store.get('ownerId') !== publicStoreId ||
+      store.get('legacyTenantId') !== publicStoreId) {
+    throw Error('PAYMENT_ORDER_SETTLEMENT_STORE_MISMATCH');
+  }
+  return store.get('firstStoreCreationVerified') === true ? canonicalStoreId : '';
+};
+
 /** Prepare all projection reads before the checkout transaction starts writing. */
 export const preparePrepaidOrderMirror = async (
   transaction: Transaction, order: CustomerOrder
@@ -57,10 +98,11 @@ export const preparePrepaidOrderMirror = async (
     throw Error('PAYMENT_ORDER_SETTLEMENT_TARGET_MISMATCH');
   }
   const tenant = await transaction.get(adminDb.doc(`tenants/${order.storeId}`));
-  const canonicalStoreId = clean(tenant.get('canonicalStoreId'));
-  // An unmapped legacy store retains its existing legacy-only contract.
+  const canonicalStoreId = await resolvePrepaidOrderMirrorStoreId(
+    transaction, order.storeId, clean(tenant.get('canonicalStoreId'))
+  );
+  // An unrelated unmapped legacy store retains the legacy-only contract.
   if (!canonicalStoreId) return null;
-  await assertPrepaidStoreMirrorIdentity(transaction, order.storeId, canonicalStoreId);
   const reference = adminDb.doc(`stores/${canonicalStoreId}/orders/${order.id}`);
   const existing = await transaction.get(reference);
   if (existing.exists && (existing.get('id') !== order.id || existing.get('storeId') !== canonicalStoreId ||
@@ -204,8 +246,10 @@ export const settleMarketplaceOperationalOrderAfterPayment = async (input: {
     if (prepaid && !confirmation) throw Error('PAYMENT_ORDER_SETTLEMENT_REQUIRES_VERIFIED_PAYMENT');
     const release = prepaid ? resolveOrderReleaseDecision({ mode: 'pay_before_fulfillment',
       approval: order.status === 'pending' ? 'pending' : 'approved', settlement: 'paid', paymentVerifiedByServer: true }) : null;
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
-    if (prepaid) await assertPrepaidStoreMirrorIdentity(transaction, storeId, canonicalStoreId);
+    const tenantCanonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const canonicalStoreId = prepaid
+      ? await resolvePrepaidOrderMirrorStoreId(transaction, storeId, tenantCanonicalStoreId)
+      : tenantCanonicalStoreId;
 
     const settled = settleExistingMarketplaceOrder({
       order,

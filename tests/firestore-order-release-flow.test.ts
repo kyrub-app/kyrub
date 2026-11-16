@@ -135,3 +135,82 @@ test('checkout fails atomically for cross-store mapping without creating financi
   assert.equal((await db.collection('stores/seller/paymentIntents').get()).size,1); // Existing baseline fixture only.
   assert.equal((await db.collection('stores/canonical/orders').get()).empty,true);
 });
+
+
+const verifiedFirstStoreFixture = async()=>{
+  await db.doc('users/seller/stores/seller').set({
+    id: 'seller', ownerId: 'seller', canonicalStoreId: 'store-first',
+  });
+  await db.doc('stores/store-first').set({
+    id: 'store-first', ownerId: 'seller', legacyTenantId: 'seller',
+    firstStoreCreationVerified: true, publicationStatus: 'published',
+  });
+  await db.doc('marketplace_listings/s_6_seller').set({
+    listingType: 'store', storeId: 'seller', ownerId: 'seller',
+    publicationStatus: 'published',
+  });
+  await db.doc('stores/store-first/products/product').set({
+    id: 'product', storeId: 'store-first', name: 'Produto',
+    category: 'Produtos', price: 20, stock: 10,
+    publicationStatus: 'published', isService: false,
+  });
+};
+test('verified first store without tenant mapping mirrors pending, approved and cancelled orders to ERP',async()=>{
+  await verifiedFirstStoreFixture();
+  const request={...checkoutBody,idempotencyKey:'first-store-cancel'};
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(created.status,201);
+  const orderId=created.body.orderId;
+  const mirror=db.doc(`stores/store-first/orders/${orderId}`);
+  assert.equal((await mirror.get()).get('status'),'pending');
+  assert.equal((await mirror.get()).get('checkoutAuthority'),'merchant_approval_required');
+  assert.equal((await mirror.get()).get('legacyStoreId'),'seller');
+  const retry=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(retry.body.duplicate,true);
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  assert.equal((await mirror.get()).get('status'),'accepted');
+  assert.equal((await mirror.get()).get('paymentStatus'),'unpaid');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'cancelled',{reason:'Comprador desistiu'});
+  assert.equal((await mirror.get()).get('status'),'cancelled');
+  assert.equal((await mirror.get()).get('paymentStatus'),'unpaid');
+});
+test('verified first-store paid order stays mirrored and only enters production after confirmed payment',async()=>{
+  await verifiedFirstStoreFixture();
+  const request={...checkoutBody,idempotencyKey:'first-store-paid'};
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(created.status,201);
+  const {orderId,paymentId,paymentIntentId}=created.body;
+  const mirror=db.doc(`stores/store-first/orders/${orderId}`);
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller',orderId,'preparing'),
+    /liberação financeira/);
+  const provider=db.batch();
+  provider.update(db.doc(`stores/seller/payments/${paymentId}`),
+    {provider:'mercado-pago',providerPaymentId:'psp-first'});
+  provider.update(db.doc(`stores/seller/paymentIntents/${paymentIntentId}`),
+    {provider:'mercado-pago',providerIntentId:'psp-first'});
+  await provider.commit();
+  await service.processVerifiedPaymentWebhook({
+    storeId:'seller',paymentId,
+    event:{...paidEvent,eventId:'first-paid-event',providerPaymentId:'psp-first',paymentIntentId},
+  });
+  await service.settleMarketplaceOperationalOrderAfterPayment({
+    storeId:'seller',orderId,paymentIntentId,occurredAt:now,
+  });
+  assert.equal((await mirror.get()).get('paymentStatus'),'paid');
+  assert.equal((await mirror.get()).get('status'),'accepted');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'preparing');
+  assert.equal((await mirror.get()).get('status'),'preparing');
+  assert.equal((await mirror.get()).get('paymentStatus'),'paid');
+});
+test('cross-owner first-store mapping fails checkout atomically without mirroring financial data',async()=>{
+  await verifiedFirstStoreFixture();
+  await db.doc('stores/store-first').update({ownerId:'someone-else'});
+  await assert.rejects(
+    service.createMarketplacePaymentIntent('Bearer isolated-test',
+      {...checkoutBody,idempotencyKey:'first-store-identity-conflict'}),
+    /STORE_IDENTITY_CONFLICT|STORE_MISMATCH/
+  );
+  assert.equal((await db.collection('stores/store-first/orders').get()).empty,true);
+});
+
