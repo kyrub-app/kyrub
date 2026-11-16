@@ -19,8 +19,7 @@ export async function activateIsolatedPromotionalBusiness(input: {
     throw Error('OFFICIAL_PROMOTION_EMULATOR_REQUIRED');
   }
   if (!/^[a-f0-9]{64}$/.test(input.checkoutId) ||
-      !/^[a-zA-Z0-9_-]{1,128}$/.test(input.buyerUid) ||
-      false) {
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(input.buyerUid)) {
     throw Error('OFFICIAL_PROMOTION_INVALID_INPUT');
   }
   const checkoutRef = adminDb.doc(`${ROOT}/plan_pix_checkouts/${input.checkoutId}`);
