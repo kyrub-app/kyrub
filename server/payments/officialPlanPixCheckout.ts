@@ -160,6 +160,9 @@ async function bind(d: any, paymentId: string) {
 export async function checkoutOfficialPlanPix(input: { authorization: string; checkoutId: string }) {
   const { buyer, d } = await load(input.authorization, input.checkoutId);
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
+  // A coupon snapshot is not yet supported by the canonical Pix issuance,
+  // ledger and contract path. Never silently charge the undiscounted price.
+  if (d.promotionAcceptedTerms) throw Error('OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED');
   allowPilotOffer(d, buyer.uid);
   // Pre-store checkout remains disabled by default. A separate explicit launch flag
   // permits only the existing one-buyer, one-shot Pro pilot (enforced by allowPilotOffer).
