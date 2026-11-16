@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import type { Transaction } from 'firebase-admin/firestore';
 import { normalizeStorePromotion, type StorePromotion } from '../../src/utils/storePromotions.js';
 import { quoteOfficialPlanPromotion } from './officialPlanPromotionQuote.js';
 import { assertOfficialPromotionPaymentMatches } from './officialPlanPromotionAcceptedTerms.js';
@@ -16,7 +17,7 @@ const reservationId = (checkoutId: string) =>
  * Reservations are counted against redemption limits to prevent overselling.
  * No real provider request is made here.
  */
-export async function reserveOfficialPlanPromotionForCheckout(input: {
+export async function reserveOfficialPlanPromotionWithinTransaction(tx: Transaction, input: {
   checkoutId: string;
   buyerUid: string;
   officialStoreId: string;
@@ -30,10 +31,7 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
     input.officialProductId, input.promotionId].every(validId)) {
     throw new Error('OFFICIAL_PROMOTION_INVALID_INPUT');
   }
-  const designation = await adminDb.doc('kyrub_admin/official_store').get();
-  if (designation.get('canonicalStoreId') !== input.officialStoreId) {
-    throw new Error('OFFICIAL_PROMOTION_STORE_FORBIDDEN');
-  }
+  const designationRef = adminDb.doc('kyrub_admin/official_store');
   const promotionRef = adminDb.doc(
     `stores/${input.officialStoreId}/promotions/${input.promotionId}`
   );
@@ -44,10 +42,13 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
     `stores/${input.officialStoreId}/promotionBuyerReservations/${input.promotionId}_${createHash('sha256').update(input.buyerUid).digest('hex')}`
   );
   const checkoutRef = adminDb.doc(`kyrub_admin/control_plane/plan_pix_checkouts/${input.checkoutId}`);
-  return adminDb.runTransaction(async tx => {
-    const [promotionDoc, reservationDoc, buyerDoc, checkoutDoc] = await Promise.all([
+    const [designation, promotionDoc, reservationDoc, buyerDoc, checkoutDoc] = await Promise.all([
+      tx.get(designationRef),
       tx.get(promotionRef), tx.get(reservationRef), tx.get(buyerReservationRef), tx.get(checkoutRef),
     ]);
+    if (designation.get('canonicalStoreId') !== input.officialStoreId) {
+      throw new Error('OFFICIAL_PROMOTION_STORE_FORBIDDEN');
+    }
     if (!checkoutDoc.exists || checkoutDoc.get('buyerId') !== input.buyerUid ||
         checkoutDoc.get('offer')?.storeId !== input.officialStoreId ||
         checkoutDoc.get('offer')?.productId !== input.officialProductId ||
@@ -115,5 +116,11 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
     tx.update(promotionRef, { reservedCount: reserved + 1 });
     return { reservationId: reservationRef.id, payableMinor: quote.payableMinor,
       discountMinor: quote.discountMinor, status: 'reserved' as const };
-  });
+}
+ 
+/** Standalone wrapper for other server callers, using the same atomic logic. */
+export async function reserveOfficialPlanPromotionForCheckout(
+  input: Parameters<typeof reserveOfficialPlanPromotionWithinTransaction>[1],
+) {
+  return adminDb.runTransaction(tx => reserveOfficialPlanPromotionWithinTransaction(tx, input));
 }
