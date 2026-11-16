@@ -478,8 +478,12 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (!isLoggedIn || !authenticatedUserId) return;
-    retainedWorkspaceTabByUser.set(authenticatedUserId, {
+    // The browser may have a signed-in Firebase user before LegacyApp's own
+    // auth-derived state settles. Persist navigation for that verified SDK user
+    // immediately, or product-sync remounts can drop the newly selected Praça.
+    const uid = auth.currentUser?.uid;
+    if (!uid) return;
+    retainedWorkspaceTabByUser.set(uid, {
       activeTab, socialSubTab, pracaFilter,
     });
   }, [isLoggedIn, authenticatedUserId, activeTab, socialSubTab, pracaFilter]);
