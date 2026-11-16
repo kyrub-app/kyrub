@@ -90,7 +90,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
     setDeliveryDeliveryPoint('');
     setDeliveryPaymentOffer('');
     setDeliveryModalTab('publicados');
-    triggerToast('Rascunho salvo localmente. Pedidos da loja são publicados pelo ERP.', 'info');
+    triggerToast('Rascunho criado nesta tela, sem publicação. Pedidos reais são publicados pelo ERP.', 'info');
   };
 
   const handleDeleteDeliveryJob = (id: string) => {
@@ -250,9 +250,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     </div>
                     <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                       <div className="text-[9px] font-mono">
-                        {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold">Aguardando Entregador</span>}
-                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {job.acceptedBy || 'Entregador'}</span>}
-                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({job.acceptedBy})</span>}
+                        {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold"{isCanonicalCourierDelivery(job) ? 'Aguardando entregador' : 'Rascunho local · não publicado'}</span>}
+                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {(job as OperationalDeliveryJob).acceptedByName || job.acceptedBy || 'Entregador'}</span>}
+                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em trajeto ({(job as OperationalDeliveryJob).acceptedByName || job.acceptedBy})</span>}
                       </div>
                       {job.status === 'available' && !isCanonicalCourierDelivery(job) ? (
                         <button type="button" onClick={() => handleDeleteDeliveryJob(job.id)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer font-mono">Cancelar</button>
