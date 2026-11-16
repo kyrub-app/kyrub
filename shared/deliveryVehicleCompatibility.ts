@@ -96,7 +96,8 @@ export const courierVehicleDocumentEligibility = (
   const category = expansionApproved ? expansion.cnhCategory : verification.cnhCategory;
   const ear = expansionApproved ? expansion.cnhHasEar : verification.cnhHasEar;
   const documents = expansionApproved ? expansion.documentPaths : verification.documentPaths;
-  const documentExists = Array.isArray(documents) && documents.length > 0;
+  const documentExists = Array.isArray(documents) && documents.length > 0
+    && (expansionApproved || verification.documentType === 'cnh');
   const validCategory = typeof category === 'string' && category.trim().toUpperCase();
   const categoryString = validCategory || '';
   const letter = vehicle === 'motorcycle' ? 'A' : 'B';
