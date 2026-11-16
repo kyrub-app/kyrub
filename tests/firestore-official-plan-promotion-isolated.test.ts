@@ -129,6 +129,17 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   assert.equal(contract.get('startsAt'), paidAt);
   assert.equal(contract.get('endsAt'), '2026-12-16T12:00:00.000Z');
   assert.equal(entitlement.get('checkoutId'), checkoutId);
+  assert.equal((await api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, paidAt, confirmation,
+  })).status, 'already_confirmed', 'matching callback after activation is idempotent');
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, paidAt: '2026-11-17T12:00:00.000Z', confirmation,
+  }), /PAYMENT_REPLAY_CONFLICT/, 'activation cannot change confirmed payment timestamp');
+  await checkoutRef.update({ status: 'quoted' });
+  await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
+    checkoutId, buyerUid, paidAt, confirmation,
+  }), /PAYMENT_STATE_CONFLICT/, 'replay must reject inconsistent checkout state');
+  await checkoutRef.update({ status: 'activated' });
   assert.equal((await db.collection(`${root}/isolated_promotion_contracts`).get()).size, 1);
   const finalized = await Promise.all(Array.from({ length: 4 }, () =>
     api.finalizeOfficialPlanPromotionReservation({
