@@ -183,7 +183,6 @@ try {
     await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
     throw error;
   }
-  await page.screenshot({ path: 'playwright-official-praça-mural.png', fullPage: true });
   assert.equal(
     new URL(await couponLink.getAttribute('href'), origin).pathname,
     '/@kyrub-oficial',
@@ -193,8 +192,9 @@ try {
     new URL(await couponLink.getAttribute('href'), origin).searchParams.get('coupon'),
     'BIZ1',
   );
-  // The real user action must originate from the social feed, not a
-  // programmatic navigation to the storefront.
+  // Do not take a full-page screenshot between resolving the link and
+  // clicking it: asynchronous LegacyApp refresh can remount the social tab.
+  // This still requires a genuine DOM click through the real Praça card.
   await couponLink.click({ timeout: 15000 });
   await page.waitForURL(url => url.pathname === '/@kyrub-oficial'
     && url.searchParams.get('coupon') === 'BIZ1', { timeout: 20000 });
