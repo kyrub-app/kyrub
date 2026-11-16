@@ -73,7 +73,9 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
           checkout.get('offer')?.productId !== reservation.get('productId') ||
           checkout.get('offer')?.quote?.totalMinor !== accepted.originalTotalMinor ||
           checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
-          !checkout.get('providerPaymentId')) {
+          !checkout.get('providerPaymentId') ||
+          checkout.get('simulatedPayment') !== true ||
+          checkout.get('providerPaidMinor') !== accepted.payableMinor) {
         throw new Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
       }
       assertOfficialPromotionPaymentMatches(accepted, {
@@ -81,7 +83,7 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
         officialStoreId: input.officialStoreId,
         officialProductId: reservation.get('productId'),
         months: accepted.months,
-        paidMinor: reservation.get('payableMinor'),
+        paidMinor: checkout.get('providerPaidMinor'),
         termsDigest: accepted.termsDigest,
       });
     } else if (!['expired', 'cancelled', 'rejected'].includes(checkoutStatus)) {
