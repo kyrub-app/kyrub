@@ -104,6 +104,23 @@ const isProduct = (value: unknown): value is Product => {
   );
 };
 
+
+/**
+ * The published storefront is authoritative for which products may remain in
+ * a resumed buyer cart. Remove withdrawn items and replace stale price/terms
+ * snapshots with the freshly published offer; preserve buyer quantities.
+ */
+export const reconcilePublishedStorefrontCart = (
+  cart: readonly CartItem[],
+  publishedOffers: readonly Product[]
+): CartItem[] => {
+  const current = new Map(publishedOffers.map(product => [product.id, product]));
+  return cart.flatMap(item => {
+    const product = current.get(item.product.id);
+    return product ? [{ ...item, product }] : [];
+  });
+};
+
 export const saveStorefrontCart = (
   slug: string,
   cart: readonly CartItem[]

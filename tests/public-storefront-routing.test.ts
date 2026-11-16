@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import { reconcilePublishedStorefrontCart } from '../src/utils/storefrontOriginContext';
+import type { Product } from '../src/types';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const legacyAppSource = readFileSync('src/LegacyApp.tsx', 'utf8');
@@ -50,6 +52,38 @@ const storefrontEventsSource = readFileSync(
   'utf8'
 );
 const vercelConfig = readFileSync('vercel.json', 'utf8');
+
+
+test('resumed storefront cart drops withdrawn products and refreshes server-priced offers', () => {
+  const product = (id: string, price: number, stock = 5) => ({
+    id, name: id, description: 'Produto publicado', price, stock,
+    category: 'Geral', image: '', supplierId: 'store-owner',
+  }) as Product;
+  const savedItem = product('active', 19);
+  const removedItem = product('withdrawn', 39);
+  const saved = [
+    { product: savedItem, quantity: 3 },
+    { product: removedItem, quantity: 1 },
+  ];
+  const current = product('active', 25, 4);
+  const result = reconcilePublishedStorefrontCart(saved, [current]);
+
+  assert.deepEqual(result, [{ product: current, quantity: 3 }]);
+  assert.equal(saved.length, 2, 'the saved cart must not be mutated in place');
+  assert.equal(saved[0].product.price, 19);
+  assert.match(publicStorefrontSource,
+    /setCart\(previous => reconcilePublishedStorefrontCart\(previous, payload\.offers\)\)/);
+});
+
+test('resumed storefront cart becomes empty when the store has no published offers', () => {
+  const savedProduct = {
+    id: 'old', name: 'Antigo', description: '', price: 12, image: '',
+    stock: 3, category: 'Geral', supplierId: 'owner',
+  } as Product;
+  assert.deepEqual(reconcilePublishedStorefrontCart([
+    { product: savedProduct, quantity: 2 },
+  ], []), []);
+});
 
 test('application routes public slugs before the Kyrub discovery and authenticated shells', () => {
   assert.match(appSource, /resolveKyrubAppRoute\(window\.location\.pathname\)/);
