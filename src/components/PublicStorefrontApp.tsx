@@ -234,6 +234,16 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   }, [store?.id, sharedCouponCode]);
 
   useEffect(() => {
+    if (store?.id !== OFFICIAL_STORE_CANONICAL_ID) return;
+    // Previously saved retail carts must not carry official plan contracts
+    // into the generic marketplace checkout after this routing change.
+    setCart(previous => {
+      const retailOnly = previous.filter(item => !isOfficialPlanProductId(item.product.id));
+      return retailOnly.length === previous.length ? previous : retailOnly;
+    });
+  }, [store?.id]);
+
+  useEffect(() => {
     saveStorefrontCart(slug, cart);
   }, [cart, slug]);
 
