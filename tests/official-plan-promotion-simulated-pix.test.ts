@@ -27,18 +27,18 @@ const input = {
   accepted,
   confirmation: { paymentId: 'simulated-001', checkoutId, buyerUid: 'third-user',
     amountMinor: 100, currency: 'BRL' as const, method: 'pix' as const, status: 'approved' as const },
-  emulatorHost: '127.0.0.1:8080', isolatedFlag: 'true',
 };
 test('emulator-only simulated Pix approves exact Business R$1 snapshot', () => {
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
   const result = verifyIsolatedOfficialPlanPromotionPix(input);
   assert.equal(result.paidMinor, 100);
   assert.equal(result.simulated, true);
 });
 test('simulated Pix rejects production, pending, wrong buyer, checkout and amount', () => {
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
   for (const candidate of [
-    { ...input, emulatorHost: undefined },
-    { ...input, emulatorHost: 'firebase.example.com:443' },
-    { ...input, isolatedFlag: 'false' },
     { ...input, confirmation: { ...input.confirmation, status: 'pending' as const } },
     { ...input, confirmation: { ...input.confirmation, amountMinor: 39700 } },
     { ...input, confirmation: { ...input.confirmation, checkoutId: 'b'.repeat(64) } },
@@ -46,4 +46,11 @@ test('simulated Pix rejects production, pending, wrong buyer, checkout and amoun
   ]) {
     assert.throws(() => verifyIsolatedOfficialPlanPromotionPix(candidate), /OFFICIAL_PROMOTION_/);
   }
+  delete process.env.FIRESTORE_EMULATOR_HOST;
+  assert.throws(() => verifyIsolatedOfficialPlanPromotionPix(input), /EMULATOR_REQUIRED/);
+  process.env.FIRESTORE_EMULATOR_HOST = 'firebase.example.com:443';
+  assert.throws(() => verifyIsolatedOfficialPlanPromotionPix(input), /EMULATOR_REQUIRED/);
+  process.env.FIRESTORE_EMULATOR_HOST = '127.0.0.1:8080';
+  delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+  assert.throws(() => verifyIsolatedOfficialPlanPromotionPix(input), /EMULATOR_REQUIRED/);
 });
