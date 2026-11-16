@@ -62,6 +62,14 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
     const checkoutStatus = checkout.get('status');
     if (input.outcome === 'redeem') {
       const accepted = checkout.get('promotionAcceptedTerms');
+      const providerPaymentId = checkout.get('providerPaymentId');
+      // The canonical payment document is created by the existing Mercado Pago
+      // reconciliation transaction, not by a caller-controlled test adapter.
+      const verifiedPayment = typeof providerPaymentId === 'string' &&
+        /^\\d{1,32}$/.test(providerPaymentId)
+        ? await tx.get(adminDb.doc(
+          `stores/${input.officialStoreId}/payments/official_pix_${providerPaymentId}`
+        )) : null;
       if (!['activated', 'paid_pending_activation'].includes(checkoutStatus) ||
           !accepted || accepted.payableMinor !== reservation.get('payableMinor') ||
           accepted.originalTotalMinor !== reservation.get('originalTotalMinor') ||
@@ -73,9 +81,14 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
           checkout.get('offer')?.productId !== reservation.get('productId') ||
           checkout.get('offer')?.quote?.totalMinor !== accepted.originalTotalMinor ||
           checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
-          !checkout.get('providerPaymentId') ||
-          checkout.get('simulatedPayment') !== true ||
-          checkout.get('providerPaidMinor') !== accepted.payableMinor) {
+          !verifiedPayment?.exists ||
+          verifiedPayment.get('status') !== 'paid' ||
+          verifiedPayment.get('method') !== 'pix' ||
+          verifiedPayment.get('currency') !== 'BRL' ||
+          verifiedPayment.get('provider') !== 'mercado-pago' ||
+          verifiedPayment.get('providerPaymentId') !== providerPaymentId ||
+          verifiedPayment.get('paymentIntentId') !== input.checkoutId ||
+          verifiedPayment.get('amount') !== accepted.payableMinor / 100) {
         throw new Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
       }
       assertOfficialPromotionPaymentMatches(accepted, {
@@ -83,7 +96,7 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
         officialStoreId: input.officialStoreId,
         officialProductId: reservation.get('productId'),
         months: accepted.months,
-        paidMinor: checkout.get('providerPaidMinor'),
+        paidMinor: Math.round(verifiedPayment!.get('amount') * 100),
         termsDigest: accepted.termsDigest,
       });
     } else if (!['expired', 'cancelled', 'rejected'].includes(checkoutStatus)) {
