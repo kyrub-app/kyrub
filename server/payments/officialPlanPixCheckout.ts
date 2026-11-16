@@ -18,6 +18,7 @@ import { officialPlanPixAccount, officialPlanPixRequest, verifyOfficialPlanPixSi
 import type { ContractTermMonths } from '../../shared/subscriptionContractOffers.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { parseOfficialPlanRewards } from '../../shared/officialPlanRewards.js';
+import { assertNoUnintegratedOfficialPromotion } from './officialPlanPromotionCheckoutAmount.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -132,7 +133,7 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
     const r = checkoutRef(input.checkoutId), doc = await tx.get(r), d = doc.data()!;
     // Do not record acceptance of a full-price offer when promotional terms
     // are present but not yet propagated through the canonical financial flow.
-    if (d.promotionAcceptedTerms) throw Error('OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED');
+    assertNoUnintegratedOfficialPromotion(d);
     if (d.buyerId !== buyer.uid || d.offer.quote.totalMinor !== input.acceptedTotalMinor || digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
     if (d.acceptedAt) return { status: 'already_accepted' };
     if (d.status !== 'quoted') throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
@@ -165,7 +166,7 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   if (d.status !== 'accepted') return reconcileOfficialPlanPix(input);
   // A coupon snapshot is not yet supported by the canonical Pix issuance,
   // ledger and contract path. Never silently charge the undiscounted price.
-  if (d.promotionAcceptedTerms) throw Error('OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED');
+  assertNoUnintegratedOfficialPromotion(d);
   allowPilotOffer(d, buyer.uid);
   // Pre-store checkout remains disabled by default. A separate explicit launch flag
   // permits only the existing one-buyer, one-shot Pro pilot (enforced by allowPilotOffer).
