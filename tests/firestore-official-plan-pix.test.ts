@@ -302,3 +302,109 @@ test('simultaneous first-store clicks converge on one canonical identity', async
   assert.equal(canonical.get('publicationStatus'), 'paused');
   assert.equal(posts, 0, 'store activation must never create a Pix charge');
 });
+
+test('ERP Business coupon uses the REAL official Pix checkout, contract and benefit (R$397 -> R$1)', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0; payment = undefined; searches = 0;
+  loseProviderResponse = false; ambiguousSearch = false;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  const root = 'kyrub_admin/control_plane';
+  const modality = { schemaVersion: 1, mode: 'subscription', subscription: {
+    schemaVersion: 1, autoRenew: false,
+    billingInterval: { unit: 'month', count: 1 }, benefit: { kind: 'access', unitsPerCycle: null },
+  } };
+  const time = Date.now();
+  await Promise.all([
+    db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+    db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+    db.doc('stores/buyer-store').set({ ownerId: 'buyer', plan: 'free' }),
+    db.doc('users/buyer/stores/buyer').set({ plan: 'free' }),
+    db.doc('stores/official-store/products/business').set({
+      name: 'Kyrub Business', price: 397, publicationStatus: 'published',
+      saleModality: modality, storePointsPerUnit: 0,
+      contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    }),
+    db.doc(root + '/official_plan_products/business').set({
+      canonicalStoreId: 'official-store', productId: 'business', planId: 'business',
+      status: 'active', rewards: { xp: 0 },
+    }),
+    db.doc('stores/official-store/promotions/business-pilot').set({
+      id: 'business-pilot', storeId: 'official-store', code: 'BIZ1', title: 'Piloto Business',
+      badge: 'PILOTO', discountType: 'fixed', discountValue: 396,
+      productIds: ['business'], eligibility: { mode: 'public' }, active: true,
+      startsAt: new Date(time - 86400000).toISOString(),
+      endsAt: new Date(time + 86400000).toISOString(),
+      maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
+      createdBy: 'owner', createdVia: 'manual', actionId: 'pilot',
+      createdAt: new Date(time - 86400000).toISOString(), updatedAt: new Date(time).toISOString(),
+    }),
+  ]);
+  try {
+    const quoteInput = { authorization: 'buyer', storeId: 'official-store',
+      productId: 'business', selectedMonths: 1 as const, promotionCode: 'BIZ1' };
+    const [q, competingQuote] = await Promise.all([
+      api.quoteOfficialPlanPix(quoteInput), api.quoteOfficialPlanPix(quoteInput),
+    ]);
+    assert.equal(q.quote.originalTotalMinor, 39700);
+    assert.equal(q.quote.promotionDiscountMinor, 39600);
+    assert.equal(q.quote.totalMinor, 100);
+    assert.equal(competingQuote.quote.totalMinor, 100);
+    const c = { authorization: 'buyer', checkoutId: q.checkoutId };
+    const accepted = await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 });
+    assert.equal(accepted.status, 'accepted');
+    assert.equal((await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 })).status, 'already_accepted');
+    await assert.rejects(
+      api.acceptOfficialPlanPix({ authorization: 'buyer', checkoutId: competingQuote.checkoutId, acceptedTotalMinor: 100 }),
+      /OFFICIAL_PROMOTION_LIMIT|OFFICIAL_PROMOTION_BUYER_LIMIT/,
+      'the second checkout may not reserve the same one-use coupon',
+    );
+    const reserved = await db.doc('stores/official-store/promotions/business-pilot').get();
+    assert.equal(reserved.get('reservedCount'), 1);
+    assert.equal(reserved.get('redemptionCount'), 0);
+    assert.equal((await db.collection('stores/official-store/promotionReservations').get()).size, 1);
+    const issued = await api.checkoutOfficialPlanPix(c);
+    assert.equal(issued.state, 'awaiting_payment');
+    assert.equal(posts, 1);
+    assert.equal(payment.transaction_amount, 1);
+    assert.equal(payment.payment_method_id, 'pix');
+    payment = { ...payment, status: 'approved', status_detail: 'accredited',
+      transaction_amount: 397, date_approved: new Date().toISOString() };
+    await assert.rejects(api.reconcileOfficialPlanPix(c), /OFFICIAL_PIX_PAYMENT_MISMATCH/,
+      'callback for R$397 must not activate a coupon-priced R$1 contract');
+    assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 0);
+    payment = { ...payment, transaction_amount: 1 };
+    const four = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(c)));
+    assert(four.every(x => x.state === 'activated'));
+    assert(four.every(x => x.startsAt === payment.date_approved));
+    const repeat = await api.reconcileOfficialPlanPix(c);
+    assert.equal(repeat.startsAt, payment.date_approved);
+    assert.equal(repeat.expiresAt, four[0].expiresAt);
+    for (const collection of ['subscriptions','prepaidSubscriptionContracts','payments','economicLedger']) {
+      assert.equal((await db.collection('stores/official-store/' + collection).get()).size, 1, collection);
+    }
+    const contract = (await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).docs[0];
+    assert.equal(contract.get('totalPaidMinor'), 100);
+    assert.equal(contract.get('monthlyBasePriceMinor'), 39700);
+    assert.equal(contract.get('promotion.discountMinor'), 39600);
+    assert.equal(contract.get('startsAt'), payment.date_approved);
+    const subscription = (await db.collection('stores/official-store/subscriptions').get()).docs[0];
+    assert.equal(subscription.get('amountMinor'), 100);
+    const confirmedPayment = (await db.collection('stores/official-store/payments').get()).docs[0];
+    assert.equal(confirmedPayment.get('amount'), 1);
+    const entitlement = await db.doc(root + '/store_entitlements/buyer').get();
+    assert.equal(entitlement.get('plan'), 'business');
+    assert.equal(entitlement.get('benefitStartsAt'), payment.date_approved);
+    const promotion = await db.doc('stores/official-store/promotions/business-pilot').get();
+    assert.equal(promotion.get('reservedCount'), 0);
+    assert.equal(promotion.get('redemptionCount'), 1);
+    assert.equal((await db.collection('stores/official-store/promotionReservations').get()).docs[0].get('status'),'redeemed');
+    assert.equal(posts, 1, 'callbacks must never create another Pix');
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+  }
+});
