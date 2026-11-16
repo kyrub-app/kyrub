@@ -163,3 +163,133 @@ test('compliance can review a bounded list and approve requested profiles', asyn
     })
   );
 });
+
+
+test('approved freelancer can request bike courier review without losing existing approval', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'identity_verifications', 'user_a'), {
+      ...verification('user_a'),
+      status: 'approved',
+      requestedProfiles: ['freelancer'],
+      approvedProfiles: ['freelancer'],
+      reviewedBy: 'compliance_a',
+      reviewedAt: Timestamp.fromMillis(1_700_000_000_000),
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      submittedAt: Timestamp.fromMillis(1_700_000_000_000),
+      updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+    });
+  });
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const profile = doc(owner, 'identity_verifications', 'user_a');
+  await assertSucceeds(updateDoc(profile, {
+    profileExpansion: {
+      profile: 'bicycle_courier',
+      status: 'submitted',
+      documentPaths: [],
+      cnhCategory: '',
+      cnhHasEar: false,
+      submittedAt: serverTimestamp(),
+      reviewedAt: null,
+      reviewedBy: '',
+      reviewReason: '',
+    },
+    updatedAt: serverTimestamp(),
+  }));
+  const requested = (await getDoc(profile)).data();
+  if (!requested) throw new Error('Missing verification record');
+  if (requested.status !== 'approved' || requested.approvedProfiles[0] !== 'freelancer') {
+    throw new Error('Previous approval was altered');
+  }
+  await assertFails(updateDoc(profile, {
+    approvedProfiles: ['freelancer', 'bicycle_courier'],
+    'profileExpansion.status': 'approved',
+    updatedAt: serverTimestamp(),
+  }));
+  const outsider = environment.authenticatedContext('user_b').firestore();
+  await assertFails(getDoc(doc(outsider, 'identity_verifications', 'user_a')));
+
+  const admin = environment.authenticatedContext('compliance_a').firestore();
+  await assertSucceeds(updateDoc(doc(admin, 'identity_verifications', 'user_a'), {
+    approvedProfiles: ['freelancer', 'bicycle_courier'],
+    requestedProfiles: ['freelancer', 'bicycle_courier'],
+    'profileExpansion.status': 'approved',
+    'profileExpansion.reviewReason': '',
+    'profileExpansion.reviewedBy': 'compliance_a',
+    'profileExpansion.reviewedAt': serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  const approved = (await getDoc(profile)).data();
+  if (approved?.approvedProfiles.join(',') !== 'freelancer,bicycle_courier' || approved.status !== 'approved') {
+    throw new Error('Profile expansion did not preserve earlier approval');
+  }
+  await assertFails(updateDoc(profile, {
+    profileExpansion: {
+      profile: 'bicycle_courier',
+      status: 'submitted',
+      documentPaths: [],
+      cnhCategory: '',
+      cnhHasEar: false,
+      submittedAt: serverTimestamp(),
+      reviewedAt: null,
+      reviewedBy: '',
+      reviewReason: '',
+    },
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('rejected expansion preserves approved freelancer and can be corrected; motorized needs CNH evidence', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'identity_verifications', 'user_a'), {
+      ...verification('user_a'),
+      status: 'approved',
+      requestedProfiles: ['freelancer'],
+      approvedProfiles: ['freelancer'],
+      reviewedBy: 'compliance_a',
+      reviewedAt: Timestamp.fromMillis(1_700_000_000_000),
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      submittedAt: Timestamp.fromMillis(1_700_000_000_000),
+      updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+    });
+  });
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const profile = doc(owner, 'identity_verifications', 'user_a');
+  const request = {
+    profile: 'motorized_courier',
+    status: 'submitted',
+    documentPaths: [],
+    cnhCategory: 'A',
+    cnhHasEar: true,
+    submittedAt: serverTimestamp(),
+    reviewedAt: null,
+    reviewedBy: '',
+    reviewReason: '',
+  };
+  await assertFails(updateDoc(profile, { profileExpansion: request, updatedAt: serverTimestamp() }));
+  await assertSucceeds(updateDoc(profile, {
+    profileExpansion: {
+      ...request,
+      documentPaths: ['identity-verification/user_a/document/cnh.jpg'],
+    },
+    updatedAt: serverTimestamp(),
+  }));
+  const admin = environment.authenticatedContext('compliance_a').firestore();
+  await assertSucceeds(updateDoc(doc(admin, 'identity_verifications', 'user_a'), {
+    'profileExpansion.status': 'rejected',
+    'profileExpansion.reviewReason': 'Documento ilegível',
+    'profileExpansion.reviewedBy': 'compliance_a',
+    'profileExpansion.reviewedAt': serverTimestamp(),
+    updatedAt: serverTimestamp(),
+  }));
+  const rejected = (await getDoc(profile)).data();
+  if (rejected?.status !== 'approved' || rejected.approvedProfiles.join(',') !== 'freelancer') {
+    throw new Error('Rejection incorrectly revoked freelancer approval');
+  }
+  await assertSucceeds(updateDoc(profile, {
+    profileExpansion: {
+      ...request,
+      documentPaths: ['identity-verification/user_a/document/cnh-new.jpg'],
+    },
+    updatedAt: serverTimestamp(),
+  }));
+});
