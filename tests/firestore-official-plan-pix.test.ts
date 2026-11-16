@@ -645,3 +645,80 @@ test('a second buyer reclaims an expired never-issued coupon and contracts Busin
     delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
   }
 });
+
+test('Business R$1 before store creation uses canonical entitlement and never downgrades to Free', async () => {
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0; payment = undefined; loseProviderResponse = false; ambiguousSearch = false;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST = 'true';
+  process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST = 'true';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  const root = 'kyrub_admin/control_plane', stamp = Date.now();
+  await Promise.all([
+    db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+    db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+    db.doc('stores/official-store/products/business').set({
+      name: 'Business', price: 397, publicationStatus: 'published', storePointsPerUnit: 0,
+      saleModality: { schemaVersion: 1, mode: 'subscription', subscription: {
+        schemaVersion: 1, autoRenew: false, billingInterval: { unit: 'month', count: 1 },
+        benefit: { kind: 'access', unitsPerCycle: null },
+      } },
+      contractDiscounts: [{ months: 1, discountPercent: 0 }],
+    }),
+    db.doc(root + '/official_plan_products/business').set({
+      canonicalStoreId: 'official-store', productId: 'business',
+      planId: 'business', status: 'active', rewards: { xp: 0 },
+    }),
+    db.doc('stores/official-store/promotions/no-store-business').set({
+      id: 'no-store-business', storeId: 'official-store', code: 'BEFORESTORE',
+      title: 'Before-store Business coupon', badge: 'TEST', discountType: 'fixed',
+      discountValue: 396, productIds: ['business'], eligibility: { mode: 'public' },
+      active: true, startsAt: new Date(stamp - 86400000).toISOString(),
+      endsAt: new Date(stamp + 86400000).toISOString(),
+      maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
+      createdBy: 'owner', createdVia: 'manual', actionId: 'before-store',
+      createdAt: new Date(stamp).toISOString(), updatedAt: new Date(stamp).toISOString(),
+    }),
+  ]);
+  try {
+    const quote = await api.quoteOfficialPlanPix({ authorization: 'buyer',
+      storeId: 'official-store', productId: 'business', selectedMonths: 1,
+      promotionCode: 'BEFORESTORE' });
+    const checkoutRef = db.doc(root + '/plan_pix_checkouts/' + quote.checkoutId);
+    assert.equal((await checkoutRef.get()).get('buyerStoreProvisioningRequired'), true);
+    assert.equal((await db.collection('stores').where('ownerId','==','buyer').get()).size, 0);
+    assert.equal(quote.quote.totalMinor, 100);
+    const c = { authorization: 'buyer', checkoutId: quote.checkoutId };
+    await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 });
+    const issued = await api.checkoutOfficialPlanPix(c);
+    assert.equal(issued.state, 'awaiting_payment');
+    assert.equal(payment.transaction_amount, 1);
+    payment = { ...payment, status: 'approved', status_detail: 'accredited',
+      date_approved: new Date().toISOString() };
+    const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(c)));
+    assert(results.every(x => x.state === 'activated' && x.startsAt === payment.date_approved));
+    const entitlement = await db.doc(root + '/store_entitlements/buyer').get();
+    assert.equal(entitlement.get('plan'), 'business');
+    assert.equal(entitlement.get('benefitStartsAt'), payment.date_approved);
+    assert.equal((await checkoutRef.get()).get('status'), 'activated');
+    assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 1);
+    assert.equal((await db.collection('stores/official-store/payments').get()).docs[0].get('amount'), 1);
+    assert.equal((await db.collection('stores').where('ownerId','==','buyer').get()).size, 0);
+    const created = await api.ensureFreePlanForStoreCreation('Bearer buyer');
+    assert.equal(created.plan, 'business', 'creating a store after payment cannot downgrade the existing Business entitlement');
+    assert.equal(created.created, true);
+    const store = await db.doc('stores/' + created.canonicalStoreId).get();
+    assert.equal(store.get('ownerId'), 'buyer');
+    assert.equal(store.get('plan'), 'business');
+    assert.equal(store.get('publicationStatus'), 'paused', 'publication must remain independent from plan validity');
+    assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('benefitStartsAt'), payment.date_approved);
+    assert.equal((await db.collection('stores/official-store/prepaidSubscriptionContracts').get()).size, 1);
+    assert.equal(posts, 1);
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+    delete process.env.KYRUB_OFFICIAL_PIX_EMULATOR_PRESTORE_TEST;
+  }
+});
