@@ -114,10 +114,17 @@ export function KyrubTab(props: KyrubTabProps) {
   const [xpLoading, setXpLoading] = useState(false);
   const [xpError, setXpError] = useState(false);
   const socialFeed = usePublicSocialFeed();
+  const [squareNow, setSquareNow] = useState(() => Date.now());
   const squarePosts = useMemo(
-    () => selectPublicSquarePosts(socialFeed.posts),
-    [socialFeed.posts]
+    () => selectPublicSquarePosts(socialFeed.posts, squareNow),
+    [socialFeed.posts, squareNow]
   );
+
+  // Match the 24-hour Status expiry used by the profile Praça surface.
+  useEffect(() => {
+    const timer = window.setInterval(() => setSquareNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   useEffect(() => {
     props.setPosts(socialFeed.posts);

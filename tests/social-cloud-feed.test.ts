@@ -71,6 +71,7 @@ test('Firebase deploy configuration includes social Firestore and Storage securi
 });
 
 test('Praça shows public publications only; private posts and connected Status stay scoped', () => {
+  const now = Date.parse('2026-11-16T15:00:00Z');
   const post = (
     id: string,
     visibility: SocialPost['visibility'],
@@ -85,18 +86,22 @@ test('Praça shows public publications only; private posts and connected Status 
     visibility,
     publicationType,
     authorId: 'author',
+    createdAt: new Date(now - 1000).toISOString(),
   });
   const shared = [
     post('public-feed', 'public'),
     post('private-timeline', 'private'),
     post('connected-status', 'connections', 'status'),
     post('public-status', 'public', 'status'),
+    { ...post('expired-public-status', 'public', 'status'), createdAt: new Date(now - 24 * 60 * 60 * 1000).toISOString() },
+    { ...post('invalid-time-status', 'public', 'status'), createdAt: '' },
     post('own-private-post', 'private'),
     post('legacy-without-visibility', undefined),
   ];
-  const square = selectPublicSquarePosts(shared);
+  const square = selectPublicSquarePosts(shared, now);
   assert.deepEqual(square.map(item => item.id), ['public-feed', 'public-status']);
-  assert.equal(shared.length, 6, 'personal/connected feeds are not mutated');
-  assert.match(kyrubSource, /selectPublicSquarePosts\(socialFeed\.posts\)/);
+  assert.equal(shared.length, 8, 'personal/connected feeds are not mutated');
+  assert.match(kyrubSource, /selectPublicSquarePosts\(socialFeed\.posts, squareNow\)/);
+  assert.match(kyrubSource, /setInterval\(\(\) => setSquareNow\(Date\.now\(\)\), 60_000\)/);
   assert.match(kyrubSource, /posts=\{squarePosts\}/);
 });
