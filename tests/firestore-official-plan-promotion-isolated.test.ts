@@ -75,6 +75,10 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
     api.confirmIsolatedOfficialPromotionPix({ checkoutId, buyerUid, paidAt: '2026-11-16T12:00:00.000Z', confirmation })));
   assert.equal(confirmations.filter((x: any) => x.status === 'confirmed').length, 1);
   assert.equal(confirmations.filter((x: any) => x.status === 'already_confirmed').length, 3);
+  const paymentClaims = await db.collection(`${root}/isolated_promotion_payment_claims`).get();
+  assert.equal(paymentClaims.size, 1, 'concurrent callbacks claim provider payment only once');
+  assert.equal(paymentClaims.docs[0].get('checkoutId'), checkoutId);
+  assert.equal(paymentClaims.docs[0].get('amountMinor'), 100);
   await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
     checkoutId, buyerUid, paidAt: '2026-11-17T12:00:00.000Z', confirmation,
   }), /PAYMENT_REPLAY_CONFLICT/, 'replayed payment cannot change its approval time');
