@@ -1,4 +1,5 @@
 import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
+import { OFFICIAL_STORE_CANONICAL_ID } from '../../shared/officialPlanCanonicalDisplay.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
@@ -589,7 +590,17 @@ export const createPaymentIntentRouter = (): Router => {
         response.status(400).json({ error: 'Loja não identificada.' });
         return;
       }
-      await loadPublishedCatalog(storeId);
+      if (storeId === OFFICIAL_STORE_CANONICAL_ID) {
+        // Official plans have a canonical stores/{id} identity, not a B2C
+        // tenants/{id} catalog. This read-only endpoint is public *only*
+        // after the official store is published.
+        const official = await adminDb.doc(`stores/${storeId}`).get();
+        if (!official.exists || official.get('publicationStatus') !== 'published') {
+          throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+        }
+      } else {
+        await loadPublishedCatalog(storeId);
+      }
       response.status(200).json({
         promotions: await listPublicStorePromotions(storeId),
       });
