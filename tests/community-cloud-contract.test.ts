@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { scopeCommunityRecords, scopeDebateComments } from '../src/utils/communityViewScope';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
@@ -61,4 +62,48 @@ test('Firestore and Storage compose dedicated community authorization', () => {
   );
   assert.match(compose, /firestore\.communities\.fragment\.rules/);
   assert.match(storage, /match \/community-covers\/\{communityId\}/);
+});
+
+
+test('community navigation never renders posts, debates, members or groups from another community', () => {
+  const records = [
+    { id: 'alpha-first', communityId: 'alpha' },
+    { id: 'beta-first', communityId: 'beta' },
+    { id: 'alpha-second', communityId: 'alpha' },
+  ];
+  assert.deepEqual(scopeCommunityRecords(records, 'beta').map(record => record.id), ['beta-first']);
+  assert.deepEqual(scopeCommunityRecords(records, 'alpha').map(record => record.id), ['alpha-first', 'alpha-second']);
+  assert.deepEqual(scopeCommunityRecords(records, ''), []);
+  assert.equal(records.length, 3, 'live subscription values cannot be mutated by view selection');
+
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /scopeCommunityRecords\(posts, selectedCommunityId\)/);
+  assert.match(component, /scopeCommunityRecords\(debates, selectedCommunityId\)/);
+  assert.match(component, /scopeCommunityRecords\(members, selectedCommunityId\)/);
+  assert.match(component, /scopeCommunityRecords\(myCommunityGroups, selectedCommunityId\)/);
+  assert.match(component, /visiblePosts\.map\(/);
+  assert.match(component, /visibleDebates\.map\(/);
+  assert.match(component, /visibleMembers\.filter\(/);
+  assert.match(component, /visibleGroups\.map\(/);
+});
+
+test('debate comments and reply context are isolated when changing debates', () => {
+  const comments = [
+    { id: 'alpha-one', communityId: 'alpha', debateId: 'one' },
+    { id: 'alpha-two', communityId: 'alpha', debateId: 'two' },
+    { id: 'beta-one', communityId: 'beta', debateId: 'one' },
+  ];
+  assert.deepEqual(scopeDebateComments(comments, 'alpha', 'one').map(item => item.id), ['alpha-one']);
+  assert.deepEqual(scopeDebateComments(comments, 'alpha', 'two').map(item => item.id), ['alpha-two']);
+  assert.deepEqual(scopeDebateComments(comments, 'beta', 'one').map(item => item.id), ['beta-one']);
+  assert.deepEqual(scopeDebateComments(comments, 'alpha', ''), []);
+  assert.deepEqual(scopeDebateComments(comments, '', 'one'), []);
+
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /scopeDebateComments\(comments, selectedCommunityId, selectedDebateId\)/);
+  assert.match(component, /visibleComments\.map\(/);
+  assert.match(component, /visibleComments\.find\(/);
+  assert.match(component, /setSelectedDebateId\(debate\.id\)/);
+  assert.match(component, /setCommentDraft\(''\)/);
+  assert.match(component, /setReplyTo\(null\)/);
 });
