@@ -30,11 +30,22 @@ O cenário Business promocional verifica:
 
 Os testes anteriores da suíte existente cobrem corrida e recuperação de Pix, replays de efeitos, comprador sem loja e criação Free idempotente. Os testes unitários de descontos/termos e os testes existentes do agendador canônico complementam essa cobertura.
 
+## Handoff visual da Praça para os planos canônicos
+
+A PR utiliza a mesma interface existente `InitialPrepaidSubscriptionCheckout` e o mesmo cliente `src/utils/storeSubscription.ts`. Não há carrinho novo:
+- `StorePromotionsManager` compartilha na Praça o link público `/@slug?coupon=CODE`.
+- `PublicStorefrontApp` identifica **somente a Loja Oficial e os IDs canônicos Pro/Business** por `shared/officialPlanCanonicalDisplay.ts` (as mesmas constantes usadas pelo backend), consulta as promoções públicas para localizar os produtos associados e apresenta a contratação de planos na vitrine.
+- Um plano clicado na vitrine seleciona o checkout pré-pago, sem entrar no carrinho B2C. Produtos e serviços comuns continuam no carrinho; itens oficiais de planos salvos anteriormente são removidos desse carrinho.
+- A mesma `official.prepaid.quote` recebe o código opcional `promotionCode` no servidor, e o mesmo componente de aceite/Pix exibe preço original, desconto ERP e total cobrado. Código inválido ou sem produto de plano participante **não é omitido silenciosamente** para cobrar o preço integral.
+- Teste de interface em `tests/official-plan-praca-storefront-routing.test.ts`: verifica o roteamento das ligações existentes e renderiza o **card real de contrato pré-pago** com preço-base R$ 397,00, desconto R$ 396,00 e total R$ 1,00, sem chamadas de rede. A suíte canônica Firestore é executada em seguida no mesmo workflow.
+
+**Limites:** a vitrine só mostra planos se os produtos canônicos estiverem publicados; publicação de produtos de produção não foi feita. A própria API mantém os cupons de planos bloqueados fora do Firebase Emulator com token fictício. O teste de roteamento/renderização ainda não é uma prova de clique-a-clique em navegador real.
+
 ## Limites e pendências para lançamento
 
 - **Isolamento obrigatório:** Business com cupom R$ 1,00 só é permitido com Firestore Emulator em localhost, `KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST=true`, token fictício `isolated-platform-token` e gates de piloto. Produção mantém somente o piloto Pro sem desconto, e o checkout real permanece desativado até autorização.
 - Não testar com pagamento real, não habilitar flags produtivas, não efetuar merge/deploy.
-- Ainda falta o roteamento visual da Praça/vitrine para `official.prepaid.quote` com `promotionCode` (o caminho atual `?coupon=CODE` do carrinho B2C não pode vender planos oficiais).
+- O roteamento e o card de contratação na vitrine já estão implementados e cobertos por teste de interface; ainda falta a verificação **clique-a-clique em navegador** e a publicação de produtos em ambiente de homologação. A regra do servidor continua proibindo vender planos pelo carrinho B2C.
 - **Recuperação de reservas:** `quoteOfficialPlanPix` reabre reservas válidas do mesmo comprador ou expira atomicamente a cotação não emitida; `acceptOfficialPlanPix` recupera reservas expiradas de outros compradores quando há nova demanda, usando a consulta indexada em `promotionReservations` (até 125 candidatos por chamada). A confirmação de Pix rejeitado devolve a reserva. **Pagamentos `bound`, `in_flight` ou `outcome_unknown` não são liberados por tempo**: exigem resultado financeiro verificável.
 - O mecanismo é **sob demanda**, não uma varredura agendada de todas as campanhas; limpeza operacional global sem novos compradores ainda não foi implementada. O índice composto está declarado em `firestore.indexes.json` para futura implantação autorizada.
 - Falta validar a jornada de primeiro login (100 Pitangas, dependente da PR #1137), publicação da primeira loja (2 XP) e clique no cupom pela interface.
