@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
-import { projectCanonicalOffers, projectLegacyPublicOffers } from '../server/payments/marketplaceDiscoveryService';
+import { projectCanonicalOffers, projectLegacyPublicOffers, projectVerifiedFirstStoreCatalogOffers } from '../server/payments/marketplaceDiscoveryService';
 import {
   buildMarketplaceStoreDiscoverySignal,
   compareMarketplaceForYouSignals,
@@ -138,6 +138,46 @@ describe('marketplace discovery', () => {
     assert.match(source, /signalByStoreId\.get\(store\.id\)\?\.forYou/);
     assert.doesNotMatch(source, /orders\.some\(order => order\.storeId/);
   });
+
+  test('verified first-store catalog uses the independent ERP store and never exposes drafts', () => {
+    const product = (id: string, overrides: Record<string, unknown> = {}) => ({
+      id,
+      data: () => ({
+        id, storeId: 'store-canonical', publicationStatus: 'published',
+        name: 'Produto ' + id, category: 'Produtos', price: 30,
+        isService: false, stock: 4, image: 'https://example.invalid/photo.jpg',
+        ...overrides,
+      }),
+    }) as unknown as Parameters<typeof projectVerifiedFirstStoreCatalogOffers>[0][number];
+
+    const offers = projectVerifiedFirstStoreCatalogOffers([
+      product('caneta'),
+      product('rascunho', { publicationStatus: 'draft' }),
+      product('outro-dono', { storeId: 'store-other' }),
+      product('sem-preco', { price: undefined }),
+      product('sem-estoque', { stock: undefined }),
+      product('servico', { isService: true, stock: undefined, price: 90 }),
+      product('id-divergente', { id: 'incorrect' }),
+    ], 'store-canonical', 'owner-public');
+
+    assert.deepEqual(offers.map(item => item.id), ['caneta', 'servico']);
+    assert.deepEqual(offers.map(item => item.price), [30, 90]);
+    assert.deepEqual(offers.map(item => item.stock), [4, 0]);
+    assert.ok(offers.every(item => item.supplierId === 'owner-public'));
+  });
+
+  test('public storefront resolves only verified first-store links; official and legacy paths remain separate', () => {
+    const service = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
+    const publication = readFileSync('server/gamification/firstStorePublicationAuthority.ts', 'utf8');
+    assert.match(publication, /listingType: 'store', storeId: uid, ownerId: uid/);
+    assert.match(service, /personal\.get\('canonicalStoreId'\)/);
+    assert.match(service, /canonicalStore\.get\('firstStoreCreationVerified'\) === true/);
+    assert.match(service, /canonicalStore\.get\('ownerId'\) === ownerId/);
+    assert.match(service, /canonicalStore\.get\('publicationStatus'\) !== 'published'/);
+    assert.match(service, /linkedStoreId !== OFFICIAL_STORE_CANONICAL_ID/);
+    assert.match(service, /projectVerifiedFirstStoreCatalogOffers\(canonicalProducts\.docs, verifiedFirstStoreId, storeId\)/);
+  });
+
   test('legacy storefront preserves paid services without physical stock but rejects incomplete products', () => {
     const offers = projectLegacyPublicOffers([
       { id: 'service-no-stock', name: 'Aula individual', price: 80, isService: true, category: 'Educação' },

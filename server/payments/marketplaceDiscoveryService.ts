@@ -194,6 +194,46 @@ export const projectCanonicalOffers = (
     }];
   });
 
+
+/**
+ * First-store publication uses the owner's UID in the public listing, while
+ * product creation writes to an independent canonical store. Only verified
+ * first-store links may project that catalog into the owner-facing storefront.
+ * Never substitute draft products or orphaned marketplace offer listings.
+ */
+export const projectVerifiedFirstStoreCatalogOffers = (
+  docs: readonly QueryDocumentSnapshot<DocumentData>[],
+  canonicalStoreId: string,
+  publicStoreId: string
+): PublicStorefrontSnapshot['offers'] =>
+  docs.flatMap(document => {
+    const data = document.data();
+    const id = clean(document.id);
+    const name = clean(data.name);
+    const category = clean(data.category);
+    const price = data.price;
+    const isService = data.isService === true;
+    const stock = data.stock;
+    if (!id || (data.id != null && clean(data.id) !== id) ||
+        data.publicationStatus !== 'published' ||
+        clean(data.storeId) !== canonicalStoreId ||
+        !name || !category || typeof price !== 'number' ||
+        !Number.isFinite(price) || price < 0 ||
+        (!isService && (!Number.isSafeInteger(stock) || stock < 0))) {
+      return [];
+    }
+    const imageUrls = stringList(data.imageUrls);
+    return [{
+      id, name, description: clean(data.description), price,
+      image: imageUrls[0] ?? clean(data.image),
+      stock: isService ? 0 : stock,
+      isService, category,
+      // Retail checkout still uses the published owner-facing store identity.
+      supplierId: publicStoreId,
+      ...projectSubscriptionFields(data),
+    }];
+  });
+
 // Official plan contract terms are maintained on canonical products, not
 // tenant.publicProducts or marketplace listing projections.
 const projectOfficialCanonicalTerms = async (
@@ -343,7 +383,29 @@ export const loadPublicStorefrontBySlug = async (
       .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
       .get();
 
-    const canonicalProducts = await adminDb.collection('stores').doc(storeId).collection('products')
+    // Verified first-store publication writes the public listing under owner
+    // UID, but its ERP products live under an independent canonical store ID.
+    // Keep pre-existing/official storefronts on their original read path.
+    let verifiedFirstStoreId = '';
+    const ownerId = clean(storeData.ownerId);
+    if (ownerId === storeId && /^[A-Za-z0-9_-]{1,128}$/.test(ownerId)) {
+      const personal = await adminDb.doc(`users/${ownerId}/stores/${ownerId}`).get();
+      const linkedStoreId = clean(personal.get('canonicalStoreId'));
+      if (linkedStoreId && linkedStoreId !== ownerId &&
+          linkedStoreId !== OFFICIAL_STORE_CANONICAL_ID &&
+          /^[A-Za-z0-9_-]{1,128}$/.test(linkedStoreId)) {
+        const canonicalStore = await adminDb.doc(`stores/${linkedStoreId}`).get();
+        if (canonicalStore.exists &&
+            canonicalStore.get('ownerId') === ownerId &&
+            canonicalStore.get('legacyTenantId') === ownerId &&
+            canonicalStore.get('firstStoreCreationVerified') === true) {
+          if (canonicalStore.get('publicationStatus') !== 'published') return null;
+          verifiedFirstStoreId = linkedStoreId;
+        }
+      }
+    }
+    const catalogStoreId = verifiedFirstStoreId || storeId;
+    const canonicalProducts = await adminDb.collection('stores').doc(catalogStoreId).collection('products')
       .where('publicationStatus', '==', 'published').limit(MAX_PUBLIC_STOREFRONT_OFFERS).get();
     const productById = new Map(canonicalProducts.docs.map(document => [document.id, document.data() as Record<string, unknown>]));
 
@@ -360,7 +422,9 @@ export const loadPublicStorefrontBySlug = async (
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
       },
-      offers: await projectOfficialCanonicalTerms(projectCanonicalOffers(offerCandidates.docs, storeId, productById), storeId),
+      offers: verifiedFirstStoreId
+        ? projectVerifiedFirstStoreCatalogOffers(canonicalProducts.docs, verifiedFirstStoreId, storeId)
+        : await projectOfficialCanonicalTerms(projectCanonicalOffers(offerCandidates.docs, storeId, productById), storeId),
     };
   }
 
