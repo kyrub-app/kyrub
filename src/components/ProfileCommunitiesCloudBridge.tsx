@@ -275,6 +275,7 @@ export function ProfileCommunitiesCloudBridge() {
     hasLocalCommunityPrototype()
   );
   const communitySubscriptionVersion = useRef(0);
+  const debateSubscriptionVersion = useRef(0);
   const mountRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchListenerRef = useRef<((event: Event) => void) | null>(null);
@@ -528,19 +529,24 @@ export function ProfileCommunitiesCloudBridge() {
   }, [groupsModalOpen, selectedCommunityId, canParticipate]);
 
   useEffect(() => {
-    if (!selectedDebateId) {
-      setComments([]);
-      return;
-    }
-    return subscribeDebateComments(
+    const version = ++debateSubscriptionVersion.current;
+    setComments([]);
+    if (!selectedCommunityId || !selectedDebateId) return;
+    const isCurrent = () => debateSubscriptionVersion.current === version;
+    const unsubscribe = subscribeDebateComments(
       selectedDebateId,
-      setComments,
+      values => { if (isCurrent()) setComments(values); },
       value => {
+        if (!isCurrent()) return;
         console.warn('Não foi possível carregar os comentários.', value);
         setMessage('Não foi possível carregar todos os comentários agora.');
       }
     );
-  }, [selectedDebateId]);
+    return () => {
+      ++debateSubscriptionVersion.current;
+      unsubscribe();
+    };
+  }, [selectedCommunityId, selectedDebateId]);
 
   useEffect(() => {
     if (
@@ -595,16 +601,30 @@ export function ProfileCommunitiesCloudBridge() {
 
   const pendingMembers = members.filter(member => member.status === 'pending');
 
+  const closeDebate = () => {
+    ++debateSubscriptionVersion.current;
+    setComments([]);
+    setReplyTo(null);
+    setCommentDraft('');
+    setEditingCommentId('');
+    setEditingCommentText('');
+    setSelectedDebateId('');
+  };
+
+  const openDebate = (debateId: string) => {
+    closeDebate();
+    setSelectedDebateId(debateId);
+  };
+
   const openCommunity = (community: CloudCommunity) => {
-    // Clear the previous community immediately, before the next snapshot arrives.
+    // Invalidate both listeners before the next community becomes visible.
     ++communitySubscriptionVersion.current;
     setPosts([]);
     setDebates([]);
     setMembers([]);
-    setComments([]);
+    closeDebate();
     setSelectedCommunityId(community.id);
     setPageTab('wall');
-    setSelectedDebateId('');
     setMessage('');
   };
 
@@ -753,7 +773,7 @@ export function ProfileCommunitiesCloudBridge() {
       setDebateTitle('');
       setDebateContent('');
       setDebateComposerOpen(false);
-      setSelectedDebateId(debateId);
+      openDebate(debateId);
       setMessage('Debate iniciado.');
     });
   };
@@ -1352,11 +1372,7 @@ export function ProfileCommunitiesCloudBridge() {
                     <div className="flex items-start gap-3">
                       <button
                         type="button"
-                        onClick={() => {
-                          setSelectedDebateId('');
-                          setReplyTo(null);
-                          setEditingCommentId('');
-                        }}
+                        onClick={closeDebate}
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-300"
                         aria-label="Voltar aos debates"
                       >
@@ -1595,7 +1611,11 @@ export function ProfileCommunitiesCloudBridge() {
                       <CommunityCover community={selectedCommunity} className="h-36 sm:h-44" />
                       <button
                         type="button"
-                        onClick={() => setSelectedCommunityId('')}
+                        onClick={() => {
+                          ++communitySubscriptionVersion.current;
+                          closeDebate();
+                          setSelectedCommunityId('');
+                        }}
                         className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-white backdrop-blur"
                         aria-label="Voltar para a Praça"
                       >
@@ -1815,7 +1835,7 @@ export function ProfileCommunitiesCloudBridge() {
                             key={debate.id}
                             type="button"
                             onClick={() => {
-                              setSelectedDebateId(debate.id);
+                              openDebate(debate.id);
                               setMessage('');
                             }}
                             className="flex w-full items-start gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left"

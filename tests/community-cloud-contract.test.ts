@@ -73,3 +73,17 @@ test('switching communities clears the previous wall and rejects late snapshots'
   assert.match(component, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
   assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+setComments\(\[\]\);/);
 });
+
+test('switching debates resets the comment composer and ignores late debate snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const debateSubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const version = \+\+debateSubscriptionVersion\.current/);
+  assert.match(component, /setComments\(\[\]\);\s+if \(!selectedCommunityId \|\| !selectedDebateId\) return/);
+  assert.match(component, /const isCurrent = \(\) => debateSubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setComments\(values\); \}/);
+  assert.match(component, /\[selectedCommunityId, selectedDebateId\]/);
+  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);\s+setReplyTo\(null\);\s+setCommentDraft\(''\);\s+setEditingCommentId\(''\);\s+setEditingCommentText\(''\);\s+setSelectedDebateId\(''\);/);
+  assert.match(component, /const openDebate = \(debateId: string\) => \{\s+closeDebate\(\);\s+setSelectedDebateId\(debateId\);/);
+  assert.match(component, /openDebate\(debate\.id\)/);
+  assert.match(component, /onClick=\{closeDebate\}/);
+});
