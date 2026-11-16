@@ -119,3 +119,30 @@ export const priceMarketplaceCheckoutItems = (
     };
   });
 };
+
+/**
+ * A new checkout must never freeze a quote whose published product price,
+ * configuration or reward terms changed before the Firestore commit.
+ * Existing pending/paid intents retain their original idempotent snapshot.
+ */
+export const assertMarketplaceCheckoutQuoteUnchanged = (
+  quoted: readonly PricedMarketplaceCheckoutItem[],
+  current: readonly PricedMarketplaceCheckoutItem[]
+): void => {
+  if (quoted.length !== current.length ||
+      quoted.some((item, index) => {
+        const latest = current[index];
+        return !latest ||
+          item.productId !== latest.productId ||
+          item.sourceProductId !== latest.sourceProductId ||
+          item.name !== latest.name ||
+          item.quantity !== latest.quantity ||
+          item.unitPrice !== latest.unitPrice ||
+          item.total !== latest.total ||
+          item.image !== latest.image ||
+          item.isService !== latest.isService ||
+          item.storePointsPerUnit !== latest.storePointsPerUnit;
+      })) {
+    throw new Error('CHECKOUT_PUBLISHED_OFFER_CHANGED');
+  }
+};

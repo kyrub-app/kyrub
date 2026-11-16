@@ -1,6 +1,7 @@
 import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
+import type { DocumentData, QueryDocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   normalizeCanonicalPaymentIntent,
@@ -19,7 +20,7 @@ import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
 import { parseProductOptionGroups, parseProductQuickNotes } from '../../src/utils/productCustomization.js';
 import { parseCatalogCustomizationDefaults, resolveCatalogCustomization } from '../../src/utils/catalogCustomizationInheritance.js';
-import { priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct, type MarketplaceCheckoutSelectionInput } from './marketplaceItemPricing.js';
+import { assertMarketplaceCheckoutQuoteUnchanged, priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct, type MarketplaceCheckoutSelectionInput, type PricedMarketplaceCheckoutItem } from './marketplaceItemPricing.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
 import { projectVerifiedFirstStoreCatalogOffers } from './marketplaceDiscoveryService.js';
 import {
@@ -277,6 +278,82 @@ const buildIntentItems = (
   items: MarketplaceCheckoutItemInput[]
 ) => {
   return priceMarketplaceCheckoutItems(catalog, items);
+};
+
+
+/**
+ * Close the publication/price time-of-check-to-time-of-use gap for newly
+ * created first-store intents. All authoritative reads happen in the same
+ * Firestore transaction as the financial documents are written, so a racing
+ * catalog update forces transaction retry rather than a stale payment.
+ */
+const assertFreshVerifiedFirstStoreQuote = async (input: {
+  transaction: Transaction;
+  storeId: string;
+  items: readonly MarketplaceCheckoutItemInput[];
+  quoted: readonly PricedMarketplaceCheckoutItem[];
+}): Promise<void> => {
+  const { transaction, storeId } = input;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(storeId)) return;
+  const listing = await transaction.get(
+    adminDb.doc(`marketplace_listings/s_${storeId.length}_${storeId}`)
+  );
+  if (!listing.exists) return; // Unmapped legacy storefronts retain their contract.
+  if (listing.get('listingType') !== 'store' ||
+      listing.get('storeId') !== storeId ||
+      listing.get('ownerId') !== storeId ||
+      listing.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const personal = await transaction.get(adminDb.doc(`users/${storeId}/stores/${storeId}`));
+  const canonicalId = clean(personal.get('canonicalStoreId'));
+  if (!canonicalId || canonicalId === storeId) return;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalId)) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  const canonical = await transaction.get(adminDb.doc(`stores/${canonicalId}`));
+  if (!canonical.exists || canonical.get('ownerId') !== storeId ||
+      canonical.get('legacyTenantId') !== storeId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (canonical.get('firstStoreCreationVerified') !== true) return;
+  if (canonical.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const ids = [...new Set(input.items.map(item => item.productId.split('::', 1)[0]))];
+  if (ids.some(id => !id || id.length > 180 || id.includes('/') || id === '.' || id === '..')) {
+    throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
+  }
+  const [tenant, ...docs] = await Promise.all([
+    transaction.get(adminDb.doc(`tenants/${storeId}`)),
+    ...ids.map(id => transaction.get(adminDb.doc(`stores/${canonicalId}/products/${id}`))),
+  ]);
+  if (docs.some(doc => !doc.exists)) throw new Error('CHECKOUT_PUBLISHED_OFFER_CHANGED');
+  // QueryDocumentSnapshot is safe here: existence was checked above. The
+  // shared projector only accesses the document's id and data().
+  const projected = projectVerifiedFirstStoreCatalogOffers(
+    docs as QueryDocumentSnapshot<DocumentData>[], canonicalId, storeId
+  );
+  if (projected.length !== ids.length) throw new Error('CHECKOUT_PUBLISHED_OFFER_CHANGED');
+
+  const byId = new Map(docs.map(doc => [doc.id, doc.data() as Record<string, unknown>]));
+  const defaults = parseCatalogCustomizationDefaults(tenant.get('catalogCustomizationDefaults'));
+  const current = catalogProducts(projected.map(offer => ({
+    ...offer,
+    optionGroups: byId.get(offer.id)?.optionGroups,
+    quickNotes: byId.get(offer.id)?.quickNotes,
+    isComplimentary: byId.get(offer.id)?.isComplimentary,
+    storePointsPerUnit: byId.get(offer.id)?.storePointsPerUnit,
+  }))).map(product => ({
+    ...product,
+    ...resolveCatalogCustomization(product, defaults),
+  }));
+  assertMarketplaceCheckoutQuoteUnchanged(
+    input.quoted,
+    priceMarketplaceCheckoutItems(current, input.items)
+  );
 };
 
 const documentToken = (idempotencyKey: string): string =>
@@ -636,6 +713,9 @@ export const createMarketplacePaymentIntent = async (
       return { intent: savedIntent, payment: savedPayment, duplicate: true };
     }
     if (existingOrder.exists) throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
+    await assertFreshVerifiedFirstStoreQuote({
+      transaction, storeId: input.storeId, items: input.items, quoted: intentItems,
+    });
     const writeMirror = await preparePrepaidOrderMirror(transaction, pendingOrder);
     transaction.set(intentRef, intent);
     transaction.set(paymentRef, payment);

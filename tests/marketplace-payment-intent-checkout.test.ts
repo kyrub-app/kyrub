@@ -4,7 +4,7 @@ import test from 'node:test';
 import './mercado-pago-current-main-contract.test';
 import { buildProductConfigurationSelection } from '../src/utils/productCustomization';
 import type { Product } from '../src/types';
-import { priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct } from '../server/payments/marketplaceItemPricing';
+import { assertMarketplaceCheckoutQuoteUnchanged, priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct } from '../server/payments/marketplaceItemPricing';
 import { parseCatalogCustomizationDefaults, resolveCatalogCustomization } from '../src/utils/catalogCustomizationInheritance';
 
 const drawerSource = readFileSync(
@@ -45,6 +45,29 @@ const materializationSource = readFileSync(
   'utf8'
 );
 
+
+
+test('new first-store order quote rejects a changed price or option amount before financial commit', () => {
+  const quote = [{
+    productId: 'meal::options=extras:cheese', sourceProductId: 'meal',
+    name: 'Refeição', quantity: 2, unitPrice: 38, total: 76,
+    note: '', image: '', isService: false, storePointsPerUnit: 0,
+  }];
+  assert.doesNotThrow(() => assertMarketplaceCheckoutQuoteUnchanged(quote, [...quote]));
+  assert.throws(() => assertMarketplaceCheckoutQuoteUnchanged(quote, [{
+    ...quote[0], unitPrice: 39, total: 78,
+  }]), /CHECKOUT_PUBLISHED_OFFER_CHANGED/);
+  assert.throws(() => assertMarketplaceCheckoutQuoteUnchanged(quote, [{
+    ...quote[0], storePointsPerUnit: 4,
+  }]), /CHECKOUT_PUBLISHED_OFFER_CHANGED/);
+  assert.throws(() => assertMarketplaceCheckoutQuoteUnchanged(quote, []),
+    /CHECKOUT_PUBLISHED_OFFER_CHANGED/);
+  assert.match(intentRouterSource, /const listing = await transaction\.get\(/);
+  assert.match(intentRouterSource, /const canonical = await transaction\.get\(/);
+  assert.match(intentRouterSource, /transaction\.get\(adminDb\.doc\(`stores\/\$\{canonicalId\}\/products\/\$\{id\}\`\)\)/);
+  assert.match(intentRouterSource, /await assertFreshVerifiedFirstStoreQuote\(/);
+  assert.match(intentRouterSource, /assertMarketplaceCheckoutQuoteUnchanged\(/);
+});
 
 test('authoritative pricing for configured cart items ignores forged browser amounts', () => {
   const product = {
