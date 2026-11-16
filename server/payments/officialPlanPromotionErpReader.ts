@@ -44,7 +44,7 @@ export async function quoteOfficialPlanPromotionFromErp(input: {
  * The buyer UID and authoritative contract price must come from server auth
  * and the official plan catalog, never the public URL.
  */
-export async function quoteOfficialPlanPromotionCodeFromErp(input: {
+export async function resolveOfficialPlanPromotionCodeFromErp(input: {
   officialStoreId: string;
   officialProductId: string;
   buyerUid: string;
@@ -77,5 +77,11 @@ export async function quoteOfficialPlanPromotionCodeFromErp(input: {
     storeId: input.officialStoreId,
   });
   if (promotion.code !== code) throw new Error('OFFICIAL_PROMOTION_CODE_CHANGED');
-  return quoteOfficialPlanPromotion({ ...input, promotion });
+  return { promotion, quote: quoteOfficialPlanPromotion({ ...input, promotion }) };
+}
+
+export async function quoteOfficialPlanPromotionCodeFromErp(
+  input: Parameters<typeof resolveOfficialPlanPromotionCodeFromErp>[0],
+) {
+  return (await resolveOfficialPlanPromotionCodeFromErp(input)).quote;
 }
