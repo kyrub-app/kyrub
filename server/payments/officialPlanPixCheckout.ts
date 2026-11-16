@@ -765,6 +765,14 @@ async function reconcileLoaded(d: any, candidateId?: string) {
       tx.update(r, { status: 'rejected', providerPaymentId: paymentId });
       if (lock.get('officialPixCheckoutId') === d.checkoutId) tx.set(slot, { checkoutReservationStatus: 'closed', providerStatus: 'cancelled' }, { merge: true });
     });
+    // Release the same ERP reservation after the canonical provider rejection
+    // is durably persisted. A provider retry cannot consume the released coupon.
+    if (d.promotionAcceptedTerms) {
+      await finalizeOfficialPlanPromotionReservation({
+        checkoutId: d.checkoutId, officialStoreId: d.offer.storeId,
+        promotionId: d.promotionAcceptedTerms.promotionId, outcome: 'release',
+      });
+    }
     return { state: 'rejected', paymentId };
   }
   if (!['pending', 'in_process'].includes(payment.status)) throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');
