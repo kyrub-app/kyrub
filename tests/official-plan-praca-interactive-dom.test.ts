@@ -134,7 +134,11 @@ test('Praça deep link quotes, accepts and opens official Business Pix without a
     assert.equal(section?.getAttribute('data-official-plan-route'),'canonical-prepaid');
     assert.match(section!.textContent||'',/BIZ1/);
     await click('button#test-select-official-product');
-    await click('button[aria-label="Consultar preço oficial do contrato"],button:not([id])'); // fallback is overridden below if no aria label
+    const quoteButton=[...dom.window.document.querySelectorAll<HTMLButtonElement>('#official-plan-contract-section button')]
+      .find(b=>b.textContent?.includes('Consultar preço oficial do contrato'));
+    assert.ok(quoteButton,'existing subscription component must offer a server quote');
+    await act(async()=>quoteButton.click());
+    await settle();
     assert.equal(requests.length,1,'one quote only');
     assert.equal(requests[0].operation,'official.prepaid.quote');
     assert.equal(requests[0].payload.promotionCode,'BIZ1');
