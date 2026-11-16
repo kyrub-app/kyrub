@@ -37,7 +37,7 @@ try {
   assert.ok(response && response.status() < 400, 'The Kyrub browser entrypoint must render');
   await page.locator('body').waitFor({ state: 'visible', timeout: 15000 });
   const browserFirebase = await page.evaluate(async () => {
-    const { auth, db, storage } = await import('/src/utils/firebase.ts');
+    const { auth, db, storage } = await import(new URL('/src/utils/firebase.ts', location.origin).href);
     return {
       projectId: auth.app.options.projectId,
       firestoreProject: db.app.options.projectId,
@@ -95,14 +95,14 @@ try {
   assert.ok(idToken);
   // Authenticate inside the actual browser Firebase SDK, not only Playwright's API client.
   const browserSignIn = await page.evaluate(async (emulatorCustomToken) => {
-    const { auth } = await import('/src/utils/firebase.ts');
-    const { signInWithCustomToken } = await import('/node_modules/.vite/deps/firebase_auth.js');
+    const { auth } = await import(new URL('/src/utils/firebase.ts', location.origin).href);
+    const { signInWithCustomToken } = await import(new URL('/node_modules/.vite/deps/firebase_auth.js', location.origin).href);
     const credentials = await signInWithCustomToken(auth, emulatorCustomToken);
     return { uid: credentials.user.uid, projectId: credentials.user.auth.app.options.projectId };
   }, customToken);
   assert.deepEqual(browserSignIn, { uid, projectId: 'kyrub-security-test' });
   const browserIdentity = await page.evaluate(async () => {
-    const { auth } = await import('/src/utils/firebase.ts');
+    const { auth } = await import(new URL('/src/utils/firebase.ts', location.origin).href);
     return { uid: auth.currentUser?.uid, projectId: auth.app.options.projectId };
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
@@ -143,7 +143,7 @@ try {
   // browser Firebase SDK token, not the separate Playwright request context.
   const authenticatedPublish = async (action) => {
     const result = await page.evaluate(async ({ action, canonicalStoreId }) => {
-      const { auth } = await import('/src/utils/firebase.ts');
+      const { auth } = await import(new URL('/src/utils/firebase.ts', location.origin).href);
       const token = await auth.currentUser.getIdToken();
       const response = await fetch('/api/action-execute?transport=first-store-publication', {
         method: 'POST',

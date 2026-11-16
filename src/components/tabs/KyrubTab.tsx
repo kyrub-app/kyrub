@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { PitangaAccount } from './PitangaAccount';
 import type React from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -106,12 +107,6 @@ export function KyrubTab(props: KyrubTabProps) {
   const [clubSummaries, setClubSummaries] = useState<Array<{ storeId: string; summary: StoreRelationshipSummary }>>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState(false);
-  const [selosBalance, setSelosBalance] = useState<number | null>(null);
-  const [selosLoading, setSelosLoading] = useState(false);
-  const [selosError, setSelosError] = useState(false);
-  const [xpTotal, setXpTotal] = useState<number | null>(null);
-  const [xpLoading, setXpLoading] = useState(false);
-  const [xpError, setXpError] = useState(false);
   const socialFeed = usePublicSocialFeed();
 
   useEffect(() => {
@@ -307,78 +302,6 @@ export function KyrubTab(props: KyrubTabProps) {
     return () => { cancelled = true; };
   }, [props.socialSubTab, props.ofertasFilter, purchasedStoreIds]);
 
-  useEffect(() => {
-    let cancelled = false;
-    setSelosBalance(null);
-    setSelosError(false);
-    if (props.socialSubTab !== 'lojas' || props.ofertasFilter !== 'cliente') {
-      setSelosLoading(false);
-      return;
-    }
-    const user = auth.currentUser;
-    if (!user) {
-      setSelosLoading(false);
-      setSelosError(true);
-      return;
-    }
-    setSelosLoading(true);
-    void user.getIdToken()
-      .then(token => fetch('/api/selos-kairubi', {
-        headers: { authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }))
-      .then(async response => {
-        if (!response.ok) throw new Error('SELOS_BALANCE_UNAVAILABLE');
-        const data = await response.json() as { balance?: unknown; unit?: unknown };
-        if (data.unit !== 'selos_kairubi' || !Number.isSafeInteger(data.balance) || (data.balance as number) < 0) {
-          throw new Error('SELOS_BALANCE_INVALID');
-        }
-        return data.balance as number;
-      })
-      .then(balance => { if (!cancelled) setSelosBalance(balance); })
-      .catch(() => { if (!cancelled) setSelosError(true); })
-      .finally(() => { if (!cancelled) setSelosLoading(false); });
-    return () => { cancelled = true; };
-  }, [props.socialSubTab, props.ofertasFilter]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setXpTotal(null);
-    setXpError(false);
-    if (props.socialSubTab !== 'lojas' || props.ofertasFilter !== 'cliente') {
-      setXpLoading(false);
-      return;
-    }
-    const user = auth.currentUser;
-    if (!user) {
-      setXpLoading(false);
-      setXpError(true);
-      return;
-    }
-    setXpLoading(true);
-    void user.getIdToken()
-      .then(token => fetch('/api/kairubi-xp', {
-        headers: { authorization: `Bearer ${token}` },
-        cache: 'no-store',
-      }))
-      .then(async response => {
-        if (!response.ok) throw new Error('XP_UNAVAILABLE');
-        const data = await response.json() as { total?: unknown; unit?: unknown; status?: unknown };
-        if (data.unit !== 'kyrub_xp') {
-          throw new Error('XP_INVALID');
-        }
-        if (data.status === 'no_entries' && data.total === null) return null;
-        if (data.status !== 'available' || !Number.isSafeInteger(data.total) || (data.total as number) < 0) {
-          throw new Error('XP_INVALID');
-        }
-        return data.total as number;
-      })
-      .then(total => { if (!cancelled) setXpTotal(total); })
-      .catch(() => { if (!cancelled) setXpError(true); })
-      .finally(() => { if (!cancelled) setXpLoading(false); });
-    return () => { cancelled = true; };
-  }, [props.socialSubTab, props.ofertasFilter]);
-
   const isConnectedContactsActive =
     props.socialSubTab === 'usuarios' && props.pracaFilter === 'conectados';
   const isPublicFeedActive =
@@ -429,23 +352,7 @@ export function KyrubTab(props: KyrubTabProps) {
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
         <section aria-label="Recompensas" className="mb-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100">
           <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
-          <div className="grid grid-cols-2 gap-3">
-            <div className="rounded-2xl bg-slate-800 p-4">
-              <h3 className="text-sm text-slate-300">Selos Kairubi</h3>
-              <p className="mt-3 text-2xl font-bold" aria-live="polite">
-                {selosLoading ? '…' : selosError || selosBalance === null ? '—' : selosBalance.toLocaleString('pt-BR')}
-              </p>
-              <p className="mt-2 text-xs text-slate-400">Saldo global</p>
-              {selosError && <p className="mt-2 text-xs text-amber-300" role="status">Saldo indisponível</p>}
-            </div>
-            <div className="rounded-2xl bg-slate-800 p-4">
-              <h3 className="text-sm text-slate-300">Experiência</h3>
-              <p className="mt-3 text-2xl font-bold" aria-live="polite">{xpLoading ? '…' : xpError || xpTotal === null ? '—' : xpTotal.toLocaleString('pt-BR')} XP</p>
-              <p className="mt-2 text-xs text-slate-400">Nível e conquistas</p>
-              {xpError && <p className="mt-1 text-xs text-amber-300" role="status">XP indisponível</p>}
-            </div>
-          </div>
-
+          <PitangaAccount key={socialFeed.currentUserId || 'signed-out'} />
           <div className="mt-5 border-t border-slate-800 pt-5">
             <h3 className="text-lg font-bold">Desafios e conquistas</h3>
             <div className="mt-3 rounded-2xl bg-slate-800 p-4 text-sm text-slate-300">

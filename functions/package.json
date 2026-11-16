@@ -1,0 +1,10 @@
+{
+  "name": "kyrub-welcome-auth",
+  "private": true,
+  "main": "lib/index.cjs",
+  "engines": { "node": "22" },
+  "dependencies": {
+    "firebase-admin": "^14.2.0",
+    "firebase-functions": "^7.0.0"
+  }
+}
