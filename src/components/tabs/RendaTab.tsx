@@ -14,6 +14,7 @@ import {
 import { DeliveryJob, FreelanceJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
+import { isAvailableCourierOffer } from '../../utils/courierDeliveryView';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
@@ -253,13 +254,12 @@ export function RendaTab({
             >
               <span>Fazer entregas</span>
               {deliveries.filter(
-                delivery => delivery.status === 'available'
+                isAvailableCourierOffer
               ).length > 0 && (
                 <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
                   {
                     deliveries.filter(
-                      delivery =>
-                        delivery.status === 'available'
+                      isAvailableCourierOffer
                     ).length
                   }
                 </span>

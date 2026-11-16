@@ -11,6 +11,7 @@ type OperationalDeliveryJob = DeliveryJob & {
   source?: string;
   sourceOrderId?: string;
   orderStatus?: string;
+  acceptedByName?: string;
 };
 
 interface KyrubDeliveryOpportunityBridgeProps {
@@ -106,8 +107,8 @@ export function KyrubDeliveryOpportunityBridge({
               payment: finite(data.payment),
               status: status as DeliveryJob['status'],
               requestedBy: clean(data.requestedBy),
-              acceptedBy:
-                clean(data.acceptedByName) || clean(data.acceptedBy) || undefined,
+              acceptedBy: clean(data.acceptedBy) || undefined,
+              acceptedByName: clean(data.acceptedByName) || undefined,
               source: clean(data.source),
               sourceOrderId: clean(data.sourceOrderId),
               orderStatus: clean(data.orderStatus),
