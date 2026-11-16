@@ -8,6 +8,7 @@ import type {
 import {
   buildOrderInventoryConsumptionWithOptions,
   parseConfiguredLineSelectedOptions,
+  verifiedMarketplaceOrderCategories,
   type OptionInventoryImpactRecord,
 } from '../shared/optionInventoryImpact';
 
@@ -116,6 +117,58 @@ describe('option inventory impacts', () => {
         ),
       /Estoque insuficiente de “Bacon”/
     );
+  });
+
+
+  test('merchant acceptance maps configured modifiers to verified canonical ERP categories', () => {
+    const category = 'Alimentação > Lanches > Burgers Artesanais';
+    const sourceProductId = 'burger-1';
+    const canonicalId = 'store-verified';
+    const categories = verifiedMarketplaceOrderCategories(
+      canonicalId,
+      [sourceProductId],
+      [{ id: sourceProductId, data: {
+        id: sourceProductId, storeId: canonicalId,
+        publicationStatus: 'published', category,
+      } }]
+    );
+    const ingredients = buildOrderInventoryConsumptionWithOptions(
+      [{
+        productId: sourceProductId, name: 'Burger', quantity: 1,
+        selectedOptions: [{ groupId: 'extras', choiceId: 'bacon-extra' }],
+      }],
+      catalog, compositions, categories, impacts
+    );
+    assert.deepEqual(ingredients.map(line => ({
+      id: line.inventoryItemId, quantity: line.quantity,
+    })), [{ id: 'bacon', quantity: 30 }, { id: 'burger-patty', quantity: 140 }]);
+  });
+
+  test('canonical category authority fails closed for draft, wrong store and missing product', () => {
+    const base = { id: 'burger-1', storeId: 'store-verified',
+      publicationStatus: 'published', category: 'Alimentação > Lanches' };
+    for (const invalid of [
+      { ...base, publicationStatus: 'draft' },
+      { ...base, storeId: 'other-store' },
+      { ...base, category: '' },
+      undefined,
+    ]) {
+      assert.throws(() => verifiedMarketplaceOrderCategories(
+        'store-verified', ['burger-1'], [{ id: 'burger-1', data: invalid }],
+      ), /Reserva de estoque bloqueada/);
+    }
+  });
+
+  test('acceptance uses verified canonical categories but leaves legacy fallback intact', () => {
+    const service = readFileSync(
+      'server/inventory/marketplaceOrderInventoryReservationService.ts', 'utf8'
+    );
+    assert.match(service, /users\/\$\{ownerId\}\/stores\/\$\{ownerId\}/);
+    assert.match(service, /store\.get\('ownerId'\) !== ownerId/);
+    assert.match(service, /store\.get\('firstStoreCreationVerified'\) !== true/);
+    assert.match(service, /return legacyCategories/);
+    assert.match(service, /verifiedMarketplaceOrderCategories\(canonicalStoreId, sourceIds/);
+    assert.match(service, /const categories = await orderProductCategories\(/);
   });
 
   test('server reads and writes both current and legacy private inventory field names', () => {
