@@ -38,6 +38,7 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   await Promise.all([
     db.doc('kyrub_admin/official_store').set({ canonicalStoreId: storeId }),
     promotionRef.set(promotion),
+    db.doc(`${root}/official_plan_products/${productId}`).set({ canonicalStoreId: storeId, productId, planId: 'business', status: 'active' }),
     checkoutRef.set({ checkoutId, buyerId: buyerUid, offer, offerDigest: 'original-offer-digest',
       status: 'quoted' }),
   ]);
@@ -76,6 +77,18 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   assert.equal(confirmations.filter((x: any) => x.status === 'already_confirmed').length, 3);
   assert.equal((await checkoutRef.get()).get('providerPaidMinor'), 100);
   assert.equal((await checkoutRef.get()).get('status'), 'paid_pending_activation');
+  const paidAt = '2026-11-16T12:00:00.000Z';
+  const activations = await Promise.all(Array.from({ length: 4 }, () =>
+    api.activateIsolatedPromotionalBusiness({ checkoutId, buyerUid, paidAt })));
+  assert.equal(activations.filter((x: any) => x.status === 'activated').length, 1);
+  assert.equal(activations.filter((x: any) => x.status === 'already_activated').length, 3);
+  const contract = await db.doc(`${root}/isolated_promotion_contracts/${checkoutId}`).get();
+  const entitlement = await db.doc(`${root}/isolated_promotion_entitlements/${buyerUid}`).get();
+  assert.equal(contract.get('planId'), 'business');
+  assert.equal(contract.get('paidMinor'), 100);
+  assert.equal(contract.get('startsAt'), paidAt);
+  assert.equal(entitlement.get('checkoutId'), checkoutId);
+  assert.equal((await db.collection(`${root}/isolated_promotion_contracts`).get()).size, 1);
   const finalized = await Promise.all(Array.from({ length: 4 }, () =>
     api.finalizeOfficialPlanPromotionReservation({
       checkoutId, officialStoreId: storeId, promotionId, outcome: 'redeem',
