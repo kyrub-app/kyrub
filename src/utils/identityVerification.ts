@@ -11,6 +11,20 @@ export type VerificationStatus =
   | 'approved'
   | 'rejected';
 
+export type AdditionalCourierProfile = 'bicycle_courier' | 'motorized_courier';
+
+export type ProfileExpansion = {
+  profile: AdditionalCourierProfile;
+  status: 'submitted' | 'approved' | 'rejected';
+  cnhCategory: string;
+  cnhHasEar: boolean;
+  documentPaths: string[];
+  submittedAt?: unknown;
+  reviewedAt?: unknown;
+  reviewedBy: string;
+  reviewReason: string;
+};
+
 export type IdentityDocumentType = 'cin' | 'rg' | 'cnh';
 
 export type IdentityVerificationRecord = {
@@ -34,6 +48,7 @@ export type IdentityVerificationRecord = {
   reviewedAt?: unknown;
   reviewedBy?: string;
   reviewReason?: string;
+  profileExpansion?: ProfileExpansion;
 };
 
 export type WorkAction =
@@ -82,17 +97,32 @@ export const courierVerificationSummary = (
   }
   const courierApproved = record.approvedProfiles.includes('bicycle_courier')
     || record.approvedProfiles.includes('motorized_courier');
-  return courierApproved
-    ? {
-        label: 'Entregador aprovado',
-        description: 'Aceites dependem ainda das regras específicas do pedido e do veículo.',
-        canAccept: true,
-      }
-    : {
-        label: 'Outra atividade aprovada',
-        description: 'A aprovação atual não inclui entregas. Uma nova modalidade requer análise.',
-        canAccept: false,
-      };
+  if (courierApproved) {
+    return {
+      label: 'Entregador aprovado',
+      description: 'Aceites dependem ainda das regras específicas do pedido e do veículo.',
+      canAccept: true,
+    };
+  }
+  if (record.profileExpansion?.status === 'submitted') {
+    return {
+      label: 'Habilitação em análise',
+      description: 'Sua atividade anterior continua aprovada. Entregas aguardam a nova análise.',
+      canAccept: false,
+    };
+  }
+  if (record.profileExpansion?.status === 'rejected') {
+    return {
+      label: 'Habilitação: corrigir',
+      description: 'A solicitação adicional precisa de correção. Consulte a central de verificação.',
+      canAccept: false,
+    };
+  }
+  return {
+    label: 'Outra atividade aprovada',
+    description: 'A aprovação atual não inclui entregas. Solicite uma nova modalidade.',
+    canAccept: false,
+  };
 };
 
 const onlyDigits = (value: string): string => value.replace(/\D/g, '');
@@ -160,6 +190,9 @@ export const mapIdentityVerification = (
       : [];
   const status = value?.status;
   const documentType = value?.documentType;
+  const expansion = value?.profileExpansion as Record<string, unknown> | undefined;
+  const expansionProfile = expansion?.profile;
+  const expansionStatus = expansion?.status;
 
   return {
     uid,
@@ -193,6 +226,23 @@ export const mapIdentityVerification = (
     reviewedAt: value?.reviewedAt,
     reviewedBy: stringValue('reviewedBy'),
     reviewReason: stringValue('reviewReason'),
+    profileExpansion:
+      (expansionProfile === 'bicycle_courier' || expansionProfile === 'motorized_courier')
+      && (expansionStatus === 'submitted' || expansionStatus === 'approved' || expansionStatus === 'rejected')
+        ? {
+            profile: expansionProfile,
+            status: expansionStatus,
+            cnhCategory: typeof expansion?.cnhCategory === 'string' ? expansion.cnhCategory : '',
+            cnhHasEar: expansion?.cnhHasEar === true,
+            documentPaths: Array.isArray(expansion?.documentPaths)
+              ? expansion.documentPaths.filter((path): path is string => typeof path === 'string')
+              : [],
+            submittedAt: expansion.submittedAt,
+            reviewedAt: expansion.reviewedAt,
+            reviewedBy: typeof expansion.reviewedBy === 'string' ? expansion.reviewedBy : '',
+            reviewReason: typeof expansion.reviewReason === 'string' ? expansion.reviewReason : '',
+          }
+        : undefined,
   };
 };
 
