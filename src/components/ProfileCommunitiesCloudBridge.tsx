@@ -32,6 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
+import { scopeCommunityRecords, scopeDebateComments, scopeGroupChatMessages } from '../utils/communityViewScope';
 import {
   addDebateComment,
   approveCommunityMember,
@@ -244,6 +245,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [groupInviteTargetId, setGroupInviteTargetId] = useState('');
   const [activeGroupChatId, setActiveGroupChatId] = useState('');
   const [groupMessages, setGroupMessages] = useState<CloudCommunityGroupMessage[]>([]);
+  const [groupMessagesGroupId, setGroupMessagesGroupId] = useState('');
   const [groupMessageDraft, setGroupMessageDraft] = useState('');
   const [groupMessageError, setGroupMessageError] = useState('');
   const [groupMessageSending, setGroupMessageSending] = useState(false);
@@ -281,7 +283,32 @@ export function ProfileCommunitiesCloudBridge() {
   const selectedCommunity = communities.find(
     community => community.id === selectedCommunityId
   );
-  const selectedDebate = debates.find(debate => debate.id === selectedDebateId);
+  // Display only records associated with the current community or debate.
+  // Stale Firestore snapshots may remain while a new listener initializes.
+  const visiblePosts = useMemo(
+    () => scopeCommunityRecords(posts, selectedCommunityId),
+    [posts, selectedCommunityId]
+  );
+  const visibleDebates = useMemo(
+    () => scopeCommunityRecords(debates, selectedCommunityId),
+    [debates, selectedCommunityId]
+  );
+  const visibleMembers = useMemo(
+    () => scopeCommunityRecords(members, selectedCommunityId),
+    [members, selectedCommunityId]
+  );
+  const visibleGroups = useMemo(
+    () => scopeCommunityRecords(myCommunityGroups, selectedCommunityId),
+    [myCommunityGroups, selectedCommunityId]
+  );
+  const visibleComments = useMemo(
+    () => scopeDebateComments(comments, selectedCommunityId, selectedDebateId),
+    [comments, selectedCommunityId, selectedDebateId]
+  );
+  const visibleGroupMessages = scopeGroupChatMessages(
+    groupMessages, groupMessagesGroupId, activeGroupChatId
+  );
+  const selectedDebate = visibleDebates.find(debate => debate.id === selectedDebateId);
   const canParticipate = Boolean(
     selectedCommunity?.isOwner || selectedCommunity?.isActiveMember
   );
@@ -299,9 +326,9 @@ export function ProfileCommunitiesCloudBridge() {
 
   const inviteToExistingGroup = async (groupId: string): Promise<void> => {
     if (groupSaving || !auth.currentUser?.uid || !groupInviteExistingId || groupInviteTargetId !== groupId) return;
-    const group = myCommunityGroups.find(item => item.id === groupId);
+    const group = visibleGroups.find(item => item.id === groupId);
     if (!group || group.creatorId !== auth.currentUser.uid || group.memberIds.includes(groupInviteExistingId) || group.memberIds.length >= 50 ||
-      !members.some(member => member.userId === groupInviteExistingId && member.status === 'active')) {
+      !visibleMembers.some(member => member.userId === groupInviteExistingId && member.status === 'active')) {
       setGroupSaveError('A seleção não está mais disponível para este grupo. Atualize os membros e tente novamente.');
       return;
     }
@@ -323,20 +350,24 @@ export function ProfileCommunitiesCloudBridge() {
   };
 
   useEffect(() => {
-    if (!groupsModalOpen || !activeGroupChatId || !myCommunityGroups.some(group => group.id === activeGroupChatId)) {
+    if (!groupsModalOpen || !activeGroupChatId || !visibleGroups.some(group => group.id === activeGroupChatId)) {
       setGroupMessages([]);
       return;
     }
     setGroupMessages([]);
+    setGroupMessagesGroupId('');
     setGroupMessageError('');
     try {
-      return subscribeCommunityGroupMessages(activeGroupChatId, setGroupMessages, error => {
+      return subscribeCommunityGroupMessages(activeGroupChatId, messages => {
+        setGroupMessages(messages);
+        setGroupMessagesGroupId(activeGroupChatId);
+      }, error => {
         setGroupMessageError(error.message || 'Não foi possível carregar as mensagens.');
       });
     } catch (error) {
       setGroupMessageError(error instanceof Error ? error.message : 'Não foi possível abrir a conversa.');
     }
-  }, [groupsModalOpen, activeGroupChatId, myCommunityGroups.some(group => group.id === activeGroupChatId)]);
+  }, [groupsModalOpen, activeGroupChatId, visibleGroups.some(group => group.id === activeGroupChatId)]);
 
   const sendGroupChatMessage = async (): Promise<void> => {
     if (!activeGroupChatId || groupMessageSending) return;
@@ -358,7 +389,7 @@ export function ProfileCommunitiesCloudBridge() {
       setGroupSaveError('Faça login novamente antes de criar um grupo.');
       return;
     }
-    if (groupSelectedMemberIds.some(id => !members.some(member => member.userId === id && member.status === 'active'))) {
+    if (groupSelectedMemberIds.some(id => !visibleMembers.some(member => member.userId === id && member.status === 'active'))) {
       setGroupSaveError('A seleção contém membros que não estão mais ativos. Atualize a lista antes de criar o grupo.');
       return;
     }
@@ -589,12 +620,28 @@ export function ProfileCommunitiesCloudBridge() {
       .slice(0, 3);
   }, [communities, createDraft.name]);
 
-  const pendingMembers = members.filter(member => member.status === 'pending');
+  const pendingMembers = visibleMembers.filter(member => member.status === 'pending');
 
   const openCommunity = (community: CloudCommunity) => {
+    setPosts([]);
+    setDebates([]);
+    setMembers([]);
+    setMyCommunityGroups([]);
+    setGroupsModalOpen(false);
+    setActiveGroupChatId('');
+    setGroupMessages([]);
     setSelectedCommunityId(community.id);
     setPageTab('wall');
     setSelectedDebateId('');
+    setComments([]);
+    setReplyTo(null);
+    setCommentDraft('');
+    setEditingCommentId('');
+    setEditingCommentText('');
+    setWallDraft('');
+    setDebateTitle('');
+    setDebateContent('');
+    setDebateComposerOpen(false);
     setMessage('');
   };
 
@@ -743,6 +790,9 @@ export function ProfileCommunitiesCloudBridge() {
       setDebateTitle('');
       setDebateContent('');
       setDebateComposerOpen(false);
+      setComments([]);
+      setReplyTo(null);
+      setCommentDraft('');
       setSelectedDebateId(debateId);
       setMessage('Debate iniciado.');
     });
@@ -881,8 +931,8 @@ export function ProfileCommunitiesCloudBridge() {
                 {groupSaveError && <p role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-3 text-xs text-red-200">{groupSaveError}</p>}
                 {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
-                {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
-                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes</p><button type="button" className="mt-2 rounded-lg border border-sky-700 px-3 py-2 text-xs text-sky-200" onClick={() => { setActiveGroupChatId(current => current === group.id ? "" : group.id); setGroupMessageDraft(""); }}> {activeGroupChatId === group.id ? "Fechar conversa" : "Abrir conversa"} </button>{activeGroupChatId === group.id && <div className="mt-3 space-y-2"><div role="log" aria-label={`Mensagens de ${group.name}`} className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-700 p-3">{groupMessages.length === 0 && <p className="text-xs text-slate-400">Nenhuma mensagem ainda.</p>}{groupMessages.map(message => <div key={message.id} className="rounded-lg bg-slate-800 p-2"><p className="text-[10px] text-sky-300">{message.authorId === auth.currentUser?.uid ? "Você" : members.find(member => member.userId === message.authorId)?.userName || "Integrante"}</p><p className="whitespace-pre-wrap break-words text-xs text-white">{message.text}</p></div>)}</div><textarea aria-label="Mensagem para o grupo" maxLength={3000} value={groupMessageDraft} onChange={event => setGroupMessageDraft(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white" rows={2} /><button type="button" disabled={groupMessageSending || !groupMessageDraft.trim()} onClick={() => void sendGroupChatMessage()} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Enviar mensagem</button>{groupMessageError && <p role="alert" className="text-xs text-red-300">{groupMessageError}</p>}</div>}{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
+                {!groupsLoadError && visibleGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
+                {visibleGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes</p><button type="button" className="mt-2 rounded-lg border border-sky-700 px-3 py-2 text-xs text-sky-200" onClick={() => { setActiveGroupChatId(current => current === group.id ? "" : group.id); setGroupMessageDraft(""); }}> {activeGroupChatId === group.id ? "Fechar conversa" : "Abrir conversa"} </button>{activeGroupChatId === group.id && <div className="mt-3 space-y-2"><div role="log" aria-label={`Mensagens de ${group.name}`} className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-700 p-3">{visibleGroupMessages.length === 0 && <p className="text-xs text-slate-400">Nenhuma mensagem ainda.</p>}{visibleGroupMessages.map(message => <div key={message.id} className="rounded-lg bg-slate-800 p-2"><p className="text-[10px] text-sky-300">{message.authorId === auth.currentUser?.uid ? "Você" : visibleMembers.find(member => member.userId === message.authorId)?.userName || "Integrante"}</p><p className="whitespace-pre-wrap break-words text-xs text-white">{message.text}</p></div>)}</div><textarea aria-label="Mensagem para o grupo" maxLength={3000} value={groupMessageDraft} onChange={event => setGroupMessageDraft(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white" rows={2} /><button type="button" disabled={groupMessageSending || !groupMessageDraft.trim()} onClick={() => void sendGroupChatMessage()} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Enviar mensagem</button>{groupMessageError && <p role="alert" className="text-xs text-red-300">{groupMessageError}</p>}</div>}{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{visibleMembers.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
               </div>
             ) : (
               <div className="space-y-3">
@@ -890,7 +940,7 @@ export function ProfileCommunitiesCloudBridge() {
                   <input value={groupDraftName} onChange={event => setGroupDraftName(event.target.value.slice(0,80))} maxLength={80} placeholder="Ex.: Equipe do projeto" className="mt-2 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-white" />
                 </label>
                 <p className="text-xs font-bold text-slate-300">Selecionar membros ({groupSelectedMemberIds.length}/49 convidados)</p>
-                {members.filter(member => member.status === 'active' && member.userId !== user?.uid).map(member => (
+                {visibleMembers.filter(member => member.status === 'active' && member.userId !== user?.uid).map(member => (
                   <label key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-white">
                     <input type="checkbox" checked={groupSelectedMemberIds.includes(member.userId)} disabled={!groupSelectedMemberIds.includes(member.userId) && groupSelectedMemberIds.length >= 49} onChange={event => setGroupSelectedMemberIds(current => event.target.checked ? [...current,member.userId] : current.filter(id => id !== member.userId))} />
                     <span className="min-w-0 flex-1 truncate">{member.userName}</span>
@@ -913,13 +963,13 @@ export function ProfileCommunitiesCloudBridge() {
               <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar membros" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-2">
-              {members.filter(member => member.status === 'active').map(member => (
+              {visibleMembers.filter(member => member.status === 'active').map(member => (
                 <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
                   <Avatar name={member.userName} url={member.userAvatar} />
                   <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-[9px] text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'moderator' ? 'Moderador' : 'Membro'}</p></div>
                 </div>
               ))}
-              {members.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum membro ativo encontrado.</p>}
+              {visibleMembers.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum membro ativo encontrado.</p>}
             </div>
           </section>
         </div>, document.body
@@ -1344,8 +1394,11 @@ export function ProfileCommunitiesCloudBridge() {
                         type="button"
                         onClick={() => {
                           setSelectedDebateId('');
+                          setComments([]);
+                          setCommentDraft('');
                           setReplyTo(null);
                           setEditingCommentId('');
+                          setEditingCommentText('');
                         }}
                         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-300"
                         aria-label="Voltar aos debates"
@@ -1408,8 +1461,8 @@ export function ProfileCommunitiesCloudBridge() {
                     </article>
 
                     <section className="mt-4 space-y-3">
-                      {comments.map(comment => {
-                        const parent = comments.find(item => item.id === comment.parentCommentId);
+                      {visibleComments.map(comment => {
+                        const parent = visibleComments.find(item => item.id === comment.parentCommentId);
                         const canManage =
                           comment.authorId === user?.uid || selectedCommunity.isOwner;
                         return (
@@ -1517,7 +1570,7 @@ export function ProfileCommunitiesCloudBridge() {
                           </article>
                         );
                       })}
-                      {comments.length === 0 && (
+                      {visibleComments.length === 0 && (
                         <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-10 text-center">
                           <MessageCircle className="mx-auto h-8 w-8 text-slate-700" />
                           <p className="mt-3 text-[10px] font-black text-slate-400">
@@ -1704,7 +1757,7 @@ export function ProfileCommunitiesCloudBridge() {
                             </div>
                           </section>
                         )}
-                        {posts.map(post => (
+                        {visiblePosts.map(post => (
                           <article key={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
                             <div className="flex items-center gap-3">
                               <Avatar name={post.authorName} url={post.authorAvatar} />
@@ -1749,7 +1802,7 @@ export function ProfileCommunitiesCloudBridge() {
                             </div>
                           </article>
                         ))}
-                        {posts.length === 0 && (
+                        {visiblePosts.length === 0 && (
                           <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-12 text-center">
                             <MessageCircle className="mx-auto h-8 w-8 text-slate-700" />
                             <p className="mt-3 text-[10px] font-black text-slate-400">O mural ainda está vazio</p>
@@ -1800,11 +1853,16 @@ export function ProfileCommunitiesCloudBridge() {
                             </button>
                           </section>
                         )}
-                        {debates.map(debate => (
+                        {visibleDebates.map(debate => (
                           <button
                             key={debate.id}
                             type="button"
                             onClick={() => {
+                              setComments([]);
+                              setReplyTo(null);
+                              setCommentDraft('');
+                              setEditingCommentId('');
+                              setEditingCommentText('');
                               setSelectedDebateId(debate.id);
                               setMessage('');
                             }}
@@ -1831,7 +1889,7 @@ export function ProfileCommunitiesCloudBridge() {
                             <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-600" />
                           </button>
                         ))}
-                        {debates.length === 0 && (
+                        {visibleDebates.length === 0 && (
                           <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-12 text-center">
                             <Users className="mx-auto h-8 w-8 text-slate-700" />
                             <p className="mt-3 text-[10px] font-black text-slate-400">Nenhum debate iniciado</p>
@@ -1910,7 +1968,7 @@ export function ProfileCommunitiesCloudBridge() {
                         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
                           <h3 className="text-[10px] font-black uppercase text-white">Participantes</h3>
                           <div className="mt-3 flex flex-wrap gap-2">
-                            {members.filter(member => member.status === 'active').slice(0, 20).map(member => (
+                            {visibleMembers.filter(member => member.status === 'active').slice(0, 20).map(member => (
                               <span key={member.id} className="flex items-center gap-2 rounded-xl bg-slate-950 px-3 py-2 text-[8px] text-slate-300">
                                 <Avatar name={member.userName} url={member.userAvatar} />
                                 {member.userName}
