@@ -41,10 +41,18 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
   const buyerReservationRef = adminDb.doc(
     `stores/${input.officialStoreId}/promotionBuyerReservations/${input.promotionId}_${createHash('sha256').update(input.buyerUid).digest('hex')}`
   );
+  const checkoutRef = adminDb.doc(`kyrub_admin/control_plane/plan_pix_checkouts/${input.checkoutId}`);
   return adminDb.runTransaction(async tx => {
-    const [promotionDoc, reservationDoc, buyerDoc] = await Promise.all([
-      tx.get(promotionRef), tx.get(reservationRef), tx.get(buyerReservationRef),
+    const [promotionDoc, reservationDoc, buyerDoc, checkoutDoc] = await Promise.all([
+      tx.get(promotionRef), tx.get(reservationRef), tx.get(buyerReservationRef), tx.get(checkoutRef),
     ]);
+    if (!checkoutDoc.exists || checkoutDoc.get('buyerId') !== input.buyerUid ||
+        checkoutDoc.get('offer')?.storeId !== input.officialStoreId ||
+        checkoutDoc.get('offer')?.productId !== input.officialProductId ||
+        checkoutDoc.get('offer')?.quote?.totalMinor !== input.contractTotalMinor ||
+        !['quoted', 'accepted'].includes(checkoutDoc.get('status'))) {
+      throw new Error('OFFICIAL_PROMOTION_CHECKOUT_CONFLICT');
+    }
     if (reservationDoc.exists) {
       const prior = reservationDoc.data()!;
       if (prior.checkoutId !== input.checkoutId || prior.buyerUid !== input.buyerUid ||
@@ -62,6 +70,16 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
       id: promotionDoc.id, storeId: input.officialStoreId,
     });
     const quote = quoteOfficialPlanPromotion({ ...input, promotion, now: input.now });
+    const accepted = checkoutDoc.get('promotionAcceptedTerms');
+    if (!accepted || accepted.promotionId !== input.promotionId ||
+        accepted.buyerUid !== input.buyerUid ||
+        accepted.officialStoreId !== input.officialStoreId ||
+        accepted.officialProductId !== input.officialProductId ||
+        accepted.originalTotalMinor !== quote.originalTotalMinor ||
+        accepted.discountMinor !== quote.discountMinor ||
+        accepted.payableMinor !== quote.payableMinor) {
+      throw new Error('OFFICIAL_PROMOTION_ACCEPTED_TERMS_REQUIRED');
+    }
     const buyerCount = Number(buyerDoc.get('reservationCount') ?? 0);
     const buyerRedeemed = Number(buyerDoc.get('redemptionCount') ?? 0);
     if (!Number.isSafeInteger(buyerCount) || buyerCount < 0 ||
