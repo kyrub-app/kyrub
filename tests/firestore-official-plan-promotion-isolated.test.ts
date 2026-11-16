@@ -69,17 +69,17 @@ test('ERP coupon snapshot, transactional reservation and one-time redemption in 
   const confirmation = { paymentId: 'simulated-pix-001', checkoutId, buyerUid,
     amountMinor: 100, currency: 'BRL', method: 'pix', status: 'approved' };
   await assert.rejects(api.confirmIsolatedOfficialPromotionPix({
-    checkoutId, buyerUid, confirmation: { ...confirmation, amountMinor: 39700 },
+    checkoutId, buyerUid, paidAt: '2026-11-16T12:00:00.000Z', confirmation: { ...confirmation, amountMinor: 39700 },
   }), /PAYMENT_MISMATCH/);
   const confirmations = await Promise.all(Array.from({ length: 4 }, () =>
-    api.confirmIsolatedOfficialPromotionPix({ checkoutId, buyerUid, confirmation })));
+    api.confirmIsolatedOfficialPromotionPix({ checkoutId, buyerUid, paidAt: '2026-11-16T12:00:00.000Z', confirmation })));
   assert.equal(confirmations.filter((x: any) => x.status === 'confirmed').length, 1);
   assert.equal(confirmations.filter((x: any) => x.status === 'already_confirmed').length, 3);
   assert.equal((await checkoutRef.get()).get('providerPaidMinor'), 100);
   assert.equal((await checkoutRef.get()).get('status'), 'paid_pending_activation');
   const paidAt = '2026-11-16T12:00:00.000Z';
   const activations = await Promise.all(Array.from({ length: 4 }, () =>
-    api.activateIsolatedPromotionalBusiness({ checkoutId, buyerUid, paidAt })));
+    api.activateIsolatedPromotionalBusiness({ checkoutId, buyerUid })));
   assert.equal(activations.filter((x: any) => x.status === 'activated').length, 1);
   assert.equal(activations.filter((x: any) => x.status === 'already_activated').length, 3);
   const contract = await db.doc(`${root}/isolated_promotion_contracts/${checkoutId}`).get();
