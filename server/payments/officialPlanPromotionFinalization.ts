@@ -66,7 +66,7 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
       // The canonical payment document is created by the existing Mercado Pago
       // reconciliation transaction, not by a caller-controlled test adapter.
       const verifiedPayment = typeof providerPaymentId === 'string' &&
-        /^\\d{1,32}$/.test(providerPaymentId)
+        /^\d{1,32}$/.test(providerPaymentId)
         ? await tx.get(adminDb.doc(
           `stores/${input.officialStoreId}/payments/official_pix_${providerPaymentId}`
         )) : null;
