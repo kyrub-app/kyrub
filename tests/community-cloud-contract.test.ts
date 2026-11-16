@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { scopeCommunityRecords, scopeDebateComments } from '../src/utils/communityViewScope';
+import { scopeCommunityRecords, scopeDebateComments, scopeGroupChatMessages } from '../src/utils/communityViewScope';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
@@ -106,4 +106,17 @@ test('debate comments and reply context are isolated when changing debates', () 
   assert.match(component, /setSelectedDebateId\(debate\.id\)/);
   assert.match(component, /setCommentDraft\(''\)/);
   assert.match(component, /setReplyTo\(null\)/);
+});
+
+test('group chat view hides messages until their own listener has provided the snapshot', () => {
+  const messages = [{ id: 'from-alpha', text: 'Assunto privado do grupo A' }];
+  assert.deepEqual(scopeGroupChatMessages(messages, 'group-alpha', 'group-beta'), []);
+  assert.deepEqual(scopeGroupChatMessages(messages, 'group-alpha', ''), []);
+  assert.deepEqual(scopeGroupChatMessages(messages, '', 'group-alpha'), []);
+  assert.deepEqual(scopeGroupChatMessages(messages, 'group-alpha', 'group-alpha'), messages);
+
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /scopeGroupChatMessages\(/);
+  assert.match(component, /setGroupMessagesGroupId\(activeGroupChatId\)/);
+  assert.match(component, /visibleGroupMessages\.map\(/);
 });

@@ -19,3 +19,11 @@ export const scopeDebateComments = <T extends { communityId: string; debateId: s
         record.communityId === communityId && record.debateId === debateId
       )
     : [];
+
+/** A group chat may keep the previous listener's messages during navigation. */
+export const scopeGroupChatMessages = <T>(
+  messages: readonly T[],
+  sourceGroupId: string,
+  selectedGroupId: string
+): readonly T[] =>
+  sourceGroupId && sourceGroupId === selectedGroupId ? messages : [];
