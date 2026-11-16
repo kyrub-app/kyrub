@@ -37,3 +37,22 @@ test('rejects zero-value Pix and untrusted malformed totals', () => {
   assert.throws(() => quoteOfficialPlanPromotion({ ...base, promotion: { ...promotion, discountValue: 397 } }), /INVALID_TOTAL/);
   assert.throws(() => quoteOfficialPlanPromotion({ ...base, contractTotalMinor: -1 }), /INVALID_INPUT/);
 });
+
+test('percentage discount uses authoritative cents and preserves the plan baseline', () => {
+  const result = quoteOfficialPlanPromotion({ ...base,
+    promotion: { ...promotion, discountType: 'percentage', discountValue: 50 },
+  });
+  assert.equal(result.originalTotalMinor, 39700);
+  assert.equal(result.discountMinor, 19850);
+  assert.equal(result.payableMinor, 19850);
+  assert.equal(base.contractTotalMinor, 39700);
+});
+test('rejects a free 100% coupon, including when the code is otherwise valid', () => {
+  assert.throws(() => quoteOfficialPlanPromotion({ ...base,
+    promotion: { ...promotion, discountType: 'percentage', discountValue: 100 },
+  }), /INVALID_TOTAL/);
+});
+test('rejects an empty buyer and fractional minor-unit totals', () => {
+  assert.throws(() => quoteOfficialPlanPromotion({ ...base, buyerUid: '' }), /INVALID_INPUT/);
+  assert.throws(() => quoteOfficialPlanPromotion({ ...base, contractTotalMinor: 39700.5 }), /INVALID_INPUT/);
+});
