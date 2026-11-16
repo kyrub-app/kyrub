@@ -37,7 +37,7 @@ const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/
 const pilotRef = () => adminDb.doc(`${ROOT}/official_plan_pix_pilot/one_shot`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
 const isolatedOfficialPromotionEnabled = () =>
-  /^(127\\.0\\.0\\.1|localhost):\\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') &&
+  /^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') &&
   process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST === 'true';
 /** This is the production checkout's amount authority, including any server-priced ERP coupon. */
 const officialPixChargeMinor = (d: any): number => {
