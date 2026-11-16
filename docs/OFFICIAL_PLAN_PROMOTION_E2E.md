@@ -1,45 +1,40 @@
-# PR #1138 — Integração de cupom ao checkout canônico (pendente)
+# PR #1138 — Cupom comercial integrado ao checkout oficial, em homologação
 
-## Correção de rumo
-Os adaptadores de confirmação Pix, anexação e ativação Business **paralelos**, suas coleções de contratos/benefícios simulados e o workflow que os exercitava foram removidos desta branch. Passar nesses testes não comprovava o funcionamento de `officialPlanPixCheckout.ts`.
+## Implementação canônica, sem checkout paralelo
 
-## Código reaproveitável ainda nesta PR
-- Cotação e leitura dos cupons comerciais existentes no ERP da Loja Oficial.
-- Snapshot imutável dos termos comerciais aceitos, validação do valor do provedor.
-- Helpers transacionais de reserva e finalização do cupom.
-- Testes unitários dessas regras.
+A PR usa as funções e documentos de `server/payments/officialPlanPixCheckout.ts`:
+- `quoteOfficialPlanPix` recebe opcionalmente `promotionCode`, encontra o cupom no ERP da Loja Oficial e retorna o **preço final** sem alterar o preço-base autoritativo do produto.
+- `acceptOfficialPlanPix` verifica o total aceito, vincula o digest dos termos e reserva o cupom **na mesma transação Firestore** que aceita o checkout.
+- `checkoutOfficialPlanPix` valida a reserva e emite o Pix com o preço final. `validatePayment` reconfirma valor, moeda, método, recebedor, referência e digest.
+- `materialize` e `materializePendingStoreActivation` registram o valor efetivamente pago nos **contratos, assinaturas, períodos, pagamentos e ledger canônicos**.
+- `finalizeOfficialPlanPromotionReservation` resgata o cupom somente após encontrar pagamento confirmado no repositório financeiro canônico. A rejeição de pagamento libera sua reserva.
+- O cupom continua sendo criado pelo ERP da Loja Oficial. Não há catálogo paralelo no Control Plane nem projeção alternativa de benefícios.
 
-**Esses helpers ainda não estão integrados ao checkout canônico; não publicar nem realizar merge.**
+## Evidência validada em GitHub Actions
 
-## Integração necessária no código já utilizado
-O fluxo autoritativo é `server/payments/officialPlanPixCheckout.ts`: `quoteOfficialPlanPix`, `acceptOfficialPlanPix`, `checkoutOfficialPlanPix`, `validatePayment`, `reconcileLoaded` e `materialize`. Hoje ele calcula, aceita, cobra e registra `d.offer.quote.totalMinor`, e o gate de piloto permite somente Pro mensal integral.
+Workflow `Official plan canonical Firestore E2E`, na suíte já existente `tests/firestore-official-plan-pix.test.ts`, **6 testes aprovados e 0 falhas** no commit `6bcadd5f` (execução 43868139642).
 
-1. Resolver o cupom do ERP no servidor e incorporá-lo ao snapshot/digest da **oferta canônica**, preservando separadamente preço-base e total final.
-2. Propagar o **mesmo total final aceito** para aceite, corpo Pix, verificação do provedor, pagamento canônico, contrato e ledger; rejeitar divergências. Não permitir caminho genérico do Marketplace para planos oficiais.
-3. Integrar reserva e consumo do cupom às transações existentes, com idempotência, liberação de reservas e proteção contra reuso do pagamento.
-4. Testar **as funções reais acima** no Firebase Emulator, com o provedor Mercado Pago simulado na fronteira de rede, sem projetar contratos em coleções alternativas.
-5. Confirmar no serviço canônico a vigência iniciada na aprovação do pagamento, inclusive comprador sem loja, e ausência de contratos duplicados.
+O cenário Business promocional verifica:
+- Preço-base R$ 397,00, desconto ERP R$ 396,00, Pix simulado R$ 1,00.
+- Rejeição de callback de R$ 397,00 quando o aceite é de R$ 1,00.
+- Dois quotes concorrentes, uma única reserva por limite e idempotência do aceite.
+- Quatro reconciliações simultâneas, apenas um contrato, uma assinatura e um pagamento no Firestore canônico.
+- Contrato com total pago de 100 centavos, base mensal 39700 e desconto 39600.
+- Ledger financeiro com pagamento de R$ 1,00, entitlement Business ativo e vigência iniciada em `date_approved`.
+- Resgate único do cupom e liberação do contador de reservas.
+- Rejeição financeira devolve a reserva sem registrar contrato nem benefício.
 
-## Limites e segurança
-Não habilitar `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED`, não ampliar o piloto Business R$1 em produção, não alterar credenciais, não criar lojas reais, não fazer cobranças reais e não efetuar merge/deploy. A PR #1137 (100 Pitangas) mantém sua atestação independente. A jornada visual Praça/Free/2 XP não foi comprovada nesta PR.
+Os quatro outros testes da suíte existente cobrem corrida e recuperação de Pix, replays de efeitos, comprador sem loja e criação Free idempotente. Os testes unitários de descontos/termos e os testes existentes do agendador canônico complementam essa cobertura.
 
-## Matriz de regressão herdada do protótipo removido
-Esta matriz **preserva os cenários**, mas não transfere automaticamente o resultado PASS do protótipo para o checkout canônico. Marcar PASS somente após executar os testes contra `officialPlanPixCheckout.ts` e os repositórios reais de contratos, benefícios e ledger.
+## Limites e pendências para lançamento
 
-| Cenário | Evidência anterior | Estado no checkout canônico |
-| --- | --- | --- |
-| Cupom ERP Business 39700 → 100 centavos; vínculo à loja/produto | Testes de cotação/snapshot | Parcial: testes unitários; sem aceite canônico |
-| Termos imutáveis e digest, preço-base separado do preço final | Testes unitários | Parcial: helpers ainda não conectados |
-| Aceite e reserva idempotentes; quatro chamadas concorrentes; limite por comprador | Firebase Emulator do protótipo | Pendente |
-| Checkout sem termos aceitos ou reserva; cupom esgotado/vencido | Protótipo e testes unitários | Pendente |
-| Pix BRL aprovado de 100 centavos; rejeitar 39700 centavos e divergências | Simulador isolado | Pendente: testar `validatePayment` real com provedor simulado |
-| Quatro callbacks simultâneos: uma confirmação | Firebase Emulator do protótipo | Pendente |
-| Reutilização de ID de pagamento em outro checkout | Firebase Emulator do protótipo | Pendente: testar binding canônico |
-| Replay com data de aprovação divergente, data inválida e estado inconsistente | Firebase Emulator do protótipo | Pendente |
-| Contrato Business único, benefício único e vigência a partir da aprovação | Coleções `isolated_promotion_*` | Pendente: testar coleções canônicas |
-| Vigência em fevereiro, ano bissexto, fim do mês e virada de ano | Cálculo isolado | Pendente: testar `scheduleOfficialPlanFromConfirmedPayment` / `addMonthsUtc` |
-| Resgate do cupom uma única vez sob quatro concorrências; contadores | Firebase Emulator do protótipo | Pendente |
-| Comprador sem loja, Free independente de publicação, 2 XP e 100 Pitangas | Não coberto pelo E2E comercial isolado | Pendente; depende de outras integrações |
-| Checkout com cupom não integrado deve falhar fechado, nunca cobrar integral | Proteção no checkout canônico (`OFFICIAL_PIX_PROMOTION_NOT_INTEGRATED`) | Implementado; teste automatizado pendente |
+- **Isolamento obrigatório:** Business com cupom R$ 1,00 só é permitido com Firestore Emulator em localhost, `KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST=true`, token fictício `isolated-platform-token` e gates de piloto. Produção mantém somente o piloto Pro sem desconto, e o checkout real permanece desativado até autorização.
+- Não testar com pagamento real, não habilitar flags produtivas, não efetuar merge/deploy.
+- Ainda falta o roteamento visual da Praça/vitrine para `official.prepaid.quote` com `promotionCode` (o caminho atual `?coupon=CODE` do carrinho B2C não pode vender planos oficiais).
+- Falta fechamento seguro de **reservas abandonadas e expiradas** cujo resultado Pix ainda não foi emitido ou já é terminal; nunca liberar reservas de pagamentos em estado desconhecido.
+- Falta validar a jornada de primeiro login (100 Pitangas, dependente da PR #1137), publicação da primeira loja (2 XP) e clique no cupom pela interface.
+- Antes de remover o gate isolado, exigir revisão independente do cálculo, do recebedor, da idempotência e dos contratos canônicos.
 
-**Regra de homologação:** não afirmar que a PR está validada pelo E2E comercial enquanto as linhas pendentes não executarem os serviços canônicos. Não restaurar a projeção de contratos isolados para obter PASS.
+## Decisão de arquitetura
+
+Não restaurar os adaptadores e coleções `isolated_promotion_*` removidos. O Firebase Emulator simula armazenamento local e a fronteira Mercado Pago; as regras comerciais, as transações e os efeitos de pagamento são os mesmos módulos reais do Kyrub.
