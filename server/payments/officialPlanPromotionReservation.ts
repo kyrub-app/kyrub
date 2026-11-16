@@ -24,7 +24,8 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
   contractTotalMinor: number;
   now?: Date;
 }) {
-  if (![input.checkoutId, input.buyerUid, input.officialStoreId,
+  if (!/^[a-f0-9]{64}$/.test(input.checkoutId) ||
+      ![input.buyerUid, input.officialStoreId,
     input.officialProductId, input.promotionId].every(validId)) {
     throw new Error('OFFICIAL_PROMOTION_INVALID_INPUT');
   }
@@ -80,6 +81,11 @@ export async function reserveOfficialPlanPromotionForCheckout(input: {
         accepted.payableMinor !== quote.payableMinor) {
       throw new Error('OFFICIAL_PROMOTION_ACCEPTED_TERMS_REQUIRED');
     }
+    assertOfficialPromotionPaymentMatches(accepted, {
+      buyerUid: input.buyerUid, officialStoreId: input.officialStoreId,
+      officialProductId: input.officialProductId, months: checkoutDoc.get('offer').quote.months,
+      paidMinor: quote.payableMinor, termsDigest: accepted.termsDigest,
+    });
     const buyerCount = Number(buyerDoc.get('reservationCount') ?? 0);
     const buyerRedeemed = Number(buyerDoc.get('redemptionCount') ?? 0);
     if (!Number.isSafeInteger(buyerCount) || buyerCount < 0 ||
