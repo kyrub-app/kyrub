@@ -71,7 +71,8 @@ test('switching communities clears the previous wall and rejects late snapshots'
   assert.match(component, /values => \{ if \(isCurrent\(\)\) setPosts\(values\); \}/);
   assert.match(component, /values => \{ if \(isCurrent\(\)\) setDebates\(values\); \}/);
   assert.match(component, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
-  assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+setComments\(\[\]\);/);
+  assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+closeDebate\(\);/);
+  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);/);
 });
 
 test('switching debates resets the comment composer and ignores late debate snapshots', () => {
