@@ -21,3 +21,10 @@
 
 ## Gates que permanecem
 O piloto financeiro real atual permite somente Pro mensal integral; não expandir para Business ou descontos sem revisão independente e autorização. `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED` continua desligada; não mexer em credenciais, `writersVerified`, Pitangas, XP ou dados reais. Esta PR não deve ser mergeada nem publicada por sua existência. A função de cotação pura não autoriza emissão nem comprova o E2E.
+
+## Origem obrigatória do cupom — ERP da Loja Oficial
+O Control Plane publica **desafios globais** (por exemplo, primeira publicação da loja -> 2 XP), não cupons comerciais. O cupom Business deve ser criado no gerenciador `StorePromotionsManager` do ERP da Loja Oficial, persistido por `storePromotionManagementRouter` em `stores/{officialStoreId}/promotions/{promotionId}` e compartilhado na Praça pela função já existente da PR #1122.
+
+O novo leitor somente-consulta `quoteOfficialPlanPromotionFromErp` verifica a designação `kyrub_admin/official_store` antes de buscar a promoção no ERP e calcular a cotação. Não aceita cupom avulso fornecido pelo navegador nem cria outro catálogo promocional no Control Plane. O leitor ainda não está ligado ao endpoint de checkout; não reserva nem consome cupom.
+
+**Atenção:** a vitrine pública passa `?coupon=CODE` ao carrinho B2C, enquanto o leitor oficial recebe `promotionId`. A futura integração precisa resolver o código contra os cupons do ERP, validar unicidade e elegibilidade no servidor e encaminhar o usuário para o checkout de plano oficial. Não tratar o carrinho genérico como checkout de plano.
