@@ -86,8 +86,14 @@ export async function activateIsolatedPromotionalBusiness(input: {
     if (entitlement.exists && entitlement.get('checkoutId') !== input.checkoutId) {
       throw Error('OFFICIAL_PROMOTION_ACTIVE_PLAN_CONFLICT');
     }
-    const endsAt = new Date(paidAt);
+    // Clamp the calendar day when the following month is shorter.
+    const start = new Date(paidAt);
+    const endsAt = new Date(start);
+    const originalDay = start.getUTCDate();
+    endsAt.setUTCDate(1);
     endsAt.setUTCMonth(endsAt.getUTCMonth() + 1);
+    const lastDay = new Date(Date.UTC(endsAt.getUTCFullYear(), endsAt.getUTCMonth() + 1, 0)).getUTCDate();
+    endsAt.setUTCDate(Math.min(originalDay, lastDay));
     const record = {
       checkoutId: input.checkoutId, buyerUid: input.buyerUid, planId: 'business',
       storeId: offer.storeId, productId: offer.productId,
