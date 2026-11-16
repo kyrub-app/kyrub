@@ -56,8 +56,14 @@ export async function finalizeOfficialPlanPromotionReservation(input: {
     if (status !== 'reserved') throw new Error('OFFICIAL_PROMOTION_FINALIZATION_CONFLICT');
     const checkoutStatus = checkout.get('status');
     if (input.outcome === 'redeem') {
+      const accepted = checkout.get('promotionAcceptedTerms');
       if (!['activated', 'paid_pending_activation'].includes(checkoutStatus) ||
-          checkout.get('offer')?.quote?.totalMinor !== reservation.get('payableMinor') ||
+          !accepted || accepted.payableMinor !== reservation.get('payableMinor') ||
+          accepted.originalTotalMinor !== reservation.get('originalTotalMinor') ||
+          accepted.promotionId !== input.promotionId ||
+          accepted.buyerUid !== reservation.get('buyerUid') ||
+          accepted.officialProductId !== reservation.get('productId') ||
+          checkout.get('acceptedOfferDigest') !== checkout.get('offerDigest') ||
           !checkout.get('providerPaymentId')) {
         throw new Error('OFFICIAL_PROMOTION_PAYMENT_NOT_CONFIRMED');
       }
