@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { assessDeliveryCargo } from '../shared/deliveryVehicleCompatibility';
 import { buildPublicKyrubDeliveryOffer, PUBLIC_KYRUB_DESTINATION_LABEL } from '../server/delivery/deliveryPublicOfferProjection';
 
 const source = (path: string): string => readFileSync(path, 'utf8');
@@ -13,6 +14,9 @@ test('the public projection only contains allowlisted non-identifying metadata',
     orderStatus: 'preparing',
     distance: 4.2,
     payment: 17,
+    cargo: assessDeliveryCargo({kind:'food',weightKg:4,lengthCm:30,widthCm:20,heightCm:15,requiresSpecialHandling:false}).cargo,
+    cargoReady: true,
+    allowedVehicles: ['bicycle', 'motorcycle', 'car'] as Array<'bicycle'|'motorcycle'|'car'>,
     buyerId: 'private-buyer-uid',
     buyerName: 'Nome Privado',
     deliveryAddress: 'Rua Privada, 999',
@@ -20,12 +24,14 @@ test('the public projection only contains allowlisted non-identifying metadata',
   };
   const offer = buildPublicKyrubDeliveryOffer(sensitiveInput);
   assert.deepEqual(Object.keys(offer).sort(), [
-    'distance', 'from', 'id', 'orderStatus', 'payment',
+    'allowedVehicles', 'cargo', 'cargoReady', 'distance', 'from', 'id', 'orderStatus', 'payment',
     'requestedBy', 'source', 'status', 'to',
   ]);
   assert.equal(offer.to, PUBLIC_KYRUB_DESTINATION_LABEL);
   assert.equal(offer.from, 'Loja Exemplo');
   assert.equal(offer.source, 'kyrub-order');
+  assert.deepEqual(offer.allowedVehicles,['bicycle','motorcycle','car']);
+  assert.equal(offer.cargo?.kind,'food');
   assert.doesNotMatch(JSON.stringify(offer), /private-buyer-uid|Nome Privado|Rua Privada|latitude|longitude/);
 });
 
