@@ -32,7 +32,7 @@ test('real acceptance is an atomic server action, never a local optimistic claim
   const bridge = readFileSync('src/components/store/KyrubDeliveryOpportunityBridge.tsx', 'utf8');
   const renda = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
   const router = readFileSync('server/delivery/deliveryOpportunityRouter.ts', 'utf8');
-  assert.match(modal, /await updateKyrubDeliveryOpportunityStatus\(job\.id, 'accepted', user\)/);
+  assert.match(modal, /await updateKyrubDeliveryOpportunityStatus\(job\.id, 'accepted', user, selectedVehicleType\)/);
   assert.match(modal, /deliveries\.filter\(isAvailableCourierOffer\)/);
   assert.match(modal, /isAssignedCourierDelivery\(d, auth\.currentUser\?\.uid\)/);
   assert.match(modal, /disabled=\{acceptingDeliveryId !== null\}/);
