@@ -1,5 +1,6 @@
 import type { User } from 'firebase/auth';
 import type { DeliveryJob } from '../types';
+import type { CourierVehicleType, DeliveryCargo } from '../../shared/deliveryVehicleCompatibility';
 
 export const KYRUB_DELIVERIES_COLLECTION_PATH = 'hub/renda/deliveries';
 
@@ -14,7 +15,8 @@ export const getKyrubDeliveryDocumentPath = (deliveryId: string): string =>
 export const updateKyrubDeliveryOpportunityStatus = async (
   deliveryId: string,
   status: KyrubDeliveryOperationalStatus,
-  user: Pick<User, 'getIdToken'>
+  user: Pick<User, 'getIdToken'>,
+  vehicleType?: CourierVehicleType
 ): Promise<void> => {
   const normalizedId = deliveryId.trim();
   if (!normalizedId) throw new Error('A entrega não foi identificada.');
@@ -28,7 +30,7 @@ export const updateKyrubDeliveryOpportunityStatus = async (
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(status === 'accepted' ? { vehicleType } : {}) }),
     }
   );
 
@@ -39,4 +41,33 @@ export const updateKyrubDeliveryOpportunityStatus = async (
       ? payload.error
       : 'Não foi possível atualizar esta entrega.'
   );
+};
+
+
+/** Store-owned ERP order classification, committed by the server. */
+export const classifyKyrubDeliveryOrderCargo = async (
+  orderId: string,
+  cargo: DeliveryCargo,
+  user: Pick<User, 'getIdToken'>
+): Promise<{ ready: boolean; allowedVehicles: CourierVehicleType[] }> => {
+  const token = await user.getIdToken();
+  const response = await fetch(
+    `/api/delivery-opportunities/orders/${encodeURIComponent(orderId)}/cargo`,
+    {
+      method: 'POST',
+      headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
+      body: JSON.stringify({ cargo }),
+    }
+  );
+  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+  if (!response.ok) throw new Error(
+    typeof payload.error === 'string' ? payload.error : 'Não foi possível classificar a carga.'
+  );
+  return {
+    ready: payload.ready === true,
+    allowedVehicles: Array.isArray(payload.allowedVehicles)
+      ? payload.allowedVehicles.filter((item): item is CourierVehicleType =>
+          item === 'bicycle' || item === 'motorcycle' || item === 'car')
+      : [],
+  };
 };
