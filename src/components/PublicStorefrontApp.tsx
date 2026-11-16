@@ -33,6 +33,7 @@ import { B2CCartDrawer } from './modals/B2CCartDrawer';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
 import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
 import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
+import { OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -54,9 +55,7 @@ type PublicStorefrontResponse = {
   offers: Product[];
 };
 
-// Presentation hint only. The API separately verifies the authoritative official
-// store/product mapping before any quote, acceptance or payment.
-const OFFICIAL_KYRUB_STORE_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
+// Reuse the shared canonical identity; the server verifies it again before payment.
 
 const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -215,7 +214,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    if (!store?.id || store.id !== OFFICIAL_KYRUB_STORE_ID || !sharedCouponCode) {
+    if (!store?.id || store.id !== OFFICIAL_STORE_CANONICAL_ID || !sharedCouponCode) {
       setCouponPromotion(null);
       setCouponLoading(false);
       return;
@@ -273,7 +272,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   };
 
   const handleAddToCart = (product: Product): void => {
-    if (store?.id === OFFICIAL_KYRUB_STORE_ID && product.saleModality?.mode === 'subscription') {
+    if (store?.id === OFFICIAL_STORE_CANONICAL_ID && isOfficialPlanProductId(product.id)) {
       // Official plans are contracts, not ordinary B2C cart items.
       setSelectedOfficialPlanId(product.id);
       document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
@@ -364,9 +363,9 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     activeKdsOrderCount,
     Boolean(user)
   );
-  const isOfficialStore = store.id === OFFICIAL_KYRUB_STORE_ID;
+  const isOfficialStore = store.id === OFFICIAL_STORE_CANONICAL_ID;
   const officialPlanProducts = isOfficialStore
-    ? publicProducts.filter(product => product.saleModality?.mode === 'subscription')
+    ? publicProducts.filter(product => isOfficialPlanProductId(product.id) && product.saleModality?.mode === 'subscription')
     : [];
   const eligibleCouponPlans = sharedCouponCode && couponPromotion
     ? officialPlanProducts.filter(product => couponPromotion.productIds.includes(product.id))
