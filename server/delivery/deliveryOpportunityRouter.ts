@@ -40,6 +40,12 @@ import {
   declareRecipientContactAttempt,
   requestRecipientAbsenceReview,
 } from './deliveryRecipientAbsenceEvidenceService.js';
+import {
+  authorizeRecipientAbsenceReturn,
+  revokeRecipientAbsenceReturn,
+  declareCourierReturnAtStore,
+  confirmStoreReceivedReturnedDelivery,
+} from './deliveryReturnToStoreService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
@@ -191,6 +197,26 @@ const errorResponse = (response: Response, error: unknown): void => {
     || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
     response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
       error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_FORBIDDEN') {
+    response.status(403).json({code:message,
+      error:'Somente o operador responsável, o entregador atribuído ou o titular da loja pode confirmar sua própria etapa.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_INVALID') {
+    response.status(400).json({code:message,
+      error:'A justificativa, condição da encomenda ou identificador é inválido.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_STORE_GEOFENCE_REQUIRED') {
+    response.status(409).json({code:message,
+      error:'O entregador precisa estar na loja com rastreamento recente e precisão suficiente antes de declarar a devolução.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_CONFLICT') {
+    response.status(409).json({code:message,
+      error:'O pedido, o responsável ou a etapa da devolução mudou. Não houve liberação financeira ou de custódia.'});
     return;
   }
   if (message === 'RECIPIENT_ABSENCE_FORBIDDEN') {
@@ -859,6 +885,52 @@ export const createDeliveryOpportunityRouter = (): Router => {
         ticketId:request.params.ticketId,courierId,
       }));
     } catch(error) { errorResponse(response,error); }
+  });
+
+  router.post('/admin/support-tickets/:ticketId/authorize-return', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await authorizeRecipientAbsenceReturn({
+        ticketId:request.params.ticketId,operatorId,reason:clean(request.body?.reason),
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/admin/returns/:deliveryId/revoke', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await revokeRecipientAbsenceReturn({
+        deliveryId:request.params.deliveryId,operatorId,reason:clean(request.body?.reason),
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/:deliveryId/return-to-store/declare', async(request,response)=>{
+    try {
+      const courierId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await declareCourierReturnAtStore({
+        deliveryId:request.params.deliveryId,courierId,
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/:deliveryId/return-to-store/confirm-receipt', async(request,response)=>{
+    try {
+      const storeId=await authenticatedTenantId(request);
+      const condition=request.body?.condition;
+      if(!['intact','damaged','disputed'].includes(condition)){
+        throw new Error('DELIVERY_RETURN_INVALID');
+      }
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await confirmStoreReceivedReturnedDelivery({
+        deliveryId:request.params.deliveryId,storeId,
+        condition:condition as 'intact'|'damaged'|'disputed',
+        note:clean(request.body?.note),
+      }));
+    } catch(error){errorResponse(response,error);}
   });
 
   router.post('/admin/support-tickets/:ticketId/respond', async (request,response) => {
