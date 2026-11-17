@@ -18,6 +18,7 @@ import {
   onSnapshot,
   query,
   serverTimestamp,
+  Timestamp,
   updateDoc,
 } from 'firebase/firestore';
 import { getDownloadURL, ref } from 'firebase/storage';
@@ -31,6 +32,8 @@ import {
   mapIdentityVerification,
   type IdentityVerificationRecord,
   type VerificationStatus,
+  type MotofreteEvidenceKind,
+  MOTOFRETE_EVIDENCE_LABELS,
 } from '../../utils/identityVerification';
 
 const statusLabel = (status: VerificationStatus): string => {
@@ -53,12 +56,33 @@ const profileLabel = (profile: string): string => ({
   motorized_courier: 'Entregador motorizado',
 }[profile] ?? profile);
 
+type MotofreteChecklistKey =
+  | 'courseVerified'
+  | 'minimumAgeAndLicenseTenureVerified'
+  | 'vehicleRegistrationAndAuthorizationVerified'
+  | 'safetyEquipmentVerified'
+  | 'semiannualInspectionVerified'
+  | 'localRequirementsVerified';
+
+const MOTO_CHECKS: Record<MotofreteChecklistKey, string> = {
+  courseVerified: 'Curso especializado e validade conferidos',
+  minimumAgeAndLicenseTenureVerified: 'Idade e tempo mínimo de CNH A conferidos',
+  vehicleRegistrationAndAuthorizationVerified: 'Registro e autorização do veículo conferidos',
+  safetyEquipmentVerified: 'Equipamentos e acondicionamento conferidos',
+  semiannualInspectionVerified: 'Inspeção semestral vigente conferida',
+  localRequirementsVerified: 'Exigências estaduais/municipais verificadas',
+};
+
 export default function AdminIdentityVerificationWorkspace() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [profile, setProfile] = useState<AdminProfile | null>(null);
   const [records, setRecords] = useState<IdentityVerificationRecord[]>([]);
   const [busyId, setBusyId] = useState('');
   const [message, setMessage] = useState('');
+  const [motofreteChecks, setMotofreteChecks] = useState<Record<string, Partial<Record<MotofreteChecklistKey, boolean>>>>({});
+  const [motofreteExpiry, setMotofreteExpiry] = useState<Record<string, string>>({});
+  const canReviewMotofrete = profile?.status === 'active'
+    && ['super_admin', 'compliance'].includes(profile.role);
 
   useEffect(() => {
     let unsubscribeProfile = () => undefined;
@@ -101,6 +125,11 @@ export default function AdminIdentityVerificationWorkspace() {
 
   const ordered = useMemo(
     () => [...records].sort((left, right) => {
+      const leftMotofrete = left.status === 'approved'
+        && left.motofreteQualification?.status === 'submitted';
+      const rightMotofrete = right.status === 'approved'
+        && right.motofreteQualification?.status === 'submitted';
+      if (leftMotofrete !== rightMotofrete) return leftMotofrete ? -1 : 1;
       const leftPending = left.status === 'approved' && left.profileExpansion?.status === 'submitted';
       const rightPending = right.status === 'approved' && right.profileExpansion?.status === 'submitted';
       if (leftPending !== rightPending) return leftPending ? -1 : 1;
@@ -187,6 +216,70 @@ export default function AdminIdentityVerificationWorkspace() {
     } catch (error) {
       console.error('Additional courier profile review failed.', error);
       setMessage('Não foi possível concluir a análise da nova modalidade.');
+    } finally {
+      setBusyId('');
+    }
+  };
+
+  const reviewMotofrete = async (
+    record: IdentityVerificationRecord,
+    decision: 'approved' | 'rejected' | 'revoked'
+  ) => {
+    const qualification = record.motofreteQualification;
+    if (!user || !canReviewMotofrete || record.status !== 'approved' || !qualification) return;
+    if (decision === 'revoked' ? qualification.status !== 'approved'
+      : qualification.status !== 'submitted') return;
+    const reason = decision !== 'approved'
+      ? window.prompt(decision === 'revoked'
+        ? 'Informe o motivo da revogação de motofrete:'
+        : 'Descreva quais documentos precisam ser corrigidos:')?.trim()
+      : '';
+    if (decision !== 'approved' && !reason) return;
+
+    let validUntil: Timestamp | null = null;
+    if (decision === 'approved') {
+      const checks = motofreteChecks[record.uid] ?? {};
+      if (!(Object.keys(MOTO_CHECKS) as MotofreteChecklistKey[]).every(key => checks[key] === true)) {
+        setMessage('Todos os critérios de motofrete precisam ser conferidos pelo revisor.');
+        return;
+      }
+      const date = motofreteExpiry[record.uid] ?? '';
+      const parsed = date ? new Date(date + 'T23:59:59') : new Date(Number.NaN);
+      if (!Number.isFinite(parsed.getTime())
+        || parsed.getTime() <= Date.now()
+        || parsed.getTime() > Date.now() + 180 * 24 * 60 * 60 * 1000) {
+        setMessage('Informe data de validade futura, limitada a 180 dias da revisão.');
+        return;
+      }
+      validUntil = Timestamp.fromDate(parsed);
+    }
+    setBusyId(record.uid);
+    setMessage('');
+    try {
+      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, record.uid), {
+        'motofreteQualification.status': decision,
+        'motofreteQualification.reviewReason': reason || '',
+        'motofreteQualification.reviewedBy': user.uid,
+        'motofreteQualification.reviewedAt': serverTimestamp(),
+        'motofreteQualification.validUntil': validUntil,
+        ...(Object.keys(MOTO_CHECKS) as MotofreteChecklistKey[]).reduce<Record<string, boolean>>(
+          (fields, key) => {
+            fields['motofreteQualification.' + key] = decision === 'approved';
+            return fields;
+          }, {}
+        ),
+        updatedAt: serverTimestamp(),
+      });
+      setMotofreteChecks(previous => ({ ...previous, [record.uid]: {} }));
+      setMotofreteExpiry(previous => ({ ...previous, [record.uid]: '' }));
+      setMessage(decision === 'approved'
+        ? 'Motofrete atestado por Compliance, com validade registrada.'
+        : decision === 'revoked'
+          ? 'Motofrete revogado sem alterar outras aprovações.'
+          : 'Correção de motofrete solicitada sem alterar outras aprovações.');
+    } catch (error) {
+      console.error('Motofrete qualification review failed.', error);
+      setMessage('Não foi possível concluir a revisão de motofrete.');
     } finally {
       setBusyId('');
     }
@@ -327,6 +420,96 @@ export default function AdminIdentityVerificationWorkspace() {
                   </div>
                   {record.profileExpansion.reviewReason && (
                     <p className="text-[9px] text-red-300">{record.profileExpansion.reviewReason}</p>
+                  )}
+                </section>
+              )}
+
+              {record.motofreteQualification && (
+                <section className="mt-3 space-y-3 rounded-2xl border border-orange-500/20 bg-orange-500/5 p-3">
+                  <h4 className="text-[10px] font-black uppercase text-orange-200">
+                    Motofrete — {record.motofreteQualification.status === 'submitted'
+                      ? 'aguardando Compliance'
+                      : record.motofreteQualification.status === 'approved'
+                        ? 'atestado com validade'
+                        : record.motofreteQualification.status === 'revoked'
+                          ? 'revogado' : 'correção necessária'}
+                  </h4>
+                  <p className="text-[9px] text-slate-400">
+                    Evidências privadas enviadas. A conferência precisa incluir CNH A/EAR, curso,
+                    tempo de habilitação, veículo, inspeção, equipamentos e regras locais.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {(Object.keys(MOTOFRETE_EVIDENCE_LABELS) as MotofreteEvidenceKind[]).map(kind => {
+                      const path = record.motofreteQualification?.documents[kind] ?? '';
+                      return path ? (
+                        <button key={kind} type="button"
+                          onClick={() => void openFile(path)}
+                          className="rounded-xl border border-slate-700 px-2 py-2 text-[9px] text-slate-200">
+                          <FileBadge className="mr-1 inline h-3 w-3" />
+                          {MOTOFRETE_EVIDENCE_LABELS[kind]}
+                        </button>
+                      ) : (
+                        <p key={kind} className="rounded-xl border border-slate-800 px-2 py-2 text-[9px] text-slate-500">
+                          {MOTOFRETE_EVIDENCE_LABELS[kind]}: não anexado
+                        </p>
+                      );
+                    })}
+                  </div>
+                  {record.motofreteQualification.reviewReason && (
+                    <p className="text-[9px] text-red-300">
+                      {record.motofreteQualification.reviewReason}
+                    </p>
+                  )}
+                  {record.motofreteQualification.status === 'approved' && (
+                    <p className="text-[9px] text-emerald-300">
+                      Atestado por {record.motofreteQualification.reviewedBy}.
+                      Validade: {record.motofreteQualification.validUntil
+                        && typeof record.motofreteQualification.validUntil === 'object'
+                        && 'toDate' in record.motofreteQualification.validUntil
+                          ? (record.motofreteQualification.validUntil as Timestamp).toDate().toLocaleDateString('pt-BR')
+                          : 'não disponível'}
+                    </p>
+                  )}
+                  {canReviewMotofrete && record.motofreteQualification.status === 'submitted' && (
+                    <div className="space-y-2 border-t border-orange-500/20 pt-3">
+                      {(Object.keys(MOTO_CHECKS) as MotofreteChecklistKey[]).map(key => (
+                        <label key={key} className="flex items-start gap-2 text-[9px] text-slate-300">
+                          <input type="checkbox"
+                            checked={motofreteChecks[record.uid]?.[key] === true}
+                            onChange={event => setMotofreteChecks(previous => ({
+                              ...previous,
+                              [record.uid]: { ...previous[record.uid], [key]: event.target.checked },
+                            }))} />
+                          {MOTO_CHECKS[key]}
+                        </label>
+                      ))}
+                      <label className="block text-[9px] text-slate-300">
+                        Válido até (máximo 180 dias)
+                        <input type="date" value={motofreteExpiry[record.uid] ?? ''}
+                          onChange={event => setMotofreteExpiry(previous => ({ ...previous, [record.uid]: event.target.value }))}
+                          className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-900 px-2 py-2 text-slate-200" />
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button type="button" disabled={busyId === record.uid}
+                          onClick={() => void reviewMotofrete(record, 'rejected')}
+                          className="rounded-xl border border-red-500/30 p-2 text-[9px] text-red-300 disabled:opacity-50">
+                          Solicitar correção
+                        </button>
+                        <button type="button" disabled={busyId === record.uid}
+                          onClick={() => void reviewMotofrete(record, 'approved')}
+                          className="rounded-xl bg-orange-500 p-2 text-[9px] font-black text-slate-950 disabled:opacity-50">
+                          Atestar motofrete
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {canReviewMotofrete && record.motofreteQualification.status === 'approved' && (
+                    <button type="button"
+                      disabled={busyId === record.uid}
+                      onClick={() => void reviewMotofrete(record, 'revoked')}
+                      className="w-full rounded-xl border border-red-500/40 p-2 text-[9px] font-black text-red-300 disabled:opacity-50">
+                      Revogar atestação de motofrete
+                    </button>
                   )}
                 </section>
               )}
