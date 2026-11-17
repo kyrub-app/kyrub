@@ -36,6 +36,10 @@ import {
   submitCourierSupportTicket,
   respondToCourierSupportTicket,
 } from './deliverySupportTicketService.js';
+import {
+  declareRecipientContactAttempt,
+  requestRecipientAbsenceReview,
+} from './deliveryRecipientAbsenceEvidenceService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
@@ -187,6 +191,31 @@ const errorResponse = (response: Response, error: unknown): void => {
     || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
     response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
       error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
+    return;
+  }
+  if (message === 'RECIPIENT_ABSENCE_FORBIDDEN') {
+    response.status(403).json({code:message,
+      error:'Somente o entregador responsável pode registrar tentativas de contato nesta entrega.'});
+    return;
+  }
+  if (message === 'RECIPIENT_ABSENCE_INVALID') {
+    response.status(400).json({code:message,
+      error:'Tentativa de contato inválida. Escolha um meio permitido.'});
+    return;
+  }
+  if (message === 'RECIPIENT_ABSENCE_CONTACT_REQUIRED') {
+    response.status(409).json({code:message,
+      error:'Registre pelo menos uma tentativa de contato antes de solicitar análise logística.'});
+    return;
+  }
+  if (message === 'RECIPIENT_ABSENCE_LIMIT') {
+    response.status(429).json({code:message,
+      error:'Limite de registros de contato atingido. Solicite orientação da logística.'});
+    return;
+  }
+  if (message === 'RECIPIENT_ABSENCE_CONFLICT') {
+    response.status(409).json({code:message,
+      error:'É necessário ter chegado ao destinatário e manter a encomenda atribuída para registrar esta ocorrência.'});
     return;
   }
   if (message === 'DELIVERY_SUPPORT_FORBIDDEN') {
@@ -802,6 +831,32 @@ export const createDeliveryOpportunityRouter = (): Router => {
         ticketId:clean(request.body?.ticketId),
         reasonCode:clean(request.body?.reasonCode),
         detail:clean(request.body?.detail),
+      }));
+    } catch(error) { errorResponse(response,error); }
+  });
+
+  router.post('/support-tickets/:ticketId/contact-attempt', async (request,response) => {
+    try {
+      const courierId=await authenticatedTenantId(request);
+      const method=request.body?.method;
+      if(!['called_recipient','messaged_recipient','tried_intercom','other_contact'].includes(method)) {
+        throw new Error('RECIPIENT_ABSENCE_INVALID');
+      }
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await declareRecipientContactAttempt({
+        ticketId:request.params.ticketId,courierId,
+        attemptId:clean(request.body?.attemptId),
+        method:method as 'called_recipient'|'messaged_recipient'|'tried_intercom'|'other_contact',
+      }));
+    } catch(error) { errorResponse(response,error); }
+  });
+
+  router.post('/support-tickets/:ticketId/request-absence-review', async (request,response) => {
+    try {
+      const courierId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await requestRecipientAbsenceReview({
+        ticketId:request.params.ticketId,courierId,
       }));
     } catch(error) { errorResponse(response,error); }
   });
