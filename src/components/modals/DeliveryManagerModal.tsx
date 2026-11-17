@@ -18,6 +18,7 @@ import {
 import { isAvailableCourierOffer, isAssignedCourierDelivery, isCanonicalCourierDelivery } from '../../utils/courierDeliveryView';
 import { DeliveryJob } from '../../types';
 import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
+import type { ReturnTariffOffer } from '../../../shared/deliveryReturnTariffOffer';
 
 interface DeliveryManagerModalProps {
   isOpen: boolean;
@@ -34,6 +35,7 @@ type OperationalDeliveryJob = DeliveryJob & {
   sourceOrderId?: string;
   orderStatus?: string;
   acceptedByName?: string;
+  returnTariffOffer?: ReturnTariffOffer | null;
 };
 
 const distanceLabel = (job: DeliveryJob): string =>
@@ -83,6 +85,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   const [deliveryDeliveryPoint, setDeliveryDeliveryPoint] = useState('');
   const [deliveryPaymentOffer, setDeliveryPaymentOffer] = useState('');
   const [acceptingDeliveryId, setAcceptingDeliveryId] = useState<string | null>(null);
+  const [tariffConsentId,setTariffConsentId]=useState('');
   const [selectedVehicleType, setSelectedVehicleType] = useState<CourierVehicleType>('bicycle');
   const [courierIdentity, setCourierIdentity] = useState<Record<string, unknown> | null>(null);
   const [identityLoaded, setIdentityLoaded] = useState(false);
@@ -269,10 +272,16 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
       triggerToast('A remuneração precisa estar definida antes do aceite.', 'warning');
       return;
     }
+    const tariff=(job as OperationalDeliveryJob).returnTariffOffer;
+    if(tariff && tariffConsentId!==job.id+':'+tariff.fingerprint) {
+      triggerToast('Confira e concorde com a versão da tarifa adicional antes do aceite.', 'warning');
+      return;
+    }
     setAcceptingDeliveryId(job.id);
     try {
       // Server rechecks cargo and approved documents atomically; this UI is only a preview.
-      await updateKyrubDeliveryOpportunityStatus(job.id, 'accepted', user, selectedVehicleType);
+      await updateKyrubDeliveryOpportunityStatus(job.id,'accepted',user,selectedVehicleType,
+        tariff?{fingerprint:tariff.fingerprint,confirmed:true}:undefined);
       setFazerEntregasModalTab('trajeto');
       triggerToast('Aceite confirmado pelo servidor. Ative o GPS para acompanhar.', 'success');
     } catch (error) {
@@ -594,9 +603,35 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                           <span className="text-[10px] text-slate-500 font-mono">{distanceLabel(job)}</span>
                         </div>
                       </div>
+                      {operational.returnTariffOffer ? (
+                        <label className="block rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] text-slate-200">
+                          <strong className="block text-cyan-200">Tarifas adicionais · política {operational.returnTariffOffer.policyId} v{operational.returnTariffOffer.version}</strong>
+                          <span className="mt-1 block">
+                            Retorno: {(operational.returnTariffOffer.returnRateMinorPerKm/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}/km,
+                            mínimo {(operational.returnTariffOffer.returnMinimumMinor/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.
+                            Espera: {operational.returnTariffOffer.recipientGraceMinutes} min de cortesia,
+                            depois {(operational.returnTariffOffer.waitingRateMinorPerIncrement/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
+                            a cada {operational.returnTariffOffer.waitingIncrementMinutes} min,
+                            até {(operational.returnTariffOffer.waitingMaxMinor/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.
+                            Retorno e espera dependem de autorização, evidências e revisão.
+                          </span>
+                          <span className="mt-2 flex items-start gap-2">
+                            <input type="checkbox"
+                              checked={tariffConsentId===job.id+':'+operational.returnTariffOffer.fingerprint}
+                              onChange={e=>setTariffConsentId(e.target.checked
+                                ?job.id+':'+operational.returnTariffOffer!.fingerprint:'')}
+                              className="mt-0.5"/>
+                            Concordo expressamente com estes valores e esta versão contratual para a entrega.
+                          </span>
+                        </label>
+                      ) : (
+                        <p className="text-[9px] text-amber-200">
+                          Tarifas adicionais não publicadas. Sem contrato aceito, retorno e espera não têm cotação automática.
+                        </p>
+                      )}
                       <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                         <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold">Disponível</span>
-                        <button type="button" onClick={() => void handleAcceptDelivery(job)} disabled={acceptingDeliveryId !== null || !identityLoaded || !courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType).eligible || job.cargoReady !== true || !(job.allowedVehicles ?? []).includes(selectedVehicleType) || job.payment <= 0} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono disabled:cursor-wait disabled:opacity-60">{acceptingDeliveryId === job.id ? 'Confirmando...' : 'Aceitar Entrega'}</button>
+                        <button type="button" onClick={() => void handleAcceptDelivery(job)} disabled={acceptingDeliveryId !== null || !identityLoaded || !courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType).eligible || job.cargoReady !== true || !(job.allowedVehicles ?? []).includes(selectedVehicleType) || job.payment <= 0 || (Boolean(operational.returnTariffOffer) && tariffConsentId!==job.id+':'+operational.returnTariffOffer!.fingerprint)} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono disabled:cursor-wait disabled:opacity-60">{acceptingDeliveryId === job.id ? 'Confirmando...' : 'Aceitar Entrega'}</button>
                       </div>
                     </div>
                   );
