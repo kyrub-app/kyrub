@@ -32,7 +32,7 @@ export function CourierReturnHistory() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    let unsubscribeReturns = () => undefined;
+    let unsubscribeReturns: () => void = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeReturns();
       unsubscribeReturns = () => undefined;
