@@ -65,3 +65,24 @@ test('returned package is a custody state, not completed order or payout',()=>{
   assert.match(rules,/match \/deliveryReturnProtocols\/\{deliveryId\}/);
   assert.match(rules,/match \/deliveryReturnEvents\/\{eventId\}/);
 });
+
+test('offline and lookup failures never silently hide return guidance or authorize physical receipt',()=>{
+  const courier=readFileSync('src/components/store/CourierReturnToStorePanel.tsx','utf8');
+  const store=readFileSync('src/components/store/StoreDeliveryReturnQueue.tsx','utf8');
+  assert.match(courier,/if\(!protocol\) \{/);
+  assert.match(courier,/return message \? \(/);
+  assert.match(courier,/Orientação de devolução indisponível/);
+  assert.match(courier,/Não inicie o retorno por conta própria/);
+  assert.match(courier,/snapshot\.metadata\.fromCache/);
+  assert.match(store,/onAuthStateChanged\(auth,user/);
+  assert.match(store,/unsubscribeReturns\(\)/);
+  assert.match(store,/setRows\(\[\]\)/);
+  assert.match(store,/includeMetadataChanges:true/);
+  assert.match(store,/snap\.metadata\.fromCache\?'offline':'live'/);
+  assert.match(store,/if\(queryState!=='live'\)/);
+  assert.match(store,/disabled=\{Boolean\(busy\)\|\|queryState!=='live'\}/);
+  assert.match(store,/if\(!visible\.length && queryState==='live' && !message\)return null/);
+  assert.match(store,/Não confirme recebimentos até restabelecer a consulta/);
+  assert.doesNotMatch(store,/if\(!visible\.length\)return null/);
+  assert.doesNotMatch(store,/captureFunds|issueRefund|payout/);
+});
