@@ -74,6 +74,8 @@ test('courier support only enables absence actions after fresh server-confirmed 
   assert.match(tracking,/!snapshot\.metadata\.fromCache/);
   assert.match(tracking,/recipientArrivalVerified: arrivalVerified/);
   assert.match(tracking,/recipientArrivalVerified=\{activeDelivery\.recipientArrivalVerified\}/);
+  assert.match(tracking,/vehicleType=\{activeDelivery\.vehicleType\}/);
+  assert.match(dialog,/vehicleType=\{vehicleType\}/);
   assert.match(dialog,/disabled=\{Boolean\(evidenceBusy\)\|\|!recipientArrivalVerified\}/);
   assert.match(dialog,/disabled=\{Boolean\(evidenceBusy\)\|\|!recipientArrivalVerified\|\|ticket\.contactAttemptsCount<1\}/);
   assert.match(dialog,/A chegada ao destinatário ainda não foi confirmada pelo servidor/);
