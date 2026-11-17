@@ -394,3 +394,56 @@ export const approveCourierRemunerationReconciliation = async (input: {
     return { deliveryId, status: 'approved_pending_manual_execution' };
   });
 };
+
+/**
+ * Advisory, read-only preview for an authorized operator. Every assumption is
+ * verified again inside the proposal transaction; never trust this total as
+ * client authority or reserve/settle it here.
+ */
+export const previewCourierRemunerationReconciliation = async (input: {
+  deliveryId: string; operatorId: string;
+}): Promise<{
+  deliveryId: string; currency: 'BRL'; totalMinor: number;
+  sourceCaptureId: string; unresolvedObligationCount: number;
+}> => {
+  const deliveryId = id(input.deliveryId);
+  const operatorId = id(input.operatorId);
+  const [operator, transfer, incident, delivery, claim, completion] = await Promise.all([
+    adminDb.doc(`${ADMIN_PATH}/${operatorId}`).get(),
+    adminDb.doc(`${TRANSFERS}/${deliveryId}`).get(),
+    adminDb.doc(`${INCIDENTS}/${deliveryId}`).get(),
+    adminDb.doc(`${DELIVERIES}/${deliveryId}`).get(),
+    adminDb.doc(`${CLAIMS}/${deliveryId}`).get(),
+    adminDb.doc(`${COMPLETIONS}/${deliveryId}`).get(),
+  ]);
+  if (!supervisorActive(rec(operator.data()), operatorId)) {
+    throw new Error('DELIVERY_FINANCIAL_RECONCILIATION_FORBIDDEN');
+  }
+  if (!transfer.exists || !incident.exists || !delivery.exists || !claim.exists) {
+    throw new Error('DELIVERY_FINANCIAL_RECONCILIATION_CONFLICT');
+  }
+  const verified = invariant(rec(transfer.data()), rec(incident.data()),
+    rec(delivery.data()), rec(claim.data()), completion.exists);
+  const tenant = await adminDb.doc(`tenants/${verified.storeId}`).get();
+  const canonicalStoreId = id(tenant.data()?.canonicalStoreId);
+  const [captureSnap, obligationSnap] = await Promise.all([
+    adminDb.collection(`stores/${canonicalStoreId}/economicLedger`)
+      .where('orderId','==',verified.orderId).limit(101).get(),
+    adminDb.collection(`stores/${canonicalStoreId}/economicObligations`)
+      .where('fulfillmentId','==',deliveryId).limit(101).get(),
+  ]);
+  if (captureSnap.size === 101 || obligationSnap.size === 101) {
+    throw new Error('DELIVERY_FINANCIAL_RECONCILIATION_SOURCE_UNAVAILABLE');
+  }
+  const authority = snapshotFinancialAuthority(
+    captureSnap.docs.map(x => rec(x.data())).filter(x => x.kind === 'payment_capture'),
+    obligationSnap.docs.map(x => rec(x.data())),
+    { deliveryId, orderId: verified.orderId, canonicalStoreId,
+      originalId: verified.originalId },
+  );
+  return {
+    deliveryId, currency: 'BRL', totalMinor: authority.amountMinor,
+    sourceCaptureId: authority.sourceCaptureId,
+    unresolvedObligationCount: authority.unresolvedObligationIds.length,
+  };
+};
