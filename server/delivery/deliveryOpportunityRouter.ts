@@ -47,6 +47,10 @@ import {
   confirmStoreReceivedReturnedDelivery,
 } from './deliveryReturnToStoreService.js';
 import { previewDeliveryReturnEconomicReconciliation } from './deliveryReturnEconomicReviewService.js';
+import {
+  RETURN_TARIFF_CONFIG_PATH, publishedReturnTariffOffer,
+  validateServerTariffOffer, acceptServerReturnTariffOffer,
+} from './deliveryReturnTariffContractService.js';
 import { getDeliveryReturnLiabilityReview, proposeDeliveryReturnLiabilityReview, reviewDeliveryReturnLiability } from './deliveryReturnLiabilityReviewService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
@@ -211,6 +215,10 @@ const errorResponse = (response: Response, error: unknown): void => {
   }
   if (message.startsWith('DELIVERY_RETURN_LIABILITY_')) {
     response.status(409).json({code:message,error:'O protocolo de devolução mudou ou a decisão não pode ser registrada neste estágio.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_TARIFF_ACCEPTANCE_REQUIRED') {
+    response.status(409).json({code:message,error:'Confira e aceite as tarifas e a versão contratual desta oferta.'});
     return;
   }
   if (message === 'DELIVERY_RETURN_ECONOMICS_FORBIDDEN') {
@@ -397,6 +405,8 @@ export const publishKyrubDeliveryOpportunity = async (
       transaction.get(reference),
       transaction.get(scheduleReference),
     ]);
+  const tariffPolicySnap=existing.exists?null
+    :await transaction.get(adminDb.doc(RETURN_TARIFF_CONFIG_PATH));
   const order = orderSnapshot.data() as Record<string, unknown> | undefined;
   if (!orderSnapshot.exists || !order) throw new Error('Pedido não encontrado.');
   if (order.fulfillmentType !== 'delivery') throw new Error('Este pedido não é uma entrega.');
@@ -409,6 +419,10 @@ export const publishKyrubDeliveryOpportunity = async (
   }
   const now = Timestamp.now();
   const nowIso = now.toDate().toISOString();
+  const returnTariffOffer=existing.exists
+    ?(validateServerTariffOffer(existing.data()?.returnTariffOfferSnapshot)
+      ?existing.data()?.returnTariffOfferSnapshot:null)
+    :publishedReturnTariffOffer(tariffPolicySnap?.data(),nowIso);
   const escalationAt = Timestamp.fromMillis(now.toMillis() + ESCALATION_DELAY_MS);
   const deliveryAddress = clean(order.deliveryAddress);
   const destinationResolutionSnapshot = existing.exists
@@ -452,6 +466,7 @@ export const publishKyrubDeliveryOpportunity = async (
     to: deliveryAddress,
     distance: finite(order.distance),
     payment: finite(order.deliveryFee),
+    ...(!existing.exists?{returnTariffOfferSnapshot:returnTariffOffer}:{}),
     cargo: cargoAssessment.cargo,
     cargoReady: cargoAssessment.ready,
     allowedVehicles: cargoAssessment.allowedVehicles,
@@ -521,6 +536,7 @@ export const publishKyrubDeliveryOpportunity = async (
       orderStatus,
       distance: finite(order.distance),
       payment: finite(order.deliveryFee),
+      returnTariffOffer,
       cargo: cargoAssessment.cargo,
       cargoReady: cargoAssessment.ready,
       allowedVehicles: cargoAssessment.allowedVehicles,
@@ -613,7 +629,8 @@ export const updateKyrubDeliveryStatus = async (
   deliveryId: string,
   status: DeliveryOperationalStatus,
   actor: AuthenticatedActor,
-  requestedVehicle?: unknown
+  requestedVehicle?: unknown,
+  tariffConsent?:{fingerprint:unknown;confirmed:unknown}
 ): Promise<void> => {
   const normalizedId = validateDeliveryId(deliveryId);
   const deliveryReference = adminDb.doc(deliveryPath(normalizedId));
@@ -642,7 +659,14 @@ export const updateKyrubDeliveryStatus = async (
 
     if (status === 'accepted') {
       if (claimSnapshot.exists) {
-        if (courierId === actor.uid) return;
+        if (courierId === actor.uid) {
+          const signed=claim?.returnTariffAcceptedTerms as Record<string,unknown>|undefined;
+          if(signed && (tariffConsent?.confirmed!==true
+            ||tariffConsent.fingerprint!==signed.offerFingerprint)){
+            throw new Error('DELIVERY_RETURN_TARIFF_ACCEPTANCE_REQUIRED');
+          }
+          return;
+        }
         throw new Error('Outro entregador já aceitou esta oportunidade.');
       }
       if (currentStatus !== 'available') {
@@ -673,6 +697,19 @@ export const updateKyrubDeliveryStatus = async (
         throw new Error('DELIVERY_PAYMENT_MISSING');
       }
 
+      const acceptedAt=Timestamp.now();
+      const offer=delivery.returnTariffOfferSnapshot;
+      const signed=validateServerTariffOffer(offer)
+        ?acceptServerReturnTariffOffer({
+          offer,deliveryId:normalizedId,courierId:actor.uid,
+          acceptedAt:acceptedAt.toDate().toISOString(),
+          fingerprint:tariffConsent?.fingerprint,
+          confirmed:tariffConsent?.confirmed,
+        })
+        :null;
+      if(!signed&&(tariffConsent?.confirmed===true||tariffConsent?.fingerprint)){
+        throw new Error('DELIVERY_RETURN_TARIFF_ACCEPTANCE_REQUIRED');
+      }
       transaction.create(claimReference, {
         id: normalizedId,
         deliveryJobId: normalizedId,
@@ -680,7 +717,8 @@ export const updateKyrubDeliveryStatus = async (
         courierName: actor.name,
         vehicleType: vehicle,
         status: 'accepted',
-        acceptedAt: FieldValue.serverTimestamp(),
+        acceptedAt,
+        ...(signed?{returnTariffAcceptedTerms:signed}:{}),
         updatedAt: FieldValue.serverTimestamp(),
       });
       transaction.set(publicOfferReference, { status: 'accepted', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
@@ -689,7 +727,7 @@ export const updateKyrubDeliveryStatus = async (
         acceptedBy: actor.uid,
         acceptedByName: actor.name,
         vehicleType: vehicle,
-        acceptedAt: FieldValue.serverTimestamp(),
+        acceptedAt,
         fallbackStatus: 'accepted_by_kyrub',
         updatedAt: FieldValue.serverTimestamp(),
       });
@@ -1257,7 +1295,11 @@ export const createDeliveryOpportunityRouter = (): Router => {
     try {
       const actor = await authenticatedActor(request);
       const status = parseOperationalStatus(request.body?.status);
-      await updateKyrubDeliveryStatus(request.params.deliveryId, status, actor, request.body?.vehicleType);
+      await updateKyrubDeliveryStatus(request.params.deliveryId,status,actor,
+        request.body?.vehicleType,{
+          confirmed:request.body?.returnTariffAccepted,
+          fingerprint:request.body?.returnTariffFingerprint,
+        });
       response.status(204).end();
     } catch (error) {
       errorResponse(response, error);
