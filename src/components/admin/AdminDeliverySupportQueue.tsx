@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { AlertTriangle, ClipboardList, Headset } from 'lucide-react';
 import { db } from '../../utils/firebase';
+import { AdminDeliveryReturnEconomicsPreview } from './AdminDeliveryReturnEconomicsPreview';
 
 interface Ticket {
   id:string;deliveryId:string;courierId:string;status:string;
@@ -209,6 +210,10 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
                 Custódia de retorno: {returns[ticket.deliveryId]}.
                 {' '}A confirmação física da loja é obrigatória e os valores continuam em análise.
               </p>
+            )}
+            {ticket.reasonCode==='recipient_not_found'
+              && returns[ticket.deliveryId]==='returned_to_store_pending_reconciliation' && (
+              <AdminDeliveryReturnEconomicsPreview user={user} deliveryId={ticket.deliveryId} />
             )}
             {ticket.lastResponse && <p className="mt-2 rounded-lg bg-slate-950 p-2 text-[10px] text-cyan-200">Última resposta: {ticket.lastResponse}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
