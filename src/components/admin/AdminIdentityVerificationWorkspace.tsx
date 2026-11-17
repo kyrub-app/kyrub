@@ -26,6 +26,7 @@ import {
 import { getDownloadURL, ref } from 'firebase/storage';
 import { auth, db, storage } from '../../utils/firebase';
 import { AdminDeliveryComplianceIncidents } from './AdminDeliveryComplianceIncidents';
+import { AdminDeliverySupportQueue } from './AdminDeliverySupportQueue';
 import {
   subscribeToAdminProfile,
   type AdminProfile,
@@ -383,6 +384,7 @@ export default function AdminIdentityVerificationWorkspace() {
           </div>
         )}
 
+        {user && canReview && <AdminDeliverySupportQueue user={user} />}
         {user && canReview && <AdminDeliveryComplianceIncidents user={user}
           canExecuteCustody={profile?.role === 'super_admin' && profile.status === 'active'} />}
 
