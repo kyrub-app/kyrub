@@ -1,6 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { adminDb } from '../server/firebaseAdmin';
+import { Timestamp } from 'firebase-admin/firestore';
+import {
+  declareRecipientContactAttempt,
+  requestRecipientAbsenceReview,
+  MAX_DECLARED_CONTACT_ATTEMPTS,
+} from '../server/delivery/deliveryRecipientAbsenceEvidenceService';
 import {
   submitCourierSupportTicket,
   respondToCourierSupportTicket,
@@ -141,4 +147,145 @@ test('only active authorized staff may take, reply and resolve; every action aud
   assert.equal(events.size,4);
   assert.equal(delivery.data()?.status,'delivering');
   assert.equal(completion.exists,false);
+});
+
+test('recipient absence attempts require recorded customer arrival, assigned courier and real open ticket',async()=>{
+  const deliveryId='support_absence_verified';
+  const courierId='support_absence_courier';
+  const ticketId='support_absence_ticket_01234567890';
+  await seed(deliveryId,courierId,'delivering');
+  await submitCourierSupportTicket({
+    deliveryId,courierId,ticketId,reasonCode:'recipient_not_found',
+    detail:'Cliente não apareceu depois de minha chegada.',
+  });
+  await assert.rejects(declareRecipientContactAttempt({
+    ticketId,courierId,attemptId:'attempt_one_0123456789',method:'called_recipient',
+  }),/RECIPIENT_ABSENCE_CONFLICT/);
+  await assert.rejects(requestRecipientAbsenceReview({
+    ticketId,courierId,
+  }),/RECIPIENT_ABSENCE_CONFLICT/);
+  const arrivedAt=Timestamp.fromMillis(Date.now()-180_000);
+  await adminDb.doc(`hub/renda/deliveries/${deliveryId}`).update({
+    customerHandoff:{
+      status:'awaiting_buyer_confirmation',arrivedByCourierId:courierId,
+      arrivedAt,trackingWasActive:true,
+    },
+  });
+  await assert.rejects(requestRecipientAbsenceReview({
+    ticketId,courierId,
+  }),/RECIPIENT_ABSENCE_CONTACT_REQUIRED/);
+  await assert.rejects(declareRecipientContactAttempt({
+    ticketId,courierId:'other_courier',
+    attemptId:'attempt_unauthorized_01234567',method:'called_recipient',
+  }),/RECIPIENT_ABSENCE_FORBIDDEN/);
+  const first={
+    ticketId,courierId,attemptId:'attempt_one_0123456789',
+    method:'called_recipient' as const,
+  };
+  const recorded=await declareRecipientContactAttempt(first);
+  assert.equal(recorded.attempts,1);
+  assert.equal(recorded.arrivedAtEpochMs,arrivedAt.toMillis());
+  assert.deepEqual(await declareRecipientContactAttempt(first),recorded);
+  await assert.rejects(declareRecipientContactAttempt({
+    ...first,method:'messaged_recipient',
+  }),/RECIPIENT_ABSENCE_CONFLICT/);
+  const second=await declareRecipientContactAttempt({
+    ticketId,courierId,attemptId:'attempt_two_0123456789',
+    method:'messaged_recipient',
+  });
+  assert.equal(second.attempts,2);
+  const request=await requestRecipientAbsenceReview({ticketId,courierId});
+  assert.equal(request.status,'review_requested');
+  assert.equal(request.attempts,2);
+  assert.ok(request.elapsedMs>=150_000);
+  assert.equal((await requestRecipientAbsenceReview({ticketId,courierId})).status,
+    'review_requested');
+
+  const [ticket,events,delivery,claim,completion]=await Promise.all([
+    adminDb.doc(`deliverySupportTickets/${ticketId}`).get(),
+    adminDb.collection('deliverySupportTicketEvents').where('ticketId','==',ticketId).get(),
+    adminDb.doc(`hub/renda/deliveries/${deliveryId}`).get(),
+    adminDb.doc(`deliveryClaims/${deliveryId}`).get(),
+    adminDb.doc(`deliveryCompletions/${deliveryId}`).get(),
+  ]);
+  assert.equal(ticket.data()?.contactAttemptsCount,2);
+  assert.equal(ticket.data()?.recipientArrivedAt.toMillis(),arrivedAt.toMillis());
+  assert.ok(ticket.data()?.recipientAbsenceReviewRequestedAt);
+  assert.equal(events.size,4); // opening, two declared attempts, review
+  assert.equal(events.docs.filter(x=>x.data().action==='contact_attempt_declared').length,2);
+  assert.equal(events.docs.filter(x=>x.data().method==='called_recipient').length,1);
+  assert.equal(events.docs.filter(x=>x.data().evidenceLevel==='courier_self_declared').length,3);
+  assert.equal(delivery.data()?.status,'delivering');
+  assert.equal(delivery.data()?.acceptedBy,courierId);
+  assert.equal(claim.data()?.courierId,courierId);
+  assert.equal(completion.exists,false);
+  for(const event of events.docs){
+    assert.equal(event.data().latitude,undefined);
+    assert.equal(event.data().phone,undefined);
+    assert.equal(event.data().messageContent,undefined);
+  }
+});
+
+test('recipient absence cannot be extended after handoff, resolution or active courier reassignment',async()=>{
+  const deliveryId='support_absence_reassignment';
+  const courierId='support_absence_original';
+  const ticketId='support_absence_other_01234567890';
+  await seed(deliveryId,courierId,'delivering');
+  await submitCourierSupportTicket({
+    deliveryId,courierId,ticketId,reasonCode:'recipient_not_found',
+    detail:'Destinatário ausente no endereço informado.',
+  });
+  await adminDb.doc(`hub/renda/deliveries/${deliveryId}`).update({
+    customerHandoff:{
+      status:'awaiting_buyer_confirmation',
+      arrivedByCourierId:courierId,
+      arrivedAt:Timestamp.fromMillis(Date.now()-60_000),
+      trackingWasActive:true,
+    },
+  });
+  await adminDb.doc(`deliverySupportTickets/${ticketId}`).update({
+    contactAttemptsCount:MAX_DECLARED_CONTACT_ATTEMPTS,
+  });
+  await assert.rejects(declareRecipientContactAttempt({
+    ticketId,courierId,attemptId:'attempt_exceeds_limit_0123456',
+    method:'tried_intercom',
+  }),/RECIPIENT_ABSENCE_LIMIT/);
+  await adminDb.doc(`deliverySupportTickets/${ticketId}`).update({
+    contactAttemptsCount:0,
+  });
+  await adminDb.doc(`deliveryClaims/${deliveryId}`).update({
+    courierId:'replacement_courier',
+  });
+  await assert.rejects(declareRecipientContactAttempt({
+    ticketId,courierId,attemptId:'attempt_wrong_custody_012345',
+    method:'tried_intercom',
+  }),/RECIPIENT_ABSENCE_CONFLICT/);
+  await assert.rejects(requestRecipientAbsenceReview({
+    ticketId,courierId,
+  }),/RECIPIENT_ABSENCE_CONFLICT/);
+});
+
+test('no-show review never enforces a ten-minute cancellation rule',async()=>{
+  const deliveryId='support_absence_immediate_review';
+  const courierId='support_absence_fast_courier';
+  const ticketId='support_absence_fast_01234567890';
+  await seed(deliveryId,courierId,'delivering');
+  await submitCourierSupportTicket({
+    deliveryId,courierId,ticketId,reasonCode:'recipient_not_found',
+    detail:'Solicitada orientação para segurança do pacote.',
+  });
+  await adminDb.doc(`hub/renda/deliveries/${deliveryId}`).update({
+    customerHandoff:{
+      status:'awaiting_buyer_confirmation',arrivedByCourierId:courierId,
+      arrivedAt:Timestamp.fromMillis(Date.now()-2_000),trackingWasActive:true,
+    },
+  });
+  await declareRecipientContactAttempt({
+    ticketId,courierId,attemptId:'attempt_fast_0123456789',method:'tried_intercom',
+  });
+  const review=await requestRecipientAbsenceReview({ticketId,courierId});
+  assert.equal(review.status,'review_requested');
+  assert.ok(review.elapsedMs<120_000);
+  assert.equal((await adminDb.doc(`hub/renda/deliveries/${deliveryId}`).get())
+    .data()?.status,'delivering');
 });
