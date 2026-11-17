@@ -21,7 +21,7 @@ const seed=async(deliveryId:string,condition:'intact'|'damaged'='intact')=>{
     adminDb.doc('kyrub_admin/control_plane/admins/'+operator).set({uid:operator,status:'active',role:'operations'}),
     adminDb.doc('kyrub_admin/control_plane/admins/'+reviewer).set({uid:reviewer,status:'active',role:'compliance'}),
     adminDb.doc('deliveryReturnProtocols/'+deliveryId).set({
-      schemaVersion:1,deliveryId,ticketId:'ticket_'+deliveryId,storeId:store,orderId,courierId,
+      schemaVersion:1,deliveryId,ticketId:'ticket_'+deliveryId,storeId:store,orderId,courierId:courier,
       status:'returned_to_store_pending_reconciliation',financialStatus:'awaiting_independent_reconciliation',
       receivedCondition:condition,receivedByStoreId:store,receivedByStoreAt:at,
     }),
