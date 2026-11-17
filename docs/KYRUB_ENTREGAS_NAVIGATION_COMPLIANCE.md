@@ -147,3 +147,48 @@ responsabilidade econômica e do rastreamento depende da definição da
 responsabilidade pelas duas etapas, condições de pagamento, autorização
 para prosseguimento e aprovação E2E física. Até isso existir, manter o caso
 em segurança, com atendimento humano.
+
+## Executor operacional supervisionado — versão isolada (PR #1145)
+
+Após duas confirmações físicas, conferência do supervisor, divisão da remuneração aceita
+pelos dois entregadores e revisão econômica independente, um **terceiro Super Admin
+independente** pode solicitar `POST /api/delivery-opportunities/admin/compliance-incidents/:deliveryId/execute-reassignment`
+com justificativa, pelo Control Plane existente. A verificação é feita novamente
+no servidor e **não** depende da visibilidade ou desabilitação do botão na interface.
+
+A transação exige entrega em rota, encomenda coletada, comprador e pedido Kyrub
+inalterados, original ainda associado ao claim, bloqueio de motofrete original ativo,
+substituto diferente e **habilitado para o veículo e carga**, sem hold, identidade
+aprovada, fonte econômica exatamente igual à proposta e ausência de qualquer
+obrigação ativa `courier_payable` para a entrega, incluindo espera remunerada.
+Obrigações `pending`, `eligible`, `settled` impedem execução; não há reversão
+silenciosa. Se qualquer premissa falhar, a transação inteira é cancelada.
+
+Quando aprovada, uma única transação muda `deliveryClaims/{deliveryId}.courierId`,
+`hub/renda/deliveries/{deliveryId}.acceptedBy` e o veículo, preserva
+`previousCourierId` e as evidências da passagem física, registra eventos
+administrativos imutáveis, marca o incidente como
+`reassigned_awaiting_buyer_confirmation` e a reconciliação como
+`operational_reassigned_awaiting_buyer_confirmation`. O GPS original perde
+todas as coordenadas antigas e fica **inativo** até o substituto autenticado
+publicar uma nova localização. O status da encomenda permanece `delivering`;
+nenhuma conclusão financeira ou transferência bancária ocorre nessa fase.
+
+Apenas depois de o substituto informar chegada com rastreio reativado e o
+**comprador confirmar o recebimento**, o serviço canônico de conclusão pode
+criar **até duas obrigações separadas** (não são repasses), identificadas pelo
+mesmo pagamento capturado e IDs distintos com sufixo `:handoff`. As parcelas
+inteiras e não negativas somam exatamente a remuneração da captura, sem
+exceder o valor original; parcela zero não produz obrigação. Ambas passam
+a `eligible` na mesma transação da confirmação do comprador e são
+reconhecidas nos extratos como obrigações, sem enviar Pix automaticamente.
+Obrigações já ativas, valor capturado alterado, captura ambígua ou loja
+canônica ausente **impedem a confirmação e seus créditos**.
+
+**Limitações de segurança e homologação:** a regra de divisão econômica
+precisa de validação contratual e regulatória; os valores de espera são
+separados e bloqueiam o executor até serem conciliados; transferências
+físicas não são comprovadas apenas por declarações digitais. Ainda faltam
+teste de GPS em dispositivo real, verificação presencial e revisão de casos
+de disputa/cancelamento e infraestrutura de pagamento antes de operação
+comercial. Sem ativação em produção.
