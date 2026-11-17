@@ -22,3 +22,24 @@ export const isFreshCourierTrackingTimestamp = (
     && lastUpdate <= nowMs + COURIER_LOCATION_FUTURE_SKEW_MS
     && nowMs - lastUpdate <= COURIER_LOCATION_STALE_AFTER_MS;
 };
+
+
+/**
+ * Reject delayed/replayed positions before they can refresh the server-side
+ * tracking timestamp or produce arrival geofence evidence.
+ * Device clock values are not antifraud proof; they are only a freshness gate.
+ * The tolerance accommodates ordinary phone clock skew and mobile latency.
+ */
+export const COURIER_DEVICE_CAPTURE_MAX_AGE_MS = 120_000;
+export const COURIER_DEVICE_CAPTURE_FUTURE_SKEW_MS = 30_000;
+
+export const isPlausibleCourierDeviceCapture = (
+  capturedAt: unknown,
+  nowMs: number = Date.now()
+): boolean =>
+  typeof capturedAt === 'number'
+  && Number.isFinite(capturedAt)
+  && capturedAt > 0
+  && Number.isFinite(nowMs)
+  && capturedAt <= nowMs + COURIER_DEVICE_CAPTURE_FUTURE_SKEW_MS
+  && nowMs - capturedAt <= COURIER_DEVICE_CAPTURE_MAX_AGE_MS;
