@@ -717,3 +717,54 @@ test('supervised custody nominations stay private to participants and audit rema
     await assertFails(deleteDoc(doc(db,'deliveryCustodyTransferEvents','handoff-event-1')));
   }
 });
+
+test('payment reconciliation split and consent events are private and impossible to forge from the browser', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db,'deliveryFinancialReconciliations','finance-secure-1'),{
+      schemaVersion:1,deliveryId:'finance-secure-1',
+      fromCourierId:'user_a',toCourierId:'user_b',
+      operatorId:'compliance_a',status:'awaiting_courier_terms',
+      amountMinor:1200,outgoingMinor:500,incomingMinor:700,
+      outgoingAcceptedAt:null,incomingAcceptedAt:null,
+      settlementStatus:'blocked_pending_manual_execution',
+      createdAt:serverTimestamp(),
+    });
+    await setDoc(doc(db,'deliveryFinancialReconciliationEvents','finance-audit-1'),{
+      schemaVersion:1,deliveryId:'finance-secure-1',
+      actorId:'compliance_a',action:'terms_proposed',
+      amountMinor:1200,outgoingMinor:500,incomingMinor:700,
+      createdAt:serverTimestamp(),
+    });
+  });
+  const original = environment.authenticatedContext('user_a').firestore();
+  const recipient = environment.authenticatedContext('user_b').firestore();
+  const operator = environment.authenticatedContext('compliance_a').firestore();
+  const stranger = environment.authenticatedContext('unrelated_user').firestore();
+  for (const db of [original,recipient,operator]) {
+    await assertSucceeds(getDoc(doc(db,'deliveryFinancialReconciliations','finance-secure-1')));
+  }
+  await assertFails(getDoc(doc(stranger,'deliveryFinancialReconciliations','finance-secure-1')));
+  await assertSucceeds(getDocs(query(collection(original,'deliveryFinancialReconciliations'),
+    where('fromCourierId','==','user_a'),limit(25))));
+  await assertSucceeds(getDocs(query(collection(recipient,'deliveryFinancialReconciliations'),
+    where('toCourierId','==','user_b'),limit(25))));
+  await assertSucceeds(getDoc(doc(operator,'deliveryFinancialReconciliationEvents','finance-audit-1')));
+  await assertFails(getDoc(doc(original,'deliveryFinancialReconciliationEvents','finance-audit-1')));
+  await assertFails(getDoc(doc(stranger,'deliveryFinancialReconciliationEvents','finance-audit-1')));
+  for (const db of [original,recipient,operator,stranger]) {
+    await assertFails(setDoc(doc(db,'deliveryFinancialReconciliations','finance-fake'),{
+      amountMinor:2400,outgoingMinor:0,incomingMinor:2400,
+    }));
+    await assertFails(updateDoc(doc(db,'deliveryFinancialReconciliations','finance-secure-1'),{
+      incomingMinor:0,outgoingMinor:1200,
+    }));
+    await assertFails(updateDoc(doc(db,'deliveryFinancialReconciliations','finance-secure-1'),{
+      incomingAcceptedAt:serverTimestamp(),
+    }));
+    await assertFails(setDoc(doc(db,'deliveryFinancialReconciliationEvents','finance-fake-event'),{
+      deliveryId:'finance-secure-1',action:'independent_review_approved',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliveryFinancialReconciliationEvents','finance-audit-1')));
+  }
+});
