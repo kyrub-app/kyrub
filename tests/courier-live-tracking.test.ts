@@ -92,6 +92,20 @@ test('tracking requires explicit browser geolocation permission and opt-in', () 
   assert.match(trackingBridgeSource, /Parar rastreio/);
 });
 
+test('interrupted connection cannot be labelled as confirmed live sharing', () => {
+  assert.match(trackingBridgeSource, /const controller = new AbortController\(\)/);
+  assert.match(trackingBridgeSource, /controller\.abort\(\), 15_000/);
+  assert.match(trackingBridgeSource, /signal: controller\.signal/);
+  assert.match(trackingBridgeSource, /window\.clearTimeout\(deadline\)/);
+  assert.match(trackingBridgeSource, /setLastConfirmedTracking\(\{ deliveryId: trackingDeliveryId, atMs: Date\.now\(\) \}\)/);
+  assert.match(trackingBridgeSource, /courierTrackingUiState\(\{/);
+  assert.match(trackingBridgeSource, /uiTrackingState === 'recent'/);
+  assert.match(trackingBridgeSource, /uiTrackingState === 'stale'/);
+  assert.match(trackingBridgeSource, /setTrackingError\(''\)/);
+  assert.match(trackingBridgeSource, /setPosition\(null\)/);
+  assert.doesNotMatch(trackingBridgeSource, /Localização compartilhada somente durante esta entrega\./);
+});
+
 test('tracking bridge stops when assigned delivery is no longer active', () => {
   assert.match(trackingBridgeSource, /assignedDeliveries\.some/);
   assert.match(trackingBridgeSource, /clearWatch/);
