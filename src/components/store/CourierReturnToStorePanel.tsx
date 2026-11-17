@@ -11,8 +11,9 @@ interface ReturnProtocol {
 }
 const txt=(x:unknown):string=>typeof x==='string'?x:'';
 
-export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType}:{
+export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType,trackingRecentlyConfirmed}:{
   deliveryId:string;pickupAddress:string;vehicleType:CourierVehicleType|null;
+  trackingRecentlyConfirmed:boolean;
 }) {
   const [protocol,setProtocol]=useState<ReturnProtocol|null>(null);
   const [busy,setBusy]=useState(false);
@@ -68,6 +69,10 @@ export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType}
 
   const declare=async()=>{
     if(busy)return;
+    if(!trackingRecentlyConfirmed){
+      setMessage('GPS sem confirmação recente. Ative ou reconecte o rastreio antes de declarar a apresentação.');
+      return;
+    }
     if(!window.confirm(
       'Você está fisicamente na loja e vai apresentar a encomenda? O Kyrub exigirá GPS recente dentro da área da loja. Não declare entrega antes de chegar.'
     ))return;
@@ -115,7 +120,12 @@ export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType}
               <MapPin className="h-4 w-4"/>Navegar até a loja original
             </a>
           )}
-          <button type="button" disabled={busy} onClick={()=>void declare()}
+          {!trackingRecentlyConfirmed && (
+            <p role="status" className="rounded-lg border border-amber-500/30 p-2 text-[10px] text-amber-100">
+              GPS sem confirmação recente. Ative ou reconecte o rastreio para declarar a apresentação à loja.
+            </p>
+          )}
+          <button type="button" disabled={busy||!trackingRecentlyConfirmed} onClick={()=>void declare()}
             className="w-full rounded-xl bg-amber-500 px-3 py-3 text-[10px] font-black text-slate-950 disabled:opacity-50">
             {busy?'Confirmando…':'Estou na loja com a encomenda'}
           </button>
