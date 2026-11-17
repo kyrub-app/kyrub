@@ -25,6 +25,32 @@ export type ProfileExpansion = {
   reviewReason: string;
 };
 
+export type MotofreteEvidenceKind = 'course' | 'vehicle' | 'inspection' | 'equipment' | 'local';
+
+export const MOTOFRETE_EVIDENCE_LABELS: Record<MotofreteEvidenceKind, string> = {
+  course: 'Curso especializado',
+  vehicle: 'Documentação e autorização do veículo',
+  inspection: 'Inspeção e manutenção de segurança',
+  equipment: 'Equipamentos obrigatórios',
+  local: 'Documentação local (quando aplicável)',
+};
+
+export type MotofreteQualification = {
+  status: 'submitted' | 'approved' | 'rejected' | 'revoked';
+  documents: Record<MotofreteEvidenceKind, string>;
+  submittedAt?: unknown;
+  reviewedAt?: unknown;
+  reviewedBy: string;
+  reviewReason: string;
+  courseVerified: boolean;
+  minimumAgeAndLicenseTenureVerified: boolean;
+  vehicleRegistrationAndAuthorizationVerified: boolean;
+  safetyEquipmentVerified: boolean;
+  semiannualInspectionVerified: boolean;
+  localRequirementsVerified: boolean;
+  validUntil?: unknown;
+};
+
 export type IdentityDocumentType = 'cin' | 'rg' | 'cnh';
 
 export type IdentityVerificationRecord = {
@@ -49,6 +75,7 @@ export type IdentityVerificationRecord = {
   reviewedBy?: string;
   reviewReason?: string;
   profileExpansion?: ProfileExpansion;
+  motofreteQualification?: MotofreteQualification;
 };
 
 export type WorkAction =
@@ -193,6 +220,13 @@ export const mapIdentityVerification = (
   const expansion = value?.profileExpansion as Record<string, unknown> | undefined;
   const expansionProfile = expansion?.profile;
   const expansionStatus = expansion?.status;
+  const motofrete = value?.motofreteQualification as Record<string, unknown> | undefined;
+  const motofreteStatus = motofrete?.status;
+  const motofreteDocuments = motofrete?.documents && typeof motofrete.documents === 'object'
+    ? motofrete.documents as Record<string, unknown>
+    : {};
+  const motofreteDocument = (key: MotofreteEvidenceKind): string =>
+    typeof motofreteDocuments[key] === 'string' ? motofreteDocuments[key] as string : '';
 
   return {
     uid,
@@ -241,6 +275,33 @@ export const mapIdentityVerification = (
             reviewedAt: expansion.reviewedAt,
             reviewedBy: typeof expansion.reviewedBy === 'string' ? expansion.reviewedBy : '',
             reviewReason: typeof expansion.reviewReason === 'string' ? expansion.reviewReason : '',
+          }
+        : undefined,
+    motofreteQualification:
+      motofreteStatus === 'submitted'
+      || motofreteStatus === 'approved'
+      || motofreteStatus === 'rejected'
+      || motofreteStatus === 'revoked'
+        ? {
+            status: motofreteStatus,
+            documents: {
+              course: motofreteDocument('course'),
+              vehicle: motofreteDocument('vehicle'),
+              inspection: motofreteDocument('inspection'),
+              equipment: motofreteDocument('equipment'),
+              local: motofreteDocument('local'),
+            },
+            submittedAt: motofrete.submittedAt,
+            reviewedAt: motofrete.reviewedAt,
+            reviewedBy: typeof motofrete.reviewedBy === 'string' ? motofrete.reviewedBy : '',
+            reviewReason: typeof motofrete.reviewReason === 'string' ? motofrete.reviewReason : '',
+            courseVerified: motofrete.courseVerified === true,
+            minimumAgeAndLicenseTenureVerified: motofrete.minimumAgeAndLicenseTenureVerified === true,
+            vehicleRegistrationAndAuthorizationVerified: motofrete.vehicleRegistrationAndAuthorizationVerified === true,
+            safetyEquipmentVerified: motofrete.safetyEquipmentVerified === true,
+            semiannualInspectionVerified: motofrete.semiannualInspectionVerified === true,
+            localRequirementsVerified: motofrete.localRequirementsVerified === true,
+            validUntil: motofrete.validUntil,
           }
         : undefined,
   };
