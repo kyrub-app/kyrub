@@ -105,6 +105,9 @@ export const previewDeliveryReturnEconomicReconciliation = async (input: {
     existingCourierObligations,
     // Optional, immutable authorities. Absent in legacy deliveries: no quote.
     acceptedTariffTerms: claim.returnTariffAcceptedTerms,
+    returnAuthorizationAt: protocol.authorizedAt
+      && typeof (protocol.authorizedAt as {toDate?:()=>Date}).toDate==='function'
+      ? (protocol.authorizedAt as {toDate:()=>Date}).toDate().toISOString() : null,
     independentReturnDistanceAuthority: protocol.independentReturnDistanceAuthority,
     recipientWaitingCorroboratedInterval: protocol.recipientWaitingCorroboratedInterval,
   });

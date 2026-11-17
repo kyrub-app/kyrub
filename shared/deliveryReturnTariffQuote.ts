@@ -81,10 +81,11 @@ const returnDistance=(raw:unknown):number|null=>{
     &&validId(x.routePlanId)&&positive(x.distanceMeters)
     ?Number(x.distanceMeters):null;
 };
-const waitingInterval=(raw:unknown,acceptanceAt:string):number|null=>{
+const waitingInterval=(raw:unknown,acceptanceAt:string,returnAuthorizationAt:string):number|null=>{
   const x=obj(raw);
   if(x.source!=='corroborated_server_interval'||x.verified!==true
-    ||!iso(x.arrivedAt)||!iso(x.returnAuthorizedAt))return null;
+    ||!iso(x.arrivedAt)||!iso(x.returnAuthorizedAt)
+    ||x.returnAuthorizedAt!==returnAuthorizationAt)return null;
   const start=Date.parse(x.arrivedAt as string),end=Date.parse(x.returnAuthorizedAt as string);
   if(start<Date.parse(acceptanceAt)||end<start)return null;
   const seconds=Math.floor((end-start)/1000);
@@ -95,6 +96,7 @@ export const quoteDeliveryReturnTariffs=(input:{
   deliveryId:string;
   courierId:string;
   acceptedTerms:unknown;
+  returnAuthorizationAt:unknown;
   returnDistanceAuthority:unknown;
   recipientWaitingAuthority:unknown;
 }):DeliveryReturnTariffQuote=>{
@@ -102,7 +104,9 @@ export const quoteDeliveryReturnTariffs=(input:{
     throw new Error('DELIVERY_RETURN_TARIFF_INVALID');
   }
   const terms=acceptedTerms(input.acceptedTerms,input.deliveryId,input.courierId);
-  if(!terms)return {
+  // A contract added AFTER the incident cannot retroactively set a tariff.
+  if(!terms || !iso(input.returnAuthorizationAt)
+    || Date.parse(terms.acceptedAt)>Date.parse(input.returnAuthorizationAt))return {
     policyId:null,policyVersion:null,contractGraceMinutes:null,
     returnMinor:null,recipientWaitingMinor:null,
     returnStatus:'contract_unavailable',
@@ -115,7 +119,7 @@ export const quoteDeliveryReturnTariffs=(input:{
     const quoted=(BigInt(distance)*BigInt(terms.returnRateMinorPerKm)+999n)/1000n;
     returnMinor=safeCurrency(quoted>BigInt(terms.returnMinimumMinor)?quoted:BigInt(terms.returnMinimumMinor));
   }
-  const waitSeconds=waitingInterval(input.recipientWaitingAuthority,terms.acceptedAt);
+  const waitSeconds=waitingInterval(input.recipientWaitingAuthority,terms.acceptedAt,input.returnAuthorizationAt as string);
   let recipientWaitingMinor:number|null=null;
   let waitingStatus:DeliveryReturnTariffQuote['waitingStatus']='corroborated_interval_required';
   if(waitSeconds!==null){

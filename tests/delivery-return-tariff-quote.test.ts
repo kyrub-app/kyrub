@@ -16,6 +16,7 @@ const distance={source:'independent_route_plan',approved:true,routePlanId:'route
 const wait={source:'corroborated_server_interval',verified:true,
   arrivedAt:'2026-11-17T09:45:00.000Z',returnAuthorizedAt:'2026-11-17T10:01:00.000Z'};
 const base={deliveryId:'d_1',courierId:'c_1',acceptedTerms:terms,
+  returnAuthorizationAt:'2026-11-17T10:01:00.000Z',
   returnDistanceAuthority:distance,recipientWaitingAuthority:wait};
 
 test('contracted return and recipient waiting are quoted in integer cents without creating payable',()=>{
@@ -29,9 +30,9 @@ test('contracted return and recipient waiting are quoted in integer cents withou
   assert.equal(q.mayExecuteFinancially,false);
   assert.equal(quoteDeliveryReturnTariffs({...base,returnDistanceAuthority:{...distance,distanceMeters:1000}}).returnMinor,400);
   assert.equal(quoteDeliveryReturnTariffs({...base,returnDistanceAuthority:{...distance,distanceMeters:1001}}).returnMinor,400);
-  assert.equal(quoteDeliveryReturnTariffs({...base,recipientWaitingAuthority:{...wait,
+  assert.equal(quoteDeliveryReturnTariffs({...base,returnAuthorizationAt:'2026-11-17T09:50:00.000Z',recipientWaitingAuthority:{...wait,
     returnAuthorizedAt:'2026-11-17T09:50:00.000Z'}}).recipientWaitingMinor,0);
-  assert.equal(quoteDeliveryReturnTariffs({...base,recipientWaitingAuthority:{...wait,
+  assert.equal(quoteDeliveryReturnTariffs({...base,returnAuthorizationAt:'2026-11-17T10:30:00.000Z',recipientWaitingAuthority:{...wait,
     returnAuthorizedAt:'2026-11-17T10:30:00.000Z'}}).recipientWaitingMinor,null);
 });
 
@@ -43,6 +44,13 @@ test('missing acceptance, mismatched courier or unverified route/clock are not a
     assert.equal(q.recipientWaitingMinor,null);
     assert.equal(q.returnStatus,'contract_unavailable');
   }
+  const retroactive=quoteDeliveryReturnTariffs({...base,
+    acceptedTerms:{...terms,acceptedAt:'2026-11-17T10:02:00.000Z'}});
+  assert.equal(retroactive.returnMinor,null);
+  assert.equal(retroactive.recipientWaitingMinor,null);
+  const mismatchedInterval=quoteDeliveryReturnTariffs({...base,
+    recipientWaitingAuthority:{...wait,returnAuthorizedAt:'2026-11-17T10:02:00.000Z'}});
+  assert.equal(mismatchedInterval.recipientWaitingMinor,null);
   const badRoute=quoteDeliveryReturnTariffs({...base,returnDistanceAuthority:{
     ...distance,source:'courier_self_reported'}});
   assert.equal(badRoute.returnMinor,null);
