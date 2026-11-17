@@ -309,3 +309,65 @@ questões de segurança. Para devolução real, faltam ainda procedimento
 de retorno à loja, confirmação bilateral da custódia e política econômica
 específica, a serem homologados separadamente. Não prometer atendimento
 em tempo real sem equipe e SLA efetivos.
+
+## Devolução segura à loja original — comprovação de custódia (PR #1145)
+
+Depois de o entregador ter registrado chegada ao destinatário, pelo menos uma
+tentativa de contato e o pedido de avaliação do ticket `recipient_not_found`,
+**apenas o operador ativo que assumiu esse chamado** pode autorizar o
+retorno. O botão fica na mesma fila de suporte do Control Plane. Essa
+autorização não cancela o pedido, não registra crédito ou reembolso e
+não encerra a responsabilidade do entregador.
+
+O backend reaproveita o mesmo handler de entrega e oferece:
+- `POST /api/delivery-opportunities/admin/support-tickets/:ticketId/authorize-return`:
+  confirma atendimento atribuído ao operador, natureza e estágio do ticket,
+  coleta segura anterior, entregador original ainda responsável, pedido em
+  rota e não concluído, ausência de outra transferência de custódia.
+  Cria `deliveryReturnProtocols/{deliveryId}` com estado
+  `return_authorized` e evento imutável `return_authorized`.
+- `POST /api/delivery-opportunities/admin/returns/:deliveryId/revoke`:
+  revoga o retorno **somente antes** da apresentação física do pacote na
+  loja, deixando a entrega ainda em rota. O comprador pode então voltar a
+  confirmar recebimento normalmente.
+- `POST /api/delivery-opportunities/:deliveryId/return-to-store/declare`:
+  somente o entregador autenticado e ainda responsável pode declarar que
+  apresentou o pacote na loja. A declaração exige GPS vivo (janela de até
+  90 segundos) e avaliação **recente e independente** do geofence da loja
+  de origem, com precisão de até 100 metros; o geofence antigo da primeira
+  coleta não é suficiente. O estado vira `courier_presented_to_store`,
+  ainda **sem confirmação do lojista**.
+- `POST /api/delivery-opportunities/:deliveryId/return-to-store/confirm-receipt`:
+  apenas a conta autenticada da **loja original** pode declarar, depois de
+  conferir fisicamente o pacote, se está `intact`, `damaged` ou `disputed`,
+  com justificativa auditável. Só esta etapa produz
+  `returned_to_store_pending_reconciliation` e muda as projeções de entrega,
+  claim e oferta para `returned_to_store`. As coordenadas antigas são
+  eliminadas e o rastreamento é encerrado. O pedido **não é marcado como
+  entregue ou cancelado**, nem disparado para devolução financeira; recebe
+  apenas o marcador `returnCustody` para atendimento e comprador.
+
+As três transições são transações atômicas do Firebase e cada uma gera
+evento em `deliveryReturnEvents`. O documento privado só pode ser lido por
+entregador, loja e operações autorizadas; usuários finais não podem fabricar
+etapas. Tanto confirmação da loja como reapresentação idêntica do entregador
+são idempotentes. Se uma transferência entre dois entregadores estiver
+iniciada, o retorno não pode ser autorizado e vice-versa.
+
+**Experiência em telas existentes:** entregador encontra o retorno autorizado
+em `Suporte` com atalho para navegar até o endereço da coleta; a loja
+confere devoluções dentro do painel de rastreio do ERP; o Control Plane
+autoriza ou revoga e acompanha o protocolo; o comprador enxerga um aviso
+de retorno e não encontra o botão para confirmar um pedido que não recebeu.
+A confirmação do comprador no servidor também fica bloqueada durante
+o retorno, mesmo com uma interface desatualizada.
+
+**Pendente de política comercial:** o prazo de ausência (dez minutos
+**continua apenas referência**, não é regra de cancelamento); obrigação de
+espera, retorno remunerado, reembolso, reposição de estoque e disputa por
+embalagem exigem reconciliação específica antes de qualquer lançamento
+econômico. Não existe assinatura presencial ou comprovação fotográfica
+independente: geofence recente e declarações autenticadas aumentam a
+rastreabilidade, mas não provam sozinhas a entrega física. Requer
+homologação presencial com duas pessoas, aprovação de SLA e proteção
+dos relatos sensíveis; não publicar sem essas provas.
