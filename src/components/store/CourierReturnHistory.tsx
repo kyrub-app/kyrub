@@ -28,6 +28,7 @@ export function CourierReturnHistory() {
   const [rows, setRows] = useState<CourierReturnHistoryRow[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [offline, setOffline] = useState(false);
+  const [historyTruncated, setHistoryTruncated] = useState(false);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -38,6 +39,7 @@ export function CourierReturnHistory() {
       setRows([]);
       setLoaded(false);
       setOffline(false);
+      setHistoryTruncated(false);
       setError('');
       if (!user) {
         setLoaded(true);
@@ -49,6 +51,7 @@ export function CourierReturnHistory() {
         limit(RETURN_HISTORY_LIMIT)
       ), { includeMetadataChanges: true }, snapshot => {
         setOffline(snapshot.metadata.fromCache);
+        setHistoryTruncated(snapshot.size >= RETURN_HISTORY_LIMIT);
         setLoaded(true);
         setError('');
         setRows(snapshot.docs.flatMap(doc => {
@@ -68,6 +71,7 @@ export function CourierReturnHistory() {
         setRows([]);
         setLoaded(true);
         setOffline(true);
+        setHistoryTruncated(false);
         setError('Não foi possível consultar o histórico de devoluções.');
       });
     });
@@ -99,7 +103,9 @@ export function CourierReturnHistory() {
       {!loaded && <p className="text-[10px] text-slate-400">Consultando devoluções…</p>}
       {loaded && recent.length === 0 && !error && (
         <p className="rounded-xl bg-slate-900 p-3 text-[10px] text-slate-400">
-          Nenhuma devolução registrada entre os protocolos consultados.
+          {offline
+            ? 'Não há registros locais para exibir. Conecte-se para consultar o histórico.'
+            : 'Nenhuma devolução registrada entre os protocolos consultados.'}
         </p>
       )}
       {recent.map(row => (
@@ -126,9 +132,10 @@ export function CourierReturnHistory() {
           )}
         </article>
       ))}
-      {recent.length === RETURN_HISTORY_VISIBLE && (
+      {(recent.length === RETURN_HISTORY_VISIBLE || historyTruncated) && (
         <p className="text-[9px] text-amber-200">
-          Exibindo até 20 protocolos. Consulte o suporte se precisar localizar registros anteriores.
+          Exibindo no máximo 20 devoluções entre até 100 protocolos consultados.
+          A consulta pode estar incompleta; consulte o suporte para registros antigos.
         </p>
       )}
     </section>
