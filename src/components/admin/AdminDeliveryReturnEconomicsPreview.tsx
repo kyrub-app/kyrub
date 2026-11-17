@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import type { User } from 'firebase/auth';
 import type { DeliveryReturnEconomicPreview } from '../../../shared/deliveryReturnEconomicPolicy';
+import { AdminDeliveryReturnLiabilityPanel } from './AdminDeliveryReturnLiabilityPanel';
 
 const LABELS = {
   original_route: 'Entrega original',
@@ -80,6 +81,7 @@ export function AdminDeliveryReturnEconomicsPreview({
               {data.pendingObligationIds.length} obrigação(ões) anteriores pendente(s) de conciliação.
             </p>
           )}
+          <AdminDeliveryReturnLiabilityPanel user={user} deliveryId={deliveryId} />
           <p className="text-[9px] font-bold text-amber-200">
             Total final não apurado. Nenhuma parcela será liberada automaticamente.
             Prazo de cortesia, taxa de retorno e espera dependem de termos previamente aceitos.

@@ -47,6 +47,7 @@ import {
   confirmStoreReceivedReturnedDelivery,
 } from './deliveryReturnToStoreService.js';
 import { previewDeliveryReturnEconomicReconciliation } from './deliveryReturnEconomicReviewService.js';
+import { getDeliveryReturnLiabilityReview, proposeDeliveryReturnLiabilityReview, reviewDeliveryReturnLiability } from './deliveryReturnLiabilityReviewService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
@@ -198,6 +199,18 @@ const errorResponse = (response: Response, error: unknown): void => {
     || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
     response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
       error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_LIABILITY_FORBIDDEN') {
+    response.status(403).json({code:message,error:'A classificação exige operador ativo e revisão independente.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_LIABILITY_INVALID') {
+    response.status(400).json({code:message,error:'Causa ou justificativa inválida (20–500 caracteres).'});
+    return;
+  }
+  if (message.startsWith('DELIVERY_RETURN_LIABILITY_')) {
+    response.status(409).json({code:message,error:'O protocolo de devolução mudou ou a decisão não pode ser registrada neste estágio.'});
     return;
   }
   if (message === 'DELIVERY_RETURN_ECONOMICS_FORBIDDEN') {
@@ -916,6 +929,38 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.setHeader('Cache-Control','private, no-store, max-age=0');
       response.json(await previewDeliveryReturnEconomicReconciliation({
         deliveryId:request.params.deliveryId,operatorId,
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.get('/admin/returns/:deliveryId/liability-review', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','private, no-store, max-age=0');
+      response.json(await getDeliveryReturnLiabilityReview({
+        deliveryId:request.params.deliveryId,operatorId,
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/admin/returns/:deliveryId/liability-review/propose', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','private, no-store, max-age=0');
+      response.json(await proposeDeliveryReturnLiabilityReview({
+        deliveryId:request.params.deliveryId,operatorId,
+        cause:request.body?.cause,justification:request.body?.justification,
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/admin/returns/:deliveryId/liability-review/decision', async(request,response)=>{
+    try {
+      const reviewerId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','private, no-store, max-age=0');
+      response.json(await reviewDeliveryReturnLiability({
+        deliveryId:request.params.deliveryId,reviewerId,
+        decision:request.body?.decision,reviewReason:request.body?.reviewReason,
       }));
     } catch(error){errorResponse(response,error);}
   });

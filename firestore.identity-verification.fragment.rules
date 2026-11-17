@@ -531,6 +531,15 @@
       allow create, update, delete: if false;
     }
 
+    // Sensitive cost attribution is read and written exclusively through the
+    // authenticated server: clients cannot forge independent decisions.
+    match /deliveryReturnLiabilityReviews/{deliveryId} {
+      allow read, write: if false;
+    }
+    match /deliveryReturnLiabilityReviewEvents/{eventId} {
+      allow read, write: if false;
+    }
+
     // PIN hashes are server-only. Client and Control Plane screens use the
     // authenticated API and never read or write these documents directly.
     match /user_security/{userId} {

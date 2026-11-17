@@ -117,3 +117,28 @@ enquanto as parcelas e a responsabilidade não estiverem comprovadas.
 **Fora de escopo da v1 inicial:** ativar taxas, cobrar compradores, lançar
 descontos, liquidar ganhos, publicar regras comerciais definitivas ou criar
 um mecanismo de repasse automático.
+
+## Extensão v1.1 — revisão independente da responsabilidade inicial
+
+A PR acrescenta `deliveryReturnLiabilityReviews/{deliveryId}` com os estados
+`awaiting_independent_review`, `needs_more_evidence` e
+`approved_no_financial_execution`; cada proposta possui versão, impressão
+digital da confirmação física e evento imutável em
+`deliveryReturnLiabilityReviewEvents`. O preparador não pode aprovar a
+própria classificação; uma modificação da confirmação física invalida a
+aprovação, e as reaberturas mantêm histórico de versões.
+
+A classificação de causa `store_failure`, `platform_failure`,
+`recipient_absent`, `safety_incident`, `courier_conduct_alleged`,
+`damage_or_missing` ou `undetermined` só sugere uma fonte *inicial* de
+custeio. Em caso de embalagem danificada/divergente, o custo fica
+`disputed` independentemente do motivo. Sem débito do entregador ou
+consumidor. A aprovação significa **triagem independente**, nunca
+responsabilidade civil definitiva nem obrigação de pagar.
+
+A fila de suporte exibe formulário e estado da revisão dentro da consulta
+econômica. Os endpoints de leitura, proposta e decisão reaproveitam a rota
+`/api/delivery-opportunities`, com Firebase Auth, papéis administrativos
+ativos e transações idempotentes. Nenhuma tarifa é presumida, e o retorno
+continua sem valor financeiro definido até a existência de contrato
+versionado aceito no momento da contratação.
