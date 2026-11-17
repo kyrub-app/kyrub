@@ -383,7 +383,8 @@ export default function AdminIdentityVerificationWorkspace() {
           </div>
         )}
 
-        {user && canReview && <AdminDeliveryComplianceIncidents user={user} />}
+        {user && canReview && <AdminDeliveryComplianceIncidents user={user}
+          canExecuteCustody={profile?.role === 'super_admin' && profile.status === 'active'} />}
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {ordered.map(record => (
