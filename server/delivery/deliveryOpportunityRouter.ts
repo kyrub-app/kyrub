@@ -33,6 +33,11 @@ import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.j
 import { reviewMotofreteWithAudit, MOTO_CHECKLIST } from '../identity/motofreteReviewService.js';
 import { resolveDeliveryComplianceIncident } from './deliveryComplianceIncidentService.js';
 import {
+  proposeSupervisedCustodyTransfer,
+  acknowledgeSupervisedCustodyTransfer,
+  attestSupervisedCustodyTransfer,
+} from './deliverySupervisedTransferService.js';
+import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
   loadAuthoritativeDeliveryCustomerArrivalPolicy,
 } from './deliveryCustomerArrivalPolicyService.js';
@@ -124,6 +129,20 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'CUSTODY_TRANSFER_FORBIDDEN') {
+    response.status(403).json({ code: message, error: 'A ação exige participação autenticada ou supervisor autorizado.' });
+    return;
+  }
+  if (message === 'CUSTODY_TRANSFER_INVALID') {
+    response.status(400).json({ code: message, error: 'Parâmetros de transferência inválidos.' });
+    return;
+  }
+  if (message.startsWith('CUSTODY_TRANSFER_CONFLICT')
+    || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
+    response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
+      error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
     return;
   }
   if (message === 'INCIDENT_FORBIDDEN') {
@@ -733,6 +752,53 @@ export const createDeliveryOpportunityRouter = (): Router => {
         decision: decision as 'release_for_new_acceptance'
           | 'request_supervised_handoff' | 'close_after_buyer_confirmation',
         reason: clean(body.reason),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/supervised-handoff', async (request, response) => {
+    try {
+      const operatorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await proposeSupervisedCustodyTransfer({
+        deliveryId: request.params.deliveryId,
+        operatorId,
+        toCourierId: clean(request.body?.toCourierId),
+        targetVehicle: request.body?.targetVehicle,
+        reason: clean(request.body?.reason),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/supervised-handoff/attest', async (request, response) => {
+    try {
+      const supervisorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await attestSupervisedCustodyTransfer({
+        deliveryId: request.params.deliveryId,
+        supervisorId,
+        note: clean(request.body?.note),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/supervised-handoff/acknowledge', async (request, response) => {
+    try {
+      const actorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const statement = request.body?.statement;
+      if (statement !== 'physically_handed_over' && statement !== 'physically_received') {
+        throw new Error('CUSTODY_TRANSFER_INVALID');
+      }
+      response.json(await acknowledgeSupervisedCustodyTransfer({
+        deliveryId: request.params.deliveryId,
+        actorId, statement,
       }));
     } catch (error) {
       errorResponse(response, error);
