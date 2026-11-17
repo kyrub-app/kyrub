@@ -44,8 +44,7 @@ export const validateMotofreteReview = (
       || (input.decision === 'approved' && reason !== '')) {
     throw new Error('COMPLIANCE_REVIEW_INVALID');
   }
-  const checks = Object.fromEntries(MOTO_CHECKLIST.map(key => [key, input.checks[key] === true]))
-    as Record<ChecklistKey, boolean>;
+  const checks = Object.fromEntries(MOTO_CHECKLIST.map(key => [key, input.checks[key] === true])) as Record<ChecklistKey, boolean>;
   if (input.decision !== 'approved') {
     if (MOTO_CHECKLIST.some(key => input.checks[key] === true)) {
       throw new Error('COMPLIANCE_REVIEW_INVALID');
