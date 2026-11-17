@@ -41,6 +41,7 @@ const mapSource = readFileSync(
   'utf8'
 );
 const appSource = readFileSync('src/App.tsx', 'utf8');
+const navigationSource = readFileSync('src/utils/googleMapsDirections.ts', 'utf8');
 
 test('courier tracking router is mounted and tracking writes require approved courier identity', () => {
   assert.match(serverSource, /\/api\/delivery-tracking/);
@@ -119,7 +120,11 @@ test('Google Maps is optional and only loads from configured environment key', (
   assert.match(mapSource, /VITE_GOOGLE_MAPS_API_KEY/);
   assert.match(mapSource, /maps\.googleapis\.com\/maps\/api\/js/);
   assert.match(mapSource, /A calcular|GPS ativo/);
-  assert.match(mapSource, /www\.google\.com\/maps\/dir/);
+  assert.match(navigationSource, /www\.google\.com\/maps\/dir/);
+  assert.match(navigationSource, /two-wheeler/);
+  assert.match(navigationSource, /bicycling/);
+  assert.match(mapSource, /buildCourierDeliveryNavigationUrl/);
+  assert.doesNotMatch(mapSource, /travelmode: 'driving'/);
 });
 
 test('live tracking bridge lives outside the remounted legacy application', () => {
@@ -127,4 +132,22 @@ test('live tracking bridge lives outside the remounted legacy application', () =
   const legacyIndex = appSource.indexOf('<LegacyApp key=');
   assert.ok(trackingIndex >= 0);
   assert.ok(legacyIndex > trackingIndex);
+});
+
+test('live navigation uses confirmed vehicle and the active phase, never the public offer', () => {
+  assert.match(trackingBridgeSource, /where\('acceptedBy', '==', user\.uid\)/);
+  assert.match(trackingBridgeSource, /vehicleType: isCourierVehicleType\(data\.vehicleType\)/);
+  assert.match(trackingBridgeSource, /navigation=\{\{ status: activeDelivery\.status, vehicleType: activeDelivery\.vehicleType \}\}/);
+  assert.match(trackingBridgeSource, /activeDelivery\.status === 'accepted'/);
+  assert.match(navigationSource, /input\.status === 'accepted' \? input\.pickup : input\.dropoff/);
+  assert.match(mapSource, /if \(navigation\)/);
+  assert.doesNotMatch(viewerSource, /navigation=\{/);
+  assert.match(trackingBridgeSource, /error\.code === error\.PERMISSION_DENIED/);
+  assert.match(trackingBridgeSource, /void stopRemoteTracking\(trackingDeliveryId\)/);
+});
+
+test('tracking endpoint rejects stale coordinates while retaining private authorization boundary', () => {
+  assert.match(trackingRouterSource, /isFreshCourierTrackingTimestamp\(tracking\?\.updatedAt\)/);
+  assert.match(trackingRouterSource, /tracking\?\.active === true && fresh/);
+  assert.match(trackingRouterSource, /if \(!active\) \{[\s\S]*?json\(\{ deliveryId, active: false \}\)/);
 });
