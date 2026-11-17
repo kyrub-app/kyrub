@@ -79,3 +79,16 @@
 - [ ] Homologação visual/Android e primeira compra real autorizada quando os respectivos gates permitirem.
 
 **Resultado:** diagnóstico de compatibilidade **concluído**; integração conjunta e homologação cruzada **pendentes**. Não há código de runtime alterado por este documento e a Vercel pode continuar bloqueada sem impedir preparação/revisão em branch isolada.
+
+## 6. Gate V0 identificado na primeira combinação — segurança de dependências
+
+**Candidato integrado:** [PR #1149](https://github.com/kyrub-app/kyrub/pull/1149), SHA `e0bee3203631eb709821214a4e383955be0f288b` (código da #1139 + **seis arquivos idênticos** da #1146). O diff adicional frente à #1139 é exatamente a cobertura de proteção de reembolso. Não houve nenhuma mudança de produção.
+
+- **Phase 10 integrated validation:** run `44151759920`, job `production-dependency-security` (`134281687780`) **FALHOU** no `npm audit --omit=dev --audit-level=high`. O job `cross-domain-contract` **PASSOU**.
+- Auditoria do grafo de dependências de produção: **11 ocorrências (4 altas, 6 moderadas, 1 baixa)** no log; auditoria geral de `npm audit`: **13 ocorrências (6 altas)**. Pacotes que exigem triagem incluem `picomatch@4.0.5`, `path-to-regexp@6.1.0` (subárvore de `@vercel/routing-utils`), `qs@6.16.0` e `fast-xml-parser@5.11.2`, além de cadeias de dependências indiretas. Alguns são de dev; conferir **exatamente** a alcançabilidade no runtime antes de classificar impacto real.
+- **Evidência de origem:** o blob do `package-lock.json` é **idêntico** na `main` e na candidata: `f164b893fb6179b122dddc1bedf0bf2ea97ab6f5`. A candidata não criou novo grafo de dependências. Essa falha não demonstra conflito funcional das PRs, **mas impede a aprovação do Beta Gate**.
+- Não executar `npm audit fix --force` sem análise: o próprio npm alerta sobre mudanças disruptivas, especialmente ferramentas de roteamento. Fazer remediação **isolada**, com upgrades específicos compatíveis e `package-lock` regenerado, revisão do grafo `--omit=dev`, teste TypeScript, suíte de segurança e prebuild, e validação da preview no HEAD correto quando possível.
+- **Ordem:** remediar/auditar vulnerabilidades V0; repetir Phase 10 no SHA conjunto; depois completar a composição com a #1138, sem antecipar Pix real.
+
+**Status deste gate:** `BLOQUEADO_V0_SEGURANCA_DEPENDENCIAS`; **não apto a merge/deploy enquanto persistir a falha**.
+
