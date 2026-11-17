@@ -48,7 +48,7 @@ test('offer contract is presented before consent, accepted only in server transa
   assert.match(router,/returnTariffAcceptedTerms:signed/);
   assert.match(router,/validateServerTariffOffer\(offer\)/);
   assert.match(router,/returnTariffOfferSnapshot/);
-  assert.match(publicOffer,/returnTariffOffer: input\.returnTariffOffer/);
+  assert.match(publicOffer,/input\.returnTariffOffer \? \{returnTariffOffer: input\.returnTariffOffer\}/);
   assert.match(modal,/Concordo expressamente com estes valores/);
   assert.match(modal,/tariffConsentId/);
   assert.match(client,/returnTariffFingerprint/);
