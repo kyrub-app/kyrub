@@ -13,6 +13,7 @@ import {
   getDocs,
   limit,
   query,
+  where,
   serverTimestamp,
   setDoc,
   Timestamp,
@@ -404,7 +405,7 @@ test('approved motorized courier submits private motofrete evidence but cannot s
   await assertFails(getDoc(doc(outsider, 'identity_verifications', 'user_a')));
 });
 
-test('only human compliance can certify bounded validity and revoke without touching old work profiles', async () => {
+test('motofrete reviewer cannot bypass server-owned immutable audit via direct Firestore writes', async () => {
   await seedApprovedMotorized();
   const owner = environment.authenticatedContext('user_a').firestore();
   const ownerDoc = doc(owner, 'identity_verifications', 'user_a');
@@ -431,7 +432,25 @@ test('only human compliance can certify bounded validity and revoke without touc
     ...approvedMotofreteFields(),
     approvedProfiles: ['bicycle_courier'],
   }));
-  await assertSucceeds(updateDoc(adminDoc, approvedMotofreteFields()));
+  await assertFails(updateDoc(adminDoc, approvedMotofreteFields()));
+  // Simulate the reviewed Admin SDK transaction; ordinary clients cannot do
+  // this independently of a server-created immutable event.
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'identity_verifications', 'user_a'), approvedMotofreteFields());
+    await setDoc(doc(context.firestore(), 'motofreteReviewEvents', 'evt-approved-a'), {
+      schemaVersion: 1,
+      userId: 'user_a',
+      reviewerId: 'compliance_a',
+      decision: 'approved',
+      previousStatus: 'submitted',
+      nextStatus: 'approved',
+      reason: '',
+      evidenceFingerprint: 'a'.repeat(64),
+      checklist: {},
+      validUntil: Timestamp.fromMillis(Date.now() + 30 * 86_400_000),
+      createdAt: serverTimestamp(),
+    });
+  });
 
   const approved = (await getDoc(ownerDoc)).data();
   if (approved?.motofreteQualification?.status !== 'approved'
@@ -444,7 +463,7 @@ test('only human compliance can certify bounded validity and revoke without touc
     updatedAt: serverTimestamp(),
   }));
   await assertFails(updateDoc(adminDoc, approvedMotofreteFields())); // no duplicate approval
-  await assertSucceeds(updateDoc(adminDoc, {
+  await assertFails(updateDoc(adminDoc, {
     'motofreteQualification.status': 'revoked',
     'motofreteQualification.reviewedBy': 'compliance_a',
     'motofreteQualification.reviewedAt': serverTimestamp(),
@@ -458,6 +477,35 @@ test('only human compliance can certify bounded validity and revoke without touc
     'motofreteQualification.localRequirementsVerified': false,
     updatedAt: serverTimestamp(),
   }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'identity_verifications', 'user_a'), {
+      'motofreteQualification.status': 'revoked',
+      'motofreteQualification.reviewedBy': 'compliance_a',
+      'motofreteQualification.reviewedAt': serverTimestamp(),
+      'motofreteQualification.reviewReason': 'Documento vencido',
+      'motofreteQualification.validUntil': null,
+      'motofreteQualification.courseVerified': false,
+      'motofreteQualification.minimumAgeAndLicenseTenureVerified': false,
+      'motofreteQualification.vehicleRegistrationAndAuthorizationVerified': false,
+      'motofreteQualification.safetyEquipmentVerified': false,
+      'motofreteQualification.semiannualInspectionVerified': false,
+      'motofreteQualification.localRequirementsVerified': false,
+      updatedAt: serverTimestamp(),
+    });
+    await setDoc(doc(context.firestore(), 'motofreteReviewEvents', 'evt-revoked-a'), {
+      schemaVersion: 1,
+      userId: 'user_a',
+      reviewerId: 'compliance_a',
+      decision: 'revoked',
+      previousStatus: 'approved',
+      nextStatus: 'revoked',
+      reason: 'Documento vencido',
+      evidenceFingerprint: 'a'.repeat(64),
+      checklist: {},
+      validUntil: null,
+      createdAt: serverTimestamp(),
+    });
+  });
   const revoked = (await getDoc(ownerDoc)).data();
   if (revoked?.motofreteQualification?.status !== 'revoked'
     || revoked.status !== 'approved'
@@ -499,13 +547,22 @@ test('motofrete rejection allows a corrected request, never self-approval or ope
     'motofreteQualification.reviewedBy': 'operations_a',
   }));
   const compliance = environment.authenticatedContext('compliance_a').firestore();
-  await assertSucceeds(updateDoc(doc(compliance, 'identity_verifications', 'user_a'), {
+  await assertFails(updateDoc(doc(compliance, 'identity_verifications', 'user_a'), {
     'motofreteQualification.status': 'rejected',
     'motofreteQualification.reviewedBy': 'compliance_a',
     'motofreteQualification.reviewedAt': serverTimestamp(),
     'motofreteQualification.reviewReason': 'Inspeção ilegível',
     updatedAt: serverTimestamp(),
   }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'identity_verifications', 'user_a'), {
+      'motofreteQualification.status': 'rejected',
+      'motofreteQualification.reviewedBy': 'compliance_a',
+      'motofreteQualification.reviewedAt': serverTimestamp(),
+      'motofreteQualification.reviewReason': 'Inspeção ilegível',
+      updatedAt: serverTimestamp(),
+    });
+  });
   await assertSucceeds(updateDoc(record, {
     motofreteQualification: {
       ...motofreteRequest('user_a'),
@@ -518,4 +575,62 @@ test('motofrete rejection allows a corrected request, never self-approval or ope
     'motofreteQualification.reviewReason': 'Tudo aprovado',
     updatedAt: serverTimestamp(),
   }));
+});
+
+test('private motofrete audit, holds and delivery incidents cannot be forged or altered', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    const privileged = context.firestore();
+    await setDoc(doc(privileged, 'motofreteReviewEvents', 'evt-immutable-a'), {
+      schemaVersion: 1,
+      userId: 'user_a',
+      reviewerId: 'compliance_a',
+      decision: 'revoked',
+      previousStatus: 'approved',
+      nextStatus: 'revoked',
+      reason: 'Inspeção vencida',
+      evidenceFingerprint: 'f'.repeat(64),
+      checklist: {},
+      validUntil: null,
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(doc(privileged, 'courierComplianceHolds', 'user_a'), {
+      userId: 'user_a', active: true, decision: 'revoked', eventId: 'evt-immutable-a',
+      reason: 'Atestação específica de motofrete indisponível.', updatedAt: serverTimestamp(),
+    });
+    await setDoc(doc(privileged, 'deliveryComplianceIncidents', 'delivery-a'), {
+      deliveryId: 'delivery-a', courierId: 'user_a', storeId: 'store_a',
+      status: 'awaiting_logistics_review', source: 'motofrete_qualification_revoked',
+    });
+  });
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const outsider = environment.authenticatedContext('user_b').firestore();
+  const compliance = environment.authenticatedContext('compliance_a').firestore();
+  const audit = doc(owner, 'motofreteReviewEvents', 'evt-immutable-a');
+  const hold = doc(owner, 'courierComplianceHolds', 'user_a');
+  const incident = doc(compliance, 'deliveryComplianceIncidents', 'delivery-a');
+
+  await assertSucceeds(getDoc(audit));
+  await assertSucceeds(getDoc(hold));
+  await assertSucceeds(getDoc(incident));
+  await assertSucceeds(getDocs(query(
+    collection(compliance, 'motofreteReviewEvents'), where('userId','==','user_a'), limit(50)
+  )));
+  await assertFails(getDoc(doc(outsider, 'motofreteReviewEvents', 'evt-immutable-a')));
+  await assertFails(getDoc(doc(outsider, 'courierComplianceHolds', 'user_a')));
+  await assertFails(getDoc(doc(owner, 'deliveryComplianceIncidents', 'delivery-a')));
+
+  for (const client of [owner, compliance]) {
+    await assertFails(updateDoc(doc(client, 'motofreteReviewEvents', 'evt-immutable-a'), {
+      reason: 'fraud',
+    }));
+    await assertFails(setDoc(doc(client, 'motofreteReviewEvents', 'evt-fake'), {
+      userId: 'user_a',
+    }));
+    await assertFails(updateDoc(doc(client, 'courierComplianceHolds', 'user_a'), {
+      active: false,
+    }));
+    await assertFails(setDoc(doc(client, 'deliveryComplianceIncidents', 'fake'), {
+      courierId: 'user_a',
+    }));
+  }
 });
