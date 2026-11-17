@@ -411,6 +411,115 @@ test('ERP Business coupon uses the REAL official Pix checkout, contract and bene
   }
 });
 
+test('live-compatible Business coupon pilot is restricted to one buyer, real ERP coupon and R$1 canonical Pix', async () => {
+  // The same production gates are exercised exclusively against local Firestore
+  // and the intercepted fake provider. Never use an actual Pix or production DB.
+  for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
+  posts = 0; payment = undefined; searches = 0;
+  loseProviderResponse = false; ambiguousSearch = false;
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID = 'buyer';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUSINESS_COUPON_ENABLED = 'true';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_ID = 'business-pilot';
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE = 'BIZ1';
+  process.env.VERCEL_ENV = 'production';
+  process.env.KYRUB_BILLING_MERCADO_PAGO_COLLECTOR_ID = '42';
+  delete process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST;
+  const root = 'kyrub_admin/control_plane';
+  const nowTs = Date.now();
+  const saleModality = { schemaVersion: 1, mode: 'subscription', subscription: {
+    schemaVersion: 1, autoRenew: false,
+    billingInterval: { unit: 'month', count: 1 },
+    benefit: { kind: 'access', unitsPerCycle: null },
+  } };
+  const coupon = {
+    id: 'business-pilot', storeId: 'official-store', code: 'BIZ1',
+    title: 'Piloto Business de um comprador', badge: 'PILOTO',
+    discountType: 'fixed', discountValue: 396,
+    productIds: ['business'],
+    eligibility: { mode: 'specific_user', userIds: ['buyer'] },
+    active: true,
+    startsAt: new Date(nowTs - 86400000).toISOString(),
+    endsAt: new Date(nowTs + 86400000).toISOString(),
+    maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
+    createdBy: 'owner', createdVia: 'manual', actionId: 'business-pilot',
+    createdAt: new Date(nowTs - 86400000).toISOString(),
+    updatedAt: new Date(nowTs).toISOString(),
+  };
+  const campaignPath = 'stores/official-store/promotions/business-pilot';
+  try {
+    await Promise.all([
+      db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+      db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+      db.doc('stores/buyer-store').set({ ownerId: 'buyer', plan: 'free' }),
+      db.doc('users/buyer/stores/buyer').set({ ownerId: 'buyer', plan: 'free' }),
+      db.doc('stores/official-store/products/business').set({
+        name: 'Kyrub Business', price: 397, publicationStatus: 'published',
+        saleModality, storePointsPerUnit: 0,
+        contractDiscounts: [{ months: 1, discountPercent: 0 }],
+      }),
+      db.doc(root + '/official_plan_products/business').set({
+        canonicalStoreId: 'official-store', productId: 'business',
+        planId: 'business', status: 'active', rewards: { xp: 0 },
+      }),
+      db.doc(campaignPath).set(coupon),
+    ]);
+    const params = { storeId: 'official-store', productId: 'business',
+      selectedMonths: 1 as const, promotionCode: 'BIZ1' };
+    await assert.rejects(api.quoteOfficialPlanPix({ ...params, authorization: 'buyer-2' }),
+      /OFFICIAL_PIX_PROMOTION_DISABLED/, 'shared coupon link may not authorize a different Firebase UID');
+    await assert.rejects(api.quoteOfficialPlanPix({ ...params, authorization: 'buyer', promotionCode: 'OTHER' }),
+      /OFFICIAL_PIX_PROMOTION_DISABLED/, 'wrong code cannot silently charge full plan price');
+    await assert.rejects(api.quoteOfficialPlanPix({ ...params, authorization: 'buyer', selectedMonths: 3 }),
+      /OFFICIAL_PIX_PROMOTION_DISABLED/, 'the offer cannot switch to a longer term');
+    await db.doc(campaignPath).update({ eligibility: { mode: 'public' } });
+    await assert.rejects(api.quoteOfficialPlanPix({ ...params, authorization: 'buyer' }),
+      /OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN/, 'public campaign is forbidden in the live pilot');
+    await db.doc(campaignPath).update({ eligibility: coupon.eligibility });
+    const q = await api.quoteOfficialPlanPix({ ...params, authorization: 'buyer' });
+    assert.equal(q.quote.originalTotalMinor, 39700);
+    assert.equal(q.quote.promotionDiscountMinor, 39600);
+    assert.equal(q.quote.totalMinor, 100);
+    const c = { authorization: 'buyer', checkoutId: q.checkoutId };
+    assert.equal((await api.acceptOfficialPlanPix({ ...c, acceptedTotalMinor: 100 })).status, 'accepted');
+    await db.doc(campaignPath).update({ eligibility: { mode: 'public' } });
+    await assert.rejects(api.checkoutOfficialPlanPix(c),
+      /OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN/, 'provider cannot be reached after the campaign is broadened');
+    assert.equal(posts, 0);
+    await db.doc(campaignPath).update({ eligibility: coupon.eligibility });
+    const issued = await api.checkoutOfficialPlanPix(c);
+    assert.equal(issued.state, 'awaiting_payment');
+    assert.equal(posts, 1);
+    assert.equal(payment.transaction_amount, 1);
+    assert.equal(payment.payment_method_id, 'pix');
+    assert.equal(payment.collector_id, '42');
+    payment = { ...payment, status: 'approved', status_detail: 'accredited',
+      date_approved: new Date().toISOString() };
+    const results = await Promise.all(Array.from({ length: 4 }, () => api.reconcileOfficialPlanPix(c)));
+    assert(results.every(result => result.state === 'activated'));
+    assert(results.every(result => result.startsAt === payment.date_approved));
+    assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('plan'), 'business');
+    const contractDocs = await db.collection('stores/official-store/prepaidSubscriptionContracts').get();
+    assert.equal(contractDocs.size, 1);
+    assert.equal(contractDocs.docs[0].get('totalPaidMinor'), 100);
+    assert.equal(contractDocs.docs[0].get('monthlyBasePriceMinor'), 39700);
+    assert.equal(contractDocs.docs[0].get('promotion.discountMinor'), 39600);
+    for (const type of ['subscriptions', 'payments', 'economicLedger']) {
+      assert.equal((await db.collection('stores/official-store/' + type).get()).size, 1, type);
+    }
+    const promo = await db.doc(campaignPath).get();
+    assert.equal(promo.get('redemptionCount'), 1);
+    assert.equal(promo.get('reservedCount'), 0);
+    assert.equal(posts, 1, 'repeated webhooks must not mint a second Pix');
+    assert.equal((await db.doc(root + '/official_plan_pix_pilot/one_shot').get()).get('buyerId'), 'buyer');
+  } finally {
+    delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUSINESS_COUPON_ENABLED;
+    delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_ID;
+    delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE;
+  }
+});
+
 test('canonical rejected Pix releases ERP reservation without redeeming or granting Business', async () => {
   for (const collection of await db.listCollections()) await db.recursiveDelete(collection);
   posts = 0; payment = undefined; loseProviderResponse = false; ambiguousSearch = false;
