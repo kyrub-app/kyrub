@@ -22,6 +22,10 @@ interface Ticket {
   priority:string;
   reasonLabel:string;
   lastResponse:string;
+  reasonCode:string;
+  contactAttemptsCount:number;
+  recipientArrivedAtMs:number;
+  absenceReviewRequested:boolean;
   createdAtMs:number;
 }
 
@@ -34,6 +38,13 @@ export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
   const [message,setMessage]=useState('');
   const [tickets,setTickets]=useState<Ticket[]>([]);
   const retryId=useRef('');
+  const attemptRetry=useRef<Record<string,string>>({});
+  const [evidenceBusy,setEvidenceBusy]=useState('');
+  const [clock,setClock]=useState(Date.now());
+  useEffect(()=>{
+    const interval=window.setInterval(()=>setClock(Date.now()),15000);
+    return ()=>window.clearInterval(interval);
+  },[]);
   const selected=getCourierSupportReason(reasonCode,stage);
 
   const reasons=useMemo(()=>KYRUB_COURIER_SUPPORT_REASONS.filter(
@@ -56,6 +67,13 @@ export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
           priority:typeof data.priority==='string'?data.priority:'',
           reasonLabel:typeof data.reasonLabel==='string'?data.reasonLabel:'',
           lastResponse:typeof data.lastResponse==='string'?data.lastResponse:'',
+          reasonCode:typeof data.reasonCode==='string'?data.reasonCode:'',
+          contactAttemptsCount:typeof data.contactAttemptsCount==='number'
+            ?data.contactAttemptsCount:0,
+          recipientArrivedAtMs:data.recipientArrivedAt
+            && typeof (data.recipientArrivedAt as Timestamp).toMillis==='function'
+              ?(data.recipientArrivedAt as Timestamp).toMillis():0,
+          absenceReviewRequested:Boolean(data.recipientAbsenceReviewRequestedAt),
           createdAtMs:typeof created?.toMillis==='function'?created.toMillis():0,
         };
       }).filter(row=>row.deliveryId===deliveryId)
@@ -97,6 +115,39 @@ export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
     } catch(error) {
       setMessage(error instanceof Error?error.message:'Não foi possível registrar o chamado.');
     } finally {setLoading(false);}
+  };
+
+  const absenceAction=async(
+    ticket:Ticket,action:'called_recipient'|'messaged_recipient'|'tried_intercom'|'review'
+  )=>{
+    if (evidenceBusy || ticket.status==='resolved') return;
+    const user=auth.currentUser;
+    if(!user){setMessage('Faça login novamente antes de registrar a tentativa.');return;}
+    const requestKey=`${ticket.id}:${action}`;
+    const attemptId=attemptRetry.current[requestKey]||crypto.randomUUID();
+    attemptRetry.current[requestKey]=attemptId;
+    setEvidenceBusy(requestKey);setMessage('');
+    try{
+      const token=await user.getIdToken();
+      const path=action==='review'?'request-absence-review':'contact-attempt';
+      const r=await fetch(
+        `/api/delivery-opportunities/support-tickets/${encodeURIComponent(ticket.id)}/${path}`,
+        {
+          method:'POST',
+          headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
+          body:JSON.stringify(action==='review'?{}:{attemptId,method:action}),
+        }
+      );
+      const payload=await r.json().catch(()=>({})) as Record<string,unknown>;
+      if(!r.ok)throw new Error(typeof payload.error==='string'?payload.error:
+        'Não foi possível registrar esta etapa.');
+      delete attemptRetry.current[requestKey];
+      setMessage(action==='review'
+        ? 'Análise logística solicitada. Nenhuma devolução, reatribuição ou cancelamento foi autorizado.'
+        : 'Tentativa declarada e registrada. Isso não comprova que o destinatário recebeu a comunicação.');
+    }catch(error){
+      setMessage(error instanceof Error?error.message:'Não foi possível registrar a tentativa.');
+    }finally{setEvidenceBusy('');}
   };
 
   return (
@@ -209,6 +260,56 @@ export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
                     <p className="mt-2 rounded-lg bg-cyan-500/10 p-2 text-cyan-100">
                       Resposta da equipe: {ticket.lastResponse}
                     </p>
+                  )}
+                  {ticket.reasonCode==='recipient_not_found' && ticket.status!=='resolved' && (
+                    <div className="mt-3 space-y-2 rounded-xl border border-amber-500/20 bg-amber-500/5 p-3">
+                      <p className="text-[10px] font-black text-amber-100">
+                        Destinatário ausente — registro de tentativas
+                      </p>
+                      <p className="text-[9px] leading-relaxed text-slate-300">
+                        Primeiro informe sua chegada ao cliente no fluxo da corrida.
+                        Somente depois, registre as tentativas que você realmente fez.
+                        Os registros são declarações suas, não comprovantes de recebimento.
+                      </p>
+                      {ticket.recipientArrivedAtMs>0 && (
+                        <p className="text-[10px] text-amber-200">
+                          Tempo desde a chegada registrada:
+                          {' '}{Math.max(0,Math.floor((clock-ticket.recipientArrivedAtMs)/60000))} min.
+                          {' '}Dez minutos são apenas referência de mercado, não autorização de devolução no Kyrub.
+                        </p>
+                      )}
+                      <p className="text-[9px] text-slate-300">
+                        Tentativas declaradas: {ticket.contactAttemptsCount}
+                      </p>
+                      {!ticket.absenceReviewRequested ? (
+                        <div className="flex flex-wrap gap-2">
+                          {([
+                            ['called_recipient','Registrei ligação'],
+                            ['messaged_recipient','Registrei mensagem'],
+                            ['tried_intercom','Registrei interfone'],
+                          ] as const).map(([action,label])=>(
+                            <button key={action} type="button"
+                              disabled={Boolean(evidenceBusy)}
+                              onClick={()=>void absenceAction(ticket,action)}
+                              className="rounded-lg border border-amber-500/25 px-2 py-2 text-[10px] text-amber-100 disabled:opacity-40">
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="text-[10px] font-bold text-amber-200">
+                          Revisão logística solicitada; mantenha a encomenda em segurança.
+                        </p>
+                      )}
+                      {!ticket.absenceReviewRequested && (
+                        <button type="button"
+                          disabled={Boolean(evidenceBusy)||ticket.contactAttemptsCount<1}
+                          onClick={()=>void absenceAction(ticket,'review')}
+                          className="w-full rounded-lg bg-amber-500 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-40">
+                          Solicitar análise da logística — não devolver
+                        </button>
+                      )}
+                    </div>
                   )}
                 </article>
               ))}
