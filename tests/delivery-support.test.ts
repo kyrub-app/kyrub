@@ -79,7 +79,7 @@ test('courier support only enables absence actions after fresh server-confirmed 
   assert.match(dialog,/A chegada ao destinatário ainda não foi confirmada pelo servidor/);
   assert.match(dialog,/Dez minutos são apenas referência de mercado/);
   assert.match(queue,/orderBy\('createdAt','desc'\),limit\(100\)/);
-  assert.match(queue,/ticket\.priority==='safety'\?0/);
+  assert.match(queue,/t\.priority==='safety'\?0/);
 });
 
 test('recipient absence uses server arrival and declarative contact attempts, never automatic return',async()=>{
