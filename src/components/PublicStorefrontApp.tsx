@@ -44,6 +44,7 @@ interface PublicStorefrontAppProps {
 }
 
 type PublicStorefrontResponse = {
+  officialPlanStoreId?: string;
   store: {
     id: string;
     name: string;
@@ -85,8 +86,10 @@ const responseStoreToStore = (
 const resolveMovementMetadata = (
   store: Store,
   activeKdsOrderCount: number,
-  authenticated: boolean
+  authenticated: boolean,
+  isOfficialPlansVitrine = false
 ): { label: string; colorClassName: string } => {
+  if (isOfficialPlansVitrine) return { label: 'Vitrine oficial de planos', colorClassName: 'text-cyan-400' };
   if (store.status === 'closed') {
     return {
       label: 'Loja fechada',
@@ -132,6 +135,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [authLoading, setAuthLoading] = useState(true);
   const [storeLoading, setStoreLoading] = useState(true);
   const [store, setStore] = useState<Store | null>(null);
+  const [officialPlanStoreId, setOfficialPlanStoreId] = useState('');
   const [publicProducts, setPublicProducts] = useState<Product[]>([]);
   const [loadCompleted, setLoadCompleted] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -162,6 +166,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     const controller = new AbortController();
 
     setStore(null);
+    setOfficialPlanStoreId('');
     setPublicProducts([]);
     setLoadCompleted(false);
     setStoreLoading(true);
@@ -186,6 +191,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         }
         if (cancelled) return;
         setStore(responseStoreToStore(payload.store));
+        setOfficialPlanStoreId(payload.officialPlanStoreId === OFFICIAL_STORE_CANONICAL_ID
+          ? OFFICIAL_STORE_CANONICAL_ID : '');
         setPublicProducts(payload.offers);
         // Resume only still-published offers, with current server-owned
         // commercial terms. Withdrawn products cannot linger in a saved cart.
@@ -214,7 +221,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
 
   useEffect(() => {
     let cancelled = false;
-    if (!store?.id || store.id !== OFFICIAL_STORE_CANONICAL_ID || !sharedCouponCode) {
+    if (!store?.id || (officialPlanStoreId !== OFFICIAL_STORE_CANONICAL_ID &&
+        store.id !== OFFICIAL_STORE_CANONICAL_ID) || !sharedCouponCode) {
       setCouponPromotion(null);
       setCouponLoading(false);
       return;
@@ -223,7 +231,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     // the ERP coupon and the exact product/price again on the server.
     setCouponPromotion(null);
     setCouponLoading(true);
-    void listMarketplacePromotions(store.id).then(promotions => {
+    void listMarketplacePromotions(OFFICIAL_STORE_CANONICAL_ID).then(promotions => {
       if (!cancelled) setCouponPromotion(promotions.find(promotion => promotion.code === sharedCouponCode) ?? null);
     }).catch(() => {
       if (!cancelled) setCouponPromotion(null);
@@ -231,17 +239,18 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       if (!cancelled) setCouponLoading(false);
     });
     return () => { cancelled = true; };
-  }, [store?.id, sharedCouponCode]);
+  }, [store?.id, officialPlanStoreId, sharedCouponCode]);
 
   useEffect(() => {
-    if (store?.id !== OFFICIAL_STORE_CANONICAL_ID) return;
+    if (officialPlanStoreId !== OFFICIAL_STORE_CANONICAL_ID &&
+        store?.id !== OFFICIAL_STORE_CANONICAL_ID) return;
     // Previously saved retail carts must not carry official plan contracts
     // into the generic marketplace checkout after this routing change.
     setCart(previous => {
       const retailOnly = previous.filter(item => !isOfficialPlanProductId(item.product.id));
       return retailOnly.length === previous.length ? previous : retailOnly;
     });
-  }, [store?.id]);
+  }, [store?.id, officialPlanStoreId]);
 
   useEffect(() => {
     saveStorefrontCart(slug, cart);
@@ -282,7 +291,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   };
 
   const handleAddToCart = (product: Product): void => {
-    if (store?.id === OFFICIAL_STORE_CANONICAL_ID && isOfficialPlanProductId(product.id)) {
+    if ((officialPlanStoreId === OFFICIAL_STORE_CANONICAL_ID ||
+      store?.id === OFFICIAL_STORE_CANONICAL_ID) && isOfficialPlanProductId(product.id)) {
       // Official plans are contracts, not ordinary B2C cart items.
       setSelectedOfficialPlanId(product.id);
       document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
@@ -368,12 +378,14 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     );
   }
 
+  const isOfficialStore = officialPlanStoreId === OFFICIAL_STORE_CANONICAL_ID ||
+    store.id === OFFICIAL_STORE_CANONICAL_ID;
   const movementMetadata = resolveMovementMetadata(
     store,
     activeKdsOrderCount,
-    Boolean(user)
+    Boolean(user),
+    isOfficialStore
   );
-  const isOfficialStore = store.id === OFFICIAL_STORE_CANONICAL_ID;
   const officialPlanProducts = isOfficialStore
     ? publicProducts.filter(product => isOfficialPlanProductId(product.id) && product.saleModality?.mode === 'subscription')
     : [];
@@ -600,7 +612,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
               user ? (
                 <InitialPrepaidSubscriptionCheckout
                   key={JSON.stringify([store.id, selectedOfficialPlan.id, selectedPlanMonths, sharedCouponCode, user.uid])}
-                  storeId={store.id}
+                  storeId={OFFICIAL_STORE_CANONICAL_ID}
                   productId={selectedOfficialPlan.id}
                   selectedMonths={selectedPlanMonths}
                   billingAuthority="platform"

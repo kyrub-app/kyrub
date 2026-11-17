@@ -62,6 +62,8 @@ const ledgerCollectionPath = (storeId: string): string =>
   `stores/${storeId}/storePointLedger`;
 
 export type PublicStorefrontSnapshot = {
+  /** Verified billing identity. Retail store.id must remain unchanged. */
+  officialPlanStoreId?: string;
   store: {
     id: string;
     name: string;
@@ -263,7 +265,7 @@ const resolveOfficialStoreProjectionId = async (
   const designation = await adminDb.doc('kyrub_admin/official_store').get();
   const data = designation.data();
   if (data?.kind !== 'official_cairobi_store' ||
-      clean(data.legacyStoreId) !== legacyStoreId ||
+      (legacyStoreId !== OFFICIAL_STORE_CANONICAL_ID && clean(data.legacyStoreId) !== legacyStoreId) ||
       clean(data.canonicalStoreId) !== OFFICIAL_STORE_CANONICAL_ID) {
     throw new Error('OFFICIAL_PLAN_PUBLIC_IDENTITY_CONFLICT');
   }
@@ -409,7 +411,13 @@ export const loadPublicStorefrontBySlug = async (
       .where('publicationStatus', '==', 'published').limit(MAX_PUBLIC_STOREFRONT_OFFERS).get();
     const productById = new Map(canonicalProducts.docs.map(document => [document.id, document.data() as Record<string, unknown>]));
 
+    const offers = verifiedFirstStoreId
+      ? projectVerifiedFirstStoreCatalogOffers(canonicalProducts.docs, verifiedFirstStoreId, storeId)
+      : projectCanonicalOffers(offerCandidates.docs, storeId, productById);
+    const verifiedOfficialId = await resolveOfficialStoreProjectionId(storeId, offers);
     return {
+      ...(verifiedOfficialId === OFFICIAL_STORE_CANONICAL_ID && offers.some(offer => isOfficialPlanProductId(offer.id))
+        ? { officialPlanStoreId: verifiedOfficialId } : {}),
       store: {
         id: storeId,
         name: clean(storeData.name),
@@ -422,9 +430,7 @@ export const loadPublicStorefrontBySlug = async (
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
       },
-      offers: verifiedFirstStoreId
-        ? projectVerifiedFirstStoreCatalogOffers(canonicalProducts.docs, verifiedFirstStoreId, storeId)
-        : await projectOfficialCanonicalTerms(projectCanonicalOffers(offerCandidates.docs, storeId, productById), storeId),
+      offers: verifiedFirstStoreId ? offers : await projectOfficialCanonicalTerms(offers, verifiedOfficialId),
     };
   }
 
@@ -462,7 +468,12 @@ export const loadPublicStorefrontBySlug = async (
   );
   if (hasCanonicalStoreAuthority) return null;
 
+  const legacyOffers = projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId);
+  const verifiedOfficialId = await resolveOfficialStoreProjectionId(legacyStoreId, legacyOffers);
+  const projectedOffers = await projectOfficialCanonicalTerms(legacyOffers, verifiedOfficialId);
   return {
+    ...(verifiedOfficialId === OFFICIAL_STORE_CANONICAL_ID && projectedOffers.some(offer => isOfficialPlanProductId(offer.id))
+      ? { officialPlanStoreId: verifiedOfficialId } : {}),
     store: {
       id: legacyStoreId,
       name: clean(legacyData.name),
@@ -475,11 +486,7 @@ export const loadPublicStorefrontBySlug = async (
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
     },
-    offers: await (async () => {
-      const offers = projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId);
-      const canonicalId = await resolveOfficialStoreProjectionId(legacyStoreId, offers);
-      return projectOfficialCanonicalTerms(offers, canonicalId);
-    })(),
+    offers: projectedOffers,
   };
 };
 

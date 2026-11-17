@@ -41,7 +41,7 @@ const COMPILED_PLAN_REFERENCE: Record<
   pro: {
     id: 'pro',
     name: 'Pro',
-    monthlyPriceBRL: 79.9,
+    monthlyPriceBRL: 197,
     activeCatalogLimit: 100,
     catalogLimitLabel: 'até 100 produtos ou serviços ativos',
     kyrubiaIntelligenceCredits: 300,
@@ -51,7 +51,7 @@ const COMPILED_PLAN_REFERENCE: Record<
   business: {
     id: 'business',
     name: 'Business',
-    monthlyPriceBRL: 199.9,
+    monthlyPriceBRL: 397,
     activeCatalogLimit: null,
     catalogLimitLabel: 'catálogo comercialmente ilimitado, sujeito a uso justo',
     kyrubiaIntelligenceCredits: 1_500,

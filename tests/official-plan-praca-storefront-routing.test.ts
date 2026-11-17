@@ -94,3 +94,16 @@ test('a private official coupon remains usable only through authenticated Busine
   assert.match(storefront, /Um código inválido nunca será ignorado para cobrar o valor integral/);
   assert.match(serverPilot, /maxRedemptionsPerBuyer !== 1/);
 });
+
+test('legacy Official Store keeps retail ID but uses verified canonical billing ID', () => {
+  const discovery = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
+  assert.match(discovery, /officialPlanStoreId\?: string/);
+  assert.match(discovery, /resolveOfficialStoreProjectionId\(legacyStoreId, legacyOffers\)/);
+  assert.match(discovery, /officialPlanStoreId: verifiedOfficialId/);
+  assert.match(storefront, /setOfficialPlanStoreId\(payload\.officialPlanStoreId === OFFICIAL_STORE_CANONICAL_ID/);
+  assert.match(storefront, /const isOfficialStore = officialPlanStoreId === OFFICIAL_STORE_CANONICAL_ID/);
+  assert.match(storefront, /storeId=\{OFFICIAL_STORE_CANONICAL_ID\}/);
+  assert.match(storefront, /listMarketplacePromotions\(OFFICIAL_STORE_CANONICAL_ID\)/);
+  assert.match(storefront, /Vitrine oficial de planos/);
+  assert.match(storefront, /label: 'Loja fechada'/);
+});
