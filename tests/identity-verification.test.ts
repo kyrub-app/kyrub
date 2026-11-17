@@ -159,8 +159,10 @@ test('motofrete UI separates evidence submission and compliance review without a
   assert.match(admin, /\['super_admin', 'compliance'\]/);
   assert.match(admin, /MOTO_CHECKS/);
   assert.match(admin, /reviewMotofrete\(record, 'revoked'\)/);
-  assert.match(admin, /'motofreteQualification\.reviewedBy': user\.uid/);
-  assert.match(admin, /'motofreteQualification\.validUntil': validUntil/);
+  assert.match(admin, /\/api\/delivery-opportunities\/admin\/motofrete-review/);
+  assert.match(admin, /getDocs\(query\(/);
+  assert.doesNotMatch(admin, /'motofreteQualification\\.reviewedBy': user\\.uid/);
+  assert.match(admin, /validUntilEpochMs: validUntil\?\.toMillis\(\)/);
   assert.match(policy, /motofreteQualification/);
   assert.match(policy, /qualification\?\.status === 'approved'/);
   assert.match(policy, /validUntilEpochMs > now/);
