@@ -6,6 +6,7 @@ import {
   LoaderCircle,
   LockKeyhole,
   LogIn,
+  MessageCircle,
   Sparkles,
   Store as StoreIcon,
 } from 'lucide-react';
@@ -31,6 +32,8 @@ import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPanel';
 import { StorefrontPanel } from './StorefrontPanel';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
+import { MomentsModal } from './modals/MomentsModal';
+import { publishStoreReview } from '../utils/storeReviews';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
 import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
 import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
@@ -134,6 +137,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [errorMessage, setErrorMessage] = useState('');
   const [cart, setCart] = useState<CartItem[]>(() => loadStorefrontCart(slug));
   const [isCartOpen, setIsCartOpen] = useState(false);
+  const [storeReviewsOpen, setStoreReviewsOpen] = useState(false);
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
@@ -500,6 +504,16 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         </div>
       </header>
 
+      <div className="mx-auto mt-3 w-full max-w-5xl px-4">
+        <button type="button" id="public-storefront-reviews-trigger"
+          onClick={() => { if (user) setStoreReviewsOpen(true); else void handleGoogleLogin(); }}
+          disabled={authLoading || loginPending}
+          className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-500/30 bg-amber-500/5 px-4 text-xs font-bold text-amber-200 disabled:opacity-50">
+          <MessageCircle className="h-4 w-4" />
+          {user ? 'Ver avaliações e avaliar esta loja' : 'Entre com Google para ver avaliações e avaliar'}
+        </button>
+      </div>
+
       {user && <BuyerDeliveryTrackingBridge storeId={store.id} buyerId={user.uid} />}
 
       {isOfficialStore && sharedCouponCode && couponLoading && (
@@ -694,6 +708,17 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
           </section>
         </div>
       ) : null}
+
+      <MomentsModal
+        isOpen={storeReviewsOpen && Boolean(user)}
+        selectedStoreForMoments={store}
+        onClose={() => setStoreReviewsOpen(false)}
+        momentos={[]}
+        onPublishMoment={async data => {
+          if (!store || !user) throw new Error('Entre no Kyrub e escolha uma loja publicada para avaliar.');
+          await publishStoreReview(store, data);
+        }}
+      />
     </div>
   );
 }
