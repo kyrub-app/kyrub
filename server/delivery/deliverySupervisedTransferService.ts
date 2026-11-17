@@ -338,10 +338,13 @@ export const attestSupervisedCustodyTransfer = async (input: {
     if (supervisorId === fromCourierId || supervisorId === toCourierId) {
       throw new Error('CUSTODY_TRANSFER_FORBIDDEN');
     }
-    assertAssignment(obj(incident.data()), obj(delivery.data()), obj(claim.data()), fromCourierId);
-    if (t.status === 'evidence_recorded_pending_reconciliation') {
+    if (t.status === 'evidence_recorded_pending_reconciliation'
+      && t.supervisorConfirmedBy === supervisorId) {
+      // Exact replay is idempotent; the original event remains the only
+      // attestation and no second economic or custody action is executed.
       return { deliveryId: id, status: 'evidence_recorded_pending_reconciliation' };
     }
+    assertAssignment(obj(incident.data()), obj(delivery.data()), obj(claim.data()), fromCourierId);
     if (t.status !== 'awaiting_supervisor_review'
       || !t.fromConfirmedAt || !t.toConfirmedAt
       || !(t.expiresAt instanceof Timestamp)
