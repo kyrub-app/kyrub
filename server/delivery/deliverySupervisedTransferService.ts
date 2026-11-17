@@ -267,8 +267,11 @@ export const acknowledgeSupervisedCustodyTransfer = async (input: {
       || (party === 'to' && input.statement !== 'physically_received')) {
       throw new Error('CUSTODY_TRANSFER_INVALID');
     }
-    assertAssignment(obj(incident.data()), obj(delivery.data()), obj(claim.data()), fromCourierId);
     const confirmedKey = party === 'from' ? 'fromConfirmedAt' : 'toConfirmedAt';
+    if (t[confirmedKey] && t.status === 'evidence_recorded_pending_reconciliation') {
+      return { deliveryId: id, status: 'evidence_recorded_pending_reconciliation' };
+    }
+    assertAssignment(obj(incident.data()), obj(delivery.data()), obj(claim.data()), fromCourierId);
     if (t[confirmedKey]) {
       return { deliveryId: id, status: transferStage(t.status) || 'awaiting_participant_confirmations' };
     }
