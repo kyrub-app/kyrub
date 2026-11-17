@@ -18,7 +18,14 @@ export interface MarketplaceSplitOneToOnePlan {
   sellerExternalId: string;
   grossAmountMinor: number;
   applicationFeeMinor: number;
+  /**
+   * Arithmetic remainder before provider fees; NEVER a verified seller payout.
+   * Mercado Pago may debit processing fees before the marketplace commission.
+   */
   sellerAmountMinor: number;
+  providerProcessingFeeMinor: null;
+  sellerNetReceivedMinor: null;
+  settlementVerified: false;
   currency: 'BRL';
   status: 'planned';
 }
@@ -71,6 +78,9 @@ export const buildMarketplaceSplitOneToOnePlan = (input: {
     grossAmountMinor: input.grossAmountMinor,
     applicationFeeMinor: input.applicationFeeMinor,
     sellerAmountMinor: input.grossAmountMinor - input.applicationFeeMinor,
+    providerProcessingFeeMinor: null,
+    sellerNetReceivedMinor: null,
+    settlementVerified: false,
     currency: 'BRL',
     status: 'planned',
   };
