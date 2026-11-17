@@ -116,3 +116,52 @@ test('additional courier review remains separate from existing work approval', (
   assert.equal(workEligibility(pending, 'accept_delivery').allowed, false);
   assert.equal(courierVerificationSummary(pending).label, 'Habilitação em análise');
 });
+
+test('motofrete evidence and reviewer state share private canonical identity without default approval', () => {
+  const record = mapIdentityVerification('courier_a', {
+    status: 'approved',
+    approvedProfiles: ['motorized_courier'],
+    motofreteQualification: {
+      status: 'submitted',
+      documents: {
+        course: 'identity-verification/courier_a/document/course.pdf',
+        vehicle: 'identity-verification/courier_a/document/vehicle.pdf',
+        inspection: 'identity-verification/courier_a/document/inspection.pdf',
+        equipment: 'identity-verification/courier_a/document/equipment.jpg',
+        local: '',
+      },
+      courseVerified: false,
+      minimumAgeAndLicenseTenureVerified: false,
+      vehicleRegistrationAndAuthorizationVerified: false,
+      safetyEquipmentVerified: false,
+      semiannualInspectionVerified: false,
+      localRequirementsVerified: false,
+      reviewedBy: '',
+      reviewReason: '',
+      validUntil: null,
+    },
+  });
+  assert.equal(record.motofreteQualification?.status, 'submitted');
+  assert.equal(record.motofreteQualification?.documents.course, 'identity-verification/courier_a/document/course.pdf');
+  assert.equal(record.motofreteQualification?.courseVerified, false);
+  assert.equal(record.motofreteQualification?.reviewedBy, '');
+});
+
+test('motofrete UI separates evidence submission and compliance review without automatic qualification', () => {
+  const profile = readFileSync('src/components/ProfileVerificationBridge.tsx', 'utf8');
+  const admin = readFileSync('src/components/admin/AdminIdentityVerificationWorkspace.tsx', 'utf8');
+  const policy = readFileSync('shared/deliveryVehicleCompatibility.ts', 'utf8');
+  assert.match(profile, /submitMotofreteQualification/);
+  assert.match(profile, /motofreteQualification:\s*\{/);
+  assert.match(profile, /courseVerified: false/);
+  assert.match(profile, /motofreteQualification\.status === 'submitted'/);
+  assert.match(admin, /const canReviewMotofrete =/);
+  assert.match(admin, /\['super_admin', 'compliance'\]/);
+  assert.match(admin, /MOTO_CHECKS/);
+  assert.match(admin, /reviewMotofrete\(record, 'revoked'\)/);
+  assert.match(admin, /'motofreteQualification\.reviewedBy': user\.uid/);
+  assert.match(admin, /'motofreteQualification\.validUntil': validUntil/);
+  assert.match(policy, /motofreteQualification/);
+  assert.match(policy, /qualification\?\.status === 'approved'/);
+  assert.match(policy, /validUntilEpochMs > now/);
+});
