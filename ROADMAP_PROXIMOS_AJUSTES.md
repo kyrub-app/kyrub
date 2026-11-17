@@ -60,6 +60,8 @@ Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção*
 
 **Reconciliação técnica iniciada:** [matriz de integração das PRs #1139, #1146 e #1138](docs/commerce/V1_PR_INTEGRATION_RECONCILIATION_2026-11.md). Identificadas quatro sobreposições #1139×#1138, nenhuma sobreposição de arquivos com #1146, e gate de teste conjunto de catálogo/pedidos/cupom/reembolso. **Apenas o diagnóstico foi concluído; a integração conjunta segue pendente.**
 
+**Bloqueio V0 recém-identificado:** a candidata [#1149](https://github.com/kyrub-app/kyrub/pull/1149) combinou #1139 + #1146 sem conflitos de arquivos, mas o gate `production-dependency-security` falhou por vulnerabilidades elevadas no **mesmo `package-lock.json` da `main`**. O contrato cross-domain passou; o Beta Gate permanece **bloqueado** até remediação de dependências, teste de segurança e nova aprovação no SHA conjunto. [Diagnóstico detalhado](docs/commerce/V1_PR_INTEGRATION_RECONCILIATION_2026-11.md).
+
 ### Fila executável imediata — sem aguardar Mercado Pago nem Vercel
 
 1. **Inventário e comparação:** congelar o `main` atual e mapear conflitos/arquivos sobrepostos de #1139, #1146, #1138, #1144, #1137, #1145 e #1147. Registrar o que já integra `main` e o que seria novidade real; evitar PR duplicada.
