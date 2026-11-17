@@ -85,7 +85,7 @@ export function AdminDeliveryFinancialReconciliationPanel({
       }
       setReadTotal(Number(result.totalMinor));
       setUnresolved(number(result.unresolvedObligationCount));
-      setOutgoingText(String(Number(result.totalMinor) / 2 | 0));
+      setOutgoingText(String(Math.floor(Number(result.totalMinor) / 2)));
       if (number(result.unresolvedObligationCount) > 0) {
         setMessage('Existem obrigações pendentes que exigirão conciliação financeira separada. Nenhuma será quitada automaticamente.');
       }
