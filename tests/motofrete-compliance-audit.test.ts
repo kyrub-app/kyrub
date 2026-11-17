@@ -14,8 +14,7 @@ const approved = (): MotofreteReviewInput => ({
   decision: 'approved',
   reason: '',
   validUntilEpochMs: now + 30 * 86_400_000,
-  checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, true]))
-    as MotofreteReviewInput['checks'],
+  checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, true])) as MotofreteReviewInput['checks'],
 });
 
 test('review policy rejects an absent checklist, self-review, expired and excessively long validity', () => {
@@ -43,8 +42,7 @@ test('rejection and revocation require a reason, clear approval and cannot exten
     const request = {
       ...approved(),
       decision,
-      checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, false]))
-        as MotofreteReviewInput['checks'],
+      checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, false])) as MotofreteReviewInput['checks'],
       reason: 'Documento com irregularidade',
       validUntilEpochMs: null,
     };
