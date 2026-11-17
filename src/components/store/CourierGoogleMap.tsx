@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { buildCourierDeliveryNavigationUrl, type CourierNavigationInput } from '../../utils/googleMapsDirections';
+import { decideCourierRoute, type CourierNavigationInput, type CourierReturnRouteStatus } from '../../utils/googleMapsDirections';
 
 interface CourierPosition {
   latitude: number;
@@ -13,6 +13,7 @@ interface CourierGoogleMapProps {
   destination: string;
   /** Only the assigned courier gets an actionable navigation link. */
   navigation?: Pick<CourierNavigationInput, 'status' | 'vehicleType'>;
+  returnStatus?: CourierReturnRouteStatus;
 }
 
 type GoogleMapsImportLibrary = (
@@ -81,6 +82,7 @@ export function CourierGoogleMap({
   origin,
   destination,
   navigation,
+  returnStatus,
 }: CourierGoogleMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -121,18 +123,12 @@ export function CourierGoogleMap({
 
   // The embedded map is a location visualization only. Google Maps owns directions;
   // stage and vehicle come from the private, server-assigned delivery snapshot.
-  let externalRoute = '';
-  if (navigation) {
-    try {
-      externalRoute = buildCourierDeliveryNavigationUrl({
-        ...navigation,
-        pickup: origin,
-        dropoff: destination,
-      });
-    } catch {
-      // Legacy assigned deliveries without a confirmed vehicle cannot silently default to driving.
-    }
-  }
+  const route = navigation ? decideCourierRoute({
+    ...navigation,
+    pickup: origin,
+    dropoff: destination,
+    returnStatus,
+  }) : null;
 
   return (
     <div className="space-y-2">
@@ -156,14 +152,14 @@ export function CourierGoogleMap({
         <span>
           {position ? `Precisão aproximada: ${Math.round(position.accuracy)} m` : 'Aguardando posição GPS'}
         </span>
-        {externalRoute && (
+        {route?.url && (
           <a
-            href={externalRoute}
+            href={route.url}
             target="_blank"
             rel="noreferrer"
             className="font-black uppercase text-cyan-300 hover:text-cyan-200"
           >
-            {navigation?.status === 'accepted' ? 'Navegar até a coleta' : 'Navegar até o cliente'}
+            {route.label}
           </a>
         )}
       </div>
