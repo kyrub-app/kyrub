@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { assessCourierStoreArrival } from './storeArrivalEvidence';
+import { isFreshCourierTrackingTimestamp, isPlausibleCourierDeviceCapture } from './courierTrackingFreshness.js';
 import { assessCourierCustomerArrival } from './customerArrivalEvidence.js';
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
@@ -59,7 +60,7 @@ const parseLocation = (value: unknown): {
   const accuracy = finite(candidate.accuracy);
   const heading = finite(candidate.heading);
   const speed = finite(candidate.speed);
-  const clientCapturedAt = finite(candidate.clientCapturedAt) ?? Date.now();
+  const clientCapturedAt = finite(candidate.clientCapturedAt);
 
   if (latitude === null || latitude < -90 || latitude > 90) {
     throw new Error('Latitude inválida.');
@@ -69,6 +70,9 @@ const parseLocation = (value: unknown): {
   }
   if (accuracy === null || accuracy < 0 || accuracy > 100_000) {
     throw new Error('Precisão da localização inválida.');
+  }
+  if (clientCapturedAt === null || !isPlausibleCourierDeviceCapture(clientCapturedAt)) {
+    throw new Error('Horário da localização inválido ou desatualizado. Atualize o GPS e tente novamente.');
   }
 
   return { latitude, longitude, accuracy, heading, speed, clientCapturedAt };
@@ -130,6 +134,13 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'CUSTODY_TRANSFER_SETTLEMENT_HOLD') {
+    response.status(409).json({
+      code: message,
+      error: 'Uma transferência foi declarada. Rastreio da antiga atribuição suspenso; contate a logística.',
+    });
+    return;
+  }
   if (message === 'TRACKING_FORBIDDEN') {
     response.status(403).json({
       error: 'Você não tem acesso ao rastreio desta entrega.',
@@ -161,11 +172,13 @@ export const createDeliveryTrackingRouter = (): Router => {
       const deliveryReference = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
       const claimReference = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
       const trackingReference = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
+      const custodyTransferReference = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
-      const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
+      const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot] = await Promise.all([
         deliveryReference.get(),
         claimReference.get(),
         trackingReference.get(),
+        custodyTransferReference.get(),
       ]);
       if (!deliverySnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
@@ -184,7 +197,17 @@ export const createDeliveryTrackingRouter = (): Router => {
 
       const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
       const deliveryInProgress = ['accepted', 'delivering'].includes(clean(delivery.status));
-      const active = Boolean(deliveryInProgress && trackingSnapshot.exists && tracking?.active === true);
+      // Device shutdown, lost GPS or denied permission must not leave a stale
+      // coordinate marked as live for the buyer or store.
+      const fresh = isFreshCourierTrackingTimestamp(tracking?.updatedAt);
+      const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
+      const custodyDisputed = Boolean(
+        (transfer?.fromConfirmedAt || transfer?.toConfirmedAt)
+        && (transfer?.status !== 'operational_reassigned'
+          || transfer?.operationalAssignment !== 'recipient_claim_active'
+          || transfer?.toCourierId !== courierId)
+      );
+      const active = Boolean(deliveryInProgress && !custodyDisputed && trackingSnapshot.exists && tracking?.active === true && fresh);
 
       if (!active) {
         response.status(200).json({ deliveryId, active: false });
@@ -225,18 +248,27 @@ export const createDeliveryTrackingRouter = (): Router => {
       const deliveryReference = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
       const claimReference = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
       const trackingReference = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
+      const custodyTransferReference = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
       const result = await adminDb.runTransaction(async transaction => {
-        const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
+        const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot] = await Promise.all([
           transaction.get(deliveryReference),
           transaction.get(claimReference),
           transaction.get(trackingReference),
+          transaction.get(custodyTransferReference),
         ]);
         if (!deliverySnapshot.exists || !claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
         const delivery = deliverySnapshot.data() as Record<string, unknown>;
         const claim = claimSnapshot.data() as Record<string, unknown>;
         if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
+        const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
+        if ((transfer?.fromConfirmedAt || transfer?.toConfirmedAt)
+          && (transfer?.status !== 'operational_reassigned'
+            || transfer?.operationalAssignment !== 'recipient_claim_active'
+            || transfer?.toCourierId !== courierId)) {
+          throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
+        }
         const deliveryStatus = clean(delivery.status);
         if (!['accepted', 'delivering'].includes(deliveryStatus)) throw new Error('Esta entrega não está em andamento.');
 

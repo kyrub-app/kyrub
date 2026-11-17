@@ -290,6 +290,40 @@ export const buildCourierPayableObligationFromCapture = (input: {
   });
 };
 
+
+/**
+ * Split-only courier obligation for an independently reviewed physical handoff.
+ * Both shares come from the SAME captured delivery remuneration. This builds
+ * a pending obligation, never a payout; buyer confirmation makes it eligible.
+ * The :handoff suffix avoids reviving a reversed original full-fee obligation.
+ */
+export const buildSupervisedHandoffCourierPayableFromCapture = (input: {
+  capture: StoreEconomicLedgerEntry;
+  fulfillmentId: string;
+  courierUserId: string;
+  totalMinor: number;
+  shareMinor: number;
+}): EconomicObligation | null => {
+  const whole = buildCourierPayableObligationFromCapture({
+    capture: input.capture, fulfillmentId: input.fulfillmentId,
+    courierUserId: input.courierUserId,
+  });
+  if (!whole || whole.amountMinor !== input.totalMinor
+    || !Number.isSafeInteger(input.shareMinor) || input.shareMinor < 0
+    || input.shareMinor > whole.amountMinor) {
+    throw new Error('ECONOMIC_OBLIGATION_HANDOFF_SPLIT_INVALID');
+  }
+  if (input.shareMinor === 0) return null;
+  const splitId = `${whole.id}:handoff`;
+  if (!validPathId(splitId)) {
+    throw new Error('ECONOMIC_OBLIGATION_HANDOFF_ID_INVALID');
+  }
+  return {
+    ...whole, id: splitId, amountMinor: input.shareMinor,
+    funding: { ...whole.funding, customerMinor: input.shareMinor },
+  };
+};
+
 export const canTransitionEconomicObligationStatus = (
   from: EconomicObligationStatus,
   to: EconomicObligationStatus

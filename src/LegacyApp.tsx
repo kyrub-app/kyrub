@@ -61,6 +61,7 @@ import { MediaCarousel } from './components/MediaCarousel';
 import { StoreOfferCarousel } from './components/StoreOfferCarousel';
 import { FreelaManagerModal } from './components/modals/FreelaManagerModal';
 import { DeliveryManagerModal } from './components/modals/DeliveryManagerModal';
+import { sanitizeDeliveryCache } from './utils/courierDeliveryCache';
 import { UserProfileModal } from './components/modals/UserProfileModal';
 import { WalletModal } from './components/modals/WalletModal';
 import { ChatModal } from './components/modals/ChatModal';
@@ -446,7 +447,13 @@ export default function App() {
   // GUIA 2 State: Vacancies & Deliveries (Persistent)
   const [deliveries, setDeliveries] = useState<DeliveryJob[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.DELIVERIES);
-    return saved ? JSON.parse(saved) : initialDeliveries;
+    if (!saved) return initialDeliveries;
+    try {
+      // Never hydrate precise buyer destinations left in storage by old releases.
+      return sanitizeDeliveryCache(JSON.parse(saved) as unknown);
+    } catch {
+      return initialDeliveries;
+    }
   });
 
   const [freelanceJobs, setFreelanceJobs] = useState<FreelanceJob[]>(() => {
@@ -538,7 +545,8 @@ export default function App() {
 
   useEffect(() => {
     if (!isLoggedIn) return;
-    localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(deliveries));
+    // Persist only the safe public subset; manual drafts and customer addresses stay out.
+    localStorage.setItem(STORAGE_KEYS.DELIVERIES, JSON.stringify(sanitizeDeliveryCache(deliveries)));
   }, [deliveries, isLoggedIn]);
 
   useEffect(() => {

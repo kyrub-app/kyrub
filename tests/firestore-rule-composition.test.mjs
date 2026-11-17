@@ -76,7 +76,8 @@ test('replaces legacy delivery rules with the server-authoritative block', () =>
 
   assert.match(result, /allow create, update, delete: if false;/);
   assert.doesNotMatch(result, /allow create: if isSignedIn\(\);/);
-  assert.match(result, /Firebase Admin SDK/);
+  assert.match(result, /resource\.data\.get\('acceptedBy', ''\) == request\.auth\.uid/);
+  assert.match(result, /match \/hub\/renda\/deliveryOffers\/\{deliveryId\}/);
 });
 
 test('composition is idempotent when the secure delivery block already exists', () => {

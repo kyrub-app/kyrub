@@ -1,6 +1,7 @@
 import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import { courierVehicleDocumentEligibility } from '../../shared/deliveryVehicleCompatibility.js';
 import {
   calculateDeliveryPaidWaiting,
   type DeliveryPaidWaitingPolicySnapshot,
@@ -8,6 +9,7 @@ import {
 import type { DeliveryOperationalEvent } from '../../shared/deliveryOperationalResponsibility.js';
 
 const DELIVERY_COLLECTION = 'hub/renda/deliveries';
+const PUBLIC_DELIVERY_OFFERS_COLLECTION = 'hub/renda/deliveryOffers';
 const DELIVERY_CLAIM_COLLECTION = 'deliveryClaims';
 const DELIVERY_TRACKING_COLLECTION = 'deliveryTracking';
 const DELIVERY_PICKUP_SECRET_COLLECTION = 'deliveryPickupSecrets';
@@ -191,24 +193,36 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
   if (!/^\d{6}$/.test(handoffCode)) throw new Error('Informe o código de coleta de 6 dígitos.');
 
   const deliveryRef = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
+  const publicOfferRef = adminDb.doc(`${PUBLIC_DELIVERY_OFFERS_COLLECTION}/${deliveryId}`);
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const secretRef = adminDb.doc(`${DELIVERY_PICKUP_SECRET_COLLECTION}/${deliveryId}`);
   const pickupEventId = pickupConfirmedOperationalEventId(deliveryId);
   const pickupEventRef = adminDb.doc(operationalEventPath(pickupEventId));
+  const identityRef = adminDb.doc(`identity_verifications/${courierId}`);
+  const safetyHoldRef = adminDb.doc(`courierComplianceHolds/${courierId}`);
 
   const result = await adminDb.runTransaction<PickupAttemptResult>(async transaction => {
-    const [deliverySnapshot, claimSnapshot, trackingSnapshot, secretSnapshot, pickupEventSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, trackingSnapshot, secretSnapshot, pickupEventSnapshot, identitySnapshot, holdSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(trackingRef),
       transaction.get(secretRef),
       transaction.get(pickupEventRef),
+      transaction.get(identityRef),
+      transaction.get(safetyHoldRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
     const delivery = deliverySnapshot.data() as Record<string, unknown>;
     const claim = claimSnapshot.data() as Record<string, unknown>;
     if (clean(claim.courierId) !== courierId) throw new Error('Somente o entregador responsável pode confirmar a coleta.');
+    if (delivery.vehicleType === 'motorcycle'
+      && (holdSnapshot.data()?.active === true
+        || !courierVehicleDocumentEligibility(
+          identitySnapshot.data() as Record<string, unknown> | undefined, 'motorcycle'
+        ).eligible)) {
+      throw new Error('COURIER_COMPLIANCE_HOLD');
+    }
     if (clean(delivery.status) === 'delivering') return { ok: true, deliveryId, status: 'delivering' };
     if (clean(delivery.status) !== 'accepted') throw new Error('A entrega precisa estar aceita antes da coleta.');
     if (clean(delivery.source) !== 'kyrub-order') throw new Error('A coleta segura só se aplica a entregas Kyrub de pedidos.');
@@ -300,6 +314,7 @@ export const confirmSecureCourierPickupAndStartRoute = async (input: { deliveryI
     };
     transaction.update(claimRef, { status: 'delivering', pickupHandoff: handoff, paidWaitingEvidence, collectedAt, updatedAt: FieldValue.serverTimestamp() });
     transaction.update(deliveryRef, { status: 'delivering', orderStatus: liveOrderStatus, pickupHandoff: handoff, paidWaitingEvidence, collectedAt, pickupConfirmedOperationalEventId: pickupEventId, updatedAt: FieldValue.serverTimestamp() });
+    transaction.set(publicOfferRef, { status: 'delivering', updatedAt: FieldValue.serverTimestamp() }, { merge: true });
     transaction.delete(secretRef);
     return { ok: true, deliveryId, status: 'delivering' };
   });

@@ -55,9 +55,13 @@ import {
   type IdentityVerificationRecord,
   type VerificationProfile,
   type WorkAction,
+  type AdditionalCourierProfile,
+  type IdentityVerificationSection,
+  type MotofreteEvidenceKind,
+  MOTOFRETE_EVIDENCE_LABELS,
 } from '../utils/identityVerification';
 
-type Tab = 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
+type Tab = IdentityVerificationSection;
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 const PROFILE_OPTIONS: Array<{
@@ -140,6 +144,15 @@ export function ProfileVerificationBridge() {
   const [pinConfigured, setPinConfigured] = useState(false);
   const [pinBusy, setPinBusy] = useState(false);
   const [toast, setToast] = useState<{ message: string; type: ToastType } | null>(null);
+  const [additionalProfile, setAdditionalProfile] = useState<AdditionalCourierProfile>('bicycle_courier');
+  const [additionalCnhCategory, setAdditionalCnhCategory] = useState('');
+  const [additionalEar, setAdditionalEar] = useState(false);
+  const [additionalDocumentPaths, setAdditionalDocumentPaths] = useState<string[]>([]);
+  const [additionalUploading, setAdditionalUploading] = useState(false);
+  const [additionalSubmitting, setAdditionalSubmitting] = useState(false);
+  const [motofreteDocuments, setMotofreteDocuments] = useState<Partial<Record<MotofreteEvidenceKind, string>>>({});
+  const [motofreteUploading, setMotofreteUploading] = useState<MotofreteEvidenceKind | null>(null);
+  const [motofreteSubmitting, setMotofreteSubmitting] = useState(false);
 
   const showToast = (message: string, type: ToastType = 'info') => {
     setToast({ message, type });
@@ -194,8 +207,9 @@ export function ProfileVerificationBridge() {
   }, [open, user]);
 
   useEffect(() => {
-    const openFromEvent = () => {
-      setActiveTab('conta');
+    const openFromEvent = (event: Event) => {
+      const section = (event as CustomEvent<{ section?: Tab }>).detail?.section;
+      setActiveTab(section && TABS.some(tab => tab.id === section) ? section : 'conta');
       setOpen(true);
     };
     window.addEventListener(IDENTITY_VERIFICATION_OPEN_EVENT, openFromEvent);
@@ -242,7 +256,7 @@ export function ProfileVerificationBridge() {
       event.preventDefault();
       event.stopPropagation();
       if ('stopImmediatePropagation' in event) event.stopImmediatePropagation();
-      setActiveTab('documentos');
+      setActiveTab(action === 'accept_delivery' ? 'conta' : 'documentos');
       setOpen(true);
       showToast(result.reason, 'warning');
     };
@@ -415,6 +429,159 @@ export function ProfileVerificationBridge() {
     }
   };
 
+  const uploadAdditionalDocument = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!user || !file) return;
+    if (file.size > 10 * 1024 * 1024 || file.size === 0
+      || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+      showToast('Envie JPG, PNG, WEBP ou PDF de até 10 MB.', 'error');
+      return;
+    }
+    setAdditionalUploading(true);
+    try {
+      const path = `identity-verification/${user.uid}/document/${Date.now()}-${safeFileName(file.name)}`;
+      await uploadBytes(ref(storage, path), file, {
+        contentType: file.type,
+        customMetadata: {
+          ownerId: user.uid,
+          purpose: 'document',
+          consentVersion: IDENTITY_CONSENT_VERSION,
+        },
+      });
+      setAdditionalDocumentPaths(previous => [...previous, path].slice(-2));
+      showToast('CNH anexada à solicitação adicional.', 'success');
+    } catch (error) {
+      console.error('Additional qualification document upload failed.', error);
+      showToast('Não foi possível anexar a CNH.', 'error');
+    } finally {
+      setAdditionalUploading(false);
+    }
+  };
+
+  const submitAdditionalProfile = async () => {
+    if (!user || !record || record.status !== 'approved' || additionalSubmitting) return;
+    if (record.profileExpansion?.status === 'submitted') return;
+    if (record.approvedProfiles.includes(additionalProfile)) {
+      showToast('Esta modalidade já está aprovada.', 'info');
+      return;
+    }
+    const reusedCnh = record.documentType === 'cnh'
+      && record.documentPaths.length > 0 && Boolean(record.cnhCategory) && record.cnhHasEar;
+    const category = (additionalCnhCategory.trim().toUpperCase()
+      || (reusedCnh ? record.cnhCategory : '')).slice(0, 8);
+    const ear = additionalEar || reusedCnh;
+    if (additionalProfile === 'motorized_courier'
+      && (!category || !ear || (!reusedCnh && additionalDocumentPaths.length === 0))) {
+      showToast('Informe a categoria, confirme EAR e anexe a CNH para análise.', 'warning');
+      return;
+    }
+    setAdditionalSubmitting(true);
+    try {
+      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, user.uid), {
+        profileExpansion: {
+          profile: additionalProfile,
+          status: 'submitted',
+          documentPaths: additionalProfile === 'motorized_courier' ? additionalDocumentPaths : [],
+          cnhCategory: additionalProfile === 'motorized_courier' ? category : '',
+          cnhHasEar: additionalProfile === 'motorized_courier' && ear,
+          submittedAt: serverTimestamp(),
+          reviewedAt: null,
+          reviewedBy: '',
+          reviewReason: '',
+        },
+        updatedAt: serverTimestamp(),
+      });
+      setAdditionalDocumentPaths([]);
+      showToast('Solicitação enviada. Sua aprovação atual foi preservada.', 'success');
+    } catch (error) {
+      console.error('Additional courier qualification submission failed.', error);
+      showToast('Não foi possível solicitar a nova modalidade.', 'error');
+    } finally {
+      setAdditionalSubmitting(false);
+    }
+  };
+
+  const uploadMotofreteDocument = async (
+    kind: MotofreteEvidenceKind,
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!user || !file || motofreteUploading) return;
+    if (file.size > 10 * 1024 * 1024 || file.size === 0
+      || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+      showToast('Envie JPG, PNG, WEBP ou PDF de até 10 MB.', 'error');
+      return;
+    }
+    setMotofreteUploading(kind);
+    try {
+      const path = `identity-verification/${user.uid}/document/${Date.now()}-${safeFileName(file.name)}`;
+      await uploadBytes(ref(storage, path), file, {
+        contentType: file.type,
+        customMetadata: {
+          ownerId: user.uid,
+          purpose: 'document',
+          consentVersion: IDENTITY_CONSENT_VERSION,
+        },
+      });
+      setMotofreteDocuments(previous => ({ ...previous, [kind]: path }));
+      showToast(`${MOTOFRETE_EVIDENCE_LABELS[kind]}: anexo recebido.`, 'success');
+    } catch (error) {
+      console.error('Motofrete evidence upload failed.', error);
+      showToast('Não foi possível enviar este documento.', 'error');
+    } finally {
+      setMotofreteUploading(null);
+    }
+  };
+
+  const submitMotofreteQualification = async () => {
+    if (!user || !record || record.status !== 'approved'
+      || !record.approvedProfiles.includes('motorized_courier')
+      || record.motofreteQualification?.status === 'submitted'
+      || motofreteSubmitting || motofreteUploading) return;
+    const previous = record.motofreteQualification?.documents;
+    const documents = {
+      course: motofreteDocuments.course || previous?.course || '',
+      vehicle: motofreteDocuments.vehicle || previous?.vehicle || '',
+      inspection: motofreteDocuments.inspection || previous?.inspection || '',
+      equipment: motofreteDocuments.equipment || previous?.equipment || '',
+      local: motofreteDocuments.local || previous?.local || '',
+    };
+    if (!documents.course || !documents.vehicle || !documents.inspection || !documents.equipment) {
+      showToast('Anexe curso, autorização/veículo, inspeção e equipamentos antes de enviar.', 'warning');
+      return;
+    }
+    setMotofreteSubmitting(true);
+    try {
+      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, user.uid), {
+        motofreteQualification: {
+          status: 'submitted',
+          documents,
+          submittedAt: serverTimestamp(),
+          reviewedAt: null,
+          reviewedBy: '',
+          reviewReason: '',
+          courseVerified: false,
+          minimumAgeAndLicenseTenureVerified: false,
+          vehicleRegistrationAndAuthorizationVerified: false,
+          safetyEquipmentVerified: false,
+          semiannualInspectionVerified: false,
+          localRequirementsVerified: false,
+          validUntil: null,
+        },
+        updatedAt: serverTimestamp(),
+      });
+      setMotofreteDocuments({});
+      showToast('Documentação de motofrete enviada para revisão humana.', 'success');
+    } catch (error) {
+      console.error('Motofrete qualification submission failed.', error);
+      showToast('Não foi possível enviar a solicitação de motofrete.', 'error');
+    } finally {
+      setMotofreteSubmitting(false);
+    }
+  };
+
   const configurePin = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{4}$/.test(pin) || pin !== pinConfirmation) {
@@ -561,6 +728,155 @@ export function ProfileVerificationBridge() {
                   })}
                 </div>
               </section>
+
+              {readOnly && (
+                <section className="space-y-3 rounded-3xl border border-teal-500/25 bg-teal-500/5 p-4">
+                  <h3 className="text-[10px] font-black uppercase text-white">
+                    Adicionar habilitação para entregas
+                  </h3>
+                  <p className="text-[9px] leading-relaxed text-slate-400">
+                    Seus documentos pessoais e aprovações anteriores continuam válidos.
+                    A nova atividade depende de revisão própria, sem novo cadastro de identidade.
+                  </p>
+                  {record?.profileExpansion?.status === 'submitted' ? (
+                    <p className="rounded-xl border border-amber-500/25 bg-amber-500/10 p-3 text-[9px] text-amber-200">
+                      Solicitação de {record.profileExpansion.profile === 'bicycle_courier' ? 'bicicleta' : 'transporte motorizado'} enviada.
+                      Aguarde a revisão administrativa; suas atividades já aprovadas seguem liberadas.
+                    </p>
+                  ) : (
+                    <>
+                      {record?.profileExpansion?.status === 'rejected' && (
+                        <p className="rounded-xl border border-red-500/25 bg-red-500/10 p-3 text-[9px] text-red-200">
+                          Correção solicitada: {record.profileExpansion.reviewReason || 'Revise sua documentação.'}
+                        </p>
+                      )}
+                      <div className="grid grid-cols-2 gap-2">
+                        {(['bicycle_courier', 'motorized_courier'] as AdditionalCourierProfile[]).map(profile => {
+                          const approved = record?.approvedProfiles.includes(profile) ?? false;
+                          return (
+                            <button
+                              key={profile}
+                              type="button"
+                              disabled={approved}
+                              onClick={() => setAdditionalProfile(profile)}
+                              className={`rounded-xl border px-2 py-3 text-[9px] font-black uppercase disabled:opacity-40 ${
+                                additionalProfile === profile
+                                  ? 'border-teal-400/60 bg-teal-500/20 text-teal-200'
+                                  : 'border-slate-700 bg-slate-950 text-slate-400'
+                              }`}
+                            >
+                              {profile === 'bicycle_courier' ? 'Bicicleta' : 'Motorizado'} {approved ? '✓' : ''}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {additionalProfile === 'motorized_courier' && !record?.approvedProfiles.includes('motorized_courier') && (
+                        <div className="space-y-2">
+                          <input
+                            className={inputClass}
+                            aria-label="Categoria da CNH para habilitação adicional"
+                            placeholder="Categoria da CNH (A, B, AB...)"
+                            value={additionalCnhCategory}
+                            onChange={event => setAdditionalCnhCategory(event.target.value.toUpperCase().slice(0, 8))}
+                          />
+                          <label className="flex items-center gap-2 text-[9px] text-slate-300">
+                            <input type="checkbox" checked={additionalEar} onChange={event => setAdditionalEar(event.target.checked)} />
+                            Declaro que minha CNH possui EAR
+                          </label>
+                          <label className="flex cursor-pointer items-center justify-center gap-2 rounded-xl border border-dashed border-teal-500/30 bg-slate-950 px-3 py-3 text-[9px] text-teal-200">
+                            <FileBadge className="h-4 w-4" />
+                            {additionalUploading ? 'Enviando documento...' : 'Anexar CNH (se ainda não consta aprovada)'}
+                            <input
+                              type="file"
+                              className="hidden"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              disabled={additionalUploading}
+                              onChange={event => void uploadAdditionalDocument(event)}
+                            />
+                          </label>
+                          <p className="text-[9px] text-slate-500">
+                            {additionalDocumentPaths.length} documento(s) anexado(s).
+                            CNH já verificada no cadastro pode ser reaproveitada.
+                          </p>
+                        </div>
+                      )}
+                      {!record?.approvedProfiles.includes(additionalProfile) && (
+                        <button
+                          type="button"
+                          disabled={additionalSubmitting || additionalUploading}
+                          onClick={() => void submitAdditionalProfile()}
+                          className="w-full rounded-xl bg-teal-500 px-4 py-3 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50"
+                        >
+                          {additionalSubmitting ? 'Enviando solicitação...' : 'Solicitar nova habilitação'}
+                        </button>
+                      )}
+                      {(['bicycle_courier', 'motorized_courier'] as AdditionalCourierProfile[])
+                        .every(profile => record?.approvedProfiles.includes(profile)) && (
+                          <p className="text-[9px] text-emerald-300">As duas categorias gerais de entregador já estão aprovadas.</p>
+                        )}
+                    </>
+                  )}
+                </section>
+              )}
+
+              {readOnly && record?.approvedProfiles.includes('motorized_courier') && (
+                <section className="space-y-3 rounded-3xl border border-orange-500/20 bg-orange-500/5 p-4">
+                  <h3 className="text-[10px] font-black uppercase text-white">Motofrete — documentação complementar</h3>
+                  <p className="text-[9px] leading-relaxed text-slate-400">
+                    A aprovação de entregador motorizado e a CNH/EAR não liberam automaticamente
+                    entregas de moto. O motofrete exige conferência de curso, condutor, veículo,
+                    inspeção, equipamentos e regras locais por uma equipe autorizada.
+                    Sua aprovação para outras atividades permanece independente.
+                  </p>
+                  {record.motofreteQualification?.status === 'submitted' && (
+                    <p className="rounded-xl bg-amber-500/10 p-3 text-[9px] text-amber-200">
+                      Documentação enviada. Aguardando análise de conformidade.
+                    </p>
+                  )}
+                  {record.motofreteQualification?.status === 'approved' && (
+                    <p className="rounded-xl bg-emerald-500/10 p-3 text-[9px] text-emerald-200">
+                      Revisão específica aprovada. A habilitação depende da validade dos documentos,
+                      da modalidade do pedido e dos controles atuais do servidor.
+                    </p>
+                  )}
+                  {['rejected', 'revoked'].includes(record.motofreteQualification?.status ?? '') && (
+                    <p className="rounded-xl bg-red-500/10 p-3 text-[9px] text-red-200">
+                      Solicitação de motofrete necessita nova revisão: {
+                        record.motofreteQualification?.reviewReason || 'Confira os comprovantes.'
+                      }
+                    </p>
+                  )}
+                  {record.motofreteQualification?.status !== 'submitted' && (
+                    <>
+                      <div className="grid gap-2">
+                        {(Object.keys(MOTOFRETE_EVIDENCE_LABELS) as MotofreteEvidenceKind[]).map(kind => (
+                          <label key={kind} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 p-3 text-[9px] text-slate-300">
+                            <span>
+                              {MOTOFRETE_EVIDENCE_LABELS[kind]}
+                              {kind === 'local' ? ' — se exigido' : ' — obrigatório'}
+                              {(motofreteDocuments[kind] || record.motofreteQualification?.documents[kind])
+                                ? ' ✓ anexado' : ''}
+                            </span>
+                            <span className="shrink-0 text-teal-300">
+                              {motofreteUploading === kind ? 'Enviando...' : 'Anexar'}
+                            </span>
+                            <input type="file" className="sr-only"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              disabled={motofreteUploading !== null || motofreteSubmitting}
+                              onChange={event => void uploadMotofreteDocument(kind, event)} />
+                          </label>
+                        ))}
+                      </div>
+                      <button type="button"
+                        disabled={motofreteSubmitting || motofreteUploading !== null}
+                        onClick={() => void submitMotofreteQualification()}
+                        className="w-full rounded-xl bg-orange-500 px-3 py-3 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50">
+                        {motofreteSubmitting ? 'Enviando análise...' : 'Enviar documentação de motofrete'}
+                      </button>
+                    </>
+                  )}
+                </section>
+              )}
 
               <section className="flex items-center justify-between gap-4 rounded-3xl border border-slate-800 bg-slate-900 p-4">
                 <div>

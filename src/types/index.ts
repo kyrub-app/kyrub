@@ -274,6 +274,11 @@ export interface DeliveryJob {
   status: 'available' | 'accepted' | 'delivering' | 'done';
   requestedBy?: string;
   acceptedBy?: string;
+  /** Public, seller-declared package measurements, never a customer address. */
+  cargo?: import('../../shared/deliveryVehicleCompatibility').DeliveryCargo | null;
+  cargoReady?: boolean;
+  allowedVehicles?: import('../../shared/deliveryVehicleCompatibility').CourierVehicleType[];
+  vehicleType?: import('../../shared/deliveryVehicleCompatibility').CourierVehicleType;
 }
 
 export interface FreelanceJob {
