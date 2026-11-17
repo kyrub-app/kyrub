@@ -5,6 +5,7 @@ import {
   buildGoogleMapsDirectionsUrl,
   buildCourierDeliveryNavigationUrl,
   courierTravelMode,
+  decideCourierRoute,
 } from '../src/utils/googleMapsDirections';
 
 const deliveryModal = readFileSync('src/components/modals/DeliveryManagerModal.tsx', 'utf8');
@@ -64,6 +65,42 @@ describe('Google Maps pickup navigation', () => {
       ...input, status: 'delivering', vehicleType: 'car',
       dropoff: 'Destino exato liberado após o aceite',
     }), /endereço do próximo trecho/i);
+  });
+
+  it('routes only by current return authority, never to the customer after authorized return', () => {
+    const input = {
+      status: 'delivering' as const, vehicleType: 'motorcycle' as const,
+      pickup: 'Loja Original, São Paulo', dropoff: 'Cliente, São Paulo',
+    };
+    const normal = decideCourierRoute({ ...input, returnStatus: 'none' });
+    assert.equal(new URL(normal.url).searchParams.get('destination'), input.dropoff);
+    const authorized = decideCourierRoute({ ...input, returnStatus: 'return_authorized' });
+    assert.equal(new URL(authorized.url).searchParams.get('destination'), input.pickup);
+    assert.equal(new URL(authorized.url).searchParams.get('travelmode'), 'two-wheeler');
+    assert.match(authorized.label, /volta à loja/);
+    for (const status of [
+      'authorization_revoked', 'courier_presented_to_store',
+      'returned_to_store_pending_reconciliation', 'checking', 'unavailable',
+    ] as const) {
+      const blocked = decideCourierRoute({ ...input, returnStatus: status });
+      assert.equal(blocked.url, '', status);
+      assert.ok(blocked.notice.length > 20, status);
+    }
+    // Even when a stale return event is present, pre-pickup must lead only to the store.
+    const pickup = decideCourierRoute({ ...input, status: 'accepted', returnStatus: 'return_authorized' });
+    assert.equal(new URL(pickup.url).searchParams.get('destination'), input.pickup);
+    assert.equal(decideCourierRoute({ ...input }).url, ''); // Missing return authority fails closed.
+  });
+
+  it('uses the same return decision for compact and embedded map navigation', () => {
+    const panel = readFileSync('src/components/store/CourierLiveTrackingBridge.tsx', 'utf8');
+    const map = readFileSync('src/components/store/CourierGoogleMap.tsx', 'utf8');
+    assert.match(panel, /decideCourierRoute\(/);
+    assert.match(map, /decideCourierRoute\(/);
+    assert.match(panel, /returnStatus=\{returnRouteStatus\}/);
+    assert.match(panel, /snapshot\.metadata\.fromCache/);
+    assert.match(panel, /'authorization_revoked'/);
+    assert.match(panel, /where\('courierId', '==', uid\)/);
   });
 
   it('keeps Kyrub-order start pickup separate from secure pickup and delivering state', () => {
