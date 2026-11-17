@@ -53,3 +53,18 @@ test('offer contract is presented before consent, accepted only in server transa
   assert.match(modal,/tariffConsentId/);
   assert.match(client,/returnTariffFingerprint/);
 });
+
+test('public tariff survives sanitized offer cache without retaining private delivery fields',async()=>{
+  const {sanitizeDeliveryCache}=await import('../src/utils/courierDeliveryCache');
+  const offer=publishedReturnTariffOffer(policy,'2026-11-17T10:00:00.000Z');
+  assert.ok(offer);
+  const cached=sanitizeDeliveryCache([{
+    id:'test_offer_1',source:'kyrub-order',status:'available',
+    from:'Loja Exemplo',to:'Endereço particular, 99',distance:4,payment:12,
+    requestedBy:'Loja Exemplo',returnTariffOffer:offer,
+    buyerId:'uid_cliente_privado',customerGeofenceSnapshot:{latitude:123,longitude:999},
+  }]);
+  const raw=cached[0] as unknown as Record<string,unknown>;
+  assert.deepEqual(raw.returnTariffOffer,offer);
+  assert.doesNotMatch(JSON.stringify(raw),/uid_cliente_privado|Endereço particular|latitude|longitude/);
+});
