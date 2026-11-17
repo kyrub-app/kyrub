@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { collection, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { CornerDownLeft, MapPin, ShieldCheck } from 'lucide-react';
+import type { CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
+import { decideCourierRoute } from '../../utils/googleMapsDirections';
 
 interface ReturnProtocol {
   status:string;deliveryId:string;storeId:string;courierId:string;
@@ -9,8 +11,8 @@ interface ReturnProtocol {
 }
 const txt=(x:unknown):string=>typeof x==='string'?x:'';
 
-export function CourierReturnToStorePanel({deliveryId,pickupAddress}:{
-  deliveryId:string;pickupAddress:string;
+export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType}:{
+  deliveryId:string;pickupAddress:string;vehicleType:CourierVehicleType|null;
 }) {
   const [protocol,setProtocol]=useState<ReturnProtocol|null>(null);
   const [busy,setBusy]=useState(false);
@@ -49,9 +51,10 @@ export function CourierReturnToStorePanel({deliveryId,pickupAddress}:{
   },[deliveryId]);
 
   if(!protocol)return null;
-  const goToStore=pickupAddress.trim()
-    ? `https://www.google.com/maps/dir/?api=1&destination=${encodeURIComponent(pickupAddress)}`
-    : '';
+  const goToStore = decideCourierRoute({
+    status:'delivering',vehicleType,pickup:pickupAddress,dropoff:'',
+    returnStatus:protocol.status==='return_authorized'?'return_authorized':'unavailable',
+  });
 
   const declare=async()=>{
     if(busy)return;
@@ -96,8 +99,8 @@ export function CourierReturnToStorePanel({deliveryId,pickupAddress}:{
             ao endereço de coleta e mantenha o rastreamento ativo; o retorno
             ainda não foi confirmado nem cancelou o pedido.
           </p>
-          {goToStore && (
-            <a href={goToStore} target="_blank" rel="noopener noreferrer"
+          {goToStore.url && (
+            <a href={goToStore.url} target="_blank" rel="noopener noreferrer"
               className="flex items-center justify-center gap-2 rounded-lg border border-cyan-500/30 px-3 py-2 text-[10px] font-black text-cyan-200">
               <MapPin className="h-4 w-4"/>Navegar até a loja original
             </a>
