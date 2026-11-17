@@ -30,7 +30,7 @@ process.env.GCLOUD_PROJECT = 'kyrub-security-test';
 const op='return_ops_admin';
 const store='return_shop_1';
 const buyer='return_buyer_1';
-const seed=async(deliveryId:string)=>{
+const seed=async(deliveryId:string,corroboratedArrival=false)=>{
   const courierId='return_driver_'+deliveryId;
   const orderId='return_order_'+deliveryId;
   const ticketId='return_ticket_'+deliveryId;
@@ -59,6 +59,16 @@ const seed=async(deliveryId:string)=>{
       deliveryProvider:'kyrub',status:'out_for_delivery',
     }),
   ]);
+  if(corroboratedArrival){
+    await adminDb.doc('deliveryTracking/'+deliveryId).update({
+      updatedAt:Timestamp.now(),
+      customerArrivalAssessment:{
+        configured:true,authoritativeDestination:true,insideGeofence:true,
+        distanceMeters:8,radiusMeters:100,accuracyMeters:12,
+        evaluatedAt:Timestamp.now(),
+      },
+    });
+  }
   await markCourierArrivedAtCustomer({deliveryId,courierId});
   await submitCourierSupportTicket({
     deliveryId,courierId,ticketId,
@@ -221,4 +231,34 @@ test('store cannot receive without courier declaration or while a separate hando
     /DELIVERY_RETURN_STORE_GEOFENCE_REQUIRED/);
   assert.equal((await adminDb.doc(`deliveryClaims/${deliveryId}`).get())
     .data()?.status,'delivering');
+});
+
+test('recipient wait evidence is corroborated only with recent server geofence and independent return authorization',async()=>{
+  const deliveryId='return_wait_corrob';
+  const {ticketId}=await seed(deliveryId,true);
+  const handoff=(await adminDb.doc('hub/renda/deliveries/'+deliveryId).get()).data()?.customerHandoff;
+  assert.equal(handoff?.arrivalCorroboration?.verified,true);
+  await authorizeRecipientAbsenceReturn({
+    ticketId,operatorId:op,
+    reason:'Contato declarado e localização do cliente corroborada por geofence atual.',
+  });
+  const protocol=(await adminDb.doc('deliveryReturnProtocols/'+deliveryId).get()).data();
+  assert.equal(protocol?.recipientWaitingCorroboratedInterval?.verified,true);
+  assert.equal(protocol?.recipientWaitingCorroboratedInterval?.source,'corroborated_server_interval');
+  assert.equal(protocol?.recipientWaitingCorroboratedInterval?.returnAuthorizedAt,
+    protocol?.authorizedAt?.toDate().toISOString());
+  assert.equal((await adminDb.doc('deliveryCompletions/'+deliveryId).get()).exists,false);
+});
+
+test('arrival without independently verified customer geofence never fabricates a billable interval',async()=>{
+  const deliveryId='return_wait_self_declared';
+  const {ticketId}=await seed(deliveryId);
+  const handoff=(await adminDb.doc('hub/renda/deliveries/'+deliveryId).get()).data()?.customerHandoff;
+  assert.equal(handoff?.arrivalCorroboration?.verified,false);
+  await authorizeRecipientAbsenceReturn({
+    ticketId,operatorId:op,
+    reason:'Destinatário não encontrado, sem prova independente da chegada física.',
+  });
+  const protocol=(await adminDb.doc('deliveryReturnProtocols/'+deliveryId).get()).data();
+  assert.equal(protocol?.recipientWaitingCorroboratedInterval,null);
 });
