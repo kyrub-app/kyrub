@@ -6,6 +6,7 @@ import {
   isPubliclyPresentableBusinessCouponPilot,
 } from '../server/payments/officialPlanBusinessCouponPilot.js';
 import type { StorePromotion } from '../src/utils/storePromotions.js';
+import { OFFICIAL_STORE_CANONICAL_ID, OFFICIAL_PLAN_BUSINESS_PRODUCT_ID } from '../shared/officialPlanCanonicalDisplay.js';
 
 const envKeys = [
   'KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED', 'KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE',
@@ -32,16 +33,16 @@ const withPilotEnv = (fn: () => void) => {
 };
 
 const promotion: StorePromotion = {
-  id: 'biz-pilot', storeId: 'official-store', code: 'PILOT-ONE',
+  id: 'biz-pilot', storeId: OFFICIAL_STORE_CANONICAL_ID, code: 'PILOT-ONE',
   title: 'Business pilot one-time', badge: 'PILOTO', discountType: 'fixed',
-  discountValue: 396, productIds: ['business'],
+  discountValue: 396, productIds: [OFFICIAL_PLAN_BUSINESS_PRODUCT_ID],
   eligibility: { mode: 'specific_user', userIds: ['buyer-pilot'] },
   active: true, startsAt: '2026-01-01T00:00:00.000Z', endsAt: '2030-01-01T00:00:00.000Z',
   maxRedemptions: 1, maxRedemptionsPerBuyer: 1, redemptionCount: 0,
   createdBy: 'owner', createdVia: 'manual', actionId: 'biz-pilot',
   createdAt: '2026-11-17T00:00:00.000Z', updatedAt: '2026-11-17T00:00:00.000Z',
 };
-const offer = { storeId: 'official-store', productId: 'business',
+const offer = { storeId: OFFICIAL_STORE_CANONICAL_ID, productId: OFFICIAL_PLAN_BUSINESS_PRODUCT_ID,
   plan: 'business', priceMinor: 39700, quote: { months: 1, totalMinor: 39700 } };
 const accepted = buildOfficialPromotionAcceptedTerms({
   promotion, officialStoreId: offer.storeId, officialProductId: offer.productId,
@@ -94,6 +95,25 @@ test('pilot refuses Pro, longer term, another amount, a public coupon or multipl
     { redemptionCount: 1 }, { discountValue: 395 }, { active: false },
     { productIds: ['business', 'pro'] },
   ]) assert.throws(() => assertLiveBusinessCouponPilot({ ...params, promotion: { ...promotion, ...change } }), /PILOT_FORBIDDEN/);
+}));
+
+test('pilot rejects forged store and product even when all other accepted terms match', () => withPilotEnv(() => {
+  for (const [storeId, productId] of [
+    ['other-official-store', offer.productId],
+    [offer.storeId, 'other-business-product'],
+  ]) {
+    const modifiedOffer = { ...offer, storeId, productId };
+    const modifiedPromotion = { ...promotion, storeId, productIds: [productId] };
+    const modifiedAccepted = buildOfficialPromotionAcceptedTerms({
+      promotion: modifiedPromotion, officialStoreId: storeId, officialProductId: productId,
+      buyerUid: 'buyer-pilot', months: 1, contractTotalMinor: 39700,
+      now: new Date('2026-11-17T12:00:00Z'),
+    });
+    assert.throws(() => assertLiveBusinessCouponPilot({
+      buyerUid: 'buyer-pilot', offer: modifiedOffer,
+      accepted: modifiedAccepted, promotion: modifiedPromotion,
+    }), /PILOT_FORBIDDEN/);
+  }
 }));
 
 test('a buyer-specific pilot may be displayed in the public Praça without disclosing or authorizing buyer identity', () => withPilotEnv(() => {

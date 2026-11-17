@@ -434,10 +434,10 @@ test('live-compatible Business coupon pilot is restricted to one buyer, real ERP
     benefit: { kind: 'access', unitsPerCycle: null },
   } };
   const coupon = {
-    id: 'business-pilot', storeId: 'official-store', code: 'BIZ1',
+    id: 'business-pilot', storeId: 'store-ae53dc42e57eb9d5c3f7151c1431', code: 'BIZ1',
     title: 'Piloto Business de um comprador', badge: 'PILOTO',
     discountType: 'fixed', discountValue: 396,
-    productIds: ['business'],
+    productIds: ['draft_5f46706373714839a55846e6d8cb102c'],
     eligibility: { mode: 'specific_user', userIds: ['buyer'] },
     active: true,
     startsAt: new Date(nowTs - 86400000).toISOString(),
@@ -447,25 +447,26 @@ test('live-compatible Business coupon pilot is restricted to one buyer, real ERP
     createdAt: new Date(nowTs - 86400000).toISOString(),
     updatedAt: new Date(nowTs).toISOString(),
   };
-  const campaignPath = 'stores/official-store/promotions/business-pilot';
+  const campaignPath = 'stores/store-ae53dc42e57eb9d5c3f7151c1431/promotions/business-pilot';
+  (globalThis as any).__officialPix.officialStoreId = 'store-ae53dc42e57eb9d5c3f7151c1431';
   try {
     await Promise.all([
-      db.doc('stores/official-store').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
-      db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'official-store' }),
+      db.doc('stores/store-ae53dc42e57eb9d5c3f7151c1431').set({ ownerId: 'owner', legacyTenantId: 'owner' }),
+      db.doc('kyrub_admin/official_store').set({ canonicalStoreId: 'store-ae53dc42e57eb9d5c3f7151c1431' }),
       db.doc('stores/buyer-store').set({ ownerId: 'buyer', plan: 'free' }),
       db.doc('users/buyer/stores/buyer').set({ ownerId: 'buyer', plan: 'free' }),
-      db.doc('stores/official-store/products/business').set({
+      db.doc('stores/store-ae53dc42e57eb9d5c3f7151c1431/products/draft_5f46706373714839a55846e6d8cb102c').set({
         name: 'Kyrub Business', price: 397, publicationStatus: 'published',
         saleModality, storePointsPerUnit: 0,
         contractDiscounts: [{ months: 1, discountPercent: 0 }],
       }),
-      db.doc(root + '/official_plan_products/business').set({
-        canonicalStoreId: 'official-store', productId: 'business',
+      db.doc(root + '/official_plan_products/draft_5f46706373714839a55846e6d8cb102c').set({
+        canonicalStoreId: 'store-ae53dc42e57eb9d5c3f7151c1431', productId: 'draft_5f46706373714839a55846e6d8cb102c',
         planId: 'business', status: 'active', rewards: { xp: 0 },
       }),
       db.doc(campaignPath).set(coupon),
     ]);
-    const params = { storeId: 'official-store', productId: 'business',
+    const params = { storeId: 'store-ae53dc42e57eb9d5c3f7151c1431', productId: 'draft_5f46706373714839a55846e6d8cb102c',
       selectedMonths: 1 as const, promotionCode: 'BIZ1' };
     await assert.rejects(api.quoteOfficialPlanPix({ ...params, authorization: 'buyer-2' }),
       /OFFICIAL_PIX_PROMOTION_DISABLED/, 'shared coupon link may not authorize a different Firebase UID');
@@ -500,13 +501,13 @@ test('live-compatible Business coupon pilot is restricted to one buyer, real ERP
     assert(results.every(result => result.state === 'activated'));
     assert(results.every(result => result.startsAt === payment.date_approved));
     assert.equal((await db.doc(root + '/store_entitlements/buyer').get()).get('plan'), 'business');
-    const contractDocs = await db.collection('stores/official-store/prepaidSubscriptionContracts').get();
+    const contractDocs = await db.collection('stores/store-ae53dc42e57eb9d5c3f7151c1431/prepaidSubscriptionContracts').get();
     assert.equal(contractDocs.size, 1);
     assert.equal(contractDocs.docs[0].get('totalPaidMinor'), 100);
     assert.equal(contractDocs.docs[0].get('monthlyBasePriceMinor'), 39700);
     assert.equal(contractDocs.docs[0].get('promotion.discountMinor'), 39600);
     for (const type of ['subscriptions', 'payments', 'economicLedger']) {
-      assert.equal((await db.collection('stores/official-store/' + type).get()).size, 1, type);
+      assert.equal((await db.collection('stores/store-ae53dc42e57eb9d5c3f7151c1431/' + type).get()).size, 1, type);
     }
     const promo = await db.doc(campaignPath).get();
     assert.equal(promo.get('redemptionCount'), 1);
@@ -514,6 +515,7 @@ test('live-compatible Business coupon pilot is restricted to one buyer, real ERP
     assert.equal(posts, 1, 'repeated webhooks must not mint a second Pix');
     assert.equal((await db.doc(root + '/official_plan_pix_pilot/one_shot').get()).get('buyerId'), 'buyer');
   } finally {
+    delete (globalThis as any).__officialPix.officialStoreId;
     delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUSINESS_COUPON_ENABLED;
     delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_ID;
     delete process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE;

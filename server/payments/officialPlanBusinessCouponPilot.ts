@@ -37,6 +37,8 @@ export const assertLiveBusinessCouponPilot = (input: {
       process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true' ||
       !validId(expectedBuyerUid) || buyerUid !== expectedBuyerUid ||
       !validId(expectedPromotionId) || !validCode(expectedCode) ||
+      offer.storeId !== OFFICIAL_STORE_CANONICAL_ID ||
+      offer.productId !== OFFICIAL_PLAN_BUSINESS_PRODUCT_ID ||
       offer.plan !== 'business' || offer.quote.months !== 1 ||
       offer.priceMinor !== 39700 || offer.quote.totalMinor !== 39700 ||
       (offer.points ?? 0) !== 0 || (offer.rewards?.xp ?? 0) !== 0 ||
