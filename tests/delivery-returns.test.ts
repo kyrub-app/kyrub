@@ -34,6 +34,13 @@ test('returned package is a custody state, not completed order or payout',()=>{
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/declare'/);
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/confirm-receipt'/);
   assert.match(courier,/Estou na loja com a encomenda/);
+  assert.match(courier,/authorization_revoked/);
+  assert.match(courier,/Retorno à loja revogado pela logística/);
+  assert.match(courier,/Não prossiga com a devolução/);
+  assert.doesNotMatch(courier,/if\(!protocol \|\| protocol\.status==='authorization_revoked'\)return null/);
+  assert.match(courier,/where\('courierId','==',uid\)/);
+  assert.match(courier,/snapshot\.metadata\.fromCache/);
+  assert.match(courier,/role="alert"/);
   assert.match(store,/Confirmar recebimento físico na loja/);
   assert.match(storeMounted,/StoreDeliveryReturnQueue/);
   assert.match(buyer,/Encomenda devolvida à loja/);
