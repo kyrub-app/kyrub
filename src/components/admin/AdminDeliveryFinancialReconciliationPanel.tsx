@@ -27,8 +27,8 @@ const cents = (text: string): number | null => {
 };
 
 export function AdminDeliveryFinancialReconciliationPanel({
-  user, deliveryId, incidentStatus,
-}: { user: User; deliveryId: string; incidentStatus: string }) {
+  user, deliveryId, incidentStatus, canExecuteCustody,
+}: { user: User; deliveryId: string; incidentStatus: string; canExecuteCustody: boolean }) {
   const [value, setValue] = useState<FinanceRecord | null>(null);
   const [readTotal, setReadTotal] = useState<number | null>(null);
   const [unresolved, setUnresolved] = useState(0);
@@ -131,7 +131,40 @@ export function AdminDeliveryFinancialReconciliationPanel({
     } finally { setBusy(false); }
   };
 
-  if (incidentStatus !== 'transfer_evidence_confirmed_pending_reconciliation') return null;
+  const execute = async () => {
+    if (!canExecuteCustody || busy) return;
+    const typed = window.prompt(
+      'Esta ação troca o entregador responsável no ERP e reinicia o GPS. A nova entrega só será concluída com confirmação do comprador; parcelas serão reconhecidas somente nessa confirmação. Para continuar digite TRANSFERIR:'
+    );
+    if (typed !== 'TRANSFERIR') return;
+    const reason = window.prompt('Justifique a troca operacional segura e a ausência de obrigações pendentes (10–500 caracteres):')?.trim();
+    if (!reason) return;
+    if (reason.length < 10 || reason.length > 500) {
+      setMessage('A justificativa deve conter de 10 a 500 caracteres.');
+      return;
+    }
+    setBusy(true);
+    setMessage('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(
+        `/api/delivery-opportunities/admin/compliance-incidents/${encodeURIComponent(deliveryId)}/execute-reassignment`,
+        {
+          method:'POST',
+          headers: {authorization:`Bearer ${token}`, 'content-type':'application/json'},
+          body:JSON.stringify({reason}),
+        }
+      );
+      const outcome = await response.json().catch(() => ({})) as Record<string,unknown>;
+      if (!response.ok) throw new Error(clean(outcome.error) || 'Transferência operacional recusada.');
+      setMessage('Responsabilidade transferida ao substituto. GPS anterior apagado. A remuneração só ficará elegível após confirmação do comprador.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Transferência não autorizada.');
+    } finally { setBusy(false); }
+  };
+
+  if (!['transfer_evidence_confirmed_pending_reconciliation',
+    'reassigned_awaiting_buyer_confirmation'].includes(incidentStatus)) return null;
   const chosen = cents(outgoingText);
   const expired = Boolean(value && value.expiresAtEpochMs <= Date.now());
   return (
@@ -203,9 +236,24 @@ export function AdminDeliveryFinancialReconciliationPanel({
             <p className="text-[9px] text-red-200">Termos expirados. Solicite revisão logística; não prossiga automaticamente.</p>
           )}
           {value.status === 'approved_pending_manual_execution' && (
-            <p className="rounded-lg border border-red-500/25 bg-red-500/10 p-2 text-[9px] text-red-200">
-              Termos aprovados apenas para execução manual controlada. O sistema não efetuou repasses
-              nem reatribuiu a entrega; é indispensável conciliar as obrigações pendentes.
+            <div className="space-y-2">
+              <p className="rounded-lg border border-red-500/25 bg-red-500/10 p-2 text-[9px] text-red-200">
+                Termos aprovados. A transferência exige Super Admin independente e não pode ter
+                obrigações econômicas ativas ou espera remunerada pendente.
+              </p>
+              {canExecuteCustody && (
+                <button type="button" disabled={busy || value.unresolvedObligationCount > 0}
+                  onClick={() => void execute()}
+                  className="rounded-lg border border-amber-500/50 px-3 py-2 text-[9px] font-black text-amber-200 disabled:opacity-50">
+                  Executar reatribuição com conferência transacional (sem repasse)
+                </button>
+              )}
+            </div>
+          )}
+          {value.status === 'operational_reassigned_awaiting_buyer_confirmation' && (
+            <p className="rounded-lg border border-teal-500/25 bg-teal-500/10 p-2 text-[9px] text-teal-200">
+              Substituto assumiu no ERP. Rastreio reiniciado; somente a confirmação do comprador
+              poderá reconhecer as duas parcelas, sem executar Pix.
             </p>
           )}
         </>
