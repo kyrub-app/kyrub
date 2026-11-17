@@ -18,6 +18,23 @@ Esta é a bateria oficial de desenvolvimento do Kyrub para a fase de fechamento 
 - Uma funcionalidade pode estar **funcionalmente aprovada em isolamento** e **visualmente pendente**. Este é o caso de entregas da #1145. Isso fecha apenas o bloco funcional, **não o gate de lançamento**.
 - Não multiplicar PRs: reconciliar/encerrar drafts antigas substituídas, preservando commits e provas úteis, antes de abrir nova implementação.
 
+### Constatação da produção real — Vercel/GitHub (17/11/2026)
+
+**Regra do proprietário:** Kyrub **já foi publicado**. Nossa prioridade é **estabilizar o ecossistema**, não anunciar novo lançamento. A revisão de loja/atendimento/visita **não exige compra**; apenas o selo futuro `compra verificada` exige confirmação do pedido e pagamento pelo servidor. Não alterar premiação ou moderar automaticamente avaliações.
+
+**Verdade do deployment (consulta autenticada, somente leitura):**
+
+- **Produção:** [Vercel deployment `dpl_DQinz91riQrQNH6tUXdv5NNYV7H1`](https://vercel.com/kyrubapp-6434s-projects/kyrub/DQinz91riQrQNH6tUXdv5NNYV7H1), `READY`, `target=production`, branch `main`, commit `008c6078435a312e05358a583ece6b148614a04e`, aliases `www.kyrub.com`, `kyrub.com`, `admin.kyrub.com`, `planos.kyrub.com`. **Ainda não contém o lote comercial/social recente.**
+- **Preview de desenvolvimento:** [Vercel `dpl_ARsK6qxSJLm9V3115oEaxmZumpZn`](https://vercel.com/kyrubapp-6434s-projects/kyrub/ARsK6qxSJLm9V3115oEaxmZumpZn), `READY`, `target=null`, SHA `da8bb296ec0a2089469f0ac6e782cfbeb4052db6`, [PR #1158](https://github.com/kyrub-app/kyrub/pull/1158) Draft. **13/13 workflows PASS**, Firestore **290/290 (+3+5)**, prebuild **2.281/2.281**, TypeScript/build/Phase10. Isso prova um build testado em isolamento, **não** publicação das Rules nem funcionamento de dinheiro real.
+- **Lojista/ERP:** a candidata #1158 reúne #1152/#1153/#1156/#1157 e respectivas correções comerciais, sociais, antifraude e de avaliação; evitar merges duplicados das PRs acumuladas. Falta E2E real com contas controladas e release app + Firestore Rules/índices coordenado.
+- **Renda/entregas:** [PR #1154](https://github.com/kyrub-app/kyrub/pull/1154) permanece **separada** da #1158. Testes isolados 13/13 não liberam corridas pagas: GPS físico, direito/qualificações, retorno/suporte, regras de dados e comprovação de proteção/liquidação do frete 1:N continuam bloqueios.
+- **Gamificação:** welcome de **100 Pitangas** permanece bloqueado por atestação de escritores Firebase e cerca transacional, independentemente de testes isolados. **2 XP pela primeira publicação da loja** e Free ao criar a loja são eventos distintos. Não anunciar campanha como disponível enquanto flags/fence estiverem OFF.
+- **Checkout Pro/Business:** `docs/OFFICIAL_PLAN_PIX_RELEASE.md` exige flags/webhook/collector/preflight e mantém gates do pagamento sem loja. O último preflight histórico apontava `checkoutEnabled:false`, mas **não foi revalidado agora com conta administrativa**. O documento antigo descreve piloto **Pro R$197**, diferente da intenção posterior de piloto **Business R$1**; conciliar regra e limite antes de qualquer cobrança. Não mexer no recebedor `3631706959`, secrets ou valores em produção nesta etapa.
+- **Gate de liberação:** (1) congelar **um HEAD**, (2) conferir versões realmente implantadas das Firestore Rules/índices, backend, flags e contagem serverless; (3) homologar navegador e Android com **login → Free → catálogo → publicação → compra → ERP/KDS/estoque → cancelamento/reembolso**, (4) proteger Renda e Pitangas indisponíveis, (5) checklist de rollback separando Vercel, Rules e dados financeiros, (6) **autorização explícita** antes de merge, regras ou deploy, e separada antes de Pix real.
+- **V0/V1 sem contaminação de escopo:** avaliação comum/denúncia não depende de compra; distintivo de compra verificada e novas recompensas sociais são melhorias posteriores, não pretexto para atrasar a estabilização comercial. Toda funcionalidade exibida como ativa deve respeitar seu gate particular.
+
+**Nenhum merge, deploy, alteração financeira, mudança de flags ou dados produtivos foi realizado nesta inspeção.** Manter os 67 itens históricos e revisar apenas lacunas de comprovação do release.
+
 ### Ordem de execução comercial: um fluxo de ponta a ponta
 
 | Ordem | Bloco de trabalho | PRs/fonte a reconciliar | Pronto quando |
