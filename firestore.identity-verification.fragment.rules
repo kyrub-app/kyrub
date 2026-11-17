@@ -306,35 +306,7 @@
                 existing().status == 'approved'
                   ? (
                       incoming().diff(existing()).affectedKeys().hasAny(['motofreteQualification'])
-                        ? (hasControlPlaneRole(['super_admin', 'compliance'])
-        && existing().status == 'approved'
-        && existing().approvedProfiles.hasAny(['motorized_courier'])
-        && 'motofreteQualification' in existing()
-        && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
-        && incoming().updatedAt == request.time
-        && incoming().motofreteQualification.documents == existing().motofreteQualification.documents
-        && incoming().motofreteQualification.submittedAt == existing().motofreteQualification.submittedAt
-        && incoming().motofreteQualification.reviewedAt == request.time
-        && incoming().motofreteQualification.reviewedBy == request.auth.uid
-        && (
-          (existing().motofreteQualification.status == 'submitted'
-            && incoming().motofreteQualification.status == 'approved'
-            && incoming().motofreteQualification.reviewReason == ''
-            && motofreteChecklistApproved(incoming().motofreteQualification)
-            && incoming().motofreteQualification.validUntil is timestamp
-            && incoming().motofreteQualification.validUntil > request.time
-            && incoming().motofreteQualification.validUntil <= request.time + duration.value(180, 'd'))
-          || (existing().motofreteQualification.status == 'submitted'
-            && incoming().motofreteQualification.status == 'rejected'
-            && incoming().motofreteQualification.reviewReason.size() > 0
-            && incoming().motofreteQualification.validUntil == null
-            && motofreteChecklistNotVerified(incoming().motofreteQualification))
-          || (existing().motofreteQualification.status == 'approved'
-            && incoming().motofreteQualification.status == 'revoked'
-            && incoming().motofreteQualification.reviewReason.size() > 0
-            && incoming().motofreteQualification.validUntil == null
-            && motofreteChecklistNotVerified(incoming().motofreteQualification))
-        ))
+                        ? false // Motofrete decisions are server-only and atomically audited.
                         : (hasControlPlaneRole(['super_admin', 'operations', 'compliance'])
         && existing().status == 'approved'
         && 'profileExpansion' in existing()
@@ -416,6 +388,37 @@
       );
 
       allow delete: if false;
+    }
+
+    // Immutable server-owned audit history. No client (including administrators)
+    // can create, edit or delete a review event.
+    match /motofreteReviewEvents/{eventId} {
+      allow get: if isSignedIn() &&
+        (resource.data.userId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','compliance']));
+      allow list: if isSignedIn()
+        && request.query.limit != null && request.query.limit <= 50
+        && (resource.data.userId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','compliance']));
+      allow create, update, delete: if false;
+    }
+
+    // A hold is operational, not a second identity record. The owner may
+    // inspect it; only the server can publish or clear it.
+    match /courierComplianceHolds/{userId} {
+      allow get: if isSignedIn() && (request.auth.uid == userId
+        || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow list: if hasControlPlaneRole(['super_admin','operations','compliance'])
+        && request.query.limit != null && request.query.limit <= 100;
+      allow create, update, delete: if false;
+    }
+
+    // A logistics incident has no public order data or personal documents.
+    match /deliveryComplianceIncidents/{deliveryId} {
+      allow get: if hasControlPlaneRole(['super_admin','operations','compliance']);
+      allow list: if hasControlPlaneRole(['super_admin','operations','compliance'])
+        && request.query.limit != null && request.query.limit <= 100;
+      allow create, update, delete: if false;
     }
 
     // PIN hashes are server-only. Client and Control Plane screens use the
