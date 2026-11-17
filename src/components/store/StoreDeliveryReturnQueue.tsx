@@ -22,6 +22,10 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
   const [message,setMessage]=useState('');
   const [queryState,setQueryState]=useState<'waiting'|'live'|'offline'|'error'>('waiting');
   const [sessionAuthorized,setSessionAuthorized]=useState(false);
+  const [reviewingId,setReviewingId]=useState('');
+  const [receiptCondition,setReceiptCondition]=useState<''|'intact'|'damaged'|'disputed'>('');
+  const [receiptNote,setReceiptNote]=useState('');
+  const [receiptAcknowledged,setReceiptAcknowledged]=useState(false);
 
   useEffect(()=>{
     let unsubscribeReturns:()=>void=()=>undefined;
@@ -31,6 +35,10 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
       setRows([]);
       setMessage('');
       setQueryState('waiting');
+      setReviewingId('');
+      setReceiptCondition('');
+      setReceiptNote('');
+      setReceiptAcknowledged(false);
       const authorized=Boolean(user && user.uid===storeId);
       setSessionAuthorized(authorized);
       if(!authorized)return;
@@ -39,6 +47,7 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
         {includeMetadataChanges:true},
         snap=>{
           setQueryState(snap.metadata.fromCache?'offline':'live');
+          setMessage(old=>old==='Não foi possível consultar devoluções sob revisão.'?'':old);
           setRows(snap.docs.map(item=>{
             const data=item.data() as Record<string,unknown>;
             return {
@@ -65,28 +74,16 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
     .sort((a,b)=>b.authorizedAtMs-a.authorizedAtMs).slice(0,40),[rows]);
 
   const confirm=async(row:ReturnRow)=>{
-    if(busy || row.status!=='courier_presented_to_store')return;
+    if(busy || row.status!=='courier_presented_to_store' || reviewingId!==row.id)return;
     if(queryState!=='live'){
       setMessage('Consulta da loja sem confirmação atual. Reconecte-se antes de registrar recebimento.');
       return;
     }
-    const condition=window.prompt(
-      'Após CONFERIR a encomenda fisicamente no balcão, informe sua condição: intacta, danificada ou divergente.'
-    )?.trim().toLowerCase();
-    const code=condition==='intacta'?'intact':condition==='danificada'?'damaged'
-      :condition==='divergente'?'disputed':'';
-    if(!code){
-      if(condition)setMessage('Informe intacta, danificada ou divergente.');
+    const note=receiptNote.trim();
+    if(!receiptCondition || note.length<10 || note.length>500 || !receiptAcknowledged){
+      setMessage('Escolha a condição, descreva a conferência (10 a 500 caracteres) e confirme a posse física.');
       return;
     }
-    const note=window.prompt('Descreva a conferência física, embalagem e eventuais divergências (10–500 caracteres):')?.trim();
-    if(!note)return;
-    if(note.length<10 || note.length>500){
-      setMessage('A descrição deve conter entre 10 e 500 caracteres.');return;
-    }
-    if(!window.confirm(
-      'Você REALMENTE recebeu o pacote do entregador indicado? Isso encerra a custódia operacional, mas NÃO cancela o pedido nem libera reembolso ou remuneração.'
-    ))return;
     setBusy(row.id);setMessage('');
     try{
       const user=auth.currentUser;
@@ -95,10 +92,14 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
       const r=await fetch(
         `/api/delivery-opportunities/${encodeURIComponent(row.id)}/return-to-store/confirm-receipt`,
         {method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
-          body:JSON.stringify({condition:code,note})}
+          body:JSON.stringify({condition:receiptCondition,note})}
       );
       const payload=await r.json().catch(()=>({})) as Record<string,unknown>;
       if(!r.ok)throw new Error(clean(payload.error)||'Recebimento não autorizado.');
+      setReviewingId('');
+      setReceiptCondition('');
+      setReceiptNote('');
+      setReceiptAcknowledged(false);
       setMessage('Posse da loja registrada. O pedido, eventual reembolso e os valores do entregador aguardam conciliação independente.');
     }catch(error){setMessage(error instanceof Error?error.message:'Não foi possível registrar o recebimento.');}
     finally{setBusy('');}
@@ -148,11 +149,57 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
                   Entregador declarou chegada no perímetro da loja. Confira
                   quem trouxe e o conteúdo físico; GPS sozinho não prova devolução.
                 </p>
-                <button type="button" disabled={Boolean(busy)||queryState!=='live'}
-                  onClick={()=>void confirm(row)}
-                  className="mt-3 w-full rounded-lg bg-amber-500 px-3 py-3 text-[10px] font-black text-slate-950 disabled:opacity-50">
-                  {busy===row.id?'Registrando…':'Confirmar recebimento físico na loja'}
-                </button>
+                {reviewingId===row.id ? (
+                  <div className="mt-3 space-y-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3">
+                    <label htmlFor={`return-condition-${row.id}`} className="block text-[10px] font-black text-amber-100">
+                      Condição da encomenda conferida
+                    </label>
+                    <select id={`return-condition-${row.id}`} value={receiptCondition}
+                      onChange={event=>setReceiptCondition(event.target.value as typeof receiptCondition)}
+                      className="w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-xs text-white">
+                      <option value="">Selecione a condição</option>
+                      <option value="intact">Intacta</option>
+                      <option value="damaged">Danificada</option>
+                      <option value="disputed">Divergente</option>
+                    </select>
+                    <label htmlFor={`return-note-${row.id}`} className="block text-[10px] font-black text-amber-100">
+                      Descrição da conferência (10 a 500 caracteres)
+                    </label>
+                    <textarea id={`return-note-${row.id}`} value={receiptNote}
+                      onChange={event=>setReceiptNote(event.target.value)}
+                      maxLength={500} rows={3}
+                      placeholder="Descreva embalagem, lacres e eventuais divergências; não inclua senhas nem dados pessoais."
+                      className="w-full rounded-lg border border-slate-600 bg-slate-900 p-3 text-xs text-white"/>
+                    <label className="flex items-start gap-2 text-[10px] leading-relaxed text-amber-100">
+                      <input type="checkbox" checked={receiptAcknowledged}
+                        onChange={event=>setReceiptAcknowledged(event.target.checked)}
+                        className="mt-0.5"/>
+                      Confirmei pessoalmente a posse física desta encomenda.
+                      Sei que isso não cancela o pedido nem autoriza reembolso ou remuneração.
+                    </label>
+                    <div className="flex gap-2">
+                      <button type="button" disabled={Boolean(busy)}
+                        onClick={()=>{setReviewingId('');setMessage('');}}
+                        className="flex-1 rounded-lg border border-slate-700 px-3 py-3 text-[10px] text-slate-300 disabled:opacity-50">
+                        Voltar
+                      </button>
+                      <button type="button"
+                        disabled={Boolean(busy)||queryState!=='live'||!receiptCondition
+                          ||receiptNote.trim().length<10||!receiptAcknowledged}
+                        onClick={()=>void confirm(row)}
+                        className="flex-1 rounded-lg bg-amber-500 px-3 py-3 text-[10px] font-black text-slate-950 disabled:opacity-50">
+                        {busy===row.id?'Registrando…':'Confirmar recebimento físico na loja'}
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" disabled={Boolean(busy)||queryState!=='live'}
+                    onClick={()=>{setReviewingId(row.id);setReceiptCondition('');
+                      setReceiptNote('');setReceiptAcknowledged(false);setMessage('');}}
+                    className="mt-3 w-full rounded-lg bg-amber-500 px-3 py-3 text-[10px] font-black text-slate-950 disabled:opacity-50">
+                    Conferir devolução no balcão
+                  </button>
+                )}
               </>
             )}
             {row.status==='returned_to_store_pending_reconciliation' && (
