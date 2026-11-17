@@ -32,6 +32,7 @@ import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDest
 import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.js';
 import { reviewMotofreteWithAudit, MOTO_CHECKLIST } from '../identity/motofreteReviewService.js';
 import { resolveDeliveryComplianceIncident } from './deliveryComplianceIncidentService.js';
+import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
   acknowledgeSupervisedCustodyTransfer,
@@ -149,6 +150,18 @@ const errorResponse = (response: Response, error: unknown): void => {
   if (message.startsWith('DELIVERY_FINANCIAL_RECONCILIATION_')) {
     response.status(409).json({ code: message,
       error: 'A fonte financeira está indisponível, mudou ou há uma obrigação incompatível. Atualize a conciliação sem liberar pagamentos.' });
+    return;
+  }
+  if (message === 'DELIVERY_CUSTODY_EXECUTION_FORBIDDEN') {
+    response.status(403).json({code:message,error:'A execução exige Super Admin independente de autores e beneficiários.'});
+    return;
+  }
+  if (message === 'DELIVERY_CUSTODY_EXECUTION_INVALID') {
+    response.status(400).json({code:message,error:'Informe uma justificativa válida para a execução.'});
+    return;
+  }
+  if (message.startsWith('DELIVERY_CUSTODY_EXECUTION_')) {
+    response.status(409).json({code:message,error:'A entrega, habilitação ou fonte financeira mudou, ou há obrigações já existentes. Não foi feita reatribuição.'});
     return;
   }
   if (message === 'CUSTODY_TRANSFER_SETTLEMENT_HOLD') {
@@ -885,6 +898,19 @@ export const createDeliveryOpportunityRouter = (): Router => {
       }));
     } catch (error) {
       errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/execute-reassignment', async (request, response) => {
+    try {
+      const executorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await executeSupervisedDeliveryReassignment({
+        deliveryId:request.params.deliveryId,
+        executorId,reason:clean(request.body?.reason),
+      }));
+    } catch (error) {
+      errorResponse(response,error);
     }
   });
 
