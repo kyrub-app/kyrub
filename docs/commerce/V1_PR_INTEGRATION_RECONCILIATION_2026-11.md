@@ -116,3 +116,11 @@
 - [ ] Confirmar release authority, visual mobile/Android, configuração de recebedores e PSP, LGPD e autorização do proprietário antes de qualquer Pix real, merge ou deploy.
 
 **Estados:** #1150, #1149 e #1151 `TESTADO_ISOLADO` (CI integrado verde, sem release); #1151 ainda requer cenário transversal varejo/KDS/reembolso e gates de produção/financeiro; primeira compra comercial e dinheiro real continuam `OWNER_GATE`. A lista-mãe mantém os 67 itens intactos e a governança de V0/V1/V1-ENTREGAS/V2.
+
+## 8. E2E transversal varejo/KDS/estoque/reembolso — concluído em emulador
+
+- **Candidata #1151 / SHA `d0e87e4d37b65a91e24837cc34b23eec94e13ec5`: 11/11 GitHub Actions PASS, 0 FAIL.** Workflow Firestore [run 44157965322](https://github.com/kyrub-app/kyrub/actions/runs/44157965322), job `134303714800`: **279/279 testes principais + 3/3 + 5/5 complementares aprovados**. Novos subtestes 74 e 75 executados de verdade no Firebase Emulator.
+- No **subteste 74**, pedido é criado pelo serviço canônico, o lojista aceita, o KDS aguarda a confirmação Pix assinada simulada, três callbacks concorrentes só registram um pagamento válido, o estoque de ingrediente cai exatamente 125g quando começa o preparo (sem dupla baixa em replay) e retorna ao nível anterior no cancelamento. Espelho ERP acompanha o pedido; nenhum reembolso automático é emitido como efeito colateral da mudança de status.
+- No **subteste 75**, evento pago validado antes do aceite não abre o KDS, cancelamento parcial do pedido ainda pendente registra obrigação de devolução transacional e idempotente, e um pedido posteriormente encerrado **não consegue** solicitar reembolso integral ao PSP enquanto houver histórico parcial incerto. Nenhuma solicitação real alcança o provedor.
+- **Estado:** `TESTADO_ISOLADO` para a cadeia varejista integrada; **não** significa reembolso Pix realmente executado, corrida simultânea de full+partial em PSP, split/liquidação do entregador, migração/prod, UI Android/GPS ou Beta Gate. Esses gates permanecem abertos e independentes.
+- A PR #1151 continua em Draft; a lista-mãe com os 67 itens e a distinção V0/V1/V1-ENTREGAS/V2 permanecem válidos. Próxima frente técnica da V1: conferir sobreposições de Praça/Comunidades (#1144) e gamificação (#1137) com este exato SHA; escritor Firebase ainda `OWNER_GATE` e não pode conceder recompensas reais.
