@@ -123,7 +123,8 @@ test('Google Maps is optional and only loads from configured environment key', (
   assert.match(navigationSource, /www\.google\.com\/maps\/dir/);
   assert.match(navigationSource, /two-wheeler/);
   assert.match(navigationSource, /bicycling/);
-  assert.match(mapSource, /buildCourierDeliveryNavigationUrl/);
+  assert.match(mapSource, /decideCourierRoute\(/);
+  assert.match(navigationSource, /buildCourierDeliveryNavigationUrl/);
   assert.doesNotMatch(mapSource, /travelmode: 'driving'/);
 });
 
@@ -140,7 +141,8 @@ test('live navigation uses confirmed vehicle and the active phase, never the pub
   assert.match(trackingBridgeSource, /navigation=\{\{ status: activeDelivery\.status, vehicleType: activeDelivery\.vehicleType \}\}/);
   assert.match(trackingBridgeSource, /activeDelivery\.status === 'accepted'/);
   assert.match(navigationSource, /input\.status === 'accepted' \? input\.pickup : input\.dropoff/);
-  assert.match(mapSource, /if \(navigation\)/);
+  assert.match(mapSource, /const route = navigation \? decideCourierRoute\(/);
+  assert.match(trackingBridgeSource, /returnStatus=\{returnRouteStatus\}/);
   assert.doesNotMatch(viewerSource, /navigation=\{/);
   assert.match(trackingBridgeSource, /error\.code === error\.PERMISSION_DENIED/);
   assert.match(trackingBridgeSource, /void stopRemoteTracking\(trackingDeliveryId\)/);
