@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { collection, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { PackageCheck, ShieldAlert, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
@@ -19,22 +20,44 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
   const [rows,setRows]=useState<ReturnRow[]>([]);
   const [busy,setBusy]=useState('');
   const [message,setMessage]=useState('');
+  const [queryState,setQueryState]=useState<'waiting'|'live'|'offline'|'error'>('waiting');
+  const [sessionAuthorized,setSessionAuthorized]=useState(false);
+
   useEffect(()=>{
-    if(auth.currentUser?.uid!==storeId)return;
-    return onSnapshot(
-      query(collection(db,'deliveryReturnProtocols'),where('storeId','==',storeId),limit(100)),
-      snap=>setRows(snap.docs.map(item=>{
-        const data=item.data() as Record<string,unknown>;
-        return {
-          id:item.id,courierId:clean(data.courierId),orderId:clean(data.orderId),
-          ticketId:clean(data.ticketId),status:clean(data.status),
-          authorizedAtMs:parseTime(data.authorizedAt),
-          courierPresentedAtMs:parseTime(data.courierPresentedAt),
-          receivedCondition:clean(data.receivedCondition),
-        };
-      })),
-      ()=>setMessage('Não foi possível consultar devoluções sob revisão.')
-    );
+    let unsubscribeReturns:()=>void=()=>undefined;
+    const unsubscribeAuth=onAuthStateChanged(auth,user=>{
+      unsubscribeReturns();
+      unsubscribeReturns=()=>undefined;
+      setRows([]);
+      setMessage('');
+      setQueryState('waiting');
+      const authorized=Boolean(user && user.uid===storeId);
+      setSessionAuthorized(authorized);
+      if(!authorized)return;
+      unsubscribeReturns=onSnapshot(
+        query(collection(db,'deliveryReturnProtocols'),where('storeId','==',storeId),limit(100)),
+        {includeMetadataChanges:true},
+        snap=>{
+          setQueryState(snap.metadata.fromCache?'offline':'live');
+          setRows(snap.docs.map(item=>{
+            const data=item.data() as Record<string,unknown>;
+            return {
+              id:item.id,courierId:clean(data.courierId),orderId:clean(data.orderId),
+              ticketId:clean(data.ticketId),status:clean(data.status),
+              authorizedAtMs:parseTime(data.authorizedAt),
+              courierPresentedAtMs:parseTime(data.courierPresentedAt),
+              receivedCondition:clean(data.receivedCondition),
+            };
+          }));
+        },
+        ()=>{
+          setRows([]);
+          setQueryState('error');
+          setMessage('Não foi possível consultar devoluções sob revisão.');
+        }
+      );
+    });
+    return ()=>{unsubscribeAuth();unsubscribeReturns();};
   },[storeId]);
 
   const visible=useMemo(()=>rows
@@ -43,6 +66,10 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
 
   const confirm=async(row:ReturnRow)=>{
     if(busy || row.status!=='courier_presented_to_store')return;
+    if(queryState!=='live'){
+      setMessage('Consulta da loja sem confirmação atual. Reconecte-se antes de registrar recebimento.');
+      return;
+    }
     const condition=window.prompt(
       'Após CONFERIR a encomenda fisicamente no balcão, informe sua condição: intacta, danificada ou divergente.'
     )?.trim().toLowerCase();
@@ -77,7 +104,8 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
     finally{setBusy('');}
   };
 
-  if(!visible.length)return null;
+  if(!sessionAuthorized)return null;
+  if(!visible.length && queryState==='live' && !message)return null;
   return (
     <section className="mb-4 rounded-3xl border border-amber-500/25 bg-amber-500/5 p-4">
       <h3 className="flex items-center gap-2 text-sm font-black text-amber-200">
@@ -88,6 +116,17 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
         Ela não conclui pedido, repasse, cancelamento ou reembolso.
       </p>
       {message && <p role="status" className="mt-2 text-[10px] text-amber-200">{message}</p>}
+      {queryState==='waiting' && (
+        <p role="status" className="mt-2 text-[10px] text-slate-300">Consultando protocolos de devolução…</p>
+      )}
+      {(queryState==='offline'||queryState==='error') && (
+        <p role="alert" className="mt-2 rounded-xl border border-amber-500/35 bg-amber-500/10 p-3 text-[10px] text-amber-100">
+          {queryState==='offline'
+            ? 'Sem confirmação atual do servidor. Os dados exibidos podem estar desatualizados.'
+            : 'Não foi possível confirmar os protocolos de devolução.'}
+          {' '}Não confirme recebimentos até restabelecer a consulta.
+        </p>
+      )}
       <div className="mt-3 grid gap-3 lg:grid-cols-2">
         {visible.map(row=>(
           <article key={row.id} className="rounded-2xl border border-slate-800 bg-slate-950 p-3 text-white">
@@ -109,7 +148,7 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
                   Entregador declarou chegada no perímetro da loja. Confira
                   quem trouxe e o conteúdo físico; GPS sozinho não prova devolução.
                 </p>
-                <button type="button" disabled={busy===row.id}
+                <button type="button" disabled={Boolean(busy)||queryState!=='live'}
                   onClick={()=>void confirm(row)}
                   className="mt-3 w-full rounded-lg bg-amber-500 px-3 py-3 text-[10px] font-black text-slate-950 disabled:opacity-50">
                   {busy===row.id?'Registrando…':'Confirmar recebimento físico na loja'}
@@ -125,8 +164,9 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
           </article>
         ))}
       </div>
-      {rows.length>40 && <p className="mt-3 text-[9px] text-amber-200">
-        Mostrando até 40 ocorrências. A paginação será necessária em escala.
+      {(visible.length>=40||rows.length>=100) && <p className="mt-3 text-[9px] text-amber-200">
+        Exibindo até 40 ocorrências entre no máximo 100 protocolos consultados.
+        A consulta pode omitir devoluções recentes quando houver mais registros; a paginação será necessária em escala.
       </p>}
     </section>
   );
