@@ -73,8 +73,9 @@
 - [x] Comparar caminhos alterados e confirmar sobreposição exata.
 - [x] Auditar os trechos relevantes dos quatro arquivos comuns e o gate de histórico parcial.
 - [x] Verificar CI individual das três PRs.
-- [ ] Construir candidato combinado **sem merge em main** (dependência técnica seguinte).
-- [ ] Executar testes cruzados no SHA combinado, abrangendo preço, estoque, cupom oficial, pedidos e reembolso.
+- [x] Construir candidato **#1139 + #1146** sem merge em main — [PR #1149](https://github.com/kyrub-app/kyrub/pull/1149), branch `integration/v1-catalog-refund-isolated-2026-11`, HEAD `e0bee3203631eb709821214a4e383955be0f288b` (exatamente 6 arquivos originais da #1146 aplicados sobre a #1139). **Aprovação conjunta depende do CI desse HEAD.**
+- [ ] Concluir CI da **#1149** para catálogo/pedidos + reembolso na mesma árvore.
+- [ ] Combinar a **#1138** preservando quatro arquivos sobrepostos e executar teste cruzado de preço, estoque, cupom oficial, pedidos e reembolso no novo SHA.
 - [ ] Homologação visual/Android e primeira compra real autorizada quando os respectivos gates permitirem.
 
 **Resultado:** diagnóstico de compatibilidade **concluído**; integração conjunta e homologação cruzada **pendentes**. Não há código de runtime alterado por este documento e a Vercel pode continuar bloqueada sem impedir preparação/revisão em branch isolada.
