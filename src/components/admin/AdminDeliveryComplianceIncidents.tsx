@@ -33,7 +33,7 @@ interface IncidentEvent {
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const PENDING = ['awaiting_logistics_review', 'awaiting_supervised_handoff'];
 
-export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
+export function AdminDeliveryComplianceIncidents({ user, canExecuteCustody }: { user: User; canExecuteCustody: boolean }) {
   const [incidents, setIncidents] = useState<Incident[]>([]);
   const [busy, setBusy] = useState('');
   const [historyBusy, setHistoryBusy] = useState('');
@@ -178,6 +178,8 @@ export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
                   : incident.status === 'awaiting_supervised_handoff' ? 'Transferência supervisionada pendente'
                     : incident.status === 'transfer_evidence_confirmed_pending_reconciliation'
                       ? 'Declarações revisadas — conciliação pendente'
+                    : incident.status === 'reassigned_awaiting_buyer_confirmation'
+                      ? 'Substituto responsável — aguardando comprador'
                     : incident.status === 'released_for_new_acceptance' ? 'Liberado para novo aceite'
                       : incident.status === 'closed_after_buyer_confirmation' ? 'Encerrado após confirmação'
                         : incident.status}
@@ -211,6 +213,7 @@ export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
               />
               <AdminDeliveryFinancialReconciliationPanel
                 user={user} deliveryId={incident.id} incidentStatus={incident.status}
+                canExecuteCustody={canExecuteCustody}
               />
               {incident.reason && (
                 <p className="mt-2 text-[9px] text-slate-400">Decisão: {incident.reason} · {incident.resolvedBy}</p>
