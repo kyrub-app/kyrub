@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { buildCourierDeliveryNavigationUrl, type CourierNavigationInput } from '../../utils/googleMapsDirections';
 
 interface CourierPosition {
   latitude: number;
@@ -10,6 +11,8 @@ interface CourierGoogleMapProps {
   position: CourierPosition | null;
   origin: string;
   destination: string;
+  /** Only the assigned courier gets an actionable navigation link. */
+  navigation?: Pick<CourierNavigationInput, 'status' | 'vehicleType'>;
 }
 
 type GoogleMapsImportLibrary = (
@@ -73,20 +76,11 @@ const loadGoogleMaps = async (): Promise<boolean> => {
   }
 };
 
-const routeUrl = (origin: string, destination: string): string => {
-  const params = new URLSearchParams({
-    api: '1',
-    origin,
-    destination,
-    travelmode: 'driving',
-  });
-  return `https://www.google.com/maps/dir/?${params.toString()}`;
-};
-
 export function CourierGoogleMap({
   position,
   origin,
   destination,
+  navigation,
 }: CourierGoogleMapProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<any>(null);
@@ -125,7 +119,20 @@ export function CourierGoogleMap({
     };
   }, [position?.latitude, position?.longitude]);
 
-  const externalRoute = origin && destination ? routeUrl(origin, destination) : '';
+  // The embedded map is a location visualization only. Google Maps owns directions;
+  // stage and vehicle come from the private, server-assigned delivery snapshot.
+  let externalRoute = '';
+  if (navigation) {
+    try {
+      externalRoute = buildCourierDeliveryNavigationUrl({
+        ...navigation,
+        pickup: origin,
+        dropoff: destination,
+      });
+    } catch {
+      // Legacy assigned deliveries without a confirmed vehicle cannot silently default to driving.
+    }
+  }
 
   return (
     <div className="space-y-2">
@@ -156,7 +163,7 @@ export function CourierGoogleMap({
             rel="noreferrer"
             className="font-black uppercase text-cyan-300 hover:text-cyan-200"
           >
-            Abrir rota
+            {navigation?.status === 'accepted' ? 'Navegar até a coleta' : 'Navegar até o cliente'}
           </a>
         )}
       </div>
