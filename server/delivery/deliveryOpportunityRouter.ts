@@ -30,6 +30,7 @@ import {
 import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryResponsibilityDecisionOrchestrator.js';
 import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
 import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.js';
+import { reviewMotofreteWithAudit, MOTO_CHECKLIST } from '../identity/motofreteReviewService.js';
 import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
   loadAuthoritativeDeliveryCustomerArrivalPolicy,
@@ -122,6 +123,25 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'COMPLIANCE_REVIEW_FORBIDDEN') {
+    response.status(403).json({ code: message, error: 'A revisão de motofrete exige Compliance ou Super Admin ativo.' });
+    return;
+  }
+  if (message === 'COMPLIANCE_REVIEW_INVALID') {
+    response.status(400).json({ code: message, error: 'A decisão de Compliance ou sua validade é inválida.' });
+    return;
+  }
+  if (message === 'COMPLIANCE_REVIEW_CONFLICT') {
+    response.status(409).json({ code: message, error: 'A situação da solicitação mudou; atualize a análise.' });
+    return;
+  }
+  if (message === 'COURIER_COMPLIANCE_HOLD') {
+    response.status(409).json({
+      code: message,
+      error: 'Esta entrega de moto exige intervenção logística. Pare em local seguro e contate o suporte.',
+    });
     return;
   }
   if (message === 'DELIVERY_PICKUP_FORBIDDEN') {
@@ -423,13 +443,15 @@ export const updateKyrubDeliveryStatus = async (
   const scheduleReference = adminDb.doc(escalationQueuePath(normalizedId));
   const publicOfferReference = adminDb.doc(publicOfferPath(normalizedId));
   const identityReference = adminDb.doc(`identity_verifications/${actor.uid}`);
+  const safetyHoldReference = adminDb.doc(`courierComplianceHolds/${actor.uid}`);
 
   await adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, scheduleSnapshot, identitySnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, scheduleSnapshot, identitySnapshot, safetyHoldSnapshot] = await Promise.all([
       transaction.get(deliveryReference),
       transaction.get(claimReference),
       transaction.get(scheduleReference),
       transaction.get(identityReference),
+      transaction.get(safetyHoldReference),
     ]);
     if (!deliverySnapshot.exists) {
       throw new Error('Esta entrega não foi encontrada.');
@@ -454,6 +476,9 @@ export const updateKyrubDeliveryStatus = async (
         throw new Error('VEHICLE_NOT_ELIGIBLE: Selecione bicicleta, moto ou carro.');
       }
       const vehicle: CourierVehicleType = requestedVehicle;
+      if (vehicle === 'motorcycle' && safetyHoldSnapshot.data()?.active === true) {
+        throw new Error('COURIER_COMPLIANCE_HOLD');
+      }
       const identity = identitySnapshot.data() as Record<string, unknown> | undefined;
       const vehicleEligibility = courierVehicleDocumentEligibility(identity, vehicle);
       if (!vehicleEligibility.eligible) {
@@ -504,6 +529,15 @@ export const updateKyrubDeliveryStatus = async (
 
     if (!claimSnapshot.exists || courierId !== actor.uid) {
       throw new Error('Somente o entregador responsável pode atualizar a entrega.');
+    }
+
+    if (delivery.vehicleType === 'motorcycle') {
+      if (safetyHoldSnapshot.data()?.active === true
+        || !courierVehicleDocumentEligibility(
+          identitySnapshot.data() as Record<string, unknown> | undefined, 'motorcycle'
+        ).eligible) {
+        throw new Error('COURIER_COMPLIANCE_HOLD');
+      }
     }
 
     if (status === 'delivering') {
@@ -635,6 +669,33 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
 
 export const createDeliveryOpportunityRouter = (): Router => {
   const router = Router();
+
+  // Reuse the existing serverless delivery router. Client Firestore writes can
+  // never approve/revoke motofrete without a server-owned append-only audit.
+  router.post('/admin/motofrete-review', async (request, response) => {
+    try {
+      const reviewerId = await authenticatedTenantId(request);
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown> : {};
+      const rawChecks = body.checks && typeof body.checks === 'object'
+        && !Array.isArray(body.checks) ? body.checks as Record<string, unknown> : {};
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const result = await reviewMotofreteWithAudit({
+        reviewerId,
+        userId: clean(body.userId),
+        decision: body.decision === 'approved' || body.decision === 'rejected'
+          || body.decision === 'revoked' ? body.decision : 'invalid' as never,
+        reason: clean(body.reason),
+        validUntilEpochMs: typeof body.validUntilEpochMs === 'number'
+          ? body.validUntilEpochMs : null,
+        checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, rawChecks[key] === true]))
+          as Record<typeof MOTO_CHECKLIST[number], boolean>,
+      });
+      response.json(result);
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
 
   router.post('/orders/:orderId/publish', async (request, response) => {
     try {
