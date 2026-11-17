@@ -53,7 +53,7 @@ test('support reports are server-authorized, auditable and never equivalent to c
   assert.doesNotMatch(service,/transaction\.update\(deliveryRef/);
   assert.doesNotMatch(service,/transaction\.update\(claimRef/);
   assert.doesNotMatch(service,/economicObligationPath|economicSettlements|providerPayment/);
-  assert.match(dialog,/href=\{\`tel:\\$\{item\.phone\}\`\}/);
+  assert.match(dialog,/tel:\$\{item\.phone\}/);
   assert.match(dialog,/sem garantia de atendimento imediato/);
   assert.match(bridge,/Abrir suporte desta entrega/);
   assert.match(bridge,/Solicitar suporte nesta entrega/);
