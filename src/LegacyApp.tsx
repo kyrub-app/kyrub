@@ -68,6 +68,7 @@ import { StoreConfigModal } from './components/modals/StoreConfigModal';
 import { SharedNotesModal } from './components/modals/SharedNotesModal';
 import { UserSearchModal } from './components/modals/UserSearchModal';
 import { MomentsModal } from './components/modals/MomentsModal';
+import { publishStoreReview } from './utils/storeReviews';
 import { ActiveAlarmModal } from './components/modals/ActiveAlarmModal';
 import { B2CCartDrawerServiceRequestWrapper as B2CCartDrawer } from './components/modals/B2CCartDrawerServiceRequestWrapper';
 import { GpsOverlayModal } from './components/modals/GpsOverlayModal';
@@ -497,10 +498,7 @@ export default function App() {
   // Store Moments (Avaliações/Depoimentos) states (Persistent)
   const [showMomentsModal, setShowMomentsModal] = useState(false);
   const [selectedStoreForMoments, setSelectedStoreForMoments] = useState<any | null>(null);
-  const [newMomentContent, setNewMomentContent] = useState('');
-  const [newMomentRating, setNewMomentRating] = useState(5);
-  const [newMomentPublishToPraca, setNewMomentPublishToPraca] = useState(true);
-  const [newMomentPhoto, setNewMomentPhoto] = useState('');
+
   const [momentos, setMomentos] = useState<any[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.MOMENTOS);
     return saved ? JSON.parse(saved) : initialMomentos;
@@ -1163,45 +1161,6 @@ const handleLogin = async (provider: 'google' | 'apple') => {
   };
 
   // Toggle friends
-
-  const handlePublishMoment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedStoreForMoments || !newMomentContent.trim()) return;
-
-const newMoment = {
-      id: `m-new-${Date.now()}`,
-      storeId: selectedStoreForMoments.id,
-      user: profileName || 'Você',
-      avatar: profilePhotoUrl || '',
-      content: newMomentContent,
-      rating: newMomentRating,
-      mediaUrl: newMomentPhoto || undefined,
-      createdAt: new Date().toLocaleString('pt-BR'),
-      publishedToFeed: newMomentPublishToPraca
-    };
-
-    setMomentos(prev => [newMoment, ...prev]);
-
-if (newMomentPublishToPraca) {
-      const newPost: SocialPost = {
-        id: `post-moment-${newMoment.id}`,
-        user: profileName || 'Você',
-        avatar: profilePhotoUrl || '',
-        time: 'Agora mesmo',
-        content: `🏪 [MOMENTO DA LOJA: ${selectedStoreForMoments.name.toUpperCase()}] ⭐ ${'★'.repeat(newMomentRating)}\n\n"${newMomentContent}"`,
-        likes: 0,
-        mediaUrls: newMomentPhoto ? [newMomentPhoto] : undefined
-      };
-      setPosts(prev => [newPost, ...prev]);
-      triggerToast('Momento publicado na loja e compartilhado na Praça!', 'success');
-    } else {
-      triggerToast('Momento publicado na loja com sucesso!', 'success');
-    }
-
-    setNewMomentContent('');
-    setNewMomentRating(5);
-    setNewMomentPhoto('');
-  };
 
   // Promotion plan button
   const handlePremiumUpgrade = () => {
@@ -1882,37 +1841,12 @@ if (newMomentPublishToPraca) {
           setSelectedStoreForMoments(null);
         }}
         momentos={momentos}
-        onPublishMoment={(data) => {
-          if (!selectedStoreForMoments) return;
-          const newMoment = {
-            id: `m-new-${Date.now()}`,
-            storeId: selectedStoreForMoments.id,
-            user: profileName || 'Você',
-            avatar: profilePhotoUrl || '',
-            content: data.content,
-            rating: data.rating,
-            mediaUrl: data.mediaUrl || undefined,
-            createdAt: new Date().toLocaleString('pt-BR'),
-            publishedToFeed: data.publishedToPraca
-          };
-
-          setMomentos(prev => [newMoment, ...prev]);
-
-          if (data.publishedToPraca) {
-            const newPost: SocialPost = {
-              id: `post-moment-${newMoment.id}`,
-              user: profileName || 'Você',
-              avatar: profilePhotoUrl || '',
-              time: 'Agora mesmo',
-              content: `Avaliou a loja ${selectedStoreForMoments.name} com ${'★'.repeat(data.rating)}: "${data.content}"`,
-              likes: 0,
-              mediaUrls: data.mediaUrl ? [data.mediaUrl] : undefined
-            };
-            setPosts(prev => [newPost, ...prev]);
-          }
-          triggerToast('Momento compartilhado!', 'success');
-          setShowMomentsModal(false);
-          setSelectedStoreForMoments(null);
+        onPublishMoment={async data => {
+          if (!selectedStoreForMoments) throw new Error('Selecione uma loja para avaliar.');
+          await publishStoreReview(selectedStoreForMoments, data);
+          triggerToast(data.publishedToPraca
+            ? 'Avaliação publicada na loja e compartilhada na Praça!'
+            : 'Avaliação publicada na loja!', 'success');
         }}
       />
 
