@@ -205,3 +205,38 @@ reajustar termos de trabalhos anteriores.
 autorizado no servidor e vinculada à loja original; validar fisicamente
 GPS, consentimento e capacidade do suporte; revisar custos e direitos do
 consumidor antes de lançamento. Operação real continua não autorizada.
+
+## Bloco técnico v1.4 — distância independente e controle de custos
+
+A rota de volta passa a contar com uma verificação sob demanda, via Google
+Routes API `computeRoutes`, com máscara exclusiva
+`routes.distanceMeters`. O servidor lê a posição do destinatário do
+snapshot georreferenciado canônico, a loja original do registro privado
+e a modalidade efetivamente aceita no claim. Para bicicleta/moto utiliza
+`BICYCLE`/`TWO_WHEELER` (beta e sujeitos a disponibilidade regional),
+e para carro `DRIVE`. Não aceita distância enviada pelo navegador, GPS
+do entregador ou endereço livre na requisição.
+
+**Portão de segurança e custo:** `platformEconomicPolicies/deliveryReturnRouteVerification`
+deve existir com `enabled: true` e `maxDistanceMeters` entre 1 e 200000.
+Sem isso, nenhuma chamada paga é realizada. A credencial Google permanece
+no repositório criptografado da plataforma. A consulta é manual, por operador
+autorizado **diferente daquele que autorizou o retorno**, após confirmação
+física da loja, contrato tarifário aceito e origem/destino válidos.
+A interface pede confirmação e informa que pode haver custo do provedor.
+Nenhuma API Maps foi acionada na implantação deste código.
+
+O resultado traz apenas a distância planejada, modo, identificador
+determinístico e auditoria; não registra trilha GPS nem prova trajeto
+real. A transação revalida a mesma rota, loja, política, protocolo e
+entregador antes de gravar `independentReturnDistanceAuthority`.
+Repetições do mesmo resultado não criam outro evento; conflitos
+suspendem a apuração. O valor continua uma **prévia sujeita a revisão**,
+não pagamento. Testes de adapter com resposta falsa não fazem requisições
+a Google.
+
+Para ativação operacional futura: autorização explícita de custos
+Maps/Routes, credencial com escopo apropriado, revisão de privacidade
+para envio de coordenadas ao provedor, suporte às modalidades e
+homologação mobile com GPS real. Nenhuma tarifa é publicada por
+esta alteração.
