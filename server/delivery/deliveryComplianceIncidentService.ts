@@ -50,7 +50,9 @@ export const assessIncidentDisposition = (
   decision: IncidentDisposition
 ): { allowed: boolean; reason: string } => {
   const conflict = (reason: string) => ({ allowed: false, reason });
-  if (state.incidentStatus !== 'awaiting_logistics_review'
+  if (!['awaiting_logistics_review','awaiting_supervised_handoff'].includes(state.incidentStatus)
+    || (state.incidentStatus === 'awaiting_supervised_handoff'
+      && decision !== 'close_after_buyer_confirmation')
     || state.incidentSource !== 'motofrete_qualification_revoked'
     || state.vehicleType !== 'motorcycle'
     || !state.holdActive
@@ -143,7 +145,9 @@ export const resolveDeliveryComplianceIncident = async (
     if (!incidentSnapshot.exists || clean(incident.deliveryId) !== deliveryId) {
       throw new Error('INCIDENT_CONFLICT');
     }
-    if (incident.status !== 'awaiting_logistics_review') {
+    if (incident.status !== 'awaiting_logistics_review'
+      && !(incident.status === 'awaiting_supervised_handoff'
+        && input.decision === 'close_after_buyer_confirmation')) {
       if (incident.decision === input.decision
         && incident.resolvedBy === operatorId && incident.reason === reason
         && clean(incident.resolutionEventId)) {
@@ -258,6 +262,8 @@ export const resolveDeliveryComplianceIncident = async (
         status: 'waiting',
         availableAt: Timestamp.fromMillis(at.toMillis() + ESCALATION_DELAY_MS),
         updatedAt: at,
+        cancelledReason: FieldValue.delete(),
+        acceptedBy: FieldValue.delete(),
         ...(scheduleSnapshot.exists ? {} : { createdAt: at }),
       }, { merge: true });
     }
