@@ -37,7 +37,7 @@ import { publishStoreReview } from '../utils/storeReviews';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
 import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
 import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
-import { OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
+import { OFFICIAL_PLAN_BUSINESS_PRODUCT_ID, OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
 
 interface PublicStorefrontAppProps {
   slug: string;
@@ -380,11 +380,22 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const eligibleCouponPlans = sharedCouponCode && couponPromotion
     ? officialPlanProducts.filter(product => couponPromotion.productIds.includes(product.id))
     : [];
+  // Private coupons are omitted from public discovery on purpose.
+  // Let the buyer request a canonical Business quote with the URL code:
+  // the server proves their eligibility before showing any payable Pix.
+  const privateCouponNeedsServerCheck = Boolean(
+    isOfficialStore && sharedCouponCode && !couponLoading && !couponPromotion
+  );
+  const privateBusinessCandidate = privateCouponNeedsServerCheck
+    ? officialPlanProducts.filter(product => product.id === OFFICIAL_PLAN_BUSINESS_PRODUCT_ID)
+    : [];
   const availablePlanProducts = sharedCouponCode
-    ? eligibleCouponPlans : officialPlanProducts;
+    ? (couponPromotion ? eligibleCouponPlans : privateBusinessCandidate)
+    : officialPlanProducts;
   const selectedOfficialPlan = availablePlanProducts.find(product => product.id === selectedOfficialPlanId) ??
     (sharedCouponCode ? availablePlanProducts[0] ?? null : null);
-  const couponForOfficialPlan = isOfficialStore && eligibleCouponPlans.length > 0;
+  const couponForOfficialPlan = isOfficialStore &&
+    (eligibleCouponPlans.length > 0 || privateBusinessCandidate.length > 0);
   const couponForRetail = Boolean(sharedCouponCode) &&
     (!isOfficialStore || (couponPromotion !== null && !couponForOfficialPlan));
 
@@ -523,7 +534,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       )}
       {isOfficialStore && sharedCouponCode && !couponLoading && !couponPromotion && (
         <p role="alert" className="mx-auto mt-3 max-w-5xl rounded-xl border border-amber-500/30 p-3 text-xs text-amber-200">
-          O cupom {sharedCouponCode} não está disponível. Nenhum valor será cobrado por esse código.
+          Cupom {sharedCouponCode} não listado publicamente. Se for um cupom exclusivo, a elegibilidade será verificada com a conta autenticada antes de qualquer cobrança. Um código inválido nunca será ignorado para cobrar o valor integral.
         </p>
       )}
       {couponForRetail && (
@@ -549,7 +560,9 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             </p>
             {couponForOfficialPlan && (
               <p className="mt-3 text-xs font-semibold text-emerald-300">
-                Cupom da Praça {sharedCouponCode} identificado. O valor e a elegibilidade serão confirmados pelo servidor antes do aceite.
+                Cupom da Praça {sharedCouponCode} informado. {privateCouponNeedsServerCheck
+                  ? 'Por ser privado ou não encontrado na lista pública, o servidor validará o código para Business antes de qualquer cobrança.'
+                  : 'O valor e a elegibilidade serão confirmados pelo servidor antes do aceite.'}
               </p>
             )}
             {sharedCouponCode && !couponLoading && !couponForOfficialPlan && (

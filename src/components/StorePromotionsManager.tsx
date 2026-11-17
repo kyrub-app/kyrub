@@ -12,6 +12,8 @@ type Draft = {
   badge: string;
   discountType: StorePromotionDiscountType;
   discountValue: string;
+  eligibilityMode: 'public' | 'specific_user';
+  eligibleUserIds: string;
   productIds: string[];
   startsAt: string;
   endsAt: string;
@@ -31,7 +33,8 @@ const emptyDraft = (): Draft => {
   const start = new Date();
   const end = new Date(start.getTime() + 30 * 24 * 60 * 60 * 1000);
   return {
-    code: '', title: '', badge: '', discountType: 'percentage', discountValue: '', productIds: [],
+    code: '', title: '', badge: '', discountType: 'percentage', discountValue: '',
+    eligibilityMode: 'public', eligibleUserIds: '', productIds: [],
     startsAt: localInput(start), endsAt: localInput(end), maxRedemptions: '0', maxRedemptionsPerBuyer: '0', active: true,
   };
 };
@@ -43,6 +46,8 @@ const fromPromotion = (promotion: StorePromotion): Draft => ({
   badge: promotion.badge,
   discountType: promotion.discountType,
   discountValue: String(promotion.discountValue),
+  eligibilityMode: promotion.eligibility.mode === 'specific_user' ? 'specific_user' : 'public',
+  eligibleUserIds: promotion.eligibility.userIds?.join(', ') ?? '',
   productIds: promotion.productIds,
   startsAt: localInput(new Date(promotion.startsAt)),
   endsAt: localInput(new Date(promotion.endsAt)),
@@ -130,6 +135,12 @@ export function StorePromotionsManager({
       triggerToast('Informe código, título, desconto e pelo menos um produto.', 'error');
       return;
     }
+    const eligibleUserIds = [...new Set(draft.eligibleUserIds.split(/[,;\s]+/).map(value => value.trim()).filter(Boolean))];
+    if (draft.eligibilityMode === 'specific_user' &&
+        (!eligibleUserIds.length || eligibleUserIds.some(uid => !/^[A-Za-z0-9_-]{1,128}$/.test(uid)))) {
+      triggerToast('Informe o UID Firebase autorizado a utilizar este cupom.', 'error');
+      return;
+    }
     setBusy(true);
     try {
       const body = {
@@ -139,6 +150,8 @@ export function StorePromotionsManager({
         badge: draft.badge,
         discountType: draft.discountType,
         discountValue: Number(draft.discountValue),
+        eligibility: draft.eligibilityMode === 'specific_user'
+          ? { mode: 'specific_user', userIds: eligibleUserIds } : { mode: 'public' },
         productIds: draft.productIds,
         startsAt: new Date(draft.startsAt).toISOString(),
         endsAt: new Date(draft.endsAt).toISOString(),
@@ -270,6 +283,27 @@ export function StorePromotionsManager({
             <label className="text-[9px] font-black uppercase text-slate-400">Fim<input type="datetime-local" value={draft.endsAt} onChange={event => setDraft(value => ({ ...value, endsAt: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs" /></label>
             <label className="text-[9px] font-black uppercase text-slate-400">Limite total <span className="normal-case font-normal">(0 = sem limite)</span><input type="number" min="0" step="1" value={draft.maxRedemptions} onChange={event => setDraft(value => ({ ...value, maxRedemptions: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs" /></label>
             <label className="text-[9px] font-black uppercase text-slate-400">Por cliente <span className="normal-case font-normal">(0 = sem limite)</span><input type="number" min="0" step="1" value={draft.maxRedemptionsPerBuyer} onChange={event => setDraft(value => ({ ...value, maxRedemptionsPerBuyer: event.target.value }))} className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs" /></label>
+            <label className="text-[9px] font-black uppercase text-slate-400">
+              Quem pode utilizar
+              <select aria-label="Elegibilidade do cupom" value={draft.eligibilityMode}
+                onChange={event => setDraft(value => ({ ...value, eligibilityMode: event.target.value as 'public' | 'specific_user' }))}
+                className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-white">
+                <option value="public">Todos os clientes</option>
+                <option value="specific_user">Perfis Firebase específicos</option>
+              </select>
+            </label>
+            {draft.eligibilityMode === 'specific_user' && (
+              <label className="text-[9px] font-black uppercase text-slate-400">
+                UID(s) autorizado(s) — não serão publicados na Praça
+                <input aria-label="UID autorizado do cupom" value={draft.eligibleUserIds}
+                  onChange={event => setDraft(value => ({ ...value, eligibleUserIds: event.target.value }))}
+                  className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs text-white"
+                  placeholder="UID Firebase do comprador (pode separar por vírgula)" />
+                <span className="mt-1 block text-[9px] font-normal normal-case text-amber-300">
+                  No piloto Business R$ 1, informe apenas um UID e configure os dois limites como 1.
+                </span>
+              </label>
+            )}
           </div>
           <div>
             <span className="text-[9px] font-black uppercase text-slate-400">Produtos participantes</span>
@@ -287,7 +321,11 @@ export function StorePromotionsManager({
         <div role="dialog" aria-label="Compartilhar cupom na Praça" className="space-y-3 rounded-2xl border border-orange-500/40 bg-slate-950 p-4">
           <strong className="text-xs">Compartilhar na Praça</strong>
           <p className="text-xs text-slate-300">{sharingPromotion.title} · Cupom {sharingPromotion.code}</p>
-          <p className="text-[10px] text-slate-400">A oferta será publicada no feed público com o nome da loja. A disponibilidade e validade continuam sendo verificadas pelo checkout; a publicação não reserva utilizações.</p>
+          <p className="text-[10px] text-slate-400">
+            A oferta será publicada no feed público com o nome da loja. A disponibilidade e validade continuam sendo verificadas pelo checkout; a publicação não reserva utilizações.
+            {sharingPromotion.eligibility.mode === 'specific_user'
+              ? ' Somente os perfis autorizados poderão utilizar o cupom; publicar o código não concede acesso a outros.' : ''}
+          </p>
           <div className="flex gap-2">
             <button type="button" disabled={busy} onClick={() => void shareToPraca()} className="min-h-9 rounded-xl bg-orange-500 px-3 text-[9px] font-black uppercase text-slate-950">Confirmar publicação</button>
             <button type="button" disabled={busy} onClick={() => setSharingPromotion(null)} className="min-h-9 rounded-xl border border-slate-700 px-3 text-[9px] font-black uppercase">Cancelar</button>

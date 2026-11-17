@@ -46,6 +46,20 @@ const parsePromotion = (
 ): StorePromotion => {
   const now = new Date().toISOString();
   const id = existing?.id || clean(body.id) || `promo_${randomUUID()}`;
+  const source = body.eligibility;
+  const eligibilityInput = source && typeof source === 'object' && !Array.isArray(source)
+    ? source as Record<string, unknown> : null;
+  const eligibilityMode = eligibilityInput?.mode ?? 'public';
+  if (eligibilityMode !== 'public' && eligibilityMode !== 'specific_user') {
+    throw new Error('PROMOTION_ELIGIBILITY_INVALID');
+  }
+  const userIds = Array.isArray(eligibilityInput?.userIds)
+    ? [...new Set(eligibilityInput.userIds.filter(
+      (value): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+    ))] : [];
+  if (eligibilityMode === 'specific_user' && userIds.length === 0) {
+    throw new Error('PROMOTION_USERS_REQUIRED');
+  }
   return normalizeStorePromotion({
     id,
     storeId,
@@ -55,7 +69,8 @@ const parsePromotion = (
     discountType: body.discountType === 'fixed' ? 'fixed' : 'percentage',
     discountValue: Number(body.discountValue),
     productIds: Array.isArray(body.productIds) ? body.productIds.map(clean).filter(Boolean) : [],
-    eligibility: { mode: 'public' },
+    eligibility: eligibilityMode === 'specific_user'
+      ? { mode: 'specific_user', userIds } : { mode: 'public' },
     active: body.active !== false,
     startsAt: clean(body.startsAt),
     endsAt: clean(body.endsAt),
