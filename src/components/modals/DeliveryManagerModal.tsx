@@ -17,7 +17,7 @@ import {
 } from '../../../shared/deliveryVehicleCompatibility';
 import { isAvailableCourierOffer, isAssignedCourierDelivery, isCanonicalCourierDelivery } from '../../utils/courierDeliveryView';
 import { DeliveryJob } from '../../types';
-import { openGoogleMapsDirections } from '../../utils/googleMapsDirections';
+import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
 
 interface DeliveryManagerModalProps {
   isOpen: boolean;
@@ -284,11 +284,15 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
   const handleStartPickup = (job: DeliveryJob): void => {
     try {
-      openGoogleMapsDirections({
-        destination: job.from,
-        travelMode: (job.vehicleType ?? selectedVehicleType) === 'bicycle' ? 'bicycling' : 'driving',
+      const url = buildCourierDeliveryNavigationUrl({
+        status: 'accepted',
+        pickup: job.from,
+        dropoff: job.to,
+        vehicleType: job.vehicleType ?? null,
       });
-      triggerToast('Google Maps aberto com a rota para o ponto de coleta.', 'info');
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) window.location.assign(url);
+      triggerToast('Google Maps aberto na modalidade confirmada para a coleta.', 'info');
     } catch (error) {
       triggerToast(
         error instanceof Error ? error.message : 'Não foi possível abrir a rota para a coleta.',
