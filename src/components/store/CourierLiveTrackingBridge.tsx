@@ -493,6 +493,12 @@ export function CourierLiveTrackingBridge() {
           deliveryId={activeDelivery.id} stage={activeDelivery.status}
           pickupAddress={activeDelivery.from}
           vehicleType={activeDelivery.vehicleType}
+          trackingRecentlyConfirmed={courierTrackingUiState({
+            selected: trackingDeliveryId===activeDelivery.id && trackingAuthorized,
+            lastConfirmedAtMs: lastConfirmedTracking?.deliveryId===activeDelivery.id
+              ? lastConfirmedTracking.atMs : null,
+            hasIssue: Boolean(trackingError), nowMs: trackingClock,
+          })==='recent'}
           recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
           recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
           onClose={() => setSupportOpen(false)} />}
@@ -718,6 +724,7 @@ export function CourierLiveTrackingBridge() {
         deliveryId={activeDelivery.id} stage={activeDelivery.status}
         pickupAddress={activeDelivery.from}
         vehicleType={activeDelivery.vehicleType}
+        trackingRecentlyConfirmed={uiTrackingState==='recent'}
         recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
         recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
         onClose={() => setSupportOpen(false)} />}
