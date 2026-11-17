@@ -55,7 +55,7 @@ export const assessIncidentDisposition = (
       && decision !== 'close_after_buyer_confirmation')
     || state.incidentSource !== 'motofrete_qualification_revoked'
     || state.vehicleType !== 'motorcycle'
-    || !state.holdActive
+    || (!state.holdActive && decision !== 'close_after_buyer_confirmation')
     || !state.courierId
     || state.courierId !== state.assignedCourierId
     || state.courierId !== state.claimCourierId
@@ -186,7 +186,12 @@ export const resolveDeliveryComplianceIncident = async (
       fulfillmentType: clean(order.fulfillmentType),
       hasPickupEvidence,
       hasCompletion: completionSnapshot.exists && completionSnapshot.data()?.status === 'confirmed'
-        && completionSnapshot.data()?.settlementEligible === true,
+        && completionSnapshot.data()?.settlementEligible === true
+        && clean(completionSnapshot.data()?.deliveryId) === deliveryId
+        && clean(completionSnapshot.data()?.orderId) === sourceOrderId
+        && clean(completionSnapshot.data()?.storeId) === storeId
+        && clean(completionSnapshot.data()?.courierId) === courierId
+        && clean(completionSnapshot.data()?.confirmedBy) === clean(delivery.buyerId),
       holdActive: holdSnapshot.data()?.active === true
         && clean(holdSnapshot.data()?.userId) === courierId,
     }, input.decision);
@@ -262,9 +267,9 @@ export const resolveDeliveryComplianceIncident = async (
         status: 'waiting',
         availableAt: Timestamp.fromMillis(at.toMillis() + ESCALATION_DELAY_MS),
         updatedAt: at,
-        cancelledReason: FieldValue.delete(),
-        acceptedBy: FieldValue.delete(),
-        ...(scheduleSnapshot.exists ? {} : { createdAt: at }),
+        ...(scheduleSnapshot.exists
+          ? { cancelledReason: FieldValue.delete(), acceptedBy: FieldValue.delete() }
+          : { createdAt: at }),
       }, { merge: true });
     }
     // A parcel in transit is NOT reassigned by updating the Firestore claimant.
