@@ -30,6 +30,72 @@ export const buildCourierDeliveryNavigationUrl = (input: CourierNavigationInput)
   });
 };
 
+/** Return-to-store navigation comes only from the courier-authorized protocol.
+ * A missing, cached, or unreadable protocol must never guess a safe route.
+ */
+export type CourierReturnRouteStatus =
+  | 'none'
+  | 'checking'
+  | 'unavailable'
+  | 'return_authorized'
+  | 'authorization_revoked'
+  | 'courier_presented_to_store'
+  | 'returned_to_store_pending_reconciliation';
+
+export interface CourierRouteDecision {
+  url: string;
+  label: string;
+  nextLeg: string;
+  notice: string;
+}
+
+export const decideCourierRoute = (input: CourierNavigationInput & {
+  returnStatus?: CourierReturnRouteStatus;
+}): CourierRouteDecision => {
+  const returnStatus = input.status === 'accepted' ? 'none' : (input.returnStatus ?? 'checking');
+
+  if (returnStatus === 'checking' || returnStatus === 'unavailable') {
+    return {
+      url: '', label: '', nextLeg: 'orientação logística pendente',
+      notice: 'Não foi possível confirmar as instruções atuais de devolução. Consulte o suporte antes de seguir viagem.',
+    };
+  }
+  if (returnStatus === 'authorization_revoked') {
+    return {
+      url: '', label: '', nextLeg: 'retorno revogado',
+      notice: 'A autorização de retorno foi revogada. Não vá à loja nem mude a entrega por conta própria; pare em segurança e consulte o suporte.',
+    };
+  }
+  if (returnStatus === 'courier_presented_to_store'
+    || returnStatus === 'returned_to_store_pending_reconciliation') {
+    return {
+      url: '', label: '', nextLeg: 'aguardando confirmação da loja',
+      notice: 'Aguarde a conferência física da loja e as instruções da logística. A devolução não encerra automaticamente o pedido.',
+    };
+  }
+
+  const returning = returnStatus === 'return_authorized';
+  let url = '';
+  try {
+    url = buildCourierDeliveryNavigationUrl({
+      ...input,
+      status: returning ? 'accepted' : input.status,
+    });
+  } catch {
+    // Missing or unverified destination/vehicle: navigation stays unavailable.
+  }
+  return {
+    url,
+    label: returning ? 'Navegar de volta à loja'
+      : input.status === 'accepted' ? 'Navegar até a coleta' : 'Navegar até o cliente',
+    nextLeg: returning ? 'retorno autorizado à loja original'
+      : input.status === 'accepted' ? 'coleta' : 'cliente',
+    notice: returning
+      ? 'Devolução autorizada pela logística. A encomenda continua sob sua responsabilidade até a loja confirmar o recebimento.'
+      : '',
+  };
+};
+
 export interface GoogleMapsDirectionsInput {
   destination: string;
   destinationPlaceId?: string;
