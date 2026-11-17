@@ -43,6 +43,72 @@
           && expansion.reviewReason is string && expansion.reviewReason.size() <= 500;
       }
 
+      function validMotofreteDocument(path, optional) {
+        return path is string && (
+          (optional && path == '')
+          || (path.size() <= 500
+            && path.matches('^identity-verification/' + userId + '/document/[^/]+$'))
+        );
+      }
+
+      function validMotofreteQualification(qualification) {
+        return qualification is map
+          && qualification.keys().hasAll([
+            'status', 'documents', 'submittedAt', 'reviewedAt', 'reviewedBy', 'reviewReason',
+            'courseVerified', 'minimumAgeAndLicenseTenureVerified',
+            'vehicleRegistrationAndAuthorizationVerified', 'safetyEquipmentVerified',
+            'semiannualInspectionVerified', 'localRequirementsVerified', 'validUntil'
+          ])
+          && qualification.keys().hasOnly([
+            'status', 'documents', 'submittedAt', 'reviewedAt', 'reviewedBy', 'reviewReason',
+            'courseVerified', 'minimumAgeAndLicenseTenureVerified',
+            'vehicleRegistrationAndAuthorizationVerified', 'safetyEquipmentVerified',
+            'semiannualInspectionVerified', 'localRequirementsVerified', 'validUntil'
+          ])
+          && qualification.status in ['submitted', 'approved', 'rejected', 'revoked']
+          && qualification.documents is map
+          && qualification.documents.keys().hasAll([
+            'course', 'vehicle', 'inspection', 'equipment', 'local'
+          ])
+          && qualification.documents.keys().hasOnly([
+            'course', 'vehicle', 'inspection', 'equipment', 'local'
+          ])
+          && validMotofreteDocument(qualification.documents.course, false)
+          && validMotofreteDocument(qualification.documents.vehicle, false)
+          && validMotofreteDocument(qualification.documents.inspection, false)
+          && validMotofreteDocument(qualification.documents.equipment, false)
+          && validMotofreteDocument(qualification.documents.local, true)
+          && qualification.submittedAt is timestamp
+          && (qualification.reviewedAt == null || qualification.reviewedAt is timestamp)
+          && qualification.reviewedBy is string && qualification.reviewedBy.size() <= 128
+          && qualification.reviewReason is string && qualification.reviewReason.size() <= 500
+          && qualification.courseVerified is bool
+          && qualification.minimumAgeAndLicenseTenureVerified is bool
+          && qualification.vehicleRegistrationAndAuthorizationVerified is bool
+          && qualification.safetyEquipmentVerified is bool
+          && qualification.semiannualInspectionVerified is bool
+          && qualification.localRequirementsVerified is bool
+          && (qualification.validUntil == null || qualification.validUntil is timestamp);
+      }
+
+      function motofreteChecklistApproved(qualification) {
+        return qualification.courseVerified == true
+          && qualification.minimumAgeAndLicenseTenureVerified == true
+          && qualification.vehicleRegistrationAndAuthorizationVerified == true
+          && qualification.safetyEquipmentVerified == true
+          && qualification.semiannualInspectionVerified == true
+          && qualification.localRequirementsVerified == true;
+      }
+
+      function motofreteChecklistNotVerified(qualification) {
+        return qualification.courseVerified == false
+          && qualification.minimumAgeAndLicenseTenureVerified == false
+          && qualification.vehicleRegistrationAndAuthorizationVerified == false
+          && qualification.safetyEquipmentVerified == false
+          && qualification.semiannualInspectionVerified == false
+          && qualification.localRequirementsVerified == false;
+      }
+
       function validIdentityVerification(data) {
         return data.keys().hasAll([
           'uid',
@@ -87,7 +153,8 @@
           'submittedAt',
           'createdAt',
           'updatedAt',
-          'profileExpansion'
+          'profileExpansion',
+          'motofreteQualification'
         ])
         && data.uid == userId
         && data.status in ['draft', 'submitted', 'under_review', 'approved', 'rejected']
@@ -115,7 +182,9 @@
         && data.reviewReason.size() <= 500
         && data.reviewedBy is string
         && data.reviewedBy.size() <= 128
-        && (!('profileExpansion' in data) || validProfileExpansion(data.profileExpansion));
+        && (!('profileExpansion' in data) || validProfileExpansion(data.profileExpansion))
+        && (!('motofreteQualification' in data)
+          || validMotofreteQualification(data.motofreteQualification));
       }
 
       allow get: if isVerificationOwner() || isActiveControlPlaneAdmin();
@@ -130,6 +199,7 @@
         && validIdentityVerification(incoming())
         && incoming().status in ['draft', 'submitted']
         && !('profileExpansion' in incoming())
+        && !('motofreteQualification' in incoming())
         && incoming().approvedProfiles.size() == 0
         && incoming().reviewReason == ''
         && incoming().reviewedBy == ''
@@ -146,6 +216,7 @@
         && existing().uid == userId
         && existing().status != 'approved'
         && !('profileExpansion' in incoming())
+        && !('motofreteQualification' in incoming())
         && validIdentityVerification(incoming())
         && incoming().uid == existing().uid
         && incoming().createdAt == existing().createdAt
@@ -206,6 +277,57 @@
               )
             )
           )
+        );
+
+      // Motofrete never inherits an ordinary motorized approval. The owner may
+      // submit evidence, but cannot set any reviewer-owned compliance check.
+      allow update: if isVerificationOwner()
+        && existing().status == 'approved'
+        && existing().approvedProfiles.hasAny(['motorized_courier'])
+        && validIdentityVerification(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && (!('motofreteQualification' in existing())
+          || existing().motofreteQualification.status in ['rejected', 'revoked', 'approved'])
+        && incoming().motofreteQualification.status == 'submitted'
+        && incoming().motofreteQualification.submittedAt == request.time
+        && incoming().motofreteQualification.reviewedAt == null
+        && incoming().motofreteQualification.reviewedBy == ''
+        && incoming().motofreteQualification.reviewReason == ''
+        && incoming().motofreteQualification.validUntil == null
+        && motofreteChecklistNotVerified(incoming().motofreteQualification);
+
+      // Only compliance / super_admin review may record a bounded, time-limited
+      // approval. The owner cannot approve, change expiry or revoke it.
+      allow update: if hasControlPlaneRole(['super_admin', 'compliance'])
+        && existing().status == 'approved'
+        && existing().approvedProfiles.hasAny(['motorized_courier'])
+        && 'motofreteQualification' in existing()
+        && validIdentityVerification(incoming())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && incoming().motofreteQualification.documents == existing().motofreteQualification.documents
+        && incoming().motofreteQualification.submittedAt == existing().motofreteQualification.submittedAt
+        && incoming().motofreteQualification.reviewedAt == request.time
+        && incoming().motofreteQualification.reviewedBy == request.auth.uid
+        && (
+          (existing().motofreteQualification.status == 'submitted'
+            && incoming().motofreteQualification.status == 'approved'
+            && incoming().motofreteQualification.reviewReason == ''
+            && motofreteChecklistApproved(incoming().motofreteQualification)
+            && incoming().motofreteQualification.validUntil is timestamp
+            && incoming().motofreteQualification.validUntil > request.time
+            && incoming().motofreteQualification.validUntil <= request.time + duration.value(180, 'd'))
+          || (existing().motofreteQualification.status == 'submitted'
+            && incoming().motofreteQualification.status == 'rejected'
+            && incoming().motofreteQualification.reviewReason.size() > 0
+            && incoming().motofreteQualification.validUntil == null
+            && motofreteChecklistNotVerified(incoming().motofreteQualification))
+          || (existing().motofreteQualification.status == 'approved'
+            && incoming().motofreteQualification.status == 'revoked'
+            && incoming().motofreteQualification.reviewReason.size() > 0
+            && incoming().motofreteQualification.validUntil == null
+            && motofreteChecklistNotVerified(incoming().motofreteQualification))
         );
 
       // A compliance reviewer can append one courier profile atomically,
