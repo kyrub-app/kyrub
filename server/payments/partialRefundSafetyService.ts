@@ -11,6 +11,7 @@ const positiveAmount = (value: unknown): number =>
 export interface ConfirmedPartialRefundSummary {
   count: number;
   amount: number;
+  unresolvedCount: number;
 }
 
 export const getConfirmedPartialRefundSummary = async (input: {
@@ -26,16 +27,30 @@ export const getConfirmedPartialRefundSummary = async (input: {
   const snapshot = await adminDb
     .collection(`stores/${storeId}/paymentPartialRefunds`)
     .where('orderId', '==', orderId)
-    .limit(50)
+    .limit(51)
     .get();
+
+  // A capped scan must never silently treat omitted records as no history.
+  // An oversized history needs independent reconciliation, not a blind refund.
+  if (snapshot.size > 50) {
+    throw new Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+  }
 
   let count = 0;
   let amount = 0;
+  let unresolvedCount = 0;
   for (const document of snapshot.docs) {
     const data = document.data() as Record<string, unknown>;
-    if (clean(data.status) !== 'refunded') continue;
+    if (clean(data.status) !== 'refunded') {
+      // Includes required, processing, failed and unknown provider states.
+      // Failed is not proof the provider did not refund the money.
+      unresolvedCount += 1;
+      continue;
+    }
     const refundedAmount = positiveAmount(data.amount);
-    if (refundedAmount <= 0) continue;
+    if (refundedAmount <= 0) {
+      throw new Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+    }
     count += 1;
     amount += refundedAmount;
   }
@@ -43,6 +58,7 @@ export const getConfirmedPartialRefundSummary = async (input: {
   return {
     count,
     amount: Math.round((amount + Number.EPSILON) * 100) / 100,
+    unresolvedCount,
   };
 };
 
@@ -51,6 +67,9 @@ export const assertFullRefundHasNoConfirmedPartialHistory = async (input: {
   orderId: string;
 }): Promise<void> => {
   const summary = await getConfirmedPartialRefundSummary(input);
+  if (summary.unresolvedCount > 0) {
+    throw new Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+  }
   if (summary.count > 0 && summary.amount > 0) {
     throw new Error('PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL');
   }
