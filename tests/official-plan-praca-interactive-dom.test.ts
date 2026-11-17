@@ -78,7 +78,7 @@ test('Praça deep link quotes, accepts and opens official Business Pix without a
     'firebase/auth': `export class GoogleAuthProvider {setCustomParameters() {}}; export const onAuthStateChanged=(auth,cb)=>{cb(auth.currentUser);return ()=>{}};export const signInWithPopup=async()=>{throw Error('REAL_LOGIN_NOT_ALLOWED')};`,
     'utils/firebase': `export const auth={currentUser:{uid:'buyer',email:'buyer@example.test',emailVerified:true,getIdToken:async()=> 'isolated-fake-token'}}; export const db={};`,
     'utils/customerOrders': `export const subscribeToStoreCustomerOrders=()=>()=>{};`,
-    'utils/storefrontOriginContext': `export const loadStorefrontCart=()=>[];export const saveStorefrontCart=()=>{};export const saveStorefrontOriginContext=()=>{};`,
+    'utils/storefrontOriginContext': `export const loadStorefrontCart=()=>[];export const saveStorefrontCart=()=>{};export const saveStorefrontOriginContext=()=>{};export const reconcilePublishedStorefrontCart=(saved,offers)=>saved.filter(item=>offers.some(offer=>offer.id===item.product.id));`,
     'utils/storefrontEvents': `export const OPEN_PUBLIC_STOREFRONT_INFO_EVENT='open-storefront-info';`,
     'utils/marketplaceCheckout': `export const listMarketplacePromotions=async()=>[{id:'pilot',code:'BIZ1',title:'Business',badge:'PILOTO',discountType:'fixed',discountValue:396,productIds:['${BUSINESS}'],endsAt:'2099-12-31T00:00:00.000Z'}];`,
     'components/LegacyStorefrontPanel': `import {createElement} from 'react';export const StorefrontPanel=({products,handleAddToCart})=>createElement('button',{type:'button',id:'test-select-official-product',onClick:()=>handleAddToCart(products[0])},'Escolher Business');`,
