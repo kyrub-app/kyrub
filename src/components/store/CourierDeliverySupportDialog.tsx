@@ -30,8 +30,11 @@ interface Ticket {
   createdAtMs:number;
 }
 
-export function CourierDeliverySupportDialog({deliveryId,stage,pickupAddress,onClose}:{
-  deliveryId:string;stage:CourierSupportStage;pickupAddress:string;onClose:()=>void;
+export function CourierDeliverySupportDialog({
+  deliveryId,stage,pickupAddress,recipientArrivalVerified,recipientArrivalAtMs,onClose,
+}:{
+  deliveryId:string;stage:CourierSupportStage;pickupAddress:string;
+  recipientArrivalVerified:boolean;recipientArrivalAtMs:number;onClose:()=>void;
 }) {
   const [reasonCode,setReasonCode]=useState('');
   const [detail,setDetail]=useState('');
@@ -275,11 +278,17 @@ export function CourierDeliverySupportDialog({deliveryId,stage,pickupAddress,onC
                         Somente depois, registre as tentativas que você realmente fez.
                         Os registros são declarações suas, não comprovantes de recebimento.
                       </p>
-                      {ticket.recipientArrivedAtMs>0 && (
+                      {recipientArrivalVerified ? (
                         <p className="text-[10px] text-amber-200">
-                          Tempo desde a chegada registrada:
-                          {' '}{Math.max(0,Math.floor((clock-ticket.recipientArrivedAtMs)/60000))} min.
+                          Tempo desde a chegada confirmada:
+                          {' '}{Math.max(0,Math.floor((clock-recipientArrivalAtMs)/60000))} min.
                           {' '}Dez minutos são apenas referência de mercado, não autorização de devolução no Kyrub.
+                        </p>
+                      ) : (
+                        <p role="status" className="rounded-lg border border-amber-500/20 bg-slate-950 p-2 text-[10px] text-amber-100">
+                          A chegada ao destinatário ainda não foi confirmada pelo servidor.
+                          Use a etapa de chegada da corrida com GPS ativo; somente depois registre tentativas reais de contato.
+                          Sem conexão confiável, consulte o suporte.
                         </p>
                       )}
                       <p className="text-[9px] text-slate-300">
@@ -293,7 +302,7 @@ export function CourierDeliverySupportDialog({deliveryId,stage,pickupAddress,onC
                             ['tried_intercom','Registrei interfone'],
                           ] as const).map(([action,label])=>(
                             <button key={action} type="button"
-                              disabled={Boolean(evidenceBusy)}
+                              disabled={Boolean(evidenceBusy)||!recipientArrivalVerified}
                               onClick={()=>void absenceAction(ticket,action)}
                               className="rounded-lg border border-amber-500/25 px-2 py-2 text-[10px] text-amber-100 disabled:opacity-40">
                               {label}
@@ -307,7 +316,7 @@ export function CourierDeliverySupportDialog({deliveryId,stage,pickupAddress,onC
                       )}
                       {!ticket.absenceReviewRequested && (
                         <button type="button"
-                          disabled={Boolean(evidenceBusy)||ticket.contactAttemptsCount<1}
+                          disabled={Boolean(evidenceBusy)||!recipientArrivalVerified||ticket.contactAttemptsCount<1}
                           onClick={()=>void absenceAction(ticket,'review')}
                           className="w-full rounded-lg bg-amber-500 px-3 py-2 text-[10px] font-black text-slate-950 disabled:opacity-40">
                           Solicitar análise da logística — não devolver
