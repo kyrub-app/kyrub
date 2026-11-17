@@ -1,5 +1,6 @@
 import type { DeliveryJob } from '../types';
 import { assessDeliveryCargo, isCourierVehicleType } from '../../shared/deliveryVehicleCompatibility';
+import { isReturnTariffOffer, type ReturnTariffOffer } from '../../shared/deliveryReturnTariffOffer';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const finite = (value: unknown): number => typeof value === 'number' && Number.isFinite(value) ? value : 0;
@@ -8,6 +9,7 @@ type LegacyDelivery = DeliveryJob & {
   source?: string;
   acceptedByName?: string;
   orderStatus?: string;
+  returnTariffOffer?: ReturnTariffOffer;
 };
 
 /**
@@ -33,6 +35,8 @@ export const sanitizeDeliveryCache = (value: unknown): DeliveryJob[] => {
         : 'Endereço disponível no painel privado de rastreio',
       distance: finite(data.distance),
       payment: finite(data.payment),
+      ...(status==='available' && isReturnTariffOffer(data.returnTariffOffer)
+        ? {returnTariffOffer:data.returnTariffOffer} : {}),
       status: status as DeliveryJob['status'],
       requestedBy: clean(data.requestedBy),
       acceptedBy: clean(data.acceptedBy) || undefined,
