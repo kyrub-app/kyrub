@@ -293,3 +293,229 @@ test('rejected expansion preserves approved freelancer and can be corrected; mot
     updatedAt: serverTimestamp(),
   }));
 });
+
+
+const motofreteDocuments = (uid: string) => ({
+  course: `identity-verification/${uid}/document/course.pdf`,
+  vehicle: `identity-verification/${uid}/document/crlv.pdf`,
+  inspection: `identity-verification/${uid}/document/inspection.pdf`,
+  equipment: `identity-verification/${uid}/document/equipment.jpg`,
+  local: '',
+});
+
+const motofreteRequest = (uid: string) => ({
+  status: 'submitted',
+  documents: motofreteDocuments(uid),
+  submittedAt: serverTimestamp(),
+  reviewedAt: null,
+  reviewedBy: '',
+  reviewReason: '',
+  courseVerified: false,
+  minimumAgeAndLicenseTenureVerified: false,
+  vehicleRegistrationAndAuthorizationVerified: false,
+  safetyEquipmentVerified: false,
+  semiannualInspectionVerified: false,
+  localRequirementsVerified: false,
+  validUntil: null,
+});
+
+const approvedMotofreteFields = () => ({
+  'motofreteQualification.status': 'approved',
+  'motofreteQualification.reviewedBy': 'compliance_a',
+  'motofreteQualification.reviewedAt': serverTimestamp(),
+  'motofreteQualification.reviewReason': '',
+  'motofreteQualification.courseVerified': true,
+  'motofreteQualification.minimumAgeAndLicenseTenureVerified': true,
+  'motofreteQualification.vehicleRegistrationAndAuthorizationVerified': true,
+  'motofreteQualification.safetyEquipmentVerified': true,
+  'motofreteQualification.semiannualInspectionVerified': true,
+  'motofreteQualification.localRequirementsVerified': true,
+  'motofreteQualification.validUntil': Timestamp.fromMillis(Date.now() + 30 * 24 * 60 * 60 * 1000),
+  updatedAt: serverTimestamp(),
+});
+
+const seedApprovedMotorized = async (uid: string = 'user_a') => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'identity_verifications', uid), {
+      ...verification(uid),
+      status: 'approved',
+      requestedProfiles: ['motorized_courier'],
+      approvedProfiles: ['motorized_courier'],
+      documentType: 'cnh',
+      cnhCategory: 'A',
+      cnhHasEar: true,
+      reviewedBy: 'compliance_a',
+      reviewedAt: Timestamp.fromMillis(1_700_000_000_000),
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      submittedAt: Timestamp.fromMillis(1_700_000_000_000),
+      updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+    });
+  });
+};
+
+test('approved motorized courier submits private motofrete evidence but cannot self-certify', async () => {
+  await seedApprovedMotorized();
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const record = doc(owner, 'identity_verifications', 'user_a');
+
+  await assertFails(updateDoc(record, {
+    motofreteQualification: { ...motofreteRequest('user_a'), documents: {
+      ...motofreteDocuments('user_a'),
+      course: 'identity-verification/user_b/document/forged.pdf',
+    } },
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(record, {
+    motofreteQualification: { ...motofreteRequest('user_a'), documents: {
+      ...motofreteDocuments('user_a'),
+      inspection: '',
+    } },
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(record, {
+    motofreteQualification: motofreteRequest('user_a'),
+    updatedAt: serverTimestamp(),
+  }));
+  const saved = (await getDoc(record)).data();
+  if (!saved || saved.status !== 'approved'
+    || saved.approvedProfiles.join(',') !== 'motorized_courier'
+    || saved.motofreteQualification?.status !== 'submitted') {
+    throw new Error('Existing motorized approval or submission was altered');
+  }
+
+  await assertFails(updateDoc(record, {
+    ...approvedMotofreteFields(),
+    'motofreteQualification.reviewedBy': 'user_a',
+  }));
+  await assertFails(updateDoc(record, {
+    'motofreteQualification.documents.course': 'identity-verification/user_a/document/fake.pdf',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(record, {
+    'motofreteQualification.validUntil': Timestamp.fromMillis(Date.now() + 86_400_000),
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(record, {
+    approvedProfiles: ['motorized_courier','bicycle_courier'],
+    updatedAt: serverTimestamp(),
+  }));
+
+  const outsider = environment.authenticatedContext('user_b').firestore();
+  await assertFails(getDoc(doc(outsider, 'identity_verifications', 'user_a')));
+});
+
+test('only human compliance can certify bounded validity and revoke without touching old work profiles', async () => {
+  await seedApprovedMotorized();
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const ownerDoc = doc(owner, 'identity_verifications', 'user_a');
+  await assertSucceeds(updateDoc(ownerDoc, {
+    motofreteQualification: motofreteRequest('user_a'),
+    updatedAt: serverTimestamp(),
+  }));
+
+  const compliance = environment.authenticatedContext('compliance_a').firestore();
+  const adminDoc = doc(compliance, 'identity_verifications', 'user_a');
+  await assertFails(updateDoc(adminDoc, {
+    ...approvedMotofreteFields(),
+    'motofreteQualification.courseVerified': false,
+  }));
+  await assertFails(updateDoc(adminDoc, {
+    ...approvedMotofreteFields(),
+    'motofreteQualification.validUntil': Timestamp.fromMillis(Date.now() + 366 * 86_400_000),
+  }));
+  await assertFails(updateDoc(adminDoc, {
+    ...approvedMotofreteFields(),
+    'motofreteQualification.reviewedBy': 'someone_else',
+  }));
+  await assertFails(updateDoc(adminDoc, {
+    ...approvedMotofreteFields(),
+    approvedProfiles: ['bicycle_courier'],
+  }));
+  await assertSucceeds(updateDoc(adminDoc, approvedMotofreteFields()));
+
+  const approved = (await getDoc(ownerDoc)).data();
+  if (approved?.motofreteQualification?.status !== 'approved'
+    || approved?.motofreteQualification?.reviewedBy !== 'compliance_a'
+    || approved.approvedProfiles.join(',') !== 'motorized_courier') {
+    throw new Error('Motofrete review failed or modified previous approval');
+  }
+  await assertFails(updateDoc(ownerDoc, {
+    'motofreteQualification.status': 'revoked',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(adminDoc, approvedMotofreteFields())); // no duplicate approval
+  await assertSucceeds(updateDoc(adminDoc, {
+    'motofreteQualification.status': 'revoked',
+    'motofreteQualification.reviewedBy': 'compliance_a',
+    'motofreteQualification.reviewedAt': serverTimestamp(),
+    'motofreteQualification.reviewReason': 'Documento vencido',
+    'motofreteQualification.validUntil': null,
+    'motofreteQualification.courseVerified': false,
+    'motofreteQualification.minimumAgeAndLicenseTenureVerified': false,
+    'motofreteQualification.vehicleRegistrationAndAuthorizationVerified': false,
+    'motofreteQualification.safetyEquipmentVerified': false,
+    'motofreteQualification.semiannualInspectionVerified': false,
+    'motofreteQualification.localRequirementsVerified': false,
+    updatedAt: serverTimestamp(),
+  }));
+  const revoked = (await getDoc(ownerDoc)).data();
+  if (revoked?.motofreteQualification?.status !== 'revoked'
+    || revoked.status !== 'approved'
+    || revoked.approvedProfiles.join(',') !== 'motorized_courier') {
+    throw new Error('Motofrete revocation modified original approval');
+  }
+  await assertSucceeds(updateDoc(ownerDoc, {
+    motofreteQualification: motofreteRequest('user_a'),
+    updatedAt: serverTimestamp(),
+  }));
+});
+
+test('motofrete rejection allows a corrected request, never self-approval or operations approval', async () => {
+  await seedApprovedMotorized();
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(),
+      'kyrub_admin','control_plane','admins','operations_a'), {
+      uid: 'operations_a',
+      email: 'operations@example.com',
+      displayName: 'Operations',
+      role: 'operations',
+      status: 'active',
+      createdBy: 'bootstrap_admin',
+      createdAt: Timestamp.fromMillis(1_700_000_000_000),
+      updatedAt: Timestamp.fromMillis(1_700_000_000_000),
+      suspendedAt: '',
+      revokedAt: '',
+    });
+  });
+  const owner = environment.authenticatedContext('user_a').firestore();
+  const record = doc(owner, 'identity_verifications', 'user_a');
+  await assertSucceeds(updateDoc(record, {
+    motofreteQualification: motofreteRequest('user_a'),
+    updatedAt: serverTimestamp(),
+  }));
+  const operator = environment.authenticatedContext('operations_a').firestore();
+  await assertFails(updateDoc(doc(operator, 'identity_verifications', 'user_a'), {
+    ...approvedMotofreteFields(),
+    'motofreteQualification.reviewedBy': 'operations_a',
+  }));
+  const compliance = environment.authenticatedContext('compliance_a').firestore();
+  await assertSucceeds(updateDoc(doc(compliance, 'identity_verifications', 'user_a'), {
+    'motofreteQualification.status': 'rejected',
+    'motofreteQualification.reviewedBy': 'compliance_a',
+    'motofreteQualification.reviewedAt': serverTimestamp(),
+    'motofreteQualification.reviewReason': 'Inspeção ilegível',
+    updatedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(updateDoc(record, {
+    motofreteQualification: {
+      ...motofreteRequest('user_a'),
+      documents: { ...motofreteDocuments('user_a'),
+        inspection: 'identity-verification/user_a/document/inspection-corrected.pdf' },
+    },
+    updatedAt: serverTimestamp(),
+  }));
+  await assertFails(updateDoc(record, {
+    'motofreteQualification.reviewReason': 'Tudo aprovado',
+    updatedAt: serverTimestamp(),
+  }));
+});
