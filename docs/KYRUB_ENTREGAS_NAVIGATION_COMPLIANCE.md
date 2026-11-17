@@ -268,3 +268,44 @@ ações seguras do suporte ligadas ao contrato de custódia; validação de
 usabilidade e acessibilidade em aparelho físico; teste de mapa móvel
 com concorrência de telas e conectividade precária. Não habilitar
 em produção sem homologação.
+
+## Destinatário ausente — evidência de chegada e tentativas de contato
+
+A navegação do entregador oferece o motivo `recipient_not_found` **somente
+depois da coleta**. Abrir o ticket pode ocorrer enquanto o entregador está
+em rota, mas registrar tentativas de contato exige uma chegada previamente
+informada pelo entregador ao cliente por `markCourierArrivedAtCustomer`:
+`customerHandoff.status == awaiting_buyer_confirmation`,
+`arrivedByCourierId == courierId`, `trackingWasActive == true` e
+`arrivedAt` preenchido pelo servidor. Isso prova **o registro de chegada
+enquanto havia GPS ativo**; não prova sozinho presença física no imóvel ou
+que o cliente recebeu uma ligação.
+
+O botão de suporte permite ao entregador declarar separadamente:
+`called_recipient` (ligação tentada), `messaged_recipient` (mensagem
+tentada) e `tried_intercom` (interfone tentado). Cada tentativa é um evento
+imutável `deliverySupportTicketEvents/{ticketId}_contact_{attemptId}` com
+chave idempotente e origem `courier_self_declared`; não armazena número de
+telefone, endereço preciso ou conteúdo de mensagens. O resumo privado do
+ticket guarda contador e horário da chegada. A operação vê esses dados
+na sua fila, junto com o texto descritivo e as respostas.
+
+Após ao menos uma tentativa, o entregador pode selecionar **Solicitar análise
+da logística — não devolver**. A requisição grava
+`recipient_absence_review_requested` e prioriza a avaliação na fila.
+O mesmo pedido repetido não cria novos eventos. Nova tentativa ou solicitação
+exige que o entregador ainda seja o responsável no `deliveryClaims` e que a
+entrega continue em `delivering` e `awaiting_buyer_confirmation`; nunca
+são aceitas declarações de outro usuário ou após transferência de posse.
+A solicitação **não cancela, finaliza, devolve, repassa dinheiro nem expõe
+informações pessoais do comprador**.
+
+O cronômetro exibido deriva de `customerHandoff.arrivedAt`, horário
+servidor, e é **informativo**. O referencial de dez minutos de algumas
+plataformas externas não é uma regra de liberação do Kyrub; não foi
+implementado limite obrigatório, devolução automática, penalidade nem
+pagamento automático por espera. A logística pode orientar antes em
+questões de segurança. Para devolução real, faltam ainda procedimento
+de retorno à loja, confirmação bilateral da custódia e política econômica
+específica, a serem homologados separadamente. Não prometer atendimento
+em tempo real sem equipe e SLA efetivos.
