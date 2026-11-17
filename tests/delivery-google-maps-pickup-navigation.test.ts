@@ -95,7 +95,10 @@ describe('Google Maps pickup navigation', () => {
   it('uses the same return decision for compact and embedded map navigation', () => {
     const panel = readFileSync('src/components/store/CourierLiveTrackingBridge.tsx', 'utf8');
     const map = readFileSync('src/components/store/CourierGoogleMap.tsx', 'utf8');
+    const supportReturn = readFileSync('src/components/store/CourierReturnToStorePanel.tsx', 'utf8');
     assert.match(panel, /decideCourierRoute\(/);
+    assert.match(supportReturn, /decideCourierRoute\(/);
+    assert.match(supportReturn, /goToStore\.url/);
     assert.match(map, /decideCourierRoute\(/);
     assert.match(panel, /returnStatus=\{returnRouteStatus\}/);
     assert.match(panel, /snapshot\.metadata\.fromCache/);
