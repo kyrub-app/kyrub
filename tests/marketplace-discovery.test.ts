@@ -121,10 +121,11 @@ describe('marketplace discovery', () => {
 
   test('official plan storefront projects canonical contract terms on both catalog paths', () => {
     const service = readFileSync('server/payments/marketplaceDiscoveryService.ts', 'utf8');
-    assert.match(service, /projectOfficialCanonicalTerms\(projectCanonicalOffers/);
+    assert.match(service, /projectCanonicalOffers\(offerCandidates\.docs, storeId, productById\)/);
+    assert.match(service, /projectOfficialCanonicalTerms\(offers, verifiedOfficialId\)/);
     assert.match(service, /projectLegacyPublicOffers\(legacyData\.publicProducts, legacyStoreId\)/);
-    assert.match(service, /resolveOfficialStoreProjectionId\(legacyStoreId, offers\)/);
-    assert.match(service, /projectOfficialCanonicalTerms\(offers, canonicalId\)/);
+    assert.match(service, /resolveOfficialStoreProjectionId\(legacyStoreId, legacyOffers\)/);
+    assert.match(service, /projectOfficialCanonicalTerms\(legacyOffers, verifiedOfficialId\)/);
     assert.match(service, /projectOfficialCanonicalProductTerms\(offer, canonicalById\.get\(offer\.id\), canonicalStoreId\)/);
     assert.match(service, /OFFICIAL_PLAN_PUBLIC_IDENTITY_CONFLICT/);
   });

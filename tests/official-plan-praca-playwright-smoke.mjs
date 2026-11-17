@@ -26,6 +26,11 @@ const fakeUid = 'official_coupon_chromium_buyer';
 let page;
 try {
   await Promise.all([
+    db.doc('kyrub_admin/official_store').set({
+      kind: 'official_cairobi_store', canonicalStoreId: STORE,
+      legacyStoreId: 'official-fake-owner', ownerUserId: 'official-fake-owner',
+      designatedBy: 'official-fake-owner',
+    }),
     db.doc('stores/' + STORE).set({
       id: STORE, name: 'Kyrub Oficial', slug: 'kyrub-oficial',
       ownerId: 'official-fake-owner', publicationStatus: 'published', status: 'open',
@@ -83,6 +88,7 @@ try {
   assert.equal(discovery.status, 200, 'real storefront API must expose published canonical plan');
   const listing = await discovery.json();
   assert.equal(listing.store.id, STORE);
+  assert.equal(listing.officialPlanStoreId, STORE, 'public response must carry the verified billing identity');
   assert.equal(listing.offers.filter(p => p.id === BUSINESS).length, 1);
   assert.equal(listing.offers.find(p => p.id === BUSINESS).saleModality.mode, 'subscription');
   const promoResponse = await fetch(promoUrl);
