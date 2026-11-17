@@ -16,7 +16,8 @@ export const updateKyrubDeliveryOpportunityStatus = async (
   deliveryId: string,
   status: KyrubDeliveryOperationalStatus,
   user: Pick<User, 'getIdToken'>,
-  vehicleType?: CourierVehicleType
+  vehicleType?: CourierVehicleType,
+  returnTariffConsent?: {fingerprint:string;confirmed:true}
 ): Promise<void> => {
   const normalizedId = deliveryId.trim();
   if (!normalizedId) throw new Error('A entrega não foi identificada.');
@@ -30,7 +31,9 @@ export const updateKyrubDeliveryOpportunityStatus = async (
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ status, ...(status === 'accepted' ? { vehicleType } : {}) }),
+      body: JSON.stringify({ status, ...(status === 'accepted' ? { vehicleType } : {}),
+        ...(returnTariffConsent ? {returnTariffAccepted:true,
+          returnTariffFingerprint:returnTariffConsent.fingerprint} : {}) }),
     }
   );
 
