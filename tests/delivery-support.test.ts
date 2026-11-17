@@ -63,3 +63,28 @@ test('support reports are server-authorized, auditable and never equivalent to c
   assert.match(rules,/match \/deliverySupportTickets\/\{ticketId\}/);
   assert.match(rules,/match \/deliverySupportTicketEvents\/\{eventId\}/);
 });
+
+test('recipient absence uses server arrival and declarative contact attempts, never automatic return',async()=>{
+  const absence=await import('../server/delivery/deliveryRecipientAbsenceEvidenceService');
+  assert.equal(absence.RECIPIENT_WAIT_REFERENCE_MS,600_000);
+  assert.equal(absence.MAX_DECLARED_CONTACT_ATTEMPTS,12);
+  const service=readFileSync('server/delivery/deliveryRecipientAbsenceEvidenceService.ts','utf8');
+  const router=readFileSync('server/delivery/deliveryOpportunityRouter.ts','utf8');
+  const dialog=readFileSync('src/components/store/CourierDeliverySupportDialog.tsx','utf8');
+  const admin=readFileSync('src/components/admin/AdminDeliverySupportQueue.tsx','utf8');
+  assert.match(service,/handoff\.arrivedAt/);
+  assert.match(service,/handoff\.arrivedByCourierId!==courierId/);
+  assert.match(service,/handoff\.trackingWasActive!==true/);
+  assert.match(service,/contact_attempt_declared/);
+  assert.match(service,/evidenceLevel:'courier_self_declared'/);
+  assert.match(service,/recipient_absence_review_requested/);
+  assert.match(service,/transaction\.create\(eventRef/);
+  assert.doesNotMatch(service,/transaction\.update\(deliveryRef/);
+  assert.doesNotMatch(service,/transaction\.update\(claimRef/);
+  assert.doesNotMatch(service,/deliveryReturns|economicObligationPath|paymentIntent/);
+  assert.match(router,/router\.post\('\/support-tickets\/:ticketId\/contact-attempt'/);
+  assert.match(router,/router\.post\('\/support-tickets\/:ticketId\/request-absence-review'/);
+  assert.match(dialog,/Solicitar análise da logística — não devolver/);
+  assert.match(dialog,/Dez minutos são apenas referência de mercado/);
+  assert.match(admin,/Revisão solicitada em/);
+});
