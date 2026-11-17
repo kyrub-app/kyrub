@@ -115,8 +115,29 @@ export const authorizeRecipientAbsenceReturn=async(input:{
       throw new Error('DELIVERY_RETURN_CONFLICT');
     }
     const at=Timestamp.now();
+    const corroboration=obj(customerHandoff.arrivalCorroboration);
+    const arrivedAt=customerHandoff.arrivedAt;
+    const geoAt=corroboration.evaluatedAt;
+    const recipientWaitingCorroboratedInterval =
+      arrivedAt instanceof Timestamp && geoAt instanceof Timestamp
+      && ticket.recipientArrivedAt instanceof Timestamp
+      && ticket.recipientArrivedAt.toMillis()===arrivedAt.toMillis()
+      && corroboration.source==='server_customer_geofence'
+      && corroboration.verified===true
+      && Math.abs(arrivedAt.toMillis()-geoAt.toMillis())<=90_000
+      && at.toMillis()>=arrivedAt.toMillis()
+      ? {
+          source:'corroborated_server_interval' as const,
+          verified:true,
+          arrivedAt:arrivedAt.toDate().toISOString(),
+          returnAuthorizedAt:at.toDate().toISOString(),
+          evidenceRef:'hub/renda/deliveries/'+deliveryId+':customerHandoff',
+          // A server-evaluated geofence corroborates location, not contact.
+        }
+      : null;
     tx.create(returnRef,{
       schemaVersion:1,deliveryId,ticketId,storeId,orderId,courierId,
+      recipientWaitingCorroboratedInterval,
       operatorId,reason:explanation,
       status:'return_authorized',authorizedAt:at,
       courierPresentedAt:null,receivedByStoreAt:null,receivedByStoreId:'',
