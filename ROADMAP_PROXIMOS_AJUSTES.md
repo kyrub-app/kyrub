@@ -48,7 +48,8 @@ Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção*
 
 | Frente canônica / PR | Estado comprovado | Próxima ação concreta |
 | --- | --- | --- |
-| **#1144** Praça, Comunidades e Kyrubia Educadora | `IMPLEMENTADO_PR` / CI integrado verde; preview do conjunto bloqueada por cota Vercel. Incorpora código de #1140, #1142, #1143; não contar como três releases independentes. | Conferir ausência de divergência com `main`, planejar única release controlada, verificar deployment e navegação visual; sem antecipar merge por CI. |
+| **#1144** Praça, Comunidades e Kyrubia Educadora | `IMPLEMENTADO_PR` / incorporada em candidato acumulado [#1152](https://github.com/kyrub-app/kyrub/pull/1152), isolado e validado; a #1144 preserva origem de #1140/#1142/#1143. | Revisão de release/visual Android e autorização separada, sem considerar CI = deploy. |
+| **#1152** V1 comércio + Praça/Comunidades/Kyrubia | `TESTADO_ISOLADO`: HEAD `0cfc15db` com **11/11 workflows PASS**; Firestore **279/279**, prebuild **2.273/2.273**, Chromium/Playwright verdes. | Priorizar atestação Firebase da #1137 e Beta Gate real; não mergear/deployar sem autorização e visual/PSP. |
 | **#1139** ERP → Marketplace / produtos e pedidos | `IMPLEMENTADO_PR` / testes e emulador aprovados no head relatado; ainda sem merge. | Conciliação com pedido/carrinho/estoque canônicos e inclusão em lote seguro. |
 | **#1138** cupom ERP → Praça → vitrine → plano oficial | `TESTADO_ISOLADO` / Pix simulado e Chromium comprovados; sem cobrança real nem merge. | Revisar o piloto oficial separado, contrato Pix e interações com #1137; não habilitar checkout real sem liberação. |
 | **#1146** segurança de reembolsos | `IMPLEMENTADO_PR`, em draft; correções de janela concorrente e histórico parcial. | Revisão de integração com serviços canônicos e gate de refund E2E. |
@@ -64,13 +65,16 @@ Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção*
 
 **Verificação cruzada adicional (#1151):** [Firebase Emulator run 44157965322](https://github.com/kyrub-app/kyrub/actions/runs/44157965322) executou de fato os subtestes 74 e 75 no SHA `d0e87e4d`. Comprovados KDS condicionado ao pagamento, baixa/restauração de estoque idempotente e bloqueio da devolução integral diante de parcial incerto; **não** comprovadas devolução PSP real, simultaneidade financeira PSP, Android nem produção.
 
+
+**Integração social adicional (#1152):** [PR #1152](https://github.com/kyrub-app/kyrub/pull/1152), SHA `0cfc15db`, acumula código testado de #1151 e 11 arquivos da #1144 (9 idênticos + 2 conciliados); **11/11 CI PASS**, Firestore **279/279**, prebuild **2.273/2.273** e navegador Chromium/Playwright aprovados. Não foram integradas as 68 alterações da gamificação #1137. Os dois pontos de sobreposição com o candidato são `server.ts` e `KyrubTab.tsx`; a atestação dos escritores Firebase continua sendo bloqueio independente de ativação de saldos reais.
+
 ### Fila executável imediata — sem aguardar Mercado Pago nem Vercel
 
 1. **Inventário e comparação:** congelar o `main` atual e mapear conflitos/arquivos sobrepostos de #1139, #1146, #1138, #1144, #1137, #1145 e #1147. Registrar o que já integra `main` e o que seria novidade real; evitar PR duplicada.
 2. **Segurança de reembolso + catálogo/pedidos:** fechar revisão isolada da #1146 e a consistência da #1139 antes de qualquer Pix real; tratar blockers sem ampliar escopo.
 3. **Gamificação:** resolver atestação Firebase da #1137 por via segura, mantendo `writersVerified` e campanhas intactos até comprovação.
-4. **Release social/educação:** preparar lote da #1144 com validação Android como gate de publicação, sem repetir testes aprovados.
-5. **Fluxo de venda isolado:** repetir somente a jornada transversal *que ainda não foi comprovada na combinação exata das PRs candidatas*, especialmente catálogo → pedido → pagamento simulado → KDS → estoque/CRM → cancelamento/reembolso.
+4. **Release social/educação:** candidato cumulativo #1152 já preparado e **11/11 checks aprovados** em isolamento; resta validação Android autenticada, release authority e homologação visual, sem refazer CI verde.
+5. **Fluxo de venda isolado:** a cadeia checkout → pagamento simulado → KDS → baixa/restauração de estoque e guardas parcial/integral **já passou** no SHA exato #1152 (subtestes 74/75; 279/279 Firestore). Reabrir somente evidências ainda ausentes: refund PSP simultâneo real, CRM visual, Android e Beta Gate.
 6. **Entregas:** preservar o parecer funcional da #1145; agendar apenas validação interativa/GPS e combinar a integração com o provedor após resposta comercial.
 7. **Mercado Pago:** aguardar número/protocolo e resposta do suporte; nenhuma ativação financeira antecipada.
 8. **Gate final:** fechar #63–67 para a **V1 delimitada**, publicar só com autorização explícita e prova de deployment. Itens V2 continuam registrados na lista-mãe, sem serem eliminados.
