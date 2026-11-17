@@ -10,6 +10,7 @@ interface Ticket {
   id:string;deliveryId:string;courierId:string;status:string;
   reasonLabel:string;reasonCode:string;priority:string;stage:string;
   detail:string;lastResponse:string;assignedTo:string;createdAtMs:number;
+  contactAttemptsCount:number;recipientArrivedAtMs:number;absenceReviewRequestedAtMs:number;
 }
 interface Event {id:string;action:string;actorId:string;createdAtMs:number;}
 
@@ -34,13 +35,21 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
         stage:clean(entry.stage),detail:clean(entry.detail),
         lastResponse:clean(entry.lastResponse),assignedTo:clean(entry.assignedTo),
         createdAtMs:typeof created?.toMillis==='function'?created.toMillis():0,
+        contactAttemptsCount:typeof entry.contactAttemptsCount==='number'?entry.contactAttemptsCount:0,
+        recipientArrivedAtMs:entry.recipientArrivedAt
+          && typeof (entry.recipientArrivedAt as Timestamp).toMillis==='function'
+            ?(entry.recipientArrivedAt as Timestamp).toMillis():0,
+        absenceReviewRequestedAtMs:entry.recipientAbsenceReviewRequestedAt
+          && typeof (entry.recipientAbsenceReviewRequestedAt as Timestamp).toMillis==='function'
+            ?(entry.recipientAbsenceReviewRequestedAt as Timestamp).toMillis():0,
       };
     })),()=>setMessage('Fila de suporte indisponível para este perfil administrativo.')
   ),[]);
 
   const ordered=useMemo(()=>[...tickets].sort((a,b)=>{
-    const p=(t:Ticket)=>t.status==='resolved'?3:
-      t.priority==='safety'?0:t.priority==='urgent'?1:2;
+    const p=(t:Ticket)=>t.status==='resolved'?4:
+      t.priority==='safety'?0:
+      t.absenceReviewRequestedAtMs>0?1:t.priority==='urgent'?2:3;
     return p(a)-p(b)||b.createdAtMs-a.createdAtMs;
   }),[tickets]);
 
@@ -130,6 +139,26 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
               {ticket.assignedTo?' · responsável '+ticket.assignedTo:''}
             </p>
             {ticket.detail && <p className="mt-2 whitespace-pre-wrap break-words text-[11px] text-slate-200">{ticket.detail}</p>}
+            {ticket.reasonCode==='recipient_not_found' && (
+              <div className="mt-2 rounded-lg border border-amber-500/25 bg-amber-500/5 p-2 text-[10px] text-amber-100">
+                <p className="font-bold">
+                  Destinatário ausente · {ticket.contactAttemptsCount} tentativa(s) declarada(s)
+                </p>
+                {ticket.recipientArrivedAtMs>0 && (
+                  <p className="mt-1 text-slate-300">
+                    Chegada informada pelo entregador, com rastreio ativo:
+                    {' '}{new Date(ticket.recipientArrivedAtMs).toLocaleString('pt-BR')}
+                  </p>
+                )}
+                {ticket.absenceReviewRequestedAtMs>0 && (
+                  <p className="mt-1 font-bold text-amber-200">
+                    Revisão solicitada em {' '}
+                    {new Date(ticket.absenceReviewRequestedAtMs).toLocaleString('pt-BR')}.
+                    Nenhum retorno ou cancelamento foi autorizado por essa solicitação.
+                  </p>
+                )}
+              </div>
+            )}
             {ticket.lastResponse && <p className="mt-2 rounded-lg bg-slate-950 p-2 text-[10px] text-cyan-200">Última resposta: {ticket.lastResponse}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               {ticket.status!=='resolved' && (
