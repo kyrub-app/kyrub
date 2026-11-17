@@ -22,6 +22,42 @@
           && data.publicationType == 'feed';
       }
 
+      function validStoreReviewSocialPost(data) {
+        let link = data.storeReview;
+        let reviewPath = /databases/$(database)/documents/store_reviews/$(link.storeId)/reviews/$(link.reviewId);
+        return link is map
+          && link.keys().hasAll(['storeId', 'reviewId', 'rating', 'storeName'])
+          && link.keys().hasOnly(['storeId', 'reviewId', 'rating', 'storeName'])
+          && isValidId(link.storeId)
+          && isValidId(link.reviewId)
+          && link.rating is int
+          && link.rating >= 1
+          && link.rating <= 5
+          && link.storeName is string
+          && data.postId == 'review_' + link.storeId + '_' + link.reviewId
+          && data.sourcePostId == link.reviewId
+          && data.publicationType == 'feed'
+          && data.visibility == 'public'
+          && data.audienceIds.size() == 0
+          && existsAfter(reviewPath)
+          && getAfter(reviewPath).data.status == 'published'
+          && getAfter(reviewPath).data.publishedToFeed == true
+          && getAfter(reviewPath).data.postId == data.postId
+          && getAfter(reviewPath).data.storeId == link.storeId
+          && getAfter(reviewPath).data.storeName == link.storeName
+          && getAfter(reviewPath).data.rating == link.rating
+          && getAfter(reviewPath).data.authorId == data.authorId
+          && getAfter(reviewPath).data.authorName == data.authorName
+          && getAfter(reviewPath).data.authorAvatar == data.authorAvatar
+          && getAfter(reviewPath).data.content == data.content
+          && getAfter(reviewPath).data.createdAtIso == data.createdAtIso
+          && data.mediaUrls == (
+            getAfter(reviewPath).data.mediaUrl == ''
+              ? []
+              : [getAfter(reviewPath).data.mediaUrl]
+          );
+      }
+
       function hasValidSocialPostShape(data) {
         return data.keys().hasAll([
           'postId',
@@ -56,9 +92,12 @@
           'createdAtIso',
           'createdAt',
           'updatedAt',
-          'storePromotion'
+          'storePromotion',
+          'storeReview'
         ])
+        && !(data.keys().hasAny(['storePromotion']) && data.keys().hasAny(['storeReview']))
         && (!data.keys().hasAny(['storePromotion']) || validStoreCouponSocialPost(data))
+        && (!data.keys().hasAny(['storeReview']) || validStoreReviewSocialPost(data))
         && data.postId == postId
         && data.sourcePostId is string
         && data.sourcePostId.size() > 0
@@ -154,6 +193,104 @@
 
       allow delete: if isSignedIn()
         && (existing().authorId == request.auth.uid || isAdmin());
+    }
+
+    // One review per authenticated user and published store. A Praça post, if selected,
+    // is created in the same Firestore batch; it never mints Pitangas or XP.
+    match /store_reviews/{storeId}/reviews/{reviewId} {
+      function linkedListingPath() {
+        return /databases/$(database)/documents/marketplace_listings/$('s_' + string(storeId.size()) + '_' + storeId);
+      }
+
+      function publishedReviewStore(data) {
+        let listing = linkedListingPath();
+        let tenant = /databases/$(database)/documents/tenants/$(storeId);
+        return (
+          exists(listing)
+          && get(listing).data.listingType == 'store'
+          && get(listing).data.publicationStatus == 'published'
+          && get(listing).data.storeId == storeId
+          && get(listing).data.ownerId != request.auth.uid
+          && get(listing).data.name == data.storeName
+        ) || (
+          exists(tenant)
+          && get(tenant).data.publicationStatus == 'published'
+          && get(tenant).data.ownerId != request.auth.uid
+          && get(tenant).data.name == data.storeName
+        );
+      }
+
+      function validReview(data) {
+        let post = /databases/$(database)/documents/social_posts/$(data.postId);
+        return isValidId(storeId)
+          && isValidId(reviewId)
+          && reviewId == request.auth.uid
+          && data.keys().hasAll([
+            'reviewId', 'storeId', 'storeName', 'authorId', 'authorName',
+            'authorAvatar', 'content', 'rating', 'mediaUrl',
+            'publishedToFeed', 'postId', 'status', 'createdAtIso', 'createdAt'
+          ])
+          && data.keys().hasOnly([
+            'reviewId', 'storeId', 'storeName', 'authorId', 'authorName',
+            'authorAvatar', 'content', 'rating', 'mediaUrl',
+            'publishedToFeed', 'postId', 'status', 'createdAtIso', 'createdAt'
+          ])
+          && data.reviewId == reviewId
+          && data.storeId == storeId
+          && data.authorId == request.auth.uid
+          && data.authorName is string
+          && data.authorName.size() > 0
+          && data.authorName.size() <= 160
+          && data.authorAvatar is string
+          && data.authorAvatar.size() <= 2048
+          && data.storeName is string
+          && data.storeName.size() > 0
+          && data.storeName.size() <= 160
+          && data.content is string
+          && data.content.size() >= 10
+          && data.content.size() <= 2000
+          && data.rating is int
+          && data.rating >= 1
+          && data.rating <= 5
+          && data.mediaUrl is string
+          && data.mediaUrl.size() <= 2048
+          && data.publishedToFeed is bool
+          && data.postId is string
+          && data.postId.size() <= 500
+          && data.status == 'published'
+          && data.createdAtIso is string
+          && data.createdAtIso.size() > 0
+          && data.createdAtIso.size() <= 64
+          && data.createdAt == request.time
+          && publishedReviewStore(data)
+          && (
+            (!data.publishedToFeed && data.postId == '')
+            || (
+              data.publishedToFeed
+              && data.postId == 'review_' + storeId + '_' + reviewId
+              && existsAfter(post)
+              && getAfter(post).data.postId == data.postId
+              && getAfter(post).data.authorId == request.auth.uid
+              && getAfter(post).data.storeReview.storeId == storeId
+              && getAfter(post).data.storeReview.reviewId == reviewId
+            )
+          );
+      }
+
+      allow get: if isSignedIn()
+        && (resource == null || existing().status == 'published');
+      allow list: if isSignedIn()
+        && existing().status == 'published';
+      allow create: if isSignedIn() && validReview(incoming());
+      allow update: if false;
+      // No orphan posts: author may retract a review only after its Praça post
+      // is removed, or when the review was never cross-posted.
+      allow delete: if isSignedIn()
+        && existing().authorId == request.auth.uid
+        && (
+          !existing().publishedToFeed
+          || !existsAfter(/databases/$(database)/documents/social_posts/$(existing().postId))
+        );
     }
 
     match /social_post_likes/{likeId} {
