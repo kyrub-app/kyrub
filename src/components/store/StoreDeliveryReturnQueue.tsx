@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { collection, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
+import { collection, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { PackageCheck, ShieldAlert, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 
@@ -22,7 +22,7 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
   useEffect(()=>{
     if(auth.currentUser?.uid!==storeId)return;
     return onSnapshot(
-      query(collection(db,'deliveryReturnProtocols'),where('storeId','==',storeId)),
+      query(collection(db,'deliveryReturnProtocols'),where('storeId','==',storeId),limit(100)),
       snap=>setRows(snap.docs.map(item=>{
         const data=item.data() as Record<string,unknown>;
         return {
