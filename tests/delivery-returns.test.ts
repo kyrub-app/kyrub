@@ -86,3 +86,20 @@ test('offline and lookup failures never silently hide return guidance or authori
   assert.doesNotMatch(store,/if\(!visible\.length\)return null/);
   assert.doesNotMatch(store,/captureFunds|issueRefund|payout/);
 });
+
+test('physical receipt has explicit Android-friendly review and no browser prompt shortcut',()=>{
+  const store=readFileSync('src/components/store/StoreDeliveryReturnQueue.tsx','utf8');
+  assert.match(store,/Conferir devolução no balcão/);
+  assert.match(store,/Condição da encomenda conferida/);
+  assert.match(store,/value="intact"/);
+  assert.match(store,/value="damaged"/);
+  assert.match(store,/value="disputed"/);
+  assert.match(store,/receiptNote\.trim\(\)\.length<10/);
+  assert.match(store,/checked=\{receiptAcknowledged\}/);
+  assert.match(store,/!receiptAcknowledged/);
+  assert.match(store,/reviewingId!==row\.id/);
+  assert.match(store,/body:JSON\.stringify\(\{condition:receiptCondition,note\}\)/);
+  assert.match(store,/queryState!=='live'/);
+  assert.doesNotMatch(store,/window\.prompt\(/);
+  assert.doesNotMatch(store,/paymentSettlement|issueRefund|payoutTransfer/);
+});
