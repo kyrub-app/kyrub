@@ -101,6 +101,8 @@ test('interrupted connection cannot be labelled as confirmed live sharing', () =
   assert.match(trackingBridgeSource, /courierTrackingUiState\(\{/);
   assert.match(trackingBridgeSource, /uiTrackingState === 'recent'/);
   assert.match(trackingBridgeSource, /uiTrackingState === 'stale'/);
+  assert.match(trackingBridgeSource, /uiTrackingState === 'recent'\s*&&\s*storeArrivalDetected/);
+  assert.match(trackingBridgeSource, /Reconecte o rastreio antes de solicitar a coleta segura/);
   assert.match(trackingBridgeSource, /setTrackingError\(''\)/);
   assert.match(trackingBridgeSource, /setPosition\(null\)/);
   assert.doesNotMatch(trackingBridgeSource, /Localização compartilhada somente durante esta entrega\./);
