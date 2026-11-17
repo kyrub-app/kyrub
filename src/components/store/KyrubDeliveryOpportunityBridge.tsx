@@ -4,6 +4,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import type { DeliveryJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { assessDeliveryCargo, isCourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
+import { isReturnTariffOffer, type ReturnTariffOffer } from '../../../shared/deliveryReturnTariffOffer';
 
 const DELIVERY_STORAGE_KEY = 'kyrub_deliveries';
 const PUBLIC_OFFERS_PATH = 'hub/renda/deliveryOffers';
@@ -15,6 +16,7 @@ type OperationalDeliveryJob = DeliveryJob & {
   source?: string;
   orderStatus?: string;
   acceptedByName?: string;
+  returnTariffOffer?: ReturnTariffOffer | null;
 };
 
 interface KyrubDeliveryOpportunityBridgeProps {
@@ -115,6 +117,7 @@ export function KyrubDeliveryOpportunityBridge({
               to: PUBLIC_DESTINATION,
               distance: finite(data.distance),
               payment: finite(data.payment),
+              returnTariffOffer: isReturnTariffOffer(data.returnTariffOffer) ? data.returnTariffOffer : null,
               status: 'available' as const,
               requestedBy: clean(data.requestedBy),
               source: 'kyrub-order' as const,
