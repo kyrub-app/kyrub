@@ -7,6 +7,7 @@ import { CourierGoogleMap } from './CourierGoogleMap';
 import { CourierDeliverySupportDialog } from './CourierDeliverySupportDialog';
 import { isCourierVehicleType, type CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
 import { decideCourierRoute, type CourierReturnRouteStatus } from '../../utils/googleMapsDirections';
+import { courierTrackingUiState } from '../../../shared/courierTrackingUiStatus';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 const TRACKING_STORAGE_KEY = 'kyrub_courier_tracking_delivery_id';
@@ -45,32 +46,45 @@ const postLocation = async (
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
-  const response = await fetch(
-    `/api/delivery-tracking/${encodeURIComponent(deliveryId)}/location`,
-    {
-      method: 'POST',
-      headers: {
-        authorization: `Bearer ${token}`,
-        'content-type': 'application/json',
-      },
-      body: JSON.stringify(position),
+  // A hung mobile connection must not permanently prevent subsequent GPS sends.
+  const controller = new AbortController();
+  const deadline = window.setTimeout(() => controller.abort(), 15_000);
+  try {
+    const response = await fetch(
+      `/api/delivery-tracking/${encodeURIComponent(deliveryId)}/location`,
+      {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(position),
+        signal: controller.signal,
+      }
+    );
+    const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
+    if (response.ok) {
+      const storeArrival =
+        payload.storeArrival && typeof payload.storeArrival === 'object'
+          ? payload.storeArrival as Record<string, unknown>
+          : null;
+      return {
+        arrivalDetected: storeArrival?.arrivalDetected === true,
+      };
     }
-  );
-  const payload = await response.json().catch(() => ({})) as Record<string, unknown>;
-  if (response.ok) {
-    const storeArrival =
-      payload.storeArrival && typeof payload.storeArrival === 'object'
-        ? payload.storeArrival as Record<string, unknown>
-        : null;
-    return {
-      arrivalDetected: storeArrival?.arrivalDetected === true,
-    };
+    throw new Error(
+      typeof payload.error === 'string'
+        ? payload.error
+        : 'Não foi possível atualizar sua localização.'
+    );
+  } catch (error) {
+    if (controller.signal.aborted) {
+      throw new Error('A conexão demorou demais para confirmar o GPS. Tente novamente com sinal estável.');
+    }
+    throw error;
+  } finally {
+    window.clearTimeout(deadline);
   }
-  throw new Error(
-    typeof payload.error === 'string'
-      ? payload.error
-      : 'Não foi possível atualizar sua localização.'
-  );
 };
 
 const confirmSecurePickup = async (
@@ -118,6 +132,10 @@ export function CourierLiveTrackingBridge() {
   );
   const [position, setPosition] = useState<CourierPosition | null>(null);
   const [trackingError, setTrackingError] = useState('');
+  const [lastConfirmedTracking, setLastConfirmedTracking] = useState<{
+    deliveryId: string; atMs: number;
+  } | null>(null);
+  const [trackingClock, setTrackingClock] = useState(Date.now());
   const [panelDismissed, setPanelDismissed] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
   const [returnNavigation, setReturnNavigation] = useState<{
@@ -133,6 +151,11 @@ export function CourierLiveTrackingBridge() {
   const watchIdRef = useRef<number | null>(null);
 
   useEffect(() => {
+    const tick = window.setInterval(() => setTrackingClock(Date.now()), 10_000);
+    return () => window.clearInterval(tick);
+  }, []);
+
+  useEffect(() => {
     let unsubscribeDeliveries = () => undefined;
     let unsubscribeHold = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
@@ -145,6 +168,7 @@ export function CourierLiveTrackingBridge() {
       setAssignedDeliveries([]);
       setAssignedDeliveriesLoaded(false);
       setPosition(null);
+      setLastConfirmedTracking(null);
       if (!user) {
         setAssignedDeliveriesLoaded(true);
         return;
@@ -288,6 +312,7 @@ export function CourierLiveTrackingBridge() {
       localStorage.removeItem(TRACKING_STORAGE_KEY);
       setTrackingDeliveryId('');
       setStoreArrivalDetected(false);
+      setLastConfirmedTracking(null);
       if (watchIdRef.current !== null) {
         navigator.geolocation?.clearWatch(watchIdRef.current);
         watchIdRef.current = null;
@@ -308,6 +333,7 @@ export function CourierLiveTrackingBridge() {
     let sending = false;
     setPosition(null);
     setTrackingError('');
+    setLastConfirmedTracking(null);
     watchIdRef.current = navigator.geolocation.watchPosition(
       current => {
         if (cancelled) return;
@@ -338,9 +364,10 @@ export function CourierLiveTrackingBridge() {
         lastSentAt = now;
         void postLocation(trackingDeliveryId, next)
           .then(result => {
-            if (!cancelled && result.arrivalDetected) {
-              setStoreArrivalDetected(true);
-            }
+            if (cancelled) return;
+            setLastConfirmedTracking({ deliveryId: trackingDeliveryId, atMs: Date.now() });
+            setTrackingError('');
+            if (result.arrivalDetected) setStoreArrivalDetected(true);
           })
           .catch(error => {
             if (cancelled) return;
@@ -358,6 +385,8 @@ export function CourierLiveTrackingBridge() {
         if (cancelled) return;
         if (error.code === error.PERMISSION_DENIED) {
           // Do not leave the server publishing the previous position as a live track.
+          setLastConfirmedTracking(null);
+          setStoreArrivalDetected(false);
           localStorage.removeItem(TRACKING_STORAGE_KEY);
           setTrackingDeliveryId('');
           setPosition(null);
@@ -368,6 +397,9 @@ export function CourierLiveTrackingBridge() {
           void stopRemoteTracking(trackingDeliveryId);
           setTrackingError('Permissão negada. O compartilhamento foi interrompido; ative-a nas configurações do navegador.');
         } else {
+          // Do not display a device position as current once GPS reports a failure.
+          setPosition(null);
+          setStoreArrivalDetected(false);
           // Transient GPS loss is handled by the server's location freshness TTL.
           setTrackingError('Sinal GPS indisponível. A posição anterior deixará de aparecer como ativa.');
         }
@@ -394,6 +426,7 @@ export function CourierLiveTrackingBridge() {
     setTrackingDeliveryId(activeDelivery.id);
     setPanelDismissed(false);
     setTrackingError('');
+    setLastConfirmedTracking(null);
   };
 
   const disableTracking = (): void => {
@@ -401,6 +434,8 @@ export function CourierLiveTrackingBridge() {
     localStorage.removeItem(TRACKING_STORAGE_KEY);
     setTrackingDeliveryId('');
     setStoreArrivalDetected(false);
+    setLastConfirmedTracking(null);
+    setPosition(null);
     if (watchIdRef.current !== null && navigator.geolocation) {
       navigator.geolocation.clearWatch(watchIdRef.current);
       watchIdRef.current = null;
@@ -464,6 +499,13 @@ export function CourierLiveTrackingBridge() {
   }
 
   const trackingActive = trackingDeliveryId === activeDelivery.id;
+  const uiTrackingState = courierTrackingUiState({
+    selected: trackingActive && trackingAuthorized,
+    lastConfirmedAtMs: lastConfirmedTracking?.deliveryId === activeDelivery.id
+      ? lastConfirmedTracking.atMs : null,
+    hasIssue: Boolean(trackingError),
+    nowMs: trackingClock,
+  });
   const complianceBlocked = activeDelivery.vehicleType === 'motorcycle'
     && (!holdLoaded || motofreteHold);
   const awaitingSecurePickup =
@@ -615,9 +657,19 @@ export function CourierLiveTrackingBridge() {
             </div>
           )}
 
-          <div className="flex items-center gap-2 rounded-xl bg-emerald-500/10 px-3 py-2 text-[9px] font-bold text-emerald-300">
+          <div role="status" className={`flex items-center gap-2 rounded-xl px-3 py-2 text-[9px] font-bold ${
+            uiTrackingState === 'recent'
+              ? 'bg-emerald-500/10 text-emerald-300'
+              : 'bg-amber-500/10 text-amber-200'
+          }`}>
             <Crosshair className="h-3.5 w-3.5" />
-            Localização compartilhada somente durante esta entrega.
+            {uiTrackingState === 'recent'
+              ? 'Posição recebida recentemente pelo Kyrub. Compartilhamento restrito a esta corrida.'
+              : uiTrackingState === 'waiting'
+                ? 'Aguardando primeira confirmação do GPS pelo servidor.'
+                : uiTrackingState === 'stale'
+                  ? 'Sem atualização confirmada há mais de 90 segundos. O rastreio pode estar indisponível.'
+                  : 'Atualização do GPS interrompida. Sua posição anterior pode deixar de aparecer como ativa.'}
           </div>
           {trackingError && (
             <p className="rounded-xl border border-red-500/20 bg-red-500/10 px-3 py-2 text-[9px] leading-relaxed text-red-300">
