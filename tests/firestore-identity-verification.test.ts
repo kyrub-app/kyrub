@@ -673,3 +673,47 @@ test('logistics incident disposition events stay server-only and visible to auth
     await assertFails(deleteDoc(doc(context, 'deliveryComplianceIncidentEvents','evt-reoffer-a')));
   }
 });
+
+test('supervised custody nominations stay private to participants and audit remains server-only', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'deliveryCustodyTransfers', 'handoff-private-1'), {
+      schemaVersion: 1, deliveryId: 'handoff-private-1',
+      fromCourierId: 'user_a', toCourierId: 'user_b',
+      targetVehicle: 'bicycle', operatorId: 'compliance_a',
+      status: 'awaiting_participant_confirmations',
+      fromConfirmedAt: null, toConfirmedAt: null,
+      createdAt: serverTimestamp(),
+    });
+    await setDoc(doc(db, 'deliveryCustodyTransferEvents', 'handoff-event-1'), {
+      schemaVersion: 1, deliveryId: 'handoff-private-1',
+      actorId: 'user_a', actorRole: 'from', action: 'physically_handed_over',
+      createdAt: serverTimestamp(),
+    });
+  });
+  const from = environment.authenticatedContext('user_a').firestore();
+  const to = environment.authenticatedContext('user_b').firestore();
+  const admin = environment.authenticatedContext('compliance_a').firestore();
+  const outsider = environment.authenticatedContext('unrelated_user').firestore();
+  for (const db of [from,to,admin]) {
+    await assertSucceeds(getDoc(doc(db, 'deliveryCustodyTransfers','handoff-private-1')));
+  }
+  await assertFails(getDoc(doc(outsider, 'deliveryCustodyTransfers','handoff-private-1')));
+  await assertSucceeds(getDocs(query(
+    collection(from,'deliveryCustodyTransfers'), where('fromCourierId','==','user_a'),limit(25)
+  )));
+  await assertSucceeds(getDocs(query(
+    collection(to,'deliveryCustodyTransfers'), where('toCourierId','==','user_b'),limit(25)
+  )));
+  await assertSucceeds(getDoc(doc(admin,'deliveryCustodyTransferEvents','handoff-event-1')));
+  await assertFails(getDoc(doc(from,'deliveryCustodyTransferEvents','handoff-event-1')));
+  for (const db of [from,to,admin,outsider]) {
+    await assertFails(updateDoc(doc(db,'deliveryCustodyTransfers','handoff-private-1'), {
+      status: 'evidence_recorded_pending_reconciliation',
+    }));
+    await assertFails(setDoc(doc(db,'deliveryCustodyTransferEvents','forged-handoff-event'), {
+      actorId: 'user_a', action: 'physically_handed_over',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliveryCustodyTransferEvents','handoff-event-1')));
+  }
+});
