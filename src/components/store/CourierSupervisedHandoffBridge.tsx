@@ -99,7 +99,16 @@ export function CourierSupervisedHandoffBridge() {
     }
   };
 
-  if (!user || dismissed || visible.length === 0) return null;
+  if (!user || visible.length === 0) return null;
+  if (dismissed) {
+    return (
+      <button type="button" onClick={() => setDismissed(false)}
+        className="fixed bottom-20 left-3 z-[191] flex items-center gap-2 rounded-xl border border-amber-500/30 bg-slate-950 px-3 py-3 text-[10px] font-black text-amber-200 shadow-2xl sm:bottom-5 sm:left-5">
+        <ArrowLeftRight className="h-4 w-4" />
+        Reabrir transferência supervisionada ({visible.length})
+      </button>
+    );
+  }
   return (
     <aside className="fixed bottom-20 left-3 z-[191] max-h-[55vh] w-[min(92vw,340px)] overflow-y-auto rounded-3xl border border-amber-500/30 bg-slate-950/95 p-4 text-white shadow-2xl backdrop-blur-lg sm:bottom-5 sm:left-5">
       <div className="flex items-center justify-between gap-2">
