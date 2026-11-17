@@ -108,6 +108,16 @@ test('interrupted connection cannot be labelled as confirmed live sharing', () =
   assert.doesNotMatch(trackingBridgeSource, /Localização compartilhada somente durante esta entrega\./);
 });
 
+test('same-delivery snapshots respect a minimized map; stale GPS cannot pass the server freshness gate', () => {
+  assert.doesNotMatch(trackingBridgeSource,
+    /setAssignedDeliveries\(next\);\s*setAssignedDeliveriesLoaded\(true\);\s*setPanelDismissed\(false\)/);
+  assert.match(trackingBridgeSource,
+    /setSupportOpen\(false\);\s*\/\/ A new assignment deserves attention;[\s\S]*setPanelDismissed\(false\);[\s\S]*\}, \[activeDelivery\?\.id\]\)/);
+  assert.match(trackingRouterSource, /isPlausibleCourierDeviceCapture\(clientCapturedAt\)/);
+  assert.match(trackingRouterSource, /Horário da localização inválido ou desatualizado/);
+  assert.doesNotMatch(trackingRouterSource, /finite\(candidate\.clientCapturedAt\) \?\? Date\.now\(\)/);
+});
+
 test('tracking bridge stops when assigned delivery is no longer active', () => {
   assert.match(trackingBridgeSource, /assignedDeliveries\.some/);
   assert.match(trackingBridgeSource, /clearWatch/);
