@@ -10,6 +10,8 @@ test('returned package is a custody state, not completed order or payout',()=>{
   const service=readFileSync('server/delivery/deliveryReturnToStoreService.ts','utf8');
   const route=readFileSync('server/delivery/deliveryOpportunityRouter.ts','utf8');
   const courier=readFileSync('src/components/store/CourierReturnToStorePanel.tsx','utf8');
+  const courierHistory=readFileSync('src/components/store/CourierReturnHistory.tsx','utf8');
+  const courierManager=readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
   const store=readFileSync('src/components/store/StoreDeliveryReturnQueue.tsx','utf8');
   const storeMounted=readFileSync('src/components/store/StoreDeliveryTrackingBridge.tsx','utf8');
   const buyer=readFileSync('src/components/store/BuyerDeliveryTrackingBridge.tsx','utf8');
@@ -34,6 +36,17 @@ test('returned package is a custody state, not completed order or payout',()=>{
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/declare'/);
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/confirm-receipt'/);
   assert.match(courier,/Estou na loja com a encomenda/);
+  assert.match(courierManager,/<CourierReturnHistory \/>/);
+  assert.match(courierHistory,/where\('courierId', '==', user\.uid\)/);
+  assert.match(courierHistory,/includeMetadataChanges: true/);
+  assert.match(courierHistory,/snapshot\.metadata\.fromCache/);
+  assert.match(courierHistory,/returned_to_store_pending_reconciliation/);
+  assert.match(courierHistory,/courier_presented_to_store/);
+  assert.match(courierHistory,/Condição declarada pela loja/);
+  assert.match(courierHistory,/conciliação econômica pendente/);
+  assert.match(courierHistory,/Não representam entrega ao comprador/);
+  assert.match(courierHistory,/A consulta pode estar incompleta/);
+  assert.doesNotMatch(courierHistory,/paymentIntent|captureFunds|transferFunds|issueRefund/);
   assert.match(courier,/decideCourierRoute\(/);
   assert.match(courier,/goToStore\.url/);
   assert.match(courier,/vehicleType:CourierVehicleType\|null/);
