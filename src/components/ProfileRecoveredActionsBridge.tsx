@@ -14,7 +14,8 @@ import {
 } from 'lucide-react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import { collection, doc, onSnapshot } from 'firebase/firestore';
-import type { SocialPost, Store } from '../types';
+import type { Store } from '../types';
+import { publishStoreReview } from '../utils/storeReviews';
 import { identityVerificationEnabled } from '../utils/featureFlags';
 import { auth, db } from '../utils/firebase';
 import { MomentsModal } from './modals/MomentsModal';
@@ -51,8 +52,6 @@ type VerificationShortcut = {
 };
 
 const MOMENTS_STORAGE_KEY = 'kyrub_momentos';
-const LEGACY_POSTS_KEY = 'kyrub_posts';
-const getUserPostsKey = (uid: string) => `kyrub_posts_${uid}`;
 
 const verificationShortcuts: VerificationShortcut[] = [
   {
@@ -105,16 +104,6 @@ const readStoredMoments = (): StoreMoment[] => {
   }
 };
 
-const readStoredPosts = (rawValue: string | null): SocialPost[] => {
-  if (!rawValue) return [];
-  try {
-    const parsed = JSON.parse(rawValue);
-    return Array.isArray(parsed) ? (parsed as SocialPost[]) : [];
-  } catch {
-    return [];
-  }
-};
-
 const storeFromDocument = (
   id: string,
   data: Record<string, unknown>
@@ -159,31 +148,13 @@ const sameReviewPortals = (
       item.store.id === next[index]?.store.id
   );
 
-const persistLocalPost = (user: User, post: SocialPost) => {
-  const key = getUserPostsKey(user.uid);
-  const current = readStoredPosts(
-    localStorage.getItem(key) ?? localStorage.getItem(LEGACY_POSTS_KEY)
-  );
-  const next = [post, ...current.filter(item => item.id !== post.id)];
-  localStorage.setItem(key, JSON.stringify(next));
-  localStorage.setItem(LEGACY_POSTS_KEY, JSON.stringify(next));
-  window.dispatchEvent(
-    new CustomEvent('kyrub-social-posts-updated', {
-      detail: { uid: user.uid, posts: next, source: 'local' },
-    })
-  );
-};
-
 export function ProfileRecoveredActionsBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [profileName, setProfileName] = useState(
     auth.currentUser?.displayName ?? ''
   );
-  const [profilePhotoUrl, setProfilePhotoUrl] = useState(
-    auth.currentUser?.photoURL ?? ''
-  );
   const [stores, setStores] = useState<Store[]>([]);
-  const [moments, setMoments] = useState<StoreMoment[]>(readStoredMoments);
+  const [moments] = useState<StoreMoment[]>(readStoredMoments);
   const [selectedStore, setSelectedStore] = useState<Store | null>(null);
   const [reviewPortals, setReviewPortals] = useState<ReviewPortal[]>([]);
   const [editFormTarget, setEditFormTarget] = useState<HTMLFormElement | null>(
@@ -209,13 +180,11 @@ export function ProfileRecoveredActionsBridge() {
 
       if (!nextUser) {
         setProfileName('');
-        setProfilePhotoUrl('');
         setSelectedStore(null);
         return;
       }
 
       setProfileName(nextUser.displayName ?? '');
-      setProfilePhotoUrl(nextUser.photoURL ?? '');
 
       unsubscribeProfile = onSnapshot(
         doc(db, 'users', nextUser.uid),
@@ -257,10 +226,6 @@ export function ProfileRecoveredActionsBridge() {
       unsubscribeProfile();
     };
   }, []);
-
-  useEffect(() => {
-    localStorage.setItem(MOMENTS_STORAGE_KEY, JSON.stringify(moments));
-  }, [moments]);
 
   const storesByName = useMemo(() => {
     const next = new Map<string, Store>();
@@ -429,52 +394,11 @@ export function ProfileRecoveredActionsBridge() {
     }
   }, [activeEditSection, editContentTarget, editFormTarget]);
 
-  const publishMoment = (data: {
-    content: string;
-    rating: number;
-    mediaUrl: string;
-    publishedToPraca: boolean;
-  }) => {
-    if (!user || !selectedStore) return;
-
-    const id = `m-new-${Date.now()}`;
-    const newMoment: StoreMoment = {
-      id,
-      storeId: selectedStore.id,
-      user:
-        profileName ||
-        user.displayName ||
-        user.email?.split('@')[0] ||
-        'Usuário Kyrub',
-      avatar: profilePhotoUrl || user.photoURL || '',
-      content: data.content,
-      rating: data.rating,
-      mediaUrl: data.mediaUrl || undefined,
-      createdAt: new Date().toLocaleString('pt-BR'),
-      publishedToFeed: data.publishedToPraca,
-    };
-
-    setMoments(current => [newMoment, ...current]);
-
-    if (data.publishedToPraca) {
-      persistLocalPost(user, {
-        id: `post-moment-${id}`,
-        authorId: user.uid,
-        user: newMoment.user,
-        avatar: newMoment.avatar,
-        time: 'Agora mesmo',
-        createdAt: new Date().toISOString(),
-        content: `Avaliou a loja ${selectedStore.name} com ${'★'.repeat(
-          data.rating
-        )}: “${data.content}”`,
-        likes: 0,
-        mediaUrls: data.mediaUrl ? [data.mediaUrl] : undefined,
-        publicationType: 'feed',
-        visibility: 'public',
-      });
-    }
-
-    setSelectedStore(null);
+  const publishMoment = async (data: {
+    content: string; rating: number; mediaUrl: string; publishedToPraca: boolean;
+  }): Promise<void> => {
+    if (!user || !selectedStore) throw new Error('Entre no Kyrub e selecione uma loja para avaliar.');
+    await publishStoreReview(selectedStore, data);
   };
 
   return (
