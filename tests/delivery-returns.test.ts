@@ -36,6 +36,11 @@ test('returned package is a custody state, not completed order or payout',()=>{
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/declare'/);
   assert.match(route,/router\.post\('\/:deliveryId\/return-to-store\/confirm-receipt'/);
   assert.match(courier,/Estou na loja com a encomenda/);
+  assert.match(courier,/trackingRecentlyConfirmed:boolean/);
+  assert.match(courier,/disabled=\{busy\|\|!trackingRecentlyConfirmed\}/);
+  assert.match(courier,/GPS sem confirmação recente/);
+  assert.match(store,/status==='courier_presented_to_store'\?0/);
+  assert.match(store,/status==='return_authorized'\?1/);
   assert.match(courierManager,/<CourierReturnHistory \/>/);
   assert.match(courierHistory,/where\('courierId', '==', user\.uid\)/);
   assert.match(courierHistory,/includeMetadataChanges: true/);
