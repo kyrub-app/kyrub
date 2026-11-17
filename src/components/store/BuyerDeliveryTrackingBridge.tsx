@@ -17,6 +17,7 @@ interface BuyerDelivery {
   to: string;
   status: string;
   customerHandoffStatus: string;
+  returnCustodyStatus: string;
 }
 
 const clean = (value: unknown): string =>
@@ -67,7 +68,7 @@ export function BuyerDeliveryTrackingBridge({
             if (
               clean(data.storeId) !== storeId ||
               clean(data.buyerId) !== buyerId ||
-              !['accepted', 'delivering'].includes(status)
+              !['accepted', 'delivering','returned_to_store'].includes(status)
             ) {
               return [];
             }
@@ -75,12 +76,16 @@ export function BuyerDeliveryTrackingBridge({
               data.customerHandoff && typeof data.customerHandoff === 'object'
                 ? data.customerHandoff as Record<string, unknown>
                 : {};
+            const returnCustody =
+              data.returnCustody && typeof data.returnCustody === 'object'
+                ? data.returnCustody as Record<string, unknown> : {};
             return [{
               id: clean(data.id) || document.id,
               from: clean(data.from),
               to: clean(data.to),
               status,
               customerHandoffStatus: clean(handoff.status),
+              returnCustodyStatus: clean(returnCustody.status),
             } satisfies BuyerDelivery];
           })
         );
@@ -107,16 +112,34 @@ export function BuyerDeliveryTrackingBridge({
           </h2>
         </div>
         {deliveries.map(delivery => {
-          const canConfirm =
+          const hasReturn= ['return_authorized','courier_presented_to_store',
+            'received_by_store_pending_financial_review'].includes(delivery.returnCustodyStatus)
+            || delivery.status==='returned_to_store';
+          const canConfirm = !hasReturn &&
             delivery.status === 'delivering' &&
             delivery.customerHandoffStatus === 'awaiting_buyer_confirmation';
           return (
             <div key={delivery.id} className="space-y-3">
-              <AuthorizedDeliveryTrackingViewer
-                deliveryId={delivery.id}
-                origin={delivery.from}
-                destination={delivery.to}
-              />
+              {hasReturn ? (
+                <div className="rounded-2xl border border-amber-500/35 bg-amber-500/5 p-3 text-[11px] text-amber-200">
+                  <p className="font-black">
+                    {delivery.status==='returned_to_store'
+                      ? 'Encomenda devolvida à loja — em análise'
+                      : 'A logística está tratando uma solicitação de retorno à loja'}
+                  </p>
+                  <p className="mt-1 text-[10px] text-amber-100/80">
+                    O pedido não foi entregue ao comprador. A confirmação de recebimento
+                    fica indisponível durante a análise; cancelamento, reembolso e
+                    remuneração dependem de decisões separadas e auditáveis.
+                  </p>
+                </div>
+              ) : (
+                <AuthorizedDeliveryTrackingViewer
+                  deliveryId={delivery.id}
+                  origin={delivery.from}
+                  destination={delivery.to}
+                />
+              )}
               {canConfirm && (
                 <div className="rounded-2xl border border-emerald-500/25 bg-emerald-500/[0.07] p-3">
                   <p className="flex items-center gap-2 text-[10px] font-black text-emerald-200">
