@@ -688,8 +688,7 @@ export const createDeliveryOpportunityRouter = (): Router => {
         reason: clean(body.reason),
         validUntilEpochMs: typeof body.validUntilEpochMs === 'number'
           ? body.validUntilEpochMs : null,
-        checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, rawChecks[key] === true]))
-          as Record<typeof MOTO_CHECKLIST[number], boolean>,
+        checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, rawChecks[key] === true])) as Record<typeof MOTO_CHECKLIST[number], boolean>,
       });
       response.json(result);
     } catch (error) {
