@@ -251,8 +251,37 @@
         && incoming().status == 'pending'
         && incoming().createdAt == request.time
         && reportId == incoming().postId + '__' + request.auth.uid
-        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId));
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId))
+        && get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.authorId == incoming().authorId
+        && incoming().authorId != request.auth.uid
+        && (
+          get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.visibility == 'public'
+          || request.auth.uid in get(/databases/$(database)/documents/social_posts/$(incoming().postId)).data.audienceIds
+        );
 
+      allow read: if isSignedIn()
+        && (existing().reporterId == request.auth.uid || isAdmin());
+      allow update, delete: if false;
+    }
+
+    // A user can report another existing user once. The report is immutable to clients.
+    match /social_user_reports/{reportId} {
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll(['reportId', 'targetUserId', 'reporterId', 'reason', 'status', 'createdAt'])
+        && incoming().keys().hasOnly(['reportId', 'targetUserId', 'reporterId', 'reason', 'status', 'createdAt'])
+        && incoming().reportId == reportId
+        && incoming().reporterId == request.auth.uid
+        && incoming().targetUserId is string
+        && incoming().targetUserId.size() > 0
+        && incoming().targetUserId.size() <= 128
+        && incoming().targetUserId != request.auth.uid
+        && incoming().reason is string
+        && incoming().reason.size() >= 3
+        && incoming().reason.size() <= 500
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && reportId == incoming().targetUserId + '__' + request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(incoming().targetUserId));
       allow read: if isSignedIn()
         && (existing().reporterId == request.auth.uid || isAdmin());
       allow update, delete: if false;
