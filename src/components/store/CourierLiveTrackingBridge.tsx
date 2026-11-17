@@ -222,7 +222,6 @@ export function CourierLiveTrackingBridge() {
           });
           setAssignedDeliveries(next);
           setAssignedDeliveriesLoaded(true);
-          setPanelDismissed(false);
         },
         error => {
           console.warn('Entregas atribuídas indisponíveis para rastreio.', error);
@@ -300,6 +299,9 @@ export function CourierLiveTrackingBridge() {
     setPickupCode('');
     setPickupError('');
     setSupportOpen(false);
+    // A new assignment deserves attention; snapshots from the same delivery
+    // must not reopen a panel intentionally minimized by the courier.
+    setPanelDismissed(false);
   }, [activeDelivery?.id]);
 
   useEffect(() => {
