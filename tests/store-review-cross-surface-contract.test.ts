@@ -48,7 +48,7 @@ test('removing a moderated Praça review also hides its canonical review and pre
   assert.match(moderation, /postRemoval\.delete\(postRef\)/);
   assert.match(moderation, /postRemoval\.update\(reviewRef/);
   assert.match(moderation, /status: 'hidden'/);
-  assert.match(moderation, /hiddenReview, createdAt/);
+  assert.match(moderation, /hiddenReview, resolvedReviewReports, createdAt/);
   assert.match(moderation, /status: 'reviewed', resolution: 'removed'/);
 });
 
