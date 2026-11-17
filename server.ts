@@ -4,7 +4,6 @@ import path from "path";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 import handleKyrubAiConsultant from "./api/consultor-kyrub";
 import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
 import {
@@ -383,6 +382,7 @@ app.get("/api/health", (_req, res) => {
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {
     console.log("[Kyrub Server] Running in DEVELOPMENT mode. Initializing Vite middleware...");
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
