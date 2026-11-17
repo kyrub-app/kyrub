@@ -135,8 +135,9 @@ export const proposeSupervisedCustodyTransfer = async (input: {
   const recipientIdentityRef = adminDb.doc(`${IDENTITIES}/${toCourierId}`);
   const recipientHoldRef = adminDb.doc(`${HOLDS}/${toCourierId}`);
   const eventRef = adminDb.collection(EVENTS).doc();
+  const returnRef = adminDb.doc(`deliveryReturnProtocols/${id}`);
   return adminDb.runTransaction(async transaction => {
-    const [operator, incident, transfer, delivery, claim, recipientIdentity, recipientHold] = await Promise.all([
+    const [operator, incident, transfer, delivery, claim, recipientIdentity, recipientHold, returnProtocol] = await Promise.all([
       transaction.get(operatorRef),
       transaction.get(incidentRef),
       transaction.get(transferRef),
@@ -144,8 +145,13 @@ export const proposeSupervisedCustodyTransfer = async (input: {
       transaction.get(claimRef),
       transaction.get(recipientIdentityRef),
       transaction.get(recipientHoldRef),
+      transaction.get(returnRef),
     ]);
     assertSupervisor(obj(operator.data()), operatorId);
+    if (returnProtocol.exists && ['return_authorized', 'courier_presented_to_store',
+      'returned_to_store_pending_reconciliation'].includes(clean(returnProtocol.data()?.status))) {
+      throw new Error('CUSTODY_TRANSFER_CONFLICT:delivery_return_in_progress');
+    }
     if (!incident.exists || !delivery.exists || !claim.exists) throw new Error('CUSTODY_TRANSFER_CONFLICT');
     const incidentData = obj(incident.data());
     const deliveryData = obj(delivery.data());
