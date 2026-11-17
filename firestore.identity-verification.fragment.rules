@@ -506,6 +506,31 @@
       allow read, write: if false;
     }
 
+    // Physical return custody is separate from a cancelled order. The
+    // sender and courier may inspect their own return request; only the
+    // server can approve, attest and close possession.
+    match /deliveryReturnProtocols/{deliveryId} {
+      allow get: if isSignedIn()
+        && (resource.data.courierId == request.auth.uid
+          || resource.data.storeId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow list: if isSignedIn()
+        && request.query.limit != null && request.query.limit <= 100
+        && (resource.data.courierId == request.auth.uid
+          || resource.data.storeId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow create, update, delete: if false;
+    }
+
+    // Immutable server audit; no courier, store or browser administrator
+    // can forge physical receipt of the package.
+    match /deliveryReturnEvents/{eventId} {
+      allow get: if hasControlPlaneRole(['super_admin','operations','compliance']);
+      allow list: if hasControlPlaneRole(['super_admin','operations','compliance'])
+        && request.query.limit != null && request.query.limit <= 50;
+      allow create, update, delete: if false;
+    }
+
     // PIN hashes are server-only. Client and Control Plane screens use the
     // authenticated API and never read or write these documents directly.
     match /user_security/{userId} {
