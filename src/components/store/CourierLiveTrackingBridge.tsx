@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
-import { Crosshair, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
+import { Crosshair, Headset, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CourierGoogleMap } from './CourierGoogleMap';
+import { CourierDeliverySupportDialog } from './CourierDeliverySupportDialog';
 import { isCourierVehicleType, type CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
 import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
 
@@ -116,6 +117,7 @@ export function CourierLiveTrackingBridge() {
   const [position, setPosition] = useState<CourierPosition | null>(null);
   const [trackingError, setTrackingError] = useState('');
   const [panelDismissed, setPanelDismissed] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const [storeArrivalDetected, setStoreArrivalDetected] = useState(false);
   const [pickupCode, setPickupCode] = useState('');
   const [pickupBusy, setPickupBusy] = useState(false);
@@ -213,6 +215,7 @@ export function CourierLiveTrackingBridge() {
     setStoreArrivalDetected(false);
     setPickupCode('');
     setPickupError('');
+    setSupportOpen(false);
   }, [activeDelivery?.id]);
 
   useEffect(() => {
@@ -364,7 +367,25 @@ export function CourierLiveTrackingBridge() {
     }
   };
 
-  if (!activeDelivery || panelDismissed) return null;
+  if (!activeDelivery) return null;
+  if (panelDismissed) {
+    return (
+      <div className="fixed bottom-20 right-3 z-[190] flex gap-2 sm:bottom-5 sm:right-5">
+        <button type="button" onClick={() => setPanelDismissed(false)}
+          className="rounded-xl border border-cyan-500/30 bg-slate-950 px-3 py-3 text-[10px] font-black text-cyan-200 shadow-xl">
+          <MapPin className="mr-1 inline h-4 w-4" /> Abrir mapa
+        </button>
+        <button type="button" onClick={() => setSupportOpen(true)}
+          aria-label="Suporte durante a entrega"
+          className="rounded-xl border border-amber-500/30 bg-slate-950 px-3 py-3 text-[10px] font-black text-amber-200 shadow-xl">
+          <Headset className="mr-1 inline h-4 w-4" /> Suporte
+        </button>
+        {supportOpen && <CourierDeliverySupportDialog
+          deliveryId={activeDelivery.id} stage={activeDelivery.status}
+          onClose={() => setSupportOpen(false)} />}
+      </div>
+    );
+  }
 
   const trackingActive = trackingDeliveryId === activeDelivery.id;
   let externalNavigationUrl = '';
@@ -402,14 +423,18 @@ export function CourierLiveTrackingBridge() {
                 : 'Entrega aceita'}
           </h3>
         </div>
-        <button
-          type="button"
-          onClick={() => setPanelDismissed(true)}
-          className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
-          aria-label="Minimizar rastreio"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => setSupportOpen(true)}
+            aria-label="Abrir suporte desta entrega"
+            className="flex h-8 items-center gap-1 rounded-xl border border-amber-500/40 bg-amber-500/10 px-2 text-[10px] font-black text-amber-200">
+            <Headset className="h-4 w-4" /> Ajuda
+          </button>
+          <button type="button" onClick={() => setPanelDismissed(true)}
+            className="flex h-8 w-8 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"
+            aria-label="Minimizar rastreio">
+            <X className="h-4 w-4" />
+          </button>
+        </div>
       </div>
 
       {complianceBlocked && (
@@ -440,12 +465,19 @@ export function CourierLiveTrackingBridge() {
 
       {trackingActive ? (
         <div className="mt-3 space-y-3">
-          <CourierGoogleMap
-            position={position}
-            origin={activeDelivery.from}
-            destination={activeDelivery.to}
-            navigation={{ status: activeDelivery.status, vehicleType: activeDelivery.vehicleType }}
-          />
+          <div className="relative">
+            <CourierGoogleMap
+              position={position}
+              origin={activeDelivery.from}
+              destination={activeDelivery.to}
+              navigation={{ status: activeDelivery.status, vehicleType: activeDelivery.vehicleType }}
+            />
+            <button type="button" onClick={() => setSupportOpen(true)}
+              aria-label="Solicitar suporte nesta entrega"
+              className="absolute right-2 top-2 z-10 flex items-center gap-1 rounded-xl border border-amber-500/50 bg-slate-950/95 px-3 py-2 text-[11px] font-black text-amber-100 shadow-lg">
+              <Headset className="h-4 w-4"/> Suporte
+            </button>
+          </div>
           {storeArrivalDetected && (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-200">
               <p className="flex items-center gap-2 font-black">
@@ -539,6 +571,9 @@ export function CourierLiveTrackingBridge() {
           </button>
         </div>
       )}
+      {supportOpen && <CourierDeliverySupportDialog
+        deliveryId={activeDelivery.id} stage={activeDelivery.status}
+        onClose={() => setSupportOpen(false)} />}
     </aside>
   );
 }
