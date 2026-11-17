@@ -173,3 +173,35 @@ do consumidor e uma fonte de financiamento.
 Nenhum valor numérico de preço foi fixado para lançamento; os exemplos
 de testes não são tarifa oficial. O modelo aceita políticas futuras sem
 reajustar termos de trabalhos anteriores.
+
+## Bloco técnico v1.3 — aceite e janela de espera com prova corroborada
+
+- Uma política publicada em `platformEconomicPolicies/deliveryRecipientReturnTariff`
+  é opcional e só participa de **novas ofertas** se contiver `enabled: true`,
+  valores em centavos, versão, data `effectiveFrom` e limites válidos.
+  **Nenhuma tarifa oficial foi cadastrada por este desenvolvimento.**
+- A oferta nova guarda `returnTariffOfferSnapshot` com impressão SHA-256
+  dos termos. Sua projeção pública traz somente preços e versão, sem
+  endereço do comprador. O entregador marca concordância expressa na
+  lista de ofertas. O aceite da rota e dos termos ocorre na **mesma
+  transação** que grava `deliveryClaims`, com UID, horário do servidor
+  e fingerprint. Não há assinatura retroativa ou recálculo pelo preço
+  global vigente depois do aceite.
+- O instante de chegada declarado pelo entregador continua **não sendo,
+  sozinho, comprovação de tempo remunerável**. O backend agora captura
+  avaliação atual e positiva do geofence do destinatário, realizada pelo
+  servidor, com precisão de até 100 m e janela de 90 s, quando disponível.
+  Se a logística autorizar o retorno após contato e solicitação de
+  análise, o intervalo até a autorização pode ser registrado como
+  `recipientWaitingCorroboratedInterval`. A autorização exige operador
+  responsável e registra seu horário no servidor. Não se considera que
+  o destinatário foi contatado apenas pelo relato do entregador.
+- Sem geofence corroborado, com evidência antiga ou em entregas legadas,
+  a espera permanece `null`/não apurada, não zero. A prévia é informativa;
+  mesmo com geofence e tarifa aceita, **nenhuma obrigação, pagamento ou
+  reembolso é criado ou liberado**.
+
+**Pendente:** obter distância de retorno calculada por um provedor de rotas
+autorizado no servidor e vinculada à loja original; validar fisicamente
+GPS, consentimento e capacidade do suporte; revisar custos e direitos do
+consumidor antes de lançamento. Operação real continua não autorizada.
