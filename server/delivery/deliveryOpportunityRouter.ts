@@ -131,6 +131,13 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'CUSTODY_TRANSFER_SETTLEMENT_HOLD') {
+    response.status(409).json({
+      code: message,
+      error: 'Há transferência física declarada. Rastreio e conclusão financeira ficam suspensos até conciliação logística.',
+    });
+    return;
+  }
   if (message === 'CUSTODY_TRANSFER_FORBIDDEN') {
     response.status(403).json({ code: message, error: 'A ação exige participação autenticada ou supervisor autorizado.' });
     return;
