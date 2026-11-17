@@ -118,7 +118,11 @@ export const courierVehicleDocumentEligibility = (
       ? verification.motofreteQualification as Record<string, unknown>
       : null;
     const now = Date.now();
-    const validUntil = qualification?.validUntilEpochMs;
+    const validUntil = qualification?.validUntil;
+    const validUntilEpochMs = validUntil && typeof validUntil === 'object'
+      && typeof (validUntil as { toMillis?: unknown }).toMillis === 'function'
+        ? (validUntil as { toMillis: () => number }).toMillis()
+        : Number.NaN;
     const attested = qualification?.status === 'approved'
       && qualification.courseVerified === true
       && qualification.minimumAgeAndLicenseTenureVerified === true
@@ -127,8 +131,7 @@ export const courierVehicleDocumentEligibility = (
       && qualification.semiannualInspectionVerified === true
       && qualification.localRequirementsVerified === true
       && typeof qualification.reviewedBy === 'string' && qualification.reviewedBy.trim().length > 0
-      && typeof validUntil === 'number' && Number.isFinite(validUntil)
-      && validUntil > now;
+      && Number.isFinite(validUntilEpochMs) && validUntilEpochMs > now;
     if (!attested) return {
       eligible: false,
       reason: 'Motofrete exige revisão específica do curso, condutor, veículo, inspeção e autorização. CNH e EAR não bastam.',
