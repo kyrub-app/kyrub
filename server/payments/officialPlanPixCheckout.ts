@@ -21,6 +21,8 @@ import { parseOfficialPlanRewards } from '../../shared/officialPlanRewards.js';
 import { resolveOfficialPromotionalCheckoutAmount } from './officialPlanPromotionCheckoutAmount.js';
 import { resolveOfficialPlanPromotionCodeFromErp } from './officialPlanPromotionErpReader.js';
 import { buildOfficialPromotionAcceptedTerms } from './officialPlanPromotionAcceptedTerms.js';
+import { assertLiveBusinessCouponPilot, liveBusinessCouponPilotEnabled } from './officialPlanBusinessCouponPilot.js';
+import type { StorePromotion } from '../../src/utils/storePromotions.js';
 import { reserveOfficialPlanPromotionWithinTransaction } from './officialPlanPromotionReservation.js';
 import { finalizeOfficialPlanPromotionReservation, reclaimExpiredUnissuedOfficialPromotionReservations } from './officialPlanPromotionFinalization.js';
 
@@ -58,21 +60,29 @@ const promotionReservationRef = (d: any) => adminDb.doc(
   `stores/${d.offer.storeId}/promotionReservations/${hash('official-plan-promotion:' + d.checkoutId)}`
 );
 
-// Fail closed whenever live creation is enabled. Pilot mode restricts issuance
-// to one authenticated user and one canonical Pro/month offer.
+// Fail closed whenever live creation is enabled. A distinct, default-off switch
+// restricts the discounted Business pilot to one authenticated buyer/coupon.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
-  // The exact same canonical flow can be exercised for one discounted Business
-  // contract in the local emulator. This exception is impossible in production.
   if (d.promotionAcceptedTerms) {
-    if (isolatedOfficialPromotionEnabled() &&
-        d.offer.plan === 'business' && d.offer.quote.months === 1 &&
-        officialPixChargeMinor(d) === 100) return;
-    throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    // Existing local-emulator Business coupon tests remain unchanged.
+    if (isolatedOfficialPromotionEnabled()) {
+      if (d.offer.plan === 'business' && d.offer.quote.months === 1 &&
+          officialPixChargeMinor(d) === 100) return;
+      throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    }
+    // Real-money use is an additional explicitly gated one-buyer, one-shot
+    // exception, never a general discount or a change to the Business price.
+    assertLiveBusinessCouponPilot({
+      buyerUid: uid, offer: d.offer, accepted: d.promotionAcceptedTerms,
+    });
+    if (officialPixChargeMinor(d) !== 100) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
+    return;
   }
+  if (liveBusinessCouponPilotEnabled()) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_REQUIRED');
   // The published Official Store product, not a compiled pilot price, owns the charge.
   // The accepted offer is revalidated against the canonical product before issuance.
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
@@ -125,10 +135,18 @@ async function offer(storeId: string, productId: string, months: ContractTermMon
 export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths; promotionCode?: string }) {
   const buyer = await authenticateConsultantRequest(input.authorization);
   if (!valid(input.storeId) || !valid(input.productId) || ![1, 3, 6, 12].includes(input.selectedMonths)) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
-  if (input.promotionCode !== undefined && (!isolatedOfficialPromotionEnabled() ||
-      typeof input.promotionCode !== 'string' || !input.promotionCode ||
-      input.promotionCode.length > 48)) {
-    throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+  if (input.promotionCode !== undefined) {
+    if (typeof input.promotionCode !== 'string' || !input.promotionCode ||
+        input.promotionCode.length > 48 ||
+        (!isolatedOfficialPromotionEnabled() &&
+          (!liveBusinessCouponPilotEnabled() ||
+           process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true' ||
+           process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true' ||
+           buyer.uid !== pilotUid() ||
+           input.promotionCode !== process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE ||
+           input.selectedMonths !== 1))) {
+      throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    }
   }
   // Reopen an unresolved attempt with its original accepted terms, even after the catalog changes.
   const slot = await slotRef(buyer.uid).get();
@@ -191,6 +209,12 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     officialProductId: snapshot.productId, buyerUid: buyer.uid,
     months: snapshot.quote.months, contractTotalMinor: snapshot.quote.totalMinor,
   }) : null;
+  if (promotionAcceptedTerms && !isolatedOfficialPromotionEnabled()) {
+    assertLiveBusinessCouponPilot({
+      buyerUid: buyer.uid, offer: snapshot, accepted: promotionAcceptedTerms,
+      promotion: promoted!.promotion,
+    });
+  }
   const checkoutId = randomBytes(32).toString('hex');
   const quoted = { checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
     ...buyerStore, offer: snapshot, offerDigest: digest(snapshot),
@@ -211,7 +235,7 @@ async function load(authorization: string, checkoutId: string) {
 export async function acceptOfficialPlanPix(input: { authorization: string; checkoutId: string; acceptedTotalMinor: number }) {
   const { buyer, d: quoted } = await load(input.authorization, input.checkoutId);
   if (quoted.promotionAcceptedTerms) {
-    if (!isolatedOfficialPromotionEnabled()) throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    if (!isolatedOfficialPromotionEnabled()) allowPilotOffer(quoted, buyer.uid);
     await reclaimExpiredUnissuedOfficialPromotionReservations({
       officialStoreId: quoted.offer.storeId,
       promotionId: quoted.promotionAcceptedTerms.promotionId,
@@ -230,7 +254,7 @@ export async function acceptOfficialPlanPix(input: { authorization: string; chec
       throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
     }
     if (d.promotionAcceptedTerms) {
-      if (!isolatedOfficialPromotionEnabled()) throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+      if (!isolatedOfficialPromotionEnabled()) allowPilotOffer(d, buyer.uid);
       await reserveOfficialPlanPromotionWithinTransaction(tx, {
         checkoutId: input.checkoutId, buyerUid: buyer.uid,
         officialStoreId: d.offer.storeId, officialProductId: d.offer.productId,
@@ -303,13 +327,16 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
     date_of_expiration: d.expiresAt, external_reference: reference(d.checkoutId) });
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId), slot = slotRef(buyer.uid);
-    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot, couponReservation] = await Promise.all([
+    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot, couponReservation, pilotCoupon] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
       tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
       tx.get(pilotRef()),
       d.promotionAcceptedTerms ? tx.get(promotionReservationRef(d)) : Promise.resolve(null),
+      d.promotionAcceptedTerms ? tx.get(adminDb.doc(
+        `stores/${d.offer.storeId}/promotions/${d.promotionAcceptedTerms.promotionId}`
+      )) : Promise.resolve(null),
     ]);
     if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) ||
         liveEntitlement(entitlement.data()) ||
@@ -328,6 +355,14 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
       throw Error('OFFICIAL_PIX_PROMOTION_RESERVATION_REQUIRED');
     }
     if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
+    if (d.promotionAcceptedTerms && !isolatedOfficialPromotionEnabled()) {
+      if (!pilotCoupon?.exists) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
+      assertLiveBusinessCouponPilot({
+        buyerUid: buyer.uid, offer: d.offer, accepted: d.promotionAcceptedTerms,
+        promotion: { ...(pilotCoupon.data() as StorePromotion),
+          id: pilotCoupon.id, storeId: d.offer.storeId },
+      });
+    }
     if ((d.buyerStoreId ? buyerStore?.get('ownerId') !== buyer.uid : d.buyerStoreProvisioningRequired !== true) || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
