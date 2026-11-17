@@ -29,6 +29,8 @@ export function AdminDeliveryReturnEconomicsPreview({
   const [data, setData] = useState<DeliveryReturnEconomicPreview | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [routeBusy,setRouteBusy]=useState(false);
+  const [routeMessage,setRouteMessage]=useState('');
   const inspect = async () => {
     if (busy) return;
     setBusy(true); setError(''); setData(null);
@@ -44,6 +46,24 @@ export function AdminDeliveryReturnEconomicsPreview({
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'Não foi possível consultar esta devolução.');
     } finally { setBusy(false); }
+  };
+  const verifyRoute=async()=>{
+    if(routeBusy||!data?.tariffQuote.policyId)return;
+    if(!window.confirm('Verificar a rota de retorno usando Google Routes? A consulta exige política habilitada, equipe independente e pode gerar custo do provedor. Não libera remuneração.'))return;
+    setRouteBusy(true);setRouteMessage('');
+    try{
+      const token=await user.getIdToken();
+      const response=await fetch(
+        '/api/delivery-opportunities/admin/returns/'+encodeURIComponent(deliveryId)+'/route-distance/verify',
+        {method:'POST',headers:{authorization:'Bearer '+token},cache:'no-store'}
+      );
+      const body=await response.json().catch(()=>({})) as Record<string,unknown>;
+      if(!response.ok)throw new Error(typeof body.error==='string'?body.error:'Rota indisponível.');
+      const meters=Number(body.distanceMeters);
+      setRouteMessage('Planejamento certificado: '+(meters/1000).toLocaleString('pt-BR',{maximumFractionDigits:2})+' km. Revisão financeira ainda necessária.');
+      await inspect();
+    }catch(caught){setRouteMessage(caught instanceof Error?caught.message:'Não foi possível certificar a rota.');}
+    finally{setRouteBusy(false);}
   };
   return (
     <div className="mt-2 rounded-xl border border-cyan-500/25 bg-slate-950 p-3">
@@ -70,6 +90,13 @@ export function AdminDeliveryReturnEconomicsPreview({
             Prazo de cortesia: {data.contractGraceMinutes===null
               ?'não apurado':data.contractGraceMinutes+' min'}.
           </p>
+          {data.tariffQuote?.policyId && data.tariffQuote.returnStatus==='distance_authority_required' && (
+            <button type="button" disabled={busy||routeBusy} onClick={()=>void verifyRoute()}
+              className="rounded-lg border border-teal-500/30 px-3 py-2 text-[10px] text-teal-200 disabled:opacity-50">
+              {routeBusy?'Validando provedor…':'Certificar distância da rota — pode gerar custo Google'}
+            </button>
+          )}
+          {routeMessage && <p role="status" className="text-[9px] text-amber-200">{routeMessage}</p>}
           {data.segments.map(part => (
             <div key={part.id} className="rounded-lg border border-slate-800 p-2">
               <div className="flex items-baseline justify-between gap-2 text-[10px]">
