@@ -3,6 +3,7 @@ import type { User } from 'firebase/auth';
 import { collection, getDocs, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { AlertTriangle, ClipboardList } from 'lucide-react';
 import { db } from '../../utils/firebase';
+import { AdminSupervisedTransferPanel } from './AdminSupervisedTransferPanel';
 
 type IncidentDecision =
   | 'release_for_new_acceptance'
@@ -174,6 +175,8 @@ export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
               <p className="mt-1 text-[9px] text-orange-300">
                 {incident.status === 'awaiting_logistics_review' ? 'Revisão pendente'
                   : incident.status === 'awaiting_supervised_handoff' ? 'Transferência supervisionada pendente'
+                    : incident.status === 'transfer_evidence_confirmed_pending_reconciliation'
+                      ? 'Declarações revisadas — conciliação pendente'
                     : incident.status === 'released_for_new_acceptance' ? 'Liberado para novo aceite'
                       : incident.status === 'closed_after_buyer_confirmation' ? 'Encerrado após confirmação'
                         : incident.status}
@@ -202,6 +205,9 @@ export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
                   </button>
                 </div>
               )}
+              <AdminSupervisedTransferPanel
+                user={user} deliveryId={incident.id} incidentStatus={incident.status}
+              />
               {incident.reason && (
                 <p className="mt-2 text-[9px] text-slate-400">Decisão: {incident.reason} · {incident.resolvedBy}</p>
               )}
