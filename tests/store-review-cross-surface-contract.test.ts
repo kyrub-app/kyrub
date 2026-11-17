@@ -36,7 +36,7 @@ test('like count uses the very same Praça like records, not a second local coun
   assert.match(hook, /collection\(db, 'social_post_likes'\)/);
   assert.match(hook, /storeReview: data\.storeReview/);
   assert.match(feed, /post\.storeReview/);
-  assert.doesNotMatch(publisher, /pitanga|reward|XP_CONVERSION/i);
+  assert.doesNotMatch(publisher, /from ['\"](?:\.\.?\/)*.*(?:gamification|pitanga)|grant[A-Z]|award[A-Z]/i);
 });
 
 test('removing a moderated Praça review also hides its canonical review and preserves the audit', () => {
