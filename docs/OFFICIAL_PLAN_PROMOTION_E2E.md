@@ -1,3 +1,11 @@
+## Evolução condicionada — piloto real via cupom, ainda não liberado (17/11/2026)
+
+A [PR #1159](https://github.com/kyrub-app/kyrub/pull/1159) prepara o mesmo mecanismo comercial para **um** pagamento real, mas exige flags separadas e a aprovação humana final. **Business 1 mês (R$ 397) − cupom ERP fixo R$ 396 = R$ 1**; nenhuma mudança no catálogo. O código/ID real do cupom e UID comprador ficam configurados somente no ambiente protegido depois que o segundo perfil existir, jamais no repositório.
+
+Para impedir que a divulgação na Praça torne a oferta resgatável por qualquer pessoa, o ERP passa a aceitar `specific_user` e limite `1/1`; a listagem de promoções públicas continua filtrando esses registros. Apenas o cupom do piloto oficial habilitado por flag pode receber **projeção pública sanitizada sem UID** para o cartão da Praça. A vitrine encaminha código privado para validação **autenticada**, exclusivamente no plano Business canônico, sem descontar outro item ou ignorar o cupom para emitir Pix cheio. O servidor revalida o código exclusivo ao cotar, reservar e imediatamente antes do provider POST. **Não é autorização de cobrança**.
+
+O contrato/assinatura deve persistir `originalTotalMinor=39700`, `discountMinor=39600`, `totalPaidMinor=100`, `plan=business`, `months=1`, início de vigência na aprovação do PSP e CRM/ledger corretos. Limites de segurança: **um UID, uma reserva, uma emissão**, dois perfis em lojas separadas, nenhum acesso a token ou saldo real em teste isolado, sem Pitangas extras. Documentação de operação e gate: [OFFICIAL_PLAN_PIX_RELEASE.md](OFFICIAL_PLAN_PIX_RELEASE.md).
+
 # PR #1138 — Cupom comercial integrado ao checkout oficial, em homologação
 
 ## Implementação canônica, sem checkout paralelo

@@ -145,6 +145,35 @@ The owner performs the first live purchase. Check approved/accredited evidence f
 First disable new creation with `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=false` and ensure the serving deployment receives it. Keep status and signed webhook reconciliation running for in-flight payments. The kill switch does not prevent already paid contracts from materializing or retrying missing projections. Do not revert/remove the handler while unresolved provider payments exist. Preserve immutable contracts, global bindings, receipts and rewards; never delete ledger records to reset a test. Only roll back to the previous commit after reconciling in-flight payments and assessing any required compensating entries through the existing governed financial workflows.
 
 
+## Escopo comercial atualizado — Business R$ 1 via cupom da Loja Oficial (17/11/2026)
+
+**Decisão do proprietário:** o custo de R$ 1 **não é preço oficial do Business**. Trata-se da contratação do **Business mensal oficial R$ 397,00**, com **cupom ERP de R$ 396,00**, gerando **um Pix de R$ 1,00** para o primeiro comprador real de homologação (um segundo perfil controlado pelo proprietário). O objetivo é provar Pix verdadeiro, conta recebedora, webhook, contrato, concessão do Business, vitrine/ERP e idempotência. **Não usar o piloto Pro R$ 197 descrito nas seções legadas abaixo como substituto.**
+
+A implementação está na [PR #1159](https://github.com/kyrub-app/kyrub/pull/1159) **Draft**, cumulativa sobre #1158. O valor do produto no catálogo **não é alterado** e o código apenas habilita, por flag adicional default OFF, um caminho **já existente** de cupom → preço servidor → aceite → Pix → contrato.
+
+**Configuração necessária, só após homologação e autorização expressa:**
+
+- `KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED=true` (gatilho financeiro geral, que deve permanecer OFF antes da liberação);
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE=true`;
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUSINESS_COUPON_ENABLED=true` (**nova flag, default OFF**);
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID=<UID Firebase do segundo perfil autenticado, obtido via operação autorizada>`;
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_ID=<ID canônico da promoção criada pelo ERP>`;
+- `KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE=<código normalizado do cupom criado pelo ERP>`.
+
+O código/ID do cupom ainda não foram escolhidos para produção, portanto os nomes `BIZ1`/`business-pilot` que aparecem nos **testes** são fictícios e não provam campanha publicada. Não inserir UID, token ou segredo em GitHub/ChatGPT. O recebedor Mercado Pago permanece a **conta oficial já aprovada**; conferir no preflight autenticado o `receiverId` e **`checkoutEnabled` atual** antes do piloto. Não habilitar a flag até a janela de teste; desligá-la depois, preservando webhooks/reconciliação de pagamentos emitidos.
+
+**Cupom ERP de uso único:** somente a Loja Oficial canônica e o produto **Business canônico, 1 mês**, `fixed=396`, `eligibility.mode=specific_user` com **exatamente o UID do segundo perfil**, `maxRedemptions=1`, `maxRedemptionsPerBuyer=1`, período limitado, sem renovação automática. O gerente de cupons na PR permite configurar a elegibilidade; a divulgação pública na Praça mostra apenas código/oferta, **nunca o UID**. Um código não listado na descoberta pública segue pela vitrine oficial para **quote autenticada**: se não pertencer ao comprador, a API recusa; **nunca substitui cupom inválido por preço cheio**. O servidor verifica o vínculo antes da cotação, durante a reserva transacional e imediatamente antes de emitir Pix.
+
+**Jornada simples recomendada:** o segundo perfil faz login → **Criar minha loja** concede Free sem depender de publicação → prepara a primeira loja → acessa a postagem do cupom da Loja Oficial na Praça → `Aproveitar cupom` → vitrine `/@kyrub-oficial?coupon=...` → confere Business por R$ 397 menos R$ 396 e **total R$ 1** → aceita → **somente depois da autorização financeira final** paga um Pix real → a API valida pagamento aprovado/acreditado e inicia vigência Business no instante da aprovação → plano e CRM refletem novo benefício sem exigir publicação da loja. Depois validar repetição de webhook/reabertura em nova sessão, o pedido canônico e ausência de cobranças/contratos duplicados. Não misturar este piloto com as 100 Pitangas enquanto o writer gate estiver aberto.
+
+**Bloqueios de uma transação real:** produto Business e loja oficial realmente publicados; Firestore Rules/app/índices já implantados e compatíveis; preflight Mercado Pago/autorização de coletor e webhook válido; prévia visual autenticada com o segundo perfil; one-shot sem uso anterior; valor e prazo revalidados pelo servidor; owner aprova expressamente **o deploy e, depois, o pagamento de R$ 1**. Caso o PSP responda com resultado incerto, recuperar pelo ID de checkout; **nunca apagar o documento one-shot nem gerar outra cobrança para tentar novamente**.
+
+**Estado:** preparação em PR, sem cupom real criado, sem flag produtiva alterada, sem merge, deploy ou Pix real executado.
+
+## Piloto legado Pro sem desconto — somente histórico (substituído no escopo comercial pelo piloto Business descrito acima)
+
+O código legado Pro permanece compatível quando a flag Business está OFF; **não o executar como piloto escolhido pelo proprietário** sem nova decisão.
+
 ## One-buyer, one-emission live pilot (pending approval)
 
 Pilot code is restricted to one official Kyrub Pro, 1 month, BRL 197.00. The server refuses live creation unless **all** production deployment settings are explicit:

@@ -78,3 +78,19 @@ test('existing contract card renders original price, ERP discount and final acce
     await unlink(path);
   }
 });
+
+test('a private official coupon remains usable only through authenticated Business quote, never through full-price fallback', () => {
+  const detail = readFileSync('server/payments/storePromotionManagementRouter.ts', 'utf8');
+  const serverPilot = readFileSync('server/payments/officialPlanBusinessCouponPilot.ts', 'utf8');
+  const management = readFileSync('src/components/StorePromotionsManager.tsx', 'utf8');
+  assert.match(management, /eligibilityMode: 'public' \| 'specific_user'/);
+  assert.match(management, /UID\(s\) autorizado\(s\)/);
+  assert.match(management, /eligibility: draft\.eligibilityMode === 'specific_user'/);
+  assert.match(detail, /isPubliclyPresentableBusinessCouponPilot\(promotion\)/);
+  assert.match(detail, /restrictedToInvitee/);
+  assert.match(storefront, /privateCouponNeedsServerCheck/);
+  assert.match(storefront, /OFFICIAL_PLAN_BUSINESS_PRODUCT_ID/);
+  assert.match(storefront, /promotionCode=\{couponForOfficialPlan \? sharedCouponCode : undefined\}/);
+  assert.match(storefront, /Um código inválido nunca será ignorado para cobrar o valor integral/);
+  assert.match(serverPilot, /maxRedemptionsPerBuyer !== 1/);
+});
