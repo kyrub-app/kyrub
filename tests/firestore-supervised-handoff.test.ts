@@ -109,7 +109,7 @@ test('signed declarations and supervisor attestation are independent, idempotent
   // or permit the original driver to certify arrival or buyer delivery.
   await assert.rejects(markCourierArrivedAtCustomer({
     deliveryId: id, courierId: originalCourierId,
-  }), /CUSTODY_TRANSFER_SETTLEMENT_HOLD/);
+  }), /COURIER_COMPLIANCE_HOLD/);
   await assert.rejects(confirmBuyerReceivedDelivery({
     deliveryId: id, buyerId,
   }), /CUSTODY_TRANSFER_SETTLEMENT_HOLD/);
