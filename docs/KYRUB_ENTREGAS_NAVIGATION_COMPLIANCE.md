@@ -371,3 +371,43 @@ independente: geofence recente e declarações autenticadas aumentam a
 rastreabilidade, mas não provam sozinhas a entrega física. Requer
 homologação presencial com duas pessoas, aprovação de SLA e proteção
 dos relatos sensíveis; não publicar sem essas provas.
+
+
+## Política econômica de devolução v1.0 — prévia segura (17/11/2026)
+
+**Decisão inicial de produto:** trabalho comprovadamente realizado pelo entregador
+deve ser analisado para remuneração, inclusive retorno autorizado e espera
+contratualmente remunerável. O comprador não recebe cobrança automática de
+devolução, nem sofre desconto automático de reembolso. Responsabilidade pelo
+custo, remuneração do entregador e reembolso são avaliações distintas.
+
+A implementação inicial inclui:
+- Modelo compartilhado versionado `shared/deliveryReturnEconomicPolicy.ts`.
+- Nova consulta **somente leitura**
+  `GET /api/delivery-opportunities/admin/returns/:deliveryId/economic-preflight`,
+  protegida por Firebase ID token e papel administrativo ativo.
+- Prévia acoplada à fila já existente de suporte no Control Plane, exibida somente
+  após confirmação física pela loja (`returned_to_store_pending_reconciliation`).
+- Quatro parcelas com identificadores distintos: rota original, retorno,
+  espera adicional e reembolso do comprador (este último **fora** da
+  remuneração do entregador). Sem valor disponível, a interface mostra
+  “Não apurado”, não R$ 0,00.
+- A remuneração original só é exibida quando um `payment_capture` único e
+  coerente com loja/pedido pode sustentar a obrigação de entregador. Uma
+  obrigação já elegível/liquidada é destacada como conflito de duplicidade.
+- Avaria/divergência, obrigações pendentes e fonte incompleta bloqueiam
+  quaisquer conclusões automáticas. Todos os valores e responsáveis adicionais
+  dependem de revisão humana e fonte contratual verificável.
+
+**Sem tarifas inventadas:** prazo sugerido de 10 minutos, preço por km, mínimo
+de retorno, adicional de espera e tetos ainda **não são configurações comerciais
+habilitadas**. A distância GPS isolada não gera obrigação; valores ilustrativos
+do planejamento não são gravados no Firestore. A consulta não cria
+`economicObligations`, autorizações de pagamento, reembolso, estorno,
+repasses nem writes. O total final permanece **não apurado**.
+
+**Próximo gate:** definir como a oferta/aceite capturam tarifa e distância do
+retorno, regras de espera no destino e custo mínimo; revisar a política
+contratual/consumerista; então implementar proposta, revisão independente,
+trava antifraude e conciliação efetiva em ambiente isolado. Sem merge ou deploy
+de produção até homologação da PR, privacidade, GPS e suporte humano.
