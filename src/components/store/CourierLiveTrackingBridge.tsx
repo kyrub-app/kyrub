@@ -489,6 +489,11 @@ export function CourierLiveTrackingBridge() {
           <p className="text-[10px] leading-relaxed text-slate-400">
             Ative o GPS para compartilhar sua posição durante a corrida. O navegador solicitará sua permissão.
           </p>
+          {trackingError && (
+            <p className="rounded-xl border border-red-500/20 bg-red-500/10 p-3 text-[9px] text-red-200">
+              {trackingError}
+            </p>
+          )}
           <button
             type="button"
             onClick={enableTracking}
