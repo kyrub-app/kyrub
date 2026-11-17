@@ -81,6 +81,8 @@ test('real app routes to independent courier declarations, supervisor and immuta
   assert.match(firestore, /match \/deliveryCustodyTransfers\/\{deliveryId\}/);
   assert.match(firestore, /match \/deliveryCustodyTransferEvents\/\{eventId\}/);
   assert.match(arrival, /CUSTODY_TRANSFER_SETTLEMENT_HOLD/);
+  assert.match(arrival, /COURIER_COMPLIANCE_HOLD/);
+  assert.match(arrival, /deliveryComplianceIncidents/);
   assert.match(tracking, /custodyDisputed/);
   assert.match(tracking, /CUSTODY_TRANSFER_SETTLEMENT_HOLD/);
 });
