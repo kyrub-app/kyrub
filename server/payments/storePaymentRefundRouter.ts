@@ -62,6 +62,13 @@ const mapRefundError = (error: unknown): {
   if (code.startsWith('ORDER_ITEM_CANCELLATION_')) {
     return { status: 409, error: 'O pedido mudou enquanto você fazia a seleção. Revise os itens antes de confirmar.', code };
   }
+  if (code === 'PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED') {
+    return {
+      status: 409,
+      error: 'Há reembolso parcial pendente, incerto ou com histórico acima do limite de conferência. Revise essa operação antes de solicitar o reembolso integral.',
+      code,
+    };
+  }
   if (code === 'PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL') {
     return {
       status: 409,
