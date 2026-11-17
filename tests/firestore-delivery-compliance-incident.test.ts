@@ -32,6 +32,7 @@ const seed = async (deliveryId: string, status: 'accepted' | 'delivering') => {
     }),
     adminDb.doc(`hub/renda/deliveries/${deliveryId}`).set({
       id: deliveryId, source: 'kyrub-order', sourceOrderId: orderId, storeId,
+      buyerId: 'buyer_test',
       acceptedBy: courierId, acceptedByName: 'Entregador de Teste', status,
       vehicleType: 'motorcycle', acceptedAt: now, pickupHandoff: {
         status: collected ? 'handed_over' : 'awaiting_code',
@@ -134,6 +135,8 @@ test('collected parcel cannot be reopened; supervised handoff preserves assignme
     adminDb.doc(`hub/renda/deliveries/${id}`).update({status: 'done'}),
     adminDb.doc(`deliveryClaims/${id}`).update({status: 'done'}),
     adminDb.doc(`deliveryCompletions/${id}`).set({
+      schemaVersion: 1, deliveryId: id, orderId, storeId,
+      courierId, buyerId: 'buyer_test',
       status: 'confirmed', settlementEligible: true, confirmedBy: 'buyer_test',
     }),
   ]);
