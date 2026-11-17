@@ -120,7 +120,9 @@ describe('buyer-confirmed customer delivery handoff', () => {
   });
 
   test('completion eligibility is not settlement, payout, transfer or wallet custody', () => {
-    assert.doesNotMatch(service, /settleEconomicObligationFromEvidence|payout|transfer|wallet|custodial/i);
+    assert.doesNotMatch(service, /settleEconomicObligationFromEvidence|payout|transferFunds|transferMoney|executeTransfer|wallet|custodial/i);
+    // Logging a physical custody-transfer declaration is not money transfer.
+    assert.match(service, /CUSTODY_TRANSFER_SETTLEMENT_HOLD/);
     assert.doesNotMatch(eligibility, /settledAt:\s*confirmedAt|payout|transfer|wallet|custodial/i);
     assert.match(buyerBridge, /não executa pagamento nem transferência/);
   });
