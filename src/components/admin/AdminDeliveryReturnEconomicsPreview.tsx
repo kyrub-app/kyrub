@@ -16,6 +16,7 @@ const STATUS_LABELS = {
   contract_terms_required: 'Aguardando distância e tarifa contratual',
   waiting_evidence_and_terms_required: 'Aguardando evidências e tarifa de espera',
   consumer_rights_review_required: 'Análise separada dos direitos do comprador',
+  quoted_pending_independent_review: 'Prévia tarifária contratada — revisão independente obrigatória',
 };
 const money = (value: number | null) =>
   value === null ? 'Não apurado' : (value / 100).toLocaleString('pt-BR', {
@@ -61,6 +62,13 @@ export function AdminDeliveryReturnEconomicsPreview({
             Pacote recebido: {data.receivedCondition === 'intact' ? 'íntegro'
               : data.receivedCondition === 'damaged' ? 'com avaria' : 'divergência'}.
             Responsabilidade pelo custo: em análise.
+          </p>
+          <p className="text-[9px] text-slate-400">
+            Contrato aceito: {data.tariffQuote?.policyId
+              ?data.tariffQuote.policyId+' v'+data.tariffQuote.policyVersion
+              :'não comprovado'}.
+            Prazo de cortesia: {data.contractGraceMinutes===null
+              ?'não apurado':data.contractGraceMinutes+' min'}.
           </p>
           {data.segments.map(part => (
             <div key={part.id} className="rounded-lg border border-slate-800 p-2">

@@ -103,5 +103,9 @@ export const previewDeliveryReturnEconomicReconciliation = async (input: {
     sourceCaptureId: captured ? clean(captured.id) || null : null,
     originalRouteMinor,
     existingCourierObligations,
+    // Optional, immutable authorities. Absent in legacy deliveries: no quote.
+    acceptedTariffTerms: claim.returnTariffAcceptedTerms,
+    independentReturnDistanceAuthority: protocol.independentReturnDistanceAuthority,
+    recipientWaitingCorroboratedInterval: protocol.recipientWaitingCorroboratedInterval,
   });
 };

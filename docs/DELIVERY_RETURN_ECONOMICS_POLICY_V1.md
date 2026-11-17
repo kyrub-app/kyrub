@@ -142,3 +142,34 @@ econômica. Os endpoints de leitura, proposta e decisão reaproveitam a rota
 ativos e transações idempotentes. Nenhuma tarifa é presumida, e o retorno
 continua sem valor financeiro definido até a existência de contrato
 versionado aceito no momento da contratação.
+
+## Extensão v1.2 — prévia de tarifa contratual, sem execução
+
+O cálculo numérico de retorno e espera ao destinatário somente retorna uma
+**prévia**, em centavos inteiros, quando três fontes independentes estiverem
+disponíveis no servidor:
+
+1. `deliveryClaims/{deliveryId}.returnTariffAcceptedTerms` — contrato
+   versionado, com `acceptedVia=server_courier_claim`, data de aceite,
+   mesmo entregador e mesma entrega. A escrita desse aceite ainda **não foi
+   habilitada na interface**.
+2. `deliveryReturnProtocols/{deliveryId}.independentReturnDistanceAuthority`
+   — distância autorizada por planejamento de rota independente, não GPS
+   unilateral do entregador. O emissor/validador dessa evidência ainda
+   **não foi implementado**.
+3. `deliveryReturnProtocols/{deliveryId}.recipientWaitingCorroboratedInterval`
+   — janela de chegada e liberação corroborada pelo servidor, não apenas
+   um cronômetro visual. A materialização dessa evidência ainda depende de
+   homologação operacional.
+
+Sem as fontes, a parcela permanece `null`/“Não apurado”. Com elas, aplica-se
+`max(piso, ceil(distancia_metros × centavos_por_km / 1000))`. A espera
+somente começa depois da cortesia contratada, por incrementos e teto,
+respeitando limite operacional (excedente exige revisão). O resultado
+**nunca** altera `totalRecognizedMinor: null` nem torna a despesa
+elegível, porque dependem de avaliação econômica independente, condições
+do consumidor e uma fonte de financiamento.
+
+Nenhum valor numérico de preço foi fixado para lançamento; os exemplos
+de testes não são tarifa oficial. O modelo aceita políticas futuras sem
+reajustar termos de trabalhos anteriores.

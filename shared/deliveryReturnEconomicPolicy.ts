@@ -1,5 +1,6 @@
 export const DELIVERY_RETURN_ECONOMIC_POLICY_ID = 'kyrub_delivery_return_v1' as const;
 export const DELIVERY_RETURN_ECONOMIC_POLICY_VERSION = 1 as const;
+import { quoteDeliveryReturnTariffs, type DeliveryReturnTariffQuote } from './deliveryReturnTariffQuote.js';
 
 /**
  * Advisory policy model. The amounts shown here are not orders to pay, debit,
@@ -13,7 +14,8 @@ export type ReturnEconomicSegmentStatus =
   | 'authority_unavailable'
   | 'contract_terms_required'
   | 'waiting_evidence_and_terms_required'
-  | 'consumer_rights_review_required';
+  | 'consumer_rights_review_required'
+  | 'quoted_pending_independent_review';
 export interface ReturnEconomicSegment {
   id: string;
   kind: ReturnEconomicSegmentKind;
@@ -37,7 +39,8 @@ export interface DeliveryReturnEconomicPreview {
   totalRecognizedMinor: null;
   settlementStatus: 'blocked_pending_independent_reconciliation';
   refundStatus: 'requires_separate_consumer_rights_review';
-  contractGraceMinutes: null;
+  contractGraceMinutes: number | null;
+  tariffQuote: DeliveryReturnTariffQuote;
 }
 
 const safeId = (value: string): string => {
@@ -55,6 +58,9 @@ export const buildDeliveryReturnEconomicPreview = (input: {
   sourceCaptureId: string | null;
   originalRouteMinor: number | null;
   existingCourierObligations: Array<{ id: string; status: string }>;
+  acceptedTariffTerms?: unknown;
+  independentReturnDistanceAuthority?: unknown;
+  recipientWaitingCorroboratedInterval?: unknown;
 }): DeliveryReturnEconomicPreview => {
   const deliveryId = safeId(input.deliveryId);
   const orderId = safeId(input.orderId);
@@ -65,6 +71,12 @@ export const buildDeliveryReturnEconomicPreview = (input: {
     || (input.sourceCaptureId !== null && !input.sourceCaptureId.trim())) {
     throw new Error('DELIVERY_RETURN_ECONOMICS_INVALID');
   }
+  const quote=quoteDeliveryReturnTariffs({
+    deliveryId,courierId,
+    acceptedTerms:input.acceptedTariffTerms,
+    returnDistanceAuthority:input.independentReturnDistanceAuthority,
+    recipientWaitingAuthority:input.recipientWaitingCorroboratedInterval,
+  });
   const obligations = input.existingCourierObligations;
   const ids = obligations.map(obligation => obligation.id);
   if (ids.some(id => !id || id.includes('/')) || new Set(ids).size !== ids.length) {
@@ -98,8 +110,10 @@ export const buildDeliveryReturnEconomicPreview = (input: {
     ).map(obligation => obligation.id).sort(),
     segments: [
       segment('original_route', input.originalRouteMinor, originalStatus),
-      segment('authorized_return', null, 'contract_terms_required'),
-      segment('additional_waiting', null, 'waiting_evidence_and_terms_required'),
+      segment('authorized_return', quote.returnMinor,
+        quote.returnMinor!==null?'quoted_pending_independent_review':'contract_terms_required'),
+      segment('additional_waiting', quote.recipientWaitingMinor,
+        quote.recipientWaitingMinor!==null?'quoted_pending_independent_review':'waiting_evidence_and_terms_required'),
       segment('buyer_refund', null, 'consumer_rights_review_required'),
     ],
     // No invented total: without a return tariff or recipient-waiting terms,
@@ -108,6 +122,7 @@ export const buildDeliveryReturnEconomicPreview = (input: {
     settlementStatus: 'blocked_pending_independent_reconciliation',
     refundStatus: 'requires_separate_consumer_rights_review',
     // Ten minutes is a proposed parameter, not a signed contract or timer.
-    contractGraceMinutes: null,
+    contractGraceMinutes: quote.contractGraceMinutes,
+    tariffQuote: quote,
   };
 };
