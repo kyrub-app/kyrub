@@ -109,5 +109,30 @@ export const courierVehicleDocumentEligibility = (
         : 'Carro exige habilitação motorizada aprovada, CNH categoria B e EAR.',
     };
   }
+  if (vehicle === 'motorcycle') {
+    // A reviewed CNH/EAR alone is not a motofrete license. Do not unlock
+    // commercial motorcycle delivery before the platform has a human-reviewed
+    // vehicle/driver qualification record with valid inspection and permits.
+    // This field is NOT writable through the current identity Firestore rules.
+    const qualification = verification.motofreteQualification && typeof verification.motofreteQualification === 'object'
+      ? verification.motofreteQualification as Record<string, unknown>
+      : null;
+    const now = Date.now();
+    const validUntil = qualification?.validUntilEpochMs;
+    const attested = qualification?.status === 'approved'
+      && qualification.courseVerified === true
+      && qualification.minimumAgeAndLicenseTenureVerified === true
+      && qualification.vehicleRegistrationAndAuthorizationVerified === true
+      && qualification.safetyEquipmentVerified === true
+      && qualification.semiannualInspectionVerified === true
+      && qualification.localRequirementsVerified === true
+      && typeof qualification.reviewedBy === 'string' && qualification.reviewedBy.trim().length > 0
+      && typeof validUntil === 'number' && Number.isFinite(validUntil)
+      && validUntil > now;
+    if (!attested) return {
+      eligible: false,
+      reason: 'Motofrete exige revisão específica do curso, condutor, veículo, inspeção e autorização. CNH e EAR não bastam.',
+    };
+  }
   return { eligible: true, reason: '' };
 };
