@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, it } from 'node:test';
-import { buildGoogleMapsDirectionsUrl } from '../src/utils/googleMapsDirections';
+import {
+  buildGoogleMapsDirectionsUrl,
+  buildCourierDeliveryNavigationUrl,
+  courierTravelMode,
+} from '../src/utils/googleMapsDirections';
 
 const deliveryModal = readFileSync('src/components/modals/DeliveryManagerModal.tsx', 'utf8');
 
@@ -33,9 +37,38 @@ describe('Google Maps pickup navigation', () => {
     );
   });
 
+  it('routes by the assigned vehicle and current delivery stage, without inventing an origin', () => {
+    const input = {
+      status: 'accepted' as const,
+      pickup: 'Loja XYZ, São Paulo',
+      dropoff: 'Rua Comprador 100, São Paulo',
+    };
+    const expected = [
+      ['bicycle', 'bicycling'],
+      ['motorcycle', 'two-wheeler'],
+      ['car', 'driving'],
+    ] as const;
+    for (const [vehicleType, mode] of expected) {
+      assert.equal(courierTravelMode(vehicleType), mode);
+      const pickup = new URL(buildCourierDeliveryNavigationUrl({ ...input, vehicleType }));
+      assert.equal(pickup.searchParams.get('travelmode'), mode);
+      assert.equal(pickup.searchParams.get('destination'), input.pickup);
+      assert.equal(pickup.searchParams.get('dir_action'), 'navigate');
+      assert.equal(pickup.searchParams.has('origin'), false);
+      const customer = new URL(buildCourierDeliveryNavigationUrl({ ...input, status: 'delivering', vehicleType }));
+      assert.equal(customer.searchParams.get('destination'), input.dropoff);
+      assert.equal(customer.searchParams.has('origin'), false);
+    }
+    assert.throws(() => buildCourierDeliveryNavigationUrl({ ...input, vehicleType: null }), /veículo não confirmada/i);
+    assert.throws(() => buildCourierDeliveryNavigationUrl({
+      ...input, status: 'delivering', vehicleType: 'car',
+      dropoff: 'Destino exato liberado após o aceite',
+    }), /endereço do próximo trecho/i);
+  });
+
   it('keeps Kyrub-order start pickup separate from secure pickup and delivering state', () => {
     assert.match(deliveryModal, /Iniciar coleta/);
-    assert.match(deliveryModal, /openGoogleMapsDirections/);
+    assert.match(deliveryModal, /buildCourierDeliveryNavigationUrl/);
     assert.match(deliveryModal, /operational\.source === 'kyrub-order'/);
   });
 });
