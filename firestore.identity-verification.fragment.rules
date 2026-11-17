@@ -430,6 +430,30 @@
       allow create, update, delete: if false;
     }
 
+    // Logistics nominates a replacement; only original/recipient couriers may
+    // inspect their own assignment invitation. All mutations are server-only.
+    match /deliveryCustodyTransfers/{deliveryId} {
+      allow get: if isSignedIn()
+        && (resource.data.fromCourierId == request.auth.uid
+          || resource.data.toCourierId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow list: if isSignedIn()
+        && request.query.limit != null && request.query.limit <= 100
+        && (resource.data.fromCourierId == request.auth.uid
+          || resource.data.toCourierId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow create, update, delete: if false;
+    }
+
+    // Server-owned, append-only declarations. This is a protected audit log,
+    // not publicly verifiable proof of physical presence or custody by itself.
+    match /deliveryCustodyTransferEvents/{eventId} {
+      allow get: if hasControlPlaneRole(['super_admin','operations','compliance']);
+      allow list: if hasControlPlaneRole(['super_admin','operations','compliance'])
+        && request.query.limit != null && request.query.limit <= 50;
+      allow create, update, delete: if false;
+    }
+
     // PIN hashes are server-only. Client and Control Plane screens use the
     // authenticated API and never read or write these documents directly.
     match /user_security/{userId} {
