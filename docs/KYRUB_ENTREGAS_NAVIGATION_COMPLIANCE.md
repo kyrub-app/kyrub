@@ -192,3 +192,79 @@ físicas não são comprovadas apenas por declarações digitais. Ainda faltam
 teste de GPS em dispositivo real, verificação presencial e revisão de casos
 de disputa/cancelamento e infraestrutura de pagamento antes de operação
 comercial. Sem ativação em produção.
+
+## Suporte contextual no mapa do entregador — regras do Kyrub (rascunho para homologação)
+
+Inspirado nos fluxos públicos de suporte do iFood e 99Entrega, mas **sem copiar
+as penalidades automáticas, pausas e garantias de atendimento** de terceiros.
+
+O botão **Suporte** aparece no mapa do entregador, no cabeçalho da corrida
+mesmo antes de ativar GPS e na versão minimizada do painel de rota. Ao abrir,
+o entregador encontra motivos compatíveis com a etapa atual, orientação
+situacional e opção de registrar um chamado. A tela também oferece discagem
+direta para serviços públicos de emergência do Brasil (190 Polícia, 192 SAMU,
+193 Bombeiros). **O Kyrub não aciona emergência por conta própria**, não
+promete atendimento 24 horas ou chat em tempo real e orienta a parar em local
+seguro antes de usar o celular.
+
+### Categorias oficiais da primeira versão
+
+- **Sempre disponíveis — segurança:** acidente ou lesão; ameaça/roubo/
+  assédio/agressão; local de coleta ou entrega perigoso. Prioridade
+  `safety`, com instruções de acionar os serviços públicos competentes.
+- **Antes da coleta (`accepted`):** loja fechada; pedido não pronto/espera;
+  pacote errado, danificado ou incompleto; código de coleta inválido.
+- **Rota (`accepted` ou `delivering`):** defeito no veículo;
+  via bloqueada; GPS/internet/aplicativo indisponível.
+- **Após a coleta (`delivering`):** destinatário ausente ou não atende;
+  endereço incorreto; recusa; problema no código de confirmação;
+  dano/extravio do pacote.
+- **Qualquer etapa:** divergência de valor/distância/espera e outros assuntos.
+
+### Autoridade e custódia
+
+Um chamado é **incidente de suporte**, não cancelamento. `accepted`
+permite uma eventual liberação para novo aceite **somente por serviço
+operacional autorizado** e se não houver prova de coleta. `delivering`
+significa que a encomenda está fisicamente em custódia; nunca se publica
+nova oferta ou se marca devolução automática apenas por um motivo de suporte.
+O responsável pela logística deve optar por retorno comprovado à loja,
+correção supervisionada ou transferência física segura com o protocolo
+de duas confirmações já desenvolvido. Para destinatário não localizado,
+a referência externa da 99 orienta tentativas de contato e espera de ao
+menos 10 minutos, mas **esse prazo ainda não é uma regra automática do
+Kyrub**: depende de temporizador auditável e de política aprovada de
+devolução, remuneração e condições de segurança. Não há punição automática
+por reportar acidentes, riscos, problemas técnicos ou espera.
+
+### Infraestrutura de chamados
+
+`POST /api/delivery-opportunities/:deliveryId/support-tickets` exige
+Firebase ID Token do próprio entregador vinculado ao `deliveryClaims` e à
+entrega canônica, etapa válida e categoria autorizada. A chave de idempotência
+de cada criação é gerada pelo cliente; tentativas repetidas com a mesma
+chave não duplicam tickets. Chamados normais têm intervalo mínimo de 20 s
+por entregador para conter abuso; relatórios com prioridade de segurança
+não esperam pelo intervalo. Os dados contêm estado, tipo e narrativa
+opcional, **sem capturar latitude, longitude, telefone, CPF ou endereço**.
+Ticket e evento de abertura são criados na mesma transação Firebase;
+a entrega, seu claim, pagamento e rastreio **não são modificados**.
+
+`deliverySupportTickets/{ticketId}` é legível apenas por quem abriu
+o chamado e por Operations/Compliance/Super Admin ativos no Control
+Plane. Alterações e exclusões no navegador são proibidas. Os eventos
+`deliverySupportTicketEvents` são escritos exclusivamente no backend,
+com acesso de leitura administrativo. A fila no Control Plane mostra
+segurança primeiro e permite que operador autorizado assuma, responda
+e encerre o chamado, registrando cada etapa. O entregador vê o estado
+e a última resposta na própria tela de suporte. A tela informa que a
+fila **não implica resposta imediata**. Por enquanto não há chat online,
+telefone comercial do Kyrub nem plantão confirmado.
+
+Pendências de lançamento: procedimento operacional com responsáveis humanos,
+escalonamento e SLA real; proteção e retenção de relatos sensíveis;
+retorno/devolução com comprovação, tempo de espera e remuneração;
+ações seguras do suporte ligadas ao contrato de custódia; validação de
+usabilidade e acessibilidade em aparelho físico; teste de mapa móvel
+com concorrência de telas e conectividade precária. Não habilitar
+em produção sem homologação.
