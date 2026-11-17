@@ -10,7 +10,7 @@ import {
   type InitialPrepaidSubscriptionQuote,
 } from '../utils/storeSubscription';
 
-type Props = { storeId: string; productId: string; selectedMonths: 1 | 3 | 6 | 12; billingAuthority?: 'platform' };
+type Props = { storeId: string; productId: string; selectedMonths: 1 | 3 | 6 | 12; billingAuthority?: 'platform'; promotionCode?: string };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const date = (value: string) => new Date(value).toLocaleDateString('pt-BR');
 
@@ -85,8 +85,14 @@ export function InitialPrepaidSubscriptionCard({ quote, payment, accepted, busy,
     {!quote ? <button type="button" disabled={busy} onClick={() => onAction('quote')} className="min-h-10 rounded-lg border border-cyan-700 px-3 disabled:opacity-50">
       {busy ? 'Consultando…' : 'Consultar preço oficial do contrato'}
     </button> : <>
+      {quote.quote.promotionCode && typeof quote.quote.originalTotalMinor === 'number' && typeof quote.quote.promotionDiscountMinor === 'number' && (
+        <div className="space-y-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3" data-official-plan-coupon-quote={quote.quote.promotionCode}>
+          <p>Preço original do contrato: <strong>{currency.format(quote.quote.originalTotalMinor / 100)}</strong></p>
+          <p>Cupom {quote.quote.promotionCode}: <strong>–{currency.format(quote.quote.promotionDiscountMinor / 100)}</strong></p>
+        </div>
+      )}
       <p>Total confirmado pelo servidor: <strong>{currency.format(quote.quote.totalMinor / 100)}</strong></p>
-      <p>Desconto sobre o período contratado: {quote.quote.discountPercent}% · Equivalente mensal: {currency.format(quote.quote.monthlyEquivalentMinor / 100)}</p>
+      <p>Desconto de período: {quote.quote.discountPercent}% · Equivalente mensal {quote.quote.promotionCode ? 'antes do cupom' : 'contratado'}: {currency.format(quote.quote.monthlyEquivalentMinor / 100)}</p>
       {quote.status && quote.status !== 'quoted' && <p>Retomando a contratação já registrada, com suas condições originais.</p>}
       {!payment && <>
         <label className="flex items-start gap-2">

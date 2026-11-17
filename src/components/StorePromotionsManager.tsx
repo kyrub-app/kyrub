@@ -213,7 +213,7 @@ export function StorePromotionsManager({
       const content = [
         `🎟️ ${current.title}`,
         `${discount} · Cupom: ${current.code}`,
-        `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}`,
+        `Confira os produtos participantes na loja: ${window.location.origin}/@${encodeURIComponent(slug)}?coupon=${encodeURIComponent(current.code)}`,
       ].join('\n');
       const nowIso = new Date().toISOString();
       const postData = {

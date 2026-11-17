@@ -201,7 +201,11 @@ export function KyrubTab(props: KyrubTabProps) {
     const imagesByStore = new Map<string, string[]>();
     for (const offer of publishedOffers) {
       const images = imagesByStore.get(offer.storeId) ?? [];
-      images.push(...offer.imageUrls.filter(url => typeof url === 'string' && url.trim()));
+      // Older published offers may lack imageUrls. A sparse listing must
+      // never crash the entire Praça or hide its coupon publications.
+      const offerImages = Array.isArray(offer.imageUrls) ? offer.imageUrls : [];
+      images.push(...offerImages.filter((url): url is string =>
+        typeof url === 'string' && Boolean(url.trim())));
       imagesByStore.set(offer.storeId, images);
     }
     const storesById = new Map<string, Store>();
