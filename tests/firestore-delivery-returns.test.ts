@@ -182,6 +182,57 @@ test('authorized return requires ticket ownership, server arrival and absence re
   }),/DELIVERY_RETURN_CUSTODY_HOLD/);
 });
 
+test('damaged and disputed returns preserve custody evidence without auto-refund or courier settlement',async()=>{
+  for (const condition of ['damaged','disputed'] as const) {
+    const deliveryId='return_'+condition+'_case';
+    const {courierId,ticketId}=await seed(deliveryId);
+    await authorizeRecipientAbsenceReturn({
+      ticketId,operatorId:op,
+      reason:'Destinatário ausente, necessária devolução para conferência física.',
+    });
+    await adminDb.doc('deliveryTracking/'+deliveryId).update({
+      active:true,
+      updatedAt:Timestamp.now(),
+      storeArrivalAssessment:{
+        configured:true,insideGeofence:true,distanceMeters:10,
+        radiusMeters:100,accuracyMeters:15,evaluatedAt:Timestamp.now(),
+      },
+    });
+    assert.equal((await declareCourierReturnAtStore({
+      deliveryId,courierId,
+    })).status,'courier_presented_to_store');
+    const originalNote=condition==='damaged'
+      ? 'Caixa visivelmente amassada na chegada e lacre divergente.'
+      : 'Quantidade entregue diverge do registro de coleta da loja.';
+    const receipt={deliveryId,storeId:store,condition,note:originalNote};
+    assert.equal((await confirmStoreReceivedReturnedDelivery(receipt)).status,
+      'returned_to_store_pending_reconciliation');
+    assert.equal((await confirmStoreReceivedReturnedDelivery(receipt)).status,
+      'returned_to_store_pending_reconciliation');
+    await assert.rejects(confirmStoreReceivedReturnedDelivery({
+      ...receipt,condition:'intact',
+    }),/DELIVERY_RETURN_CONFLICT/);
+    const [protocol,delivery,order,completion,tracking,events]=await Promise.all([
+      adminDb.doc('deliveryReturnProtocols/'+deliveryId).get(),
+      adminDb.doc('hub/renda/deliveries/'+deliveryId).get(),
+      adminDb.doc('artifacts/'+store+'/public/data/customerOrders/return_order_'+deliveryId).get(),
+      adminDb.doc('deliveryCompletions/'+deliveryId).get(),
+      adminDb.doc('deliveryTracking/'+deliveryId).get(),
+      adminDb.collection('deliveryReturnEvents').where('deliveryId','==',deliveryId).get(),
+    ]);
+    assert.equal(protocol.data()?.receivedCondition,condition);
+    assert.equal(protocol.data()?.financialStatus,'awaiting_independent_reconciliation');
+    assert.equal(delivery.data()?.status,'returned_to_store');
+    assert.equal(order.data()?.status,'out_for_delivery');
+    assert.equal(completion.exists,false);
+    assert.equal(tracking.data()?.active,false);
+    assert.equal(events.size,3);
+    assert.equal(events.docs.filter(e=>e.data().action==='store_physically_received_return').length,1);
+    await assert.rejects(confirmBuyerReceivedDelivery({deliveryId,buyerId:buyer}),
+      /DELIVERY_RETURN_CUSTODY_HOLD/);
+  }
+});
+
 test('authorization may be revoked before physical presentation and restores buyer confirmation path',async()=>{
   const deliveryId='return_revoke_case';
   const {courierId,ticketId}=await seed(deliveryId);
