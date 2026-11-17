@@ -4,6 +4,7 @@ import type { Transaction } from 'firebase-admin/firestore';
 import { normalizeStorePromotion, type StorePromotion } from '../../src/utils/storePromotions.js';
 import { quoteOfficialPlanPromotion } from './officialPlanPromotionQuote.js';
 import { assertOfficialPromotionPaymentMatches } from './officialPlanPromotionAcceptedTerms.js';
+import { assertLiveBusinessCouponPilot, liveBusinessCouponPilotEnabled } from './officialPlanBusinessCouponPilot.js';
 
 const validId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
 const reservationId = (checkoutId: string) =>
@@ -88,6 +89,14 @@ export async function reserveOfficialPlanPromotionWithinTransaction(tx: Transact
       officialProductId: input.officialProductId, months: checkoutDoc.get('offer').quote.months,
       paidMinor: quote.payableMinor, termsDigest: accepted.termsDigest,
     });
+    // A live pilot must remain restricted even if an ERP promotion was edited
+    // between displaying the quote and transactionally reserving the coupon.
+    if (liveBusinessCouponPilotEnabled()) {
+      assertLiveBusinessCouponPilot({
+        buyerUid: input.buyerUid, offer: checkoutDoc.get('offer'),
+        accepted, promotion,
+      });
+    }
     const buyerCount = Number(buyerDoc.get('reservationCount') ?? 0);
     const buyerRedeemed = Number(buyerDoc.get('redemptionCount') ?? 0);
     if (!Number.isSafeInteger(buyerCount) || buyerCount < 0 ||
