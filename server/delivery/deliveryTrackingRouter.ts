@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { assessCourierStoreArrival } from './storeArrivalEvidence';
+import { isFreshCourierTrackingTimestamp } from './courierTrackingFreshness.js';
 import { assessCourierCustomerArrival } from './customerArrivalEvidence.js';
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
@@ -184,7 +185,10 @@ export const createDeliveryTrackingRouter = (): Router => {
 
       const tracking = trackingSnapshot.data() as Record<string, unknown> | undefined;
       const deliveryInProgress = ['accepted', 'delivering'].includes(clean(delivery.status));
-      const active = Boolean(deliveryInProgress && trackingSnapshot.exists && tracking?.active === true);
+      // Device shutdown, lost GPS or denied permission must not leave a stale
+      // coordinate marked as live for the buyer or store.
+      const fresh = isFreshCourierTrackingTimestamp(tracking?.updatedAt);
+      const active = Boolean(deliveryInProgress && trackingSnapshot.exists && tracking?.active === true && fresh);
 
       if (!active) {
         response.status(200).json({ deliveryId, active: false });
