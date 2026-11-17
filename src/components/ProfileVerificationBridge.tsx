@@ -57,6 +57,8 @@ import {
   type WorkAction,
   type AdditionalCourierProfile,
   type IdentityVerificationSection,
+  type MotofreteEvidenceKind,
+  MOTOFRETE_EVIDENCE_LABELS,
 } from '../utils/identityVerification';
 
 type Tab = IdentityVerificationSection;
@@ -148,6 +150,9 @@ export function ProfileVerificationBridge() {
   const [additionalDocumentPaths, setAdditionalDocumentPaths] = useState<string[]>([]);
   const [additionalUploading, setAdditionalUploading] = useState(false);
   const [additionalSubmitting, setAdditionalSubmitting] = useState(false);
+  const [motofreteDocuments, setMotofreteDocuments] = useState<Partial<Record<MotofreteEvidenceKind, string>>>({});
+  const [motofreteUploading, setMotofreteUploading] = useState<MotofreteEvidenceKind | null>(null);
+  const [motofreteSubmitting, setMotofreteSubmitting] = useState(false);
 
   const showToast = (message: string, type: ToastType = 'info') => {
     setToast({ message, type });
@@ -497,6 +502,86 @@ export function ProfileVerificationBridge() {
     }
   };
 
+  const uploadMotofreteDocument = async (
+    kind: MotofreteEvidenceKind,
+    event: ChangeEvent<HTMLInputElement>
+  ) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!user || !file || motofreteUploading) return;
+    if (file.size > 10 * 1024 * 1024 || file.size === 0
+      || !['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.type)) {
+      showToast('Envie JPG, PNG, WEBP ou PDF de até 10 MB.', 'error');
+      return;
+    }
+    setMotofreteUploading(kind);
+    try {
+      const path = `identity-verification/${user.uid}/document/${Date.now()}-${safeFileName(file.name)}`;
+      await uploadBytes(ref(storage, path), file, {
+        contentType: file.type,
+        customMetadata: {
+          ownerId: user.uid,
+          purpose: 'document',
+          consentVersion: IDENTITY_CONSENT_VERSION,
+        },
+      });
+      setMotofreteDocuments(previous => ({ ...previous, [kind]: path }));
+      showToast(`${MOTOFRETE_EVIDENCE_LABELS[kind]}: anexo recebido.`, 'success');
+    } catch (error) {
+      console.error('Motofrete evidence upload failed.', error);
+      showToast('Não foi possível enviar este documento.', 'error');
+    } finally {
+      setMotofreteUploading(null);
+    }
+  };
+
+  const submitMotofreteQualification = async () => {
+    if (!user || !record || record.status !== 'approved'
+      || !record.approvedProfiles.includes('motorized_courier')
+      || record.motofreteQualification?.status === 'submitted'
+      || motofreteSubmitting || motofreteUploading) return;
+    const previous = record.motofreteQualification?.documents;
+    const documents = {
+      course: motofreteDocuments.course || previous?.course || '',
+      vehicle: motofreteDocuments.vehicle || previous?.vehicle || '',
+      inspection: motofreteDocuments.inspection || previous?.inspection || '',
+      equipment: motofreteDocuments.equipment || previous?.equipment || '',
+      local: motofreteDocuments.local || previous?.local || '',
+    };
+    if (!documents.course || !documents.vehicle || !documents.inspection || !documents.equipment) {
+      showToast('Anexe curso, autorização/veículo, inspeção e equipamentos antes de enviar.', 'warning');
+      return;
+    }
+    setMotofreteSubmitting(true);
+    try {
+      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, user.uid), {
+        motofreteQualification: {
+          status: 'submitted',
+          documents,
+          submittedAt: serverTimestamp(),
+          reviewedAt: null,
+          reviewedBy: '',
+          reviewReason: '',
+          courseVerified: false,
+          minimumAgeAndLicenseTenureVerified: false,
+          vehicleRegistrationAndAuthorizationVerified: false,
+          safetyEquipmentVerified: false,
+          semiannualInspectionVerified: false,
+          localRequirementsVerified: false,
+          validUntil: null,
+        },
+        updatedAt: serverTimestamp(),
+      });
+      setMotofreteDocuments({});
+      showToast('Documentação de motofrete enviada para revisão humana.', 'success');
+    } catch (error) {
+      console.error('Motofrete qualification submission failed.', error);
+      showToast('Não foi possível enviar a solicitação de motofrete.', 'error');
+    } finally {
+      setMotofreteSubmitting(false);
+    }
+  };
+
   const configurePin = async (event: FormEvent) => {
     event.preventDefault();
     if (!/^\d{4}$/.test(pin) || pin !== pinConfirmation) {
@@ -729,6 +814,65 @@ export function ProfileVerificationBridge() {
                         .every(profile => record?.approvedProfiles.includes(profile)) && (
                           <p className="text-[9px] text-emerald-300">As duas categorias gerais de entregador já estão aprovadas.</p>
                         )}
+                    </>
+                  )}
+                </section>
+              )}
+
+              {readOnly && record?.approvedProfiles.includes('motorized_courier') && (
+                <section className="space-y-3 rounded-3xl border border-orange-500/20 bg-orange-500/5 p-4">
+                  <h3 className="text-[10px] font-black uppercase text-white">Motofrete — documentação complementar</h3>
+                  <p className="text-[9px] leading-relaxed text-slate-400">
+                    A aprovação de entregador motorizado e a CNH/EAR não liberam automaticamente
+                    entregas de moto. O motofrete exige conferência de curso, condutor, veículo,
+                    inspeção, equipamentos e regras locais por uma equipe autorizada.
+                    Sua aprovação para outras atividades permanece independente.
+                  </p>
+                  {record.motofreteQualification?.status === 'submitted' && (
+                    <p className="rounded-xl bg-amber-500/10 p-3 text-[9px] text-amber-200">
+                      Documentação enviada. Aguardando análise de conformidade.
+                    </p>
+                  )}
+                  {record.motofreteQualification?.status === 'approved' && (
+                    <p className="rounded-xl bg-emerald-500/10 p-3 text-[9px] text-emerald-200">
+                      Revisão específica aprovada. A habilitação depende da validade dos documentos,
+                      da modalidade do pedido e dos controles atuais do servidor.
+                    </p>
+                  )}
+                  {['rejected', 'revoked'].includes(record.motofreteQualification?.status ?? '') && (
+                    <p className="rounded-xl bg-red-500/10 p-3 text-[9px] text-red-200">
+                      Solicitação de motofrete necessita nova revisão: {
+                        record.motofreteQualification?.reviewReason || 'Confira os comprovantes.'
+                      }
+                    </p>
+                  )}
+                  {record.motofreteQualification?.status !== 'submitted' && (
+                    <>
+                      <div className="grid gap-2">
+                        {(Object.keys(MOTOFRETE_EVIDENCE_LABELS) as MotofreteEvidenceKind[]).map(kind => (
+                          <label key={kind} className="flex items-center justify-between gap-3 rounded-xl border border-slate-700 p-3 text-[9px] text-slate-300">
+                            <span>
+                              {MOTOFRETE_EVIDENCE_LABELS[kind]}
+                              {kind === 'local' ? ' — se exigido' : ' — obrigatório'}
+                              {(motofreteDocuments[kind] || record.motofreteQualification?.documents[kind])
+                                ? ' ✓ anexado' : ''}
+                            </span>
+                            <span className="shrink-0 text-teal-300">
+                              {motofreteUploading === kind ? 'Enviando...' : 'Anexar'}
+                            </span>
+                            <input type="file" className="sr-only"
+                              accept="image/jpeg,image/png,image/webp,application/pdf"
+                              disabled={motofreteUploading !== null || motofreteSubmitting}
+                              onChange={event => void uploadMotofreteDocument(kind, event)} />
+                          </label>
+                        ))}
+                      </div>
+                      <button type="button"
+                        disabled={motofreteSubmitting || motofreteUploading !== null}
+                        onClick={() => void submitMotofreteQualification()}
+                        className="w-full rounded-xl bg-orange-500 px-3 py-3 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50">
+                        {motofreteSubmitting ? 'Enviando análise...' : 'Enviar documentação de motofrete'}
+                      </button>
                     </>
                   )}
                 </section>
