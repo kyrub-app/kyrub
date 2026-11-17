@@ -71,7 +71,7 @@ const parseLocation = (value: unknown): {
   if (accuracy === null || accuracy < 0 || accuracy > 100_000) {
     throw new Error('Precisão da localização inválida.');
   }
-  if (!isPlausibleCourierDeviceCapture(clientCapturedAt)) {
+  if (clientCapturedAt === null || !isPlausibleCourierDeviceCapture(clientCapturedAt)) {
     throw new Error('Horário da localização inválido ou desatualizado. Atualize o GPS e tente novamente.');
   }
 
