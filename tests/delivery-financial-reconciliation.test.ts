@@ -55,3 +55,58 @@ test('finance split source is authorized payment capture, never client payment e
   assert.match(rules,/match \/deliveryFinancialReconciliations\/\{deliveryId\}/);
   assert.match(rules,/match \/deliveryFinancialReconciliationEvents\/\{eventId\}/);
 });
+
+test('independent executor changes custody atomically and credits are split only on verified buyer completion', () => {
+  const executor = readFileSync('server/delivery/deliveryCustodyExecutionService.ts','utf8');
+  const buyer = readFileSync('server/delivery/deliveryCustomerHandoffService.ts','utf8');
+  const tracking = readFileSync('server/delivery/deliveryTrackingRouter.ts','utf8');
+  const admin = readFileSync('src/components/admin/AdminDeliveryFinancialReconciliationPanel.tsx','utf8');
+  const root = readFileSync('shared/economicObligations.ts','utf8');
+  assert.match(executor,/adminDb\.runTransaction/);
+  assert.match(executor,/operator\.role !== 'super_admin'/);
+  assert.match(executor,/operatorId === finance\.independentReviewerId/);
+  assert.match(executor,/DELIVERY_CUSTODY_EXECUTION_OUTSTANDING_OBLIGATIONS/);
+  assert.match(executor,/buildCourierPayableObligationFromCapture/);
+  assert.match(executor,/transaction\.update\(claimRef/);
+  assert.match(executor,/transaction\.update\(transferRef/);
+  assert.match(executor,/latitude:FieldValue\.delete\(\)/);
+  assert.match(executor,/transaction\.create\(financialEventRef/);
+  assert.doesNotMatch(executor,/transaction\.create\(.*[Oo]bligation/);
+  assert.doesNotMatch(executor,/transaction\.create\(completionRef/);
+  assert.match(buyer,/buildSupervisedHandoffCourierPayableFromCapture/);
+  assert.match(buyer,/originalSplitPayable/);
+  assert.match(buyer,/transaction\.create\(originalSplitRef/);
+  assert.match(buyer,/reassigned && captures\.length !== 1/);
+  assert.match(tracking,/operationalAssignment !== 'recipient_claim_active'/);
+  assert.match(admin,/Executar reatribuição com conferência transacional/);
+  assert.match(root,/\${whole.id}:handoff/);
+});
+
+test('shared canonical handoff obligations retain unique IDs and exact funded cents', async () => {
+  const {buildEconomicAllocationSnapshot}=await import('../shared/economicFeesSubsidies');
+  const {buildSupervisedHandoffCourierPayableFromCapture}=await import('../shared/economicObligations');
+  const allocation=buildEconomicAllocationSnapshot({
+    merchandiseGrossMinor:2000,customerPaidMinor:3300,deliveryFeeMinor:1300,
+  });
+  const capture={
+    id:'capture-1',kind:'payment_capture',storeId:'store-1',paymentId:'pay-1',orderId:'order-1',
+    amountMinor:3300,occurredAt:'2026-11-16T10:00:00Z',economicAllocation:allocation,
+  } as Parameters<typeof buildSupervisedHandoffCourierPayableFromCapture>[0]['capture'];
+  const first=buildSupervisedHandoffCourierPayableFromCapture({
+    capture,fulfillmentId:'del-1',courierUserId:'courier-a',totalMinor:1300,shareMinor:500,
+  });
+  const second=buildSupervisedHandoffCourierPayableFromCapture({
+    capture,fulfillmentId:'del-1',courierUserId:'courier-b',totalMinor:1300,shareMinor:800,
+  });
+  assert.ok(first && second);
+  assert.notEqual(first.id,second.id);
+  assert.notEqual(first.id.replace(':handoff',''),first.id);
+  assert.equal(first.amountMinor+second.amountMinor,1300);
+  assert.equal(first.funding.customerMinor+second.funding.customerMinor,1300);
+  assert.equal(buildSupervisedHandoffCourierPayableFromCapture({
+    capture,fulfillmentId:'del-1',courierUserId:'courier-b',totalMinor:1300,shareMinor:0,
+  }),null);
+  assert.throws(()=>buildSupervisedHandoffCourierPayableFromCapture({
+    capture,fulfillmentId:'del-1',courierUserId:'courier-a',totalMinor:1300,shareMinor:1400,
+  }));
+});
