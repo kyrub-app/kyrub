@@ -14,9 +14,11 @@ import {
   arrayUnion,
   collection,
   doc,
+  getDocs,
   limit,
   onSnapshot,
   query,
+  where,
   serverTimestamp,
   Timestamp,
   updateDoc,
@@ -81,6 +83,10 @@ export default function AdminIdentityVerificationWorkspace() {
   const [message, setMessage] = useState('');
   const [motofreteChecks, setMotofreteChecks] = useState<Record<string, Partial<Record<MotofreteChecklistKey, boolean>>>>({});
   const [motofreteExpiry, setMotofreteExpiry] = useState<Record<string, string>>({});
+  const [reviewHistory, setReviewHistory] = useState<Record<string, Array<{
+    id: string; decision: string; reviewedBy: string; reason: string; occurredAt: string;
+  }>>>({});
+  const [historyBusyId, setHistoryBusyId] = useState('');
   const canReviewMotofrete = profile?.status === 'active'
     && ['super_admin', 'compliance'].includes(profile.role);
 
@@ -256,32 +262,81 @@ export default function AdminIdentityVerificationWorkspace() {
     setBusyId(record.uid);
     setMessage('');
     try {
-      await updateDoc(doc(db, IDENTITY_VERIFICATION_COLLECTION, record.uid), {
-        'motofreteQualification.status': decision,
-        'motofreteQualification.reviewReason': reason || '',
-        'motofreteQualification.reviewedBy': user.uid,
-        'motofreteQualification.reviewedAt': serverTimestamp(),
-        'motofreteQualification.validUntil': validUntil,
-        ...(Object.keys(MOTO_CHECKS) as MotofreteChecklistKey[]).reduce<Record<string, boolean>>(
-          (fields, key) => {
-            fields['motofreteQualification.' + key] = decision === 'approved';
-            return fields;
-          }, {}
-        ),
-        updatedAt: serverTimestamp(),
+      const token = await user.getIdToken();
+      const response = await fetch('/api/delivery-opportunities/admin/motofrete-review', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({
+          userId: record.uid,
+          decision,
+          reason: reason || '',
+          validUntilEpochMs: validUntil?.toMillis() ?? null,
+          checks: (Object.keys(MOTO_CHECKS) as MotofreteChecklistKey[]).reduce<Record<string, boolean>>(
+            (fields, key) => {
+              fields[key] = decision === 'approved';
+              return fields;
+            }, {}
+          ),
+        }),
       });
+      const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+      if (!response.ok) throw new Error(typeof result.error === 'string'
+        ? result.error : 'Falha ao registrar a decisão auditada.');
+      setReviewHistory(previous => {
+        const next = { ...previous };
+        delete next[record.uid];
+        return next;
+      });
+      if (result.incidentScanStatus === 'failed') {
+        setMessage('Decisão registrada. A busca de corridas afetadas falhou; verifique a fila de segurança operacional.');
+      }
       setMotofreteChecks(previous => ({ ...previous, [record.uid]: {} }));
       setMotofreteExpiry(previous => ({ ...previous, [record.uid]: '' }));
-      setMessage(decision === 'approved'
-        ? 'Motofrete atestado por Compliance, com validade registrada.'
-        : decision === 'revoked'
-          ? 'Motofrete revogado sem alterar outras aprovações.'
-          : 'Correção de motofrete solicitada sem alterar outras aprovações.');
+      if (decision !== 'revoked') {
+        setMessage(decision === 'approved'
+          ? 'Motofrete atestado e auditado com validade registrada.'
+          : 'Correção solicitada com histórico imutável, sem afetar outras atividades.');
+      } else if (result.incidentScanStatus !== 'failed') {
+        setMessage('Motofrete revogado e registrado. Corridas afetadas foram sinalizadas para logística.');
+      }
     } catch (error) {
       console.error('Motofrete qualification review failed.', error);
       setMessage('Não foi possível concluir a revisão de motofrete.');
     } finally {
       setBusyId('');
+    }
+  };
+
+  const loadMotofreteHistory = async (userId: string) => {
+    if (!user || !canReviewMotofrete || historyBusyId) return;
+    setHistoryBusyId(userId);
+    try {
+      const snapshot = await getDocs(query(
+        collection(db, 'motofreteReviewEvents'),
+        where('userId', '==', userId),
+        limit(50)
+      ));
+      const history = snapshot.docs.map(item => {
+        const data = item.data() as Record<string, unknown>;
+        const reviewedAt = data.createdAt as Timestamp | undefined;
+        return {
+          id: item.id,
+          decision: typeof data.decision === 'string' ? data.decision : '',
+          reviewedBy: typeof data.reviewerId === 'string' ? data.reviewerId : '',
+          reason: typeof data.reason === 'string' ? data.reason : '',
+          occurredAt: reviewedAt && typeof reviewedAt.toDate === 'function'
+            ? reviewedAt.toDate().toLocaleString('pt-BR') : 'Data indisponível',
+        };
+      }).sort((a,b) => b.occurredAt.localeCompare(a.occurredAt));
+      setReviewHistory(previous => ({...previous, [userId]: history}));
+    } catch (error) {
+      console.error('Motofrete review history read failed.', error);
+      setMessage('Não foi possível carregar o histórico de auditoria.');
+    } finally {
+      setHistoryBusyId('');
     }
   };
 
@@ -434,6 +489,27 @@ export default function AdminIdentityVerificationWorkspace() {
                         : record.motofreteQualification.status === 'revoked'
                           ? 'revogado' : 'correção necessária'}
                   </h4>
+                  {canReviewMotofrete && (
+                    <div className="space-y-2">
+                      <button type="button" disabled={historyBusyId === record.uid}
+                        onClick={() => void loadMotofreteHistory(record.uid)}
+                        className="rounded-lg border border-slate-700 px-3 py-2 text-[9px] text-cyan-200">
+                        {historyBusyId === record.uid ? 'Consultando histórico...' : 'Consultar histórico imutável'}
+                      </button>
+                      {reviewHistory[record.uid] && (
+                        <div className="max-h-36 space-y-2 overflow-y-auto rounded-lg bg-slate-950 p-2">
+                          {reviewHistory[record.uid].length === 0
+                            ? <p className="text-[9px] text-slate-500">Nenhuma decisão auditada neste fluxo.</p>
+                            : reviewHistory[record.uid].map(item => (
+                              <p key={item.id} className="text-[9px] text-slate-300">
+                                {item.occurredAt} · {item.decision} · {item.reviewedBy}
+                                {item.reason ? ` · ${item.reason}` : ''}
+                              </p>
+                            ))}
+                        </div>
+                      )}
+                    </div>
+                  )}
                   <p className="text-[9px] text-slate-400">
                     Evidências privadas enviadas. A conferência precisa incluir CNH A/EAR, curso,
                     tempo de habilitação, veículo, inspeção, equipamentos e regras locais.
