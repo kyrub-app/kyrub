@@ -66,7 +66,7 @@ test('preflight uses only server-owned claim, route and corroborated interval so
   const service=readFileSync('server/delivery/deliveryReturnEconomicReviewService.ts','utf8');
   const model=readFileSync('shared/deliveryReturnEconomicPolicy.ts','utf8');
   const ui=readFileSync('src/components/admin/AdminDeliveryReturnEconomicsPreview.tsx','utf8');
-  assert.match(service,/quoteDeliveryReturnTariffs/);
+  assert.match(model,/quoteDeliveryReturnTariffs/);
   assert.match(service,/claim\.returnTariffAcceptedTerms/);
   assert.match(service,/protocol\.independentReturnDistanceAuthority/);
   assert.match(service,/protocol\.recipientWaitingCorroboratedInterval/);
