@@ -76,7 +76,9 @@ export const submitCourierSupportTicket = async (input: {
       throw new Error('DELIVERY_SUPPORT_CONFLICT');
     }
     const reason = getCourierSupportReason(input.reasonCode,stage);
-    if (!reason) throw new Error('DELIVERY_SUPPORT_INVALID');
+    if (!reason || (reason.code === 'other_issue' && detail.length < 10)) {
+      throw new Error('DELIVERY_SUPPORT_INVALID');
+    }
     const at = Timestamp.now();
     const lastAt = rec(rateSnap.data()).lastCreatedAt as Timestamp | undefined;
     if (reason.priority !== 'safety' && lastAt instanceof Timestamp
