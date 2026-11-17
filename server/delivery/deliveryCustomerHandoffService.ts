@@ -406,7 +406,8 @@ export const confirmBuyerReceivedDelivery = async (input: {
       }
     }
 
-    const customerAvailableEvent = await persistDeliveryOperationalEvent({
+    const [customerAvailableEvent, confirmedEvent] = await Promise.all([
+      persistDeliveryOperationalEvent({
       transaction,
       deliveryId,
       orderId,
@@ -417,10 +418,8 @@ export const confirmBuyerReceivedDelivery = async (input: {
       authority: 'customer_action',
       actor: 'customer',
       referenceId: `${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}:buyer_confirmation`,
-    });
-    if (!customerAvailableEvent) throw new Error('DELIVERY_CUSTOMER_AVAILABLE_EVENT_CONFLICT');
-
-    const confirmedEvent = await persistDeliveryOperationalEvent({
+    }),
+      persistDeliveryOperationalEvent({
       transaction,
       deliveryId,
       orderId,
@@ -431,7 +430,9 @@ export const confirmBuyerReceivedDelivery = async (input: {
       authority: 'customer_action',
       actor: 'customer',
       referenceId: `${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}:buyer_confirmation`,
-    });
+    }),
+    ]);
+    if (!customerAvailableEvent) throw new Error('DELIVERY_CUSTOMER_AVAILABLE_EVENT_CONFLICT');
     if (!confirmedEvent) throw new Error('DELIVERY_CONFIRMED_EVENT_CONFLICT');
 
     const customerHandoff = {
