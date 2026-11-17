@@ -69,9 +69,17 @@ export function StoreDeliveryReturnQueue({storeId}:{storeId:string}) {
     return ()=>{unsubscribeAuth();unsubscribeReturns();};
   },[storeId]);
 
+  // Prioritize physical handoffs requiring an action over already received
+  // returns; no extra Firestore index is required for this UI ordering.
+  const returnPriority=(status:string):number=>
+    status==='courier_presented_to_store'?0
+      :status==='return_authorized'?1
+        :status==='returned_to_store_pending_reconciliation'?2:3;
   const visible=useMemo(()=>rows
     .filter(row=>row.status!=='authorization_revoked')
-    .sort((a,b)=>b.authorizedAtMs-a.authorizedAtMs).slice(0,40),[rows]);
+    .sort((a,b)=>returnPriority(a.status)-returnPriority(b.status)
+      ||b.authorizedAtMs-a.authorizedAtMs)
+    .slice(0,40),[rows]);
 
   const confirm=async(row:ReturnRow)=>{
     if(busy || row.status!=='courier_presented_to_store' || reviewingId!==row.id)return;
