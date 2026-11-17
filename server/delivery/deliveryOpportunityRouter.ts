@@ -31,6 +31,7 @@ import { materializeDeliveryResponsibilityAndWaitingDecision } from './deliveryR
 import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDestinationResolutionSnapshotService.js';
 import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.js';
 import { reviewMotofreteWithAudit, MOTO_CHECKLIST } from '../identity/motofreteReviewService.js';
+import { resolveDeliveryComplianceIncident } from './deliveryComplianceIncidentService.js';
 import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
   loadAuthoritativeDeliveryCustomerArrivalPolicy,
@@ -123,6 +124,23 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'INCIDENT_FORBIDDEN') {
+    response.status(403).json({
+      code: message,
+      error: 'A decisão sobre incidentes exige Operations, Compliance ou Super Admin ativo.',
+    });
+    return;
+  }
+  if (message === 'INCIDENT_INVALID') {
+    response.status(400).json({ code: message, error: 'Informe uma decisão válida e justificativa objetiva.' });
+    return;
+  }
+  if (message.startsWith('INCIDENT_CONFLICT')) {
+    response.status(409).json({ code: 'INCIDENT_CONFLICT',
+      error: message.includes(':') ? message.split(':').slice(1).join(':')
+        : 'A etapa da entrega mudou ou o incidente já foi tratado. Atualize a fila.' });
     return;
   }
   if (message === 'COMPLIANCE_REVIEW_FORBIDDEN') {
@@ -691,6 +709,31 @@ export const createDeliveryOpportunityRouter = (): Router => {
         checks: Object.fromEntries(MOTO_CHECKLIST.map(key => [key, rawChecks[key] === true])) as Record<typeof MOTO_CHECKLIST[number], boolean>,
       });
       response.json(result);
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/resolve', async (request, response) => {
+    try {
+      const operatorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown> : {};
+      const allowed = [
+        'release_for_new_acceptance',
+        'request_supervised_handoff',
+        'close_after_buyer_confirmation',
+      ];
+      const decision = clean(body.decision);
+      if (!allowed.includes(decision)) throw new Error('INCIDENT_INVALID');
+      response.json(await resolveDeliveryComplianceIncident({
+        deliveryId: request.params.deliveryId,
+        operatorId,
+        decision: decision as 'release_for_new_acceptance'
+          | 'request_supervised_handoff' | 'close_after_buyer_confirmation',
+        reason: clean(body.reason),
+      }));
     } catch (error) {
       errorResponse(response, error);
     }
