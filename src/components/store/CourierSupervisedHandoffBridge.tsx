@@ -4,6 +4,36 @@ import { collection, limit, onSnapshot, query, where, type Timestamp } from 'fir
 import { ArrowLeftRight, ShieldAlert } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 
+interface FinancialTerms {
+  deliveryId: string;
+  status: string;
+  fromCourierId: string;
+  toCourierId: string;
+  amountMinor: number;
+  outgoingMinor: number;
+  incomingMinor: number;
+  outgoingAccepted: boolean;
+  incomingAccepted: boolean;
+  expiresAtEpochMs: number;
+}
+const termsFrom = (id: string, data: Record<string, unknown>): FinancialTerms => ({
+  deliveryId: id,
+  status: typeof data.status === 'string' ? data.status : '',
+  fromCourierId: typeof data.fromCourierId === 'string' ? data.fromCourierId : '',
+  toCourierId: typeof data.toCourierId === 'string' ? data.toCourierId : '',
+  amountMinor: typeof data.amountMinor === 'number' ? data.amountMinor : 0,
+  outgoingMinor: typeof data.outgoingMinor === 'number' ? data.outgoingMinor : 0,
+  incomingMinor: typeof data.incomingMinor === 'number' ? data.incomingMinor : 0,
+  outgoingAccepted: Boolean(data.outgoingAcceptedAt),
+  incomingAccepted: Boolean(data.incomingAcceptedAt),
+  expiresAtEpochMs: data.expiresAt && typeof data.expiresAt === 'object'
+    && 'toMillis' in data.expiresAt
+      ? (data.expiresAt as Timestamp).toMillis() : 0,
+});
+const currency = (minor: number): string => (minor / 100).toLocaleString(
+  'pt-BR', { style: 'currency', currency: 'BRL' }
+);
+
 interface Transfer {
   id: string;
   fromCourierId: string;
@@ -32,6 +62,8 @@ export function CourierSupervisedHandoffBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [outgoing, setOutgoing] = useState<Transfer[]>([]);
   const [incoming, setIncoming] = useState<Transfer[]>([]);
+  const [outgoingTerms, setOutgoingTerms] = useState<FinancialTerms[]>([]);
+  const [incomingTerms, setIncomingTerms] = useState<FinancialTerms[]>([]);
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
   const [dismissed, setDismissed] = useState(false);
@@ -40,6 +72,8 @@ export function CourierSupervisedHandoffBridge() {
     setUser(next);
     setOutgoing([]);
     setIncoming([]);
+    setOutgoingTerms([]);
+    setIncomingTerms([]);
     setBusy('');
     setMessage('');
     setDismissed(false);
@@ -59,7 +93,19 @@ export function CourierSupervisedHandoffBridge() {
     ), snapshot => setIncoming(snapshot.docs.map(item =>
       toTransfer(item.id, item.data() as Record<string, unknown>)
     )), () => setMessage('Solicitações de transferência indisponíveis.'));
-    return () => { from(); to(); };
+    const termsFromUser = onSnapshot(query(
+      collection(db, 'deliveryFinancialReconciliations'),
+      where('fromCourierId','==',user.uid), limit(25)
+    ), snapshot => setOutgoingTerms(snapshot.docs.map(item =>
+      termsFrom(item.id, item.data() as Record<string, unknown>)
+    )), () => setMessage('Não foi possível consultar as parcelas propostas.'));
+    const termsToUser = onSnapshot(query(
+      collection(db, 'deliveryFinancialReconciliations'),
+      where('toCourierId','==',user.uid), limit(25)
+    ), snapshot => setIncomingTerms(snapshot.docs.map(item =>
+      termsFrom(item.id, item.data() as Record<string, unknown>)
+    )), () => setMessage('Não foi possível consultar as parcelas propostas.'));
+    return () => { from(); to(); termsFromUser(); termsToUser(); };
   }, [user?.uid]);
 
   const visible = useMemo(() => Array.from(
@@ -67,6 +113,34 @@ export function CourierSupervisedHandoffBridge() {
   ).filter(item =>
     ['awaiting_participant_confirmations','awaiting_supervisor_review','evidence_recorded_pending_reconciliation'].includes(item.status)
   ).slice(0, 6), [incoming, outgoing]);
+
+  const financialTerms = useMemo(() => new Map(
+    [...outgoingTerms, ...incomingTerms].map(item => [item.deliveryId, item])
+  ), [outgoingTerms, incomingTerms]);
+
+  const acceptTerms = async (item: FinancialTerms, party: 'from' | 'to') => {
+    if (!user || busy) return;
+    const amount = party === 'from' ? item.outgoingMinor : item.incomingMinor;
+    const confirmed = window.confirm(
+      `Você concorda com a proposta de remuneração de ${currency(amount)} para sua participação, total da entrega ${currency(item.amountMinor)}? Sua declaração não gera pagamento, Pix ou autorização para prosseguir a corrida.`
+    );
+    if (!confirmed) return;
+    setBusy(item.deliveryId); setMessage('');
+    try {
+      const token = await user.getIdToken();
+      const response = await fetch(
+        `/api/delivery-opportunities/${encodeURIComponent(item.deliveryId)}/remuneration/accept-terms`,
+        { method:'POST', headers: { authorization: `Bearer ${token}`, 'content-type':'application/json' },
+          body: '{}' }
+      );
+      const result = await response.json().catch(() => ({})) as Record<string, unknown>;
+      if (!response.ok) throw new Error(typeof result.error === 'string'
+        ? result.error : 'O aceite financeiro não foi autorizado.');
+      setMessage('Sua concordância foi registrada. A revisão independente e a conciliação econômica ainda são necessárias.');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Não foi possível aceitar os termos.');
+    } finally { setBusy(''); }
+  };
 
   const acknowledge = async (item: Transfer, party: 'from' | 'to') => {
     if (!user || busy) return;
@@ -143,6 +217,40 @@ export function CourierSupervisedHandoffBridge() {
                 Entrega física declarada: {item.fromConfirmedAt ? 'sim' : 'não'}.
                 Recebimento declarado: {item.toConfirmedAt ? 'sim' : 'não'}.
               </p>
+              {financialTerms.get(item.id) && (() => {
+                const financial = financialTerms.get(item.id)!;
+                const accepted = party === 'from'
+                  ? financial.outgoingAccepted : financial.incomingAccepted;
+                const amount = party === 'from'
+                  ? financial.outgoingMinor : financial.incomingMinor;
+                const termsExpired = financial.expiresAtEpochMs <= Date.now();
+                return (
+                  <div className="mt-3 rounded-lg border border-cyan-500/25 bg-cyan-500/5 p-2">
+                    <p className="text-[9px] font-black text-cyan-200">
+                      Proposta de remuneração: {currency(amount)}
+                    </p>
+                    <p className="mt-1 text-[9px] text-slate-300">
+                      Total autorizado: {currency(financial.amountMinor)}.
+                      Original: {currency(financial.outgoingMinor)}.
+                      Substituto: {currency(financial.incomingMinor)}.
+                    </p>
+                    <p className="mt-1 text-[9px] text-slate-400">
+                      {financial.status === 'approved_pending_manual_execution'
+                        ? 'Termos revisados; pagamento continua bloqueado.'
+                        : accepted ? 'Você aceitou sua parcela; aguarde a outra parte e o revisor.'
+                          : termsExpired ? 'Proposta expirada; procure a logística.'
+                            : 'Leia os termos. Sua decisão exige autenticação própria.'}
+                    </p>
+                    {financial.status === 'awaiting_courier_terms' && !accepted && !termsExpired && (
+                      <button type="button" disabled={busy === item.id}
+                        onClick={() => void acceptTerms(financial, party)}
+                        className="mt-2 w-full rounded-lg border border-cyan-500/30 px-3 py-2 text-[9px] font-black text-cyan-200 disabled:opacity-50">
+                        Concordo com minha parcela (sem pagamento)
+                      </button>
+                    )}
+                  </div>
+                );
+              })()}
               {item.status === 'awaiting_participant_confirmations' && !confirmed && !expired ? (
                 <button type="button" disabled={busy === item.id}
                   onClick={() => void acknowledge(item, party)}
