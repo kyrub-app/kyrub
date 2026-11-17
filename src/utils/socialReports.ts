@@ -13,7 +13,8 @@ async function saveReportOnce(
   payload: Record<string, unknown>
 ): Promise<SocialReportOutcome> {
   const reference = doc(db, collection, reportId);
-  if ((await getDoc(reference)).exists()) return 'already_reported';
+  // An absent report is not readable under the private Firestore rules.
+  // Attempt its one-time create first; on retry, read only an existing report.
   try {
     await setDoc(reference, { ...payload, createdAt: serverTimestamp() });
     return 'submitted';
