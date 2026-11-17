@@ -50,7 +50,17 @@ export function CourierReturnToStorePanel({deliveryId,pickupAddress,vehicleType}
     },()=>{setProtocol(null);setMessage('Não foi possível consultar o protocolo de devolução.');});
   },[deliveryId]);
 
-  if(!protocol)return null;
+  if(!protocol) {
+    // Cached/failed lookup cannot be interpreted as permission to return.
+    // Keep the warning visible instead of silently hiding the return panel.
+    return message ? (
+      <section role="status" className="mt-3 rounded-xl border border-amber-500/35 bg-amber-500/5 p-3 text-[10px] text-amber-100">
+        <p className="font-black">Orientação de devolução indisponível</p>
+        <p className="mt-1">{message}</p>
+        <p className="mt-1">Não inicie o retorno por conta própria. Procure o suporte da corrida.</p>
+      </section>
+    ) : null;
+  }
   const goToStore = decideCourierRoute({
     status:'delivering',vehicleType,pickup:pickupAddress,dropoff:'',
     returnStatus:protocol.status==='return_authorized'?'return_authorized':'unavailable',
