@@ -58,6 +58,8 @@ Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção*
 | **#1136** Produtos e Estoque | `PRODUCAO_VERIFICADA` no escopo de correção manual aprovado em 15/11; inspeção rede/console opcional. | Não reabrir ou refazer; observar regressão somente se houver evidência nova. |
 | **PRs antigas #1135/#1132/#1130/#1128 e legados de pagamentos/ERP** | `AUDITORIA_PENDENTE` quanto à substituição/incorporação; algumas foram superadas por PRs posteriores. | Inventariar dependências antes de encerrar ou mesclar; nunca somar cada PR antiga como funcionalidade faltante. |
 
+**Reconciliação técnica iniciada:** [matriz de integração das PRs #1139, #1146 e #1138](docs/commerce/V1_PR_INTEGRATION_RECONCILIATION_2026-11.md). Identificadas quatro sobreposições #1139×#1138, nenhuma sobreposição de arquivos com #1146, e gate de teste conjunto de catálogo/pedidos/cupom/reembolso. **Apenas o diagnóstico foi concluído; a integração conjunta segue pendente.**
+
 ### Fila executável imediata — sem aguardar Mercado Pago nem Vercel
 
 1. **Inventário e comparação:** congelar o `main` atual e mapear conflitos/arquivos sobrepostos de #1139, #1146, #1138, #1144, #1137, #1145 e #1147. Registrar o que já integra `main` e o que seria novidade real; evitar PR duplicada.
