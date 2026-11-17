@@ -4,6 +4,7 @@ import { collection, getDocs, limit, onSnapshot, query, where, type Timestamp } 
 import { AlertTriangle, ClipboardList } from 'lucide-react';
 import { db } from '../../utils/firebase';
 import { AdminSupervisedTransferPanel } from './AdminSupervisedTransferPanel';
+import { AdminDeliveryFinancialReconciliationPanel } from './AdminDeliveryFinancialReconciliationPanel';
 
 type IncidentDecision =
   | 'release_for_new_acceptance'
@@ -206,6 +207,9 @@ export function AdminDeliveryComplianceIncidents({ user }: { user: User }) {
                 </div>
               )}
               <AdminSupervisedTransferPanel
+                user={user} deliveryId={incident.id} incidentStatus={incident.status}
+              />
+              <AdminDeliveryFinancialReconciliationPanel
                 user={user} deliveryId={incident.id} incidentStatus={incident.status}
               />
               {incident.reason && (
