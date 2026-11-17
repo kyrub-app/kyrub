@@ -246,7 +246,7 @@ Nunca solicitar token no chat da Kyrubia.
 
 **Status atual:** reconciliação necessária com as fundações financeiras/onboarding existentes antes de implementar gaps.
 
-## 16. 🔎 Implementar Split 1:1
+## 16. 🟡 Implementar Split 1:1
 
 Primeiro modelo:
 
@@ -257,7 +257,7 @@ Mercado Pago
 lojista   Kyrub
           application_fee
 
-**Status atual:** reconciliação necessária.
+**Status atualizado (17/11/2026):** contrato aritmético existente, mas **split 1:1 DESATIVADO** no checkout Pix de loja, sem `application_fee`; a integração atual só gera pagamento no recebedor OAuth do lojista quando liberada por seu gate. Código, metadados de Vercel e pré-requisitos oficiais documentados em `docs/finance/mercado-pago-split-readiness-2026-11.md` (PR #1147). Apto apenas para planejamento; faltam confirmação da aplicação marketplace, elegibilidade Pix/1:1, política comercial aprovada, consentimento, conciliação e E2E sem cobrança. Nenhuma alteração em produção.
 
 ## 17. 🔎 Separar Payment de Allocation
 
@@ -341,13 +341,13 @@ custos.
 
 **Status atual:** pendente.
 
-## 21. ⬜ Mercado Pago 1:N — Commercial Gate
+## 21. ⏸️ Mercado Pago 1:N — Commercial Gate
 
 Verificar oficialmente possibilidade de habilitação para o Kyrub.
 
 Não bloqueia o MVP 1:1.
 
-**Status atual:** pendente; será tratado como gate comercial, sem bloquear 1:1.
+**Status atualizado (17/11/2026):** depende de **habilitação comercial específica pelo Mercado Pago**, documentação e consentimento por recebedor (Orders API). Não assumir que um plano 1:1 permite adicionar entregador como terceiro recebedor. Mantido como **Owner/Commercial Gate** sem bloquear o planejamento do 1:1; ver auditoria `docs/finance/mercado-pago-split-readiness-2026-11.md` (PR #1147).
 
 ---
 
