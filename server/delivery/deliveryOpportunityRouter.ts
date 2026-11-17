@@ -46,6 +46,7 @@ import {
   declareCourierReturnAtStore,
   confirmStoreReceivedReturnedDelivery,
 } from './deliveryReturnToStoreService.js';
+import { previewDeliveryReturnEconomicReconciliation } from './deliveryReturnEconomicReviewService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
@@ -197,6 +198,18 @@ const errorResponse = (response: Response, error: unknown): void => {
     || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
     response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
       error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_ECONOMICS_FORBIDDEN') {
+    response.status(403).json({code:message,error:'Somente a equipe administrativa autorizada pode consultar esta conciliação.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_ECONOMICS_INVALID') {
+    response.status(400).json({code:message,error:'Identificador de conciliação inválido.'});
+    return;
+  }
+  if (message.startsWith('DELIVERY_RETURN_ECONOMICS_')) {
+    response.status(409).json({code:message,error:'A devolução ou sua fonte financeira ainda não está pronta para conciliação.'});
     return;
   }
   if (message === 'DELIVERY_RETURN_FORBIDDEN') {
@@ -893,6 +906,16 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.setHeader('Cache-Control','no-store, max-age=0');
       response.json(await authorizeRecipientAbsenceReturn({
         ticketId:request.params.ticketId,operatorId,reason:clean(request.body?.reason),
+      }));
+    } catch(error){errorResponse(response,error);}
+  });
+
+  router.get('/admin/returns/:deliveryId/economic-preflight', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','private, no-store, max-age=0');
+      response.json(await previewDeliveryReturnEconomicReconciliation({
+        deliveryId:request.params.deliveryId,operatorId,
       }));
     } catch(error){errorResponse(response,error);}
   });
