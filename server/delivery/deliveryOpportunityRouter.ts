@@ -38,6 +38,11 @@ import {
   attestSupervisedCustodyTransfer,
 } from './deliverySupervisedTransferService.js';
 import {
+  proposeCourierRemunerationReconciliation,
+  acceptCourierRemunerationTerms,
+  approveCourierRemunerationReconciliation,
+} from './deliveryFinancialReconciliationService.js';
+import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
   loadAuthoritativeDeliveryCustomerArrivalPolicy,
 } from './deliveryCustomerArrivalPolicyService.js';
@@ -129,6 +134,20 @@ const errorResponse = (response: Response, error: unknown): void => {
   const message = error instanceof Error ? error.message : String(error);
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     response.status(401).json({ error: 'Faça login novamente.' });
+    return;
+  }
+  if (message === 'DELIVERY_FINANCIAL_RECONCILIATION_FORBIDDEN') {
+    response.status(403).json({ code: message, error: 'A conciliação exige um participante autorizado ou revisor administrativo independente.' });
+    return;
+  }
+  if (message === 'DELIVERY_FINANCIAL_RECONCILIATION_INVALID'
+    || message === 'DELIVERY_FINANCIAL_RECONCILIATION_SPLIT_INVALID') {
+    response.status(400).json({ code: message, error: 'A divisão deve ser composta por valores inteiros em centavos que totalizem a remuneração oficial.' });
+    return;
+  }
+  if (message.startsWith('DELIVERY_FINANCIAL_RECONCILIATION_')) {
+    response.status(409).json({ code: message,
+      error: 'A fonte financeira está indisponível, mudou ou há uma obrigação incompatível. Atualize a conciliação sem liberar pagamentos.' });
     return;
   }
   if (message === 'CUSTODY_TRANSFER_SETTLEMENT_HOLD') {
@@ -806,6 +825,50 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(await acknowledgeSupervisedCustodyTransfer({
         deliveryId: request.params.deliveryId,
         actorId, statement,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/remuneration/propose', async (request, response) => {
+    try {
+      const operatorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      const body = request.body && typeof request.body === 'object'
+        ? request.body as Record<string, unknown> : {};
+      response.json(await proposeCourierRemunerationReconciliation({
+        deliveryId: request.params.deliveryId,
+        operatorId,
+        outgoingMinor: body.outgoingMinor as number,
+        incomingMinor: body.incomingMinor as number,
+        reason: clean(body.reason),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/admin/compliance-incidents/:deliveryId/remuneration/approve', async (request, response) => {
+    try {
+      const reviewerId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await approveCourierRemunerationReconciliation({
+        deliveryId: request.params.deliveryId,
+        reviewerId,
+        reason: clean(request.body?.reason),
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.post('/:deliveryId/remuneration/accept-terms', async (request, response) => {
+    try {
+      const actorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await acceptCourierRemunerationTerms({
+        deliveryId: request.params.deliveryId, actorId,
       }));
     } catch (error) {
       errorResponse(response, error);
