@@ -114,14 +114,16 @@ export const markCourierArrivedAtCustomer = async (input: {
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const custodyTransferRef = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
   const incidentRef = adminDb.doc(`deliveryComplianceIncidents/${deliveryId}`);
+  const returnRef = adminDb.doc(`deliveryReturnProtocols/${deliveryId}`);
 
   await adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot, incidentSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot, incidentSnapshot, returnSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(trackingRef),
       transaction.get(custodyTransferRef),
       transaction.get(incidentRef),
+      transaction.get(returnRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) {
       throw new Error('A entrega não foi encontrada.');
@@ -134,6 +136,11 @@ export const markCourierArrivedAtCustomer = async (input: {
     if (clean(delivery.status) === 'done') return;
     const custody = record(transferSnapshot.data());
     const incident = record(incidentSnapshot.data());
+    const returnProtocol = record(returnSnapshot.data());
+    if (['return_authorized','courier_presented_to_store',
+      'returned_to_store_pending_reconciliation'].includes(clean(returnProtocol.status))) {
+      throw new Error('DELIVERY_RETURN_CUSTODY_HOLD');
+    }
     if (incident.source === 'motofrete_qualification_revoked'
       && incident.courierId === courierId
       && ['awaiting_logistics_review', 'awaiting_supervised_handoff',
@@ -212,14 +219,16 @@ export const confirmBuyerReceivedDelivery = async (input: {
   const completionRef = adminDb.doc(`${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}`);
   const custodyTransferRef = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
   const financialRef = adminDb.doc(`deliveryFinancialReconciliations/${deliveryId}`);
+  const returnRef = adminDb.doc(`deliveryReturnProtocols/${deliveryId}`);
 
   return adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot, transferSnapshot, financialSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot, transferSnapshot, financialSnapshot, returnSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(completionRef),
       transaction.get(custodyTransferRef),
       transaction.get(financialRef),
+      transaction.get(returnRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) {
       throw new Error('A entrega não foi encontrada.');
@@ -239,6 +248,14 @@ export const confirmBuyerReceivedDelivery = async (input: {
     const order = orderSnapshot.data() as Record<string, unknown>;
     if (clean(order.buyerId) !== buyerId || clean(delivery.buyerId) !== buyerId) {
       throw new Error('DELIVERY_BUYER_CONFIRMATION_FORBIDDEN');
+    }
+
+    const returnProtocol = record(returnSnapshot.data());
+    if (['return_authorized','courier_presented_to_store',
+      'returned_to_store_pending_reconciliation'].includes(clean(returnProtocol.status))) {
+      // Even if an earlier arrival or buyer-screen prompt is stale, return
+      // custody must be resolved before an economic completion can occur.
+      throw new Error('DELIVERY_RETURN_CUSTODY_HOLD');
     }
 
     if (existingCompletionSnapshot.exists) {
