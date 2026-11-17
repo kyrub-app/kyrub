@@ -4,6 +4,80 @@ Atualizado em: 2026-08-23
 
 Esta é a bateria oficial de desenvolvimento do Kyrub para a fase de fechamento estrutural do projeto. A numeração e a organização abaixo preservam a lista oficial de 67 pontos definida pelo proprietário.
 
+## Prioridade executiva vigente — V1 comercial confiável (17/11/2026)
+
+> **Esta seção é o painel operacional ativo desta lista-mãe.** Ela reordena a execução sem excluir, renumerar ou dar baixa automática nos 67 itens históricos abaixo. Os status escritos nos itens antigos são fotografias da época: não substituem verificação de `main`, PR, CI e implantação atual. Em conflitos de prioridade, prevalece este painel; em conflitos de regras técnicas/comerciais, revalidar a evidência e obter a decisão apropriada.
+>
+> **Objetivo imediato:** lançar uma primeira versão comercial em que usuário encontra uma oferta verdadeira, compra com autorização financeira confiável, o lojista recebe/processa o pedido, o pós-venda é consistente e a plataforma consegue conciliar cada evento — sem prometer pagamentos/recompensas/entregas não disponíveis. A visão completa do super-app permanece preservada.
+
+### Regra de classificação — usar duas dimensões independentes
+
+- **Prioridade:** `V0` bloqueia segurança de qualquer lançamento; `V1` compõe a primeira versão comercial; `V1-ENTREGAS` é gate para oferecer corridas pagas Kyrub; `V2` é expansão ou funcionalidade que não precisa bloquear o primeiro fluxo comercial *quando não for exposta como pronta*.
+- **Estado comprovado:** `PRODUCAO_VERIFICADA` (SHA e fluxo observados no deployment público); `INTEGRADO_MAIN` (sem prova de deployment); `IMPLEMENTADO_PR` (ainda fora da main); `TESTADO_ISOLADO` (emulador/contratos, não uso em produção); `AUDITORIA_PENDENTE`; `OWNER_GATE` (ação/aprovação humana ou comercial); `BLOQUEIO_EXTERNO`; `NAO_INICIADO`.
+- Cada tarefa precisa de **referência do código/PR, SHA de validação, resultado de testes, ambiente, dependências, próximo passo e critério de encerramento**. Não marcar `PRODUCAO_VERIFICADA` por CI verde, PR mergeada, teste sintético ou preview antiga.
+- Uma funcionalidade pode estar **funcionalmente aprovada em isolamento** e **visualmente pendente**. Este é o caso de entregas da #1145. Isso fecha apenas o bloco funcional, **não o gate de lançamento**.
+- Não multiplicar PRs: reconciliar/encerrar drafts antigas substituídas, preservando commits e provas úteis, antes de abrir nova implementação.
+
+### Ordem de execução comercial: um fluxo de ponta a ponta
+
+| Ordem | Bloco de trabalho | PRs/fonte a reconciliar | Pronto quando |
+| --- | --- | --- | --- |
+| **0 — V0** | **Ambiente, identidade, segurança e autoridade de release**: congelar SHA candidato, conferir `main` x deployment real, Vercel, Firebase Rules, permissões, isolamento de lojas, segredos e logs; planejar lote para não consumir cota. | Itens #1–9, #12, #17, #55, #57–58, #62, #64–67; correção já integrada #1136. | Produção identificada, mudanças candidatas comparadas contra `main`, CI exato e rollback definido; nenhuma operação financeira depende do frontend. |
+| **1 — V1** | **Loja + catálogo + pedido**: criar loja Free idempotente sem depender de publicação; preservar plano pago já vigente, não duplicar loja; produto/serviço válido, preço, personalização e estoque consistentes; vitrine, carrinho, aprovação do lojista, espelho canônico, KDS, estoque e CRM. | #1139, contratos já integrados de ativação #1110 e Produtos/Estoque #1136, serviços atuais de pedidos; checar regressões sem duplicá-los. | Um usuário fictício percorre criação/publicação/compra e o lojista opera o mesmo pedido com isolamento, idempotência e estoque correto. |
+| **2 — V1** | **Pagamento e pós-venda seguros**: seller OAuth/recebedor autoritativo, Pix marketplace e, separadamente, planos Pro/Business pré-pagos; eventos pendentes/aprovados/rejeitados, retries, webhook, devoluções financeiras, parcial x integral, ledger, reembolso e reconciliação. Cupom oficial usa caminho canônico, nunca carrinho financeiro paralelo. | #1138, #1146, #1147; itens #10–15, #17–18; preflight de conta oficial já desenvolvido. | Testes isolados completos e, **somente após autorização explícita**, piloto Pix real restrito, valor/recebedor exatos, notificação confirmada, nenhum pagamento ou benefício duplicado, falhas recuperáveis. #1146 deve ser revisada antes de liberar reembolso integral. |
+| **3 — V1** | **Praça, apresentação e gamificação inicial segura**: oferta/cupom divulgado sem vazamento de audiência, Comunidades sem mistura de dados, 100 Pitangas no primeiro login elegível, 2 XP no primeiro evento de publicação validado e conversão voluntária 1.000 Pitangas → 1 XP, extrato auditável, guardas antifraude/budgets mínimos. Kyrubia Educadora usa interface existente. | #1144 consolida #1140/#1142/#1143; #1137 consolida boa parte de #1135/#1128; desafio da #1134 já integrado; itens #31–37, #53–54. | UI/contratos testados; **atestação dos escritores Firebase da #1137** e proteção de ledger comprovadas antes de ativar recompensas reais. Sem campanhas ou bônus reais enquanto o gate estiver aberto. |
+| **4 — V1-ENTREGAS** | **Entrega Kyrub operacional e remuneração protegida**: aceite servidor, GPS, coleta, suporte, ausência, devolução, reatribuição, recebimento físico e reconciliação, mais rail financeiro que reserve/proteja efetivamente o frete e pague o entregador sem saldo livre do lojista. | #1145, #1147, itens #16, #18–21, auditoria financeira e retorno formal Mercado Pago. | #1145 tem homologação **funcional isolada** no commit `4824007`, mas falta interação Android/GPS físico e integração. Corridas **pagas** só podem ser liberadas quando houver prova do modelo de custódia/liquidação, Pix externo se contratado, cancelamentos e disputas; `allocation` não é reserva real. |
+| **5 — V0/V1** | **Jornada comercial E2E e Beta Gate**: contas fictícias + transições reais na interface, mobile, fluxos de erro, autorização, compatibilidade de versões, fiscalização de logs, LGPD/termos, checksum de deployment, plano de reversão. | Itens #63–67; PRs candidatas já testadas; documentos de políticas e consentimento. | Relatório único de `PASS/FAIL/BLOQUEADO` por jornada, deploy SHA confirmado e testes autenticados em dispositivo/navegador compatível. Não lançar funcionalidades fora do escopo aprovado. |
+
+**Decisão comercial ainda não presumida:** caso o PSP não comprove proteção do valor do frete, é possível avaliar uma V1 **sem corridas pagas Kyrub**, com retirada/atendimento local quando os fluxos próprios estiverem autorizados, **somente mediante decisão do proprietário**. Se entregas pagas forem requisito obrigatório da V1, o lançamento dessa oferta continua bloqueado até resolver o rail. Nunca substituir por repasse manual ou saldo disponível do lojista.
+
+**Separar dois trilhos de Pix:** checkout dos **planos oficiais** (recebedor da plataforma) ≠ pagamentos de **pedidos dos lojistas** (conta OAuth) ≠ **pagamento aos entregadores**. Aprovação de um não libera os outros. Não abrir checkout, cobrar R$ 1 de piloto, integrar split, conceder Pitangas ou publicar loja sem os gates específicos.
+
+### Mapa dos 67 itens históricos — prioridade sem apagar o backlog
+
+Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção**, não atualização automática do estado histórico registrado no item:
+
+| Prioridade | Itens originais | Interpretação |
+| --- | --- | --- |
+| **V0 — fundação, segurança e fechamento** | **#1–9, #12, #17, #31, #45, #55, #57, #58, #62, #64–67** | Preservar autoridades e invariantes; confirmar que o que foi implementado continua válido; gates de produção e auditoria. |
+| **V1 — jornada comercial e gamificação inicial** | **#10, #11, #13–15, #18, #32–37, #53–54, #63** | Fechar apenas as lacunas da venda real, pós-venda, recompensas iniciais e E2E. #11 é `OWNER_GATE` para dinheiro real. |
+| **V1-ENTREGAS — condicional a rail financeiro** | **#16, #19–21** | PSP, split/settlement e garantia do frete. #16 (taxa/split 1:1) não deve ser ativado sem comissão aprovada; não é substituto de 1:N. |
+| **V2 — expansão preservada** | **#22–30, #38–44, #46–52, #56, #59–61** | Omnichannel, clube completo, resgates, desafios avançados e automações de governança. **Exceção:** qualquer integração/recompensa dessas frentes exposta na V1 herda imediatamente gates V0 de segurança, autorização, tenant e orçamento. |
+
+### Registro de frentes ativas (fotografia verificada em 17/11/2026)
+
+| Frente canônica / PR | Estado comprovado | Próxima ação concreta |
+| --- | --- | --- |
+| **#1144** Praça, Comunidades e Kyrubia Educadora | `IMPLEMENTADO_PR` / CI integrado verde; preview do conjunto bloqueada por cota Vercel. Incorpora código de #1140, #1142, #1143; não contar como três releases independentes. | Conferir ausência de divergência com `main`, planejar única release controlada, verificar deployment e navegação visual; sem antecipar merge por CI. |
+| **#1139** ERP → Marketplace / produtos e pedidos | `IMPLEMENTADO_PR` / testes e emulador aprovados no head relatado; ainda sem merge. | Conciliação com pedido/carrinho/estoque canônicos e inclusão em lote seguro. |
+| **#1138** cupom ERP → Praça → vitrine → plano oficial | `TESTADO_ISOLADO` / Pix simulado e Chromium comprovados; sem cobrança real nem merge. | Revisar o piloto oficial separado, contrato Pix e interações com #1137; não habilitar checkout real sem liberação. |
+| **#1146** segurança de reembolsos | `IMPLEMENTADO_PR`, em draft; correções de janela concorrente e histórico parcial. | Revisão de integração com serviços canônicos e gate de refund E2E. |
+| **#1137** gamificação inicial | `TESTADO_ISOLADO`, em draft; atestação dos escritores Firebase ainda pendente. | Obter prova de escritores sem expor segredos; depois deliberar sobre integração e ativação. Não reaplicar versões antigas #1135/#1128. |
+| **#1145** entregas / suporte / devolução | `TESTADO_ISOLADO`; homologação funcional de serviços e contratos aprovada no commit `4824007` (302/302 Firestore Emulator), PR draft. | Homologação visual Android e GPS físico permanece pendente; integrar apenas após revisão transversal do lote. |
+| **#1147** arquitetura financeira split/liquidação | `IMPLEMENTADO_PR` documental/técnico; decisão comercial externa pendente. | Aguardar suporte Mercado Pago sobre segregação real do frete, recebedores após pagamento, Pix externo, custos, estornos/disputas; PSP alternativo se necessário. |
+| **#1136** Produtos e Estoque | `PRODUCAO_VERIFICADA` no escopo de correção manual aprovado em 15/11; inspeção rede/console opcional. | Não reabrir ou refazer; observar regressão somente se houver evidência nova. |
+| **PRs antigas #1135/#1132/#1130/#1128 e legados de pagamentos/ERP** | `AUDITORIA_PENDENTE` quanto à substituição/incorporação; algumas foram superadas por PRs posteriores. | Inventariar dependências antes de encerrar ou mesclar; nunca somar cada PR antiga como funcionalidade faltante. |
+
+### Fila executável imediata — sem aguardar Mercado Pago nem Vercel
+
+1. **Inventário e comparação:** congelar o `main` atual e mapear conflitos/arquivos sobrepostos de #1139, #1146, #1138, #1144, #1137, #1145 e #1147. Registrar o que já integra `main` e o que seria novidade real; evitar PR duplicada.
+2. **Segurança de reembolso + catálogo/pedidos:** fechar revisão isolada da #1146 e a consistência da #1139 antes de qualquer Pix real; tratar blockers sem ampliar escopo.
+3. **Gamificação:** resolver atestação Firebase da #1137 por via segura, mantendo `writersVerified` e campanhas intactos até comprovação.
+4. **Release social/educação:** preparar lote da #1144 com validação Android como gate de publicação, sem repetir testes aprovados.
+5. **Fluxo de venda isolado:** repetir somente a jornada transversal *que ainda não foi comprovada na combinação exata das PRs candidatas*, especialmente catálogo → pedido → pagamento simulado → KDS → estoque/CRM → cancelamento/reembolso.
+6. **Entregas:** preservar o parecer funcional da #1145; agendar apenas validação interativa/GPS e combinar a integração com o provedor após resposta comercial.
+7. **Mercado Pago:** aguardar número/protocolo e resposta do suporte; nenhuma ativação financeira antecipada.
+8. **Gate final:** fechar #63–67 para a **V1 delimitada**, publicar só com autorização explícita e prova de deployment. Itens V2 continuam registrados na lista-mãe, sem serem eliminados.
+
+### Definição objetiva de conclusão
+
+- **Um bloco de código está pronto** quando seus contratos/autorizações, testes e integração estão demonstrados na versão candidata exata.
+- **Uma frente funcional isolada está encerrada** quando seu E2E de serviços em emulador passou e riscos/pendências visuais são documentados; isso não equivale a lançamento.
+- **A V1 comercial está apta para autorização** apenas quando checkout/benefícios realmente oferecidos têm prova financeira, fluxos essenciais foram exercitados na interface real, conflitos transversais foram resolvidos e os gates de segurança/legais estão aprovados.
+- **Produção está verificada** somente quando o deployment servido corresponde ao SHA esperado e os smoke tests pós-publicação passam. Sem inventar sucesso de Pix, entrega, reembolso, saldo ou campanha.
+
+---
+
 ## Regra de execução
 
 Tratar esta lista como fila contínua de trabalho. Executar os itens respeitando dependências, sem interromper para solicitar “continue”. Trabalhos independentes podem ser executados em paralelo.
