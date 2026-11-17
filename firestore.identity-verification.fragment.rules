@@ -405,7 +405,15 @@
         ]))
               )
             )
-      ) && validIdentityVerification(incoming());
+      ) && (
+        // The preceding motofrete transition limits the parent update to
+        // ['motofreteQualification','updatedAt']; all identity data is unchanged.
+        // Revalidating the entire identity AND the motofrete fields on the same
+        // operation breaches Firestore's 1000-expression evaluation budget.
+        incoming().diff(existing()).affectedKeys().hasAny(['motofreteQualification'])
+          ? validMotofreteQualification(incoming().motofreteQualification)
+          : validIdentityVerification(incoming())
+      );
 
       allow delete: if false;
     }
