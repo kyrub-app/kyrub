@@ -162,11 +162,13 @@ export const createDeliveryTrackingRouter = (): Router => {
       const deliveryReference = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
       const claimReference = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
       const trackingReference = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
+      const custodyTransferReference = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
-      const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
+      const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot] = await Promise.all([
         deliveryReference.get(),
         claimReference.get(),
         trackingReference.get(),
+        custodyTransferReference.get(),
       ]);
       if (!deliverySnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
@@ -188,7 +190,9 @@ export const createDeliveryTrackingRouter = (): Router => {
       // Device shutdown, lost GPS or denied permission must not leave a stale
       // coordinate marked as live for the buyer or store.
       const fresh = isFreshCourierTrackingTimestamp(tracking?.updatedAt);
-      const active = Boolean(deliveryInProgress && trackingSnapshot.exists && tracking?.active === true && fresh);
+      const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
+      const custodyDisputed = Boolean(transfer?.fromConfirmedAt || transfer?.toConfirmedAt);
+      const active = Boolean(deliveryInProgress && !custodyDisputed && trackingSnapshot.exists && tracking?.active === true && fresh);
 
       if (!active) {
         response.status(200).json({ deliveryId, active: false });
@@ -229,18 +233,24 @@ export const createDeliveryTrackingRouter = (): Router => {
       const deliveryReference = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
       const claimReference = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
       const trackingReference = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
+      const custodyTransferReference = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
       const result = await adminDb.runTransaction(async transaction => {
-        const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
+        const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot] = await Promise.all([
           transaction.get(deliveryReference),
           transaction.get(claimReference),
           transaction.get(trackingReference),
+          transaction.get(custodyTransferReference),
         ]);
         if (!deliverySnapshot.exists || !claimSnapshot.exists) throw new Error('A entrega não foi encontrada.');
 
         const delivery = deliverySnapshot.data() as Record<string, unknown>;
         const claim = claimSnapshot.data() as Record<string, unknown>;
         if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
+        const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
+        if (transfer?.fromConfirmedAt || transfer?.toConfirmedAt) {
+          throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
+        }
         const deliveryStatus = clean(delivery.status);
         if (!['accepted', 'delivering'].includes(deliveryStatus)) throw new Error('Esta entrega não está em andamento.');
 
