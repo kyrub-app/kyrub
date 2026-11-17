@@ -111,12 +111,14 @@ export const markCourierArrivedAtCustomer = async (input: {
   const deliveryRef = adminDb.doc(`${DELIVERY_COLLECTION}/${deliveryId}`);
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
+  const custodyTransferRef = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
   await adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, trackingSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, trackingSnapshot, transferSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(trackingRef),
+      transaction.get(custodyTransferRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) {
       throw new Error('A entrega não foi encontrada.');
@@ -127,6 +129,10 @@ export const markCourierArrivedAtCustomer = async (input: {
       throw new Error('Somente o entregador responsável pode informar a chegada ao cliente.');
     }
     if (clean(delivery.status) === 'done') return;
+    const custody = record(transferSnapshot.data());
+    if (custody.fromConfirmedAt || custody.toConfirmedAt) {
+      throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
+    }
     if (clean(delivery.status) !== 'delivering') {
       throw new Error('A rota precisa estar em andamento antes da chegada ao cliente.');
     }
@@ -191,12 +197,14 @@ export const confirmBuyerReceivedDelivery = async (input: {
   const claimRef = adminDb.doc(`${DELIVERY_CLAIM_COLLECTION}/${deliveryId}`);
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const completionRef = adminDb.doc(`${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}`);
+  const custodyTransferRef = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
 
   return adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot, transferSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(completionRef),
+      transaction.get(custodyTransferRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) {
       throw new Error('A entrega não foi encontrada.');
@@ -235,6 +243,13 @@ export const confirmBuyerReceivedDelivery = async (input: {
       throw new Error('DELIVERY_COMPLETION_CONFLICT');
     }
 
+    const custody = record(transferSnapshot.data());
+    if (custody.fromConfirmedAt || custody.toConfirmedAt) {
+      // The physical recipient may differ from the financial beneficiary.
+      // Preserve buyer/order data but never create an automatic courier payable
+      // attributed to the original driver after handoff is declared.
+      throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
+    }
     if (clean(delivery.status) !== 'delivering') {
       throw new Error('A entrega precisa estar em rota antes da confirmação do cliente.');
     }
