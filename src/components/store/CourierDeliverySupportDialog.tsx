@@ -3,6 +3,7 @@ import { AlertTriangle, Headset, PhoneCall, ShieldAlert, X } from 'lucide-react'
 import { collection, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { CourierReturnToStorePanel } from './CourierReturnToStorePanel';
+import type { CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
 import {
   getCourierSupportReason,
   KYRUB_COURIER_SUPPORT_REASONS,
@@ -31,9 +32,10 @@ interface Ticket {
 }
 
 export function CourierDeliverySupportDialog({
-  deliveryId,stage,pickupAddress,recipientArrivalVerified,recipientArrivalAtMs,onClose,
+  deliveryId,stage,pickupAddress,vehicleType,recipientArrivalVerified,recipientArrivalAtMs,onClose,
 }:{
   deliveryId:string;stage:CourierSupportStage;pickupAddress:string;
+  vehicleType:CourierVehicleType|null;
   recipientArrivalVerified:boolean;recipientArrivalAtMs:number;onClose:()=>void;
 }) {
   const [reasonCode,setReasonCode]=useState('');
@@ -197,7 +199,7 @@ export function CourierDeliverySupportDialog({
         </div>
 
         {stage==='delivering' && <CourierReturnToStorePanel
-          deliveryId={deliveryId} pickupAddress={pickupAddress} />}
+          deliveryId={deliveryId} pickupAddress={pickupAddress} vehicleType={vehicleType} />}
 
         <label className="mt-4 block text-[11px] font-black text-white" htmlFor="kyrub-help-reason">
           O que aconteceu?
