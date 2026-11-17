@@ -768,3 +768,55 @@ test('payment reconciliation split and consent events are private and impossible
     await assertFails(deleteDoc(doc(db,'deliveryFinancialReconciliationEvents','finance-audit-1')));
   }
 });
+
+test('courier help tickets remain private and support reports cannot be forged or used to cancel orders',async()=>{
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,'deliverySupportTickets','support-private-0123456789'),{
+      schemaVersion:1,id:'support-private-0123456789',
+      courierId:'user_a',deliveryId:'delivery_test',
+      storeId:'store_test',sourceOrderId:'order_test',
+      reasonCode:'recipient_not_found',reasonLabel:'Destinatário não aparece',
+      priority:'urgent',status:'open',assignedTo:'',lastResponse:'',
+      createdAt:serverTimestamp(),
+    });
+    await setDoc(doc(db,'deliverySupportTicketEvents','support-event-1'),{
+      schemaVersion:1,ticketId:'support-private-0123456789',
+      actorId:'user_a',action:'opened',
+      createdAt:serverTimestamp(),
+    });
+    await setDoc(doc(db,'deliverySupportRateLimits','user_a'),{
+      courierId:'user_a',lastCreatedAt:serverTimestamp(),
+    });
+  });
+  const courier=environment.authenticatedContext('user_a').firestore();
+  const outsider=environment.authenticatedContext('user_z').firestore();
+  const admin=environment.authenticatedContext('compliance_a').firestore();
+  await assertSucceeds(getDoc(doc(courier,'deliverySupportTickets','support-private-0123456789')));
+  await assertSucceeds(getDoc(doc(admin,'deliverySupportTickets','support-private-0123456789')));
+  await assertFails(getDoc(doc(outsider,'deliverySupportTickets','support-private-0123456789')));
+  await assertSucceeds(getDocs(query(collection(courier,'deliverySupportTickets'),
+    where('courierId','==','user_a'),limit(50))));
+  await assertSucceeds(getDocs(query(collection(admin,'deliverySupportTickets'),limit(100))));
+  await assertSucceeds(getDoc(doc(admin,'deliverySupportTicketEvents','support-event-1')));
+  await assertFails(getDoc(doc(courier,'deliverySupportTicketEvents','support-event-1')));
+  await assertFails(getDoc(doc(outsider,'deliverySupportTicketEvents','support-event-1')));
+  await assertFails(getDoc(doc(courier,'deliverySupportRateLimits','user_a')));
+  await assertFails(getDoc(doc(admin,'deliverySupportRateLimits','user_a')));
+  for(const db of [courier,outsider,admin]){
+    await assertFails(setDoc(doc(db,'deliverySupportTickets','support-fake-ticket'),{
+      courierId:'user_a',status:'resolved',reasonCode:'other_issue',
+    }));
+    await assertFails(updateDoc(doc(db,'deliverySupportTickets','support-private-0123456789'),{
+      status:'resolved',lastResponse:'Resolvido artificialmente',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliverySupportTickets','support-private-0123456789')));
+    await assertFails(setDoc(doc(db,'deliverySupportTicketEvents','support-forged-event'),{
+      ticketId:'support-private-0123456789',action:'resolved',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliverySupportTicketEvents','support-event-1')));
+    await assertFails(setDoc(doc(db,'deliverySupportRateLimits','user_a'),{
+      courierId:'user_a',lastCreatedAt:serverTimestamp(),
+    }));
+  }
+});
