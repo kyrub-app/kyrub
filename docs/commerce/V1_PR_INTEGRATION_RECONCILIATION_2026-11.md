@@ -50,7 +50,7 @@
 
 ## 3. Reembolso integral vs parcial: revisão de fronteiras
 
-**#1146** reforça três pontos realmente observados no código:
+**Evidência específica:** o job `134047930758` do GitHub Actions executou no Firebase Emulator **269/269 testes, 0 falhas**, incluindo os **cinco casos** de `tests/firestore-refund-history-safety.test.ts` (intenção parcial transacional, estados incertos, parcial confirmado, 51 tentativas e histórico vazio). Os cinco casos **não simulam um POST real de reembolso integral concorrente contra o PSP**; isso permanece gate de integração e piloto financeiro.\n\n**#1146** reforça três pontos realmente observados no código:
 1. `partialRefundSafetyService.ts` limita a consulta a 51 para detectar histórico acima de 50 e bloquear por revisão humana, além de estados `required`, `processing`, `failed` e desconhecidos.
 2. `orderItemCancellationService.ts` grava a intenção de reembolso parcial na **mesma transação** que altera o pedido; não informa ao PSP que dinheiro foi devolvido por apenas registrar a intenção.
 3. `paymentRefundService.ts` volta a verificar o histórico antes de `preparePaymentForRefund`, inclusive para chamadores que não passam pelo roteador; o HTTP expõe 409 explícito.
