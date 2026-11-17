@@ -198,7 +198,12 @@ export const createDeliveryTrackingRouter = (): Router => {
       // coordinate marked as live for the buyer or store.
       const fresh = isFreshCourierTrackingTimestamp(tracking?.updatedAt);
       const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
-      const custodyDisputed = Boolean(transfer?.fromConfirmedAt || transfer?.toConfirmedAt);
+      const custodyDisputed = Boolean(
+        (transfer?.fromConfirmedAt || transfer?.toConfirmedAt)
+        && (transfer?.status !== 'operational_reassigned'
+          || transfer?.operationalAssignment !== 'recipient_claim_active'
+          || transfer?.toCourierId !== courierId)
+      );
       const active = Boolean(deliveryInProgress && !custodyDisputed && trackingSnapshot.exists && tracking?.active === true && fresh);
 
       if (!active) {
@@ -255,7 +260,10 @@ export const createDeliveryTrackingRouter = (): Router => {
         const claim = claimSnapshot.data() as Record<string, unknown>;
         if (clean(claim.courierId) !== courierId) throw new Error('Este entregador não é o responsável pela corrida.');
         const transfer = transferSnapshot.data() as Record<string, unknown> | undefined;
-        if (transfer?.fromConfirmedAt || transfer?.toConfirmedAt) {
+        if ((transfer?.fromConfirmedAt || transfer?.toConfirmedAt)
+          && (transfer?.status !== 'operational_reassigned'
+            || transfer?.operationalAssignment !== 'recipient_claim_active'
+            || transfer?.toCourierId !== courierId)) {
           throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
         }
         const deliveryStatus = clean(delivery.status);
