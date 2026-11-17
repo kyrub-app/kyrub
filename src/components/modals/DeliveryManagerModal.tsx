@@ -19,6 +19,7 @@ import { isAvailableCourierOffer, isAssignedCourierDelivery, isCanonicalCourierD
 import { DeliveryJob } from '../../types';
 import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
 import type { ReturnTariffOffer } from '../../../shared/deliveryReturnTariffOffer';
+import { CourierReturnHistory } from '../store/CourierReturnHistory';
 
 interface DeliveryManagerModalProps {
   isOpen: boolean;
@@ -707,6 +708,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     </div>
                   </div>
                 ))}
+                <CourierReturnHistory />
               </div>
             )}
 
