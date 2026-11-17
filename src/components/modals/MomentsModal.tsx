@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
+import { subscribeStoreReviews, subscribeStoreReviewLikeCounts, type CanonicalStoreReview } from '../../utils/storeReviews';
 import { Store } from '../../types';
 
 interface Moment {
@@ -23,7 +24,7 @@ interface MomentsModalProps {
     rating: number;
     mediaUrl: string;
     publishedToPraca: boolean;
-  }) => void;
+  }) => Promise<void>;
 }
 
 export const MomentsModal: React.FC<MomentsModalProps> = ({
@@ -37,27 +38,62 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
   const [newMomentRating, setNewMomentRating] = useState(5);
   const [newMomentPhoto, setNewMomentPhoto] = useState('');
   const [newMomentPublishToPraca, setNewMomentPublishToPraca] = useState(true);
+  const [reviews, setReviews] = useState<CanonicalStoreReview[]>([]);
+  const [likeCounts, setLikeCounts] = useState<Record<string, number>>({});
+  const [loadingReviews, setLoadingReviews] = useState(false);
+  const [reviewError, setReviewError] = useState('');
+  const [submitError, setSubmitError] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const storeId = selectedStoreForMoments?.id ?? '';
+  const reviewPostIds = reviews.filter(review => review.publishedToFeed).map(review => review.postId).join('|');
+
+  useEffect(() => {
+    if (!isOpen || !storeId) return;
+    setReviews([]);
+    setLikeCounts({});
+    setLoadingReviews(true);
+    setReviewError('');
+    return subscribeStoreReviews(storeId,
+      next => { setReviews(next); setLoadingReviews(false); },
+      error => {
+        console.warn('Falha ao carregar avaliações.', error);
+        setReviewError('Não foi possível carregar as avaliações desta loja.');
+        setLoadingReviews(false);
+      },
+    );
+  }, [isOpen, storeId]);
+
+  useEffect(() => {
+    if (!isOpen || !reviewPostIds) { setLikeCounts({}); return; }
+    return subscribeStoreReviewLikeCounts(reviewPostIds.split('|'), setLikeCounts,
+      error => console.warn('Falha ao acompanhar curtidas das avaliações.', error));
+  }, [isOpen, reviewPostIds]);
 
   if (!isOpen || !selectedStoreForMoments) return null;
 
-  const storeMoments = momentos.filter(m => m.storeId === selectedStoreForMoments.id);
+  const legacyMoments = momentos.filter(m => m.storeId === storeId);
+  const storeMoments = reviews.map(review => ({
+    ...review, user: review.authorName,
+    createdAt: review.createdAtIso ? new Date(review.createdAtIso).toLocaleString('pt-BR') : '',
+  }));
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!newMomentContent.trim()) return;
-
-    onPublishMoment({
-      content: newMomentContent,
-      rating: newMomentRating,
-      mediaUrl: newMomentPhoto,
-      publishedToPraca: newMomentPublishToPraca
-    });
-
-    // Reset local states
-    setNewMomentContent('');
-    setNewMomentRating(5);
-    setNewMomentPhoto('');
-    setNewMomentPublishToPraca(true);
+    if (submitting || !newMomentContent.trim()) return;
+    setSubmitting(true);
+    setSubmitError('');
+    try {
+      await onPublishMoment({
+        content: newMomentContent, rating: newMomentRating,
+        mediaUrl: newMomentPhoto, publishedToPraca: newMomentPublishToPraca,
+      });
+      setNewMomentContent('');
+      setNewMomentRating(5);
+      setNewMomentPhoto('');
+      setNewMomentPublishToPraca(true);
+    } catch (error) {
+      setSubmitError(error instanceof Error ? error.message : 'Não foi possível enviar sua avaliação.');
+    } finally { setSubmitting(false); }
   };
 
   return (
@@ -88,11 +124,13 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
 
         {/* List Existing Moments */}
         <div className="space-y-3">
-          <span className="text-[10px] font-mono uppercase text-slate-400 block tracking-wider">Momentos Compartilhados por Clientes</span>
+          <span className="text-[10px] font-mono uppercase text-slate-400 block tracking-wider">Avaliações sincronizadas de clientes</span>
           <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
-            {storeMoments.length === 0 ? (
+            {loadingReviews && <p className="p-3 text-xs text-slate-400">Carregando avaliações...</p>}
+            {reviewError && <p className="p-3 text-xs text-red-300" role="alert">{reviewError}</p>}
+            {!loadingReviews && storeMoments.length === 0 ? (
               <div className="text-center py-8 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-900">
-                Ainda não há avaliações de Momentos para esta loja. Publique o primeiro abaixo!
+                Ainda não há avaliações sincronizadas para esta loja. Publique a primeira abaixo!
               </div>
             ) : (
               storeMoments.map(mom => (
@@ -124,13 +162,28 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
                   {mom.publishedToFeed && (
                     <div className="flex items-center gap-1.5 text-[8px] font-mono text-orange-400 uppercase">
                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
-                      <span>Sincronizado na Praça Local</span>
+                      <span>Compartilhado na Praça · {likeCounts[mom.postId] ?? 0} curtidas</span>
                     </div>
                   )}
                 </div>
               ))
             )}
           </div>
+          {legacyMoments.length > 0 && (
+            <details className="rounded-xl border border-slate-700 p-3">
+              <summary className="cursor-pointer text-[10px] font-semibold text-slate-300">
+                Histórico antigo deste dispositivo ({legacyMoments.length})
+              </summary>
+              <p className="mt-2 text-[10px] text-amber-300">
+                Estes registros foram salvos apenas neste navegador. Não estão publicados no banco de avaliações ou na Praça.
+              </p>
+              {legacyMoments.map(item => (
+                <p className="mt-2 whitespace-pre-wrap text-[10px] text-slate-400" key={item.id}>
+                  {item.user} · {item.rating}/5 · {item.content}
+                </p>
+              ))}
+            </details>
+          )}
         </div>
 
         {/* Write a New Moment Form */}
@@ -214,11 +267,14 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
           </div>
 
           {/* Publish Button */}
+          {submitError && <p className="text-xs text-red-300" role="alert">{submitError}</p>}
+          <p className="text-[9px] text-slate-500">Uma avaliação por Kairubido e por loja. Não identificamos compra verificada neste formulário; nenhum XP ou Pitanga é concedido por esta ação.</p>
           <button
             type="submit"
+            disabled={submitting}
             className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer text-center"
           >
-            Publicar Momento
+            {submitting ? 'Enviando avaliação...' : 'Publicar avaliação'}
           </button>
         </form>
       </div>
