@@ -510,6 +510,7 @@ export function CourierLiveTrackingBridge() {
     && (!holdLoaded || motofreteHold);
   const awaitingSecurePickup =
     trackingActive &&
+    uiTrackingState === 'recent' &&
     storeArrivalDetected &&
     activeDelivery.status === 'accepted'
     && !complianceBlocked;
@@ -613,6 +614,13 @@ export function CourierLiveTrackingBridge() {
             </div>
           )}
 
+          {trackingActive && storeArrivalDetected && activeDelivery.status === 'accepted'
+            && uiTrackingState !== 'recent' && (
+            <p role="status" className="rounded-xl border border-amber-500/30 bg-amber-950/30 p-3 text-[10px] text-amber-100">
+              A chegada à loja foi detectada antes, mas o GPS não possui confirmação recente.
+              Reconecte o rastreio antes de solicitar a coleta segura.
+            </p>
+          )}
           {awaitingSecurePickup && (
             <div className="space-y-2 rounded-2xl border border-orange-500/25 bg-orange-500/[0.06] p-3">
               <label className="flex items-center gap-2 text-[9px] font-black uppercase text-orange-300">
