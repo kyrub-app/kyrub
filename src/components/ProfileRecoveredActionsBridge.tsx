@@ -196,9 +196,6 @@ export function ProfileRecoveredActionsBridge() {
               nextUser.email?.split('@')[0] ||
               'Usuário Kyrub'
           );
-          setProfilePhotoUrl(
-            readString(data?.photoUrl) || nextUser.photoURL || ''
-          );
         },
         () => undefined
       );
