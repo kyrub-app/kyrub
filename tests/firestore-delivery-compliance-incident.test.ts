@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { FieldValue, Timestamp } from 'firebase-admin/firestore';
+import { Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../server/firebaseAdmin';
 import { resolveDeliveryComplianceIncident } from '../server/delivery/deliveryComplianceIncidentService';
 
