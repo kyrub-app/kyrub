@@ -18,6 +18,8 @@ interface AssignedDelivery {
   from: string;
   to: string;
   vehicleType: CourierVehicleType | null;
+  recipientArrivalVerified: boolean;
+  recipientArrivalAtMs: number;
 }
 
 interface CourierPosition {
@@ -172,12 +174,26 @@ export function CourierLiveTrackingBridge() {
             ) {
               return [];
             }
+            const handoff = data.customerHandoff && typeof data.customerHandoff === 'object'
+              ? data.customerHandoff as Record<string, unknown> : {};
+            const arrivalTimestamp = handoff.arrivedAt;
+            const arrivalMs = arrivalTimestamp && typeof arrivalTimestamp === 'object'
+              && 'toMillis' in arrivalTimestamp && typeof arrivalTimestamp.toMillis === 'function'
+                ? arrivalTimestamp.toMillis() : 0;
+            const arrivalVerified = !snapshot.metadata.fromCache
+              && status === 'delivering'
+              && handoff.status === 'awaiting_buyer_confirmation'
+              && handoff.arrivedByCourierId === user.uid
+              && handoff.trackingWasActive === true
+              && arrivalMs > 0 && arrivalMs <= Date.now();
             return [{
               id: clean(data.id) || document.id,
               status: status as AssignedDelivery['status'],
               from: clean(data.from),
               to: clean(data.to),
               vehicleType: isCourierVehicleType(data.vehicleType) ? data.vehicleType : null,
+              recipientArrivalVerified: arrivalVerified,
+              recipientArrivalAtMs: arrivalVerified ? arrivalMs : 0,
             } satisfies AssignedDelivery];
           });
           setAssignedDeliveries(next);
@@ -439,6 +455,8 @@ export function CourierLiveTrackingBridge() {
         {supportOpen && <CourierDeliverySupportDialog
           deliveryId={activeDelivery.id} stage={activeDelivery.status}
           pickupAddress={activeDelivery.from}
+          recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
+          recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
           onClose={() => setSupportOpen(false)} />}
       </div>
     );
@@ -636,6 +654,8 @@ export function CourierLiveTrackingBridge() {
       {supportOpen && <CourierDeliverySupportDialog
         deliveryId={activeDelivery.id} stage={activeDelivery.status}
         pickupAddress={activeDelivery.from}
+        recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
+        recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
         onClose={() => setSupportOpen(false)} />}
     </aside>
   );
