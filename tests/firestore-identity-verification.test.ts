@@ -9,6 +9,7 @@ import {
 import {
   collection,
   doc,
+  deleteDoc,
   getDoc,
   getDocs,
   limit,
@@ -632,5 +633,43 @@ test('private motofrete audit, holds and delivery incidents cannot be forged or 
     await assertFails(setDoc(doc(client, 'deliveryComplianceIncidents', 'fake'), {
       courierId: 'user_a',
     }));
+  }
+});
+
+test('logistics incident disposition events stay server-only and visible to authorized operations', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'deliveryComplianceIncidentEvents', 'evt-reoffer-a'), {
+      schemaVersion: 1,
+      deliveryId: 'delivery-a',
+      incidentId: 'delivery-a',
+      courierId: 'user_a',
+      storeId: 'store_a',
+      operatorId: 'compliance_a',
+      decision: 'release_for_new_acceptance',
+      deliveryStatusAtDecision: 'accepted',
+      reason: 'Retirada não ocorreu e reatribuição autorizada',
+      createdAt: serverTimestamp(),
+    });
+  });
+  const courier = environment.authenticatedContext('user_a').firestore();
+  const outsider = environment.authenticatedContext('user_b').firestore();
+  const compliance = environment.authenticatedContext('compliance_a').firestore();
+  const event = doc(compliance, 'deliveryComplianceIncidentEvents', 'evt-reoffer-a');
+  await assertSucceeds(getDoc(event));
+  await assertSucceeds(getDocs(query(
+    collection(compliance, 'deliveryComplianceIncidentEvents'),
+    where('deliveryId','==','delivery-a'), limit(30)
+  )));
+  await assertFails(getDoc(doc(courier, 'deliveryComplianceIncidentEvents', 'evt-reoffer-a')));
+  await assertFails(getDoc(doc(outsider, 'deliveryComplianceIncidentEvents', 'evt-reoffer-a')));
+  for (const context of [compliance, courier, outsider]) {
+    await assertFails(setDoc(doc(context, 'deliveryComplianceIncidentEvents','fake-event'), {
+      decision: 'release_for_new_acceptance',
+      deliveryId: 'delivery-a',
+    }));
+    await assertFails(updateDoc(doc(context, 'deliveryComplianceIncidentEvents','evt-reoffer-a'), {
+      decision: 'close_after_buyer_confirmation',
+    }));
+    await assertFails(deleteDoc(doc(context, 'deliveryComplianceIncidentEvents','evt-reoffer-a')));
   }
 });
