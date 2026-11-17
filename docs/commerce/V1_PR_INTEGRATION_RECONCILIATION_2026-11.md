@@ -92,3 +92,27 @@
 
 **Status deste gate:** `BLOQUEADO_V0_SEGURANCA_DEPENDENCIAS`; **não apto a merge/deploy enquanto persistir a falha**.
 
+
+## 7. Atualização de execução — 17/11/2026 (substitui o status temporal da seção 6)
+
+### Correção do bloqueio V0
+
+- A falha inicial do `npm audit --omit=dev --audit-level=high` estava no escopo de dependências herdado da `main`: `vite` e ferramentas de build/teste incluídas em `dependencies` em vez de `devDependencies`. O servidor ainda importava Vite estaticamente em runtime.
+- [PR #1150](https://github.com/kyrub-app/kyrub/pull/1150), HEAD `6a7d5c99`, corrige as classificações sem mudar versões, carrega Vite apenas no ramo de desenvolvimento e preserva a auditoria. Resultado: **8/8 workflows GitHub Actions PASS**; audit produtivo **0 altas/críticas**, ainda **1 baixa e 6 moderadas**. O audit completo segue com altos de tooling e não deve ser omitido da triagem.
+- [PR #1149](https://github.com/kyrub-app/kyrub/pull/1149) atualizada no HEAD `d5d3c61a`: correção reaplicada diretamente sobre #1139 + #1146, **8/8 workflows PASS**, incluindo build, validação geral, regras de segurança, browser smoke e Phase 10. Ainda sem merge/deploy.
+
+### Combinação da PR #1138 aos contratos de catálogo e reembolsos
+
+- [PR #1151](https://github.com/kyrub-app/kyrub/pull/1151), branch `integration/v1-commerce-plans-refunds-2026-11`, criada a partir do HEAD corrigido da #1149. Incorporados os **31 arquivos** alterados pela #1138: 27 blobs preservados literalmente e os quatro arquivos sobrepostos reconciliados sem suprimir checkout B2C, proteção de preço/personalizações ou checkout oficial pré-pago.
+- Primeiro SHA `ac25937f`: **Phase 10 PASS** e **E2E de gamificação cruzada PASS**; o job `Official plan canonical Firestore E2E` falhou antes de executar o Firestore, na etapa de teste DOM, porque o stub virtual de `storefrontOriginContext` não exportava a nova função `reconcilePublishedStorefrontCart` da #1139 (erro de `esbuild`).
+- Correção restrita ao mock do teste `tests/official-plan-praca-interactive-dom.test.ts` no HEAD `865b012d`, sem alteração de cobrança, catálogo ou contrato. **Revalidação do novo SHA e demais workflows em andamento** na última consulta; não inferir aprovação total a partir de Phase 10 ou checks parciais.
+
+### Situação e próximos critérios
+
+- [x] Candidato #1149 integrado ERP/reembolsos validado no SHA de segurança corrigida.
+- [x] Composição de código com #1138 e reconciliação dos quatro pontos de sobreposição realizada no #1151.
+- [ ] Finalizar e conferir **todos** os workflows GitHub Actions da #1151 no HEAD atualizado; corrigir eventuais erros de integração sem desativar asserts financeiros.
+- [ ] Homologar jornada cruzada pedido varejo → aprovação → Pix simulado → KDS/estoque → refund/ledger sob o mesmo SHA, além dos E2E específicos do plano oficial.
+- [ ] Confirmar release authority, visual mobile/Android, configuração de recebedores e PSP, LGPD e autorização do proprietário antes de qualquer Pix real, merge ou deploy.
+
+**Estados:** #1150 e #1149 `TESTADO_ISOLADO` (sem release); #1151 `IMPLEMENTADO_PR` / `E2E_INTEGRADO_PENDENTE`; primeira compra comercial e dinheiro real ainda `OWNER_GATE`. A lista-mãe mantém os 67 itens intactos e a governança de V0/V1/V1-ENTREGAS/V2.
