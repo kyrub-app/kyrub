@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, Headset, PhoneCall, ShieldAlert, X } from 'lucide-react';
 import { collection, limit, onSnapshot, query, where, type Timestamp } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
+import { CourierReturnToStorePanel } from './CourierReturnToStorePanel';
 import {
   getCourierSupportReason,
   KYRUB_COURIER_SUPPORT_REASONS,
@@ -29,8 +30,8 @@ interface Ticket {
   createdAtMs:number;
 }
 
-export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
-  deliveryId:string;stage:CourierSupportStage;onClose:()=>void;
+export function CourierDeliverySupportDialog({deliveryId,stage,pickupAddress,onClose}:{
+  deliveryId:string;stage:CourierSupportStage;pickupAddress:string;onClose:()=>void;
 }) {
   const [reasonCode,setReasonCode]=useState('');
   const [detail,setDetail]=useState('');
@@ -191,6 +192,9 @@ export function CourierDeliverySupportDialog({deliveryId,stage,onClose}:{
             ))}
           </div>
         </div>
+
+        {stage==='delivering' && <CourierReturnToStorePanel
+          deliveryId={deliveryId} pickupAddress={pickupAddress} />}
 
         <label className="mt-4 block text-[11px] font-black text-white" htmlFor="kyrub-help-reason">
           O que aconteceu?
