@@ -52,6 +52,7 @@ function CouponOfferCard({ storeId, promotionId }: { storeId: string; promotionI
     redemptionCount: number;
     maxRedemptions: number;
     remaining: number | null;
+    restrictedToInvitee?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -85,6 +86,11 @@ function CouponOfferCard({ storeId, promotionId }: { storeId: string; promotionI
         <p className="text-sm font-semibold text-slate-300">Oferta especial da loja</p>
         <h5 className="text-xl font-black text-white">{offer?.title || 'Cupom de desconto'}</h5>
         {offer && <p className="text-sm font-bold text-orange-200">{discount}</p>}
+        {offer?.restrictedToInvitee && (
+          <p className="text-[11px] text-amber-200">
+            Cupom exclusivo de um comprador convidado. O link é público, mas somente a conta autorizada poderá utilizá-lo após validação no servidor.
+          </p>
+        )}
         <div className="mx-auto w-fit rounded-2xl border border-slate-600 px-5 py-3 font-mono text-base font-black tracking-wide text-white">
           {offer?.code || 'Carregando cupom…'}
         </div>

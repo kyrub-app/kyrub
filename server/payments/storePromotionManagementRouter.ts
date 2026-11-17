@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { isPubliclyPresentableBusinessCouponPilot } from './officialPlanBusinessCouponPilot.js';
 import {
   normalizeStorePromotion,
   type StorePromotion,
@@ -117,7 +118,11 @@ export const createStorePromotionManagementRouter = (): Router => {
         return;
       }
       const promotion = normalizeStorePromotion({ ...(snapshot.data() as StorePromotion), id: promotionId, storeId });
-      if (promotion.eligibility.mode !== 'public') {
+      // The lone official Business R$1 pilot may be publicly *advertised*,
+      // without exposing target UIDs. Redemption remains server-authenticated.
+      const restrictedToInvitee = promotion.eligibility.mode === 'specific_user'
+        && isPubliclyPresentableBusinessCouponPilot(promotion);
+      if (promotion.eligibility.mode !== 'public' && !restrictedToInvitee) {
         response.status(404).json({ error: 'Cupom não disponível.' });
         return;
       }
@@ -136,6 +141,7 @@ export const createStorePromotionManagementRouter = (): Router => {
         code: promotion.code,
         discountType: promotion.discountType,
         discountValue: promotion.discountValue,
+        restrictedToInvitee,
         storeSlug,
         active: promotion.active && Date.parse(promotion.startsAt) <= now
           && Date.parse(promotion.endsAt) > now && (remaining === null || remaining > 0),

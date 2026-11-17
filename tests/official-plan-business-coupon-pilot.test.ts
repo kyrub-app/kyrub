@@ -3,6 +3,7 @@ import test from 'node:test';
 import { buildOfficialPromotionAcceptedTerms } from '../server/payments/officialPlanPromotionAcceptedTerms.js';
 import {
   assertLiveBusinessCouponPilot, liveBusinessCouponPilotEnabled,
+  isPubliclyPresentableBusinessCouponPilot,
 } from '../server/payments/officialPlanBusinessCouponPilot.js';
 import type { StorePromotion } from '../src/utils/storePromotions.js';
 
@@ -92,4 +93,22 @@ test('pilot refuses Pro, longer term, another amount, a public coupon or multipl
     { redemptionCount: 1 }, { discountValue: 395 }, { active: false },
     { productIds: ['business', 'pro'] },
   ]) assert.throws(() => assertLiveBusinessCouponPilot({ ...params, promotion: { ...promotion, ...change } }), /PILOT_FORBIDDEN/);
+}));
+
+test('a buyer-specific pilot may be displayed in the public Praça without disclosing or authorizing buyer identity', () => withPilotEnv(() => {
+  const publicPromotion = {
+    ...promotion,
+    storeId: 'store-ae53dc42e57eb9d5c3f7151c1431',
+    productIds: ['draft_5f46706373714839a55846e6d8cb102c'],
+  };
+  assert.equal(isPubliclyPresentableBusinessCouponPilot(publicPromotion), true);
+  assert.equal(isPubliclyPresentableBusinessCouponPilot({
+    ...publicPromotion, eligibility: { mode: 'public' },
+  }), false);
+  assert.equal(isPubliclyPresentableBusinessCouponPilot({
+    ...publicPromotion, eligibility: { mode: 'specific_user', userIds: ['buyer-pilot','other'] },
+  }), false);
+  assert.equal(isPubliclyPresentableBusinessCouponPilot({ ...publicPromotion, storeId: 'other' }), false);
+  process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUSINESS_COUPON_ENABLED = 'false';
+  assert.equal(isPubliclyPresentableBusinessCouponPilot(publicPromotion), false);
 }));

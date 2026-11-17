@@ -1,5 +1,6 @@
 import { isPromotionCurrentlyAvailable, normalizeStorePromotion, type StorePromotion } from '../../src/utils/storePromotions.js';
 import type { OfficialPromotionAcceptedTerms } from './officialPlanPromotionAcceptedTerms.js';
+import { OFFICIAL_PLAN_BUSINESS_PRODUCT_ID, OFFICIAL_STORE_CANONICAL_ID } from '../../shared/officialPlanCanonicalDisplay.js';
 
 /**
  * Dedicated, default-off commercial pilot. Never substitutes an ERP coupon,
@@ -57,5 +58,34 @@ export const assertLiveBusinessCouponPilot = (input: {
         !isPromotionCurrentlyAvailable(promotion)) {
       throw new Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
     }
+  }
+};
+
+/**
+ * A public Praça card may disclose an offer *without* disclosing the buyer UID.
+ * This is not authorization to redeem: only the private, authenticated checkout
+ * determines whether the buyer actually owns the coupon.
+ */
+export const isPubliclyPresentableBusinessCouponPilot = (value: StorePromotion): boolean => {
+  if (!liveBusinessCouponPilotEnabled() ||
+      process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true' ||
+      process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') return false;
+  try {
+    const promotion = normalizeStorePromotion(value);
+    const uid = process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
+    return /^[A-Za-z0-9_-]{1,128}$/.test(uid) &&
+      promotion.id === process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_ID &&
+      promotion.code === process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE &&
+      promotion.storeId === OFFICIAL_STORE_CANONICAL_ID &&
+      promotion.productIds.length === 1 &&
+      promotion.productIds[0] === OFFICIAL_PLAN_BUSINESS_PRODUCT_ID &&
+      promotion.discountType === 'fixed' && promotion.discountValue === 396 &&
+      promotion.maxRedemptions === 1 && promotion.maxRedemptionsPerBuyer === 1 &&
+      promotion.eligibility.mode === 'specific_user' &&
+      promotion.eligibility.userIds?.length === 1 &&
+      promotion.eligibility.userIds[0] === uid &&
+      isPromotionCurrentlyAvailable(promotion);
+  } catch {
+    return false;
   }
 };
