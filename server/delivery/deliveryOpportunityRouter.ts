@@ -32,6 +32,10 @@ import { buildDeliveryDestinationResolutionSnapshotFields } from './deliveryDest
 import { buildPublicKyrubDeliveryOffer } from './deliveryPublicOfferProjection.js';
 import { reviewMotofreteWithAudit, MOTO_CHECKLIST } from '../identity/motofreteReviewService.js';
 import { resolveDeliveryComplianceIncident } from './deliveryComplianceIncidentService.js';
+import {
+  submitCourierSupportTicket,
+  respondToCourierSupportTicket,
+} from './deliverySupportTicketService.js';
 import { executeSupervisedDeliveryReassignment } from './deliveryCustodyExecutionService.js';
 import {
   proposeSupervisedCustodyTransfer,
@@ -183,6 +187,22 @@ const errorResponse = (response: Response, error: unknown): void => {
     || message === 'CUSTODY_TRANSFER_EXPIRED_OR_CONFLICT') {
     response.status(409).json({ code: 'CUSTODY_TRANSFER_CONFLICT',
       error: 'A transferência está indisponível, mudou ou venceu. Atualize os registros e fale com a logística.' });
+    return;
+  }
+  if (message === 'DELIVERY_SUPPORT_FORBIDDEN') {
+    response.status(403).json({code:message,error:'Somente o entregador responsável ou operador autorizado pode acessar este atendimento.'});
+    return;
+  }
+  if (message === 'DELIVERY_SUPPORT_INVALID') {
+    response.status(400).json({code:message,error:'Selecione um motivo válido para a etapa da entrega e revise os dados.'});
+    return;
+  }
+  if (message === 'DELIVERY_SUPPORT_RATE_LIMIT') {
+    response.status(429).json({code:message,error:'Aguarde alguns segundos antes de abrir outro chamado. Emergências devem ser comunicadas pelos canais oficiais.'});
+    return;
+  }
+  if (message === 'DELIVERY_SUPPORT_CONFLICT') {
+    response.status(409).json({code:message,error:'Este chamado mudou de situação, ou o pedido não está mais nesta etapa.'});
     return;
   }
   if (message === 'INCIDENT_FORBIDDEN') {
@@ -771,6 +791,34 @@ export const createDeliveryOpportunityRouter = (): Router => {
     } catch (error) {
       errorResponse(response, error);
     }
+  });
+
+  router.post('/:deliveryId/support-tickets', async (request, response) => {
+    try {
+      const courierId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await submitCourierSupportTicket({
+        deliveryId:request.params.deliveryId,courierId,
+        ticketId:clean(request.body?.ticketId),
+        reasonCode:clean(request.body?.reasonCode),
+        detail:clean(request.body?.detail),
+      }));
+    } catch(error) { errorResponse(response,error); }
+  });
+
+  router.post('/admin/support-tickets/:ticketId/respond', async (request,response) => {
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      const action=request.body?.action;
+      if (action!=='take' && action!=='reply' && action!=='resolve') {
+        throw new Error('DELIVERY_SUPPORT_INVALID');
+      }
+      response.setHeader('Cache-Control','no-store, max-age=0');
+      response.json(await respondToCourierSupportTicket({
+        ticketId:request.params.ticketId,operatorId,action,
+        response:clean(request.body?.response),
+      }));
+    } catch(error) { errorResponse(response,error); }
   });
 
   router.post('/admin/compliance-incidents/:deliveryId/resolve', async (request, response) => {
