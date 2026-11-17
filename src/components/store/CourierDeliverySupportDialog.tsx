@@ -32,10 +32,10 @@ interface Ticket {
 }
 
 export function CourierDeliverySupportDialog({
-  deliveryId,stage,pickupAddress,vehicleType,recipientArrivalVerified,recipientArrivalAtMs,onClose,
+  deliveryId,stage,pickupAddress,vehicleType,trackingRecentlyConfirmed,recipientArrivalVerified,recipientArrivalAtMs,onClose,
 }:{
   deliveryId:string;stage:CourierSupportStage;pickupAddress:string;
-  vehicleType:CourierVehicleType|null;
+  vehicleType:CourierVehicleType|null;trackingRecentlyConfirmed:boolean;
   recipientArrivalVerified:boolean;recipientArrivalAtMs:number;onClose:()=>void;
 }) {
   const [reasonCode,setReasonCode]=useState('');
@@ -199,7 +199,8 @@ export function CourierDeliverySupportDialog({
         </div>
 
         {stage==='delivering' && <CourierReturnToStorePanel
-          deliveryId={deliveryId} pickupAddress={pickupAddress} vehicleType={vehicleType} />}
+          deliveryId={deliveryId} pickupAddress={pickupAddress} vehicleType={vehicleType}
+          trackingRecentlyConfirmed={trackingRecentlyConfirmed} />}
 
         <label className="mt-4 block text-[11px] font-black text-white" htmlFor="kyrub-help-reason">
           O que aconteceu?
