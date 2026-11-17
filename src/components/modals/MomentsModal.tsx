@@ -1,5 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { subscribeStoreReviews, subscribeStoreReviewLikeCounts, type CanonicalStoreReview } from '../../utils/storeReviews';
+import { submitStoreReviewReport } from '../../utils/storeReviewReports';
+import { auth } from '../../utils/firebase';
+import type { SocialReportReason } from '../../utils/socialReports';
 import { Store } from '../../types';
 
 interface Moment {
@@ -44,6 +47,11 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
   const [reviewError, setReviewError] = useState('');
   const [submitError, setSubmitError] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const [reportReviewId, setReportReviewId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
+  const [reportPending, setReportPending] = useState(false);
+  const [reportMessage, setReportMessage] = useState('');
+  const [reportError, setReportError] = useState('');
   const storeId = selectedStoreForMoments?.id ?? '';
   const reviewPostIds = reviews.filter(review => review.publishedToFeed).map(review => review.postId).join('|');
 
@@ -76,6 +84,25 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
     ...review, user: review.authorName,
     createdAt: review.createdAtIso ? new Date(review.createdAtIso).toLocaleString('pt-BR') : '',
   }));
+
+  const handleReport = async (reviewId: string) => {
+    if (reportPending) return;
+    setReportPending(true);
+    setReportError('');
+    setReportMessage('');
+    try {
+      const outcome = await submitStoreReviewReport(storeId, reviewId, reportReason);
+      setReportMessage(outcome === 'already_reported'
+        ? 'Você já denunciou esta avaliação.'
+        : 'Denúncia encaminhada à moderação do Kyrub.');
+      setReportReviewId(null);
+    } catch (error) {
+      console.warn('Não foi possível encaminhar a denúncia de avaliação.', error);
+      setReportError('A denúncia não foi enviada. Confira sua conexão e tente novamente.');
+    } finally {
+      setReportPending(false);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -128,6 +155,8 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
           <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
             {loadingReviews && <p className="p-3 text-xs text-slate-400">Carregando avaliações...</p>}
             {reviewError && <p className="p-3 text-xs text-red-300" role="alert">{reviewError}</p>}
+            {reportMessage && <p className="p-3 text-xs text-emerald-300" role="status">{reportMessage}</p>}
+            {reportError && <p className="p-3 text-xs text-red-300" role="alert">{reportError}</p>}
             {!loadingReviews && storeMoments.length === 0 ? (
               <div className="text-center py-8 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-900">
                 Ainda não há avaliações sincronizadas para esta loja. Publique a primeira abaixo!
@@ -159,6 +188,49 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
                     </div>
                   )}
 
+                  {mom.authorId !== auth.currentUser?.uid && (
+                    <div className="border-t border-slate-800 pt-2">
+                      <button
+                        type="button"
+                        className="text-[10px] font-semibold text-amber-300 hover:text-amber-200"
+                        onClick={() => {
+                          setReportReviewId(current => current === mom.id ? null : mom.id);
+                          setReportReason('spam');
+                          setReportError('');
+                          setReportMessage('');
+                        }}
+                        aria-expanded={reportReviewId === mom.id}
+                        aria-label={`Denunciar avaliação de ${mom.user}`}
+                      >
+                        Denunciar avaliação
+                      </button>
+                      {reportReviewId === mom.id && (
+                        <div className="mt-2 space-y-2 rounded-lg border border-amber-500/20 p-2" role="group" aria-label="Motivo da denúncia de avaliação">
+                          <label htmlFor={`review-report-reason-${mom.id}`} className="block text-[10px] text-slate-300">Por qual motivo?</label>
+                          <select
+                            id={`review-report-reason-${mom.id}`}
+                            value={reportReason}
+                            onChange={event => setReportReason(event.target.value as SocialReportReason)}
+                            className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-slate-100"
+                          >
+                            <option value="spam">Spam ou propaganda abusiva</option>
+                            <option value="abuse">Ofensa, ameaça ou assédio</option>
+                            <option value="fraud">Fraude ou informação enganosa</option>
+                            <option value="unsafe">Conteúdo perigoso ou inadequado</option>
+                            <option value="other">Outro motivo</option>
+                          </select>
+                          <div className="flex gap-2">
+                            <button type="button" disabled={reportPending}
+                              className="rounded-lg bg-amber-600 px-3 py-2 text-[10px] font-semibold text-slate-950 disabled:opacity-50"
+                              onClick={() => void handleReport(mom.id)}>
+                              {reportPending ? 'Enviando…' : 'Enviar denúncia'}
+                            </button>
+                            <button type="button" disabled={reportPending} className="rounded-lg border border-slate-700 px-3 py-2 text-[10px] text-slate-300" onClick={() => setReportReviewId(null)}>Cancelar</button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
                   {mom.publishedToFeed && (
                     <div className="flex items-center gap-1.5 text-[8px] font-mono text-orange-400 uppercase">
                       <span className="w-1.5 h-1.5 rounded-full bg-orange-500 animate-pulse"></span>
