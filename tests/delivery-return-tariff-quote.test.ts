@@ -32,7 +32,7 @@ test('contracted return and recipient waiting are quoted in integer cents withou
   assert.equal(quoteDeliveryReturnTariffs({...base,recipientWaitingAuthority:{...wait,
     returnAuthorizedAt:'2026-11-17T09:50:00.000Z'}}).recipientWaitingMinor,0);
   assert.equal(quoteDeliveryReturnTariffs({...base,recipientWaitingAuthority:{...wait,
-    returnAuthorizedAt:'2026-11-17T10:22:00.000Z'}}).recipientWaitingMinor,null);
+    returnAuthorizedAt:'2026-11-17T10:30:00.000Z'}}).recipientWaitingMinor,null);
 });
 
 test('missing acceptance, mismatched courier or unverified route/clock are not authority',()=>{
