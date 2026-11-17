@@ -212,196 +212,200 @@
             : incoming().submittedAt == request.time
         );
 
-      // Apply the shared identity schema once, before the six mutually exclusive
-      // owner/reviewer transitions. Multiple allow-update clauses each evaluating
-      // the full schema exceeded Firestore's 1000-expression evaluation ceiling.
-      // Keep role, state and changed-field boundaries unchanged.
-      allow update: if validIdentityVerification(incoming())
+      // Route exactly one transition by authenticated actor, current status
+      // and affected field before validating the common schema. This avoids
+      // Firestore's 1000-expression cap on unrelated owner/reviewer clauses.
+      // A reviewer cannot approve their own identity in this direct path.
+      allow update: if (
+        isVerificationOwner()
+          ? (
+              existing().status == 'approved'
+                ? (
+                    incoming().diff(existing()).affectedKeys().hasAny(['motofreteQualification'])
+                      ? (isVerificationOwner()
+        && existing().status == 'approved'
+        && existing().approvedProfiles.hasAny(['motorized_courier'])
+        && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && (!('motofreteQualification' in existing())
+          || existing().motofreteQualification.status in ['rejected', 'revoked', 'approved'])
+        && incoming().motofreteQualification.status == 'submitted'
+        && incoming().motofreteQualification.submittedAt == request.time
+        && incoming().motofreteQualification.reviewedAt == null
+        && incoming().motofreteQualification.reviewedBy == ''
+        && incoming().motofreteQualification.reviewReason == ''
+        && incoming().motofreteQualification.validUntil == null
+        && motofreteChecklistNotVerified(incoming().motofreteQualification))
+                      : (isVerificationOwner()
+        && existing().status == 'approved'
+        && incoming().diff(existing()).affectedKeys().hasOnly(['profileExpansion', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && (!('profileExpansion' in existing()) || existing().profileExpansion.status in ['rejected', 'approved'])
+        && incoming().profileExpansion.status == 'submitted'
+        && incoming().profileExpansion.submittedAt == request.time
+        && incoming().profileExpansion.reviewedBy == ''
+        && incoming().profileExpansion.reviewedAt == null
+        && incoming().profileExpansion.reviewReason == ''
+        && !existing().approvedProfiles.hasAny([incoming().profileExpansion.profile])
         && (
-          // Transition 1: identity owner
-          (isVerificationOwner()
-                  && existing().uid == userId
-                  && existing().status != 'approved'
-                  && !('profileExpansion' in incoming())
-                  && !('motofreteQualification' in incoming())
-                  && incoming().uid == existing().uid
-                  && incoming().createdAt == existing().createdAt
-                  && incoming().approvedProfiles == existing().approvedProfiles
-                  && incoming().reviewReason == existing().reviewReason
-                  && incoming().reviewedBy == existing().reviewedBy
-                  && incoming().reviewedAt == existing().reviewedAt
-                  && incoming().status in ['draft', 'submitted']
-                  && incoming().updatedAt == request.time
-                  && (
-                    incoming().status == 'draft'
-                      ? incoming().submittedAt == null
-                      : incoming().submittedAt == request.time
+          incoming().profileExpansion.profile == 'bicycle_courier'
+          || (
+            incoming().profileExpansion.profile == 'motorized_courier'
+            && incoming().profileExpansion.cnhCategory.size() > 0
+            && incoming().profileExpansion.cnhHasEar == true
+            && (
+              incoming().profileExpansion.documentPaths.size() > 0
+              || (
+                existing().documentType == 'cnh'
+                && existing().documentPaths.size() > 0
+                && existing().cnhCategory.size() > 0
+                && existing().cnhHasEar == true
+              )
+            )
+          )
+        ))
                   )
-                  && incoming().diff(existing()).affectedKeys().hasOnly([
-                    'status',
-                    'requestedProfiles',
-                    'fullName',
-                    'cpf',
-                    'address',
-                    'whatsapp',
-                    'documentType',
-                    'documentPaths',
-                    'selfiePath',
-                    'cnhCategory',
-                    'cnhHasEar',
-                    'consentVersion',
-                    'submittedAt',
-                    'updatedAt'
-                  ]))
-          ||
-          // Transition 2: identity owner
-          (isVerificationOwner()
-                  && existing().status == 'approved'
-                  && incoming().diff(existing()).affectedKeys().hasOnly(['profileExpansion', 'updatedAt'])
-                  && incoming().updatedAt == request.time
-                  && (!('profileExpansion' in existing()) || existing().profileExpansion.status in ['rejected', 'approved'])
-                  && incoming().profileExpansion.status == 'submitted'
-                  && incoming().profileExpansion.submittedAt == request.time
-                  && incoming().profileExpansion.reviewedBy == ''
-                  && incoming().profileExpansion.reviewedAt == null
-                  && incoming().profileExpansion.reviewReason == ''
-                  && !existing().approvedProfiles.hasAny([incoming().profileExpansion.profile])
-                  && (
-                    incoming().profileExpansion.profile == 'bicycle_courier'
-                    || (
-                      incoming().profileExpansion.profile == 'motorized_courier'
-                      && incoming().profileExpansion.cnhCategory.size() > 0
-                      && incoming().profileExpansion.cnhHasEar == true
-                      && (
-                        incoming().profileExpansion.documentPaths.size() > 0
-                        || (
-                          existing().documentType == 'cnh'
-                          && existing().documentPaths.size() > 0
-                          && existing().cnhCategory.size() > 0
-                          && existing().cnhHasEar == true
-                        )
-                      )
+                : (isVerificationOwner()
+        && existing().uid == userId
+        && existing().status != 'approved'
+        && !('profileExpansion' in incoming())
+        && !('motofreteQualification' in incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().approvedProfiles == existing().approvedProfiles
+        && incoming().reviewReason == existing().reviewReason
+        && incoming().reviewedBy == existing().reviewedBy
+        && incoming().reviewedAt == existing().reviewedAt
+        && incoming().status in ['draft', 'submitted']
+        && incoming().updatedAt == request.time
+        && (
+          incoming().status == 'draft'
+            ? incoming().submittedAt == null
+            : incoming().submittedAt == request.time
+        )
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'requestedProfiles',
+          'fullName',
+          'cpf',
+          'address',
+          'whatsapp',
+          'documentType',
+          'documentPaths',
+          'selfiePath',
+          'cnhCategory',
+          'cnhHasEar',
+          'consentVersion',
+          'submittedAt',
+          'updatedAt'
+        ]))
+            )
+          : (
+              hasControlPlaneRole(['super_admin','operations','compliance'])
+              && (
+                existing().status == 'approved'
+                  ? (
+                      incoming().diff(existing()).affectedKeys().hasAny(['motofreteQualification'])
+                        ? (hasControlPlaneRole(['super_admin', 'compliance'])
+        && existing().status == 'approved'
+        && existing().approvedProfiles.hasAny(['motorized_courier'])
+        && 'motofreteQualification' in existing()
+        && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
+        && incoming().updatedAt == request.time
+        && incoming().motofreteQualification.documents == existing().motofreteQualification.documents
+        && incoming().motofreteQualification.submittedAt == existing().motofreteQualification.submittedAt
+        && incoming().motofreteQualification.reviewedAt == request.time
+        && incoming().motofreteQualification.reviewedBy == request.auth.uid
+        && (
+          (existing().motofreteQualification.status == 'submitted'
+            && incoming().motofreteQualification.status == 'approved'
+            && incoming().motofreteQualification.reviewReason == ''
+            && motofreteChecklistApproved(incoming().motofreteQualification)
+            && incoming().motofreteQualification.validUntil is timestamp
+            && incoming().motofreteQualification.validUntil > request.time
+            && incoming().motofreteQualification.validUntil <= request.time + duration.value(180, 'd'))
+          || (existing().motofreteQualification.status == 'submitted'
+            && incoming().motofreteQualification.status == 'rejected'
+            && incoming().motofreteQualification.reviewReason.size() > 0
+            && incoming().motofreteQualification.validUntil == null
+            && motofreteChecklistNotVerified(incoming().motofreteQualification))
+          || (existing().motofreteQualification.status == 'approved'
+            && incoming().motofreteQualification.status == 'revoked'
+            && incoming().motofreteQualification.reviewReason.size() > 0
+            && incoming().motofreteQualification.validUntil == null
+            && motofreteChecklistNotVerified(incoming().motofreteQualification))
+        ))
+                        : (hasControlPlaneRole(['super_admin', 'operations', 'compliance'])
+        && existing().status == 'approved'
+        && 'profileExpansion' in existing()
+        && existing().profileExpansion.status == 'submitted'
+        && incoming().status == 'approved'
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'profileExpansion', 'approvedProfiles', 'requestedProfiles', 'updatedAt'
+        ])
+        && incoming().profileExpansion.profile == existing().profileExpansion.profile
+        && incoming().profileExpansion.submittedAt == existing().profileExpansion.submittedAt
+        && incoming().profileExpansion.documentPaths == existing().profileExpansion.documentPaths
+        && incoming().profileExpansion.cnhCategory == existing().profileExpansion.cnhCategory
+        && incoming().profileExpansion.cnhHasEar == existing().profileExpansion.cnhHasEar
+        && incoming().profileExpansion.reviewedBy == request.auth.uid
+        && incoming().profileExpansion.reviewedAt == request.time
+        && (
+          (
+            incoming().profileExpansion.status == 'approved'
+            && incoming().profileExpansion.reviewReason == ''
+            && incoming().approvedProfiles.hasAll(existing().approvedProfiles)
+            && incoming().approvedProfiles.hasAny([existing().profileExpansion.profile])
+            && incoming().approvedProfiles.size() == existing().approvedProfiles.size() + 1
+            && incoming().requestedProfiles.hasAll(existing().requestedProfiles)
+            && incoming().requestedProfiles.hasAny([existing().profileExpansion.profile])
+            && incoming().requestedProfiles.size() <= existing().requestedProfiles.size() + 1
+          )
+          || (
+            incoming().profileExpansion.status == 'rejected'
+            && incoming().profileExpansion.reviewReason.size() > 0
+            && incoming().approvedProfiles == existing().approvedProfiles
+            && incoming().requestedProfiles == existing().requestedProfiles
+          )
+        ))
                     )
-                  ))
-          ||
-          // Transition 3: identity owner
-          (isVerificationOwner()
-                  && existing().status == 'approved'
-                  && existing().approvedProfiles.hasAny(['motorized_courier'])
-                  && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
-                  && incoming().updatedAt == request.time
-                  && (!('motofreteQualification' in existing())
-                    || existing().motofreteQualification.status in ['rejected', 'revoked', 'approved'])
-                  && incoming().motofreteQualification.status == 'submitted'
-                  && incoming().motofreteQualification.submittedAt == request.time
-                  && incoming().motofreteQualification.reviewedAt == null
-                  && incoming().motofreteQualification.reviewedBy == ''
-                  && incoming().motofreteQualification.reviewReason == ''
-                  && incoming().motofreteQualification.validUntil == null
-                  && motofreteChecklistNotVerified(incoming().motofreteQualification))
-          ||
-          // Transition 4: compliance motofrete
-          (hasControlPlaneRole(['super_admin', 'compliance'])
-                  && existing().status == 'approved'
-                  && existing().approvedProfiles.hasAny(['motorized_courier'])
-                  && 'motofreteQualification' in existing()
-                  && incoming().diff(existing()).affectedKeys().hasOnly(['motofreteQualification', 'updatedAt'])
-                  && incoming().updatedAt == request.time
-                  && incoming().motofreteQualification.documents == existing().motofreteQualification.documents
-                  && incoming().motofreteQualification.submittedAt == existing().motofreteQualification.submittedAt
-                  && incoming().motofreteQualification.reviewedAt == request.time
-                  && incoming().motofreteQualification.reviewedBy == request.auth.uid
-                  && (
-                    (existing().motofreteQualification.status == 'submitted'
-                      && incoming().motofreteQualification.status == 'approved'
-                      && incoming().motofreteQualification.reviewReason == ''
-                      && motofreteChecklistApproved(incoming().motofreteQualification)
-                      && incoming().motofreteQualification.validUntil is timestamp
-                      && incoming().motofreteQualification.validUntil > request.time
-                      && incoming().motofreteQualification.validUntil <= request.time + duration.value(180, 'd'))
-                    || (existing().motofreteQualification.status == 'submitted'
-                      && incoming().motofreteQualification.status == 'rejected'
-                      && incoming().motofreteQualification.reviewReason.size() > 0
-                      && incoming().motofreteQualification.validUntil == null
-                      && motofreteChecklistNotVerified(incoming().motofreteQualification))
-                    || (existing().motofreteQualification.status == 'approved'
-                      && incoming().motofreteQualification.status == 'revoked'
-                      && incoming().motofreteQualification.reviewReason.size() > 0
-                      && incoming().motofreteQualification.validUntil == null
-                      && motofreteChecklistNotVerified(incoming().motofreteQualification))
-                  ))
-          ||
-          // Transition 5: administrative review
-          (hasControlPlaneRole(['super_admin', 'operations', 'compliance'])
-                  && existing().status == 'approved'
-                  && 'profileExpansion' in existing()
-                  && existing().profileExpansion.status == 'submitted'
-                  && incoming().status == 'approved'
-                  && incoming().updatedAt == request.time
-                  && incoming().diff(existing()).affectedKeys().hasOnly([
-                    'profileExpansion', 'approvedProfiles', 'requestedProfiles', 'updatedAt'
-                  ])
-                  && incoming().profileExpansion.profile == existing().profileExpansion.profile
-                  && incoming().profileExpansion.submittedAt == existing().profileExpansion.submittedAt
-                  && incoming().profileExpansion.documentPaths == existing().profileExpansion.documentPaths
-                  && incoming().profileExpansion.cnhCategory == existing().profileExpansion.cnhCategory
-                  && incoming().profileExpansion.cnhHasEar == existing().profileExpansion.cnhHasEar
-                  && incoming().profileExpansion.reviewedBy == request.auth.uid
-                  && incoming().profileExpansion.reviewedAt == request.time
-                  && (
-                    (
-                      incoming().profileExpansion.status == 'approved'
-                      && incoming().profileExpansion.reviewReason == ''
-                      && incoming().approvedProfiles.hasAll(existing().approvedProfiles)
-                      && incoming().approvedProfiles.hasAny([existing().profileExpansion.profile])
-                      && incoming().approvedProfiles.size() == existing().approvedProfiles.size() + 1
-                      && incoming().requestedProfiles.hasAll(existing().requestedProfiles)
-                      && incoming().requestedProfiles.hasAny([existing().profileExpansion.profile])
-                      && incoming().requestedProfiles.size() <= existing().requestedProfiles.size() + 1
-                    )
-                    || (
-                      incoming().profileExpansion.status == 'rejected'
-                      && incoming().profileExpansion.reviewReason.size() > 0
-                      && incoming().approvedProfiles == existing().approvedProfiles
-                      && incoming().requestedProfiles == existing().requestedProfiles
-                    )
-                  ))
-          ||
-          // Transition 6: administrative review
-          (hasControlPlaneRole([
-                  'super_admin',
-                  'operations',
-                  'compliance'
-                ])
-                  && existing().status != 'approved'
-                  && incoming().uid == existing().uid
-                  && incoming().createdAt == existing().createdAt
-                  && incoming().requestedProfiles == existing().requestedProfiles
-                  && incoming().fullName == existing().fullName
-                  && incoming().cpf == existing().cpf
-                  && incoming().address == existing().address
-                  && incoming().whatsapp == existing().whatsapp
-                  && incoming().documentType == existing().documentType
-                  && incoming().documentPaths == existing().documentPaths
-                  && incoming().selfiePath == existing().selfiePath
-                  && incoming().cnhCategory == existing().cnhCategory
-                  && incoming().cnhHasEar == existing().cnhHasEar
-                  && incoming().consentVersion == existing().consentVersion
-                  && incoming().submittedAt == existing().submittedAt
-                  && incoming().status in ['under_review', 'approved', 'rejected']
-                  && validVerificationProfiles(incoming().approvedProfiles)
-                  && incoming().reviewedBy == request.auth.uid
-                  && incoming().reviewedAt == request.time
-                  && incoming().updatedAt == request.time
-                  && incoming().diff(existing()).affectedKeys().hasOnly([
-                    'status',
-                    'approvedProfiles',
-                    'reviewReason',
-                    'reviewedBy',
-                    'reviewedAt',
-                    'updatedAt'
-                  ]))
-        );
+                  : (hasControlPlaneRole([
+        'super_admin',
+        'operations',
+        'compliance'
+      ])
+        && existing().status != 'approved'
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().requestedProfiles == existing().requestedProfiles
+        && incoming().fullName == existing().fullName
+        && incoming().cpf == existing().cpf
+        && incoming().address == existing().address
+        && incoming().whatsapp == existing().whatsapp
+        && incoming().documentType == existing().documentType
+        && incoming().documentPaths == existing().documentPaths
+        && incoming().selfiePath == existing().selfiePath
+        && incoming().cnhCategory == existing().cnhCategory
+        && incoming().cnhHasEar == existing().cnhHasEar
+        && incoming().consentVersion == existing().consentVersion
+        && incoming().submittedAt == existing().submittedAt
+        && incoming().status in ['under_review', 'approved', 'rejected']
+        && validVerificationProfiles(incoming().approvedProfiles)
+        && incoming().reviewedBy == request.auth.uid
+        && incoming().reviewedAt == request.time
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status',
+          'approvedProfiles',
+          'reviewReason',
+          'reviewedBy',
+          'reviewedAt',
+          'updatedAt'
+        ]))
+              )
+            )
+      ) && validIdentityVerification(incoming());
 
       allow delete: if false;
     }
