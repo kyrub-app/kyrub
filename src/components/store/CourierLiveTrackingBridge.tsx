@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { collection, doc, onSnapshot, query, where } from 'firebase/firestore';
+import { collection, doc, limit, onSnapshot, query, where } from 'firebase/firestore';
 import { Crosshair, Headset, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CourierGoogleMap } from './CourierGoogleMap';
 import { CourierDeliverySupportDialog } from './CourierDeliverySupportDialog';
 import { isCourierVehicleType, type CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
-import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
+import { decideCourierRoute, type CourierReturnRouteStatus } from '../../utils/googleMapsDirections';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 const TRACKING_STORAGE_KEY = 'kyrub_courier_tracking_delivery_id';
@@ -118,6 +118,10 @@ export function CourierLiveTrackingBridge() {
   const [trackingError, setTrackingError] = useState('');
   const [panelDismissed, setPanelDismissed] = useState(false);
   const [supportOpen, setSupportOpen] = useState(false);
+  const [returnNavigation, setReturnNavigation] = useState<{
+    deliveryId: string;
+    status: CourierReturnRouteStatus;
+  } | null>(null);
   const [storeArrivalDetected, setStoreArrivalDetected] = useState(false);
   const [pickupCode, setPickupCode] = useState('');
   const [pickupBusy, setPickupBusy] = useState(false);
@@ -210,6 +214,46 @@ export function CourierLiveTrackingBridge() {
   const trackingAuthorized = assignedDeliveriesLoaded && assignedDeliveries.some(
     delivery => delivery.id === trackingDeliveryId
   );
+
+  useEffect(() => {
+    if (!activeDelivery || activeDelivery.status !== 'delivering') {
+      setReturnNavigation(null);
+      return;
+    }
+    const deliveryId = activeDelivery.id;
+    const uid = auth.currentUser?.uid;
+    setReturnNavigation({ deliveryId, status: 'checking' });
+    if (!uid) {
+      setReturnNavigation({ deliveryId, status: 'unavailable' });
+      return;
+    }
+    // Courier-scoped list can safely be empty. Direct get on a missing return
+    // protocol is not necessarily authorized by the Firestore per-document rule.
+    return onSnapshot(query(
+      collection(db, 'deliveryReturnProtocols'), where('courierId', '==', uid), limit(100)
+    ), { includeMetadataChanges: true }, snapshot => {
+      // Never offer return routing based on offline cache or incomplete pagination.
+      if (snapshot.metadata.fromCache) {
+        setReturnNavigation({ deliveryId, status: 'unavailable' });
+        return;
+      }
+      const protocol = snapshot.docs.find(row => row.id === deliveryId);
+      if (!protocol && snapshot.size >= 100) {
+        setReturnNavigation({ deliveryId, status: 'unavailable' });
+        return;
+      }
+      const status = protocol ? clean(protocol.data().status) : 'none';
+      const known: readonly CourierReturnRouteStatus[] = [
+        'none', 'return_authorized', 'authorization_revoked',
+        'courier_presented_to_store', 'returned_to_store_pending_reconciliation',
+      ];
+      setReturnNavigation({
+        deliveryId,
+        status: known.includes(status as CourierReturnRouteStatus)
+          ? status as CourierReturnRouteStatus : 'unavailable',
+      });
+    }, () => setReturnNavigation({ deliveryId, status: 'unavailable' }));
+  }, [activeDelivery?.id, activeDelivery?.status]);
 
   useEffect(() => {
     setStoreArrivalDetected(false);
@@ -368,12 +412,24 @@ export function CourierLiveTrackingBridge() {
   };
 
   if (!activeDelivery) return null;
+  const returnRouteStatus: CourierReturnRouteStatus =
+    activeDelivery.status === 'accepted' ? 'none'
+      : returnNavigation?.deliveryId === activeDelivery.id
+        ? returnNavigation.status : 'checking';
+  const route = decideCourierRoute({
+    status: activeDelivery.status,
+    vehicleType: activeDelivery.vehicleType,
+    pickup: activeDelivery.from,
+    dropoff: activeDelivery.to,
+    returnStatus: returnRouteStatus,
+  });
   if (panelDismissed) {
     return (
       <div className="fixed bottom-20 right-3 z-[190] flex gap-2 sm:bottom-5 sm:right-5">
         <button type="button" onClick={() => setPanelDismissed(false)}
           className="rounded-xl border border-cyan-500/30 bg-slate-950 px-3 py-3 text-[10px] font-black text-cyan-200 shadow-xl">
-          <MapPin className="mr-1 inline h-4 w-4" /> Abrir mapa
+          <MapPin className="mr-1 inline h-4 w-4" /> {returnRouteStatus === 'authorization_revoked'
+            ? 'Retorno revogado — ver instruções' : 'Abrir mapa'}
         </button>
         <button type="button" onClick={() => setSupportOpen(true)}
           aria-label="Suporte durante a entrega"
@@ -389,17 +445,6 @@ export function CourierLiveTrackingBridge() {
   }
 
   const trackingActive = trackingDeliveryId === activeDelivery.id;
-  let externalNavigationUrl = '';
-  try {
-    externalNavigationUrl = buildCourierDeliveryNavigationUrl({
-      status: activeDelivery.status,
-      vehicleType: activeDelivery.vehicleType,
-      pickup: activeDelivery.from,
-      dropoff: activeDelivery.to,
-    });
-  } catch {
-    // Do not assume a vehicle or fabricate an address for a legacy delivery.
-  }
   const complianceBlocked = activeDelivery.vehicleType === 'motorcycle'
     && (!holdLoaded || motofreteHold);
   const awaitingSecurePickup =
@@ -417,8 +462,12 @@ export function CourierLiveTrackingBridge() {
           </span>
           <h3 className="mt-1 flex items-center gap-2 text-sm font-black">
             <MapPin className="h-4 w-4 text-orange-400" />
-            {activeDelivery.status === 'delivering'
-              ? 'Em rota para o cliente'
+            {returnRouteStatus === 'authorization_revoked'
+              ? 'Retorno revogado — procure suporte'
+              : returnRouteStatus === 'return_authorized'
+                ? 'Retorno à loja autorizado'
+                : activeDelivery.status === 'delivering'
+                  ? 'Em rota para o cliente'
               : trackingActive
                 ? 'Rastreio ao vivo'
                 : 'Entrega aceita'}
@@ -438,6 +487,17 @@ export function CourierLiveTrackingBridge() {
         </div>
       </div>
 
+      {route.notice && (
+        <div role={returnRouteStatus === 'authorization_revoked' ? 'alert' : 'status'}
+          className={`mt-3 rounded-xl border p-3 text-[10px] leading-relaxed ${
+            returnRouteStatus === 'authorization_revoked'
+              ? 'border-red-500/40 bg-red-950/50 text-red-100'
+              : 'border-amber-500/30 bg-amber-950/30 text-amber-100'
+          }`}>
+          {route.notice}
+        </div>
+      )}
+
       {complianceBlocked && (
         <div className="mt-3 rounded-2xl border border-red-500/30 bg-red-950/60 p-3 text-[10px] text-red-100">
           <p className="font-black">Motofrete sob bloqueio de segurança</p>
@@ -454,12 +514,12 @@ export function CourierLiveTrackingBridge() {
         <p className="truncate text-slate-300"><strong className="text-slate-500">Destino:</strong> {activeDelivery.to}</p>
         <p className="text-[9px] text-cyan-300">
           {activeDelivery.vehicleType === 'bicycle' ? 'Rota de bicicleta' : activeDelivery.vehicleType === 'motorcycle' ? 'Rota de moto' : activeDelivery.vehicleType === 'car' ? 'Rota de carro' : 'Veículo não confirmado'}
-          {' · '}{activeDelivery.status === 'accepted' ? 'Próximo trecho: coleta' : 'Próximo trecho: cliente'}
+          {' · '}Próximo trecho: {route.nextLeg}
         </p>
-        {externalNavigationUrl && !trackingActive && !complianceBlocked && (
-          <a href={externalNavigationUrl} target="_blank" rel="noopener noreferrer"
+        {route.url && !trackingActive && !complianceBlocked && (
+          <a href={route.url} target="_blank" rel="noopener noreferrer"
              className="mt-2 block rounded-lg border border-cyan-500/30 px-3 py-2 text-center text-[9px] font-black uppercase text-cyan-300">
-            {activeDelivery.status === 'accepted' ? 'Navegar até a coleta' : 'Navegar até o cliente'}
+            {route.label}
           </a>
         )}
       </div>
@@ -472,6 +532,7 @@ export function CourierLiveTrackingBridge() {
               origin={activeDelivery.from}
               destination={activeDelivery.to}
               navigation={{ status: activeDelivery.status, vehicleType: activeDelivery.vehicleType }}
+              returnStatus={returnRouteStatus}
             />
             <button type="button" onClick={() => setSupportOpen(true)}
               aria-label="Solicitar suporte nesta entrega"
@@ -529,7 +590,7 @@ export function CourierLiveTrackingBridge() {
             </div>
           )}
 
-          {activeDelivery.status === 'delivering' && (
+          {activeDelivery.status === 'delivering' && returnRouteStatus === 'none' && (
             <div className="rounded-xl border border-cyan-500/20 bg-cyan-500/10 px-3 py-2 text-[9px] font-bold text-cyan-200">
               Coleta confirmada. Rota para o cliente iniciada.
             </div>
