@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import type { User } from 'firebase/auth';
 import {
-  collection, getDocs, limit, onSnapshot, query, where, type Timestamp,
+  collection, getDocs, limit, onSnapshot, orderBy, query, where, type Timestamp,
 } from 'firebase/firestore';
 import { AlertTriangle, ClipboardList, Headset } from 'lucide-react';
 import { db } from '../../utils/firebase';
@@ -26,7 +26,7 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
   const [returns,setReturns]=useState<Record<string,string>>({});
 
   useEffect(()=>onSnapshot(
-    query(collection(db,'deliverySupportTickets'),limit(100)),
+    query(collection(db,'deliverySupportTickets'),orderBy('createdAt','desc'),limit(100)),
     snapshot=>setTickets(snapshot.docs.map(row=>{
       const entry=row.data() as Record<string,unknown>;
       const created=entry.createdAt as Timestamp|undefined;
@@ -272,7 +272,7 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
         ))}
       </div>
       {tickets.length>=100 && <p className="mt-3 text-[10px] text-amber-200">
-        Fila limitada a 100 chamados. É necessário ampliar a paginação antes da operação comercial.
+        Mostrando apenas os 100 chamados mais recentes. Chamados antigos podem ficar fora da fila; é necessário ampliar a paginação antes da operação comercial.
       </p>}
     </section>
   );
