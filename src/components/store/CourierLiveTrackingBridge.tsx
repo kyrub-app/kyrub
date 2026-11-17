@@ -4,6 +4,8 @@ import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { Crosshair, KeyRound, LocateFixed, MapPin, X } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CourierGoogleMap } from './CourierGoogleMap';
+import { isCourierVehicleType, type CourierVehicleType } from '../../../shared/deliveryVehicleCompatibility';
+import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 const TRACKING_STORAGE_KEY = 'kyrub_courier_tracking_delivery_id';
@@ -14,6 +16,7 @@ interface AssignedDelivery {
   status: 'accepted' | 'delivering';
   from: string;
   to: string;
+  vehicleType: CourierVehicleType | null;
 }
 
 interface CourierPosition {
@@ -149,6 +152,7 @@ export function CourierLiveTrackingBridge() {
               status: status as AssignedDelivery['status'],
               from: clean(data.from),
               to: clean(data.to),
+              vehicleType: isCourierVehicleType(data.vehicleType) ? data.vehicleType : null,
             } satisfies AssignedDelivery];
           });
           setAssignedDeliveries(next);
@@ -269,11 +273,21 @@ export function CourierLiveTrackingBridge() {
       },
       error => {
         if (cancelled) return;
-        setTrackingError(
-          error.code === error.PERMISSION_DENIED
-            ? 'Permissão de localização negada. Ative-a nas configurações do navegador.'
-            : 'Não foi possível obter sua localização atual.'
-        );
+        if (error.code === error.PERMISSION_DENIED) {
+          // Do not leave the server publishing the previous position as a live track.
+          localStorage.removeItem(TRACKING_STORAGE_KEY);
+          setTrackingDeliveryId('');
+          setPosition(null);
+          if (watchIdRef.current !== null) {
+            navigator.geolocation.clearWatch(watchIdRef.current);
+            watchIdRef.current = null;
+          }
+          void stopRemoteTracking(trackingDeliveryId);
+          setTrackingError('Permissão negada. O compartilhamento foi interrompido; ative-a nas configurações do navegador.');
+        } else {
+          // Transient GPS loss is handled by the server's location freshness TTL.
+          setTrackingError('Sinal GPS indisponível. A posição anterior deixará de aparecer como ativa.');
+        }
       },
       {
         enableHighAccuracy: true,
@@ -332,6 +346,17 @@ export function CourierLiveTrackingBridge() {
   if (!activeDelivery || panelDismissed) return null;
 
   const trackingActive = trackingDeliveryId === activeDelivery.id;
+  let externalNavigationUrl = '';
+  try {
+    externalNavigationUrl = buildCourierDeliveryNavigationUrl({
+      status: activeDelivery.status,
+      vehicleType: activeDelivery.vehicleType,
+      pickup: activeDelivery.from,
+      dropoff: activeDelivery.to,
+    });
+  } catch {
+    // Do not assume a vehicle or fabricate an address for a legacy delivery.
+  }
   const awaitingSecurePickup =
     trackingActive &&
     storeArrivalDetected &&
@@ -366,6 +391,16 @@ export function CourierLiveTrackingBridge() {
       <div className="mt-3 space-y-1 rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[10px]">
         <p className="truncate text-slate-300"><strong className="text-slate-500">Coleta:</strong> {activeDelivery.from}</p>
         <p className="truncate text-slate-300"><strong className="text-slate-500">Destino:</strong> {activeDelivery.to}</p>
+        <p className="text-[9px] text-cyan-300">
+          {activeDelivery.vehicleType === 'bicycle' ? 'Rota de bicicleta' : activeDelivery.vehicleType === 'motorcycle' ? 'Rota de moto' : activeDelivery.vehicleType === 'car' ? 'Rota de carro' : 'Veículo não confirmado'}
+          {' · '}{activeDelivery.status === 'accepted' ? 'Próximo trecho: coleta' : 'Próximo trecho: cliente'}
+        </p>
+        {externalNavigationUrl && !trackingActive && (
+          <a href={externalNavigationUrl} target="_blank" rel="noopener noreferrer"
+             className="mt-2 block rounded-lg border border-cyan-500/30 px-3 py-2 text-center text-[9px] font-black uppercase text-cyan-300">
+            {activeDelivery.status === 'accepted' ? 'Navegar até a coleta' : 'Navegar até o cliente'}
+          </a>
+        )}
       </div>
 
       {trackingActive ? (
@@ -374,6 +409,7 @@ export function CourierLiveTrackingBridge() {
             position={position}
             origin={activeDelivery.from}
             destination={activeDelivery.to}
+            navigation={{ status: activeDelivery.status, vehicleType: activeDelivery.vehicleType }}
           />
           {storeArrivalDetected && (
             <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-[9px] text-emerald-200">
