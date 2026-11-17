@@ -2,7 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminAuth, adminDb } from '../firebaseAdmin';
 import { assessCourierStoreArrival } from './storeArrivalEvidence';
-import { isFreshCourierTrackingTimestamp } from './courierTrackingFreshness.js';
+import { isFreshCourierTrackingTimestamp, isPlausibleCourierDeviceCapture } from './courierTrackingFreshness.js';
 import { assessCourierCustomerArrival } from './customerArrivalEvidence.js';
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 
@@ -60,7 +60,7 @@ const parseLocation = (value: unknown): {
   const accuracy = finite(candidate.accuracy);
   const heading = finite(candidate.heading);
   const speed = finite(candidate.speed);
-  const clientCapturedAt = finite(candidate.clientCapturedAt) ?? Date.now();
+  const clientCapturedAt = finite(candidate.clientCapturedAt);
 
   if (latitude === null || latitude < -90 || latitude > 90) {
     throw new Error('Latitude inválida.');
@@ -70,6 +70,9 @@ const parseLocation = (value: unknown): {
   }
   if (accuracy === null || accuracy < 0 || accuracy > 100_000) {
     throw new Error('Precisão da localização inválida.');
+  }
+  if (!isPlausibleCourierDeviceCapture(clientCapturedAt)) {
+    throw new Error('Horário da localização inválido ou desatualizado. Atualize o GPS e tente novamente.');
   }
 
   return { latitude, longitude, accuracy, heading, speed, clientCapturedAt };
