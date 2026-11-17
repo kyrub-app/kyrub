@@ -1,6 +1,7 @@
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { evaluateKyrubDeliveryCompletion } from './deliveryCompletionService.js';
+import { isFreshCourierTrackingTimestamp } from './courierTrackingFreshness.js';
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 import {
   buildCourierPayableObligationFromCapture,
@@ -164,6 +165,16 @@ export const markCourierArrivedAtCustomer = async (input: {
     const storeId = validId(clean(delivery.storeId), 'A loja');
     const orderId = validId(clean(delivery.sourceOrderId), 'O pedido');
     const currentHandoff = record(delivery.customerHandoff);
+    const customerAssessment = record(tracking?.customerArrivalAssessment);
+    const arrivalCorroborated = tracking?.courierId===courierId
+      && isFreshCourierTrackingTimestamp(tracking?.updatedAt)
+      && isFreshCourierTrackingTimestamp(customerAssessment.evaluatedAt)
+      && customerAssessment.configured===true
+      && customerAssessment.authoritativeDestination===true
+      && customerAssessment.insideGeofence===true
+      && typeof customerAssessment.accuracyMeters==='number'
+      && customerAssessment.accuracyMeters>=0
+      && customerAssessment.accuracyMeters<=100;
     const existingArrivedAt = timestampIso(currentHandoff.arrivedAt);
     const arrivedAt = existingArrivedAt || Timestamp.now().toDate().toISOString();
     const arrivalEvent = await persistDeliveryOperationalEvent({
@@ -187,6 +198,11 @@ export const markCourierArrivedAtCustomer = async (input: {
       arrivedByCourierId: courierId,
       arrivedAt: Timestamp.fromDate(new Date(arrivedAt)),
       trackingWasActive: true,
+      arrivalCorroboration: arrivalCorroborated ? {
+        source:'server_customer_geofence',
+        verified:true, evaluatedAt:customerAssessment.evaluatedAt,
+        accuracyMeters:customerAssessment.accuracyMeters,
+      } : {source:'courier_self_declared',verified:false},
     };
     transaction.update(deliveryRef, {
       customerHandoff,
