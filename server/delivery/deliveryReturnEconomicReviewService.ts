@@ -91,9 +91,12 @@ export const previewDeliveryReturnEconomicReconciliation = async (input: {
     }
   }
   const existingCourierObligations = obligations.docs
-    .map(doc => ({ id: doc.id, ...record(doc.data()) }))
+    .map(doc => {
+      const raw = record(doc.data());
+      return { id: doc.id, kind: clean(raw.kind), status: clean(raw.status) };
+    })
     .filter(row => row.kind === 'courier_payable')
-    .map(row => ({ id: clean(row.id), status: clean(row.status) }));
+    .map(row => ({ id: row.id, status: row.status }));
   return buildDeliveryReturnEconomicPreview({
     deliveryId, orderId, courierId,
     receivedCondition: protocol.receivedCondition as 'intact' | 'damaged' | 'disputed',
