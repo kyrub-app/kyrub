@@ -455,6 +455,7 @@ export function CourierLiveTrackingBridge() {
         {supportOpen && <CourierDeliverySupportDialog
           deliveryId={activeDelivery.id} stage={activeDelivery.status}
           pickupAddress={activeDelivery.from}
+          vehicleType={activeDelivery.vehicleType}
           recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
           recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
           onClose={() => setSupportOpen(false)} />}
@@ -654,6 +655,7 @@ export function CourierLiveTrackingBridge() {
       {supportOpen && <CourierDeliverySupportDialog
         deliveryId={activeDelivery.id} stage={activeDelivery.status}
         pickupAddress={activeDelivery.from}
+        vehicleType={activeDelivery.vehicleType}
         recipientArrivalVerified={activeDelivery.recipientArrivalVerified}
         recipientArrivalAtMs={activeDelivery.recipientArrivalAtMs}
         onClose={() => setSupportOpen(false)} />}
