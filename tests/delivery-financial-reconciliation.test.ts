@@ -64,7 +64,7 @@ test('independent executor changes custody atomically and credits are split only
   const root = readFileSync('shared/economicObligations.ts','utf8');
   assert.match(executor,/adminDb\.runTransaction/);
   assert.match(executor,/operator\.role !== 'super_admin'/);
-  assert.match(executor,/operatorId === finance\.independentReviewerId/);
+  assert.match(executor,/executorId === finance\.independentReviewerId/);
   assert.match(executor,/DELIVERY_CUSTODY_EXECUTION_OUTSTANDING_OBLIGATIONS/);
   assert.match(executor,/buildCourierPayableObligationFromCapture/);
   assert.match(executor,/transaction\.update\(claimRef/);
