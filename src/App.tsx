@@ -33,6 +33,7 @@ import { StorefrontReturnBridge } from './components/StorefrontReturnBridge';
 import { UserNotificationCenterBridge } from './components/UserNotificationCenterBridge';
 import { CatalogCustomizationInheritanceBridge } from './components/store/CatalogCustomizationInheritanceBridge';
 import { CourierLiveTrackingBridge } from './components/store/CourierLiveTrackingBridge';
+import { CourierSupervisedHandoffBridge } from './components/store/CourierSupervisedHandoffBridge';
 import { IntegrationTestOrderBridge } from './components/store/IntegrationTestOrderBridge';
 import { KyrubDeliveryOpportunityBridge } from './components/store/KyrubDeliveryOpportunityBridge';
 import { KyrubDeliveryStatusSyncBridge } from './components/store/KyrubDeliveryStatusSyncBridge';
@@ -209,6 +210,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       />
       <KyrubDeliveryStatusSyncBridge />
       <CourierLiveTrackingBridge />
+      <CourierSupervisedHandoffBridge />
       <NinetyNineFoodConnectionBridge />
       <NinetyNineFoodOrderStatusBridge />
       <NoteInvitationOutboxBridge />
