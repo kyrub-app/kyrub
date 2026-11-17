@@ -282,7 +282,7 @@ export const describeKyrubiaPlanContextForGenerative = (
   if (!isPlanCandidate(intent, hasRecentPlanContext(messages), directPlans)) return null;
   // Keep generative context aligned with the same non-billing V1 references
   // used by deterministic plan answers. Never embed stale hardcoded prices.
-  const proPrice = formatKyrubPlanMonthlyPrice(KYRUB_COMMERCIAL_PLANS_V1.pro.monthlyPriceBRL).replace(/\\s+/g, '');
-  const businessPrice = formatKyrubPlanMonthlyPrice(KYRUB_COMMERCIAL_PLANS_V1.business.monthlyPriceBRL).replace(/\\s+/g, '');
+  const proPrice = formatKyrubPlanMonthlyPrice(KYRUB_COMMERCIAL_PLANS_V1.pro.monthlyPriceBRL).replace(/\s+/g, '');
+  const businessPrice = formatKyrubPlanMonthlyPrice(KYRUB_COMMERCIAL_PLANS_V1.business.monthlyPriceBRL).replace(/\s+/g, '');
   return `Planos Kyrub V1: Free R$0/5 itens/30 créditos; Pro ${proPrice}/100 itens/300 créditos; Business ${businessPrice}/ilimitado*/1.500 créditos. *uso justo. Operações locais não gastam créditos. Checkout pago indisponível. Valores V1.`;
 };
