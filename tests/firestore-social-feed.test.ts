@@ -632,3 +632,56 @@ test(
     );
   }
 );
+
+test('report cannot forge post author or access a private post outside the audience', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
+      ...postPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+    await setDoc(doc(context.firestore(), 'social_posts', PRIVATE_POST_ID), {
+      ...privatePostPayload(),
+      createdAt: new Date('2026-07-25T12:00:00.000Z'),
+      updatedAt: new Date('2026-07-25T12:00:00.000Z'),
+    });
+  });
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const reportId = `${POST_ID}__${VIEWER_ID}`;
+  const correct = { reportId, postId: POST_ID, reporterId: VIEWER_ID,
+    authorId: OWNER_ID, reason: 'spam', status: 'pending', createdAt: serverTimestamp() };
+  await assertFails(setDoc(doc(viewer, 'social_post_reports', reportId), { ...correct, authorId: STRANGER_ID }));
+  await assertSucceeds(setDoc(doc(viewer, 'social_post_reports', reportId), correct));
+  const owner = environment.authenticatedContext(OWNER_ID).firestore();
+  const ownId = `${POST_ID}__${OWNER_ID}`;
+  await assertFails(setDoc(doc(owner, 'social_post_reports', ownId), {
+    ...correct, reportId: ownId, reporterId: OWNER_ID,
+  }));
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  const privateId = `${PRIVATE_POST_ID}__${STRANGER_ID}`;
+  await assertFails(setDoc(doc(stranger, 'social_post_reports', privateId), {
+    ...correct, reportId: privateId, postId: PRIVATE_POST_ID, reporterId: STRANGER_ID,
+  }));
+});
+
+test('user report is immutable, scoped to reporter and requires existing non-self target', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'users', OWNER_ID), { name: 'Test user' });
+  });
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const reportId = `${OWNER_ID}__${VIEWER_ID}`;
+  const ref = doc(viewer, 'social_user_reports', reportId);
+  const payload = { reportId, targetUserId: OWNER_ID, reporterId: VIEWER_ID,
+    reason: 'Comportamento suspeito no chat.', status: 'pending', createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(ref, payload));
+  await assertSucceeds(getDoc(ref));
+  await assertFails(setDoc(ref, payload));
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  await assertFails(getDoc(doc(stranger, 'social_user_reports', reportId)));
+  await assertFails(setDoc(doc(viewer, 'social_user_reports', `not-real__${VIEWER_ID}`), {
+    ...payload, reportId: `not-real__${VIEWER_ID}`, targetUserId: 'not-real',
+  }));
+  await assertFails(setDoc(doc(viewer, 'social_user_reports', `${VIEWER_ID}__${VIEWER_ID}`), {
+    ...payload, reportId: `${VIEWER_ID}__${VIEWER_ID}`, targetUserId: VIEWER_ID,
+  }));
+});

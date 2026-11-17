@@ -427,6 +427,9 @@ export function KyrubTab(props: KyrubTabProps) {
           likedPostIds={socialFeed.likedPostIds}
           commentsByPost={socialFeed.commentsByPost}
           friends={props.friends}
+          suggestedUsers={props.getSuggestions()}
+          onConnectUser={props.handleToggleFriend}
+          onOpenChat={friend => { props.setSelectedChatUser(friend); props.setShowChatModal(true); }}
           searchQuery={props.searchQuery}
           filter={props.pracaFilter as 'recentes' | 'favoritos'}
           onToggleLike={socialFeed.toggleLike}
