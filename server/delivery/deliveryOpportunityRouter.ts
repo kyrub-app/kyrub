@@ -41,6 +41,7 @@ import {
   proposeCourierRemunerationReconciliation,
   acceptCourierRemunerationTerms,
   approveCourierRemunerationReconciliation,
+  previewCourierRemunerationReconciliation,
 } from './deliveryFinancialReconciliationService.js';
 import {
   DELIVERY_CUSTOMER_ARRIVAL_POLICY_PATH,
@@ -825,6 +826,18 @@ export const createDeliveryOpportunityRouter = (): Router => {
       response.json(await acknowledgeSupervisedCustodyTransfer({
         deliveryId: request.params.deliveryId,
         actorId, statement,
+      }));
+    } catch (error) {
+      errorResponse(response, error);
+    }
+  });
+
+  router.get('/admin/compliance-incidents/:deliveryId/remuneration/preflight', async (request, response) => {
+    try {
+      const operatorId = await authenticatedTenantId(request);
+      response.setHeader('Cache-Control', 'no-store, max-age=0');
+      response.json(await previewCourierRemunerationReconciliation({
+        deliveryId: request.params.deliveryId, operatorId,
       }));
     } catch (error) {
       errorResponse(response, error);
