@@ -4,6 +4,7 @@ import { KeyRound, Truck } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
 import { CanonicalOrderLocationControl } from '../customer/CanonicalOrderLocationControl';
 import { AuthorizedDeliveryTrackingViewer } from './AuthorizedDeliveryTrackingViewer';
+import { StoreDeliveryReturnQueue } from './StoreDeliveryReturnQueue';
 
 const DELIVERY_COLLECTION_PATH = 'hub/renda/deliveries';
 
@@ -131,6 +132,7 @@ export function StoreDeliveryTrackingBridge({
   return (
     <>
       <CanonicalOrderLocationControl storeId={storeId} />
+      <StoreDeliveryReturnQueue storeId={storeId} />
       {deliveries.length > 0 && (
         <section className="mb-4 space-y-3 rounded-3xl border border-cyan-500/20 bg-cyan-500/5 p-4">
           <div>
