@@ -32,15 +32,22 @@ Referências oficiais:
 
 Revisão humana deve abranger, conforme legislação e localidade: idade mínima e tempo de habilitação A; curso especializado e reciclagem; registro/autorização do veículo na categoria de aluguel, equipamentos específicos, inspeção periódica, regras de acondicionamento da carga e exigências locais. As obrigações podem variar; não interpretar esta lista como certidão de conformidade.
 
-### Bloqueio intencional de motofrete
+### Motofrete — fluxo humano de atestação implementado na PR #1145
 
-`courierVehicleDocumentEligibility` exige uma avaliação complementar de motofrete aprovada, atestada por humano e não expirada. O registro atual `identity_verifications` ainda **não permite gravar essa atestação pelo cliente ou pelo painel administrativo**. Portanto, o aceite de **moto fica bloqueado** neste estágio, até a implementação e os testes de um fluxo autorizado e auditado para essa verificação na mesma central de identidade. Este bloqueio não deve ser removido só para fazer o E2E passar.
+A avaliação especializada foi adicionada ao **mesmo documento privado de identidade**
+`identity_verifications/{uid}.motofreteQualification`, sem cadastro paralelo:
 
-Isso **não** altera a aprovação original da pessoa para outras atividades. Carro continua sujeito à validação da categoria B/EAR no fluxo atual e às exigências locais/regras de frota ainda não atestadas; não existe certificação legal automática de carro.
+1. Um usuário com identidade e perfil `motorized_courier` aprovados solicita motofrete na central de verificação. Anexa em caminhos privados `identity-verification/{uid}/document/*` evidências de curso, veículo/autorização, inspeção, equipamentos e, quando aplicável, autorização local. Documentos já anexados podem ser reutilizados na ressubmissão; nunca há aprovação automática.
+2. O Control Plane mostra as evidências aos revisores com papel **Compliance** ou **Super Admin**. A equipe deve conferir as seis verificações explicitamente e fornecer uma validade futura de no máximo **180 dias** por política operacional conservadora — o limite não é uma declaração de prazo legal único.
+3. A regra Firestore exige `reviewedBy == request.auth.uid`, `reviewedAt == request.time`, todos os critérios verificados e `validUntil > request.time` e `<= request.time + 180 dias`. O cliente só pode enviar nova solicitação; não pode criar atestação, alterar aprovação, validade, documentos em revisão ou revogar.
+4. O revisor pode solicitar correções mantendo outras atividades aprovadas; pode também **revogar a atestação** após aprovação, registrando motivo e responsável sem modificar `approvedProfiles` original.
+5. `courierVehicleDocumentEligibility` exige, na aceitação transacional do pedido, a atestação vigente, a CNH categoria A e EAR verificados; aprovação genérica `motorized_courier` não libera moto.
+
+**Risco residual de auditoria:** o registro guarda `reviewedBy`, `reviewedAt` e motivo da **última decisão**, não um histórico imutável de todas as decisões anteriores. Para liberação comercial ampla, avaliar um livro de auditoria append-only com evidência versionada e retenção conforme LGPD.
 
 ## Pendências para liberação comercial
 
-- Fluxo de atestação administrativa com comprovação documental de motofrete e expiração/rechecagem, sem sistema de identidade paralelo.
+- Atestação administrativa de motofrete e expiração estão implementadas; ainda é necessário confirmar abrangência jurídica por localidade, qualidade real das evidências e rastreabilidade histórica completa antes do lançamento.
 - Verificação jurídica para municípios e modalidades de serviço, seguro e regras de frota, revisão de política de dimensões/peso por veículo.
 - Teste **E2E físico**: bicicleta/moto/carro com 4G, GPS negado, GPS perdido, troca de contas, suspensão do app ao abrir Google Maps, coleta por código/geofence, confirmação do comprador e expiração automática da localização.
 - Configuração e restrição da chave do mapa incorporado apenas se esta função vier a ser habilitada; não confundir com links externos.
