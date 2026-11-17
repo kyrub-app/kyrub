@@ -65,3 +65,10 @@ test('ERP delivery cannot be marked done locally without buyer confirmation', ()
   assert.match(modal, /a entrega só termina após confirmação do cliente/i);
   assert.match(modal, /Confirme a chegada no painel de rastreio/);
 });
+
+test('assigned vehicle, not chosen browse option, drives pickup navigation', () => {
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx', 'utf8');
+  assert.match(modal, /vehicleType: job\.vehicleType \?\? null/);
+  assert.match(modal, /buildCourierDeliveryNavigationUrl/);
+  assert.doesNotMatch(modal, /\(job\.vehicleType \?\? selectedVehicleType\)/);
+});
