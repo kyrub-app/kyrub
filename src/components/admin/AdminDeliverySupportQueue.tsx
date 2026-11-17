@@ -22,6 +22,7 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
   const [message,setMessage]=useState('');
   const [audit,setAudit]=useState<Record<string,Event[]>>({});
   const [auditBusy,setAuditBusy]=useState('');
+  const [returns,setReturns]=useState<Record<string,string>>({});
 
   useEffect(()=>onSnapshot(
     query(collection(db,'deliverySupportTickets'),limit(100)),
@@ -45,6 +46,50 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
       };
     })),()=>setMessage('Fila de suporte indisponível para este perfil administrativo.')
   ),[]);
+
+  useEffect(()=>onSnapshot(
+    query(collection(db,'deliveryReturnProtocols'),limit(100)),
+    snap=>setReturns(Object.fromEntries(snap.docs.map(row=>{
+      const data=row.data() as Record<string,unknown>;
+      return [row.id,clean(data.status)];
+    }))),
+    ()=>setMessage('Protocolo de devolução temporariamente indisponível.')
+  ),[]);
+
+  const decideReturn=async(ticket:Ticket,action:'authorize'|'revoke')=>{
+    if(busy)return;
+    if(action==='authorize' && ticket.assignedTo!==user.uid){
+      setMessage('Assuma o atendimento com sua conta antes de autorizar o retorno.');return;
+    }
+    const reason=window.prompt(action==='authorize'
+      ? 'Justifique o retorno à loja original, considerando as tentativas de contato e a segurança física (10–500 caracteres). Isto não autoriza reembolso ou pagamento:'
+      : 'Justifique a revogação da autorização ANTES da entrega física à loja (10–500 caracteres):'
+    )?.trim();
+    if(!reason)return;
+    if(reason.length<10 || reason.length>500){
+      setMessage('Justificativa precisa ter de 10 a 500 caracteres.');return;
+    }
+    if(!window.confirm(action==='authorize'
+      ? 'Confirmar autorização de RETORNO, mas não cancelamento? O entregador continua responsável até a loja confirmar a posse.'
+      : 'Revogar esta autorização antes da entrega física?'))return;
+    setBusy(ticket.id);setMessage('');
+    try{
+      const token=await user.getIdToken();
+      const endpoint=action==='authorize'
+        ? `/api/delivery-opportunities/admin/support-tickets/${encodeURIComponent(ticket.id)}/authorize-return`
+        : `/api/delivery-opportunities/admin/returns/${encodeURIComponent(ticket.deliveryId)}/revoke`;
+      const result=await fetch(endpoint,{
+        method:'POST',headers:{authorization:`Bearer ${token}`,'content-type':'application/json'},
+        body:JSON.stringify({reason}),
+      });
+      const data=await result.json().catch(()=>({})) as Record<string,unknown>;
+      if(!result.ok)throw new Error(clean(data.error)||'Decisão de retorno recusada.');
+      setMessage(action==='authorize'
+        ? 'Retorno autorizado. Encomenda permanece com entregador até apresentação no perímetro da loja e recebimento independente.'
+        : 'Autorização revogada. A logística poderá retomar a análise da entrega.');
+    }catch(error){setMessage(error instanceof Error?error.message:'Não foi possível registrar a decisão.');}
+    finally{setBusy('');}
+  };
 
   const ordered=useMemo(()=>[...tickets].sort((a,b)=>{
     const p=(t:Ticket)=>t.status==='resolved'?4:
@@ -159,6 +204,12 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
                 )}
               </div>
             )}
+            {ticket.reasonCode==='recipient_not_found' && returns[ticket.deliveryId] && (
+              <p className="mt-2 rounded-lg bg-amber-500/10 p-2 text-[10px] text-amber-200">
+                Custódia de retorno: {returns[ticket.deliveryId]}.
+                {' '}A confirmação física da loja é obrigatória e os valores continuam em análise.
+              </p>
+            )}
             {ticket.lastResponse && <p className="mt-2 rounded-lg bg-slate-950 p-2 text-[10px] text-cyan-200">Última resposta: {ticket.lastResponse}</p>}
             <div className="mt-3 flex flex-wrap gap-2">
               {ticket.status!=='resolved' && (
@@ -176,6 +227,25 @@ export function AdminDeliverySupportQueue({user}:{user:User}) {
                     Encerrar chamado
                   </button>
                 </>
+              )}
+              {ticket.reasonCode==='recipient_not_found'
+                && ticket.absenceReviewRequestedAtMs>0
+                && ticket.status!=='resolved'
+                && !returns[ticket.deliveryId]
+                && ticket.assignedTo===user.uid && (
+                <button type="button" disabled={busy===ticket.id}
+                  onClick={()=>void decideReturn(ticket,'authorize')}
+                  className="rounded-lg border border-orange-500/35 px-3 py-2 text-[10px] text-orange-200 disabled:opacity-50">
+                  Autorizar retorno à loja — sem cancelamento
+                </button>
+              )}
+              {ticket.reasonCode==='recipient_not_found'
+                && returns[ticket.deliveryId]==='return_authorized' && (
+                <button type="button" disabled={busy===ticket.id}
+                  onClick={()=>void decideReturn(ticket,'revoke')}
+                  className="rounded-lg border border-red-500/35 px-3 py-2 text-[10px] text-red-200 disabled:opacity-50">
+                  Revogar autorização de retorno
+                </button>
               )}
               <button type="button" disabled={auditBusy===ticket.id}
                 onClick={()=>void loadAudit(ticket.id)}
