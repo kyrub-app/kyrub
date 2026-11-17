@@ -77,6 +77,7 @@ test('real app routes to independent courier declarations, supervisor and immuta
   assert.match(courier, /physically_handed_over/);
   assert.match(courier, /physically_received/);
   assert.match(courier, /onAuthStateChanged/);
+  assert.match(courier, /Reabrir transferência supervisionada/);
   assert.match(app, /<CourierSupervisedHandoffBridge/);
   assert.match(firestore, /match \/deliveryCustodyTransfers\/\{deliveryId\}/);
   assert.match(firestore, /match \/deliveryCustodyTransferEvents\/\{eventId\}/);
