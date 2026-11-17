@@ -124,6 +124,10 @@ export const authorizeRecipientAbsenceReturn=async(input:{
       financialStatus:'awaiting_independent_reconciliation',
       updatedAt:at,
     });
+    tx.update(deliveryRef,{
+      returnCustody:{status:'return_authorized',source:'supervised_kyrub_return'},
+      updatedAt:at,
+    });
     tx.create(eventRef,{
       schemaVersion:1,deliveryId,ticketId,actorId:operatorId,
       actorType:'operations',action:'return_authorized',
@@ -142,10 +146,11 @@ export const revokeRecipientAbsenceReturn=async(input:{
   const explanation=reasonText(input.reason);
   const ref=adminDb.doc(`${protocols}/${deliveryId}`);
   const adminRef=adminDb.doc(`${adminCollection}/${operatorId}`);
+  const deliveryRef=adminDb.doc(`${deliverables}/${deliveryId}`);
   const ev=adminDb.collection(events).doc();
   return adminDb.runTransaction(async tx=>{
-    const [protocolSnap,adminSnap]=await Promise.all([
-      tx.get(ref),tx.get(adminRef),
+    const [protocolSnap,adminSnap,deliverySnap]=await Promise.all([
+      tx.get(ref),tx.get(adminRef),tx.get(deliveryRef),
     ]);
     if(!operatorAuthorized(obj(adminSnap.data()),operatorId)){
       throw new Error('DELIVERY_RETURN_FORBIDDEN');
@@ -155,10 +160,17 @@ export const revokeRecipientAbsenceReturn=async(input:{
       && protocol.revokedBy===operatorId && protocol.revocationReason===explanation){
       return {deliveryId,status:'authorization_revoked' as const};
     }
-    if(protocol.status!=='return_authorized'){
+    if(protocol.status!=='return_authorized'
+      || deliverySnap.data()?.status!=='delivering'
+      || obj(deliverySnap.data()).returnCustody===undefined
+      || obj(obj(deliverySnap.data()).returnCustody).status!=='return_authorized'){
       throw new Error('DELIVERY_RETURN_CONFLICT');
     }
     const at=Timestamp.now();
+    tx.update(deliveryRef,{
+      returnCustody:{status:'authorization_revoked',source:'supervised_kyrub_return'},
+      updatedAt:at,
+    });
     tx.update(ref,{status:'authorization_revoked',revokedBy:operatorId,
       revocationReason:explanation,revokedAt:at,updatedAt:at});
     tx.create(ev,{schemaVersion:1,deliveryId,actorId:operatorId,
@@ -216,6 +228,10 @@ export const declareCourierReturnAtStore=async(input:{
     tx.update(returnRef,{status:'courier_presented_to_store',
       courierPresentedAt:at,courierDeclaredBy:courierId,
       evidenceKind:'fresh_server_evaluated_store_geofence',
+      updatedAt:at,
+    });
+    tx.update(deliveryRef,{
+      returnCustody:{status:'courier_presented_to_store',source:'supervised_kyrub_return'},
       updatedAt:at,
     });
     tx.create(eventRef,{schemaVersion:1,deliveryId,actorId:courierId,
