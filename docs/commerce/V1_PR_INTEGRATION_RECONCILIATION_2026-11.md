@@ -105,14 +105,14 @@
 
 - [PR #1151](https://github.com/kyrub-app/kyrub/pull/1151), branch `integration/v1-commerce-plans-refunds-2026-11`, criada a partir do HEAD corrigido da #1149. Incorporados os **31 arquivos** alterados pela #1138: 27 blobs preservados literalmente e os quatro arquivos sobrepostos reconciliados sem suprimir checkout B2C, proteção de preço/personalizações ou checkout oficial pré-pago.
 - Primeiro SHA `ac25937f`: **Phase 10 PASS** e **E2E de gamificação cruzada PASS**; o job `Official plan canonical Firestore E2E` falhou antes de executar o Firestore, na etapa de teste DOM, porque o stub virtual de `storefrontOriginContext` não exportava a nova função `reconcilePublishedStorefrontCart` da #1139 (erro de `esbuild`).
-- Correção restrita ao mock do teste `tests/official-plan-praca-interactive-dom.test.ts` no HEAD `865b012d`, sem alteração de cobrança, catálogo ou contrato. **Revalidação do novo SHA e demais workflows em andamento** na última consulta; não inferir aprovação total a partir de Phase 10 ou checks parciais.
+- Correção restrita ao mock do teste `tests/official-plan-praca-interactive-dom.test.ts` no HEAD `865b012d`, sem alteração de cobrança, catálogo ou contrato. **11/11 workflows GitHub Actions concluídos com sucesso (0 falhas)** no SHA exato, incluindo validação geral/prebuild, regras de loja, emulador Firestore financeiro, Chrome Praça, Playwright primeira loja, cross-PR gamificação, segurança e build.
 
 ### Situação e próximos critérios
 
 - [x] Candidato #1149 integrado ERP/reembolsos validado no SHA de segurança corrigida.
 - [x] Composição de código com #1138 e reconciliação dos quatro pontos de sobreposição realizada no #1151.
-- [ ] Finalizar e conferir **todos** os workflows GitHub Actions da #1151 no HEAD atualizado; corrigir eventuais erros de integração sem desativar asserts financeiros.
+- [x] Finalizar e conferir **todos os 11/11 workflows GitHub Actions** da #1151 no HEAD `865b012d` (0 falhas), sem desativar asserts financeiros.
 - [ ] Homologar jornada cruzada pedido varejo → aprovação → Pix simulado → KDS/estoque → refund/ledger sob o mesmo SHA, além dos E2E específicos do plano oficial.
 - [ ] Confirmar release authority, visual mobile/Android, configuração de recebedores e PSP, LGPD e autorização do proprietário antes de qualquer Pix real, merge ou deploy.
 
-**Estados:** #1150 e #1149 `TESTADO_ISOLADO` (sem release); #1151 `IMPLEMENTADO_PR` / `E2E_INTEGRADO_PENDENTE`; primeira compra comercial e dinheiro real ainda `OWNER_GATE`. A lista-mãe mantém os 67 itens intactos e a governança de V0/V1/V1-ENTREGAS/V2.
+**Estados:** #1150, #1149 e #1151 `TESTADO_ISOLADO` (CI integrado verde, sem release); #1151 ainda requer cenário transversal varejo/KDS/reembolso e gates de produção/financeiro; primeira compra comercial e dinheiro real continuam `OWNER_GATE`. A lista-mãe mantém os 67 itens intactos e a governança de V0/V1/V1-ENTREGAS/V2.
