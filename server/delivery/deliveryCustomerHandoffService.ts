@@ -4,6 +4,7 @@ import { evaluateKyrubDeliveryCompletion } from './deliveryCompletionService.js'
 import { persistDeliveryOperationalEvent } from './deliveryOperationalEventService.js';
 import {
   buildCourierPayableObligationFromCapture,
+  buildSupervisedHandoffCourierPayableFromCapture,
   economicObligationPath,
   type EconomicObligation,
 } from '../../shared/economicObligations.js';
@@ -139,7 +140,10 @@ export const markCourierArrivedAtCustomer = async (input: {
         'transfer_evidence_confirmed_pending_reconciliation'].includes(clean(incident.status))) {
       throw new Error('COURIER_COMPLIANCE_HOLD');
     }
-    if (custody.fromConfirmedAt || custody.toConfirmedAt) {
+    if ((custody.fromConfirmedAt || custody.toConfirmedAt)
+      && !(custody.status === 'operational_reassigned'
+        && custody.operationalAssignment === 'recipient_claim_active'
+        && custody.toCourierId === courierId)) {
       throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
     }
     if (clean(delivery.status) !== 'delivering') {
@@ -207,13 +211,15 @@ export const confirmBuyerReceivedDelivery = async (input: {
   const trackingRef = adminDb.doc(`${DELIVERY_TRACKING_COLLECTION}/${deliveryId}`);
   const completionRef = adminDb.doc(`${DELIVERY_COMPLETION_COLLECTION}/${deliveryId}`);
   const custodyTransferRef = adminDb.doc(`deliveryCustodyTransfers/${deliveryId}`);
+  const financialRef = adminDb.doc(`deliveryFinancialReconciliations/${deliveryId}`);
 
   return adminDb.runTransaction(async transaction => {
-    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot, transferSnapshot] = await Promise.all([
+    const [deliverySnapshot, claimSnapshot, existingCompletionSnapshot, transferSnapshot, financialSnapshot] = await Promise.all([
       transaction.get(deliveryRef),
       transaction.get(claimRef),
       transaction.get(completionRef),
       transaction.get(custodyTransferRef),
+      transaction.get(financialRef),
     ]);
     if (!deliverySnapshot.exists || !claimSnapshot.exists) {
       throw new Error('A entrega não foi encontrada.');
@@ -253,10 +259,19 @@ export const confirmBuyerReceivedDelivery = async (input: {
     }
 
     const custody = record(transferSnapshot.data());
-    if (custody.fromConfirmedAt || custody.toConfirmedAt) {
-      // The physical recipient may differ from the financial beneficiary.
-      // Preserve buyer/order data but never create an automatic courier payable
-      // attributed to the original driver after handoff is declared.
+    const financial = record(financialSnapshot.data());
+    const reassigned = custody.status === 'operational_reassigned'
+      && custody.operationalAssignment === 'recipient_claim_active'
+      && custody.toCourierId === courierId
+      && custody.fromCourierId !== courierId
+      && financial.status === 'operational_reassigned_awaiting_buyer_confirmation'
+      && financial.fromCourierId === custody.fromCourierId
+      && financial.toCourierId === courierId
+      && financial.operationalStatus === 'recipient_claim_active'
+      && financial.settlementStatus === 'held_until_buyer_confirmation'
+      && financial.outgoingAcceptedAt && financial.incomingAcceptedAt
+      && financial.independentReviewedAt;
+    if ((custody.fromConfirmedAt || custody.toConfirmedAt) && !reassigned) {
       throw new Error('CUSTODY_TRANSFER_SETTLEMENT_HOLD');
     }
     if (clean(delivery.status) !== 'delivering') {
@@ -289,6 +304,8 @@ export const confirmBuyerReceivedDelivery = async (input: {
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
     let courierPayable: EconomicObligation | null = null;
     let courierPayableRef: ReturnType<typeof adminDb.doc> | null = null;
+    let originalSplitPayable: EconomicObligation | null = null;
+    let originalSplitRef: ReturnType<typeof adminDb.doc> | null = null;
     let existingCourierPayable: EconomicObligation | null = null;
     let waitingPayableRef: ReturnType<typeof adminDb.doc> | null = null;
     let existingWaitingPayable: EconomicObligation | null = null;
@@ -304,28 +321,71 @@ export const confirmBuyerReceivedDelivery = async (input: {
       waitingPayableRef = adminDb.doc(
         economicObligationPath(canonicalStoreId, waitingObligationId)
       );
-      const [captureSnapshot, waitingSnapshot] = await Promise.all([
+      const [captureSnapshot, waitingSnapshot, allExistingPayables] = await Promise.all([
         transaction.get(captureQuery),
         transaction.get(waitingPayableRef),
+        reassigned
+          ? transaction.get(adminDb.collection(`stores/${canonicalStoreId}/economicObligations`)
+            .where('fulfillmentId','==',deliveryId).limit(101))
+          : Promise.resolve(null),
       ]);
+      if (reassigned && (allExistingPayables?.size === 101 || !canonicalStoreId
+        || financial.canonicalStoreId !== canonicalStoreId
+        || financial.orderId !== orderId || financial.amountMinor !==
+          Number(financial.outgoingMinor) + Number(financial.incomingMinor)
+        || (allExistingPayables?.docs.some(doc => {
+          const item = record(doc.data());
+          return item.kind === 'courier_payable' && item.status !== 'reversed';
+        }) ?? true))) {
+        throw new Error('DELIVERY_COURIER_PAYABLE_CONFLICT');
+      }
       const captures = captureSnapshot.docs
         .map(document => document.data() as StoreEconomicLedgerEntry)
         .filter(entry => entry.kind === 'payment_capture');
       if (captures.length > 1) {
         throw new Error('DELIVERY_CAPTURE_AMBIGUOUS');
       }
+      if (reassigned && captures.length !== 1) {
+        throw new Error('DELIVERY_CAPTURE_AMBIGUOUS');
+      }
       if (captures.length === 1) {
-        courierPayable = buildCourierPayableObligationFromCapture({
-          capture: captures[0],
-          fulfillmentId: deliveryId,
-          courierUserId: courierId,
-        });
+        if (reassigned) {
+          const capture = captures[0];
+          if (capture.id !== financial.sourceCaptureId
+            || capture.paymentId !== financial.paymentId
+            || !Number.isSafeInteger(financial.amountMinor)
+            || !Number.isSafeInteger(financial.outgoingMinor)
+            || !Number.isSafeInteger(financial.incomingMinor)) {
+            throw new Error('DELIVERY_COURIER_PAYABLE_CONFLICT');
+          }
+          courierPayable = buildSupervisedHandoffCourierPayableFromCapture({
+            capture, fulfillmentId:deliveryId,courierUserId:courierId,
+            totalMinor:Number(financial.amountMinor),
+            shareMinor:Number(financial.incomingMinor),
+          });
+          originalSplitPayable = buildSupervisedHandoffCourierPayableFromCapture({
+            capture, fulfillmentId:deliveryId,courierUserId:clean(custody.fromCourierId),
+            totalMinor:Number(financial.amountMinor),
+            shareMinor:Number(financial.outgoingMinor),
+          });
+          if (originalSplitPayable) {
+            originalSplitRef = adminDb.doc(economicObligationPath(canonicalStoreId,originalSplitPayable.id));
+            if ((await transaction.get(originalSplitRef)).exists) {
+              throw new Error('DELIVERY_COURIER_PAYABLE_CONFLICT');
+            }
+          }
+        } else {
+          courierPayable = buildCourierPayableObligationFromCapture({
+            capture: captures[0], fulfillmentId:deliveryId,courierUserId:courierId,
+          });
+        }
         if (courierPayable) {
           courierPayableRef = adminDb.doc(
             economicObligationPath(canonicalStoreId, courierPayable.id)
           );
           const obligationSnapshot = await transaction.get(courierPayableRef);
           if (obligationSnapshot.exists) {
+            if (reassigned) throw new Error('DELIVERY_COURIER_PAYABLE_CONFLICT');
             existingCourierPayable = obligationSnapshot.data() as EconomicObligation;
             assertExistingCourierPayableEquivalent(existingCourierPayable, courierPayable);
           }
@@ -448,6 +508,17 @@ export const confirmBuyerReceivedDelivery = async (input: {
       }
     }
 
+    if (originalSplitPayable && originalSplitRef) {
+      const eligibility = buildCourierPayableDeliveryEligibilityUpdate({
+        obligation:originalSplitPayable,
+        evidence: {
+          storeId:canonicalStoreId,orderId,deliveryId,
+          courierId:clean(custody.fromCourierId),buyerId,confirmedAt,
+        },
+      });
+      transaction.create(originalSplitRef,{...originalSplitPayable,...eligibility});
+    }
+
     if (existingWaitingPayable && waitingPayableRef) {
       if (existingWaitingPayable.status !== 'pending') {
         throw new Error(`DELIVERY_WAITING_PAYABLE_STATUS_INVALID:${existingWaitingPayable.status}`);
@@ -472,7 +543,7 @@ export const confirmBuyerReceivedDelivery = async (input: {
       deliveryId,
       status: 'done' as const,
       settlementEligible: true as const,
-      courierPayableEligible: Boolean(courierPayable || existingWaitingPayable),
+      courierPayableEligible: Boolean(courierPayable || originalSplitPayable || existingWaitingPayable),
     };
   });
 };
