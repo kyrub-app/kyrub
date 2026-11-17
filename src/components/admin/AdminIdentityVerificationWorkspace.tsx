@@ -25,6 +25,7 @@ import {
 } from 'firebase/firestore';
 import { getDownloadURL, ref } from 'firebase/storage';
 import { auth, db, storage } from '../../utils/firebase';
+import { AdminDeliveryComplianceIncidents } from './AdminDeliveryComplianceIncidents';
 import {
   subscribeToAdminProfile,
   type AdminProfile,
@@ -381,6 +382,8 @@ export default function AdminIdentityVerificationWorkspace() {
             {message}
           </div>
         )}
+
+        {user && canReview && <AdminDeliveryComplianceIncidents user={user} />}
 
         <div className="mt-5 grid gap-4 lg:grid-cols-2">
           {ordered.map(record => (
