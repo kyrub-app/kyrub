@@ -28,7 +28,7 @@ export const buildPublicKyrubDeliveryOffer = (input: PublicKyrubDeliveryOfferInp
     orderStatus: input.orderStatus,
     distance: Number.isFinite(input.distance) && input.distance > 0 ? input.distance : 0,
     payment: Number.isFinite(input.payment) && input.payment > 0 ? input.payment : 0,
-    returnTariffOffer: input.returnTariffOffer ?? null,
+    ...(input.returnTariffOffer ? {returnTariffOffer: input.returnTariffOffer} : {}),
     cargo: input.cargo,
     cargoReady: input.cargoReady,
     allowedVehicles: input.allowedVehicles,
