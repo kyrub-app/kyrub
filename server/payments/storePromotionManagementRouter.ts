@@ -50,14 +50,19 @@ const parsePromotion = (
   const source = body.eligibility;
   const eligibilityInput = source && typeof source === 'object' && !Array.isArray(source)
     ? source as Record<string, unknown> : null;
-  const eligibilityMode = eligibilityInput?.mode ?? 'public';
-  if (eligibilityMode !== 'public' && eligibilityMode !== 'specific_user') {
+  // Legacy owner clients may omit eligibility during edits. Preserve the
+  // previously persisted audience rather than silently turning a private
+  // coupon into a public one.
+  const eligibilityMode = eligibilityInput?.mode ?? existing?.eligibility.mode ?? 'public';
+  if (!['public', 'specific_user', 'club_member', 'crm_segment'].includes(eligibilityMode as string)) {
     throw new Error('PROMOTION_ELIGIBILITY_INVALID');
   }
   const userIds = Array.isArray(eligibilityInput?.userIds)
     ? [...new Set(eligibilityInput.userIds.filter(
       (value): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
-    ))] : [];
+    ))] : existing?.eligibility.userIds ?? [];
+  const segmentId = typeof eligibilityInput?.segmentId === 'string'
+    ? eligibilityInput.segmentId.trim() : existing?.eligibility.segmentId ?? '';
   if (eligibilityMode === 'specific_user' && userIds.length === 0) {
     throw new Error('PROMOTION_USERS_REQUIRED');
   }
@@ -71,7 +76,10 @@ const parsePromotion = (
     discountValue: Number(body.discountValue),
     productIds: Array.isArray(body.productIds) ? body.productIds.map(clean).filter(Boolean) : [],
     eligibility: eligibilityMode === 'specific_user'
-      ? { mode: 'specific_user', userIds } : { mode: 'public' },
+      ? { mode: 'specific_user', userIds }
+      : eligibilityMode === 'club_member' ? { mode: 'club_member' }
+      : eligibilityMode === 'crm_segment' ? { mode: 'crm_segment', segmentId }
+      : { mode: 'public' },
     active: body.active !== false,
     startsAt: clean(body.startsAt),
     endsAt: clean(body.endsAt),
