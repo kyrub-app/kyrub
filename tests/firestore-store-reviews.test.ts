@@ -161,3 +161,69 @@ test('reviews hidden by a moderator are not readable by the public audience', as
   )));
   if (!visible.empty) throw Error('A moderated review leaked into public results.');
 });
+
+test('a published store-only review can be reported once by an unrelated authenticated user', async () => {
+  const buyer = environment.authenticatedContext(BUYER).firestore();
+  await assertSucceeds(setDoc(doc(buyer, ...REVIEW_PATH), review({ shared: false })));
+  const viewer = environment.authenticatedContext(STRANGER).firestore();
+  const reportId = `${STORE_ID}__${BUYER}__${STRANGER}`;
+  const reportRef = doc(viewer, 'store_review_reports', reportId);
+  const complaint = {
+    reportId, storeId: STORE_ID, reviewId: BUYER, authorId: BUYER,
+    reporterId: STRANGER, reason: 'abuse', status: 'pending',
+    createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(reportRef, complaint));
+  await assertSucceeds(getDoc(reportRef));
+  await assertFails(setDoc(reportRef, complaint));
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  await assertFails(getDoc(doc(owner, 'store_review_reports', reportId)));
+  await assertFails(getDocs(collection(owner, 'store_review_reports')));
+  const posted = await assertSucceeds(getDoc(doc(viewer, ...REVIEW_PATH)));
+  if (posted.data()?.postId !== '') throw Error('A store-only review cannot require a Praça post to be reportable.');
+});
+
+test('store review report refuses self-report, forged identity, spoofed timestamps and edited status', async () => {
+  const buyer = environment.authenticatedContext(BUYER).firestore();
+  await assertSucceeds(setDoc(doc(buyer, ...REVIEW_PATH), review({ shared: false })));
+  const viewer = environment.authenticatedContext(STRANGER).firestore();
+  const reportId = `${STORE_ID}__${BUYER}__${STRANGER}`;
+  const ref = doc(viewer, 'store_review_reports', reportId);
+  const complaint = {
+    reportId, storeId: STORE_ID, reviewId: BUYER, authorId: BUYER,
+    reporterId: STRANGER, reason: 'spam', status: 'pending',
+    createdAt: serverTimestamp(),
+  };
+  await assertFails(setDoc(ref, { ...complaint, authorId: OWNER }));
+  await assertFails(setDoc(ref, { ...complaint, reporterId: OWNER }));
+  await assertFails(setDoc(ref, { ...complaint, status: 'reviewed' }));
+  await assertFails(setDoc(ref, { ...complaint, createdAt: Timestamp.now() }));
+  await assertFails(setDoc(ref, { ...complaint, reason: 'invalid' }));
+  const ownId = `${STORE_ID}__${BUYER}__${BUYER}`;
+  await assertFails(setDoc(doc(buyer, 'store_review_reports', ownId), {
+    ...complaint, reportId: ownId, reporterId: BUYER,
+  }));
+  await assertSucceeds(setDoc(ref, complaint));
+  await assertFails(setDoc(ref, { ...complaint, reason: 'fraud' }));
+  await assertFails(deleteDoc(ref));
+});
+
+test('missing and hidden store reviews cannot be reported or resurrected from the client', async () => {
+  const viewer = environment.authenticatedContext(STRANGER).firestore();
+  const reportId = `${STORE_ID}__${BUYER}__${STRANGER}`;
+  const complaint = {
+    reportId, storeId: STORE_ID, reviewId: BUYER, authorId: BUYER,
+    reporterId: STRANGER, reason: 'fraud', status: 'pending',
+    createdAt: serverTimestamp(),
+  };
+  await assertFails(setDoc(doc(viewer, 'store_review_reports', reportId), complaint));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), ...REVIEW_PATH), {
+      ...review({ shared: false }), status: 'hidden',
+      createdAt: Timestamp.now(), reviewedBy: 'moderator',
+    });
+  });
+  await assertFails(setDoc(doc(viewer, 'store_review_reports', reportId), complaint));
+  const buyer = environment.authenticatedContext(BUYER).firestore();
+  await assertFails(setDoc(doc(buyer, ...REVIEW_PATH), review({ shared: false })));
+});

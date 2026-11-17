@@ -293,6 +293,43 @@
         );
     }
 
+    // Denúncia independente de compartilhamento na Praça.
+    // Um documento imutável por (loja, avaliação, denunciante), sem punição automática.
+    match /store_review_reports/{reportId} {
+      function targetReview() {
+        return /databases/$(database)/documents/store_reviews/$(incoming().storeId)/reviews/$(incoming().reviewId);
+      }
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'reportId', 'storeId', 'reviewId', 'authorId', 'reporterId',
+          'reason', 'status', 'createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'reportId', 'storeId', 'reviewId', 'authorId', 'reporterId',
+          'reason', 'status', 'createdAt'
+        ])
+        && incoming().reportId == reportId
+        && incoming().storeId is string
+        && isValidId(incoming().storeId)
+        && incoming().reviewId is string
+        && isValidId(incoming().reviewId)
+        && incoming().authorId is string
+        && isValidId(incoming().authorId)
+        && incoming().reporterId == request.auth.uid
+        && incoming().authorId != request.auth.uid
+        && incoming().reason in ['spam', 'abuse', 'fraud', 'unsafe', 'other']
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && reportId == incoming().storeId + '__' + incoming().reviewId + '__' + request.auth.uid
+        && exists(targetReview())
+        && get(targetReview()).data.status == 'published'
+        && get(targetReview()).data.authorId == incoming().authorId
+        && get(targetReview()).data.storeId == incoming().storeId;
+      allow get: if isSignedIn()
+        && (existing().reporterId == request.auth.uid || isAdmin());
+      allow list, update, delete: if false;
+    }
+
     match /social_post_likes/{likeId} {
       allow read: if isSignedIn();
 
