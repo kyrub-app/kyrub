@@ -820,3 +820,52 @@ test('courier help tickets remain private and support reports cannot be forged o
     }));
   }
 });
+
+test('physical shop return is private to courier, store and logistics with no client custody forgery',async()=>{
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,'deliveryReturnProtocols','return_private_1'),{
+      schemaVersion:1,deliveryId:'return_private_1',storeId:'return_store_owner',
+      courierId:'return_courier_owner',ticketId:'return_ticket_1',
+      status:'return_authorized',financialStatus:'awaiting_independent_reconciliation',
+      authorizedAt:serverTimestamp(),
+    });
+    await setDoc(doc(db,'deliveryReturnEvents','return_event_1'),{
+      schemaVersion:1,deliveryId:'return_private_1',actorId:'compliance_a',
+      action:'return_authorized',createdAt:serverTimestamp(),
+    });
+  });
+  const store=environment.authenticatedContext('return_store_owner').firestore();
+  const courier=environment.authenticatedContext('return_courier_owner').firestore();
+  const admin=environment.authenticatedContext('compliance_a').firestore();
+  const stranger=environment.authenticatedContext('return_stranger').firestore();
+  for(const db of [courier,store,admin]){
+    await assertSucceeds(getDoc(doc(db,'deliveryReturnProtocols','return_private_1')));
+  }
+  await assertFails(getDoc(doc(stranger,'deliveryReturnProtocols','return_private_1')));
+  await assertSucceeds(getDocs(query(
+    collection(store,'deliveryReturnProtocols'),where('storeId','==','return_store_owner'),limit(50)
+  )));
+  await assertSucceeds(getDocs(query(
+    collection(courier,'deliveryReturnProtocols'),where('courierId','==','return_courier_owner'),limit(50)
+  )));
+  await assertSucceeds(getDocs(query(collection(admin,'deliveryReturnProtocols'),limit(100))));
+  await assertSucceeds(getDoc(doc(admin,'deliveryReturnEvents','return_event_1')));
+  await assertFails(getDoc(doc(store,'deliveryReturnEvents','return_event_1')));
+  await assertFails(getDoc(doc(courier,'deliveryReturnEvents','return_event_1')));
+  await assertFails(getDoc(doc(stranger,'deliveryReturnEvents','return_event_1')));
+  for(const db of [courier,store,admin,stranger]){
+    await assertFails(setDoc(doc(db,'deliveryReturnProtocols','return_fake'),{
+      courierId:'return_courier_owner',storeId:'return_store_owner',
+      status:'returned_to_store_pending_reconciliation',
+    }));
+    await assertFails(updateDoc(doc(db,'deliveryReturnProtocols','return_private_1'),{
+      status:'returned_to_store_pending_reconciliation',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliveryReturnProtocols','return_private_1')));
+    await assertFails(setDoc(doc(db,'deliveryReturnEvents','return_forged_event'),{
+      deliveryId:'return_private_1',action:'store_physically_received_return',
+    }));
+    await assertFails(deleteDoc(doc(db,'deliveryReturnEvents','return_event_1')));
+  }
+});
