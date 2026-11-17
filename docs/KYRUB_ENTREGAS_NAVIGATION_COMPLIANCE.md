@@ -100,3 +100,50 @@ Limitações do piloto: a busca inicial da revogação é limitada às primeiras
 exibe no máximo 100 incidentes e a transição de custódia em rota ainda
 precisa de homologação física. **Não usar este fluxo como prova de entrega
 nem como autorização legal de continuidade do motofrete.**
+
+## Conciliação de remuneração com dois entregadores — sem movimentação de dinheiro
+
+Depois de registrar a transferência física supervisionada, o caso entra em
+`transfer_evidence_confirmed_pending_reconciliation`. Esse estágio **não
+altera o entregador original no ERP, não publica novas ofertas e não permite
+aprovar a entrega em nome do cliente**.
+
+Na mesma função serverless `/api/delivery-opportunities`:
+1. Um operador autorizado consulta `/admin/compliance-incidents/:id/remuneration/preflight`
+   (GET, somente leitura). O servidor verifica o protocolo de custódia, a fase
+   da entrega e o pagamento capturado na coleção econômica da loja canônica.
+   A remuneração é derivada **exclusivamente** de
+   `economicAllocation.courierRemunerationMinor` validado pela construção
+   canônica da obrigação do entregador. Sem captura, com captura duplicada,
+   fonte inconsistente, valores zerados ou obrigação `eligible/settled`,
+   a proposta falha fechada, sem inventar valor por distância ou pelo campo
+   `payment` da oferta.
+2. O operador informa as duas parcelas em **centavos inteiros**. O servidor
+   exige `originalMinor + substitutoMinor == totalMinor` sem saldo residual
+   e cria `deliveryFinancialReconciliations/{deliveryId}`, contendo origem
+   econômica, fingerprint, obrigações pendentes e prazo de **24 horas**. Não
+   grava novas obrigações de pagamento.
+3. Cada entregador vê somente o próprio convite privado e precisa concordar
+   com a parcela usando sua própria sessão de autenticação.
+4. Depois dos dois aceites, **outro** administrador autorizado (distinto de
+   quem preparou a divisão e dos dois participantes) revisa novamente a
+   captura e as obrigações atuais. Somente uma fonte econômica inalterada
+   permite `approved_pending_manual_execution`. Essa situação significa
+   que os termos foram **conferidos**, não que houve transferência, saque
+   ou conciliação contábil.
+5. Todas as propostas, aceitações e revisões geram eventos append-only em
+   `deliveryFinancialReconciliationEvents`, protegidos contra gravações
+   dos clientes, inclusive administradores no navegador. O documento
+   financeiro contém a fonte e os centavos; a trilha de evidência não contém
+   CPF, fotos de documentos ou dados bancários.
+
+As obrigações econômicas anteriores, especialmente remuneração por **tempo
+de espera**, permanecem independentes e pendentes de conferência; não se
+divide automaticamente qualquer saldo já devido, nem se cria novo crédito
+sem a reconciliação contratual. A mera aprovação não executa Pix, não altera
+`economicObligations`, `economicSettlements`, `deliveryClaims` ou
+`deliveryCompletions`. O procedimento definitivo de transferência da
+responsabilidade econômica e do rastreamento depende da definição da
+responsabilidade pelas duas etapas, condições de pagamento, autorização
+para prosseguimento e aprovação E2E física. Até isso existir, manter o caso
+em segurança, com atendimento humano.
