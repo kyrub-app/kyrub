@@ -27,10 +27,11 @@ const original = 'finance_original';
 const recipient = 'finance_recipient';
 const storeId = 'finance_store';
 const canonicalStoreId = 'finance_canonical';
-const orderId = 'finance_order';
+const orderPrefix = 'finance_order';
 const fee = 1200;
 
 const seed = async (deliveryId: string, capture: boolean) => {
+  const orderId = `${orderPrefix}_${deliveryId}`;
   const at = Timestamp.now();
   const allocation = buildEconomicAllocationSnapshot({
     merchandiseGrossMinor:4000, customerPaidMinor:5200, deliveryFeeMinor:fee,
