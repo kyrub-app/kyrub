@@ -6,3 +6,5 @@ dist/
 .vscode/
 .env
 .env.local
+functions/lib/
+*-debug.log

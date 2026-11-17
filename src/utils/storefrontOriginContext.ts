@@ -1,4 +1,5 @@
 import type { CartItem, Product } from '../types';
+import { buildProductConfigurationSelection } from './productCustomization';
 
 const ORIGIN_KEY = 'kyrub_storefront_origin_v1';
 const CART_PREFIX = 'kyrub_storefront_cart_v1:';
@@ -102,6 +103,69 @@ const isProduct = (value: unknown): value is Product => {
     Number.isFinite(product.stock) &&
     typeof product.category === 'string'
   );
+};
+
+
+/**
+ * The published storefront is authoritative for which products may remain in
+ * a resumed buyer cart. Remove withdrawn items and replace stale price/terms
+ * snapshots with the freshly published offer; preserve buyer quantities.
+ */
+export const reconcilePublishedStorefrontCart = (
+  cart: readonly CartItem[],
+  publishedOffers: readonly Product[]
+): CartItem[] => {
+  const current = new Map(publishedOffers.map(product => [product.id, product]));
+  return cart.flatMap(item => {
+    const originalId = item.product.id;
+    const sourceId = item.product.sourceProductId ?? originalId.split('::', 1)[0];
+    const product = current.get(sourceId);
+    if (!product) return [];
+
+    const configured = originalId !== sourceId ||
+      (item.product.selectedOptions?.length ?? 0) > 0 ||
+      (item.product.selectedQuickNotes?.length ?? 0) > 0;
+    if (!configured) return [{ ...item, product }];
+
+    // Public projections may omit customization metadata when product choices
+    // are supplied by legacy store-wide defaults. Without that authoritative
+    // metadata, keep the buyer's selection and existing displayed price;
+    // never fabricate a new option price or discard a still-published item.
+    const choicesUnknown = (item.product.selectedOptions?.length ?? 0) > 0 &&
+      product.optionGroups === undefined;
+    const quickNotesUnknown = (item.product.selectedQuickNotes?.length ?? 0) > 0 &&
+      product.quickNotes === undefined;
+    if (choicesUnknown || quickNotesUnknown) {
+      return [{ ...item, product: { ...item.product, stock: product.stock } }];
+    }
+
+    // Keep a configured cart line only if all selected choices/notes remain
+    // valid in the current catalog. Reprice through the same PDV builder.
+    const selectedIds: Record<string, string[]> = {};
+    for (const option of item.product.selectedOptions ?? []) {
+      (selectedIds[option.groupId] ??= []).push(option.choiceId);
+    }
+    try {
+      const refreshed = buildProductConfigurationSelection(
+        product,
+        selectedIds,
+        item.product.selectedQuickNotes ?? [],
+        (item.product as Product & { customerNote?: string }).customerNote ?? ''
+      );
+      // A changed key means one or more choices/notes were removed or altered.
+      // Never silently convert a configured purchase into a different item.
+      if (refreshed.id !== originalId) return [];
+      return [{
+        ...item, product: refreshed,
+        ...(item.unitPrice !== undefined ? { unitPrice: refreshed.unitPrice } : {}),
+        ...(item.selectedOptions !== undefined ? { selectedOptions: refreshed.selectedOptions } : {}),
+        ...(item.selectedQuickNotes !== undefined ? { selectedQuickNotes: refreshed.selectedQuickNotes } : {}),
+        ...(item.customizationSummary !== undefined ? { customizationSummary: refreshed.customizationSummary } : {}),
+      }];
+    } catch {
+      return [];
+    }
+  });
 };
 
 export const saveStorefrontCart = (

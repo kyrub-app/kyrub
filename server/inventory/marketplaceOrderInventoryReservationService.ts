@@ -12,6 +12,7 @@ import {
   parseConfiguredLineSelectedOptions,
   parseInventorySelectedOptions,
   parseOptionInventoryImpacts,
+  verifiedMarketplaceOrderCategories,
   type OptionAwareInventoryOrderItem,
 } from '../../shared/optionInventoryImpact.js';
 import {
@@ -113,6 +114,57 @@ const productCategoriesFromTenant = (
     if (id && category) categories[id] = category;
   }
   return categories;
+};
+
+
+/** Resolve the exact ERP categories behind a verified first-store order.
+ * A stale tenant catalog must not disable category-scoped ingredient impacts.
+ * All identity and product reads remain inside the acceptance transaction.
+ */
+const orderProductCategories = async (input: {
+  transaction: Transaction;
+  tenantId: string;
+  tenantData: DocumentData | undefined;
+  items: readonly OptionAwareInventoryOrderItem[];
+}): Promise<Record<string, string>> => {
+  const legacyCategories = productCategoriesFromTenant(input.tenantData);
+  const ownerId = input.tenantId;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(ownerId)) return legacyCategories;
+  const personal = await input.transaction.get(
+    adminDb.doc(`users/${ownerId}/stores/${ownerId}`)
+  );
+  const canonicalStoreId = clean(personal.get('canonicalStoreId'));
+  if (!canonicalStoreId) return legacyCategories;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+    throw new Error('Reserva de estoque bloqueada: vínculo canônico da loja inválido.');
+  }
+
+  const store = await input.transaction.get(adminDb.doc(`stores/${canonicalStoreId}`));
+  if (!store.exists || store.get('ownerId') !== ownerId ||
+      store.get('legacyTenantId') !== ownerId) {
+    throw new Error('Reserva de estoque bloqueada: proprietário canônico divergente.');
+  }
+  // Existing merchant stores that are not first-store publications retain
+  // their legacy catalog category semantics.
+  if (store.get('firstStoreCreationVerified') !== true) return legacyCategories;
+  const tenantCanonicalId = clean(input.tenantData?.canonicalStoreId);
+  if (tenantCanonicalId && tenantCanonicalId !== canonicalStoreId) {
+    throw new Error('Reserva de estoque bloqueada: identidade de loja conflitante.');
+  }
+
+  const sourceIds = [...new Set(input.items.map(item => item.productId))];
+  if (sourceIds.some(id => !id || id.length > 180 ||
+      id.includes('/') || id === '.' || id === '..')) {
+    throw new Error('Reserva de estoque bloqueada: produto inválido.');
+  }
+  const publishedProducts = await Promise.all(sourceIds.map(id =>
+    input.transaction.get(adminDb.doc(`stores/${canonicalStoreId}/products/${id}`))
+  ));
+  return verifiedMarketplaceOrderCategories(canonicalStoreId, sourceIds,
+    publishedProducts.map((doc, index) => ({
+      id: sourceIds[index], data: doc.data() as Record<string, unknown> | undefined,
+    }))
+  );
 };
 
 const reservedQuantities = (value: unknown): Record<string, number> => {
@@ -312,11 +364,17 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
     );
     const reserved = reservedQuantities(stateSnapshot.data()?.reservedByItem);
     const availableCatalog = availableCatalogAfterReservations(catalog, reserved);
+    const categories = await orderProductCategories({
+      transaction,
+      tenantId: normalizedTenantId,
+      tenantData: tenantSnapshot.data(),
+      items,
+    });
     const lines = buildOrderInventoryConsumptionWithOptions(
       items,
       availableCatalog,
       compositions,
-      productCategoriesFromTenant(tenantSnapshot.data()),
+      categories,
       parseOptionInventoryImpacts(inventoryData?.optionInventoryImpacts)
     );
     const now = FieldValue.serverTimestamp();

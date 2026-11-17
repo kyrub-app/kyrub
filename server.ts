@@ -4,7 +4,6 @@ import path from "path";
 import rateLimit from "express-rate-limit";
 import dotenv from "dotenv";
 import { GoogleGenAI } from "@google/genai";
-import { createServer as createViteServer } from "vite";
 import handleKyrubAiConsultant from "./api/consultor-kyrub";
 import { proxyPublicGoogleDriveImage } from "./server/driveMediaProxy";
 import {
@@ -376,6 +375,11 @@ app.get(
     proxyPublicGoogleDriveImage(req.query.fileId, res)
 );
 
+app.all('/api/pitangas', async (req, res) => {
+  const { handlePitangaAccountRequest } = await import('./server/gamification/pitangaAccountHandler.js');
+  await handlePitangaAccountRequest(req, res);
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });
@@ -383,6 +387,7 @@ app.get("/api/health", (_req, res) => {
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {
     console.log("[Kyrub Server] Running in DEVELOPMENT mode. Initializing Vite middleware...");
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

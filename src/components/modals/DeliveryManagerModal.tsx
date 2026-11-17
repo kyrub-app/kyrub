@@ -1,9 +1,25 @@
 import React, { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
-import { db } from '../../utils/firebase';
-import { deleteDoc, doc } from 'firebase/firestore';
+import { onAuthStateChanged } from 'firebase/auth';
+import { collection, doc, onSnapshot } from 'firebase/firestore';
+import { auth, db } from '../../utils/firebase';
+import {
+  classifyKyrubDeliveryOrderCargo,
+  updateKyrubDeliveryOpportunityStatus,
+} from '../../utils/deliveryOpportunities';
+import { IDENTITY_VERIFICATION_COLLECTION } from '../../utils/identityVerification';
+import {
+  assessDeliveryCargo,
+  courierVehicleDocumentEligibility,
+  type CourierCargoKind,
+  type CourierVehicleType,
+  type DeliveryCargo,
+} from '../../../shared/deliveryVehicleCompatibility';
+import { isAvailableCourierOffer, isAssignedCourierDelivery, isCanonicalCourierDelivery } from '../../utils/courierDeliveryView';
 import { DeliveryJob } from '../../types';
-import { openGoogleMapsDirections } from '../../utils/googleMapsDirections';
+import { buildCourierDeliveryNavigationUrl } from '../../utils/googleMapsDirections';
+import type { ReturnTariffOffer } from '../../../shared/deliveryReturnTariffOffer';
+import { CourierReturnHistory } from '../store/CourierReturnHistory';
 
 interface DeliveryManagerModalProps {
   isOpen: boolean;
@@ -19,6 +35,8 @@ type OperationalDeliveryJob = DeliveryJob & {
   source?: string;
   sourceOrderId?: string;
   orderStatus?: string;
+  acceptedByName?: string;
+  returnTariffOffer?: ReturnTariffOffer | null;
 };
 
 const distanceLabel = (job: DeliveryJob): string =>
@@ -26,6 +44,30 @@ const distanceLabel = (job: DeliveryJob): string =>
 
 const paymentLabel = (job: DeliveryJob): string =>
   job.payment > 0 ? `R$ ${job.payment.toFixed(2)}` : 'A definir';
+
+const VEHICLE_LABELS: Record<CourierVehicleType, string> = {
+  bicycle: 'Bicicleta', motorcycle: 'Moto', car: 'Carro',
+};
+
+type SellerCargoOrder = {
+  id: string;
+  status: string;
+  itemsCount: number;
+  cargo: DeliveryCargo | null;
+};
+
+type CargoDraft = {
+  kind: CourierCargoKind;
+  requiresSpecialHandling: boolean;
+  weightKg: string;
+  lengthCm: string;
+  widthCm: string;
+  heightCm: string;
+};
+
+const EMPTY_CARGO: CargoDraft = {
+  kind: 'parcel', requiresSpecialHandling: false, weightKg: '', lengthCm: '', widthCm: '', heightCm: '',
+};
 
 export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   isOpen,
@@ -36,18 +78,84 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   profileName,
   triggerToast,
 }) => {
-  const [deliveryModalTab, setDeliveryModalTab] = useState<'solicitar' | 'publicados' | 'historico'>('solicitar');
+  const [deliveryModalTab, setDeliveryModalTab] = useState<'classificar' | 'solicitar' | 'publicados' | 'historico'>('classificar');
   const [fazerEntregasModalTab, setFazerEntregasModalTab] = useState<'solicitacoes' | 'trajeto' | 'historico'>('solicitacoes');
 
   const [deliveryParcelDesc, setDeliveryParcelDesc] = useState('');
   const [deliveryPickupPoint, setDeliveryPickupPoint] = useState('');
   const [deliveryDeliveryPoint, setDeliveryDeliveryPoint] = useState('');
   const [deliveryPaymentOffer, setDeliveryPaymentOffer] = useState('');
+  const [acceptingDeliveryId, setAcceptingDeliveryId] = useState<string | null>(null);
+  const [tariffConsentId,setTariffConsentId]=useState('');
+  const [selectedVehicleType, setSelectedVehicleType] = useState<CourierVehicleType>('bicycle');
+  const [courierIdentity, setCourierIdentity] = useState<Record<string, unknown> | null>(null);
+  const [identityLoaded, setIdentityLoaded] = useState(false);
+  const [sellerCargoOrders, setSellerCargoOrders] = useState<SellerCargoOrder[]>([]);
+  const [selectedOrderId, setSelectedOrderId] = useState('');
+  const [cargoDraft, setCargoDraft] = useState<CargoDraft>(EMPTY_CARGO);
+  const [cargoSaving, setCargoSaving] = useState(false);
+
+  // Only the signed-in store sees its own ERP orders. No buyer address is used.
+  useEffect(() => {
+    if (!isOpen || mode !== 'employer') return;
+    let unsubscribeOrders = () => undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeOrders();
+      unsubscribeOrders = () => undefined;
+      setSellerCargoOrders([]);
+      if (!user) return;
+      unsubscribeOrders = onSnapshot(
+        collection(db, `artifacts/${user.uid}/public/data/customerOrders`),
+        snapshot => {
+          const orders = snapshot.docs.flatMap(snapshotOrder => {
+            const data = snapshotOrder.data() as Record<string, unknown>;
+            if (data.fulfillmentType !== 'delivery' || data.deliveryProvider !== 'kyrub'
+              || !['preparing', 'ready', 'out_for_delivery'].includes(String(data.status))) return [];
+            return [{
+              id: snapshotOrder.id,
+              status: String(data.status),
+              itemsCount: Array.isArray(data.items) ? data.items.length : 0,
+              cargo: assessDeliveryCargo(data.deliveryCargo).cargo,
+            } satisfies SellerCargoOrder];
+          });
+          setSellerCargoOrders(orders);
+        },
+        error => {
+          console.warn('Não foi possível consultar pedidos próprios para classificar carga.', error);
+          setSellerCargoOrders([]);
+        }
+      );
+    });
+    return () => { unsubscribeAuth(); unsubscribeOrders(); };
+  }, [isOpen, mode]);
+
+  useEffect(() => {
+    if (!isOpen || mode !== 'employee') return;
+    let unsubscribeIdentity = () => undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeIdentity();
+      unsubscribeIdentity = () => undefined;
+      setCourierIdentity(null);
+      setIdentityLoaded(false);
+      if (!user) { setIdentityLoaded(true); return; }
+      unsubscribeIdentity = onSnapshot(
+        doc(db, IDENTITY_VERIFICATION_COLLECTION, user.uid),
+        snapshot => {
+          setCourierIdentity(snapshot.exists()
+            ? snapshot.data() as Record<string, unknown>
+            : null);
+          setIdentityLoaded(true);
+        },
+        () => { setCourierIdentity(null); setIdentityLoaded(true); }
+      );
+    });
+    return () => { unsubscribeAuth(); unsubscribeIdentity(); };
+  }, [isOpen, mode]);
 
   useEffect(() => {
     if (!isOpen) return;
     if (mode === 'employer') {
-      setDeliveryModalTab('solicitar');
+      setDeliveryModalTab('classificar');
       setDeliveryPaymentOffer('');
     } else {
       setFazerEntregasModalTab('solicitacoes');
@@ -87,34 +195,114 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
     setDeliveryDeliveryPoint('');
     setDeliveryPaymentOffer('');
     setDeliveryModalTab('publicados');
-    triggerToast('Solicitação de entrega criada sem dados estimados fictícios.', 'success');
+    triggerToast('Rascunho criado nesta tela, sem publicação. Pedidos reais são publicados pelo ERP.', 'info');
   };
 
-  const handleDeleteDeliveryJob = async (id: string) => {
-    setDeliveries(prev => prev.filter(job => job.id !== id));
+  const handleDeleteDeliveryJob = (id: string) => {
+    const job = deliveries.find(delivery => delivery.id === id);
+    if (!job) return;
+    if (isCanonicalCourierDelivery(job)) {
+      triggerToast('Pedidos reais devem ser cancelados pelo fluxo oficial do ERP.', 'warning');
+      return;
+    }
+    setDeliveries(prev => prev.filter(delivery => delivery.id !== id));
+    triggerToast('Rascunho local removido.', 'info');
+  };
+
+  const selectCargoOrder = (order: SellerCargoOrder) => {
+    setSelectedOrderId(order.id);
+    const cargo = order.cargo;
+    setCargoDraft(cargo
+      ? {
+          kind: cargo.kind,
+          requiresSpecialHandling: false,
+          weightKg: String(cargo.weightKg),
+          lengthCm: String(cargo.lengthCm),
+          widthCm: String(cargo.widthCm),
+          heightCm: String(cargo.heightCm),
+        }
+      : EMPTY_CARGO);
+  };
+
+  const handleClassifyCargo = async (event: React.FormEvent): Promise<void> => {
+    event.preventDefault();
+    const user = auth.currentUser;
+    if (!user || !selectedOrderId || cargoSaving) return;
+    const cargo: DeliveryCargo = {
+      kind: cargoDraft.kind,
+      weightKg: Number(cargoDraft.weightKg),
+      lengthCm: Number(cargoDraft.lengthCm),
+      widthCm: Number(cargoDraft.widthCm),
+      heightCm: Number(cargoDraft.heightCm),
+      requiresSpecialHandling: cargoDraft.requiresSpecialHandling as false,
+    };
+    const assessed = assessDeliveryCargo(cargo);
+    if (!assessed.ready) {
+      triggerToast(assessed.reason, 'warning');
+      return;
+    }
+    setCargoSaving(true);
     try {
-      await deleteDoc(doc(db, 'delivery_jobs', id));
-      triggerToast('Entrega excluída com sucesso!', 'success');
-    } catch (e) {
-      console.error('Error deleting delivery job:', e);
-      triggerToast('Removido localmente.', 'info');
+      const result = await classifyKyrubDeliveryOrderCargo(selectedOrderId, cargo, user);
+      triggerToast(`Carga classificada. Modalidades compatíveis: ${result.allowedVehicles.map(vehicle => VEHICLE_LABELS[vehicle]).join(', ')}.`, 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Falha ao classificar carga.', 'error');
+    } finally {
+      setCargoSaving(false);
     }
   };
 
-  const handleAcceptDelivery = (jobId: string) => {
-    setDeliveries(prev =>
-      prev.map(d => {
-        if (d.id !== jobId) return d;
-        triggerToast(`Entrega de ${d.from} aceita. Você já pode se deslocar até a coleta.`, 'success');
-        return { ...d, status: 'accepted', acceptedBy: profileName || 'Você', updatedAt: new Date().toISOString() };
-      })
-    );
+  const handleAcceptDelivery = async (job: DeliveryJob): Promise<void> => {
+    if (!isAvailableCourierOffer(job) || acceptingDeliveryId) return;
+    const user = auth.currentUser;
+    if (!user) {
+      triggerToast('Faça login para aceitar uma entrega.', 'warning');
+      return;
+    }
+    const vehicleEligibility = courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType);
+    const cargoAssessment = assessDeliveryCargo(job.cargo);
+    if (!vehicleEligibility.eligible) {
+      triggerToast(vehicleEligibility.reason, 'warning');
+      return;
+    }
+    if (!cargoAssessment.ready || job.cargoReady !== true || !cargoAssessment.allowedVehicles.includes(selectedVehicleType)) {
+      triggerToast('A carga ainda não está classificada ou não cabe no veículo escolhido.', 'warning');
+      return;
+    }
+    if (job.payment <= 0) {
+      triggerToast('A remuneração precisa estar definida antes do aceite.', 'warning');
+      return;
+    }
+    const tariff=(job as OperationalDeliveryJob).returnTariffOffer;
+    if(tariff && tariffConsentId!==job.id+':'+tariff.fingerprint) {
+      triggerToast('Confira e concorde com a versão da tarifa adicional antes do aceite.', 'warning');
+      return;
+    }
+    setAcceptingDeliveryId(job.id);
+    try {
+      // Server rechecks cargo and approved documents atomically; this UI is only a preview.
+      await updateKyrubDeliveryOpportunityStatus(job.id,'accepted',user,selectedVehicleType,
+        tariff?{fingerprint:tariff.fingerprint,confirmed:true}:undefined);
+      setFazerEntregasModalTab('trajeto');
+      triggerToast('Aceite confirmado pelo servidor. Ative o GPS para acompanhar.', 'success');
+    } catch (error) {
+      triggerToast(error instanceof Error ? error.message : 'Não foi possível confirmar o aceite.', 'error');
+    } finally {
+      setAcceptingDeliveryId(null);
+    }
   };
 
   const handleStartPickup = (job: DeliveryJob): void => {
     try {
-      openGoogleMapsDirections({ destination: job.from, travelMode: 'driving' });
-      triggerToast('Google Maps aberto com a rota para o ponto de coleta.', 'info');
+      const url = buildCourierDeliveryNavigationUrl({
+        status: 'accepted',
+        pickup: job.from,
+        dropoff: job.to,
+        vehicleType: job.vehicleType ?? null,
+      });
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) window.location.assign(url);
+      triggerToast('Google Maps aberto na modalidade confirmada para a coleta.', 'info');
     } catch (error) {
       triggerToast(
         error instanceof Error ? error.message : 'Não foi possível abrir a rota para a coleta.',
@@ -124,6 +312,11 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   };
 
   const handleAdvanceDelivery = (jobId: string, nextStatus: 'delivering' | 'done') => {
+    const job = deliveries.find(delivery => delivery.id === jobId);
+    if (job && isCanonicalCourierDelivery(job)) {
+      triggerToast('Entregas do ERP são concluídas após registrar a chegada e obter confirmação do comprador.', 'warning');
+      return;
+    }
     setDeliveries(prev =>
       prev.map(d => {
         if (d.id !== jobId) return d;
@@ -171,14 +364,88 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
           <>
             <div className="flex border-b border-slate-800 text-[10px] font-bold font-mono">
               <button type="button" onClick={() => setDeliveryModalTab('solicitar')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'solicitar' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Solicitar</button>
-              <button type="button" onClick={() => setDeliveryModalTab('publicados')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'publicados' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Publicados</button>
+              <button type="button" onClick={() => setDeliveryModalTab('publicados')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'publicados' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Meus registros</button>
               <button type="button" onClick={() => setDeliveryModalTab('historico')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'historico' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Histórico</button>
+              <button type="button" onClick={() => setDeliveryModalTab('classificar')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'classificar' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Pedidos ERP</button>
             </div>
+
+            {deliveryModalTab === 'classificar' && (
+              <section className="space-y-3 text-xs">
+                <p className="rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] text-cyan-100">
+                  Classifique os pedidos reais da sua loja antes de oferecer a entrega. A autorização do veículo é verificada no servidor; cargas especiais e transportes de passageiros não são atendidos.
+                </p>
+                {sellerCargoOrders.length === 0 ? (
+                  <p className="rounded-xl bg-slate-950 p-4 text-[10px] text-slate-400">
+                    Nenhum pedido do ERP aguardando logística Kyrub nesta conta.
+                  </p>
+                ) : (
+                  <div className="max-h-32 space-y-1 overflow-y-auto">
+                    {sellerCargoOrders.map(order => (
+                      <button
+                        key={order.id}
+                        type="button"
+                        onClick={() => selectCargoOrder(order)}
+                        className={`w-full rounded-xl border p-2 text-left text-[9px] ${selectedOrderId === order.id ? 'border-teal-500 bg-teal-500/10' : 'border-slate-700 bg-slate-950'}`}
+                      >
+                        Pedido {order.id.slice(0, 16)} · {order.itemsCount} item(ns) · {
+                          order.cargo ? 'Carga informada' : 'Pendente de classificação'
+                        }
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {selectedOrderId && (
+                  <form onSubmit={event => void handleClassifyCargo(event)} className="space-y-3 rounded-xl bg-slate-950 p-3">
+                    <label className="block text-[10px] text-slate-300">
+                      Tipo de carga
+                      <select
+                        value={cargoDraft.kind}
+                        onChange={event => setCargoDraft(previous => ({...previous, kind: event.target.value as CourierCargoKind}))}
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2"
+                      >
+                        <option value="food">Comida / alimento</option>
+                        <option value="parcel">Objeto / encomenda</option>
+                      </select>
+                    </label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['weightKg','lengthCm','widthCm','heightCm'] as const).map(field => (
+                        <label key={field} className="text-[9px] text-slate-300">
+                          {{weightKg:'Peso (kg)',lengthCm:'Comprimento (cm)',widthCm:'Largura (cm)',heightCm:'Altura (cm)'}[field]}
+                          <input
+                            type="number"
+                            required
+                            min="0.01"
+                            step="0.01"
+                            value={cargoDraft[field]}
+                            onChange={event => setCargoDraft(previous => ({ ...previous, [field]: event.target.value }))}
+                            className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-900 p-2 text-white"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                    <label className="flex items-center gap-2 text-[9px] text-slate-300">
+                      <input
+                        type="checkbox"
+                        checked={cargoDraft.requiresSpecialHandling}
+                        onChange={event => setCargoDraft(previous => ({...previous,requiresSpecialHandling:event.target.checked}))}
+                      />
+                      Esta carga exige transporte especial (refrigerado, perigoso, frágil ou outro)
+                    </label>
+                    <p className="text-[9px] text-slate-500">
+                      Informe peso e medidas do pacote embalado. Limites são operacionais do piloto, não certificação legal do veículo.
+                    </p>
+                    <button type="submit" disabled={cargoSaving} className="w-full rounded-xl bg-teal-500 py-3 text-[10px] font-black uppercase text-slate-950 disabled:opacity-50">
+                      {cargoSaving ? 'Classificando...' : 'Salvar classificação no ERP'}
+                    </button>
+                  </form>
+                )}
+              </section>
+            )}
 
             {deliveryModalTab === 'solicitar' && (
               <form onSubmit={handleCreateDelivery} className="space-y-4 text-xs">
                 <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] leading-relaxed text-cyan-100">
-                  Este formulário é para entregas avulsas. Pedidos feitos no Kyrub Shop entram automaticamente na logística pelo KDS quando a loja escolher “Entregador Kyrub”.
+                  Este formulário salva apenas um rascunho neste dispositivo, não publica ofertas para entregadores. Os pedidos reais entram na logística pelo ERP quando a loja escolhe “Entregador Kyrub”.
                 </div>
                 <div className="space-y-3">
                   <div>
@@ -213,7 +480,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
                 <div className="flex gap-3 pt-3 border-t border-slate-800/80">
                   <button type="button" onClick={onClose} className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold py-2.5 rounded-xl text-xs transition-all cursor-pointer">Fechar</button>
-                  <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all uppercase tracking-wider cursor-pointer">Publicar Entrega</button>
+                  <button type="submit" className="flex-1 bg-orange-600 hover:bg-orange-500 text-white font-bold py-2.5 rounded-xl text-xs transition-all uppercase tracking-wider cursor-pointer">Salvar rascunho</button>
                 </div>
               </form>
             )}
@@ -237,11 +504,11 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     </div>
                     <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                       <div className="text-[9px] font-mono">
-                        {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold">Aguardando Entregador</span>}
-                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {job.acceptedBy || 'Entregador'}</span>}
-                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em Trajeto ({job.acceptedBy})</span>}
+                        {job.status === 'available' && <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-bold">{isCanonicalCourierDelivery(job) ? 'Aguardando entregador' : 'Rascunho local · não publicado'}</span>}
+                        {job.status === 'accepted' && <span className="text-teal-400 bg-teal-400/5 border border-teal-400/20 px-2 py-0.5 rounded-full font-bold">Aceita por {(job as OperationalDeliveryJob).acceptedByName || job.acceptedBy || 'Entregador'}</span>}
+                        {job.status === 'delivering' && <span className="text-sky-400 bg-sky-400/5 border border-sky-400/20 px-2 py-0.5 rounded-full font-bold">Em trajeto ({(job as OperationalDeliveryJob).acceptedByName || job.acceptedBy})</span>}
                       </div>
-                      {job.status === 'available' ? (
+                      {job.status === 'available' && !isCanonicalCourierDelivery(job) ? (
                         <button type="button" onClick={() => handleDeleteDeliveryJob(job.id)} className="px-3 py-1 bg-red-600 hover:bg-red-500 text-white font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer font-mono">Cancelar</button>
                       ) : <span className="text-[9px] text-slate-500 font-mono">Não Cancelável</span>}
                     </div>
@@ -275,7 +542,26 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
           </>
         ) : (
           <>
-            <p className="text-[11px] text-slate-400 leading-relaxed">Aceite oportunidades reais de entrega, desloque-se até a coleta e acompanhe o momento em que o pedido estiver pronto.</p>
+            <p className="text-[11px] text-slate-400 leading-relaxed">Consulte as ofertas, escolha seu veículo habilitado e aceite apenas cargas compatíveis. O servidor confirma a autorização antes de atribuir o pedido.</p>
+            <label className="block space-y-1 text-[10px] text-slate-300">
+              Veículo utilizado nesta entrega
+              <select
+                value={selectedVehicleType}
+                onChange={event => setSelectedVehicleType(event.target.value as CourierVehicleType)}
+                className="w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white"
+              >
+                <option value="bicycle">Bicicleta</option>
+                <option value="motorcycle">Moto</option>
+                <option value="car">Carro</option>
+              </select>
+            </label>
+            <p className="text-[9px] text-slate-500">
+              {identityLoaded
+                ? courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType).eligible
+                  ? 'Modalidade documental aprovada; o pedido ainda depende da capacidade do veículo.'
+                  : courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType).reason
+                : 'Consultando sua habilitação privada...'}
+            </p>
 
             <div className="flex border-b border-slate-800 text-[10px] font-bold font-mono">
               <button type="button" onClick={() => setFazerEntregasModalTab('solicitacoes')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${fazerEntregasModalTab === 'solicitacoes' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Solicitações</button>
@@ -285,9 +571,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'solicitacoes' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => d.status === 'available' && d.requestedBy !== (profileName || 'Usuário')).length === 0 ? (
+                {deliveries.filter(isAvailableCourierOffer).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Nenhuma oferta de entrega disponível no momento.</div>
-                ) : deliveries.filter(d => d.status === 'available' && d.requestedBy !== (profileName || 'Usuário')).map(job => {
+                ) : deliveries.filter(isAvailableCourierOffer).map(job => {
                   const operational = job as OperationalDeliveryJob;
                   return (
                     <div key={job.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850 hover:border-slate-800 transition-colors space-y-3">
@@ -300,15 +586,53 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                             <p className="text-[9px] font-mono text-cyan-300">{operational.orderStatus === 'preparing' ? 'Pedido em preparo · você pode aceitar e se deslocar' : 'Pedido pronto para coleta'}</p>
                           )}
                           {job.requestedBy && <p className="text-[9px] text-slate-500 pt-1 font-mono">Solicitante: {job.requestedBy}</p>}
+                          {job.cargoReady && job.cargo ? (
+                            <p className="text-[9px] text-slate-400">
+                              {job.cargo.kind === 'food' ? 'Alimento' : 'Objeto'} · {job.cargo.weightKg} kg · {job.cargo.lengthCm} × {job.cargo.widthCm} × {job.cargo.heightCm} cm
+                            </p>
+                          ) : (
+                            <p className="text-[9px] text-amber-300">Aguardando classificação da carga pelo lojista.</p>
+                          )}
+                          {job.cargoReady && (
+                            <p className="text-[9px] text-cyan-300">
+                              Compatível com: {(job.allowedVehicles ?? []).map(vehicle => VEHICLE_LABELS[vehicle]).join(', ') || 'Nenhum veículo'}
+                            </p>
+                          )}
                         </div>
                         <div className="text-right shrink-0">
                           <span className="text-sm font-black text-orange-400 font-mono block">{paymentLabel(job)}</span>
                           <span className="text-[10px] text-slate-500 font-mono">{distanceLabel(job)}</span>
                         </div>
                       </div>
+                      {operational.returnTariffOffer ? (
+                        <label className="block rounded-xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] text-slate-200">
+                          <strong className="block text-cyan-200">Tarifas adicionais · política {operational.returnTariffOffer.policyId} v{operational.returnTariffOffer.version}</strong>
+                          <span className="mt-1 block">
+                            Retorno: {(operational.returnTariffOffer.returnRateMinorPerKm/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}/km,
+                            mínimo {(operational.returnTariffOffer.returnMinimumMinor/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.
+                            Espera: {operational.returnTariffOffer.recipientGraceMinutes} min de cortesia,
+                            depois {(operational.returnTariffOffer.waitingRateMinorPerIncrement/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}
+                            a cada {operational.returnTariffOffer.waitingIncrementMinutes} min,
+                            até {(operational.returnTariffOffer.waitingMaxMinor/100).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})}.
+                            Retorno e espera dependem de autorização, evidências e revisão.
+                          </span>
+                          <span className="mt-2 flex items-start gap-2">
+                            <input type="checkbox"
+                              checked={tariffConsentId===job.id+':'+operational.returnTariffOffer.fingerprint}
+                              onChange={e=>setTariffConsentId(e.target.checked
+                                ?job.id+':'+operational.returnTariffOffer!.fingerprint:'')}
+                              className="mt-0.5"/>
+                            Concordo expressamente com estes valores e esta versão contratual para a entrega.
+                          </span>
+                        </label>
+                      ) : (
+                        <p className="text-[9px] text-amber-200">
+                          Tarifas adicionais não publicadas. Sem contrato aceito, retorno e espera não têm cotação automática.
+                        </p>
+                      )}
                       <div className="flex items-center justify-between border-t border-slate-900/80 pt-3">
                         <span className="text-orange-400 bg-orange-400/5 border border-orange-400/20 px-2 py-0.5 rounded-full font-mono text-[9px] font-bold">Disponível</span>
-                        <button type="button" onClick={() => handleAcceptDelivery(job.id)} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Aceitar Entrega</button>
+                        <button type="button" onClick={() => void handleAcceptDelivery(job)} disabled={acceptingDeliveryId !== null || !identityLoaded || !courierVehicleDocumentEligibility(courierIdentity ?? undefined, selectedVehicleType).eligible || job.cargoReady !== true || !(job.allowedVehicles ?? []).includes(selectedVehicleType) || job.payment <= 0 || (Boolean(operational.returnTariffOffer) && tariffConsentId!==job.id+':'+operational.returnTariffOffer!.fingerprint)} className="px-3.5 py-1.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono disabled:cursor-wait disabled:opacity-60">{acceptingDeliveryId === job.id ? 'Confirmando...' : 'Aceitar Entrega'}</button>
                       </div>
                     </div>
                   );
@@ -318,9 +642,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'trajeto' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && d.acceptedBy === (profileName || 'Você')).length === 0 ? (
+                {deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && isAssignedCourierDelivery(d, auth.currentUser?.uid)).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Você não possui entregas em andamento.</div>
-                ) : deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && d.acceptedBy === (profileName || 'Você')).map(job => {
+                ) : deliveries.filter(d => (d.status === 'accepted' || d.status === 'delivering') && isAssignedCourierDelivery(d, auth.currentUser?.uid)).map(job => {
                   const operational = job as OperationalDeliveryJob;
                   const waitingForKitchen = job.status === 'accepted' && operational.source === 'kyrub-order' && operational.orderStatus === 'preparing';
                   return (
@@ -351,6 +675,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                             ) : (
                               <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'delivering')} disabled={waitingForKitchen} className="px-3.5 py-1.5 bg-teal-500 hover:bg-teal-400 disabled:bg-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-slate-950 font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">{waitingForKitchen ? 'Aguardar pronto' : 'Coletar Pacote'}</button>
                             )
+                          ) : isCanonicalCourierDelivery(job) ? (
+                            <span className="max-w-[12rem] text-right text-[9px] leading-relaxed text-cyan-300">Confirme a chegada no painel de rastreio. A entrega só termina após confirmação do cliente.</span>
                           ) : (
                             <button type="button" onClick={() => handleAdvanceDelivery(job.id, 'done')} className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer font-mono">Concluir Entrega</button>
                           )}
@@ -364,9 +690,9 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
             {fazerEntregasModalTab === 'historico' && (
               <div className="space-y-3 text-xs">
-                {deliveries.filter(d => d.status === 'done' && d.acceptedBy === (profileName || 'Você')).length === 0 ? (
+                {deliveries.filter(d => d.status === 'done' && isAssignedCourierDelivery(d, auth.currentUser?.uid)).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Você ainda não concluiu nenhuma entrega.</div>
-                ) : deliveries.filter(d => d.status === 'done' && d.acceptedBy === (profileName || 'Você')).map(job => (
+                ) : deliveries.filter(d => d.status === 'done' && isAssignedCourierDelivery(d, auth.currentUser?.uid)).map(job => (
                   <div key={job.id} className="bg-slate-950 p-4 rounded-2xl border border-slate-850 space-y-2">
                     <div className="flex justify-between items-start gap-4">
                       <div className="min-w-0">
@@ -382,6 +708,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
                     </div>
                   </div>
                 ))}
+                <CourierReturnHistory />
               </div>
             )}
 

@@ -11,6 +11,46 @@ export type VerificationStatus =
   | 'approved'
   | 'rejected';
 
+export type AdditionalCourierProfile = 'bicycle_courier' | 'motorized_courier';
+
+export type ProfileExpansion = {
+  profile: AdditionalCourierProfile;
+  status: 'submitted' | 'approved' | 'rejected';
+  cnhCategory: string;
+  cnhHasEar: boolean;
+  documentPaths: string[];
+  submittedAt?: unknown;
+  reviewedAt?: unknown;
+  reviewedBy: string;
+  reviewReason: string;
+};
+
+export type MotofreteEvidenceKind = 'course' | 'vehicle' | 'inspection' | 'equipment' | 'local';
+
+export const MOTOFRETE_EVIDENCE_LABELS: Record<MotofreteEvidenceKind, string> = {
+  course: 'Curso especializado',
+  vehicle: 'Documentação e autorização do veículo',
+  inspection: 'Inspeção e manutenção de segurança',
+  equipment: 'Equipamentos obrigatórios',
+  local: 'Documentação local (quando aplicável)',
+};
+
+export type MotofreteQualification = {
+  status: 'submitted' | 'approved' | 'rejected' | 'revoked';
+  documents: Record<MotofreteEvidenceKind, string>;
+  submittedAt?: unknown;
+  reviewedAt?: unknown;
+  reviewedBy: string;
+  reviewReason: string;
+  courseVerified: boolean;
+  minimumAgeAndLicenseTenureVerified: boolean;
+  vehicleRegistrationAndAuthorizationVerified: boolean;
+  safetyEquipmentVerified: boolean;
+  semiannualInspectionVerified: boolean;
+  localRequirementsVerified: boolean;
+  validUntil?: unknown;
+};
+
 export type IdentityDocumentType = 'cin' | 'rg' | 'cnh';
 
 export type IdentityVerificationRecord = {
@@ -34,6 +74,8 @@ export type IdentityVerificationRecord = {
   reviewedAt?: unknown;
   reviewedBy?: string;
   reviewReason?: string;
+  profileExpansion?: ProfileExpansion;
+  motofreteQualification?: MotofreteQualification;
 };
 
 export type WorkAction =
@@ -45,6 +87,70 @@ export type WorkAction =
 export const IDENTITY_VERIFICATION_COLLECTION = 'identity_verifications';
 export const IDENTITY_VERIFICATION_OPEN_EVENT = 'kyrub-open-identity-verification';
 export const IDENTITY_CONSENT_VERSION = '2026-08-01';
+
+export type IdentityVerificationSection = 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
+
+// Both Meu Perfil and Renda → Entregas open the same private identity record.
+export const openIdentityVerification = (section: IdentityVerificationSection = 'conta'): void => {
+  if (typeof window === 'undefined') return;
+  window.dispatchEvent(new CustomEvent(IDENTITY_VERIFICATION_OPEN_EVENT, {
+    detail: { section },
+  }));
+};
+
+export const courierVerificationSummary = (
+  record: IdentityVerificationRecord | null
+): { label: string; description: string; canAccept: boolean } => {
+  if (!record || record.status === 'draft') {
+    return {
+      label: 'Cadastro pendente',
+      description: 'Escolha sua modalidade e envie os documentos no cadastro de identidade.',
+      canAccept: false,
+    };
+  }
+  if (record.status === 'submitted' || record.status === 'under_review') {
+    return {
+      label: 'Em análise',
+      description: 'Você pode consultar oportunidades; aceitar exige aprovação da equipe.',
+      canAccept: false,
+    };
+  }
+  if (record.status === 'rejected') {
+    return {
+      label: 'Correção necessária',
+      description: 'Consulte o motivo da revisão na sua área privada de verificação.',
+      canAccept: false,
+    };
+  }
+  const courierApproved = record.approvedProfiles.includes('bicycle_courier')
+    || record.approvedProfiles.includes('motorized_courier');
+  if (courierApproved) {
+    return {
+      label: 'Entregador aprovado',
+      description: 'Aceites dependem ainda das regras específicas do pedido e do veículo.',
+      canAccept: true,
+    };
+  }
+  if (record.profileExpansion?.status === 'submitted') {
+    return {
+      label: 'Habilitação em análise',
+      description: 'Sua atividade anterior continua aprovada. Entregas aguardam a nova análise.',
+      canAccept: false,
+    };
+  }
+  if (record.profileExpansion?.status === 'rejected') {
+    return {
+      label: 'Habilitação: corrigir',
+      description: 'A solicitação adicional precisa de correção. Consulte a central de verificação.',
+      canAccept: false,
+    };
+  }
+  return {
+    label: 'Outra atividade aprovada',
+    description: 'A aprovação atual não inclui entregas. Solicite uma nova modalidade.',
+    canAccept: false,
+  };
+};
 
 const onlyDigits = (value: string): string => value.replace(/\D/g, '');
 
@@ -111,6 +217,16 @@ export const mapIdentityVerification = (
       : [];
   const status = value?.status;
   const documentType = value?.documentType;
+  const expansion = value?.profileExpansion as Record<string, unknown> | undefined;
+  const expansionProfile = expansion?.profile;
+  const expansionStatus = expansion?.status;
+  const motofrete = value?.motofreteQualification as Record<string, unknown> | undefined;
+  const motofreteStatus = motofrete?.status;
+  const motofreteDocuments = motofrete?.documents && typeof motofrete.documents === 'object'
+    ? motofrete.documents as Record<string, unknown>
+    : {};
+  const motofreteDocument = (key: MotofreteEvidenceKind): string =>
+    typeof motofreteDocuments[key] === 'string' ? motofreteDocuments[key] as string : '';
 
   return {
     uid,
@@ -144,6 +260,50 @@ export const mapIdentityVerification = (
     reviewedAt: value?.reviewedAt,
     reviewedBy: stringValue('reviewedBy'),
     reviewReason: stringValue('reviewReason'),
+    profileExpansion:
+      (expansionProfile === 'bicycle_courier' || expansionProfile === 'motorized_courier')
+      && (expansionStatus === 'submitted' || expansionStatus === 'approved' || expansionStatus === 'rejected')
+        ? {
+            profile: expansionProfile,
+            status: expansionStatus,
+            cnhCategory: typeof expansion?.cnhCategory === 'string' ? expansion.cnhCategory : '',
+            cnhHasEar: expansion?.cnhHasEar === true,
+            documentPaths: Array.isArray(expansion?.documentPaths)
+              ? expansion.documentPaths.filter((path): path is string => typeof path === 'string')
+              : [],
+            submittedAt: expansion.submittedAt,
+            reviewedAt: expansion.reviewedAt,
+            reviewedBy: typeof expansion.reviewedBy === 'string' ? expansion.reviewedBy : '',
+            reviewReason: typeof expansion.reviewReason === 'string' ? expansion.reviewReason : '',
+          }
+        : undefined,
+    motofreteQualification:
+      motofreteStatus === 'submitted'
+      || motofreteStatus === 'approved'
+      || motofreteStatus === 'rejected'
+      || motofreteStatus === 'revoked'
+        ? {
+            status: motofreteStatus,
+            documents: {
+              course: motofreteDocument('course'),
+              vehicle: motofreteDocument('vehicle'),
+              inspection: motofreteDocument('inspection'),
+              equipment: motofreteDocument('equipment'),
+              local: motofreteDocument('local'),
+            },
+            submittedAt: motofrete.submittedAt,
+            reviewedAt: motofrete.reviewedAt,
+            reviewedBy: typeof motofrete.reviewedBy === 'string' ? motofrete.reviewedBy : '',
+            reviewReason: typeof motofrete.reviewReason === 'string' ? motofrete.reviewReason : '',
+            courseVerified: motofrete.courseVerified === true,
+            minimumAgeAndLicenseTenureVerified: motofrete.minimumAgeAndLicenseTenureVerified === true,
+            vehicleRegistrationAndAuthorizationVerified: motofrete.vehicleRegistrationAndAuthorizationVerified === true,
+            safetyEquipmentVerified: motofrete.safetyEquipmentVerified === true,
+            semiannualInspectionVerified: motofrete.semiannualInspectionVerified === true,
+            localRequirementsVerified: motofrete.localRequirementsVerified === true,
+            validUntil: motofrete.validUntil,
+          }
+        : undefined,
   };
 };
 

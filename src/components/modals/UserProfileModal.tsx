@@ -26,7 +26,8 @@ import {
   setDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
-import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
+import { formatWhatsApp } from '../../utils/helpers';
+import { openIdentityVerification } from '../../utils/identityVerification';
 import { createSelection, resolveSavedPublication, setSavedPublicationSelections, subscribeSavedPublications, subscribeSelections, type ResolvedSavedPublication, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
 
 interface UserProfileModalProps {
@@ -172,10 +173,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
     setBiometricsActive,
     transactionPin,
     setTransactionPin,
-    kycDocType,
-    setKycDocType,
-    kycStatus,
-    setKycStatus,
     facialValidated,
     setFacialValidated,
     isFacialScanning,
@@ -184,12 +181,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
     setProfileAddress,
     profileWhatsApp,
     setProfileWhatsApp,
-    kycCpf,
-    setKycCpf,
-    kycCnh,
-    setKycCnh,
-    kycCnpj,
-    setKycCnpj,
     triggerToast,
   } = props;
   const [activeSection, setActiveSection] =
@@ -234,14 +225,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
     } finally {
       setIsSaving(false);
     }
-  };
-
-  const startDocumentSimulation = () => {
-    setKycStatus('Em Análise');
-    triggerToast(
-      'Documento preparado para análise. O envio definitivo dependerá do backend seguro.',
-      'info'
-    );
   };
 
   const startFacialSimulation = () => {
@@ -572,107 +555,30 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
           )}
 
           {activeSection === 'verificacao' && (
-            <div className="space-y-4">
-              <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <IdCard className="h-4 w-4 text-indigo-400" />
-                    <div>
-                      <h4 className="text-[10px] font-black uppercase text-slate-200">
-                        Perfil para verificação
-                      </h4>
-                      <p className="mt-0.5 text-[9px] text-slate-500">
-                        Organize os documentos conforme a atividade exercida.
-                      </p>
-                    </div>
-                  </div>
-                  <span
-                    className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
-                      kycStatus === 'Verificado'
-                        ? 'border-emerald-500/30 bg-emerald-500/10 text-emerald-400'
-                        : kycStatus === 'Em Análise'
-                          ? 'border-orange-500/30 bg-orange-500/10 text-orange-300'
-                          : 'border-slate-800 bg-slate-900 text-slate-500'
-                    }`}
-                  >
-                    {kycStatus}
-                  </span>
-                </div>
-                <div className="grid grid-cols-3 gap-2">
-                  {[
-                    { id: 'bike' as const, label: 'Bike', icon: Bike },
-                    { id: 'motorized' as const, label: 'Motorizado', icon: IdCard },
-                    { id: 'lojista' as const, label: 'Lojista', icon: Building2 },
-                  ].map(item => {
-                    const Icon = item.icon;
-                    return (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => {
-                          setKycDocType(item.id);
-                          setKycStatus('Pendente');
-                        }}
-                        className={`rounded-xl border p-2.5 text-[8px] font-bold uppercase ${
-                          kycDocType === item.id
-                            ? 'border-indigo-500/40 bg-indigo-500/15 text-indigo-300'
-                            : 'border-slate-800 bg-slate-900 text-slate-500'
-                        }`}
-                      >
-                        <Icon className="mx-auto mb-1 h-4 w-4" />
-                        {item.label}
-                      </button>
-                    );
-                  })}
-                </div>
-
-                {kycDocType === 'bike' && (
-                  <input
-                    type="text"
-                    value={kycCpf}
-                    onChange={event => setKycCpf(formatCpf(event.target.value))}
-                    placeholder="CPF: 000.000.000-00"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                  />
-                )}
-                {kycDocType === 'motorized' && (
-                  <input
-                    type="text"
-                    value={kycCnh}
-                    onChange={event =>
-                      setKycCnh(event.target.value.replace(/\D/g, '').slice(0, 11))
-                    }
-                    placeholder="Número de registro da CNH com EAR"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                  />
-                )}
-                {kycDocType === 'lojista' && (
-                  <input
-                    type="text"
-                    value={kycCnpj}
-                    onChange={event => setKycCnpj(formatCnpj(event.target.value))}
-                    placeholder="CNPJ: 00.000.000/0001-00"
-                    className="w-full rounded-xl border border-slate-800 bg-slate-900 px-3 py-2.5 text-xs font-mono text-white focus:border-indigo-500/50 focus:outline-none"
-                  />
-                )}
-                <button
-                  type="button"
-                  onClick={startDocumentSimulation}
-                  className="w-full rounded-xl border border-dashed border-indigo-500/35 bg-indigo-500/10 py-3 text-[9px] font-black uppercase text-indigo-300 hover:bg-indigo-500/15"
-                >
-                  Preparar documento para análise
-                </button>
-              </section>
-              <div className="rounded-2xl border border-slate-800 bg-slate-950 p-4 text-[9px] leading-relaxed text-slate-500">
-                <div className="flex items-center gap-2 text-slate-300">
-                  <CheckCircle2 className="h-4 w-4 text-teal-400" />
-                  <span className="font-bold uppercase">Separação de segurança</span>
-                </div>
-                <p className="mt-2">
-                  Documentos, PIN e biometria não são gravados pelo navegador no diretório público.
-                </p>
+            <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-4">
+              <div className="flex items-center gap-2">
+                <ShieldCheck className="h-4 w-4 text-teal-400" />
+                <h4 className="text-[10px] font-black uppercase text-slate-200">Identidade e documentos</h4>
               </div>
-            </div>
+              <p className="text-[10px] leading-relaxed text-slate-400">
+                Seus documentos pessoais ficam em uma única verificação privada. A seção Renda → Entregas consulta
+                a mesma aprovação, sem solicitar outro envio dos documentos já válidos.
+              </p>
+              <p className="text-[9px] leading-relaxed text-slate-500">
+                Para trabalhar com entregas, selecione o perfil de entregador e acompanhe a análise pela mesma central.
+                A aprovação para outra atividade não habilita entregas automaticamente.
+              </p>
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  openIdentityVerification('documentos');
+                }}
+                className="w-full rounded-xl border border-teal-500/30 bg-teal-500/10 py-3 text-[10px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
+              >
+                Consultar documentos e verificação
+              </button>
+            </section>
           )}
         </div>
 

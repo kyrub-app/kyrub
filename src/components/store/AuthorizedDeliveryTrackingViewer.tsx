@@ -162,7 +162,7 @@ export function AuthorizedDeliveryTrackingViewer({
     return (
       <div className="flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[9px] text-slate-500">
         <MapPin className="h-3.5 w-3.5" />
-        O entregador ainda não iniciou o compartilhamento de localização.
+        Sem posição GPS recente disponível. O entregador pode não ter iniciado ou pode estar sem sinal.
       </div>
     );
   }

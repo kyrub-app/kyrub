@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync } from 'node:fs';
 import test from 'node:test';
+import { reconcilePublishedStorefrontCart } from '../src/utils/storefrontOriginContext';
+import { buildProductConfigurationSelection } from '../src/utils/productCustomization';
+import type { Product } from '../src/types';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
 const legacyAppSource = readFileSync('src/LegacyApp.tsx', 'utf8');
@@ -51,6 +54,120 @@ const storefrontEventsSource = readFileSync(
 );
 const vercelConfig = readFileSync('vercel.json', 'utf8');
 
+
+test('resumed storefront cart drops withdrawn products and refreshes server-priced offers', () => {
+  const product = (id: string, price: number, stock = 5) => ({
+    id, name: id, description: 'Produto publicado', price, stock,
+    category: 'Geral', image: '', supplierId: 'store-owner',
+  }) as Product;
+  const savedItem = product('active', 19);
+  const removedItem = product('withdrawn', 39);
+  const saved = [
+    { product: savedItem, quantity: 3 },
+    { product: removedItem, quantity: 1 },
+  ];
+  const current = product('active', 25, 4);
+  const result = reconcilePublishedStorefrontCart(saved, [current]);
+
+  assert.deepEqual(result, [{ product: current, quantity: 3 }]);
+  assert.equal(saved.length, 2, 'the saved cart must not be mutated in place');
+  assert.equal(saved[0].product.price, 19);
+  assert.match(publicStorefrontSource,
+    /setCart\(previous => reconcilePublishedStorefrontCart\(previous, payload\.offers\)\)/);
+});
+
+
+test('resumed storefront cart preserves configured products and reprices current option choices', () => {
+  const original = {
+    id: 'meal', name: 'Refeição', description: '', price: 20,
+    image: '', stock: 8, category: 'Refeições', supplierId: 'owner',
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 5 }],
+    }],
+    quickNotes: ['Sem cebola'],
+  } as Product;
+  const configured = buildProductConfigurationSelection(
+    original, { extras: ['cheese'] }, ['Sem cebola'], 'entregar quente'
+  );
+  const refreshed = {
+    ...original, price: 30,
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 8 }],
+    }],
+  } as Product;
+  const reconciled = reconcilePublishedStorefrontCart([
+    { product: configured, quantity: 2 },
+  ], [refreshed]);
+  assert.equal(reconciled.length, 1);
+  assert.equal(reconciled[0].product.id, configured.id);
+  assert.equal(reconciled[0].product.price, 38);
+  assert.equal(reconciled[0].quantity, 2);
+  assert.equal(reconciled[0].product.selectedOptions?.[0]?.priceDelta, 8);
+  assert.equal(original.price, 20);
+});
+
+
+test('saved configured item remains in cart when public catalog omits customization metadata', () => {
+  const source = {
+    id: 'coffee', name: 'Café', description: '', price: 15,
+    image: '', stock: 6, category: 'Bebidas', supplierId: 'owner',
+    optionGroups: [{
+      id: 'milk', name: 'Leite', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'oat', name: 'Aveia', priceDelta: 5 }],
+    }],
+    quickNotes: ['Sem gelo'],
+  } as Product;
+  const saved = buildProductConfigurationSelection(
+    source, { milk: ['oat'] }, ['Sem gelo']
+  );
+  const currentPublicOffer = {
+    id: 'coffee', name: 'Café', description: '', price: 18,
+    image: '', stock: 3, category: 'Bebidas', supplierId: 'owner',
+  } as Product;
+  const result = reconcilePublishedStorefrontCart(
+    [{ product: saved, quantity: 2 }], [currentPublicOffer]
+  );
+  assert.equal(result.length, 1);
+  assert.equal(result[0].product.id, saved.id);
+  assert.equal(result[0].product.price, 20, 'do not invent a new option price without metadata');
+  assert.equal(result[0].product.stock, 3, 'refresh safe availability data');
+  assert.equal(result[0].quantity, 2);
+});
+
+test('resumed storefront cart rejects withdrawn configuration choices rather than silently changing them', () => {
+  const product = {
+    id: 'meal', name: 'Refeição', description: '', price: 20,
+    image: '', stock: 5, category: 'Refeições', supplierId: 'owner',
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'cheese', name: 'Queijo', priceDelta: 5 }],
+    }],
+  } as Product;
+  const configured = buildProductConfigurationSelection(product, { extras: ['cheese'] });
+  const changed = {
+    ...product,
+    optionGroups: [{
+      id: 'extras', name: 'Extras', minSelections: 1, maxSelections: 1,
+      choices: [{ id: 'salad', name: 'Salada', priceDelta: 3 }],
+    }],
+  } as Product;
+  assert.deepEqual(reconcilePublishedStorefrontCart([
+    { product: configured, quantity: 1 },
+  ], [changed]), []);
+});
+
+test('resumed storefront cart becomes empty when the store has no published offers', () => {
+  const savedProduct = {
+    id: 'old', name: 'Antigo', description: '', price: 12, image: '',
+    stock: 3, category: 'Geral', supplierId: 'owner',
+  } as Product;
+  assert.deepEqual(reconcilePublishedStorefrontCart([
+    { product: savedProduct, quantity: 2 },
+  ], []), []);
+});
+
 test('application routes public slugs before the Kyrub discovery and authenticated shells', () => {
   assert.match(appSource, /resolveKyrubAppRoute\(window\.location\.pathname\)/);
   assert.match(appSource, /route\.kind === 'public-storefront'/);
@@ -77,8 +194,11 @@ test('Renda is the canonical direct discovery door before the full app', () => {
 test('full Kyrub panel opens on Renda and storefront handoff skips the external Renda entry', () => {
   assert.match(
     legacyAppSource,
-    /useState<'perfil' \| 'renda' \| 'kyrub' \| 'cairubia'>\('renda'\)/
+    /useState<ActiveMainTab>\([\s\S]*?retainedWorkspaceTabByUser\.get\(auth\.currentUser\?\.uid \?\? ''\)\?\.activeTab \?\? 'renda'/
   );
+  assert.match(legacyAppSource, /type ActiveMainTab = 'perfil' \| 'renda' \| 'kyrub' \| 'cairubia'/);
+  assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.set\(uid/);
+  assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
   assert.match(
     publicStorefrontSource,
     /window\.location\.assign\('\/\?app=1'\)/

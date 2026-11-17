@@ -62,3 +62,45 @@ test('Firestore and Storage compose dedicated community authorization', () => {
   assert.match(compose, /firestore\.communities\.fragment\.rules/);
   assert.match(storage, /match \/community-covers\/\{communityId\}/);
 });
+
+test('switching communities clears the previous wall and rejects late snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const communitySubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const version = \+\+communitySubscriptionVersion\.current/);
+  assert.match(component, /const isCurrent = \(\) => communitySubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setPosts\(values\); \}/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setDebates\(values\); \}/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
+  assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+closeDebate\(\);/);
+  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);/);
+});
+
+test('switching debates resets the comment composer and ignores late debate snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const debateSubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const version = \+\+debateSubscriptionVersion\.current/);
+  assert.match(component, /setComments\(\[\]\);\s+if \(!selectedCommunityId \|\| !selectedDebateId\) return/);
+  assert.match(component, /const isCurrent = \(\) => debateSubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setComments\(values\); \}/);
+  assert.match(component, /\[selectedCommunityId, selectedDebateId\]/);
+  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);\s+setReplyTo\(null\);\s+setCommentDraft\(''\);\s+setEditingCommentId\(''\);\s+setEditingCommentText\(''\);\s+setSelectedDebateId\(''\);/);
+  assert.match(component, /const openDebate = \(debateId: string\) => \{\s+closeDebate\(\);\s+setSelectedDebateId\(debateId\);/);
+  assert.match(component, /openDebate\(debate\.id\)/);
+  assert.match(component, /onClick=\{closeDebate\}/);
+});
+
+test('private group navigation rejects stale messages and cross-community membership snapshots', () => {
+  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(component, /const groupDirectorySubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /const groupMessageSubscriptionVersion = useRef\(0\)/);
+  assert.match(component, /group\.communityId === selectedCommunityId/);
+  assert.match(component, /group\.memberIds\.includes\(user\.uid\)/);
+  assert.match(component, /const isCurrent = \(\) => groupMessageSubscriptionVersion\.current === version/);
+  assert.match(component, /values => \{ if \(isCurrent\(\)\) setGroupMessages\(values\); \}/);
+  assert.match(component, /const isCurrent = \(\) => groupDirectorySubscriptionVersion\.current === version/);
+  assert.match(component, /setMyCommunityGroups\(values\.filter\(group => group\.communityId === selectedCommunityId\)\)/);
+  assert.match(component, /const closeGroupsModal = \(\) => \{[\s\S]*?setActiveGroupChatId\(''\);[\s\S]*?setGroupMessages\(\[\]\);/);
+  assert.match(component, /const toggleGroupConversation = \(groupId: string\) => \{[\s\S]*?setGroupMessages\(\[\]\);[\s\S]*?setGroupMessageDraft\(''\);/);
+  assert.match(component, /onClick=\{\(\) => toggleGroupConversation\(group\.id\)\}/);
+  assert.match(component, /const openCommunity = \(community: CloudCommunity\) => \{[\s\S]*?closeGroupsModal\(\);/);
+});
