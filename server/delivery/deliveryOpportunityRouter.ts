@@ -47,6 +47,7 @@ import {
   confirmStoreReceivedReturnedDelivery,
 } from './deliveryReturnToStoreService.js';
 import { previewDeliveryReturnEconomicReconciliation } from './deliveryReturnEconomicReviewService.js';
+import { verifyIndependentReturnDistance } from './deliveryReturnRouteVerificationService.js';
 import {
   RETURN_TARIFF_CONFIG_PATH, publishedReturnTariffOffer,
   validateServerTariffOffer, acceptServerReturnTariffOffer,
@@ -215,6 +216,18 @@ const errorResponse = (response: Response, error: unknown): void => {
   }
   if (message.startsWith('DELIVERY_RETURN_LIABILITY_')) {
     response.status(409).json({code:message,error:'O protocolo de devolução mudou ou a decisão não pode ser registrada neste estágio.'});
+    return;
+  }
+  if (message === 'DELIVERY_RETURN_ROUTE_FORBIDDEN') {
+    response.status(403).json({code:message,error:'A verificação da rota exige operador autorizado, independente de quem autorizou o retorno.'});
+    return;
+  }
+  if (message==='DELIVERY_RETURN_ROUTE_INVALID') {
+    response.status(400).json({code:message,error:'Identificador da entrega inválido.'});
+    return;
+  }
+  if (message.startsWith('DELIVERY_RETURN_ROUTE_')) {
+    response.status(409).json({code:message,error:'Rota não certificada. Confira endereço original, geofence, política habilitada e disponibilidade do provedor.'});
     return;
   }
   if (message === 'DELIVERY_RETURN_TARIFF_ACCEPTANCE_REQUIRED') {
@@ -969,6 +982,16 @@ export const createDeliveryOpportunityRouter = (): Router => {
         deliveryId:request.params.deliveryId,operatorId,
       }));
     } catch(error){errorResponse(response,error);}
+  });
+
+  router.post('/admin/returns/:deliveryId/route-distance/verify', async(request,response)=>{
+    try {
+      const operatorId=await authenticatedTenantId(request);
+      response.setHeader('Cache-Control','private, no-store, max-age=0');
+      response.json(await verifyIndependentReturnDistance({
+        deliveryId:request.params.deliveryId,operatorId,
+      }));
+    }catch(error){errorResponse(response,error);}
   });
 
   router.get('/admin/returns/:deliveryId/liability-review', async(request,response)=>{
