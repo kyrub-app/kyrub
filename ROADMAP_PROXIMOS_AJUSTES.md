@@ -99,6 +99,15 @@ Cada número abaixo aparece exatamente uma vez no mapa. É **ordem de atenção*
 - **Gamificação social:** Pitangas por posts/compartilhamentos permanece ideia de desafio administrável, **não ativada**; requer atestação de escritores, budget, antifraude, rate limit e deduplicação de eventos. Não alterar bônus de cadastro (100 Pitangas elegíveis) nem primeira publicação de loja (2 XP, 0 Pitangas).
 - Sem merge, deploy, publicação de regras ou alteração de usuários reais. Prioridades centrais continuam **lojista/ERP, Renda e gamificação**, com Praça/Comunidades/segurança como ligações transversais.
 
+### Avaliações de loja canônicas ↔ Praça — código aprovado em isolamento (17/11/2026)
+
+- **Candidata [PR #1157](https://github.com/kyrub-app/kyrub/pull/1157):** branch acumulada após #1156, HEAD **`2dd057f4c305a90480d84e8eb5cc660d6580ebb7`**, **13/13 GitHub Actions PASS**; `Store security rules` **287/287 + 3/3 + 5/5**, `Validate Kyrub` **2.278/2.278** prebuild, sem regressão dos contratos de planos/Pix simulado.
+- **Ligação funcional implementada:** avaliação autenticada em `store_reviews/{storeId}/reviews/{authorUid}`; somente loja publicada, uma avaliação por usuário/loja, proibição de autoavaliação e de autor/identidade comercial forjados. Ao optar por compartilhar, `social_posts/review_{storeId}_{authorUid}` é criado **na mesma operação batch**; Firestore Rules validam vínculo via `existsAfter/getAfter`. Curtidas na loja e na Praça leem **os mesmos** registros `social_post_likes`, não dois contadores.
+- **Todas as entradas relevantes:** `LegacyApp`/Momentos, `ProfileRecoveredActionsBridge` e a vitrine pública `/@slug` usam `publishStoreReview`; segundo caminho local legado foi eliminado. O histórico anterior de `localStorage` é exibido **separado, sem se passar por avaliação pública**; nenhuma migração automática de autorias antigas.
+- **Moderação cruzada:** remoção administrativa do post de uma avaliação oculta, no mesmo batch, a avaliação canônica vinculada, preservando denúncias/auditoria. Não há concessão de Pitangas ou XP por avaliação/compartilhamento.
+- **Validade comercial ainda pendente:** `TESTADO_ISOLADO`, **não** `PRODUCAO_VERIFICADA`. Exigir Firestore Rules e app coordenados, dispositivo/browser autenticado real, dois usuários (autor/curtidor), reabertura interdispositivos, resposta do lojista e denúncia de reviews sem postagem. A avaliação **não certifica compra concluída**: não usar rótulo "compra verificada" nem reputação premiada até prova vinculada ao pedido. Decidir regras de edição/reavaliação futuras sem prejudicar histórico e antifraude.
+- **Prioridade seguinte após este gate:** moderação de avaliações sem compartilhamento e rastreio de avaliação a pedido genuíno, depois curso/progresso Kyrubia → Praça; tudo sem interferir na prioridade central lojista/ERP, Renda e gamificação segura.
+
 ### Fila executável imediata — sem aguardar Mercado Pago nem Vercel
 
 1. **Inventário e comparação:** congelar o `main` atual e mapear conflitos/arquivos sobrepostos de #1139, #1146, #1138, #1144, #1137, #1145 e #1147. Registrar o que já integra `main` e o que seria novidade real; evitar PR duplicada.
