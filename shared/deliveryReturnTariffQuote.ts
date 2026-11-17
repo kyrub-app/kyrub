@@ -96,6 +96,7 @@ export const quoteDeliveryReturnTariffs=(input:{
   deliveryId:string;
   courierId:string;
   acceptedTerms:unknown;
+  claimAcceptedAt:unknown;
   returnAuthorizationAt:unknown;
   returnDistanceAuthority:unknown;
   recipientWaitingAuthority:unknown;
@@ -105,8 +106,9 @@ export const quoteDeliveryReturnTariffs=(input:{
   }
   const terms=acceptedTerms(input.acceptedTerms,input.deliveryId,input.courierId);
   // A contract added AFTER the incident cannot retroactively set a tariff.
-  if(!terms || !iso(input.returnAuthorizationAt)
-    || Date.parse(terms.acceptedAt)>Date.parse(input.returnAuthorizationAt))return {
+  if(!terms || !iso(input.claimAcceptedAt) || !iso(input.returnAuthorizationAt)
+    || Date.parse(terms.acceptedAt)>Date.parse(input.claimAcceptedAt)
+    || Date.parse(input.claimAcceptedAt)>Date.parse(input.returnAuthorizationAt))return {
     policyId:null,policyVersion:null,contractGraceMinutes:null,
     returnMinor:null,recipientWaitingMinor:null,
     returnStatus:'contract_unavailable',

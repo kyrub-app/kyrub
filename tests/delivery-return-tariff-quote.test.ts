@@ -16,6 +16,7 @@ const distance={source:'independent_route_plan',approved:true,routePlanId:'route
 const wait={source:'corroborated_server_interval',verified:true,
   arrivedAt:'2026-11-17T09:45:00.000Z',returnAuthorizedAt:'2026-11-17T10:01:00.000Z'};
 const base={deliveryId:'d_1',courierId:'c_1',acceptedTerms:terms,
+  claimAcceptedAt:'2026-11-17T09:00:01.000Z',
   returnAuthorizationAt:'2026-11-17T10:01:00.000Z',
   returnDistanceAuthority:distance,recipientWaitingAuthority:wait};
 
@@ -45,7 +46,7 @@ test('missing acceptance, mismatched courier or unverified route/clock are not a
     assert.equal(q.returnStatus,'contract_unavailable');
   }
   const retroactive=quoteDeliveryReturnTariffs({...base,
-    acceptedTerms:{...terms,acceptedAt:'2026-11-17T10:02:00.000Z'}});
+    acceptedTerms:{...terms,acceptedAt:'2026-11-17T09:05:00.000Z'}});
   assert.equal(retroactive.returnMinor,null);
   assert.equal(retroactive.recipientWaitingMinor,null);
   const mismatchedInterval=quoteDeliveryReturnTariffs({...base,

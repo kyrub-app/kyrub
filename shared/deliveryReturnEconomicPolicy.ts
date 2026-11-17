@@ -59,6 +59,7 @@ export const buildDeliveryReturnEconomicPreview = (input: {
   originalRouteMinor: number | null;
   existingCourierObligations: Array<{ id: string; status: string }>;
   acceptedTariffTerms?: unknown;
+  claimAcceptedAt?: unknown;
   returnAuthorizationAt?: unknown;
   independentReturnDistanceAuthority?: unknown;
   recipientWaitingCorroboratedInterval?: unknown;
@@ -75,6 +76,7 @@ export const buildDeliveryReturnEconomicPreview = (input: {
   const quote=quoteDeliveryReturnTariffs({
     deliveryId,courierId,
     acceptedTerms:input.acceptedTariffTerms,
+    claimAcceptedAt:input.claimAcceptedAt,
     returnAuthorizationAt:input.returnAuthorizationAt,
     returnDistanceAuthority:input.independentReturnDistanceAuthority,
     recipientWaitingAuthority:input.recipientWaitingCorroboratedInterval,
