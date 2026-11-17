@@ -302,6 +302,9 @@ export const confirmBuyerReceivedDelivery = async (input: {
     }
 
     const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    if (reassigned && !canonicalStoreId) {
+      throw new Error('DELIVERY_COURIER_PAYABLE_CONFLICT');
+    }
     let courierPayable: EconomicObligation | null = null;
     let courierPayableRef: ReturnType<typeof adminDb.doc> | null = null;
     let originalSplitPayable: EconomicObligation | null = null;
