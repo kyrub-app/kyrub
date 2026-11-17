@@ -223,7 +223,7 @@ try {
     && url.searchParams.get('coupon') === 'BIZ1', { timeout: 20000 });
   const section = page.locator('#official-plan-contract-section');
   await section.waitFor({ state: 'visible', timeout: 20000 });
-  await section.getByText('Cupom da Praça BIZ1 identificado').waitFor({ timeout: 15000 });
+  await section.getByText('Cupom da Praça BIZ1 informado').waitFor({ timeout: 15000 });
   assert.equal(await section.getAttribute('data-official-plan-route'), 'canonical-prepaid');
   await section.getByRole('button', { name: 'Consultar preço oficial do contrato' }).click();
   await section.getByText(/Preço original do contrato/).waitFor();
