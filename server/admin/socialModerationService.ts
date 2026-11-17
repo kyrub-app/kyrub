@@ -142,7 +142,30 @@ export const removeModeratedPost = async (authorization: string, postIdValue: un
   const dependencies = ['social_post_likes','social_post_comments','social_post_engagements','social_post_campaigns'];
   const deleted: Record<string, number> = {};
   for (const name of dependencies) deleted[name] = await deleteByPostId(name, postId);
-  await postRef.delete();
+  // If this post is a store review, hide its canonical review with the same
+  // authoritative moderation decision. Never leave removed harmful text on a
+  // storefront while suppressing only the Praça copy.
+  let hiddenReview = false;
+  const postRemoval = adminDb.batch();
+  postRemoval.delete(postRef);
+  const linked = postData.storeReview as Record<string, unknown> | undefined;
+  const linkedStoreId = clean(linked?.storeId);
+  const linkedReviewId = clean(linked?.reviewId);
+  if (/^[a-zA-Z0-9_-]{1,128}$/.test(linkedStoreId)
+      && /^[a-zA-Z0-9_-]{1,128}$/.test(linkedReviewId)) {
+    const reviewRef = adminDb.doc(`store_reviews/${linkedStoreId}/reviews/${linkedReviewId}`);
+    const reviewSnapshot = await reviewRef.get();
+    if (reviewSnapshot.exists && reviewSnapshot.data()?.postId === postId
+        && reviewSnapshot.data()?.authorId === clean(postData.authorId)
+        && reviewSnapshot.data()?.status === 'published') {
+      postRemoval.update(reviewRef, {
+        status: 'hidden', reviewedBy: admin.uid, reviewReason: reason,
+        reviewedAt: FieldValue.serverTimestamp(),
+      });
+      hiddenReview = true;
+    }
+  }
+  await postRemoval.commit();
   // Keep reported content evidence and outcome for audit; never erase the complaint ledger.
   const reportSnapshots = await adminDb.collection('social_post_reports').where('postId', '==', postId).get();
   let resolvedReports = 0;
@@ -161,9 +184,9 @@ export const removeModeratedPost = async (authorization: string, postIdValue: un
   await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
     id: auditId, action: 'admin.social.post.removed', actorId: admin.uid, actorRole: admin.role,
     targetType: 'social_post', targetId: postId, source: 'server', reason,
-    targetAuthorId: clean(postData.authorId), deletedDependencies: deleted, resolvedReports, createdAt: FieldValue.serverTimestamp(),
+    targetAuthorId: clean(postData.authorId), deletedDependencies: deleted, resolvedReports, hiddenReview, createdAt: FieldValue.serverTimestamp(),
   });
-  return { status: 'removed' as const, postId, deletedDependencies: deleted, resolvedReports };
+  return { status: 'removed' as const, postId, deletedDependencies: deleted, resolvedReports, hiddenReview };
 };
 
 export const mapSocialModerationError = (error: unknown) => {
