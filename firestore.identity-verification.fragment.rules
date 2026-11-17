@@ -479,6 +479,33 @@
       allow create, update, delete: if false;
     }
 
+    // Courier support is private to the assigned reporter and authorized
+    // Control Plane staff. Neither can forge a cancellation or a ticket reply
+    // through the browser; only authenticated server transactions may write.
+    match /deliverySupportTickets/{ticketId} {
+      allow get: if isSignedIn()
+        && (resource.data.courierId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow list: if isSignedIn()
+        && request.query.limit != null && request.query.limit <= 100
+        && (resource.data.courierId == request.auth.uid
+          || hasControlPlaneRole(['super_admin','operations','compliance']));
+      allow create, update, delete: if false;
+    }
+
+    // Server-only audit trails must not be forged or erased by clients.
+    match /deliverySupportTicketEvents/{eventId} {
+      allow get: if hasControlPlaneRole(['super_admin','operations','compliance']);
+      allow list: if hasControlPlaneRole(['super_admin','operations','compliance'])
+        && request.query.limit != null && request.query.limit <= 50;
+      allow create, update, delete: if false;
+    }
+
+    // Rate limits never need browser reads and contain no precise coordinates.
+    match /deliverySupportRateLimits/{courierId} {
+      allow read, write: if false;
+    }
+
     // PIN hashes are server-only. Client and Control Plane screens use the
     // authenticated API and never read or write these documents directly.
     match /user_security/{userId} {
