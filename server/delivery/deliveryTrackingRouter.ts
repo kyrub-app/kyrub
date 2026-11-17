@@ -131,6 +131,13 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if (message === 'CUSTODY_TRANSFER_SETTLEMENT_HOLD') {
+    response.status(409).json({
+      code: message,
+      error: 'Uma transferência foi declarada. Rastreio da antiga atribuição suspenso; contate a logística.',
+    });
+    return;
+  }
   if (message === 'TRACKING_FORBIDDEN') {
     response.status(403).json({
       error: 'Você não tem acesso ao rastreio desta entrega.',
