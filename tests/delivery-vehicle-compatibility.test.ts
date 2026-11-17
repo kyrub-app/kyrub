@@ -29,16 +29,34 @@ test('motorized registration is not automatic authorization for every vehicle', 
     status: 'approved', approvedProfiles:['motorized_courier'],
     documentType:'cnh', documentPaths:['cnh'], cnhCategory:'A', cnhHasEar:true,
   };
-  assert.equal(courierVehicleDocumentEligibility(motorized,'motorcycle').eligible, true);
+  // The generic motorized profile never releases motofrete by itself.
+  assert.equal(courierVehicleDocumentEligibility(motorized,'motorcycle').eligible, false);
   assert.equal(courierVehicleDocumentEligibility(motorized,'car').eligible, false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'B'},'car').eligible, true);
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'B'},'motorcycle').eligible, false);
-  assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'AB'},'motorcycle').eligible, true);
+  assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'AB'},'motorcycle').eligible, false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'AB'},'car').eligible, true);
   assert.equal(courierVehicleDocumentEligibility({...motorized,cnhHasEar:false},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,documentPaths:[]},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,documentType:'cin'},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({...motorized,status:'under_review'},'motorcycle').eligible,false);
+  const clearance = {
+    status: 'approved',
+    courseVerified: true,
+    minimumAgeAndLicenseTenureVerified: true,
+    vehicleRegistrationAndAuthorizationVerified: true,
+    safetyEquipmentVerified: true,
+    semiannualInspectionVerified: true,
+    localRequirementsVerified: true,
+    reviewedBy: 'admin-compliance',
+    validUntilEpochMs: Date.now() + 24 * 60 * 60 * 1000,
+  };
+  const withCompliance = {...motorized, motofreteQualification: clearance};
+  assert.equal(courierVehicleDocumentEligibility(withCompliance,'motorcycle').eligible, true);
+  assert.equal(courierVehicleDocumentEligibility({...motorized,cnhCategory:'B',motofreteQualification:clearance},'motorcycle').eligible,false);
+  assert.equal(courierVehicleDocumentEligibility({...withCompliance,motofreteQualification:{...clearance,courseVerified:false}},'motorcycle').eligible,false);
+  assert.equal(courierVehicleDocumentEligibility({...withCompliance,motofreteQualification:{...clearance,validUntilEpochMs:Date.now()-1}},'motorcycle').eligible,false);
+  assert.equal(courierVehicleDocumentEligibility({...withCompliance,motofreteQualification:{...clearance,reviewedBy:''}},'motorcycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility(motorized,'bicycle').eligible,false);
   assert.equal(courierVehicleDocumentEligibility({status:'approved',approvedProfiles:['bicycle_courier']},'bicycle').eligible,true);
   assert.equal(courierVehicleDocumentEligibility({
