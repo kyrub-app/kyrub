@@ -154,7 +154,7 @@ test('motofrete UI separates evidence submission and compliance review without a
   assert.match(profile, /submitMotofreteQualification/);
   assert.match(profile, /motofreteQualification:\s*\{/);
   assert.match(profile, /courseVerified: false/);
-  assert.match(profile, /motofreteQualification\.status === 'submitted'/);
+  assert.match(profile, /motofreteQualification\?\.status === 'submitted'/);
   assert.match(admin, /const canReviewMotofrete =/);
   assert.match(admin, /\['super_admin', 'compliance'\]/);
   assert.match(admin, /MOTO_CHECKS/);
