@@ -52,3 +52,51 @@ A avaliação especializada foi adicionada ao **mesmo documento privado de ident
 - Teste **E2E físico**: bicicleta/moto/carro com 4G, GPS negado, GPS perdido, troca de contas, suspensão do app ao abrir Google Maps, coleta por código/geofence, confirmação do comprador e expiração automática da localização.
 - Configuração e restrição da chave do mapa incorporado apenas se esta função vier a ser habilitada; não confundir com links externos.
 - Validar publicação coordenada de frontend, backend e regras Firebase. **Não liberar PR #1145 ou produção com base apenas nos testes de fonte/CI.**
+
+## Control Plane — incidentes de motofrete após revogação
+
+A partir da PR #1145, a **mesma tela de verificação de identidade** exibe uma fila
+privada de `deliveryComplianceIncidents`, para Super Admin, Operations e Compliance.
+O controle do incidente é uma operação no servidor existente:
+`POST /api/delivery-opportunities/admin/compliance-incidents/:deliveryId/resolve`.
+O servidor verifica novamente o vínculo administrativo ativo e não confia em
+dados de fase ou identidade enviados pela interface.
+
+**Liberação para novo aceite (somente antes da coleta):**
+- Precisa de pedido Kyrub ainda em preparo/pronto na loja, entrega `accepted`,
+  `deliveryClaims` em `accepted`, mesmo entregador revogado e hold ativo.
+- Nenhum evento de coleta confirmado, `collectedAt`, handoff concluído ou comprovante
+  de recebimento pode existir.
+- Uma só transação exclui a antiga atribuição, invalida o código anterior,
+  retira dados precisos do GPS antigo, reabre a oferta pública e programa nova
+  janela de escalonamento. O entregador revogado continua impedido de aceitar
+  nova oferta de moto. O pedido **não** é reatribuído a outro usuário arbitrariamente:
+  um novo entregador precisa aceitá-lo explicitamente sob as regras vigentes.
+- Um evento privado registra operador, motivo, entrega, fase e ID do incidente
+  original, sem duplicar dados pessoais do comprador.
+
+**Pacote já em rota:** o operador pode registrar
+`request_supervised_handoff`. Isso **não altera a custódia Firestore**,
+não coloca um novo entregador como responsável e **não autoriza motofrete
+irregular**. O entregador deve parar em local seguro e aguardar a
+transferência física supervisionada via suporte. O procedimento físico de
+troca de custódia, com dupla confirmação, ainda requer um fluxo próprio
+antes de lançamento comercial em escala.
+
+**Encerramento:** o operador pode registrar `close_after_buyer_confirmation`
+somente se o documento `deliveryCompletions/{deliveryId}` já estiver
+`confirmed` e `settlementEligible=true`, com entrega e claim `done`.
+Esse encerramento não cria pagamento, não altera o extrato e não substitui a
+confirmação do comprador.
+
+Todas essas ações têm justificativa de 10 a 500 caracteres. A decisão e
+um evento em `deliveryComplianceIncidentEvents` são atômicos no servidor.
+Repetir exatamente a mesma decisão com o mesmo operador e motivo retorna
+o evento anterior, sem novo efeito. As regras Firebase proíbem que usuários,
+inclusive administradores via SDK cliente, criem ou alterem esses eventos.
+
+Limitações do piloto: a busca inicial da revogação é limitada às primeiras
+100 atribuições (falha reportada ao revisor, hold permanece), a fila visual
+exibe no máximo 100 incidentes e a transição de custódia em rota ainda
+precisa de homologação física. **Não usar este fluxo como prova de entrega
+nem como autorização legal de continuidade do motofrete.**
