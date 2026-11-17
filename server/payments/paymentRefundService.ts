@@ -11,6 +11,7 @@ import type { VerifiedPaymentProviderEvent } from '../../src/utils/paymentProvid
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
 import { processVerifiedPaymentWebhook } from './paymentWebhookProcessor.js';
 import { writeOperationalOrderRefundState } from './orderRefundStateService.js';
+import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 
 interface MercadoPagoRefundResponse {
   id?: string | number;
@@ -394,6 +395,11 @@ export const requestCanonicalOrderRefund = async (input: {
       duplicate: true,
     };
   }
+
+  // Enforce the same safety rule for direct service callers, not just the
+  // authenticated HTTP router. Never start a provider refund when a partial
+  // operation is confirmed, in flight, uncertain, or too large to reconcile.
+  await assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId });
 
   const payment = await preparePaymentForRefund(initialPayment, reason);
   await writeOperationalOrderRefundState({

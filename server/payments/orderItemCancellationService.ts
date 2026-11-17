@@ -566,6 +566,24 @@ const mutateOrderItems = async (input: {
       );
     }
     transaction.create(cancellationRef, cancellationRecord);
+    if (refundRequired) {
+      // Make the financial conflict visible atomically with the ERP mutation.
+      // The provider request happens later; full refunds must already see this
+      // unresolved partial attempt and fail closed during that interval.
+      transaction.create(
+        adminDb.doc(partialRefundPath(input.storeId, input.operationId)),
+        {
+          storeId: input.storeId,
+          orderId: input.orderId,
+          operationId: input.operationId,
+          amount: cancelledAmount,
+          reason: input.reason,
+          status: 'required',
+          createdAt: updatedAt,
+          updatedAt,
+        }
+      );
+    }
 
     return {
       orderId: input.orderId,
