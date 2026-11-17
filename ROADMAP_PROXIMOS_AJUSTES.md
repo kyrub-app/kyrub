@@ -930,3 +930,65 @@ Os **#63–#67** voltam a reunir tudo para validação final.
 
 - ⏸️ #11 — primeiro E2E Pix real do X-Burger: aguarda produto legitimamente vendável e confirmação explícita imediatamente antes de dinheiro real.
 - ⏸️ Teste real BYO-AI fora desta bateria de 67: proprietário fará diretamente em `Minha IA`, sem enviar chave em chat.
+
+
+---
+
+## Adendo de 17/11/2026 — Homologação real de Kyrub Entregas (PR #1145)
+
+**Situação:** ⏸️ **PENDENTE — gate de homologação visual e GPS em dispositivo real**.
+Enquadramento da lista-mãe de cinco macroblocos: **Bloco 4 — Jornada operacional**,
+com fechamento no **Bloco 5 — Beta Gate**. Relaciona-se às verificações **#63
+(Cross-domain E2E), #64 (Security Regression), #65 (Production Verification)** desta bateria
+de 67 pontos. **Não cria um item numerado duplicado** nem substitui esses gates.
+
+**Evidência disponível — não repetir sem mudança relevante de código:**
+- PR: https://github.com/kyrub-app/kyrub/pull/1145, branch
+  `fix/courier-authoritative-accept-tracking-resume`.
+- Teste integrado isolado `tests/firestore-delivery-return-journey-e2e.test.ts`
+  executa a jornada ERP/loja → publicação de oferta → consentimento tarifário
+  de teste e aceite → coleta por código → GPS/geofence *sintéticos* → destinatário
+  ausente e suporte → retorno supervisionado → recebimento físico *simulado*
+  pela loja → prévia econômica → classificação e revisão financeira independentes.
+- GitHub Actions no commit `180a017428af1155f766cda44c6782f764d1f00f`:
+  **301/301 testes** da suíte principal Firestore Emulator aprovados, incluindo
+  o novo subteste; checks de build/contratos/segurança aprovados. O resultado
+  não certifica GPS físico, interface Android ou operação comercial.
+
+**Gate que falta comprovar em HTTPS isolado, fora da produção:**
+- [ ] Disponibilizar build exato da PR #1145 em preview HTTPS isolada
+  com autenticação de **contas fictícias**, serviços de backend e Firebase
+  isolados. Vercel não é requisito se houver alternativa equivalente;
+  não habilitar Pix nem publicar dados/pedidos reais.
+- [ ] Conferir em Android com GPS de dispositivo real, permissão de localização,
+  geofence da loja/destinatário e retomada após perda de rede ou recarga,
+  inclusive precisão/atualidade e expiração de posições.
+- [ ] Conferir UI autenticada dos três papéis: entregador (oferta, aceite,
+  rota, rastreio e suporte), lojista (coleta, código, confirmação da devolução)
+  e operador (chamado, autorização, revisão independente).
+- [ ] Verificar que compradores e outros entregadores não acessam localização
+  privada, que a loja não confirma pacote alheio, que duas operações
+  concorrentes/repetidas não produzem custódia ou pagamento em duplicidade.
+- [ ] Conferir o relatório financeiro das **quatro parcelas separadas**
+  (rota original, retorno, espera e eventual reembolso do comprador),
+  preservando `Não apurado` quando faltar prova; **nenhuma liquidação,
+  cobrança ou reembolso autorizado por estes testes**.
+- [ ] Submeter tarifas reais e efeitos legais a aprovação humana, revisar
+  privacidade/GPS, capacidade do suporte, custo/permissão da API de rotas
+  antes de habilitar política comercial.
+- [ ] Registrar evidências de navegador/dispositivo, logs sanitizados,
+  SHA e parecer de liberação; só então avaliar merge/publicação em gate
+  específico. A PR permanece Draft até haver evidência suficiente.
+
+**Próxima frente independente da Vercel (recomendação):** reconciliação
+de código, contratos e testes do **Bloco 3 — Financeiro**:
+reembolso total/parcial e cancelamento de pedido (**#13–#14**), integrando
+a separação da remuneração do entregador (**#18**) à política de devolução,
+**sem refazer** os testes já existentes em
+`tests/payment-failure-e2e.test.ts`,
+`tests/payment-refund-reconciliation.test.ts` e
+`tests/payments-failure-refund-integration.test.ts`. A primeira tarefa é
+mapear os fluxos reais de `server/payments/*Refund*`,
+ledger/obrigação e seu vínculo com a devolução; corrigir apenas lacunas
+comprovadas. Proibidos reembolso real, mudança de preço, Pix ativo, merge
+ou deploy sem autorização separada.

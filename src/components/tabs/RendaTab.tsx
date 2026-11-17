@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDoc } from 'firebase/firestore';
+import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import {
   BadgeCheck,
   Briefcase,
@@ -14,6 +14,14 @@ import {
 import { DeliveryJob, FreelanceJob } from '../../types';
 import { auth, db } from '../../utils/firebase';
 import { loadCachedUserStore } from '../../utils/storePersistence';
+import { isAvailableCourierOffer } from '../../utils/courierDeliveryView';
+import {
+  IDENTITY_VERIFICATION_COLLECTION,
+  courierVerificationSummary,
+  mapIdentityVerification,
+  openIdentityVerification,
+  type IdentityVerificationRecord,
+} from '../../utils/identityVerification';
 import { getPrimaryUserStoreDocumentPath } from '../../utils/storePaths';
 import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectionCard';
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
@@ -68,6 +76,39 @@ export function RendaTab({
   const [isProvisioningFree, setIsProvisioningFree] = useState(false);
   const [isDeliveryEarningsOpen, setIsDeliveryEarningsOpen] =
     useState(false);
+  const [courierVerification, setCourierVerification] = useState<IdentityVerificationRecord | null>(null);
+  const [courierVerificationRead, setCourierVerificationRead] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  // Read the same private identity document used by Meu Perfil; never cache IDs or documents in Renda.
+  useEffect(() => {
+    let unsubscribeVerification = () => undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeVerification();
+      setCourierVerification(null);
+      if (!user) {
+        setCourierVerificationRead('ready');
+        return;
+      }
+      setCourierVerificationRead('loading');
+      unsubscribeVerification = onSnapshot(
+        doc(db, IDENTITY_VERIFICATION_COLLECTION, user.uid),
+        snapshot => {
+          setCourierVerification(snapshot.exists()
+            ? mapIdentityVerification(user.uid, snapshot.data() as Record<string, unknown>, user.displayName || '')
+            : null);
+          setCourierVerificationRead('ready');
+        },
+        () => {
+          setCourierVerification(null);
+          setCourierVerificationRead('error');
+        }
+      );
+    });
+    return () => {
+      unsubscribeAuth();
+      unsubscribeVerification();
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -199,6 +240,8 @@ export function RendaTab({
     }
   };
 
+  const courierSummary = courierVerificationSummary(courierVerification);
+
   return (
     <div
       className="space-y-6 animate-fade-in"
@@ -235,6 +278,39 @@ export function RendaTab({
           </div>
 
           <div className="space-y-2 pt-1">
+            <section className="rounded-xl border border-slate-700 bg-slate-950/80 p-2.5" aria-label="Habilitação para entregas">
+              <div className="flex items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-[9px] font-black uppercase text-slate-200">
+                    {courierVerificationRead === 'loading'
+                      ? 'Consultando habilitação...'
+                      : courierVerificationRead === 'error'
+                        ? 'Verificação indisponível'
+                        : courierSummary.label}
+                  </p>
+                  <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
+                    {courierVerificationRead === 'error'
+                      ? 'Não foi possível consultar o status. Tente novamente mais tarde.'
+                      : courierSummary.description}
+                  </p>
+                </div>
+                <BadgeCheck className="h-4 w-4 shrink-0 text-teal-400" aria-hidden="true" />
+              </div>
+              <button
+                type="button"
+                id="btn-courier-verification"
+                onClick={() => {
+                  if (!auth.currentUser) {
+                    triggerToast('Entre na sua conta para iniciar sua habilitação.', 'warning');
+                    return;
+                  }
+                  openIdentityVerification('conta');
+                }}
+                className="mt-2 w-full rounded-lg border border-teal-500/30 bg-teal-500/10 px-2 py-2 text-[9px] font-black uppercase text-teal-300 hover:bg-teal-500/20"
+              >
+                {courierSummary.canAccept ? 'Consultar minha habilitação' : 'Cadastrar ou acompanhar habilitação'}
+              </button>
+            </section>
             <button
               type="button"
               onClick={() => setShowDeliveryModal(true)}
@@ -253,13 +329,12 @@ export function RendaTab({
             >
               <span>Fazer entregas</span>
               {deliveries.filter(
-                delivery => delivery.status === 'available'
+                isAvailableCourierOffer
               ).length > 0 && (
                 <span className="rounded-full bg-orange-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
                   {
                     deliveries.filter(
-                      delivery =>
-                        delivery.status === 'available'
+                      isAvailableCourierOffer
                     ).length
                   }
                 </span>
