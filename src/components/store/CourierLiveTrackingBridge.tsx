@@ -382,6 +382,7 @@ export function CourierLiveTrackingBridge() {
         </button>
         {supportOpen && <CourierDeliverySupportDialog
           deliveryId={activeDelivery.id} stage={activeDelivery.status}
+          pickupAddress={activeDelivery.from}
           onClose={() => setSupportOpen(false)} />}
       </div>
     );
@@ -573,6 +574,7 @@ export function CourierLiveTrackingBridge() {
       )}
       {supportOpen && <CourierDeliverySupportDialog
         deliveryId={activeDelivery.id} stage={activeDelivery.status}
+        pickupAddress={activeDelivery.from}
         onClose={() => setSupportOpen(false)} />}
     </aside>
   );
