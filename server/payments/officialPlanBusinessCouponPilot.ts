@@ -14,6 +14,8 @@ export type BusinessCouponPilotOffer = {
   productId: string;
   plan: string;
   priceMinor: number;
+  points?: number;
+  rewards?: { xp?: number; achievement?: unknown };
   quote: { months: number; totalMinor: number };
 };
 
@@ -37,6 +39,8 @@ export const assertLiveBusinessCouponPilot = (input: {
       !validId(expectedPromotionId) || !validCode(expectedCode) ||
       offer.plan !== 'business' || offer.quote.months !== 1 ||
       offer.priceMinor !== 39700 || offer.quote.totalMinor !== 39700 ||
+      (offer.points ?? 0) !== 0 || (offer.rewards?.xp ?? 0) !== 0 ||
+      Boolean(offer.rewards?.achievement) ||
       accepted.buyerUid !== buyerUid || accepted.officialStoreId !== offer.storeId ||
       accepted.officialProductId !== offer.productId || accepted.months !== 1 ||
       accepted.originalTotalMinor !== 39700 || accepted.discountMinor !== 39600 ||

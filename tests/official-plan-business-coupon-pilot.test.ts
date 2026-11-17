@@ -80,7 +80,8 @@ test('pilot refuses Pro, longer term, another amount, a public coupon or multipl
   for (const change of [
     { plan: 'pro' }, { quote: { months: 3, totalMinor: 39700 } },
     { priceMinor: 39600 }, { quote: { months: 1, totalMinor: 39600 } },
-    { productId: 'other-product' },
+    { productId: 'other-product' }, { points: 1 },
+    { rewards: { xp: 2 } }, { rewards: { xp: 0, achievement: { id: 'unexpected' } } },
   ]) assert.throws(() => assertLiveBusinessCouponPilot({ ...params, offer: { ...offer, ...change } }), /PILOT_FORBIDDEN/);
   for (const change of [
     { payableMinor: 101 }, { payableMinor: 0 }, { originalTotalMinor: 100 },
