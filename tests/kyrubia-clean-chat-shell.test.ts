@@ -21,7 +21,7 @@ const externalBridgeEvents = readFileSync(
 
 test('Kyrubia uses the clean conversation shell requested for the primary workspace', () => {
   assert.match(workspace, /aria-label="Abrir conversas"/);
-  assert.match(workspace, /aria-label="Mais opções da Kyrubia"/);
+  assert.doesNotMatch(workspace, /aria-label="Mais opções da Kyrubia"/);
   assert.match(workspace, /aria-label="Anexar ou conectar IA"/);
   assert.match(workspace, /aria-label="Enviar mensagem para a Kyrubia"/);
   assert.match(workspace, /Mensagem para a Kyrubia\.\.\./);
@@ -61,13 +61,26 @@ test('conversation history stays available from the hamburger drawer', () => {
   assert.match(workspace, /setActiveConversationId/);
 });
 
-test('Kyrubia Educadora is a dedicated resumable learning context', () => {
-  assert.match(workspace, /const EDUCATOR_TOPIC = 'Kyrubia Educadora'/);
-  assert.match(workspace, /Aprender · praticar · evoluir/);
-  assert.match(workspace, /Começar nova trilha/);
-  assert.match(workspace, /Continuar aprendendo/);
-  assert.match(workspace, /O que você quer aprender\?/);
-  assert.match(workspace, /conversation\.topic === EDUCATOR_TOPIC/);
+test('Cairúbia opens with personal assistant presentation and retains conversation history', () => {
+  const welcome = readFileSync('src/components/KyrubiaWelcomePanel.tsx', 'utf8');
+  const guest = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+  assert.match(workspace, /<KyrubiaWelcomePanel/);
+  assert.match(guest, /<KyrubiaWelcomePanel/);
+  assert.match(workspace, /activeConversation\.messages\.length === 0/);
+  assert.match(workspace, /setDraft\(prompt\)/);
+  assert.match(workspace, /onConnectAi=\{openProviderSettings\}/);
+  assert.match(workspace, /findProviderSettingsTrigger/);
+  assert.match(welcome, /Olá! Eu sou a Cairúbia/);
+  assert.match(welcome, /Organizar o dia e preparar tarefas/);
+  assert.match(welcome, /Explicar recursos do Kyrub/);
+  assert.match(welcome, /Pesquisa na internet e criação de imagens dependem/);
+  assert.match(welcome, /Alguns provedores exigem uma chave de API/);
+  assert.match(welcome, /Conectar minha IA/);
+  assert.match(welcome, /Sugestões não executam ações automaticamente/);
+  assert.doesNotMatch(workspace, /educatorOpen|startEducatorConversation|EllipsisVertical|Kyrubia Educadora/);
+  assert.match(workspace, /conversations\.map/);
+  assert.match(workspace, /loadKyrubAiConversations/);
+  assert.match(workspace, /saveKyrubAiConversations/);
 });
 
 test('the clean shell preserves authoritative and multimodal Kyrubia runtime paths', () => {
@@ -80,19 +93,4 @@ test('the clean shell preserves authoritative and multimodal Kyrubia runtime pat
   assert.match(workspace, /selectedOfferedIntentId/);
 });
 
-test('Educadora reuses Kyrubia chat for the three learning paths without automatic enrolment', () => {
-  const tracks = readFileSync('src/ai/kyrubiaLearningTracks.ts', 'utf8');
-  assert.match(workspace, /KYRUBIA_LEARNING_TRACKS\.map\(track =>/);
-  assert.match(workspace, /onClick=\{\(\) => startEducatorConversation\(track\)\}/);
-  assert.match(workspace, /track\?\.title \?\? EDUCATOR_TOPIC/);
-  assert.match(workspace, /setDraft\(track\?\.starterPrompt \?\? ''\)/);
-  assert.match(workspace, /Começar nova trilha/);
-  assert.match(workspace, /Escolher uma trilha não realiza matrícula nem contratação/);
-  for (const name of [
-    'Aprender para gerar renda',
-    'Aprender a empreender',
-    'Aprender a usar o Kyrub',
-  ]) assert.ok(tracks.includes(name));
-  assert.doesNotMatch(tracks, /enrollCourse|purchaseCourse|issueCertificate/);
-  assert.doesNotMatch(workspace, /requestReply\(conversation,.*starterPrompt/);
-});
+
