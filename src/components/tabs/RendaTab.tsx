@@ -19,6 +19,10 @@ import { CourierEarningsProjectionCard } from '../renda/CourierEarningsProjectio
 import { LocalServiceDashboardCards } from '../store/LocalServiceDashboardCards';
 
 interface RendaTabProps {
+  guestReadOnly?: boolean;
+  onGuestBrowseDeliveries?: () => void;
+  onGuestBrowseFreelas?: () => void;
+  onGuestLoginRequired?: (reason: string) => void;
   deliveries: DeliveryJob[];
   freelanceJobs: FreelanceJob[];
   setShowDeliveryModal: (show: boolean) => void;
@@ -51,6 +55,10 @@ const hasMeaningfulStoreProfile = (
 };
 
 export function RendaTab({
+  guestReadOnly = false,
+  onGuestBrowseDeliveries,
+  onGuestBrowseFreelas,
+  onGuestLoginRequired,
   deliveries,
   freelanceJobs,
   setShowDeliveryModal,
@@ -158,6 +166,10 @@ export function RendaTab({
   }, [isDeliveryEarningsOpen]);
 
   const openRetailerWorkspace = async () => {
+    if (guestReadOnly) {
+      onGuestLoginRequired?.('criar ou acessar sua loja');
+      return;
+    }
     if (isProvisioningFree) return;
     // Existing stores must remain accessible even when a paid entitlement
     // requires reconciliation; Free provisioning is only for first creation.
@@ -216,7 +228,9 @@ export function RendaTab({
               </div>
               <button
                 type="button"
-                onClick={() => setIsDeliveryEarningsOpen(true)}
+                onClick={() => guestReadOnly
+                  ? onGuestLoginRequired?.('consultar seus ganhos')
+                  : setIsDeliveryEarningsOpen(true)}
                 className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-300 transition hover:border-cyan-400/35 hover:bg-cyan-500/[0.14] active:scale-95"
                 id="btn-delivery-earnings"
                 aria-label="Ver ganhos em entregas"
@@ -237,7 +251,9 @@ export function RendaTab({
           <div className="space-y-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowDeliveryModal(true)}
+              onClick={() => guestReadOnly
+                ? onGuestLoginRequired?.('solicitar uma entrega')
+                : setShowDeliveryModal(true)}
               className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all hover:bg-orange-500"
               id="btn-solicitar-entrega"
             >
@@ -245,8 +261,9 @@ export function RendaTab({
             </button>
             <button
               type="button"
-              onClick={() =>
-                setShowFazerEntregasModal(true)
+              onClick={() => guestReadOnly
+                ? onGuestBrowseDeliveries?.()
+                : setShowFazerEntregasModal(true)
               }
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-all hover:text-orange-300"
               id="btn-fazer-entregas"
@@ -285,7 +302,9 @@ export function RendaTab({
           <div className="space-y-2 pt-1">
             <button
               type="button"
-              onClick={() => setShowFreelaModal(true)}
+              onClick={() => guestReadOnly
+                ? onGuestLoginRequired?.('contratar um freela')
+                : setShowFreelaModal(true)}
               className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-teal-400"
               id="btn-solicitar-freela"
             >
@@ -293,8 +312,9 @@ export function RendaTab({
             </button>
             <button
               type="button"
-              onClick={() =>
-                setShowFazerFreelasModal(true)
+              onClick={() => guestReadOnly
+                ? onGuestBrowseFreelas?.()
+                : setShowFazerFreelasModal(true)
               }
               className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
               id="btn-fazer-freela"
