@@ -26,7 +26,6 @@ import {
   Play,
   Pause,
   TrendingUp,
-  LogOut,
   Clock,
   Activity,
   CheckCircle2,
@@ -575,6 +574,7 @@ export default function App() {
 
   // User Profile state
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
   const [profilePhotoUrl, setProfilePhotoUrl] = useState('');
@@ -1092,6 +1092,31 @@ export default function App() {
     return () => clearInterval(checkAlarms);
   }, [notes, dismissedAlarms, activeAlarmNote]);
 
+  // Leaving the account is a deliberate action in Meu perfil, never a
+  // navigation/back control in the application header.
+  const handleLogout = async (): Promise<void> => {
+    if (isSigningOut) return;
+    const signingOutUid = auth.currentUser?.uid;
+    if (!signingOutUid) {
+      setShowUserProfileModal(false);
+      return;
+    }
+    setIsSigningOut(true);
+    try {
+      await signOut(auth);
+      retainedWorkspaceTabByUser.delete(signingOutUid);
+      setShowUserProfileModal(false);
+      setIsLoggedIn(false);
+      setGpsGranted(false);
+      triggerToast('Você saiu do ecossistema Kyrub.', 'info');
+    } catch (error) {
+      console.error('Sign out error:', error);
+      triggerToast('Não foi possível sair da conta. Tente novamente.', 'error');
+    } finally {
+      setIsSigningOut(false);
+    }
+  };
+
   // Handle Login Flow
 const handleLogin = async (provider: 'google' | 'apple') => {
   if (provider === 'apple') {
@@ -1267,30 +1292,8 @@ const handleLogin = async (provider: 'google' | 'apple') => {
           {/* 1. TOP MOBILE NAV HEADER */}
           <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
             <button
-              onClick={async () => {
-                const signingOutUid = auth.currentUser?.uid;
-                if (signingOutUid) retainedWorkspaceTabByUser.delete(signingOutUid);
-                try {
-                  await signOut(auth);
-                  setIsLoggedIn(false);
-                  setGpsGranted(false);
-                  triggerToast('Você saiu do ecossistema Kyrub.', 'info');
-                } catch (e) {
-                  console.error('Sign out error:', e);
-                  setIsLoggedIn(false);
-                  setGpsGranted(false);
-                }
-              }}
-              className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-slate-400 hover:text-red-400 transition-all mr-auto"
-              title="Sair"
-              aria-label="Sair"
-            >
-              <LogOut className="w-4 h-4 rotate-180" />
-            </button>
-
-            <button
               onClick={() => setShowUserProfileModal(true)}
-              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
+              className="mr-auto w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
               id="header-user-profile-trigger"
               title="Meu perfil"
               aria-label="Abrir meu perfil"
@@ -1764,6 +1767,8 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       <UserProfileModal
         isOpen={showUserProfileModal}
         onClose={() => setShowUserProfileModal(false)}
+        onLogout={() => { void handleLogout(); }}
+        isSigningOut={isSigningOut}
         profileName={profileName}
         setProfileName={setProfileName}
         profileEmail={profileEmail}

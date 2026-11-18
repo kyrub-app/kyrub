@@ -396,3 +396,31 @@ test('Vercel sends direct public, staff and legacy app routes to the SPA entry',
   assert.equal(routes.get('/@:slug/:path*'), '/index.html');
   assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
+
+test('app header shows profile first while logout is only available inside the profile', () => {
+  const profileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+  const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+  const appHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
+  const guestHeader = guestSource.match(/<header id="app-header"([\s\S]*?)<\/header>/)?.[1] ?? '';
+
+  assert.ok(appHeader.length > 0, 'authenticated app header should exist');
+  assert.ok(guestHeader.length > 0, 'guest app header should exist');
+  assert.ok(appHeader.indexOf('id="header-user-profile-trigger"') < appHeader.indexOf('id="header-marketplace-trigger"'));
+  assert.equal((appHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
+  assert.doesNotMatch(appHeader, /<LogOut|aria-label="Sair"|title="Sair"/);
+  assert.match(appHeader, /mr-auto w-10 h-10 rounded-xl/);
+
+  assert.ok(guestHeader.indexOf('id="header-user-profile-trigger"') < guestHeader.indexOf('id="header-marketplace-trigger"'));
+  assert.equal((guestHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
+  assert.doesNotMatch(guestHeader, /<LogIn|<LogOut/);
+  assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
+
+  assert.match(profileSource, /id="profile-logout-button"/);
+  assert.match(profileSource, /onClick=\{onLogout\}/);
+  assert.match(profileSource, /disabled=\{isSigningOut\}/);
+  assert.match(profileSource, /Sair da conta/);
+  assert.match(legacyAppSource, /onLogout=\{\(\) => \{ void handleLogout\(\); \}\}/);
+  assert.match(legacyAppSource, /await signOut\(auth\)/);
+  assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
+  assert.match(legacyAppSource, /triggerToast\('Não foi possível sair da conta\. Tente novamente\.'/);
+});

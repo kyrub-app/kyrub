@@ -11,6 +11,7 @@ import {
   Fingerprint,
   IdCard,
   LockKeyhole,
+  LogOut,
   MapPin,
   ShieldCheck,
   Smartphone,
@@ -32,6 +33,8 @@ import { createSelection, resolveSavedPublication, setSavedPublicationSelections
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onLogout: () => void;
+  isSigningOut: boolean;
   profileName: string;
   setProfileName: React.Dispatch<React.SetStateAction<string>>;
   profileEmail: string;
@@ -707,6 +710,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const {
     isOpen,
     onClose,
+    onLogout,
+    isSigningOut,
     profileName,
     profileEmail,
     profilePhotoUrl,
@@ -917,6 +922,21 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               </section>
             )}
 
+            <section id="profile-session-actions" className="border-t border-slate-900 bg-slate-950 px-4 py-5 sm:px-5">
+              <button
+                id="profile-logout-button"
+                type="button"
+                onClick={onLogout}
+                disabled={isSigningOut}
+                className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-red-500/25 bg-red-500/10 px-4 py-3 text-xs font-bold text-red-300 transition-colors hover:border-red-500/50 hover:bg-red-500/15 disabled:cursor-wait disabled:opacity-60"
+              >
+                <LogOut className="h-4 w-4" aria-hidden="true" />
+                {isSigningOut ? 'Saindo da conta...' : 'Sair da conta'}
+              </button>
+              <p className="mt-2 text-center text-[10px] leading-relaxed text-slate-500">
+                Após sair, você poderá continuar explorando as áreas públicas do Kyrub sem login.
+              </p>
+            </section>
           </div>
         </div>
       </div>

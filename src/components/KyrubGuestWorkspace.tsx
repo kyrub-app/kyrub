@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Compass, LogIn, ShoppingBag,
+  Bell, Briefcase, CheckSquare, Compass, ShoppingBag,
   Sparkles, Store, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -89,11 +89,7 @@ export function KyrubGuestWorkspace() {
     <div id="kyrub-guest-workspace" data-kyrub-guest-workspace="true"
       className="flex min-h-[100dvh] flex-col bg-slate-950 text-slate-100">
       <header id="app-header" className="sticky top-0 z-40 flex items-center gap-2 border-b border-slate-900 bg-slate-950/95 px-3 py-3 backdrop-blur-md">
-        <button type="button" className={iconButtonClass + ' mr-auto'}
-          title="Entrar" aria-label="Entrar" onClick={() => requestLogin('acessar sua conta')}>
-          <LogIn className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass} title="Meu perfil"
+        <button type="button" className={iconButtonClass + ' mr-auto'} title="Meu perfil"
           aria-label="Abrir meu perfil" id="header-user-profile-trigger"
           onClick={() => requestLogin('acessar seu perfil')}>
           <UserRound className="h-4 w-4" />
