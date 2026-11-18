@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   Bell, Briefcase, CheckSquare, Compass, GraduationCap, ShoppingBag,
-  Sparkles, Store, UserRound, Wallet, X,
+  Sparkles, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { RendaTab } from './tabs/RendaTab';
@@ -99,10 +99,6 @@ export function KyrubGuestWorkspace() {
           title="Cairúbia" aria-label="Abrir Cairúbia" id="header-kyrubia-trigger"
           onClick={() => setTab('cairubia')}>
           <Sparkles className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass} title="Marketplace"
-          aria-label="Abrir Marketplace" id="header-marketplace-trigger" onClick={() => setTab('praca')}>
-          <Store className="h-4 w-4" />
         </button>
         <button type="button" className={iconButtonClass} title="Tarefas"
           aria-label="Abrir Tarefas" id="header-tasks-trigger"
