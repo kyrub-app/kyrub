@@ -7,11 +7,8 @@ import {
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  BookOpen,
   Camera,
-  EllipsisVertical,
   FileUp,
-  GraduationCap,
   LoaderCircle,
   Menu,
   MessageSquareText,
@@ -43,13 +40,11 @@ import {
   titleFromFirstRequest,
   type KyrubAiLocalConversation,
 } from '../ai/conversationStore';
-import { KYRUBIA_LEARNING_TRACKS, type KyrubiaLearningTrack } from '../ai/kyrubiaLearningTracks';
 import {
   KyrubAiAttachmentPicker,
   KyrubAiAttachmentSummary,
 } from './KyrubAiAttachmentPicker';
-
-const EDUCATOR_TOPIC = 'Kyrubia Educadora';
+import { KyrubiaWelcomePanel } from './KyrubiaWelcomePanel';
 
 // Legacy migration markers kept only so older source-level contracts remain traceable
 // while the visible landing UI is intentionally replaced by the clean chat shell.
@@ -95,13 +90,12 @@ export function KyrubAiWorkspaceBridge() {
   const [errorMessage, setErrorMessage] = useState('');
   const [failedConversationId, setFailedConversationId] = useState('');
   const [conversationMenuOpen, setConversationMenuOpen] = useState(false);
-  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const [plusMenuOpen, setPlusMenuOpen] = useState(false);
-  const [educatorOpen, setEducatorOpen] = useState(false);
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const messagesViewportRef = useRef<HTMLDivElement | null>(null);
   const hiddenAttachmentPickerRef = useRef<HTMLDivElement | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement | null>(null);
   const busy = sending || uploadingAttachments;
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
@@ -158,9 +152,7 @@ export function KyrubAiWorkspaceBridge() {
     setFailedConversationId('');
     setActiveConversationId('');
     setConversationMenuOpen(false);
-    setMoreMenuOpen(false);
     setPlusMenuOpen(false);
-    setEducatorOpen(false);
     if (!user) {
       setConversations([]);
       setHydratedUid('');
@@ -179,11 +171,6 @@ export function KyrubAiWorkspaceBridge() {
     () => conversations.find(item => item.id === activeConversationId) ?? null,
     [activeConversationId, conversations]
   );
-  const educatorConversations = useMemo(
-    () => conversations.filter(item => item.topic === EDUCATOR_TOPIC),
-    [conversations]
-  );
-
   useEffect(() => {
     const viewport = messagesViewportRef.current;
     if (!viewport) return;
@@ -252,22 +239,6 @@ export function KyrubAiWorkspaceBridge() {
     setPendingAttachmentFiles([]);
     setErrorMessage('');
     setFailedConversationId('');
-  };
-
-  const startEducatorConversation = (track?: KyrubiaLearningTrack) => {
-    const conversation = createKyrubAiConversation(
-      EDUCATOR_TOPIC,
-      track?.title ?? EDUCATOR_TOPIC
-    );
-    setConversations(current => [conversation, ...current]);
-    setActiveConversationId(conversation.id);
-    // Prepare a transparent user-editable request; never enroll or send automatically.
-    setDraft(track?.starterPrompt ?? '');
-    setPendingAttachmentFiles([]);
-    setErrorMessage('');
-    setFailedConversationId('');
-    setEducatorOpen(false);
-    setMoreMenuOpen(false);
   };
 
   const submitContent = async (content: string, selectedOfferedIntentId?: string) => {
@@ -391,26 +362,25 @@ export function KyrubAiWorkspaceBridge() {
 
   return createPortal(
     <div id="kyrub-ai-workspace" className="relative flex min-h-[70dvh] flex-col overflow-hidden rounded-3xl border border-slate-900 bg-slate-950 shadow-2xl">
-      <div className="absolute right-3 top-3 z-30 flex items-center gap-2">
-        <button type="button" onClick={() => { setMoreMenuOpen(false); setConversationMenuOpen(true); }} className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-950/90 text-slate-300" aria-label="Abrir conversas">
+      <div className="absolute right-3 top-3 z-30">
+        <button type="button" onClick={() => setConversationMenuOpen(true)}
+          className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-950/90 text-slate-300"
+          aria-label="Abrir conversas">
           <Menu className="h-5 w-5" />
         </button>
-        <div className="relative">
-          <button type="button" onClick={() => { setConversationMenuOpen(false); setMoreMenuOpen(current => !current); }} className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-950/90 text-slate-300" aria-label="Mais opções da Kyrubia">
-            <EllipsisVertical className="h-5 w-5" />
-          </button>
-          {moreMenuOpen && (
-            <div className="absolute right-0 top-12 w-56 rounded-2xl border border-slate-800 bg-slate-950 p-1.5 shadow-2xl">
-              <button type="button" onClick={() => { setMoreMenuOpen(false); setEducatorOpen(true); }} className="flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left text-xs font-black text-slate-200 hover:bg-slate-900">
-                <GraduationCap className="h-4 w-4 text-violet-300" />
-                Kyrubia Educadora
-              </button>
-            </div>
-          )}
-        </div>
       </div>
 
       <div ref={messagesViewportRef} className="flex-1 space-y-4 overflow-y-auto px-4 pb-5 pt-16">
+        {(!activeConversation || activeConversation.messages.length === 0) && (
+          <KyrubiaWelcomePanel
+            onSelectPrompt={prompt => {
+              setDraft(prompt);
+              composerRef.current?.focus();
+            }}
+            onConnectAi={openProviderSettings}
+          />
+        )}
+
         {activeConversation?.messages.map(message => (
           <div key={message.id ?? `${message.role}-${message.createdAt}`} className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
             <div className={`max-w-[86%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed ${message.role === 'user' ? 'rounded-tr-md bg-violet-500 text-white' : 'rounded-tl-md border border-slate-800 bg-slate-900 text-slate-300'}`}>
@@ -481,7 +451,7 @@ export function KyrubAiWorkspaceBridge() {
             )}
           </div>
 
-          <textarea value={draft} onChange={event => setDraft(event.target.value.slice(0, 4_000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder={activeConversation?.topic === EDUCATOR_TOPIC ? 'O que você quer aprender?' : 'Mensagem para a Kyrubia...'} rows={1} className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-1 py-2.5 text-base leading-relaxed text-white outline-none placeholder:text-slate-600" />
+          <textarea ref={composerRef} value={draft} onChange={event => setDraft(event.target.value.slice(0, 4_000))} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); void sendMessage(); } }} placeholder="Mensagem para a Kyrubia..." rows={1} className="max-h-36 min-h-11 flex-1 resize-none bg-transparent px-1 py-2.5 text-base leading-relaxed text-white outline-none placeholder:text-slate-600" />
           <button type="submit" disabled={(!draft.trim() && pendingAttachmentFiles.length === 0) || busy || !user} className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-violet-500 text-white disabled:opacity-35" aria-label="Enviar mensagem para a Kyrubia">
             {busy ? <LoaderCircle className="h-5 w-5 animate-spin" /> : <Send className="h-5 w-5" />}
           </button>
@@ -504,64 +474,11 @@ export function KyrubAiWorkspaceBridge() {
                 <div key={conversation.id} className={`flex items-center gap-2 rounded-2xl border p-2 ${conversation.id === activeConversationId ? 'border-violet-500/35 bg-violet-500/10' : 'border-slate-800 bg-slate-900/60'}`}>
                   <button type="button" onClick={() => { setActiveConversationId(conversation.id); setDraft(''); setPendingAttachmentFiles([]); setErrorMessage(''); setFailedConversationId(''); setConversationMenuOpen(false); }} className="min-w-0 flex-1 px-2 py-2 text-left">
                     <strong className="block truncate text-xs text-white">{conversation.title}</strong>
-                    <span className="mt-1 block text-[10px] text-slate-500">{relativeConversationDate(conversation.updatedAt)}{conversation.topic === EDUCATOR_TOPIC ? ' · Educadora' : ''}</span>
+                    <span className="mt-1 block text-[10px] text-slate-500">{relativeConversationDate(conversation.updatedAt)}</span>
                   </button>
                   <button type="button" onClick={() => deleteConversation(conversation)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-slate-600 hover:bg-red-500/10 hover:text-red-300" aria-label={`Excluir conversa ${conversation.title}`}><Trash2 className="h-4 w-4" /></button>
                 </div>
               ))}
-            </div>
-          </aside>
-        </div>
-      )}
-
-      {educatorOpen && (
-        <div className="fixed inset-0 z-[360] bg-slate-950/80 backdrop-blur-sm" onClick={() => setEducatorOpen(false)}>
-          <aside className="absolute right-0 top-0 flex h-full w-[min(26rem,94vw)] flex-col border-l border-violet-500/20 bg-slate-950 shadow-2xl" onClick={event => event.stopPropagation()} aria-label="Kyrubia Educadora">
-            <header className="flex items-center gap-3 border-b border-slate-800 p-4">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-violet-500/10 text-violet-300"><GraduationCap className="h-5 w-5" /></div>
-              <div className="min-w-0 flex-1"><span className="text-[9px] font-black uppercase tracking-wider text-violet-300">Aprender · praticar · evoluir</span><h2 className="text-base font-black text-white">Kyrubia Educadora</h2></div>
-              <button type="button" onClick={() => setEducatorOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-800 text-slate-400" aria-label="Fechar Kyrubia Educadora"><X className="h-4 w-4" /></button>
-            </header>
-            <div className="flex-1 overflow-y-auto p-4">
-              <section className="rounded-3xl border border-violet-500/20 bg-violet-500/5 p-4">
-                <BookOpen className="h-6 w-6 text-violet-300" />
-                <h3 className="mt-3 text-sm font-black text-white">Sua trilha continua entre conversas</h3>
-                <p className="mt-2 text-xs leading-relaxed text-slate-400">A Kyrubia organiza seus estudos e permite retomar as conversas de aprendizagem. As aulas, matrículas, certificados e o progresso da plataforma externa ainda dependem de integração própria.</p>
-              </section>
-              <section className="mt-5 space-y-2" aria-label="Trilhas de aprendizagem">
-                <h3 className="text-xs font-black uppercase tracking-wide text-slate-400">Escolha um objetivo de aprendizagem</h3>
-                {KYRUBIA_LEARNING_TRACKS.map(track => (
-                  <button
-                    key={track.id}
-                    type="button"
-                    onClick={() => startEducatorConversation(track)}
-                    className="flex w-full min-h-16 items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left transition-colors hover:border-violet-500/40"
-                    aria-label={`Iniciar trilha ${track.title}`}
-                  >
-                    <BookOpen className="h-5 w-5 shrink-0 text-violet-300" aria-hidden="true" />
-                    <span className="min-w-0 flex-1">
-                      <strong className="block text-xs text-white">{track.title}</strong>
-                      <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">{track.description}</span>
-                    </span>
-                    <Plus className="h-4 w-4 shrink-0 text-violet-300" aria-hidden="true" />
-                  </button>
-                ))}
-                <p className="text-[10px] leading-relaxed text-slate-500">O pedido aparece no chat para você revisar antes de enviar. Escolher uma trilha não realiza matrícula nem contratação.</p>
-              </section>
-              <button type="button" onClick={() => startEducatorConversation()} className="mt-4 flex w-full items-center justify-center gap-2 rounded-2xl bg-violet-500 px-4 py-3 text-xs font-black text-white"><Plus className="h-4 w-4" />Começar nova trilha</button>
-              {educatorConversations.length > 0 && (
-                <section className="mt-6">
-                  <h3 className="text-xs font-black uppercase tracking-wide text-slate-400">Continuar aprendendo</h3>
-                  <div className="mt-2 space-y-2">
-                    {educatorConversations.map(conversation => (
-                      <button key={conversation.id} type="button" onClick={() => { setActiveConversationId(conversation.id); setDraft(''); setPendingAttachmentFiles([]); setErrorMessage(''); setFailedConversationId(''); setEducatorOpen(false); }} className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900 p-3 text-left">
-                        <GraduationCap className="h-4 w-4 shrink-0 text-violet-300" />
-                        <span className="min-w-0 flex-1"><strong className="block truncate text-xs text-white">{conversation.title}</strong><span className="mt-1 block text-[10px] text-slate-500">{relativeConversationDate(conversation.updatedAt)}</span></span>
-                      </button>
-                    ))}
-                  </div>
-                </section>
-              )}
             </div>
           </aside>
         </div>
