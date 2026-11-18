@@ -173,7 +173,7 @@ try {
   await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
   await page.waitForTimeout(1200);
   await page.locator('#kyrub-bootstrap-screen').waitFor({ state: 'hidden', timeout: 20000 });
-  const pracaButton = page.getByRole('button', { name: 'Praça', exact: true });
+  const pracaButton = page.getByRole('button', { name: 'Taba — Praça', exact: true });
   await pracaButton.waitFor({ state: 'visible', timeout: 20000 });
   await pracaButton.click();
   await page.locator('#praca-tab-container').waitFor({ state: 'visible', timeout: 15000 });
