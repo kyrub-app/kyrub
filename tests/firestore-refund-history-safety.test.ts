@@ -119,3 +119,67 @@ test('no partial-refund history is eligible for full-refund preflight; financial
   assert.match(router,/assertFullRefundHasNoConfirmedPartialHistory\(\{ storeId, orderId \}\)/);
   assert.match(cancellation,/transaction\.create\(\s*adminDb\.doc\(partialRefundPath/);
 });
+
+
+// Exercise both serial orders of the paid-order refund boundary with the real
+// Firestore emulator. No PSP credentials or HTTP mock are needed: both cases
+// stop before provider issuance. A successful full refund remains a distinct
+// provider E2E gate and is never inferred from this test.
+test('the two refund terminalization orders are mutually exclusive in Firestore', async () => {
+  const paidOrder = (orderId: string) => ({
+    id: orderId, storeId, status: 'pending', paymentStatus: 'paid',
+    total: 40, subtotal: 40, items: [
+      { lineId: 'first', productId: 'p1', name: 'Produto 1', quantity: 2, price: 10 },
+      { lineId: 'second', productId: 'p2', name: 'Produto 2', quantity: 2, price: 10 },
+    ],
+  });
+  const endOrder = async (orderId: string) => {
+    const ref = adminDb.doc('artifacts/' + storeId + '/public/data/customerOrders/' + orderId);
+    await adminDb.runTransaction(async transaction => {
+      const snapshot = await transaction.get(ref);
+      assert.equal(snapshot.get('status'), 'pending');
+      transaction.update(ref, { status: 'cancelled' });
+    });
+  };
+
+  // Partial wins: it commits the order mutation and the unresolved refund
+  // marker together. An eventual terminal state cannot permit full refund.
+  const partialFirstId = 'refund_race_partial_first';
+  const partialFirstRef = adminDb.doc('artifacts/' + storeId + '/public/data/customerOrders/' + partialFirstId);
+  await partialFirstRef.set(paidOrder(partialFirstId));
+  const partial = await cancelOrderItemsWithRefund({
+    storeId, orderId: partialFirstId, operationId: 'refund_race_partial_op',
+    reason: 'Cancelamento parcial antes de encerrar',
+    selections: [{ lineId: 'first', quantity: 1 }],
+  });
+  assert.equal(partial.refundRequired, true);
+  assert.equal(partial.refundStatus, 'required');
+  assert.equal((await partials(partialFirstId).doc('refund_race_partial_op').get()).get('status'), 'required');
+  await endOrder(partialFirstId);
+  await assert.rejects(
+    assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId: partialFirstId }),
+    /PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED/
+  );
+
+  // Terminal wins: after a full-refund preflight sees a terminal paid order,
+  // the partial operation must fail in its own Firestore transaction without
+  // creating an economic marker or contacting the PSP.
+  const terminalFirstId = 'refund_race_terminal_first';
+  const terminalFirstRef = adminDb.doc('artifacts/' + storeId + '/public/data/customerOrders/' + terminalFirstId);
+  await terminalFirstRef.set(paidOrder(terminalFirstId));
+  await endOrder(terminalFirstId);
+  await assert.doesNotReject(
+    assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId: terminalFirstId })
+  );
+  await assert.rejects(
+    cancelOrderItemsWithRefund({
+      storeId, orderId: terminalFirstId, operationId: 'refund_race_terminal_op',
+      reason: 'Cancelamento parcial tardio',
+      selections: [{ lineId: 'first', quantity: 1 }],
+    }),
+    /ORDER_ITEM_CANCELLATION_ORDER_NOT_PENDING/
+  );
+  assert.equal((await terminalFirstRef.get()).get('status'), 'cancelled');
+  assert.equal((await partials(terminalFirstId).where('orderId', '==', terminalFirstId).get()).empty, true);
+  assert.equal((await adminDb.doc('stores/' + storeId + '/paymentRefunds/refund_race_terminal_op').get()).exists, false);
+});
