@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ShoppingBag, Store as StoreIcon } from 'lucide-react';
+import { ShoppingBag, Store as StoreIcon } from 'lucide-react';
 import type { Store } from '../../types';
 
 type StoreListTab = 'mine' | 'discover' | 'trending';
@@ -103,10 +103,9 @@ export function SquareStoresSection({
 
   const visible = useMemo(() => {
     const favoriteIds = new Set(favoriteStoreIds);
-    const purchasedIds = new Set(purchasedStoreIds);
     const offerIds = new Set(offerStoreIds);
     if (listTab === 'mine') {
-      return cards.filter(store => favoriteIds.has(store.id) || purchasedIds.has(store.id));
+      return cards.filter(store => favoriteIds.has(store.id));
     }
     if (listTab === 'trending') {
       // Early showcase: published offers and the platform's own store.
@@ -114,7 +113,7 @@ export function SquareStoresSection({
       return cards.filter(store => store.official || offerIds.has(store.id));
     }
     return cards;
-  }, [cards, favoriteStoreIds, purchasedStoreIds, offerStoreIds, listTab]);
+  }, [cards, favoriteStoreIds, offerStoreIds, listTab]);
 
   return (
     <section id="square-stores" aria-label="Lojas na Praça"
@@ -124,20 +123,16 @@ export function SquareStoresSection({
           <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">Lojas</span>
           <h2 className="mt-0.5 text-xs font-black text-white">Descubra lojas e ofertas</h2>
         </div>
-        <button type="button" id="square-stores-view-all" onClick={onViewAll}
-          className="flex min-h-9 shrink-0 items-center gap-1 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950">
-          Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
-        </button>
       </header>
       <div role="group" aria-label="Filtros de lojas" className="flex gap-1.5 overflow-x-auto">
         {([
-          ['mine', 'Minhas'],
+          ['mine', 'Favoritas'],
           ['discover', 'Descobrir'],
           ['trending', 'Em alta'],
         ] as const).map(([id, label]) => (
           <button key={id} type="button"
             aria-pressed={listTab === id}
-            onClick={() => setListTab(id)}
+            onClick={() => id === 'discover' ? onViewAll() : setListTab(id)}
             className={`shrink-0 rounded-xl px-3 py-2 text-[8px] font-black uppercase ${
               listTab === id
                 ? 'bg-sky-500/15 text-sky-200'
@@ -148,7 +143,7 @@ export function SquareStoresSection({
         ))}
       </div>
       {listTab === 'mine' && (
-        <p className="text-[9px] text-slate-500">Suas lojas favoritas e com compras anteriores.</p>
+        <p className="text-[9px] text-slate-500">Suas lojas favoritas.</p>
       )}
       {listTab === 'trending' && (
         <p className="text-[9px] text-slate-500">Destaques e lojas com ofertas publicadas; sem ranking de vendas.</p>
@@ -190,7 +185,7 @@ export function SquareStoresSection({
         {!loadingOfficial && visible.length === 0 && (
           <p className="self-center rounded-xl border border-slate-800 p-4 text-xs text-slate-400">
             {listTab === 'mine'
-              ? 'Suas lojas favoritas ou com compras aparecerão aqui.'
+              ? 'Suas lojas favoritas aparecerão aqui.'
               : officialError && cards.length === 0
                 ? 'Não foi possível consultar as vitrines agora.'
                 : 'Nenhuma loja encontrada neste filtro.'}
