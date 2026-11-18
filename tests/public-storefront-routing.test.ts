@@ -460,6 +460,11 @@ test('cultural guides and assistant header match the approved information archit
   assert.match(learningSource, /id="jemboe-kyrub-cursos-link"/);
   assert.match(learningSource, /https:\/\/smartlyst\.com\.br\/platform\/kyrubcursos/);
   assert.match(learningSource, /target="_blank" rel="noopener noreferrer"/);
-  assert.match(learningSource, /KYRUBIA_LEARNING_TRACKS/);
+  // Jemboé deliberately opens directly on the external classroom access.
+  // The marked hero and three explainer cards must not return unnoticed.
+  assert.doesNotMatch(learningSource, /KYRUBIA_LEARNING_TRACKS|Trilhas de aprendizagem/);
+  assert.doesNotMatch(learningSource, /Aprenda uma habilidade\. Transforme conhecimento/);
+  assert.doesNotMatch(learningSource, /Aprender para gerar renda|Aprender a empreender|Aprender a usar o Kyrub/);
+  assert.match(learningSource, /Acesse a sala de aula/);
   assert.doesNotMatch(learningSource, enrolledProviderActions);
 });
