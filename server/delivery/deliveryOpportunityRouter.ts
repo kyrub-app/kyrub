@@ -477,6 +477,19 @@ export const escalateUnacceptedKyrubDeliveries = async (): Promise<{
 export const createDeliveryOpportunityRouter = (): Router => {
   const router = Router();
 
+  // Match the production serverless rewrite in local Express development.
+  // No authentication is required to browse this *redacted* projection, but
+  // no private delivery data, reservation or acceptance is exposed here.
+  router.get('/public', async (_request, response) => {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const { listPublicDeliveryOpportunities } = await import('./publicDeliveryDiscoveryService.js');
+      response.status(200).json(await listPublicDeliveryOpportunities());
+    } catch {
+      response.status(503).json({ error: 'PUBLIC_DELIVERY_DISCOVERY_UNAVAILABLE' });
+    }
+  });
+
   router.post('/orders/:orderId/publish', async (request, response) => {
     try {
       const tenantId = await authenticatedTenantId(request);
