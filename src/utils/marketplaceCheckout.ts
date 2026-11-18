@@ -87,6 +87,11 @@ const cartRequestItems = (
   productId: item.product.id,
   quantity: item.quantity,
   note: itemNotes[item.product.id]?.trim() ?? '',
+  // Send only option identity. Prices are reconstructed from the store catalog.
+  selectedOptions: (item.product.selectedOptions ?? item.selectedOptions ?? [])
+    .map(option => ({ groupId: option.groupId, choiceId: option.choiceId })),
+  selectedQuickNotes: item.product.selectedQuickNotes ?? item.selectedQuickNotes ?? [],
+  customerNote: (item.product as typeof item.product & { customerNote?: string }).customerNote ?? '',
 }));
 
 const checkoutFingerprint = (
@@ -348,11 +353,12 @@ export const listMarketplacePromotions = async (
 ): Promise<PublicMarketplacePromotion[]> => {
   const normalizedStoreId = storeId.trim();
   if (!normalizedStoreId) return [];
-  const response = await fetch('/api/payments/promotions', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ storeId: normalizedStoreId }),
-  });
+  // The real Express router exposes GET /promotions?storeId=... .
+  // Use the same public ERP catalog that quotes and reserves official coupons.
+  const response = await fetch(
+    `/api/payments/promotions?storeId=${encodeURIComponent(normalizedStoreId)}`,
+    { method: 'GET', cache: 'no-store' }
+  );
   const payload = await responsePayload(response);
   if (!response.ok) return [];
   return Array.isArray(payload.promotions)

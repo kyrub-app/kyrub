@@ -1,5 +1,5 @@
 import type { Product, ProductOptionGroup } from '../types';
-import { splitCatalogCategoryPath, joinCatalogCategoryPath } from './catalogCategoryTree';
+import { splitCatalogCategoryPath, joinCatalogCategoryPath } from './catalogCategoryPath';
 import {
   parseProductOptionGroups,
   parseProductQuickNotes,

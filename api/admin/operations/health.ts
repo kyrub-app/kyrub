@@ -87,15 +87,29 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
-  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove') {
+  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove' || transport === 'social-moderation-report-review' || transport === 'social-moderation-store-review-hide') {
     const expectedMethod = transport === 'social-moderation-list' ? 'GET' : 'POST';
     if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
     try {
       const moderation = await import('../../../server/admin/socialModerationService.js');
       mapError = moderation.mapSocialModerationError;
-      if (transport === 'social-moderation-list') { response.status(200).json({ posts: await moderation.listModerationPosts(authorization) }); return; }
+      if (transport === 'social-moderation-list') {
+        const [posts, reports] = await Promise.all([
+          moderation.listModerationPosts(authorization), moderation.listModerationReports(authorization),
+        ]);
+        response.status(200).json({ posts, reports });
+        return;
+      }
       const body = bodyRecord(request.body);
+      if (transport === 'social-moderation-report-review') {
+        response.status(200).json(await moderation.dismissModerationReport(authorization, body.kind, body.reportId, body.reason));
+        return;
+      }
+      if (transport === 'social-moderation-store-review-hide') {
+        response.status(200).json(await moderation.hideModeratedStoreReview(authorization, body.storeId, body.reviewId, body.reason));
+        return;
+      }
       response.status(200).json(await moderation.removeModeratedPost(authorization, body.postId, body.reason));
     } catch (error) {
       const mapped = mapError ? mapError(error) : unavailable('Não foi possível acessar a moderação agora.');

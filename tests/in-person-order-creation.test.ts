@@ -145,11 +145,13 @@ describe('authoritative in-person order creation', () => {
 
   test('existing status authority keeps legacy and canonical copies aligned', () => {
     const inventory = readFileSync('server/inventory/orderInventoryService.ts', 'utf8');
-    assert.match(inventory, /const canonicalStoreId = clean\(tenantSnapshot\.data\(\)\?\.canonicalStoreId\)/);
+    assert.match(inventory, /const inventoryCanonicalStoreId = clean\(tenantSnapshot\.get\('canonicalStoreId'\)\)/);
+    assert.match(inventory, /const mirrorCanonicalStoreId = prepaid/);
+    assert.match(inventory, /resolvePrepaidOrderMirrorStoreId\(transaction, normalizedTenantId, inventoryCanonicalStoreId\)/);
     assert.match(inventory, /transaction\.set\(\s*orderReference/);
     assert.match(
       inventory,
-      /adminDb\.doc\(`stores\/\$\{canonicalStoreId\}\/orders\/\$\{normalizedOrderId\}`\)/
+      /adminDb\.doc\(`stores\/\$\{mirrorCanonicalStoreId\}\/orders\/\$\{normalizedOrderId\}`\)/
     );
     assert.match(inventory, /status: nextStatus/);
   });

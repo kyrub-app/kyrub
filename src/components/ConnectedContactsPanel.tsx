@@ -17,6 +17,7 @@ import {
 import type { Friend, SocialPost } from '../types';
 import { auth } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
+import { submitSocialUserReport } from '../utils/socialReports';
 
 type ExtendedSocialPost = SocialPost & {
   authorId?: string;
@@ -350,7 +351,6 @@ export function ConnectedContactsPanel({
   const viewerId = auth.currentUser?.uid || 'anonymous';
   const hiddenSuggestionsKey = `kyrub_hidden_suggestions_${viewerId}`;
   const blockedUsersKey = `kyrub_blocked_users_${viewerId}`;
-  const reportsKey = `kyrub_user_reports_${viewerId}`;
   const normalizedSearch = normalizeSearch(searchQuery);
 
   const [activeListModal, setActiveListModal] = useState<
@@ -452,26 +452,22 @@ export function ConnectedContactsPanel({
     triggerToast(`${friend.name} foi bloqueado neste perfil.`, 'success');
   };
 
-  const reportFriend = (friend: Friend) => {
-    try {
-      const currentReports = JSON.parse(localStorage.getItem(reportsKey) ?? '[]');
-      const reports = Array.isArray(currentReports) ? currentReports : [];
-      localStorage.setItem(
-        reportsKey,
-        JSON.stringify([
-          ...reports,
-          {
-            userId: friend.id,
-            userName: friend.name,
-            createdAt: new Date().toISOString(),
-          },
-        ])
-      );
-    } catch (error) {
-      console.warn('Não foi possível registrar a denúncia localmente.', error);
-    }
+  const reportFriend = async (friend: Friend) => {
     setOpenContactMenuId(null);
-    triggerToast('Denúncia registrada para a etapa de moderação.', 'success');
+    const reason = window.prompt(`Por que deseja denunciar ${friend.name}? Descreva brevemente o motivo:`, '');
+    if (reason === null) return;
+    const normalizedReason = reason.trim();
+    if (normalizedReason.length < 3 || normalizedReason.length > 500) {
+      triggerToast('Informe um motivo entre 3 e 500 caracteres.', 'error');
+      return;
+    }
+    try {
+      const outcome = await submitSocialUserReport(friend.id, normalizedReason);
+      triggerToast(outcome === 'already_reported' ? 'Você já denunciou este usuário.' : 'Denúncia encaminhada à moderação.', 'success');
+    } catch (error) {
+      console.warn('Falha ao encaminhar denúncia de usuário.', error);
+      triggerToast('Denúncia não enviada. Tente novamente.', 'error');
+    }
   };
 
   return (
@@ -662,7 +658,7 @@ export function ConnectedContactsPanel({
                       </button>
                       <button
                         type="button"
-                        onClick={() => reportFriend(friend)}
+                        onClick={() => void reportFriend(friend)}
                         className="flex w-full items-center gap-2 rounded-xl px-2.5 py-2 text-left text-[9px] font-bold text-amber-300 hover:bg-amber-500/10"
                       >
                         <Flag className="h-3.5 w-3.5" />

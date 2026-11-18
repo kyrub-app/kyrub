@@ -3,6 +3,7 @@ import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
+import { isPubliclyPresentableBusinessCouponPilot } from './officialPlanBusinessCouponPilot.js';
 import {
   normalizeStorePromotion,
   type StorePromotion,
@@ -46,6 +47,25 @@ const parsePromotion = (
 ): StorePromotion => {
   const now = new Date().toISOString();
   const id = existing?.id || clean(body.id) || `promo_${randomUUID()}`;
+  const source = body.eligibility;
+  const eligibilityInput = source && typeof source === 'object' && !Array.isArray(source)
+    ? source as Record<string, unknown> : null;
+  // Legacy owner clients may omit eligibility during edits. Preserve the
+  // previously persisted audience rather than silently turning a private
+  // coupon into a public one.
+  const eligibilityMode = eligibilityInput?.mode ?? existing?.eligibility.mode ?? 'public';
+  if (!['public', 'specific_user', 'club_member', 'crm_segment'].includes(eligibilityMode as string)) {
+    throw new Error('PROMOTION_ELIGIBILITY_INVALID');
+  }
+  const userIds = Array.isArray(eligibilityInput?.userIds)
+    ? [...new Set(eligibilityInput.userIds.filter(
+      (value): value is string => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value)
+    ))] : existing?.eligibility.userIds ?? [];
+  const segmentId = typeof eligibilityInput?.segmentId === 'string'
+    ? eligibilityInput.segmentId.trim() : existing?.eligibility.segmentId ?? '';
+  if (eligibilityMode === 'specific_user' && userIds.length === 0) {
+    throw new Error('PROMOTION_USERS_REQUIRED');
+  }
   return normalizeStorePromotion({
     id,
     storeId,
@@ -55,7 +75,11 @@ const parsePromotion = (
     discountType: body.discountType === 'fixed' ? 'fixed' : 'percentage',
     discountValue: Number(body.discountValue),
     productIds: Array.isArray(body.productIds) ? body.productIds.map(clean).filter(Boolean) : [],
-    eligibility: { mode: 'public' },
+    eligibility: eligibilityMode === 'specific_user'
+      ? { mode: 'specific_user', userIds }
+      : eligibilityMode === 'club_member' ? { mode: 'club_member' }
+      : eligibilityMode === 'crm_segment' ? { mode: 'crm_segment', segmentId }
+      : { mode: 'public' },
     active: body.active !== false,
     startsAt: clean(body.startsAt),
     endsAt: clean(body.endsAt),
@@ -102,7 +126,11 @@ export const createStorePromotionManagementRouter = (): Router => {
         return;
       }
       const promotion = normalizeStorePromotion({ ...(snapshot.data() as StorePromotion), id: promotionId, storeId });
-      if (promotion.eligibility.mode !== 'public') {
+      // The lone official Business R$1 pilot may be publicly *advertised*,
+      // without exposing target UIDs. Redemption remains server-authenticated.
+      const restrictedToInvitee = promotion.eligibility.mode === 'specific_user'
+        && isPubliclyPresentableBusinessCouponPilot(promotion);
+      if (promotion.eligibility.mode !== 'public' && !restrictedToInvitee) {
         response.status(404).json({ error: 'Cupom não disponível.' });
         return;
       }
@@ -121,6 +149,7 @@ export const createStorePromotionManagementRouter = (): Router => {
         code: promotion.code,
         discountType: promotion.discountType,
         discountValue: promotion.discountValue,
+        restrictedToInvitee,
         storeSlug,
         active: promotion.active && Date.parse(promotion.startsAt) <= now
           && Date.parse(promotion.endsAt) > now && (remaining === null || remaining > 0),

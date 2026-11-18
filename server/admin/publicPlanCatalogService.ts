@@ -8,6 +8,8 @@ import {
 } from '../../shared/kyrubPlanManagement.js';
 import type { KyrubCommercialPlanId } from '../../shared/kyrubCommercialPlans.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { OFFICIAL_STORE_CANONICAL_ID, OFFICIAL_PLAN_PRO_PRODUCT_ID, OFFICIAL_PLAN_BUSINESS_PRODUCT_ID } from '../../shared/officialPlanCanonicalDisplay.js';
+import { selectPublishedOfficialPlanPrice } from './officialPlanPublicPrice.js';
 
 const PLAN_IDS: readonly KyrubCommercialPlanId[] = ['free', 'pro', 'business'];
 const PLAN_CATALOG_COLLECTION = 'kyrub_admin/control_plane/plan_catalog';
@@ -87,6 +89,28 @@ const entryFromDocument = (
   };
 };
 
+const loadOfficialPublishedPrices = async (): Promise<Partial<Record<'pro' | 'business', number>>> => {
+  try {
+    const designation = (await adminDb.doc('kyrub_admin/official_store').get()).data();
+    if (designation?.canonicalStoreId !== OFFICIAL_STORE_CANONICAL_ID) return {};
+    const ids = { pro: OFFICIAL_PLAN_PRO_PRODUCT_ID, business: OFFICIAL_PLAN_BUSINESS_PRODUCT_ID };
+    const prices = await Promise.all((['pro', 'business'] as const).map(async planId => {
+      const id = ids[planId];
+      const [product, mapping] = await Promise.all([
+        adminDb.doc(`stores/${OFFICIAL_STORE_CANONICAL_ID}/products/${id}`).get(),
+        adminDb.doc(`kyrub_admin/control_plane/official_plan_products/${id}`).get(),
+      ]);
+      return [planId, selectPublishedOfficialPlanPrice({
+        planId, designation, product: product.data(), mapping: mapping.data(),
+      })] as const;
+    }));
+    return Object.fromEntries(prices.filter(([, price]) => price !== null)) as Partial<Record<'pro' | 'business', number>>;
+  } catch (error) {
+    console.warn('[Kyrub Plans] Published official prices unavailable for public display.', error);
+    return {};
+  }
+};
+
 export const loadPublicActivePlanCatalog = async (): Promise<KyrubActivePlanCatalogSnapshot> => {
   const plans = await Promise.all(
     PLAN_IDS.map(async planId => {
@@ -107,9 +131,18 @@ export const loadPublicActivePlanCatalog = async (): Promise<KyrubActivePlanCata
     })
   );
 
+  const officialPrices = await loadOfficialPublishedPrices();
   return {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
-    plans,
+    plans: plans.map(plan => {
+      if (plan.planId === 'free') return plan;
+      const officialPrice = officialPrices[plan.planId];
+      return {
+        ...plan,
+        monthlyPriceBRL: officialPrice ?? plan.monthlyPriceBRL,
+        priceSource: officialPrice === undefined ? 'reference_v1' : 'official_store',
+      };
+    }),
   };
 };

@@ -1,6 +1,10 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   Bookmark,
+  EllipsisVertical,
+  Flag,
+  MessageCircleMore,
+  UserRoundPlus,
   CircleUserRound,
   Heart,
   Gift,
@@ -14,6 +18,7 @@ import type { Friend, SocialPost } from '../types';
 import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
 import { MediaCarousel } from './MediaCarousel';
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
+import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
 
 interface PublicSocialFeedPanelProps {
   posts: SocialPost[];
@@ -22,6 +27,9 @@ interface PublicSocialFeedPanelProps {
   likedPostIds: Set<string>;
   commentsByPost: Map<string, SocialPostComment[]>;
   friends: Friend[];
+  suggestedUsers: Friend[];
+  onConnectUser: (userId: string) => void | Promise<void>;
+  onOpenChat: (friend: Friend) => void;
   searchQuery: string;
   filter: 'recentes' | 'favoritos';
   onToggleLike: (postId: string) => Promise<void>;
@@ -44,6 +52,7 @@ function CouponOfferCard({ storeId, promotionId }: { storeId: string; promotionI
     redemptionCount: number;
     maxRedemptions: number;
     remaining: number | null;
+    restrictedToInvitee?: boolean;
   } | null>(null);
 
   useEffect(() => {
@@ -77,6 +86,11 @@ function CouponOfferCard({ storeId, promotionId }: { storeId: string; promotionI
         <p className="text-sm font-semibold text-slate-300">Oferta especial da loja</p>
         <h5 className="text-xl font-black text-white">{offer?.title || 'Cupom de desconto'}</h5>
         {offer && <p className="text-sm font-bold text-orange-200">{discount}</p>}
+        {offer?.restrictedToInvitee && (
+          <p className="text-[11px] text-amber-200">
+            Cupom exclusivo de um comprador convidado. O link é público, mas somente a conta autorizada poderá utilizá-lo após validação no servidor.
+          </p>
+        )}
         <div className="mx-auto w-fit rounded-2xl border border-slate-600 px-5 py-3 font-mono text-base font-black tracking-wide text-white">
           {offer?.code || 'Carregando cupom…'}
         </div>
@@ -145,6 +159,9 @@ export function PublicSocialFeedPanel({
   likedPostIds,
   commentsByPost,
   friends,
+  suggestedUsers,
+  onConnectUser,
+  onOpenChat,
   searchQuery,
   filter,
   onToggleLike,
@@ -158,6 +175,9 @@ export function PublicSocialFeedPanel({
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [pendingAction, setPendingAction] = useState('');
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(null);
+  const [reportPostId, setReportPostId] = useState<string | null>(null);
+  const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
 
   useEffect(() => subscribeSavedPublications(
     items => setSavedPostIds(new Set(items.filter(item => item.sourceKind === 'praca').map(item => item.sourceId))),
@@ -228,6 +248,9 @@ export function PublicSocialFeedPanel({
         const isLiked = likedPostIds.has(post.id);
         const commentsOpen = expandedComments.has(post.id);
         const isStatus = post.publicationType === 'status';
+        const connectedAuthor = friends.find(friend => friend.id === post.authorId && friend.added);
+        const suggestedAuthor = suggestedUsers.find(friend => friend.id === post.authorId);
+        const canReport = Boolean(post.authorId && post.authorId !== currentUserId);
 
         return (
           <article
@@ -263,7 +286,84 @@ export function PublicSocialFeedPanel({
               >
                 {isStatus ? 'Status' : 'Feed'}
               </span>
+              {canReport && (
+                <div className="relative">
+                  <button
+                    type="button"
+                    aria-label={`Mais opções da publicação de ${post.user}`}
+                    aria-expanded={openPostMenuId === post.id}
+                    onClick={() => setOpenPostMenuId(current => current === post.id ? null : post.id)}
+                    className="rounded-lg border border-slate-700 p-2 text-slate-300 hover:text-white"
+                  >
+                    <EllipsisVertical className="h-4 w-4" />
+                  </button>
+                  {openPostMenuId === post.id && (
+                    <div className="absolute right-0 top-10 z-30 min-w-44 space-y-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-xl" role="menu">
+                      {suggestedAuthor?.connectionStatus === 'none' && suggestedAuthor.isProfileVisible !== false && (
+                        <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-slate-200 hover:bg-slate-800"
+                          onClick={() => {
+                            setOpenPostMenuId(null);
+                            void onConnectUser(post.authorId!);
+                          }}
+                        >
+                          <UserRoundPlus className="h-4 w-4" /> Conectar
+                        </button>
+                      )}
+                      {suggestedAuthor?.connectionStatus === 'pending_sent' && (
+                        <p className="px-2 py-1 text-xs text-slate-400">Solicitação de conexão pendente</p>
+                      )}
+                      {connectedAuthor && (
+                        <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-slate-200 hover:bg-slate-800"
+                          onClick={() => { setOpenPostMenuId(null); onOpenChat(connectedAuthor); }}
+                        >
+                          <MessageCircleMore className="h-4 w-4" /> Conversar
+                        </button>
+                      )}
+                      <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-amber-300 hover:bg-slate-800"
+                        onClick={() => { setOpenPostMenuId(null); setReportReason('spam'); setReportPostId(post.id); }}
+                      >
+                        <Flag className="h-4 w-4" /> Denunciar publicação
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
             </header>
+            {reportPostId === post.id && canReport && (
+              <div className="space-y-2 rounded-xl border border-amber-500/30 bg-slate-950 p-3" role="group" aria-label="Denunciar publicação">
+                <label className="block text-xs font-semibold text-slate-200" htmlFor={`report-reason-${post.id}`}>Qual é o motivo da denúncia?</label>
+                <select id={`report-reason-${post.id}`} value={reportReason} onChange={event => setReportReason(event.target.value as SocialReportReason)}
+                  className="w-full rounded-lg border border-slate-700 bg-slate-900 p-2 text-xs text-slate-100">
+                  <option value="spam">Spam ou publicidade abusiva</option>
+                  <option value="abuse">Assédio ou ofensa</option>
+                  <option value="fraud">Golpe ou fraude</option>
+                  <option value="unsafe">Conteúdo perigoso ou inadequado</option>
+                  <option value="other">Outro motivo</option>
+                </select>
+                <div className="flex gap-2">
+                  <button type="button" disabled={pendingAction === `report-${post.id}`} className="rounded-lg bg-amber-600 px-3 py-2 text-xs font-bold text-slate-950 disabled:opacity-50"
+                    onClick={async () => {
+                      setPendingAction(`report-${post.id}`);
+                      try {
+                        const outcome = await submitSocialPostReport(post.id, reportReason);
+                        triggerToast(outcome === 'already_reported' ? 'Você já denunciou esta publicação.' : 'Denúncia encaminhada à moderação.', 'success');
+                        setReportPostId(null);
+                      } catch (error) {
+                        console.warn('Não foi possível enviar a denúncia.', error);
+                        triggerToast('Denúncia não enviada. Tente novamente.', 'error');
+                      } finally { setPendingAction(''); }
+                    }}
+                  >{pendingAction === `report-${post.id}` ? 'Enviando…' : 'Enviar denúncia'}</button>
+                  <button type="button" className="rounded-lg border border-slate-700 px-3 py-2 text-xs text-slate-300" onClick={() => setReportPostId(null)}>Cancelar</button>
+                </div>
+              </div>
+            )}
+
+            {post.storeReview && (
+              <p className="rounded-lg border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-xs font-semibold text-amber-300">
+                Avaliação da loja {post.storeReview.storeName} · {'★'.repeat(Math.max(0, Math.min(5, post.storeReview.rating)))}
+              </p>
+            )}
 
             {post.content && !post.storePromotion && (
               <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">

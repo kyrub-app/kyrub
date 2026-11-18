@@ -75,6 +75,33 @@ const mergeProductAllocations = (
     .sort((a, b) => a.productId.localeCompare(b.productId));
 };
 
+
+/**
+ * A verified first store may sell products from its canonical ERP catalog
+ * even when tenants/{ownerUid}.publicProducts is absent or stale.
+ * Never derive scoped option/ingredient reservations from another store,
+ * a draft, or a missing product.
+ */
+export const verifiedMarketplaceOrderCategories = (
+  canonicalStoreId: string,
+  sourceProductIds: readonly string[],
+  products: readonly { id: string; data: Record<string, unknown> | undefined }[]
+): Record<string, string> => {
+  const byId = new Map(products.map(product => [product.id, product.data]));
+  const result: Record<string, string> = {};
+  for (const id of new Set(sourceProductIds)) {
+    const data = byId.get(id);
+    const category = clean(data?.category);
+    if (!data || data.storeId !== canonicalStoreId ||
+        data.publicationStatus !== 'published' ||
+        (data.id != null && data.id !== id) || !category) {
+      throw new Error('Reserva de estoque bloqueada: produto canônico indisponível ou divergente.');
+    }
+    result[id] = category;
+  }
+  return result;
+};
+
 export const parseInventorySelectedOptions = (
   value: unknown
 ): InventorySelectedOptionRef[] => {

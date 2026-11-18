@@ -82,8 +82,11 @@ describe('paid platform plan checkout requires authoritative pricing', () => {
     assert.ok(webhook.includes('SUBSCRIPTION_IDENTITY_CONFLICT'));
   });
 
-  it('retains compiled fallback for public plan display only', () => {
+  it('retains display-only fallback while projecting published official prices', () => {
     assert.match(catalog, /source: 'compiled_v1'/);
     assert.match(catalog, /source: 'control_plane'/);
+    assert.match(catalog, /selectPublishedOfficialPlanPrice/);
+    assert.match(catalog, /priceSource: officialPrice === undefined/);
+    assert.match(catalog, /monthlyPriceBRL: officialPrice/);
   });
 });

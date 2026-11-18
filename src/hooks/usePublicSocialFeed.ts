@@ -104,6 +104,16 @@ const mapPost = (
     publicationType,
     visibility,
     audienceIds: readStringList(data.audienceIds),
+    storeReview: data.storeReview && typeof data.storeReview === 'object'
+      && readString((data.storeReview as Record<string, unknown>).storeId)
+      && readString((data.storeReview as Record<string, unknown>).reviewId)
+      ? {
+          storeId: readString((data.storeReview as Record<string, unknown>).storeId),
+          reviewId: readString((data.storeReview as Record<string, unknown>).reviewId),
+          storeName: readString((data.storeReview as Record<string, unknown>).storeName),
+          rating: typeof (data.storeReview as Record<string, unknown>).rating === 'number'
+            ? (data.storeReview as Record<string, unknown>).rating as number : 0,
+        } : undefined,
     storePromotion: data.storePromotion && typeof data.storePromotion === 'object'
       && readString((data.storePromotion as Record<string, unknown>).storeId)
       && readString((data.storePromotion as Record<string, unknown>).promotionId)

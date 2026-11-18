@@ -263,6 +263,7 @@ export interface SocialPost {
   audienceIds?: string[];
   commentCount?: number;
   storePromotion?: { storeId: string; promotionId: string };
+  storeReview?: { storeId: string; reviewId: string; rating: number; storeName: string };
 }
 
 export interface DeliveryJob {

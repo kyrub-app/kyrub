@@ -269,12 +269,12 @@ export default async function handler(
       case 'official.prepaid.payment-status': {
         if (method !== 'POST') { methodNotAllowed(response); return; }
         response.setHeader('cache-control', 'no-store, max-age=0');
-        const fields = operation.endsWith('.quote') ? ['storeId', 'productId', 'selectedMonths']
+        const fields = operation.endsWith('.quote') ? ['storeId', 'productId', 'selectedMonths', 'promotionCode']
           : operation.endsWith('.accept') ? ['checkoutId', 'acceptedTotalMinor'] : ['checkoutId'];
         if (Object.keys(body).some(key => !fields.includes(key)) ||
           (!operation.endsWith('.quote') && typeof body.checkoutId !== 'string')) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
         const result = operation.endsWith('.quote')
-          ? await quoteOfficialPlanPix({ authorization, storeId: body.storeId as string, productId: body.productId as string, selectedMonths: body.selectedMonths as any })
+          ? await quoteOfficialPlanPix({ authorization, storeId: body.storeId as string, productId: body.productId as string, selectedMonths: body.selectedMonths as any, promotionCode: body.promotionCode as string | undefined })
           : operation.endsWith('.accept') ? await acceptOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string, acceptedTotalMinor: body.acceptedTotalMinor as number })
             : operation.endsWith('.checkout') ? await checkoutOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string })
               : await reconcileOfficialPlanPix({ authorization, checkoutId: body.checkoutId as string });

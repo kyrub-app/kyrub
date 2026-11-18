@@ -62,6 +62,8 @@ const ledgerCollectionPath = (storeId: string): string =>
   `stores/${storeId}/storePointLedger`;
 
 export type PublicStorefrontSnapshot = {
+  /** Verified billing identity. Retail store.id must remain unchanged. */
+  officialPlanStoreId?: string;
   store: {
     id: string;
     name: string;
@@ -103,7 +105,7 @@ const projectSubscriptionFields = (data: Record<string, unknown>) => {
   return { saleModality, ...(contractDiscounts ? { contractDiscounts } : {}) };
 };
 
-const projectLegacyPublicOffers = (
+export const projectLegacyPublicOffers = (
   value: unknown,
   storeId: string
 ): PublicStorefrontSnapshot['offers'] => {
@@ -120,6 +122,7 @@ const projectLegacyPublicOffers = (
     const category = clean(data.category);
     const price = data.price;
     const stock = data.stock;
+    const isService = data.isService === true;
 
     if (
       !id ||
@@ -127,9 +130,8 @@ const projectLegacyPublicOffers = (
       typeof price !== 'number' ||
       !Number.isFinite(price) ||
       price < 0 ||
-      typeof stock !== 'number' ||
-      !Number.isFinite(stock) ||
-      stock < 0
+      (!isService && (typeof stock !== 'number' ||
+        !Number.isFinite(stock) || stock < 0))
     ) {
       return [];
     }
@@ -140,8 +142,9 @@ const projectLegacyPublicOffers = (
       description: clean(data.description),
       price,
       image: clean(data.image),
-      stock: data.isService === true ? 0 : Math.floor(stock),
-      isService: data.isService === true,
+      // Legacy services may have no physical inventory field at all.
+      stock: isService ? 0 : Math.floor(stock as number),
+      isService,
       category,
       supplierId: storeId,
       ...projectSubscriptionFields(data),
@@ -149,7 +152,7 @@ const projectLegacyPublicOffers = (
   });
 };
 
-const projectCanonicalOffers = (
+export const projectCanonicalOffers = (
   docs: readonly QueryDocumentSnapshot<DocumentData>[],
   storeId: string,
   productById: ReadonlyMap<string, Record<string, unknown>>
@@ -168,18 +171,68 @@ const projectCanonicalOffers = (
     const name = clean(data.name);
     if (!offerId || !name) return [];
 
+    // Never turn absent/invalid commercial fields into a fictitious R$ 0,00
+    // offer. Services have no stock requirement; physical products do.
+    const price = data.price;
+    const stock = data.stock;
+    const isService = data.isService === true;
+    if (typeof price !== 'number' || !Number.isFinite(price) || price < 0 ||
+        (!isService && (typeof stock !== 'number' || !Number.isFinite(stock) || stock < 0))) {
+      return [];
+    }
+
     const imageUrls = stringList(data.imageUrls);
     return [{
       id: offerId,
       name,
       description: clean(data.description),
-      price: Math.max(0, finiteNumber(data.price)),
+      price,
       image: imageUrls[0] ?? clean(data.image),
-      stock: Math.max(0, Math.floor(finiteNumber(data.stock))),
-      isService: data.isService === true,
+      stock: isService ? 0 : Math.floor(stock as number),
+      isService,
       category: clean(data.category),
       supplierId: storeId,
       ...projectSubscriptionFields(productById.get(clean(data.productId) || offerId) ?? {}),
+    }];
+  });
+
+
+/**
+ * First-store publication uses the owner's UID in the public listing, while
+ * product creation writes to an independent canonical store. Only verified
+ * first-store links may project that catalog into the owner-facing storefront.
+ * Never substitute draft products or orphaned marketplace offer listings.
+ */
+export const projectVerifiedFirstStoreCatalogOffers = (
+  docs: readonly QueryDocumentSnapshot<DocumentData>[],
+  canonicalStoreId: string,
+  publicStoreId: string
+): PublicStorefrontSnapshot['offers'] =>
+  docs.flatMap(document => {
+    const data = document.data();
+    const id = clean(document.id);
+    const name = clean(data.name);
+    const category = clean(data.category);
+    const price = data.price;
+    const isService = data.isService === true;
+    const stock = data.stock;
+    if (!id || (data.id != null && clean(data.id) !== id) ||
+        data.publicationStatus !== 'published' ||
+        clean(data.storeId) !== canonicalStoreId ||
+        !name || !category || typeof price !== 'number' ||
+        !Number.isFinite(price) || price < 0 ||
+        (!isService && (!Number.isSafeInteger(stock) || stock < 0))) {
+      return [];
+    }
+    const imageUrls = stringList(data.imageUrls);
+    return [{
+      id, name, description: clean(data.description), price,
+      image: imageUrls[0] ?? clean(data.image),
+      stock: isService ? 0 : stock,
+      isService, category,
+      // Retail checkout still uses the published owner-facing store identity.
+      supplierId: publicStoreId,
+      ...projectSubscriptionFields(data),
     }];
   });
 
@@ -212,7 +265,7 @@ const resolveOfficialStoreProjectionId = async (
   const designation = await adminDb.doc('kyrub_admin/official_store').get();
   const data = designation.data();
   if (data?.kind !== 'official_cairobi_store' ||
-      clean(data.legacyStoreId) !== legacyStoreId ||
+      (legacyStoreId !== OFFICIAL_STORE_CANONICAL_ID && clean(data.legacyStoreId) !== legacyStoreId) ||
       clean(data.canonicalStoreId) !== OFFICIAL_STORE_CANONICAL_ID) {
     throw new Error('OFFICIAL_PLAN_PUBLIC_IDENTITY_CONFLICT');
   }
@@ -332,11 +385,39 @@ export const loadPublicStorefrontBySlug = async (
       .limit(MAX_PUBLIC_STOREFRONT_OFFERS)
       .get();
 
-    const canonicalProducts = await adminDb.collection('stores').doc(storeId).collection('products')
+    // Verified first-store publication writes the public listing under owner
+    // UID, but its ERP products live under an independent canonical store ID.
+    // Keep pre-existing/official storefronts on their original read path.
+    let verifiedFirstStoreId = '';
+    const ownerId = clean(storeData.ownerId);
+    if (ownerId === storeId && /^[A-Za-z0-9_-]{1,128}$/.test(ownerId)) {
+      const personal = await adminDb.doc(`users/${ownerId}/stores/${ownerId}`).get();
+      const linkedStoreId = clean(personal.get('canonicalStoreId'));
+      if (linkedStoreId && linkedStoreId !== ownerId &&
+          linkedStoreId !== OFFICIAL_STORE_CANONICAL_ID &&
+          /^[A-Za-z0-9_-]{1,128}$/.test(linkedStoreId)) {
+        const canonicalStore = await adminDb.doc(`stores/${linkedStoreId}`).get();
+        if (canonicalStore.exists &&
+            canonicalStore.get('ownerId') === ownerId &&
+            canonicalStore.get('legacyTenantId') === ownerId &&
+            canonicalStore.get('firstStoreCreationVerified') === true) {
+          if (canonicalStore.get('publicationStatus') !== 'published') return null;
+          verifiedFirstStoreId = linkedStoreId;
+        }
+      }
+    }
+    const catalogStoreId = verifiedFirstStoreId || storeId;
+    const canonicalProducts = await adminDb.collection('stores').doc(catalogStoreId).collection('products')
       .where('publicationStatus', '==', 'published').limit(MAX_PUBLIC_STOREFRONT_OFFERS).get();
     const productById = new Map(canonicalProducts.docs.map(document => [document.id, document.data() as Record<string, unknown>]));
 
+    const offers = verifiedFirstStoreId
+      ? projectVerifiedFirstStoreCatalogOffers(canonicalProducts.docs, verifiedFirstStoreId, storeId)
+      : projectCanonicalOffers(offerCandidates.docs, storeId, productById);
+    const verifiedOfficialId = await resolveOfficialStoreProjectionId(storeId, offers);
     return {
+      ...(verifiedOfficialId === OFFICIAL_STORE_CANONICAL_ID && offers.some(offer => isOfficialPlanProductId(offer.id))
+        ? { officialPlanStoreId: verifiedOfficialId } : {}),
       store: {
         id: storeId,
         name: clean(storeData.name),
@@ -349,7 +430,7 @@ export const loadPublicStorefrontBySlug = async (
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
       },
-      offers: await projectOfficialCanonicalTerms(projectCanonicalOffers(offerCandidates.docs, storeId, productById), storeId),
+      offers: verifiedFirstStoreId ? offers : await projectOfficialCanonicalTerms(offers, verifiedOfficialId),
     };
   }
 
@@ -387,7 +468,12 @@ export const loadPublicStorefrontBySlug = async (
   );
   if (hasCanonicalStoreAuthority) return null;
 
+  const legacyOffers = projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId);
+  const verifiedOfficialId = await resolveOfficialStoreProjectionId(legacyStoreId, legacyOffers);
+  const projectedOffers = await projectOfficialCanonicalTerms(legacyOffers, verifiedOfficialId);
   return {
+    ...(verifiedOfficialId === OFFICIAL_STORE_CANONICAL_ID && projectedOffers.some(offer => isOfficialPlanProductId(offer.id))
+      ? { officialPlanStoreId: verifiedOfficialId } : {}),
     store: {
       id: legacyStoreId,
       name: clean(legacyData.name),
@@ -400,11 +486,7 @@ export const loadPublicStorefrontBySlug = async (
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
     },
-    offers: await (async () => {
-      const offers = projectLegacyPublicOffers(legacyData.publicProducts, legacyStoreId);
-      const canonicalId = await resolveOfficialStoreProjectionId(legacyStoreId, offers);
-      return projectOfficialCanonicalTerms(offers, canonicalId);
-    })(),
+    offers: projectedOffers,
   };
 };
 

@@ -14,6 +14,8 @@ export type KyrubActivePlanPublicEntry = {
   features: KyrubPlanFeatureStates;
   effectiveFrom: string | null;
   source: KyrubActivePlanCatalogSource;
+  /** Display price origin only; checkout always uses the persisted official ERP product. */
+  priceSource?: 'official_store' | 'reference_v1';
 };
 
 export type KyrubActivePlanCatalogSnapshot = {

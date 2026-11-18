@@ -2,9 +2,11 @@ import { parseProductSaleModality, type ProductSaleModality } from './productSal
 import { parseSubscriptionContractDiscounts } from './subscriptionContractOffers';
 
 export const OFFICIAL_STORE_CANONICAL_ID = 'store-ae53dc42e57eb9d5c3f7151c1431';
+export const OFFICIAL_PLAN_PRO_PRODUCT_ID = 'draft_1d3dfa74091747d3a3012eadd8027894';
+export const OFFICIAL_PLAN_BUSINESS_PRODUCT_ID = 'draft_5f46706373714839a55846e6d8cb102c';
 export const OFFICIAL_PLAN_PRODUCT_IDS = new Set([
-  'draft_1d3dfa74091747d3a3012eadd8027894',
-  'draft_5f46706373714839a55846e6d8cb102c',
+  OFFICIAL_PLAN_PRO_PRODUCT_ID,
+  OFFICIAL_PLAN_BUSINESS_PRODUCT_ID,
 ]);
 
 export const isOfficialPlanProductId = (productId: string): boolean =>

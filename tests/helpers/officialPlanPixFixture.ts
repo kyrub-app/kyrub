@@ -20,7 +20,7 @@ export async function loadOfficialPlanPixFixture() {
         a.path.endsWith('consultantAuth.js') ? 'export const authenticateConsultantRequest=globalThis.__officialPix.auth;export const verifyFirebaseIdToken=authenticateConsultantRequest;' :
         a.path.endsWith('paidPlanSubscriptionService.js') ? `export const platformBillingRequest=globalThis.__officialPix.request;
           export const writePlanMirrors=(tx,buyer,storeId,plan,now)=>{ for(const path of [...(storeId ? ['users/'+buyer+'/stores/'+buyer,'stores/'+storeId] : []),'tenants/'+buyer]) tx.set(globalThis.__officialPix.db.doc(path),{plan,updatedAt:now},{merge:true}); };` :
-        a.path.endsWith('officialStoreService.js') ? `export const getOfficialStoreIdentity=async()=>({canonicalStoreId:'official-store',ownerUserId:'owner',legacyStoreId:'owner'});` :
+        a.path.endsWith('officialStoreService.js') ? `export const getOfficialStoreIdentity=async()=>({canonicalStoreId:globalThis.__officialPix.officialStoreId||'official-store',ownerUserId:'owner',legacyStoreId:'owner'});` :
         a.path.endsWith('publicPlanCatalogService.js') ? `export const loadPublicActivePlanCatalog=async()=>({plans:[{planId:'pro',version:4},{planId:'business',version:4}]});` :
         a.path.endsWith('canonicalStoreIdentityService.js') ? `export const resolveCanonicalStoreIdentity=async(store)=>({canonicalStoreId:store,ownerUserId:'owner',legacyStoreId:'owner'});` :
         a.path.endsWith('mercadoPagoStoreConnectionSecretStore.js') ? `export const loadMercadoPagoStoreConnectionMetadata=async(scope)=>{if(scope!=='owner')throw Error('WRONG_OAUTH_SCOPE');return {status:'connected',externalAccountId:'42'};};` :

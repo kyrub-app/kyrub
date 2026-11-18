@@ -80,7 +80,7 @@ test('plan runtime answers Pro capabilities from the official V1 reference witho
   assert.equal(result?.focusPlan, 'pro');
   assert.match(result?.reply ?? '', /100 produtos ou serviços ativos/i);
   assert.match(result?.reply ?? '', /300 Créditos Kyrubia/i);
-  assert.match(result?.reply ?? '', /R\$\s*79,90/i);
+  assert.match(result?.reply ?? '', /R\$\s*197,00/i);
   assert.match(result?.reply ?? '', /Business não é necessário/i);
   assert.match(result?.reply ?? '', /contratação.*ainda não está conectada/i);
 });
@@ -100,7 +100,7 @@ test('plan runtime keeps conversational focus across short surprise-style follow
   ];
   const price = resolveKyrubiaPlanConversation(priceMessages, erpContext());
   assert.equal(price?.focusPlan, 'pro');
-  assert.match(price?.reply ?? '', /R\$\s*79,90/i);
+  assert.match(price?.reply ?? '', /R\$\s*197,00/i);
 
   const businessMessages = [
     ...priceMessages,
@@ -112,7 +112,7 @@ test('plan runtime keeps conversational focus across short surprise-style follow
     erpContext()
   );
   assert.equal(business?.focusPlan, 'business');
-  assert.match(business?.reply ?? '', /R\$\s*199,90/i);
+  assert.match(business?.reply ?? '', /R\$\s*397,00/i);
   assert.match(business?.reply ?? '', /1\.500 Créditos Kyrubia/i);
 
   const creditsMessages = [
@@ -294,7 +294,7 @@ test('open commercial judgment remains generative but receives a compact grounde
   assert.equal(deterministic, null);
   assert.ok(context);
   assert.ok(context.length <= 240);
-  assert.match(context, /Pro R\$79,90\/100 itens\/300 créditos/i);
+  assert.match(context, /Pro R\$197,00\/100 itens\/300 créditos/i);
   assert.match(context, /Checkout pago indisponível/i);
 });
 

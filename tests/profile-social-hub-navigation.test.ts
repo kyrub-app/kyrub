@@ -96,8 +96,9 @@ describe('native React profile social hub', () => {
     assert.match(recoveredActionsSource, /kyrub_momentos/);
     assert.match(recoveredActionsSource, /profileOfferEnter/);
     assert.match(recoveredActionsSource, /calc\(100% - 4rem\)/);
-    assert.match(recoveredActionsSource, /post-moment-/);
-    assert.match(recoveredActionsSource, /kyrub-social-posts-updated/);
+    // The recovered entrypoint must use the same canonical cloud review flow.
+    assert.match(recoveredActionsSource, /await publishStoreReview\(selectedStore, data\)/);
+    assert.doesNotMatch(recoveredActionsSource, /persistLocalPost|post-moment-/);
   });
 
   test('keeps Docs, Bio and Face inside the modern edit profile panel', () => {

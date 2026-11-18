@@ -18,6 +18,13 @@ import { officialPlanPixAccount, officialPlanPixRequest, verifyOfficialPlanPixSi
 import type { ContractTermMonths } from '../../shared/subscriptionContractOffers.js';
 import type { CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { parseOfficialPlanRewards } from '../../shared/officialPlanRewards.js';
+import { resolveOfficialPromotionalCheckoutAmount } from './officialPlanPromotionCheckoutAmount.js';
+import { resolveOfficialPlanPromotionCodeFromErp } from './officialPlanPromotionErpReader.js';
+import { buildOfficialPromotionAcceptedTerms } from './officialPlanPromotionAcceptedTerms.js';
+import { assertLiveBusinessCouponPilot, liveBusinessCouponPilotEnabled } from './officialPlanBusinessCouponPilot.js';
+import type { StorePromotion } from '../../src/utils/storePromotions.js';
+import { reserveOfficialPlanPromotionWithinTransaction } from './officialPlanPromotionReservation.js';
+import { finalizeOfficialPlanPromotionReservation, reclaimExpiredUnissuedOfficialPromotionReservations } from './officialPlanPromotionFinalization.js';
 
 const ROOT = 'kyrub_admin/control_plane';
 const hash = (value: string) => createHash('sha256').update(value).digest('hex');
@@ -31,13 +38,51 @@ const slotRef = (uid: string) => adminDb.doc(`${ROOT}/store_subscriptions/${uid}
 const entitlementRef = (uid: string) => adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
 const pilotRef = () => adminDb.doc(`${ROOT}/official_plan_pix_pilot/one_shot`);
 const gate = () => { if (process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true') throw Error('OFFICIAL_PIX_DISABLED'); };
-// Fail closed whenever live creation is enabled. Pilot mode restricts issuance
-// to one authenticated user and one canonical Pro/month offer.
+const isolatedOfficialPromotionEnabled = () =>
+  /^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '') &&
+  process.env.KYRUB_OFFICIAL_PROMOTION_ISOLATED_PIX_TEST === 'true' &&
+  process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN === 'isolated-platform-token';
+/** This is the production checkout's amount authority, including any server-priced ERP coupon. */
+const officialPixChargeMinor = (d: any): number => {
+  if (!d.promotionAcceptedTerms) return d.offer.quote.totalMinor;
+  return resolveOfficialPromotionalCheckoutAmount({
+    buyerUid: d.buyerId, offer: d.offer, accepted: d.promotionAcceptedTerms,
+    providerAmountMinor: d.promotionAcceptedTerms.payableMinor,
+  }).payableMinor;
+};
+const publicOfficialPixQuote = (d: any) => {
+  const accepted = d.promotionAcceptedTerms;
+  return accepted ? { ...d.offer.quote, totalMinor: officialPixChargeMinor(d),
+    originalTotalMinor: d.offer.quote.totalMinor, promotionDiscountMinor: accepted.discountMinor,
+    promotionCode: accepted.code } : d.offer.quote;
+};
+const promotionReservationRef = (d: any) => adminDb.doc(
+  `stores/${d.offer.storeId}/promotionReservations/${hash('official-plan-promotion:' + d.checkoutId)}`
+);
+
+// Fail closed whenever live creation is enabled. A distinct, default-off switch
+// restricts the discounted Business pilot to one authenticated buyer/coupon.
 const pilotUid = () => process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_BUYER_UID?.trim() || '';
 const allowPilotOffer = (d: any, uid: string) => {
   gate();
   if (process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true') throw Error('OFFICIAL_PIX_PILOT_MODE_REQUIRED');
   if (!valid(pilotUid()) || uid !== pilotUid()) throw Error('OFFICIAL_PIX_PILOT_FORBIDDEN');
+  if (d.promotionAcceptedTerms) {
+    // Existing local-emulator Business coupon tests remain unchanged.
+    if (isolatedOfficialPromotionEnabled()) {
+      if (d.offer.plan === 'business' && d.offer.quote.months === 1 &&
+          officialPixChargeMinor(d) === 100) return;
+      throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    }
+    // Real-money use is an additional explicitly gated one-buyer, one-shot
+    // exception, never a general discount or a change to the Business price.
+    assertLiveBusinessCouponPilot({
+      buyerUid: uid, offer: d.offer, accepted: d.promotionAcceptedTerms,
+    });
+    if (officialPixChargeMinor(d) !== 100) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
+    return;
+  }
+  if (liveBusinessCouponPilotEnabled()) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_REQUIRED');
   // The published Official Store product, not a compiled pilot price, owns the charge.
   // The accepted offer is revalidated against the canonical product before issuance.
   if (d.offer.plan !== 'pro' || d.offer.quote.months !== 1 ||
@@ -87,17 +132,60 @@ async function offer(storeId: string, productId: string, months: ContractTermMon
     ownerUserId: official.ownerUserId, legacyStoreId: official.legacyStoreId, quote, rewards, points };
 }
 
-export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths }) {
+export async function quoteOfficialPlanPix(input: { authorization: string; storeId: string; productId: string; selectedMonths: ContractTermMonths; promotionCode?: string }) {
   const buyer = await authenticateConsultantRequest(input.authorization);
   if (!valid(input.storeId) || !valid(input.productId) || ![1, 3, 6, 12].includes(input.selectedMonths)) throw Error('OFFICIAL_PIX_INVALID_REQUEST');
+  if (input.promotionCode !== undefined) {
+    if (typeof input.promotionCode !== 'string' || !input.promotionCode ||
+        input.promotionCode.length > 48 ||
+        (!isolatedOfficialPromotionEnabled() &&
+          (!liveBusinessCouponPilotEnabled() ||
+           process.env.KYRUB_OFFICIAL_PLAN_PIX_CHECKOUT_ENABLED !== 'true' ||
+           process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_MODE !== 'true' ||
+           buyer.uid !== pilotUid() ||
+           input.promotionCode !== process.env.KYRUB_OFFICIAL_PLAN_PIX_PILOT_PROMOTION_CODE ||
+           input.selectedMonths !== 1))) {
+      throw Error('OFFICIAL_PIX_PROMOTION_DISABLED');
+    }
+  }
   // Reopen an unresolved attempt with its original accepted terms, even after the catalog changes.
   const slot = await slotRef(buyer.uid).get();
   if (slot.get('officialPixCheckoutId') && blockedSlot(slot.data())) {
     const d = (await checkoutRef(slot.get('officialPixCheckoutId')).get()).data();
-    if (d?.buyerId !== buyer.uid || d?.offer.storeId !== input.storeId || d?.offer.productId !== input.productId) throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
-    return { checkoutId: slot.get('officialPixCheckoutId'), quote: d.offer.quote, status: d.status };
+    if (d?.buyerId !== buyer.uid || d?.offer.storeId !== input.storeId || d?.offer.productId !== input.productId ||
+        (input.promotionCode && d.promotionAcceptedTerms?.code !== input.promotionCode)) {
+      throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+    }
+    return { checkoutId: slot.get('officialPixCheckoutId'), quote: publicOfficialPixQuote(d), status: d.status };
   }
   if (blockedSlot(slot.data())) throw Error('OFFICIAL_PIX_EXISTING_SUBSCRIPTION');
+  // The existing billing slot locates any still-reserved ERP coupon. Never
+  // discard it without checking that provider issuance has not started.
+  const reservedCheckoutId = slot.get('officialPromotionReservationCheckoutId');
+  if (reservedCheckoutId) {
+    checkId(reservedCheckoutId);
+    const previous = (await checkoutRef(reservedCheckoutId).get()).data();
+    if (!previous || previous.buyerId !== buyer.uid || !previous.promotionAcceptedTerms) {
+      throw Error('OFFICIAL_PROMOTION_RESERVED_CHECKOUT_CONFLICT');
+    }
+    if (previous.status === 'accepted' &&
+        Number.isFinite(Date.parse(previous.expiresAt)) &&
+        Date.parse(previous.expiresAt) <= Date.now()) {
+      await finalizeOfficialPlanPromotionReservation({
+        checkoutId: reservedCheckoutId, officialStoreId: previous.offer.storeId,
+        promotionId: previous.promotionAcceptedTerms.promotionId, outcome: 'expire_unissued',
+      });
+    } else {
+      if (previous.status !== 'accepted' ||
+          previous.offer.storeId !== input.storeId ||
+          previous.offer.productId !== input.productId ||
+          previous.offer.quote.months !== input.selectedMonths ||
+          previous.promotionAcceptedTerms.code !== input.promotionCode) {
+        throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+      }
+      return { checkoutId: reservedCheckoutId, quote: publicOfficialPixQuote(previous), status: previous.status };
+    }
+  }
   const [snapshot, owned, legacy, entitlement] = await Promise.all([
     offer(input.storeId, input.productId, input.selectedMonths),
     adminDb.collection('stores').where('ownerId', '==', buyer.uid).get(),
@@ -111,11 +199,29 @@ export async function quoteOfficialPlanPix(input: { authorization: string; store
     hasLegacyStore: legacy.exists,
   });
   if (liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_ACTIVE_ENTITLEMENT');
+  const promoted = input.promotionCode ? await resolveOfficialPlanPromotionCodeFromErp({
+    officialStoreId: snapshot.storeId, officialProductId: snapshot.productId,
+    buyerUid: buyer.uid, contractTotalMinor: snapshot.quote.totalMinor,
+    code: input.promotionCode,
+  }) : null;
+  const promotionAcceptedTerms = promoted ? buildOfficialPromotionAcceptedTerms({
+    promotion: promoted.promotion, officialStoreId: snapshot.storeId,
+    officialProductId: snapshot.productId, buyerUid: buyer.uid,
+    months: snapshot.quote.months, contractTotalMinor: snapshot.quote.totalMinor,
+  }) : null;
+  if (promotionAcceptedTerms && !isolatedOfficialPromotionEnabled()) {
+    assertLiveBusinessCouponPilot({
+      buyerUid: buyer.uid, offer: snapshot, accepted: promotionAcceptedTerms,
+      promotion: promoted!.promotion,
+    });
+  }
   const checkoutId = randomBytes(32).toString('hex');
-  await checkoutRef(checkoutId).create({ checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
-    ...buyerStore,
-    offer: snapshot, offerDigest: digest(snapshot), status: 'quoted', quotedAt: now() });
-  return { checkoutId, quote: snapshot.quote, status: 'quoted' };
+  const quoted = { checkoutId, buyerId: buyer.uid, buyerEmail: buyer.email || '',
+    ...buyerStore, offer: snapshot, offerDigest: digest(snapshot),
+    ...(promotionAcceptedTerms ? { promotionAcceptedTerms } : {}),
+    status: 'quoted', quotedAt: now() };
+  await checkoutRef(checkoutId).create(quoted);
+  return { checkoutId, quote: publicOfficialPixQuote(quoted), status: 'quoted' };
 }
 
 async function load(authorization: string, checkoutId: string) {
@@ -127,23 +233,55 @@ async function load(authorization: string, checkoutId: string) {
 }
 
 export async function acceptOfficialPlanPix(input: { authorization: string; checkoutId: string; acceptedTotalMinor: number }) {
-  const { buyer } = await load(input.authorization, input.checkoutId);
+  const { buyer, d: quoted } = await load(input.authorization, input.checkoutId);
+  if (quoted.promotionAcceptedTerms) {
+    if (!isolatedOfficialPromotionEnabled()) allowPilotOffer(quoted, buyer.uid);
+    await reclaimExpiredUnissuedOfficialPromotionReservations({
+      officialStoreId: quoted.offer.storeId,
+      promotionId: quoted.promotionAcceptedTerms.promotionId,
+    });
+  }
   return adminDb.runTransaction(async tx => {
-    const r = checkoutRef(input.checkoutId), doc = await tx.get(r), d = doc.data()!;
-    if (d.buyerId !== buyer.uid || d.offer.quote.totalMinor !== input.acceptedTotalMinor || digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
+    const r = checkoutRef(input.checkoutId), buyerSlot = slotRef(buyer.uid);
+    const [doc, currentSlot] = await Promise.all([tx.get(r), tx.get(buyerSlot)]);
+    const d = doc.data()!;
+    if (d.buyerId !== buyer.uid || officialPixChargeMinor(d) !== input.acceptedTotalMinor ||
+        digest(d.offer) !== d.offerDigest) throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
     if (d.acceptedAt) return { status: 'already_accepted' };
     if (d.status !== 'quoted') throw Error('OFFICIAL_PIX_ACCEPTANCE_REQUIRED');
+    const reservedByBuyer = currentSlot.get('officialPromotionReservationCheckoutId');
+    if (reservedByBuyer && reservedByBuyer !== input.checkoutId) {
+      throw Error('OFFICIAL_PIX_EXISTING_CHECKOUT');
+    }
+    if (d.promotionAcceptedTerms) {
+      if (!isolatedOfficialPromotionEnabled()) allowPilotOffer(d, buyer.uid);
+      await reserveOfficialPlanPromotionWithinTransaction(tx, {
+        checkoutId: input.checkoutId, buyerUid: buyer.uid,
+        officialStoreId: d.offer.storeId, officialProductId: d.offer.productId,
+        promotionId: d.promotionAcceptedTerms.promotionId,
+        contractTotalMinor: d.offer.quote.totalMinor,
+      });
+    }
     const acceptedAt = now();
-    tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest, status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
+    tx.update(r, { acceptedAt, acceptedBy: buyer.uid, acceptedOfferDigest: d.offerDigest,
+      ...(d.promotionAcceptedTerms ? { acceptedPromotionDigest: d.promotionAcceptedTerms.termsDigest } : {}),
+      status: 'accepted', expiresAt: new Date(Date.parse(acceptedAt) + 30 * 60000).toISOString() });
+    if (d.promotionAcceptedTerms) {
+      tx.set(buyerSlot, { officialPromotionReservationCheckoutId: input.checkoutId }, { merge: true });
+    }
     return { status: 'accepted' };
   });
 }
 
 function validatePayment(payment: any, d: any) {
+  if (d.promotionAcceptedTerms &&
+      d.acceptedPromotionDigest !== d.promotionAcceptedTerms.termsDigest) {
+    throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+  }
   const cents = payment?.transaction_amount * 100;
   if (!/^\d{1,32}$/.test(String(payment?.id)) || payment.currency_id !== 'BRL' || payment.payment_method_id !== 'pix' ||
     String(payment.collector_id) !== d.collectorId || payment.external_reference !== reference(d.checkoutId) ||
-    !Number.isSafeInteger(Math.round(cents)) || Math.abs(cents - Math.round(cents)) > 1e-6 || Math.round(cents) !== d.offer.quote.totalMinor ||
+    !Number.isSafeInteger(Math.round(cents)) || Math.abs(cents - Math.round(cents)) > 1e-6 || Math.round(cents) !== officialPixChargeMinor(d) ||
     Number(payment.transaction_amount_refunded ?? 0) !== 0 ||
     (process.env.VERCEL_ENV === 'production' && payment.live_mode !== true)) throw Error('OFFICIAL_PIX_PAYMENT_MISMATCH');
 }
@@ -184,21 +322,47 @@ export async function checkoutOfficialPlanPix(input: { authorization: string; ch
   if (url.protocol !== 'https:') throw Error('OFFICIAL_PIX_WEBHOOK_URL_INVALID');
   url.pathname = '/api/plan-control'; url.search = ''; url.hash = '';
   url.searchParams.set('op', 'official.prepaid.webhook'); url.searchParams.set('checkoutId', d.checkoutId);
-  const body = JSON.stringify({ transaction_amount: d.offer.quote.totalMinor / 100, payment_method_id: 'pix',
+  const body = JSON.stringify({ transaction_amount: officialPixChargeMinor(d) / 100, payment_method_id: 'pix',
     payer: { email: buyer.email }, description: d.offer.productName, notification_url: url.toString(),
     date_of_expiration: d.expiresAt, external_reference: reference(d.checkoutId) });
   await adminDb.runTransaction(async tx => {
     const r = checkoutRef(d.checkoutId), slot = slotRef(buyer.uid);
-    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot] = await Promise.all([
+    const [current, lock, entitlement, product, mapping, buyerStore, seller, designation, pilot, couponReservation, pilotCoupon] = await Promise.all([
       tx.get(r), tx.get(slot), tx.get(entitlementRef(buyer.uid)),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}/products/${d.offer.productId}`)),
       tx.get(adminDb.doc(`${ROOT}/official_plan_products/${d.offer.productId}`)), d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null),
       tx.get(adminDb.doc(`stores/${d.offer.storeId}`)), tx.get(adminDb.doc('kyrub_admin/official_store')),
       tx.get(pilotRef()),
+      d.promotionAcceptedTerms ? tx.get(promotionReservationRef(d)) : Promise.resolve(null),
+      d.promotionAcceptedTerms ? tx.get(adminDb.doc(
+        `stores/${d.offer.storeId}/promotions/${d.promotionAcceptedTerms.promotionId}`
+      )) : Promise.resolve(null),
     ]);
-    if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) || liveEntitlement(entitlement.data())) throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
+    if (current.get('status') !== 'accepted' || blockedSlot(lock.data()) ||
+        liveEntitlement(entitlement.data()) ||
+        Date.parse(current.get('expiresAt')) <= Date.now()) {
+      throw Error('OFFICIAL_PIX_CHECKOUT_IN_PROGRESS');
+    }
     allowPilotOffer(d, buyer.uid);
+    if (d.promotionAcceptedTerms &&
+        (lock.get('officialPromotionReservationCheckoutId') !== d.checkoutId ||
+         current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest ||
+         couponReservation?.get('status') !== 'reserved' ||
+         couponReservation.get('buyerUid') !== buyer.uid ||
+         couponReservation.get('promotionId') !== d.promotionAcceptedTerms.promotionId ||
+         Date.parse(couponReservation.get('expiresAt')) <= Date.now())) {
+      throw Error('OFFICIAL_PIX_PROMOTION_RESERVATION_REQUIRED');
+    }
     if (pilot.exists) throw Error('OFFICIAL_PIX_PILOT_ALREADY_USED');
+    if (d.promotionAcceptedTerms && !isolatedOfficialPromotionEnabled()) {
+      if (!pilotCoupon?.exists) throw Error('OFFICIAL_PIX_BUSINESS_COUPON_PILOT_FORBIDDEN');
+      assertLiveBusinessCouponPilot({
+        buyerUid: buyer.uid, offer: d.offer, accepted: d.promotionAcceptedTerms,
+        promotion: { ...(pilotCoupon.data() as StorePromotion),
+          id: pilotCoupon.id, storeId: d.offer.storeId },
+      });
+    }
     if ((d.buyerStoreId ? buyerStore?.get('ownerId') !== buyer.uid : d.buyerStoreProvisioningRequired !== true) || seller.get('ownerId') !== d.offer.ownerUserId ||
       (seller.get('legacyTenantId') || seller.get('ownerId')) !== d.offer.legacyStoreId || designation.get('canonicalStoreId') !== d.offer.storeId ||
       product.get('publicationStatus') !== 'published' ||
@@ -252,7 +416,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
   const paymentId = `official_pix_${payment.id}`;
   const canonical: CanonicalPayment = {
     id: paymentId, storeId, orderId: contractId, buyerId: uid,
-    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100,
+    paymentIntentId: d.checkoutId, amount: officialPixChargeMinor(d) / 100,
     currency: 'BRL', method: 'pix', context: 'pos', status: 'paid',
     provider: 'mercado-pago', providerPaymentId: String(payment.id),
     idempotencyKey: d.checkoutId, createdAt: paidAt, updatedAt: paidAt,
@@ -265,6 +429,11 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
       tx.get(entitlementRef(uid)),
     ]);
+    if (d.promotionAcceptedTerms &&
+        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest)) {
+      throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+    }
     if (current.get('providerPaymentId') !== String(payment.id) ||
         current.get('offerDigest') !== digest(d.offer) ||
         current.get('acceptedOfferDigest') !== current.get('offerDigest') ||
@@ -280,7 +449,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       if (existingBinding.get('contractPath') !== contractRef.path ||
           existingBinding.get('providerPaymentId') !== String(payment.id) ||
           existingSubscription.get('buyerId') !== uid ||
-          existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor ||
+          existingContract.get('totalPaidMinor') !== officialPixChargeMinor(d) ||
           existingContract.get('paidAt') !== paidAt ||
           existingContract.get('providerPaymentId') !== String(payment.id) ||
           existingSubscription.get('providerPaymentId') !== String(payment.id) ||
@@ -312,8 +481,16 @@ async function materializePendingStoreActivation(d: any, payment: any) {
     tx.create(contractRef, {
       contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId,
       customerId: uid, productId: d.offer.productId, months: d.offer.quote.months,
-      totalPaidMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
-      discountPercent: d.offer.quote.discountPercent, acceptedAt: d.acceptedAt,
+      totalPaidMinor: officialPixChargeMinor(d), monthlyBasePriceMinor: d.offer.priceMinor,
+      discountPercent: d.offer.quote.discountPercent,
+      ...(d.promotionAcceptedTerms ? { promotion: {
+        promotionId: d.promotionAcceptedTerms.promotionId, code: d.promotionAcceptedTerms.code,
+        originalTotalMinor: d.promotionAcceptedTerms.originalTotalMinor,
+        discountMinor: d.promotionAcceptedTerms.discountMinor,
+        payableMinor: d.promotionAcceptedTerms.payableMinor,
+        termsDigest: d.promotionAcceptedTerms.termsDigest,
+      } } : {}),
+      acceptedAt: d.acceptedAt,
       paidAt, state: 'paid_pending_activation', startsAt: null, expiresAt: null,
       providerPaymentId: String(payment.id),
     });
@@ -322,7 +499,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId,
       productId: d.offer.productId, productName: d.offer.productName,
       collectionMode: 'prepaid', contractedMonths: d.offer.quote.months,
-      amountMinor: d.offer.quote.totalMinor, monthlyBasePriceMinor: d.offer.priceMinor,
+      amountMinor: officialPixChargeMinor(d), monthlyBasePriceMinor: d.offer.priceMinor,
       currency: 'BRL', saleModality: d.offer.saleModality,
       provider: 'mercado_pago', providerSubscriptionId: '',
       providerStatus: 'authorized', state: 'paid_pending_activation',
@@ -337,7 +514,7 @@ async function materializePendingStoreActivation(d: any, payment: any) {
     tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), {
       contractId, storeId, subscriptionId: id, buyerId: uid,
       productId: d.offer.productId, startsAt: null, expiresAt: null,
-      providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor,
+      providerPaymentId: String(payment.id), paidAmountMinor: officialPixChargeMinor(d),
       state: 'paid_pending_activation',
     });
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
@@ -352,6 +529,11 @@ async function materializePendingStoreActivation(d: any, payment: any) {
       startsAt: null, contractExpiresAt: null, effectsStatus: 'pending',
     });
   });
+  if (d.promotionAcceptedTerms) {
+    await finalizeOfficialPlanPromotionReservation({ checkoutId: d.checkoutId,
+      officialStoreId: d.offer.storeId, promotionId: d.promotionAcceptedTerms.promotionId,
+      outcome: 'redeem' });
+  }
   // Read after the transaction: a concurrent store activation may have
   // advanced this same contract while the provider callback was running.
   const settled = await checkoutRef(d.checkoutId).get();
@@ -533,7 +715,7 @@ async function materialize(d: any, payment: any) {
   const bindingRef = adminDb.doc(`prepaidRenewalPaymentBindings/${hash('mercado_pago:' + payment.id)}`);
   const paymentId = `official_pix_${payment.id}`;
   const canonical: CanonicalPayment = { id: paymentId, storeId, orderId: contractId, buyerId: uid,
-    paymentIntentId: d.checkoutId, amount: d.offer.quote.totalMinor / 100, currency: 'BRL', method: 'pix', context: 'pos',
+    paymentIntentId: d.checkoutId, amount: officialPixChargeMinor(d) / 100, currency: 'BRL', method: 'pix', context: 'pos',
     status: 'paid', provider: 'mercado-pago', providerPaymentId: String(payment.id), idempotencyKey: d.checkoutId,
     createdAt: startsAt, updatedAt: startsAt, paidAt: startsAt, refundedAt: '' };
   const pointEntry = buildStorePointPurchaseEntry({ storeId, customerId: uid, orderId: contractId, paymentId,
@@ -545,13 +727,18 @@ async function materialize(d: any, payment: any) {
       d.buyerStoreId ? tx.get(adminDb.doc(`stores/${d.buyerStoreId}`)) : Promise.resolve(null), tx.get(entitlementRef(uid)),
       tx.get(contractRef), tx.get(subscriptionRef), tx.get(adminDb.doc(`stores/${storeId}`)),
     ]);
+    if (d.promotionAcceptedTerms &&
+        (current.get('acceptedPromotionDigest') !== d.promotionAcceptedTerms.termsDigest ||
+         current.get('promotionAcceptedTerms')?.termsDigest !== d.promotionAcceptedTerms.termsDigest)) {
+      throw Error('OFFICIAL_PIX_PROMOTION_CHANGED');
+    }
     if (current.get('providerPaymentId') !== String(payment.id) || current.get('offerDigest') !== digest(d.offer) ||
       current.get('acceptedOfferDigest') !== current.get('offerDigest') || current.get('acceptedBy') !== uid ||
       current.get('requestDigest') !== hash(current.get('requestBody')) || current.get('collectorId') !== d.collectorId) throw Error('OFFICIAL_PIX_ACCEPTANCE_CHANGED');
     if (binding.exists) {
       if (binding.get('contractPath') !== contractRef.path || binding.get('providerPaymentId') !== String(payment.id) ||
         current.get('status') !== 'activated' || existingContract.get('startsAt') !== startsAt || existingContract.get('expiresAt') !== expiresAt ||
-        existingContract.get('totalPaidMinor') !== d.offer.quote.totalMinor || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
+        existingContract.get('totalPaidMinor') !== officialPixChargeMinor(d) || existingSubscription.get('buyerId') !== uid) throw Error('OFFICIAL_PIX_PAYMENT_ALREADY_USED');
       return;
     }
     if (slot.get('officialPixCheckoutId') !== d.checkoutId ||
@@ -565,12 +752,19 @@ async function materialize(d: any, payment: any) {
     // All reads precede writes. The immutable provider binding gates every commercial effect.
     tx.create(bindingRef, { provider: 'mercado_pago', providerPaymentId: String(payment.id), storeId, subscriptionId: id, contractId, contractPath: contractRef.path });
     tx.create(contractRef, { contractId, checkoutId: d.checkoutId, subscriptionId: id, storeId, customerId: uid,
-      productId: d.offer.productId, months: d.offer.quote.months, totalPaidMinor: d.offer.quote.totalMinor,
+      productId: d.offer.productId, months: d.offer.quote.months, totalPaidMinor: officialPixChargeMinor(d),
       monthlyBasePriceMinor: d.offer.priceMinor, discountPercent: d.offer.quote.discountPercent,
+      ...(d.promotionAcceptedTerms ? { promotion: {
+        promotionId: d.promotionAcceptedTerms.promotionId, code: d.promotionAcceptedTerms.code,
+        originalTotalMinor: d.promotionAcceptedTerms.originalTotalMinor,
+        discountMinor: d.promotionAcceptedTerms.discountMinor,
+        payableMinor: d.promotionAcceptedTerms.payableMinor,
+        termsDigest: d.promotionAcceptedTerms.termsDigest,
+      } } : {}),
       acceptedAt: d.acceptedAt, startsAt, expiresAt, providerPaymentId: String(payment.id) });
     tx.create(subscriptionRef, { schemaVersion: 1, id, storeId, buyerId: uid, buyerEmail: d.buyerEmail,
       ownerUserId: d.offer.ownerUserId, legacyStoreId: d.offer.legacyStoreId, productId: d.offer.productId, productName: d.offer.productName,
-      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months, amountMinor: d.offer.quote.totalMinor,
+      collectionMode: 'prepaid', contractedMonths: d.offer.quote.months, amountMinor: officialPixChargeMinor(d),
       monthlyBasePriceMinor: d.offer.priceMinor, currency: 'BRL',
       saleModality: { ...d.offer.saleModality, subscription: { ...d.offer.saleModality.subscription, autoRenew: false } },
       provider: 'mercado_pago', providerSubscriptionId: '', providerStatus: 'authorized', state: 'active', checkoutUrl: '',
@@ -579,7 +773,7 @@ async function materialize(d: any, payment: any) {
       providerPaymentOccurredAt: startsAt, paymentConfirmedAt: startsAt, createdAt: startsAt, updatedAt: startsAt, activatedAt: startsAt,
       cancelledAt: '', startsAt, expiresAt, initialContractId: contractId, billingAuthority: 'platform' });
     tx.create(subscriptionRef.collection('prepaidPeriods').doc(contractId), { contractId, storeId, subscriptionId: id,
-      buyerId: uid, productId: d.offer.productId, startsAt, expiresAt, providerPaymentId: String(payment.id), paidAmountMinor: d.offer.quote.totalMinor, state: 'paid' });
+      buyerId: uid, productId: d.offer.productId, startsAt, expiresAt, providerPaymentId: String(payment.id), paidAmountMinor: officialPixChargeMinor(d), state: 'paid' });
     tx.create(adminDb.doc(`${root}/payments/${paymentId}`), canonical);
     applyStoreEconomicLedgerPaymentPlan(tx, finance);
     if (pointEntry) tx.create(adminDb.doc(`${root}/storePointLedger/${Buffer.from(pointEntry.id).toString('base64url')}`), pointEntry);
@@ -594,6 +788,11 @@ async function materialize(d: any, payment: any) {
       actorId: 'kyrub_billing', actorRole: 'system', targetType: 'store', targetId: uid, nextPlan: d.offer.plan,
       providerPaymentId: String(payment.id), checkoutId: d.checkoutId, source: 'server', createdAt: startsAt });
   });
+  if (d.promotionAcceptedTerms) {
+    await finalizeOfficialPlanPromotionReservation({ checkoutId: d.checkoutId,
+      officialStoreId: d.offer.storeId, promotionId: d.promotionAcceptedTerms.promotionId,
+      outcome: 'redeem' });
+  }
   // Retry-safe projections use their canonical owners; a failed projection does not create another payment.
   if (d.offer.rewards.xp > 0) await persistVerifiedKyrubXp({ userId: uid, sourceType: 'achievement', sourceId: d.offer.productId,
     deltaXp: d.offer.rewards.xp, correlationId: d.checkoutId, idempotencyKey: `official_${d.checkoutId}`, occurredAt: startsAt });
@@ -649,6 +848,14 @@ async function reconcileLoaded(d: any, candidateId?: string) {
       tx.update(r, { status: 'rejected', providerPaymentId: paymentId });
       if (lock.get('officialPixCheckoutId') === d.checkoutId) tx.set(slot, { checkoutReservationStatus: 'closed', providerStatus: 'cancelled' }, { merge: true });
     });
+    // Release the same ERP reservation after the canonical provider rejection
+    // is durably persisted. A provider retry cannot consume the released coupon.
+    if (d.promotionAcceptedTerms) {
+      await finalizeOfficialPlanPromotionReservation({
+        checkoutId: d.checkoutId, officialStoreId: d.offer.storeId,
+        promotionId: d.promotionAcceptedTerms.promotionId, outcome: 'release',
+      });
+    }
     return { state: 'rejected', paymentId };
   }
   if (!['pending', 'in_process'].includes(payment.status)) throw Error('OFFICIAL_PIX_POST_PAYMENT_REVIEW_REQUIRED');

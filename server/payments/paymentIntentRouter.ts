@@ -1,6 +1,8 @@
 import { assertNoOfficialPlanProducts } from './officialPlanMarketplaceGuard.js';
+import { OFFICIAL_STORE_CANONICAL_ID } from '../../shared/officialPlanCanonicalDisplay.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
+import type { DocumentData, QueryDocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
   normalizeCanonicalPaymentIntent,
@@ -17,7 +19,11 @@ import { materializePendingMarketplaceOrder } from '../../src/utils/paymentOrder
 import { preparePrepaidOrderMirror } from './marketplaceOrderPaymentSettlementService.js';
 import { normalizePromotionCode } from '../../src/utils/storePromotions.js';
 import { normalizeStorePointsPerUnit } from '../../shared/storePoints.js';
+import { parseProductOptionGroups, parseProductQuickNotes } from '../../src/utils/productCustomization.js';
+import { parseCatalogCustomizationDefaults, resolveCatalogCustomization } from '../../src/utils/catalogCustomizationInheritance.js';
+import { assertMarketplaceCheckoutQuoteUnchanged, priceMarketplaceCheckoutItems, type MarketplaceCatalogPricingProduct, type MarketplaceCheckoutSelectionInput, type PricedMarketplaceCheckoutItem } from './marketplaceItemPricing.js';
 import { attachMercadoPagoPixToExistingIntent } from './mercadoPagoCheckoutBridge.js';
+import { projectVerifiedFirstStoreCatalogOffers } from './marketplaceDiscoveryService.js';
 import {
   mapMercadoPagoWebhookError,
   processMercadoPagoWebhook,
@@ -27,11 +33,7 @@ import {
   resolveStorePromotionForCheckout,
 } from './storePromotionService.js';
 
-interface MarketplaceCheckoutItemInput {
-  productId: string;
-  quantity: number;
-  note?: string;
-}
+type MarketplaceCheckoutItemInput = MarketplaceCheckoutSelectionInput;
 
 interface MarketplaceCheckoutInput {
   storeId: string;
@@ -46,14 +48,7 @@ interface MarketplaceCheckoutInput {
   couponCode: string;
 }
 
-interface CatalogProduct {
-  id: string;
-  name: string;
-  price: number;
-  image: string;
-  isService: boolean;
-  storePointsPerUnit: number;
-}
+type CatalogProduct = MarketplaceCatalogPricingProduct;
 
 export interface MarketplacePaymentIntentResponse {
   paymentIntentId: string;
@@ -91,22 +86,43 @@ const operationalOrderPath = (storeId: string, orderId: string): string =>
   `artifacts/${storeId}/public/data/customerOrders/${orderId}`;
 
 const parseCheckoutItems = (value: unknown): MarketplaceCheckoutItemInput[] => {
-  if (!Array.isArray(value) || value.length === 0) {
+  if (!Array.isArray(value) || value.length === 0 || value.length > 100) {
     throw new Error('CHECKOUT_ITEMS_REQUIRED');
   }
   return value.map(item => {
-    const record = item && typeof item === 'object'
+    const record = item && typeof item === 'object' && !Array.isArray(item)
       ? item as Record<string, unknown>
       : {};
     const productId = clean(record.productId);
     const quantity = record.quantity;
-    if (!productId || !Number.isInteger(quantity) || Number(quantity) <= 0) {
+    const rawOptions = record.selectedOptions ?? [];
+    const rawNotes = record.selectedQuickNotes ?? [];
+    if (!productId || productId.length > 1024 ||
+        !Number.isSafeInteger(quantity) || Number(quantity) <= 0 ||
+        !Array.isArray(rawOptions) || rawOptions.length > 30 ||
+        !Array.isArray(rawNotes) || rawNotes.length > 30 ||
+        rawNotes.some(note => typeof note !== 'string' || note.length > 60)) {
       throw new Error('CHECKOUT_ITEM_INVALID');
     }
+    const selectedOptions = rawOptions.map(value => {
+      const option = value && typeof value === 'object' && !Array.isArray(value)
+        ? value as Record<string, unknown> : {};
+      const groupId = clean(option.groupId);
+      const choiceId = clean(option.choiceId);
+      if (!groupId || !choiceId || groupId.length > 120 || choiceId.length > 120) {
+        throw new Error('CHECKOUT_ITEM_CONFIGURATION_INVALID');
+      }
+      return { groupId, choiceId };
+    });
+    const customerNote = clean(record.customerNote);
+    if (customerNote.length > 280) throw new Error('CHECKOUT_ITEM_CONFIGURATION_INVALID');
     return {
       productId,
       quantity: Number(quantity),
       note: clean(record.note),
+      selectedOptions,
+      selectedQuickNotes: rawNotes as string[],
+      customerNote,
     };
   });
 };
@@ -168,18 +184,89 @@ const catalogProducts = (value: unknown): CatalogProduct[] => {
       price: record.isComplimentary === true ? 0 : price,
       image: clean(record.image),
       isService: record.isService === true,
+      isComplimentary: record.isComplimentary === true,
+      category: clean(record.category),
+      optionGroups: parseProductOptionGroups(record.optionGroups),
+      quickNotes: parseProductQuickNotes(record.quickNotes),
       storePointsPerUnit: normalizeStorePointsPerUnit(record.storePointsPerUnit),
     }];
   });
 };
 
-const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> => {
-  const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
-  const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
-  if (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published') {
+/**
+ * A verified first store publishes its public listing under the owner's UID,
+ * but its ERP products are held in an independent canonical stores/{id} path.
+ * The checkout must read the same published projection as the storefront,
+ * rather than trusting an absent/stale legacy tenant mirror.
+ *
+ * Null means this is not a verified first-store identity: keep legacy checkout
+ * semantics unchanged. Publication/identity conflicts fail closed.
+ */
+const loadVerifiedFirstStorePublishedCatalog = async (
+  publicStoreId: string
+): Promise<CatalogProduct[] | null> => {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(publicStoreId)) return null;
+  const listingId = `s_${publicStoreId.length}_${publicStoreId}`;
+  const listing = await adminDb.doc(`marketplace_listings/${listingId}`).get();
+  if (!listing.exists) return null;
+
+  if (listing.get('listingType') !== 'store' ||
+      listing.get('storeId') !== publicStoreId ||
+      listing.get('ownerId') !== publicStoreId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (listing.get('publicationStatus') !== 'published') {
     throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
   }
-  return catalogProducts(tenant?.publicProducts);
+
+  const privateStore = await adminDb.doc(`users/${publicStoreId}/stores/${publicStoreId}`).get();
+  const canonicalStoreId = clean(privateStore.get('canonicalStoreId'));
+  if (!canonicalStoreId || canonicalStoreId === publicStoreId) return null;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+
+  const canonicalStore = await adminDb.doc(`stores/${canonicalStoreId}`).get();
+  if (!canonicalStore.exists ||
+      canonicalStore.get('ownerId') !== publicStoreId ||
+      canonicalStore.get('legacyTenantId') !== publicStoreId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (canonicalStore.get('firstStoreCreationVerified') !== true) return null;
+  if (canonicalStore.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const canonicalProducts = await adminDb.collection('stores')
+    .doc(canonicalStoreId).collection('products')
+    .where('publicationStatus', '==', 'published').limit(250).get();
+  const published = projectVerifiedFirstStoreCatalogOffers(
+    canonicalProducts.docs, canonicalStoreId, publicStoreId
+  );
+  const rawById = new Map(canonicalProducts.docs.map(doc => [doc.id, doc.data()]));
+  return catalogProducts(published.map(offer => ({
+    ...offer,
+    optionGroups: rawById.get(offer.id)?.optionGroups,
+    quickNotes: rawById.get(offer.id)?.quickNotes,
+    isComplimentary: rawById.get(offer.id)?.isComplimentary,
+    storePointsPerUnit: rawById.get(offer.id)?.storePointsPerUnit,
+  })));
+};
+
+const loadPublishedCatalog = async (storeId: string): Promise<CatalogProduct[]> => {
+  const verifiedFirstStoreCatalog = await loadVerifiedFirstStorePublishedCatalog(storeId);
+  const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
+  const tenant = tenantSnapshot.data() as Record<string, unknown> | undefined;
+  if (verifiedFirstStoreCatalog === null &&
+      (!tenantSnapshot.exists || tenant?.publicationStatus !== 'published')) {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+  const products = verifiedFirstStoreCatalog ?? catalogProducts(tenant?.publicProducts);
+  const defaults = parseCatalogCustomizationDefaults(tenant?.catalogCustomizationDefaults);
+  return products.map(product => ({
+    ...product,
+    ...resolveCatalogCustomization(product, defaults),
+  }));
 };
 
 const assertNotOfficialPlanItems = (ids: string[]) =>
@@ -191,23 +278,83 @@ const buildIntentItems = (
   catalog: CatalogProduct[],
   items: MarketplaceCheckoutItemInput[]
 ) => {
-  const productMap = new Map(catalog.map(product => [product.id, product]));
-  return items.map(item => {
-    const product = productMap.get(item.productId);
-    if (!product) throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
-    const total = Number((product.price * item.quantity).toFixed(2));
-    return {
-      productId: product.id,
-      name: product.name,
-      quantity: item.quantity,
-      unitPrice: product.price,
-      total,
-      note: item.note ?? '',
-      image: product.image,
-      isService: product.isService,
-      storePointsPerUnit: product.storePointsPerUnit,
-    };
-  });
+  return priceMarketplaceCheckoutItems(catalog, items);
+};
+
+
+/**
+ * Close the publication/price time-of-check-to-time-of-use gap for newly
+ * created first-store intents. All authoritative reads happen in the same
+ * Firestore transaction as the financial documents are written, so a racing
+ * catalog update forces transaction retry rather than a stale payment.
+ */
+const assertFreshVerifiedFirstStoreQuote = async (input: {
+  transaction: Transaction;
+  storeId: string;
+  items: readonly MarketplaceCheckoutItemInput[];
+  quoted: readonly PricedMarketplaceCheckoutItem[];
+}): Promise<void> => {
+  const { transaction, storeId } = input;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(storeId)) return;
+  const listing = await transaction.get(
+    adminDb.doc(`marketplace_listings/s_${storeId.length}_${storeId}`)
+  );
+  if (!listing.exists) return; // Unmapped legacy storefronts retain their contract.
+  if (listing.get('listingType') !== 'store' ||
+      listing.get('storeId') !== storeId ||
+      listing.get('ownerId') !== storeId ||
+      listing.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const personal = await transaction.get(adminDb.doc(`users/${storeId}/stores/${storeId}`));
+  const canonicalId = clean(personal.get('canonicalStoreId'));
+  if (!canonicalId || canonicalId === storeId) return;
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalId)) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  const canonical = await transaction.get(adminDb.doc(`stores/${canonicalId}`));
+  if (!canonical.exists || canonical.get('ownerId') !== storeId ||
+      canonical.get('legacyTenantId') !== storeId) {
+    throw new Error('CHECKOUT_STORE_IDENTITY_CONFLICT');
+  }
+  if (canonical.get('firstStoreCreationVerified') !== true) return;
+  if (canonical.get('publicationStatus') !== 'published') {
+    throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+  }
+
+  const ids = [...new Set(input.items.map(item => item.productId.split('::', 1)[0]))];
+  if (ids.some(id => !id || id.length > 180 || id.includes('/') || id === '.' || id === '..')) {
+    throw new Error('CHECKOUT_PRODUCT_NOT_AVAILABLE');
+  }
+  const [tenant, ...docs] = await Promise.all([
+    transaction.get(adminDb.doc(`tenants/${storeId}`)),
+    ...ids.map(id => transaction.get(adminDb.doc(`stores/${canonicalId}/products/${id}`))),
+  ]);
+  if (docs.some(doc => !doc.exists)) throw new Error('CHECKOUT_PUBLISHED_OFFER_CHANGED');
+  // QueryDocumentSnapshot is safe here: existence was checked above. The
+  // shared projector only accesses the document's id and data().
+  const projected = projectVerifiedFirstStoreCatalogOffers(
+    docs as QueryDocumentSnapshot<DocumentData>[], canonicalId, storeId
+  );
+  if (projected.length !== ids.length) throw new Error('CHECKOUT_PUBLISHED_OFFER_CHANGED');
+
+  const byId = new Map(docs.map(doc => [doc.id, doc.data() as Record<string, unknown>]));
+  const defaults = parseCatalogCustomizationDefaults(tenant.get('catalogCustomizationDefaults'));
+  const current = catalogProducts(projected.map(offer => ({
+    ...offer,
+    optionGroups: byId.get(offer.id)?.optionGroups,
+    quickNotes: byId.get(offer.id)?.quickNotes,
+    isComplimentary: byId.get(offer.id)?.isComplimentary,
+    storePointsPerUnit: byId.get(offer.id)?.storePointsPerUnit,
+  }))).map(product => ({
+    ...product,
+    ...resolveCatalogCustomization(product, defaults),
+  }));
+  assertMarketplaceCheckoutQuoteUnchanged(
+    input.quoted,
+    priceMarketplaceCheckoutItems(current, input.items)
+  );
 };
 
 const documentToken = (idempotencyKey: string): string =>
@@ -421,7 +568,7 @@ export const createMarketplacePaymentIntent = async (
 
   const input = parseCheckout(body);
   const catalog = await loadPublishedCatalog(input.storeId);
-  await assertNotOfficialPlanItems(input.items.map(item => item.productId));
+  await assertNotOfficialPlanItems(input.items.map(item => item.productId.split('::', 1)[0]));
   const intentItems = buildIntentItems(catalog, input.items);
   const subtotal = Number(
     intentItems.reduce((sum, item) => sum + item.total, 0).toFixed(2)
@@ -434,7 +581,7 @@ export const createMarketplacePaymentIntent = async (
         buyerId: identity.uid,
         couponCode: input.couponCode,
         lines: intentItems.map(item => ({
-          productId: item.productId,
+          productId: item.sourceProductId,
           unitPrice: item.unitPrice,
           quantity: item.quantity,
         })),
@@ -470,7 +617,9 @@ export const createMarketplacePaymentIntent = async (
       badge: resolvedPromotion.quote.badge,
       discountType: resolvedPromotion.quote.discountType,
       discountValue: resolvedPromotion.quote.discountValue,
-      eligibleProductIds: resolvedPromotion.quote.eligibleProductIds,
+      eligibleProductIds: intentItems
+        .filter(item => resolvedPromotion.quote.eligibleProductIds.includes(item.sourceProductId))
+        .map(item => item.productId),
     } : null,
     deliveryFee: 0,
     total: amount,
@@ -565,6 +714,9 @@ export const createMarketplacePaymentIntent = async (
       return { intent: savedIntent, payment: savedPayment, duplicate: true };
     }
     if (existingOrder.exists) throw new Error('CHECKOUT_IDEMPOTENCY_CONFLICT');
+    await assertFreshVerifiedFirstStoreQuote({
+      transaction, storeId: input.storeId, items: input.items, quoted: intentItems,
+    });
     const writeMirror = await preparePrepaidOrderMirror(transaction, pendingOrder);
     transaction.set(intentRef, intent);
     transaction.set(paymentRef, payment);
@@ -589,7 +741,17 @@ export const createPaymentIntentRouter = (): Router => {
         response.status(400).json({ error: 'Loja não identificada.' });
         return;
       }
-      await loadPublishedCatalog(storeId);
+      if (storeId === OFFICIAL_STORE_CANONICAL_ID) {
+        // Official plans have a canonical stores/{id} identity, not a B2C
+        // tenants/{id} catalog. This read-only endpoint is public *only*
+        // after the official store is published.
+        const official = await adminDb.doc(`stores/${storeId}`).get();
+        if (!official.exists || official.get('publicationStatus') !== 'published') {
+          throw new Error('CHECKOUT_STORE_NOT_AVAILABLE');
+        }
+      } else {
+        await loadPublishedCatalog(storeId);
+      }
       response.status(200).json({
         promotions: await listPublicStorePromotions(storeId),
       });
@@ -612,14 +774,14 @@ export const createPaymentIntentRouter = (): Router => {
       if (!storeId || !couponCode) throw new Error('CHECKOUT_REQUIRED_FIELDS_MISSING');
       const items = parseCheckoutItems(body.items);
       const catalog = await loadPublishedCatalog(storeId);
-      await assertNotOfficialPlanItems(items.map(item => item.productId));
+      await assertNotOfficialPlanItems(items.map(item => item.productId.split('::', 1)[0]));
       const intentItems = buildIntentItems(catalog, items);
       const resolved = await resolveStorePromotionForCheckout({
         storeId,
         buyerId: identity.uid,
         couponCode,
         lines: intentItems.map(item => ({
-          productId: item.productId,
+          productId: item.sourceProductId,
           unitPrice: item.unitPrice,
           quantity: item.quantity,
         })),

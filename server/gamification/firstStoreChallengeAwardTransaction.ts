@@ -67,6 +67,7 @@ export const awardVerifiedFirstStoreChallengeInTransaction = async (
       userId: uid, awardId, sourceType: 'challenge', sourceId: plan.challengeId,
       amount: plan.pitangas, occurredAt: input.event.createdAt,
       balanceRef: input.balanceRef, ledgerRef: input.pitangaLedgerRef,
+      legacyFenceRef: input.balanceRef.firestore.doc('systemControl/pitangaLegacyWriterFence'),
     });
   }
   if (plan.xp > 0) {

@@ -80,6 +80,12 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'pitanga-account') {
+    const { handlePitangaAccountRequest } = await import('../server/gamification/pitangaAccountHandler.js');
+    await handlePitangaAccountRequest(request, response);
+    return;
+  }
+
   if (transport === 'kairubi-xp-total') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {

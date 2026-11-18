@@ -5,7 +5,7 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
-import { loadPrepaidPaymentConfirmation, assertPrepaidStoreMirrorIdentity } from '../payments/marketplaceOrderPaymentSettlementService.js';
+import { loadPrepaidPaymentConfirmation, resolvePrepaidOrderMirrorStoreId, assertPrepaidStoreMirrorIdentity } from '../payments/marketplaceOrderPaymentSettlementService.js';
 import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy.js';
 import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
 import {
@@ -489,7 +489,12 @@ export const transitionOrderStatusWithInventory = async (
       throw Error('ORDER_IDENTITY_MISMATCH');
     }
     const prepaid = releaseMode === 'pay_before_fulfillment';
-    if (prepaid) await assertPrepaidStoreMirrorIdentity(transaction, normalizedTenantId, clean(tenantSnapshot.get('canonicalStoreId')));
+    // The canonical order mirror is an ERP projection; inventory authority
+    // stays on its existing independently verified tenant/member path.
+    const inventoryCanonicalStoreId = clean(tenantSnapshot.get('canonicalStoreId'));
+    const mirrorCanonicalStoreId = prepaid
+      ? await resolvePrepaidOrderMirrorStoreId(transaction, normalizedTenantId, inventoryCanonicalStoreId)
+      : inventoryCanonicalStoreId;
     const confirmation = prepaid && !['rejected', 'cancelled'].includes(nextStatus)
       ? await loadPrepaidPaymentConfirmation({ transaction, storeId: normalizedTenantId,
         orderId: normalizedOrderId, order: rawOrder, now: new Date().toISOString() }) : null;
@@ -516,7 +521,7 @@ export const transitionOrderStatusWithInventory = async (
       throw new Error('Explique o motivo da recusa ou cancelamento.');
     }
 
-    const canonicalStoreId = clean(tenantSnapshot.data()?.canonicalStoreId);
+    const canonicalStoreId = inventoryCanonicalStoreId;
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,
       tenantId: normalizedTenantId,
@@ -580,11 +585,11 @@ export const transitionOrderStatusWithInventory = async (
       { merge: true }
     );
 
-    if (canonicalStoreId) {
+    if (mirrorCanonicalStoreId) {
       transaction.set(
-        adminDb.doc(`stores/${canonicalStoreId}/orders/${normalizedOrderId}`),
+        adminDb.doc(`stores/${mirrorCanonicalStoreId}/orders/${normalizedOrderId}`),
         {
-          ...(prepaid ? { ...rawOrder, storeId: canonicalStoreId, legacyStoreId: normalizedTenantId,
+          ...(prepaid ? { ...rawOrder, storeId: mirrorCanonicalStoreId, legacyStoreId: normalizedTenantId,
             legacyUpdatedAt: updatedAt } : {}),
           status: nextStatus,
           ...releasePatch,

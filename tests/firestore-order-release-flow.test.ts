@@ -22,7 +22,9 @@ before(async()=>{
     export {isOrderVisibleInKds} from './src/utils/orderWorkflow';
     export {parseCustomerOrder,customerOrdersEquivalent} from './src/utils/customerOrders';
     export * from './server/payments/paymentWebhookProcessor.ts';
-    export * from './server/inventory/orderInventoryService.ts';`,resolveDir:process.cwd(),loader:'ts'},
+    export * from './server/inventory/orderInventoryService.ts';
+    export {cancelOrderItemsWithRefund} from './server/payments/orderItemCancellationService.ts';
+    export {requestCanonicalOrderRefund} from './server/payments/paymentRefundService.ts';`,resolveDir:process.cwd(),loader:'ts'},
     bundle:true,platform:'node',format:'cjs',packages:'external',write:false,plugins:[{name:'emulator-only-db',setup(plugin){
       plugin.onResolve({filter:/firebaseAdmin\.js$/},()=>({path:'db',namespace:'emulator-only-db'}));
       plugin.onLoad({filter:/.*/,namespace:'emulator-only-db'},()=>({contents:'export const adminDb=globalThis.__orderReleaseEmulatorDb;',loader:'js'}));
@@ -134,4 +136,195 @@ test('checkout fails atomically for cross-store mapping without creating financi
   await assert.rejects(service.createMarketplacePaymentIntent('Bearer isolated-test',checkoutBody),/STORE_MISMATCH/);
   assert.equal((await db.collection('stores/seller/paymentIntents').get()).size,1); // Existing baseline fixture only.
   assert.equal((await db.collection('stores/canonical/orders').get()).empty,true);
+});
+
+
+const verifiedFirstStoreFixture = async()=>{
+  await db.doc('users/seller/stores/seller').set({
+    id: 'seller', ownerId: 'seller', canonicalStoreId: 'store-first',
+  });
+  await db.doc('stores/store-first').set({
+    id: 'store-first', ownerId: 'seller', legacyTenantId: 'seller',
+    firstStoreCreationVerified: true, publicationStatus: 'published',
+  });
+  await db.doc('marketplace_listings/s_6_seller').set({
+    listingType: 'store', storeId: 'seller', ownerId: 'seller',
+    publicationStatus: 'published',
+  });
+  await db.doc('stores/store-first/products/product').set({
+    id: 'product', storeId: 'store-first', name: 'Produto',
+    category: 'Produtos', price: 20, stock: 10,
+    publicationStatus: 'published', isService: false,
+  });
+};
+test('verified first store without tenant mapping mirrors pending, approved and cancelled orders to ERP',async()=>{
+  await verifiedFirstStoreFixture();
+  const request={...checkoutBody,idempotencyKey:'first-store-cancel'};
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(created.status,201);
+  const orderId=created.body.orderId;
+  const mirror=db.doc(`stores/store-first/orders/${orderId}`);
+  assert.equal((await mirror.get()).get('status'),'pending');
+  assert.equal((await mirror.get()).get('checkoutAuthority'),'merchant_approval_required');
+  assert.equal((await mirror.get()).get('legacyStoreId'),'seller');
+  const retry=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(retry.body.duplicate,true);
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  assert.equal((await mirror.get()).get('status'),'accepted');
+  assert.equal((await mirror.get()).get('paymentStatus'),'unpaid');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'cancelled',{reason:'Comprador desistiu'});
+  assert.equal((await mirror.get()).get('status'),'cancelled');
+  assert.equal((await mirror.get()).get('paymentStatus'),'unpaid');
+});
+test('verified first-store paid order stays mirrored and only enters production after confirmed payment',async()=>{
+  await verifiedFirstStoreFixture();
+  const request={...checkoutBody,idempotencyKey:'first-store-paid'};
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',request);
+  assert.equal(created.status,201);
+  const {orderId,paymentId,paymentIntentId}=created.body;
+  const mirror=db.doc(`stores/store-first/orders/${orderId}`);
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller',orderId,'preparing'),
+    /liberação financeira/);
+  const provider=db.batch();
+  provider.update(db.doc(`stores/seller/payments/${paymentId}`),
+    {provider:'mercado-pago',providerPaymentId:'psp-first'});
+  provider.update(db.doc(`stores/seller/paymentIntents/${paymentIntentId}`),
+    {provider:'mercado-pago',providerIntentId:'psp-first'});
+  await provider.commit();
+  await service.processVerifiedPaymentWebhook({
+    storeId:'seller',paymentId,
+    event:{...paidEvent,eventId:'first-paid-event',providerPaymentId:'psp-first',paymentIntentId},
+  });
+  await service.settleMarketplaceOperationalOrderAfterPayment({
+    storeId:'seller',orderId,paymentIntentId,occurredAt:now,
+  });
+  assert.equal((await mirror.get()).get('paymentStatus'),'paid');
+  assert.equal((await mirror.get()).get('status'),'accepted');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'preparing');
+  assert.equal((await mirror.get()).get('status'),'preparing');
+  assert.equal((await mirror.get()).get('paymentStatus'),'paid');
+});
+test('cross-owner first-store mapping fails checkout atomically without mirroring financial data',async()=>{
+  await verifiedFirstStoreFixture();
+  await db.doc('stores/store-first').update({ownerId:'someone-else'});
+  await assert.rejects(
+    service.createMarketplacePaymentIntent('Bearer isolated-test',
+      {...checkoutBody,idempotencyKey:'first-store-identity-conflict'}),
+    /STORE_IDENTITY_CONFLICT|STORE_MISMATCH/
+  );
+  assert.equal((await db.collection('stores/store-first/orders').get()).empty,true);
+});
+
+
+test('cross-domain retail: approved Pix leads to one KDS release, one stock deduction and exact restoration on cancellation',async()=>{
+  await mappedStore();
+  await db.doc('users/seller/private_store/inventory').set({
+    ownerId:'seller',
+    catalog:[{id:'flour',name:'Farinha',unit:'g',currentQuantity:1000,minimumQuantity:100,
+      purchaseCost:0.02,supplier:'',updatedAt:now}],
+    compositions:{product:{kind:'recipe',yieldQuantity:1,
+      lines:[{inventoryItemId:'flour',quantity:125}],updatedAt:now}},
+    consumptionTrigger:'preparing',
+  });
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',{
+    ...checkoutBody,idempotencyKey:'retail-inventory-refund-chain',
+  });
+  assert.equal(created.status,201);
+  const {orderId,paymentId,paymentIntentId}=created.body;
+  const orderRef=db.doc('artifacts/seller/public/data/customerOrders/'+orderId);
+  const mirrorRef=db.doc('stores/canonical/orders/'+orderId);
+  const inventoryRef=db.doc('users/seller/private_store/inventory');
+  await service.transitionOrderStatusWithInventory('seller',orderId,'accepted');
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder((await orderRef.get()).data())),false);
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller',orderId,'preparing'),/liberação financeira/);
+  const provider=db.batch();
+  provider.update(db.doc('stores/seller/payments/'+paymentId),{provider:'mercado-pago',providerPaymentId:'psp-retail-stock'});
+  provider.update(db.doc('stores/seller/paymentIntents/'+paymentIntentId),{provider:'mercado-pago',providerIntentId:'psp-retail-stock'});
+  await provider.commit();
+  const verified={...paidEvent,paymentIntentId,providerPaymentId:'psp-retail-stock',eventId:'verified-stock'};
+  const outcomes=await Promise.all([0,1,2].map(()=>service.processVerifiedPaymentWebhook({
+    storeId:'seller',paymentId,event:verified,
+  })));
+  assert.equal(outcomes.filter(item=>!item.duplicate).length,1);
+  await service.settleMarketplaceOperationalOrderAfterPayment({storeId:'seller',orderId,paymentIntentId,occurredAt:now});
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder((await orderRef.get()).data())),true);
+  assert.equal((await mirrorRef.get()).get('paymentStatus'),'paid');
+  const preparing=await service.transitionOrderStatusWithInventory('seller',orderId,'preparing');
+  assert.equal(preparing.inventoryAction,'consumed');
+  assert.equal((await inventoryRef.get()).data()?.catalog?.[0]?.currentQuantity,875);
+  const retry=await service.transitionOrderStatusWithInventory('seller',orderId,'preparing');
+  assert.equal(retry.inventoryAction,'duplicate');
+  assert.equal((await inventoryRef.get()).data()?.catalog?.[0]?.currentQuantity,875);
+  const cancelled=await service.transitionOrderStatusWithInventory('seller',orderId,'cancelled',{
+    reason:'Cancelamento pelo lojista após preparo no emulador',
+  });
+  assert.equal(cancelled.inventoryAction,'restored');
+  assert.equal((await inventoryRef.get()).data()?.catalog?.[0]?.currentQuantity,1000);
+  assert.equal((await mirrorRef.get()).get('status'),'cancelled');
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder((await orderRef.get()).data())),false);
+  assert.equal((await db.collection('stores/seller/paymentRefunds').get()).empty,true,
+    'inventory cancellation must never issue an automatic financial refund');
+});
+
+test('cross-domain retail: paid pending order partial cancellation blocks full refund before provider access',async()=>{
+  await mappedStore();
+  const created=await service.createMarketplacePaymentIntent('Bearer isolated-test',{
+    ...checkoutBody,
+    items:[{productId:'product',quantity:2}],
+    idempotencyKey:'retail-paid-partial-full-refund-conflict',
+  });
+  assert.equal(created.status,201);
+  const {orderId,paymentId,paymentIntentId}=created.body;
+  const orderRef=db.doc('artifacts/seller/public/data/customerOrders/'+orderId);
+  const paidOrder=(await orderRef.get()).data()!;
+  assert.equal(paidOrder.status,'pending');
+  assert.equal(paidOrder.total,40);
+  const provider=db.batch();
+  provider.update(db.doc('stores/seller/payments/'+paymentId),{provider:'mercado-pago',providerPaymentId:'psp-retail-partial'});
+  provider.update(db.doc('stores/seller/paymentIntents/'+paymentIntentId),{provider:'mercado-pago',providerIntentId:'psp-retail-partial'});
+  await provider.commit();
+  // A verified payment may arrive out of order. It does not authorize KDS without seller acceptance.
+  await service.processVerifiedPaymentWebhook({storeId:'seller',paymentId,event:{
+    ...paidEvent,paymentIntentId,providerPaymentId:'psp-retail-partial',amount:40,eventId:'paid-before-merchant-acceptance',
+  }});
+  await service.settleMarketplaceOperationalOrderAfterPayment({storeId:'seller',orderId,paymentIntentId,occurredAt:now});
+  assert.equal((await orderRef.get()).get('status'),'pending');
+  assert.equal((await orderRef.get()).get('paymentStatus'),'paid');
+  assert.equal(service.isOrderVisibleInKds(service.parseCustomerOrder((await orderRef.get()).data())),false);
+
+  const oldFetch=globalThis.fetch;
+  let externalCalls=0;
+  globalThis.fetch=async (input:any,init?:any)=>{
+    const url=String(input);
+    if(/^https?:\/\//.test(url)&&!/^http:\/\/127\.0\.0\.1:8088\//.test(url)){
+      externalCalls+=1;
+      throw new Error('PSP_NETWORK_PROHIBITED_IN_EMULATOR');
+    }
+    return oldFetch(input,init);
+  };
+  try{
+    const cancellation={storeId:'seller',orderId,operationId:'retail_partial_operation_01',
+      reason:'Item indisponível em checkout já pago',selections:[{lineId:paidOrder.items[0].lineId,quantity:1}]};
+    const partial=await service.cancelOrderItemsWithRefund(cancellation);
+    assert.equal(partial.refundRequired,true);
+    assert.equal(partial.cancelledAmount,20);
+    assert.ok(['required','failed','processing'].includes(partial.refundStatus));
+    const marker=db.doc('stores/seller/paymentPartialRefunds/retail_partial_operation_01');
+    assert.equal((await marker.get()).get('orderId'),orderId);
+    assert.equal((await service.cancelOrderItemsWithRefund(cancellation)).duplicate,true);
+    assert.equal((await db.collection('stores/seller/paymentPartialRefunds').where('orderId','==',orderId).get()).size,1);
+    await service.transitionOrderStatusWithInventory('seller',orderId,'cancelled',{
+      reason:'Pedido encerrado após cancelamento parcial pendente',
+    });
+    await assert.rejects(service.requestCanonicalOrderRefund({
+      storeId:'seller',orderId,reason:'Reembolso integral deve recusar parcial incerto',
+    }),/PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED|PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL/);
+    assert.equal((await db.collection('stores/seller/paymentRefunds').get()).empty,true,
+      'full refund must stop before creating any provider request');
+    assert.equal((await db.doc('stores/seller/payments/'+paymentId).get()).get('status'),'paid');
+    assert.ok(externalCalls<=1,'any partial provider attempt was intercepted, never sent');
+  } finally{
+    globalThis.fetch=oldFetch;
+  }
 });
