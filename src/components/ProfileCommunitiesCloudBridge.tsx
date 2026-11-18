@@ -1002,14 +1002,7 @@ export function ProfileCommunitiesCloudBridge() {
                   Encontre espaços para participar
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
+
             </header>
 
 
