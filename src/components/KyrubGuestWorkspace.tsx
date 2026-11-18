@@ -1,14 +1,15 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Compass, ShoppingBag,
+  Bell, Briefcase, CheckSquare, Compass, GraduationCap, ShoppingBag,
   Sparkles, Store, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { RendaTab } from './tabs/RendaTab';
+import { JemboeHabilidadesTab } from './tabs/JemboeHabilidadesTab';
 import { auth } from '../utils/firebase';
 import { loadStorefrontOriginContext } from '../utils/storefrontOriginContext';
 
-type GuestTab = 'renda' | 'praca' | 'cairubia';
+type GuestTab = 'habilidades' | 'renda' | 'praca' | 'cairubia';
 type GuestPanel = 'deliveries' | 'freelas' | null;
 
 interface PublicOpportunity {
@@ -94,6 +95,11 @@ export function KyrubGuestWorkspace() {
           onClick={() => requestLogin('acessar seu perfil')}>
           <UserRound className="h-4 w-4" />
         </button>
+        <button type="button" className={iconButtonClass + ' text-orange-400'}
+          title="Cairúbia" aria-label="Abrir Cairúbia" id="header-kyrubia-trigger"
+          onClick={() => setTab('cairubia')}>
+          <Sparkles className="h-4 w-4" />
+        </button>
         <button type="button" className={iconButtonClass} title="Marketplace"
           aria-label="Abrir Marketplace" id="header-marketplace-trigger" onClick={() => setTab('praca')}>
           <Store className="h-4 w-4" />
@@ -120,6 +126,7 @@ export function KyrubGuestWorkspace() {
             Voltar para {origin.storeName}
           </a>
         )}
+        {tab === 'habilidades' && <JemboeHabilidadesTab />}
         {tab === 'renda' && (
           <RendaTab
             guestReadOnly
@@ -173,14 +180,18 @@ export function KyrubGuestWorkspace() {
       <nav className="fixed bottom-0 left-0 right-0 z-40 flex items-center justify-around border-t border-slate-900 bg-slate-950/95 px-6 py-3 backdrop-blur-lg"
         aria-label="Navegação principal">
         {([
-          ['praca', Compass, 'Praça'], ['renda', Briefcase, 'Renda'], ['cairubia', Sparkles, 'Cairúbia'],
-        ] as const).map(([nextTab, Icon, label]) => (
+          ['habilidades', GraduationCap, 'Jemboé', 'Habilidades'],
+          ['renda', Briefcase, 'Catu', 'Renda'],
+          ['praca', Compass, 'Taba', 'Praça'],
+        ] as const).map(([nextTab, Icon, label, meaning]) => (
           <button type="button" key={nextTab} onClick={() => setTab(nextTab)}
             aria-current={tab === nextTab ? 'page' : undefined}
-            className={'flex flex-col items-center gap-1 text-[10px] font-bold uppercase ' +
+            aria-label={`${label} — ${meaning}`}
+            className={'flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase ' +
               (tab === nextTab ? 'text-orange-500' : 'text-slate-500')}>
             <Icon className="h-5 w-5" />
             <span>{label}</span>
+            <span className="text-[8px] font-medium normal-case">{meaning}</span>
           </button>
         ))}
       </nav>

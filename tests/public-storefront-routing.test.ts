@@ -424,3 +424,42 @@ test('app header shows profile first while logout is only available inside the p
   assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
   assert.match(legacyAppSource, /triggerToast\('Não foi possível sair da conta\. Tente novamente\.'/);
 });
+
+
+test('cultural guides and assistant header match the approved information architecture', () => {
+  const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+  const learningSource = readFileSync('src/components/tabs/JemboeHabilidadesTab.tsx', 'utf8');
+  const workspaceBridge = readFileSync('src/components/KyrubAiWorkspaceBridge.tsx', 'utf8');
+  const enrolledProviderActions = /startEnrollment|createEnrollment|grantPaidAccess|authMagicLink/;
+
+  // Profile remains first; Cairúbia uses its old second header slot.
+  assert.ok(legacyAppSource.indexOf('id="header-user-profile-trigger"') <
+    legacyAppSource.indexOf('id="header-kyrubia-trigger"'));
+  assert.ok(legacyAppSource.indexOf('id="header-kyrubia-trigger"') <
+    legacyAppSource.indexOf('id="header-marketplace-trigger"'));
+  assert.ok(guestSource.indexOf('id="header-user-profile-trigger"') <
+    guestSource.indexOf('id="header-kyrubia-trigger"'));
+  assert.ok(guestSource.indexOf('id="header-kyrubia-trigger"') <
+    guestSource.indexOf('id="header-marketplace-trigger"'));
+
+  assert.match(legacyAppSource, /onClick=\{\(\) => setActiveTab\('cairubia'\)\}/);
+  assert.match(guestSource, /onClick=\{\(\) => setTab\('cairubia'\)\}/);
+  assert.match(legacyAppSource, /activeTab === 'cairubia' && \(\s*<div id="kyrub-tab-container"/);
+  assert.match(workspaceBridge, /getElementById\('kyrub-tab-container'\)/);
+
+  // Same three guide names and translations in signed-in and guest views.
+  for (const label of ['Jemboé', 'Catu', 'Taba']) {
+    assert.match(legacyAppSource, new RegExp('<span>' + label + '<\\/span>'));
+    assert.ok(guestSource.includes("'" + label + "'"));
+  }
+  assert.match(legacyAppSource, /activeTab === 'habilidades' && <JemboeHabilidadesTab/);
+  assert.match(guestSource, /tab === 'habilidades' && <JemboeHabilidadesTab/);
+  assert.doesNotMatch(legacyAppSource.match(/<nav className="fixed bottom-[\s\S]*?<\/nav>/)?.[0] ?? '', /<span>Cairúbia<\/span>/);
+  assert.doesNotMatch(guestSource.match(/<nav className="fixed bottom-[\s\S]*?<\/nav>/)?.[0] ?? '', /'cairubia', Sparkles/);
+
+  assert.match(learningSource, /id="jemboe-kyrub-cursos-link"/);
+  assert.match(learningSource, /https:\/\/smartlyst\.com\.br\/platform\/kyrubcursos/);
+  assert.match(learningSource, /target="_blank" rel="noopener noreferrer"/);
+  assert.match(learningSource, /KYRUBIA_LEARNING_TRACKS/);
+  assert.doesNotMatch(learningSource, enrolledProviderActions);
+});

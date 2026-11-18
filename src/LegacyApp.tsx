@@ -4,6 +4,7 @@ import {
   Package,
   Store as StoreIcon,
   Compass,
+  GraduationCap,
   Layers,
   ShoppingCart,
   ShoppingBag,
@@ -81,6 +82,7 @@ import { canStoreRoleAccessErpMenuItem } from './components/MobileErpMenu';
 import { requestErpManagementNavigation } from './utils/erpManagementNavigation';
 import { PerfilTab } from './components/tabs/PerfilTab';
 import { RendaTab } from './components/tabs/RendaTab';
+import { JemboeHabilidadesTab } from './components/tabs/JemboeHabilidadesTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
 import { MobileErpMenu } from './components/MobileErpMenu';
 
@@ -225,7 +227,7 @@ const getUserStoreCreateInput = (
   return input;
 };
 
-type ActiveMainTab = 'perfil' | 'renda' | 'kyrub' | 'cairubia';
+type ActiveMainTab = 'perfil' | 'habilidades' | 'renda' | 'kyrub' | 'cairubia';
 type ActiveSocialTab = 'lojas' | 'usuarios';
 type ActivePracaFilter = 'recentes' | 'favoritos' | 'conectados';
 type RetainedWorkspaceTab = {
@@ -1306,6 +1308,17 @@ const handleLogin = async (provider: 'google' | 'apple') => {
             </button>
 
             <button
+              type="button"
+              onClick={() => setActiveTab('cairubia')}
+              className="w-10 h-10 rounded-xl border border-orange-500/25 bg-slate-900 flex items-center justify-center text-orange-400 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors"
+              id="header-kyrubia-trigger"
+              title="Cairúbia"
+              aria-label="Abrir Cairúbia"
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+
+            <button
               onClick={() => {
                 setSocialSubTab('lojas');
                 setActiveTab('kyrub');
@@ -1343,7 +1356,10 @@ const handleLogin = async (provider: 'google' | 'apple') => {
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6">
 
-            {/* GUIA 1: NOTAS (Notes & Productivity) */}
+            {/* JEMBOÉ: Habilidades, ensino e cursos externos em etapa inicial. */}
+            {activeTab === 'habilidades' && <JemboeHabilidadesTab />}
+
+            {/* Notas/Tarefas acessadas pelo cabeçalho, não pela navegação principal. */}
             {activeTab === 'perfil' && (
               <PerfilTab
                 notes={notes}
@@ -1443,13 +1459,34 @@ const handleLogin = async (provider: 'google' | 'apple') => {
             )}
           </main>
 
-          {/* 3. FIXED BOTTOM NAVIGATION BAR */}
-          <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900 py-3 px-6 flex justify-around items-center backdrop-blur-lg shadow-2xl">
-            <button
+          {/* 3. THREE CULTURAL MAIN GUIDES — learning → earning → community.
+              Keep Renda/Catu as the initial selected guide. */}
+          <nav className="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 border-t border-slate-900 py-3 px-6 flex justify-around items-center backdrop-blur-lg shadow-2xl" aria-label="Guias principais">
+            <button type="button"
+              onClick={() => setActiveTab('habilidades')}
+              aria-current={activeTab === 'habilidades' ? 'page' : undefined}
+              aria-label="Jemboé — Habilidades"
+              className={`flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase transition-all ${
+                activeTab === 'habilidades' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+              }`}>
+              <GraduationCap className="w-5 h-5" />
+              <span>Jemboé</span>
+              <span className="text-[8px] font-medium normal-case">Habilidades</span>
+            </button>
+            <button type="button"
+              onClick={() => setActiveTab('renda')}
+              aria-current={activeTab === 'renda' ? 'page' : undefined}
+              aria-label="Catu — Renda"
+              className={`flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase transition-all ${
+                activeTab === 'renda' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+              }`}>
+              <Briefcase className="w-5 h-5" />
+              <span>Catu</span>
+              <span className="text-[8px] font-medium normal-case">Renda</span>
+            </button>
+            <button type="button"
               onClick={() => {
-                // Persist before triggering the keyed app refresh. A React
-                // effect alone can be skipped if the product-sync bridge
-                // unmounts this instance immediately after the click.
+                // Preserve Praça state across a keyed application refresh.
                 const uid = auth.currentUser?.uid;
                 if (uid) retainedWorkspaceTabByUser.set(uid, {
                   activeTab: 'kyrub', socialSubTab: 'usuarios', pracaFilter: 'recentes',
@@ -1458,30 +1495,14 @@ const handleLogin = async (provider: 'google' | 'apple') => {
                 setPracaFilter('recentes');
                 setActiveTab('kyrub');
               }}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
+              aria-current={activeTab === 'kyrub' ? 'page' : undefined}
+              aria-label="Taba — Praça"
+              className={`flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase transition-all ${
                 activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
+              }`}>
               <Compass className="w-5 h-5" />
-              <span>Praça</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('renda')}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'renda' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              <Briefcase className="w-5 h-5" />
-              <span>Renda</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('cairubia')}
-              className={`flex flex-col items-center gap-1 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'cairubia' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
-              }`}
-            >
-              <Sparkles className="w-5 h-5" />
-              <span>Cairúbia</span>
+              <span>Taba</span>
+              <span className="text-[8px] font-medium normal-case">Praça</span>
             </button>
           </nav>
         </div>
