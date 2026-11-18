@@ -405,12 +405,12 @@ test('app header shows profile first while logout is only available inside the p
 
   assert.ok(appHeader.length > 0, 'authenticated app header should exist');
   assert.ok(guestHeader.length > 0, 'guest app header should exist');
-  assert.ok(appHeader.indexOf('id="header-user-profile-trigger"') < appHeader.indexOf('id="header-marketplace-trigger"'));
+  assert.ok(appHeader.indexOf('id="header-user-profile-trigger"') < appHeader.indexOf('id="header-kyrubia-trigger"'));
   assert.equal((appHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
   assert.doesNotMatch(appHeader, /<LogOut|aria-label="Sair"|title="Sair"/);
   assert.match(appHeader, /mr-auto w-10 h-10 rounded-xl/);
 
-  assert.ok(guestHeader.indexOf('id="header-user-profile-trigger"') < guestHeader.indexOf('id="header-marketplace-trigger"'));
+  assert.ok(guestHeader.indexOf('id="header-user-profile-trigger"') < guestHeader.indexOf('id="header-kyrubia-trigger"'));
   assert.equal((guestHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
   assert.doesNotMatch(guestHeader, /<LogIn|<LogOut/);
   assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
@@ -436,11 +436,11 @@ test('cultural guides and assistant header match the approved information archit
   assert.ok(legacyAppSource.indexOf('id="header-user-profile-trigger"') <
     legacyAppSource.indexOf('id="header-kyrubia-trigger"'));
   assert.ok(legacyAppSource.indexOf('id="header-kyrubia-trigger"') <
-    legacyAppSource.indexOf('id="header-marketplace-trigger"'));
+    legacyAppSource.indexOf('id="header-tasks-trigger"'));
   assert.ok(guestSource.indexOf('id="header-user-profile-trigger"') <
     guestSource.indexOf('id="header-kyrubia-trigger"'));
   assert.ok(guestSource.indexOf('id="header-kyrubia-trigger"') <
-    guestSource.indexOf('id="header-marketplace-trigger"'));
+    guestSource.indexOf('id="header-tasks-trigger"'));
 
   assert.match(legacyAppSource, /onClick=\{\(\) => setActiveTab\('cairubia'\)\}/);
   assert.match(guestSource, /onClick=\{\(\) => setTab\('cairubia'\)\}/);
@@ -467,4 +467,27 @@ test('cultural guides and assistant header match the approved information archit
   assert.doesNotMatch(learningSource, /Aprender para gerar renda|Aprender a empreender|Aprender a usar o Kyrub/);
   assert.match(learningSource, /Acesse a sala de aula/);
   assert.doesNotMatch(learningSource, enrolledProviderActions);
+});
+
+
+test('Marketplace remains reachable through Taba and Lojas, without a duplicate header shortcut', () => {
+  const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+  const socialSource = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
+  const storesSource = readFileSync('src/components/tabs/SquareStoresSection.tsx', 'utf8');
+  const authenticatedHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
+  const guestHeader = guestSource.match(/<header id="app-header"([\s\S]*?)<\/header>/)?.[1] ?? '';
+
+  assert.ok(authenticatedHeader && guestHeader);
+  assert.doesNotMatch(authenticatedHeader, /header-marketplace-trigger|aria-label="Abrir Marketplace"/);
+  assert.doesNotMatch(guestHeader, /header-marketplace-trigger|aria-label="Abrir Marketplace"/);
+
+  // Taba is the main destination regardless of auth state; no marketplace link is lost.
+  assert.match(legacyAppSource, /aria-label="Taba — Praça"/);
+  assert.match(legacyAppSource, /setSocialSubTab\('usuarios'\);\s*setPracaFilter\('recentes'\);\s*setActiveTab\('kyrub'\)/);
+  assert.match(guestSource, /\['praca', Compass, 'Taba', 'Praça'\]/);
+  assert.match(guestSource, /href="\/@kyrub-oficial"/);
+  assert.match(socialSource, /<SquareStoresSection/);
+  assert.match(socialSource, /props\.setSocialSubTab\('lojas'\)/);
+  assert.match(storesSource, /id="square-stores-view-all"/);
+  assert.match(storesSource, /href=\{OFFICIAL_STORE_PATH\}/);
 });

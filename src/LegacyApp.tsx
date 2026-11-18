@@ -1319,19 +1319,6 @@ const handleLogin = async (provider: 'google' | 'apple') => {
             </button>
 
             <button
-              onClick={() => {
-                setSocialSubTab('lojas');
-                setActiveTab('kyrub');
-              }}
-              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 hover:text-orange-300 hover:border-orange-500/40 transition-colors"
-              id="header-marketplace-trigger"
-              title="Marketplace"
-              aria-label="Abrir Marketplace"
-            >
-              <StoreIcon className="w-4 h-4" />
-            </button>
-
-            <button
               onClick={() => setActiveTab('perfil')}
               className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 hover:text-orange-300 hover:border-orange-500/40 transition-colors"
               id="header-tasks-trigger"
