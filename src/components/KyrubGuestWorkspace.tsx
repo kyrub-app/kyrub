@@ -5,6 +5,7 @@ import {
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { RendaTab } from './tabs/RendaTab';
+import { KyrubiaWelcomePanel } from './KyrubiaWelcomePanel';
 import { JemboeHabilidadesTab } from './tabs/JemboeHabilidadesTab';
 import { auth } from '../utils/firebase';
 import { loadStorefrontOriginContext } from '../utils/storefrontOriginContext';
@@ -157,14 +158,13 @@ export function KyrubGuestWorkspace() {
         )}
         {tab === 'cairubia' && (
           <section id="guest-cairubia" className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-            <Sparkles className="h-9 w-9 text-orange-400" />
-            <h1 className="mt-3 text-2xl font-black">Cairúbia</h1>
-            <p className="mt-3 text-sm leading-6 text-slate-400">
-              Conheça a assistente do Kyrub. Para guardar uma conversa e executar ações vinculadas a você, entre na sua conta.
-            </p>
+            <KyrubiaWelcomePanel
+              onSelectPrompt={() => requestLogin('conversar com a Cairúbia')}
+              onConnectAi={() => requestLogin('conectar sua inteligência artificial')}
+            />
             <button type="button" onClick={() => requestLogin('conversar com a Cairúbia')}
-              className="mt-5 rounded-xl bg-orange-600 px-4 py-3 text-xs font-black uppercase">
-              Conversar com a Cairúbia
+              className="mt-4 w-full rounded-xl bg-orange-600 px-4 py-3 text-xs font-black uppercase">
+              Entrar para conversar
             </button>
           </section>
         )}
