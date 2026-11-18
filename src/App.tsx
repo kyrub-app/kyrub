@@ -18,6 +18,7 @@ import { KyrubAiWorkspaceBridge } from './components/KyrubAiWorkspaceBridge';
 import { KyrubiaExternalBridgeControls } from './components/KyrubiaExternalBridgeControls';
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { KyrubRendaEntryApp } from './components/KyrubRendaEntryApp';
+import { KyrubGuestWorkspace } from './components/KyrubGuestWorkspace';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PlanCenterApp } from './components/plans/PlanCenterApp';
 import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
@@ -254,6 +255,23 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   );
 }
 
+function KyrubMainEntry() {
+  // Restore an existing Firebase session before deciding which entry surface to
+  // show. A guest sees the same Renda navigation, but only read-only content.
+  const [currentUser, setCurrentUser] = useState(auth.currentUser);
+  const [resolved, setResolved] = useState(false);
+
+  useEffect(() => onAuthStateChanged(auth, user => {
+    setCurrentUser(user);
+    setResolved(true);
+  }), []);
+
+  if (!resolved) return <KyrubBootstrapScreen />;
+  return currentUser
+    ? <AuthenticatedKyrubApp operational={false} />
+    : <KyrubGuestWorkspace />;
+}
+
 export default function App() {
   useFontSizeAccessibility();
 
@@ -278,23 +296,21 @@ export default function App() {
 
   const searchParams = new URLSearchParams(window.location.search);
   const entry = searchParams.get('entry');
-  const fullAppRequested = searchParams.get('app') === '1';
 
-  // Renda is the public discovery door for Kyrub. Direct visitors and people
-  // arriving from a merchant storefront can explore it before authenticating.
-  // The complete authenticated workspace remains available explicitly via
-  // ?app=1 and preserves the storefront return bridge when there is an origin.
-  if (
-    route.kind === 'default' &&
-    !fullAppRequested &&
-    (entry === null || entry === 'renda')
-  ) {
+  // The former "Meu Kyrub / Comece por aqui" landing remains deliberately
+  // accessible for the separately planned onboarding change, never the default.
+  if (route.kind === 'default' && (entry === 'welcome' || entry === 'renda')) {
     return <KyrubRendaEntryApp />;
   }
 
-  if (route.kind === 'staff-app' && route.legacyRedirect) {
-    window.history.replaceState({}, '', route.canonicalPath);
+  if (route.kind === 'staff-app') {
+    if (route.legacyRedirect) {
+      window.history.replaceState({}, '', route.canonicalPath);
+    }
+    return <AuthenticatedKyrubApp operational />;
   }
 
-  return <AuthenticatedKyrubApp operational={route.kind === 'staff-app'} />;
+  // Root / and legacy ?app=1 both lead to the real workspace. Guests can
+  // explore Renda/Praça before login; protected actions request an account.
+  return <KyrubMainEntry />;
 }
