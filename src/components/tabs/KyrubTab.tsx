@@ -12,6 +12,7 @@ import { BadgePercent, Sparkles } from 'lucide-react';
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
 import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
 import { StoreOfferCardPresentationBridge } from '../StoreOfferCardPresentationBridge';
+import { SquareStoresSection } from './SquareStoresSection';
 import { KyrubTab as LegacyKyrubTab } from './LegacyKyrubTab';
 import { usePublicSocialFeed } from '../../hooks/usePublicSocialFeed';
 import { selectPublicSquarePosts } from '../../utils/publicSquareFeed';
@@ -406,6 +407,20 @@ export function KyrubTab(props: KyrubTabProps) {
             )}
           </div>
         </section>
+      )}
+
+      {props.socialSubTab === 'usuarios' && (
+        <SquareStoresSection
+          stores={allPublishedStores}
+          favoriteStoreIds={props.favoriteStoreIds}
+          purchasedStoreIds={purchasedStoreIds}
+          offerStoreIds={publishedOffers.map(offer => offer.storeId)}
+          onViewAll={() => {
+            props.setOfertasFilter('todas');
+            props.setSocialSubTab('lojas');
+          }}
+          onOpenStore={props.setVisitingStore}
+        />
       )}
 
       <LegacyKyrubTab
