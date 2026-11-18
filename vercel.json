@@ -32,6 +32,10 @@
       "destination": "/api/admin/operations/health?transport=global-challenges"
     },
     {
+      "source": "/api/delivery-opportunities/public",
+      "destination": "/api/health?transport=public-delivery-discovery"
+    },
+    {
       "source": "/api/pitangas",
       "destination": "/api/health?transport=pitanga-account"
     },

@@ -172,7 +172,7 @@ test('application routes public slugs before the Kyrub discovery and authenticat
   assert.match(appSource, /resolveKyrubAppRoute\(window\.location\.pathname\)/);
   assert.match(appSource, /route\.kind === 'public-storefront'/);
   assert.match(appSource, /<PublicStorefrontApp slug=\{route\.slug\}/);
-  assert.match(appSource, /fullAppRequested = searchParams\.get\('app'\) === '1'/);
+  assert.match(appSource, /return <KyrubMainEntry \/>/);
   assert.match(appSource, /<KyrubRendaEntryApp \/>/);
   assert.match(appSource, /route\.legacyRedirect/);
   assert.match(
@@ -181,9 +181,11 @@ test('application routes public slugs before the Kyrub discovery and authenticat
   );
 });
 
-test('Renda is the canonical direct discovery door before the full app', () => {
-  assert.match(appSource, /entry === null \|\| entry === 'renda'/);
-  assert.match(appSource, /!fullAppRequested/);
+test('Renda workspace is the default discovery door and old introduction remains available', () => {
+  assert.match(appSource, /return <KyrubMainEntry \/>/);
+  assert.match(appSource, /entry === 'welcome' \|\| entry === 'renda'/);
+  assert.match(appSource, /<KyrubGuestWorkspace \/>/);
+  assert.match(appSource, /<AuthenticatedKyrubApp operational=\{false\} \/>/);
   assert.match(rendaEntrySource, /Comece por aqui/);
   assert.match(rendaEntrySource, /Kyrub Entregas/);
   assert.match(rendaEntrySource, /Kyrub Freelas/);
@@ -358,7 +360,7 @@ test('storefront header owns info and close actions while movement uses fire bes
 });
 
 test('the staff route opens the real retailer workspace after Google authentication', () => {
-  assert.match(appSource, /operational=\{route\.kind === 'staff-app'\}/);
+  assert.match(appSource, /<AuthenticatedKyrubApp operational \/>/);
   assert.match(appSource, /<OperationalAppEntryBridge/);
   assert.match(operationalEntrySource, /onAuthStateChanged/);
   assert.match(operationalEntrySource, /btn-criar-loja-ofertas/);
