@@ -26,7 +26,7 @@ const OFFICIAL_STORE_SLUG = 'kyrub-oficial';
 const OFFICIAL_STORE_PATH = '/@kyrub-oficial';
 
 export function SquareStoresSection({
-  stores, favoriteStoreIds, purchasedStoreIds, offerStoreIds,
+  stores, favoriteStoreIds, offerStoreIds,
   onViewAll, onOpenStore,
 }: SquareStoresSectionProps) {
   const [listTab, setListTab] = useState<StoreListTab>('discover');
