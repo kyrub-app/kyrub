@@ -104,3 +104,25 @@ test('private group navigation rejects stale messages and cross-community member
   assert.match(component, /onClick=\{\(\) => toggleGroupConversation\(group\.id\)\}/);
   assert.match(component, /const openCommunity = \(community: CloudCommunity\) => \{[\s\S]*?closeGroupsModal\(\);/);
 });
+
+
+test('Taba shows Lojas before a single Comunidades panel without device-test imports', () => {
+  const tab = read('src/components/tabs/KyrubTab.tsx');
+  const stores = read('src/components/tabs/SquareStoresSection.tsx');
+  const communities = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.ok(tab.indexOf('<SquareStoresSection') >= 0);
+  assert.ok(tab.indexOf('<SquareStoresSection') < tab.indexOf('<LegacyKyrubTab'));
+  assert.match(tab, /props\.setSocialSubTab\('lojas'\)/);
+  assert.equal((communities.match(/id="square-communities"/g) || []).length, 1);
+  assert.doesNotMatch(communities, /Importar teste deste aparelho|showLocalImport|importLocalCommunityPrototype/);
+  assert.match(communities, /Criar comunidade/);
+  assert.match(stores, /id="square-stores"/);
+  assert.match(stores, /Ver todas/);
+  for (const name of ["'Minhas'", "'Descobrir'", "'Em alta'"]) {
+    assert.ok(stores.includes(name));
+  }
+  assert.ok(stores.includes("fetch('/api/marketplace-discovery/public/kyrub-oficial'"));
+  assert.match(stores, /href=\{OFFICIAL_STORE_PATH\}/);
+  assert.ok(stores.includes("const OFFICIAL_STORE_PATH = '/@kyrub-oficial';"));
+  assert.doesNotMatch(stores, /Criar comunidade|Importar teste deste aparelho/);
+});

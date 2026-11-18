@@ -15,7 +15,6 @@ import {
   ChevronRight,
   CircleAlert,
   Globe2,
-  Import,
   LockKeyhole,
   MapPin,
   Megaphone,
@@ -39,8 +38,6 @@ import {
   createCommunityDebate,
   createCommunityPost,
   deleteDebateComment,
-  hasLocalCommunityPrototype,
-  importLocalCommunityPrototype,
   joinCommunity,
   leaveCommunity,
   OPEN_COMMUNITY_CLOUD_CREATE_EVENT,
@@ -271,9 +268,6 @@ export function ProfileCommunitiesCloudBridge() {
   const [editingCommentText, setEditingCommentText] = useState('');
   const [message, setMessage] = useState('');
   const [actionBusy, setActionBusy] = useState('');
-  const [showLocalImport, setShowLocalImport] = useState(() =>
-    hasLocalCommunityPrototype()
-  );
   const communitySubscriptionVersion = useRef(0);
   const debateSubscriptionVersion = useRef(0);
   const groupDirectorySubscriptionVersion = useRef(0);
@@ -852,20 +846,6 @@ export function ProfileCommunitiesCloudBridge() {
     });
   };
 
-  const importLocal = async () => {
-    await runAction('import-local', async () => {
-      const imported = await importLocalCommunityPrototype();
-      setShowLocalImport(false);
-      setMessage(
-        imported > 0
-          ? `${imported} comunidade${imported === 1 ? '' : 's'} importada${
-              imported === 1 ? '' : 's'
-            } para este perfil.`
-          : 'Este perfil já importou as comunidades locais disponíveis.'
-      );
-    });
-  };
-
   const renderCard = (community: (typeof communities)[number]) => {
     const actionLabel = community.isOwner || community.isActiveMember
       ? 'Abrir'
@@ -1032,135 +1012,6 @@ export function ProfileCommunitiesCloudBridge() {
               </button>
             </header>
 
-            {showLocalImport && user && (
-              <button
-                type="button"
-                disabled={actionBusy === 'import-local'}
-                onClick={() => void importLocal()}
-                className="flex w-full items-center gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/10 p-3 text-left disabled:opacity-45"
-              >
-                <Import className="h-5 w-5 shrink-0 text-violet-300" />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-[9px] font-black uppercase text-violet-200">
-                    Importar teste deste aparelho
-                  </strong>
-                  <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                    O perfil conectado agora se tornará dono das comunidades locais importadas.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-violet-300" />
-              </button>
-            )}
-
-            <div className="flex gap-1.5 overflow-x-auto">
-              {([
-                ['mine', 'Minhas'],
-                ['discover', 'Descobrir'],
-                ['trending', 'Em alta'],
-              ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
-                <button
-                  key={id}
-                  type="button"
-                  onClick={() => setListTab(id)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[8px] font-black uppercase ${
-                    listTab === id
-                      ? 'bg-sky-500/15 text-sky-200'
-                      : 'border border-slate-800 bg-slate-950 text-slate-500'
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-
-            {error && (
-              <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[8px] text-amber-200">
-                {error}
-              </p>
-            )}
-
-            <div className="flex gap-2.5 overflow-x-auto pb-1">
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex w-[132px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/5 p-4 text-center"
-              >
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-slate-950">
-                  <Plus className="h-5 w-5" />
-                </span>
-                <strong className="mt-3 text-[9px] font-black uppercase text-sky-200">
-                  Criar comunidade
-                </strong>
-                <span className="mt-1 text-[7px] leading-relaxed text-slate-500">
-                  Reúna pessoas em torno de um interesse.
-                </span>
-              </button>
-
-              {visibleCommunities.map(renderCard)}
-
-              {!loading && visibleCommunities.length === 0 && (
-                <div className="flex min-h-[210px] min-w-[230px] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 p-5 text-center">
-                  <div>
-                    <Users className="mx-auto h-7 w-7 text-slate-700" />
-                    <p className="mt-2 text-[9px] font-black text-slate-400">
-                      Nenhuma comunidade encontrada
-                    </p>
-                    <p className="mt-1 text-[8px] text-slate-600">
-                      Crie uma ou procure na aba Descobrir.
-                    </p>
-                  </div>
-                </div>
-              )}
-            </div>
-          </section>,
-          host
-        )}
-
-      {host &&
-        createPortal(
-          <section
-            className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-3"
-            id="square-communities"
-            aria-label="Comunidades na Praça"
-          >
-            <header className="flex items-start justify-between gap-3">
-              <div>
-                <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
-                  Comunidades
-                </span>
-                <h3 className="mt-0.5 text-xs font-black text-white">
-                  Encontre espaços para participar
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
-            </header>
-
-            {showLocalImport && user && (
-              <button
-                type="button"
-                disabled={actionBusy === 'import-local'}
-                onClick={() => void importLocal()}
-                className="flex w-full items-center gap-3 rounded-2xl border border-violet-500/25 bg-violet-500/10 p-3 text-left disabled:opacity-45"
-              >
-                <Import className="h-5 w-5 shrink-0 text-violet-300" />
-                <span className="min-w-0 flex-1">
-                  <strong className="block text-[9px] font-black uppercase text-violet-200">
-                    Importar teste deste aparelho
-                  </strong>
-                  <span className="mt-0.5 block text-[8px] leading-relaxed text-slate-500">
-                    O perfil conectado agora se tornará dono das comunidades locais importadas.
-                  </span>
-                </span>
-                <ChevronRight className="h-4 w-4 text-violet-300" />
-              </button>
-            )}
 
             <div className="flex gap-1.5 overflow-x-auto">
               {([
