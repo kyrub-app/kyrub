@@ -234,3 +234,55 @@ test('app images reject a forged hash, forged owner and unsupported content', as
     )
   );
 });
+
+
+const wallMediaMetadata = (communityId: string, ownerId: string, contentType: string) => ({
+  contentType,
+  customMetadata: { communityId, ownerId, purpose: 'community-wall' },
+});
+
+test('community creator can upload image and video and members can read media', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).storage();
+  const imagePath = `community-post-media/public_cover/${OWNER_ID}/image-test.jpg`;
+  const videoPath = `community-post-media/public_cover/${OWNER_ID}/video-test.mp4`;
+  await assertSucceeds(uploadBytes(ref(owner, imagePath), new Uint8Array([1, 2, 3]),
+    wallMediaMetadata('public_cover', OWNER_ID, 'image/jpeg')));
+  await assertSucceeds(uploadBytes(ref(owner, videoPath), new Uint8Array([1, 2, 3]),
+    wallMediaMetadata('public_cover', OWNER_ID, 'video/mp4')));
+  const visitor = environment.authenticatedContext('visitor').storage();
+  await assertSucceeds(getBytes(ref(visitor, imagePath)));
+  await assertSucceeds(getBytes(ref(visitor, videoPath)));
+  await assertFails(deleteObject(ref(visitor, imagePath)));
+  await assertSucceeds(deleteObject(ref(owner, videoPath)));
+});
+
+test('active member can publish private media; nonmember cannot read or upload', async () => {
+  const member = environment.authenticatedContext(MEMBER_ID).storage();
+  const mediaPath = `community-post-media/private_cover/${MEMBER_ID}/image-membership.png`;
+  await assertSucceeds(uploadBytes(ref(member, mediaPath), new Uint8Array([1]),
+    wallMediaMetadata('private_cover', MEMBER_ID, 'image/png')));
+  await assertSucceeds(getBytes(ref(member, mediaPath)));
+  const outsider = environment.authenticatedContext('outsider').storage();
+  await assertFails(getBytes(ref(outsider, mediaPath)));
+  await assertFails(uploadBytes(ref(outsider, `community-post-media/private_cover/outsider/image-bypass.png`),
+    new Uint8Array([1]), wallMediaMetadata('private_cover', 'outsider', 'image/png')));
+  await assertFails(uploadBytes(ref(outsider, `community-post-media/public_cover/outsider/image-bypass.png`),
+    new Uint8Array([1]), wallMediaMetadata('public_cover', 'outsider', 'image/png')));
+});
+
+test('community wall upload rejects forged owner, metadata, MIME and size', async () => {
+  const owner = environment.authenticatedContext(OWNER_ID).storage();
+  const mediaPath = `community-post-media/public_cover/${OWNER_ID}/image-test.jpg`;
+  const visitor = environment.authenticatedContext('visitor').storage();
+  await assertFails(uploadBytes(ref(visitor, mediaPath), new Uint8Array([1]),
+    wallMediaMetadata('public_cover', OWNER_ID, 'image/jpeg')));
+  await assertFails(uploadBytes(ref(owner, mediaPath), new Uint8Array([1]),
+    wallMediaMetadata('another_community', OWNER_ID, 'image/jpeg')));
+  await assertFails(uploadBytes(ref(owner, mediaPath), new Uint8Array([1]),
+    wallMediaMetadata('public_cover', 'forged_owner', 'image/jpeg')));
+  await assertFails(uploadBytes(ref(owner, mediaPath), new Uint8Array([1]),
+    wallMediaMetadata('public_cover', OWNER_ID, 'application/pdf')));
+  await assertFails(uploadBytes(ref(owner, `community-post-media/public_cover/${OWNER_ID}/video-oversize.mp4`),
+    new Uint8Array(20 * 1024 * 1024 + 1),
+    wallMediaMetadata('public_cover', OWNER_ID, 'video/mp4')));
+});
