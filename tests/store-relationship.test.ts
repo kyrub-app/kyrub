@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 import {
   deriveStoreRelationshipLevel,
   relationshipProgressPercent,
+  isStoreOwnerViewer,
 } from '../shared/storeRelationship';
 
 describe('customer store relationship', () => {
@@ -125,7 +126,7 @@ describe('customer store relationship', () => {
     assert.match(health, /transport === 'store-relationship'/);
     assert.match(health, /verifyFirebaseIdToken\(token\)/);
     assert.match(health, /customerId: identity\.uid/);
-    assert.match(health, /loadStoreRelationshipSummary/);
+    assert.match(health, /loadStoreRelationshipForViewer/);
   });
 
   test('zero purchase history remains valid and is explained without inventing transactions', () => {
@@ -137,14 +138,22 @@ describe('customer store relationship', () => {
     assert.match(service, /deriveStoreRelationshipLevel\(confirmedPurchases\)/);
   });
 
-  test('store owner identity comes from server tenant, not public storefront or empty history', () => {
+  test('canonical owner is distinguished before any customer relationship query', () => {
     const contract = readFileSync('shared/storeRelationship.ts', 'utf8');
     const service = readFileSync('server/payments/storeRelationshipService.ts', 'utf8');
     const panel = readFileSync('src/components/CustomerStoreRelationshipPanel.tsx', 'utf8');
-    assert.match(contract, /isStoreOwner\?: boolean/);
-    assert.match(service, /isStoreOwner: clean\(tenantSnapshot\.data\(\)\?\.ownerId\) === customerId/);
-    assert.match(panel, /summary\?\.isStoreOwner/);
-    assert.match(panel, /Administrar a loja não cria compras, pontos nem vínculo de fidelidade automaticamente/);
+    assert.equal(isStoreOwnerViewer('uid-owner', 'uid-owner'), true);
+    assert.equal(isStoreOwnerViewer('', ''), false);
+    assert.equal(isStoreOwnerViewer(undefined, 'uid-owner'), false);
+    assert.equal(isStoreOwnerViewer('uid-owner', 'uid-customer'), false);
+    assert.match(contract, /viewerRole: 'owner'/);
+    assert.match(service, /adminDb\.doc\(`stores\/\$\{storeId\}`\)\.get\(\)/);
+    const ownerCheck = service.indexOf("if (isStoreOwnerViewer(ownerId, customerId))");
+    const loadCustomer = service.indexOf("return loadStoreRelationshipSummary(input);", ownerCheck);
+    assert.ok(ownerCheck >= 0 && loadCustomer > ownerCheck);
+    assert.match(panel, /viewerRole === 'owner'\) return null/);
+    assert.match(panel, /viewerRole === 'customer' && storeId/);
+    assert.doesNotMatch(panel, /summary\?\.isStoreOwner/);
   });
 
   test('store relationship economy remains independent from K-Coins', () => {
