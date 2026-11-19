@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   BarChart3, Bookmark, EllipsisVertical, Eye, Flag, Heart, Megaphone, MessageCircle, MessageCircleMore, Share2,
-  Trash2, UserRound, UserRoundPlus, X,
+  Trash2, UserRound, UserRoundPlus, UsersRound, X,
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
 import type { CommunityPostComment, CommunityPostLike } from '../utils/communityPostInteractions';
@@ -31,6 +31,8 @@ interface CommunityPostCardProps {
   onDeleteComment: (commentId: string) => Promise<void>;
   onReport: (reason: SocialReportReason) => Promise<SocialReportOutcome>;
   onRemove: () => Promise<void>;
+  squarePublished?: boolean;
+  onToggleSquare?: () => Promise<void>;
 }
 
 const displayDate = (value: string): string => {
@@ -43,6 +45,7 @@ const displayDate = (value: string): string => {
 export function CommunityPostCard({
   post, viewerId, canParticipate, communityOwnerId, likes, comments, connection,
   saved, onToggleSave, onToggleLike, onComment, onDeleteComment, onReport, onRemove,
+  squarePublished, onToggleSquare,
 }: CommunityPostCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -182,6 +185,13 @@ export function CommunityPostCard({
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40">
                 <Share2 className="h-4 w-4" /> Compartilhar
               </button>
+              {isMine && onToggleSquare && (
+                <button type="button" role="menuitem" disabled={Boolean(pending)}
+                  onClick={() => { setMenuOpen(false); void run('square', onToggleSquare); }}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-sky-200 hover:bg-slate-800 disabled:opacity-40">
+                  <UsersRound className="h-4 w-4" /> {squarePublished ? 'Retirar da Praça' : 'Mostrar na Praça'}
+                </button>
+              )}
               {isMine && (
                 <button type="button" role="menuitem"
                   onClick={() => { setMenuOpen(false); setPromotionPreviewOpen(true); }}
