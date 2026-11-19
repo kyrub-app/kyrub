@@ -167,3 +167,16 @@ export const relationshipProgressPercent = (
   }
   return Math.max(0, Math.min(100, Math.floor(progress * 100 / targetInput)));
 };
+/** Owner access never creates or loads a loyalty relationship. */
+export interface StoreRelationshipOwnerView {
+  viewerRole: 'owner';
+  storeId: string;
+}
+
+export type StoreRelationshipViewerResponse = StoreRelationshipSummary | StoreRelationshipOwnerView;
+
+/** Safe identity comparison; an absent owner must never match an absent buyer. */
+export const isStoreOwnerViewer = (ownerId: unknown, buyerId: unknown): boolean =>
+  typeof ownerId === 'string' && ownerId.trim().length > 0 &&
+  typeof buyerId === 'string' && buyerId.trim().length > 0 &&
+  ownerId.trim() === buyerId.trim();

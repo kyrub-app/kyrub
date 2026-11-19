@@ -475,3 +475,27 @@ export const loadStoreRelationshipSummary = async (input: {
     history,
   };
 };
+/** Identify the canonical owner before making any customer loyalty queries. */
+export const loadStoreRelationshipForViewer = async (input: {
+  storeId: string;
+  customerId: string;
+  now?: Date;
+}): Promise<import('../../shared/storeRelationship.js').StoreRelationshipViewerResponse> => {
+  const storeId = clean(input.storeId);
+  const customerId = clean(input.customerId);
+  if (!storeId || !customerId || storeId.includes('/')) {
+    throw new Error('STORE_RELATIONSHIP_REQUIRED');
+  }
+  const storeSnapshot = await adminDb.doc(`stores/${storeId}`).get();
+  let ownerId = clean(storeSnapshot.data()?.ownerId);
+  // Older store documents may only keep the owner in their tenant record.
+  if (!ownerId) {
+    const tenantSnapshot = await adminDb.doc(`tenants/${storeId}`).get();
+    ownerId = clean(tenantSnapshot.data()?.ownerId);
+  }
+  const { isStoreOwnerViewer } = await import('../../shared/storeRelationship.js');
+  if (isStoreOwnerViewer(ownerId, customerId)) {
+    return { viewerRole: 'owner', storeId };
+  }
+  return loadStoreRelationshipSummary(input);
+};

@@ -130,6 +130,13 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [couponPromotion, setCouponPromotion] = useState<PublicMarketplacePromotion | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [selectedOfficialPlanId, setSelectedOfficialPlanId] = useState('');
+  useEffect(() => {
+    if (!selectedOfficialPlanId) return;
+    const section = document.getElementById('official-plan-contract-section');
+    if (typeof section?.scrollIntoView === 'function') {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+  }, [selectedOfficialPlanId]);
   const [selectedPlanMonths, setSelectedPlanMonths] = useState<1 | 3 | 6 | 12>(1);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [authLoading, setAuthLoading] = useState(true);
@@ -295,7 +302,6 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       store?.id === OFFICIAL_STORE_CANONICAL_ID) && isOfficialPlanProductId(product.id)) {
       // Official plans are contracts, not ordinary B2C cart items.
       setSelectedOfficialPlanId(product.id);
-      document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
       return;
     }
     setCart(current => {
@@ -560,13 +566,13 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
         </div>
       )}
       <main className="mx-auto w-full max-w-5xl p-3 pb-10 sm:p-5">
-        {isOfficialStore && officialPlanProducts.length > 0 && (
+        {isOfficialStore && officialPlanProducts.length > 0 && (selectedOfficialPlan || sharedCouponCode) && (
           <section id="official-plan-contract-section" data-official-plan-route="canonical-prepaid"
             className="mb-5 rounded-3xl border border-cyan-500/30 bg-slate-900 p-4 sm:p-5">
             <span className="font-mono text-[10px] font-black uppercase tracking-widest text-cyan-300">
               Planos da Kyrub Oficial
             </span>
-            <h2 className="mt-1 text-lg font-black text-white">Contratação pré-paga de planos</h2>
+            <h2 className="mt-1 text-lg font-black text-white">Finalizar contratação do plano {selectedOfficialPlan?.name ?? 'oficial'}</h2>
             <p className="mt-2 text-xs leading-5 text-slate-300">
               Planos são contratados pelo checkout oficial, com aceite de contrato e Pix único. Não entram no carrinho de produtos e serviços.
             </p>
@@ -584,17 +590,6 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             )}
             {availablePlanProducts.length > 0 && (
               <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                <label className="text-xs font-semibold text-slate-300">
-                  Plano
-                  <select value={selectedOfficialPlan?.id ?? ''} aria-label="Selecionar plano Kyrub"
-                    onChange={event => setSelectedOfficialPlanId(event.target.value)}
-                    className="mt-2 min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 p-2 text-white">
-                    {!selectedOfficialPlan && <option value="">Escolha um plano</option>}
-                    {availablePlanProducts.map(product => (
-                      <option key={product.id} value={product.id}>{product.name}</option>
-                    ))}
-                  </select>
-                </label>
                 <label className="text-xs font-semibold text-slate-300">
                   Duração do contrato
                   <select value={selectedPlanMonths} aria-label="Selecionar período de contratação"

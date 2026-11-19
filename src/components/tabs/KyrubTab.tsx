@@ -309,7 +309,9 @@ export function KyrubTab(props: KyrubTabProps) {
       .then(results => {
         if (cancelled) return;
         setClubSummaries(results.flatMap((result, index) =>
-          result.status === 'fulfilled' ? [{ storeId: purchasedStoreIds[index], summary: result.value }] : []
+          result.status === 'fulfilled' && !('viewerRole' in result.value)
+            ? [{ storeId: purchasedStoreIds[index], summary: result.value }]
+            : []
         ));
         setClubsError(results.some(result => result.status === 'rejected'));
       })

@@ -63,6 +63,10 @@
       "destination": "/api/health?transport=store-connections&path=:path*"
     },
     {
+      "source": "/api/store-relationship",
+      "destination": "/api/health?transport=store-relationship"
+    },
+    {
       "source": "/api/store-crm",
       "destination": "/api/health?transport=store-crm"
     },

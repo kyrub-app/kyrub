@@ -99,6 +99,47 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'store-relationship') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'Método não permitido.' });
+      return;
+    }
+    try {
+      const authorization = headerValue(request.headers.authorization ?? request.headers.Authorization);
+      const token = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+      if (!token) {
+        response.status(401).json({ error: 'Faça login novamente para consultar seu relacionamento.' });
+        return;
+      }
+      const storeId = queryValue(request.query?.storeId).trim();
+      if (!storeId) {
+        response.status(400).json({ error: 'Loja não identificada.' });
+        return;
+      }
+      const [{ verifyFirebaseIdToken }, { loadStoreRelationshipForViewer }] = await Promise.all([
+        import('../server/ai/consultantAuth.js'),
+        import('../server/payments/storeRelationshipService.js'),
+      ]);
+      const identity = await verifyFirebaseIdToken(token);
+      const summary = await loadStoreRelationshipForViewer({ storeId, customerId: identity.uid });
+      response.status(200).json(summary);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (message.startsWith('STORE_RELATIONSHIP_')) {
+        console.warn('[store-relationship]', message);
+        response.status(409).json({ error: 'Os dados de fidelidade desta loja estão inconsistentes.' });
+      } else if (/AUTH_|TOKEN_|UNAUTHORIZED|INVALID_ID_TOKEN/i.test(message)) {
+        response.status(401).json({ error: 'Faça login novamente para consultar seu relacionamento.' });
+      } else {
+        console.error('[store-relationship]', error);
+        response.status(503).json({ error: 'Não foi possível carregar seu relacionamento com a loja.' });
+      }
+    }
+    return;
+  }
+
   if (transport === 'pitanga-account') {
     const { handlePitangaAccountRequest } = await import('../server/gamification/pitangaAccountHandler.js');
     await handlePitangaAccountRequest(request, response);

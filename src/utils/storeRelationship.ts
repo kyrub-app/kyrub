@@ -1,4 +1,4 @@
-import type { StoreRelationshipSummary } from '../../shared/storeRelationship';
+import type { StoreRelationshipViewerResponse } from '../../shared/storeRelationship';
 import { auth } from './firebase';
 
 const clean = (value: string): string => value.trim();
@@ -17,7 +17,7 @@ const responseError = async (response: Response): Promise<Error> => {
 
 export const loadStoreRelationshipForCurrentUser = async (
   storeIdInput: string
-): Promise<StoreRelationshipSummary> => {
+): Promise<StoreRelationshipViewerResponse> => {
   const storeId = clean(storeIdInput);
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
@@ -36,5 +36,5 @@ export const loadStoreRelationshipForCurrentUser = async (
     }
   );
   if (!response.ok) throw await responseError(response);
-  return response.json() as Promise<StoreRelationshipSummary>;
+  return response.json() as Promise<StoreRelationshipViewerResponse>;
 };
