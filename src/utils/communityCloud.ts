@@ -794,6 +794,10 @@ export const uploadCommunityPostMedia = async (
     'video/mp4': 'mp4',
     'video/webm': 'webm',
   };
+  const community = await getCommunity(communityId);
+  if (!community || community.visibility === 'private') {
+    throw new Error('Anexos da comunidade privada exigem um leitor de mídia protegido. Por enquanto, publique texto.');
+  }
   const extension = extensions[file.type];
   const maxSize = file.type.startsWith('video/') ? 20 : 8;
   if (!extension || file.size === 0 || file.size > maxSize * 1024 * 1024) {
