@@ -488,6 +488,7 @@ test('Marketplace remains reachable through Taba and Lojas, without a duplicate 
   assert.match(guestSource, /href="\/@kyrub-oficial"/);
   assert.match(socialSource, /<SquareStoresSection/);
   assert.match(socialSource, /props\.setSocialSubTab\('lojas'\)/);
-  assert.match(storesSource, /id="square-stores-view-all"/);
+  assert.doesNotMatch(storesSource, /square-stores-view-all/);
+  assert.match(storesSource, /id === 'discover' \? onViewAll\(\)/);
   assert.match(storesSource, /href=\{OFFICIAL_STORE_PATH\}/);
 });
