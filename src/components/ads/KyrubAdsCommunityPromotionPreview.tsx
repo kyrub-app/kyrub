@@ -13,7 +13,7 @@ interface KyrubAdsCommunityPromotionPreviewProps {
 /**
  * Entry point into the future Kyrub Ads campaign editor.
  * This UI is deliberately a preview: it never creates a campaign, persists a
- * draft, offers checkout, starts distribution or promises a paid placement.
+ * draft, opens billing, starts distribution or promises a paid placement.
  */
 export function KyrubAdsCommunityPromotionPreview({
   post, onClose,
