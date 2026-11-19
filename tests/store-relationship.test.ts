@@ -137,6 +137,16 @@ describe('customer store relationship', () => {
     assert.match(service, /deriveStoreRelationshipLevel\(confirmedPurchases\)/);
   });
 
+  test('store owner identity comes from server tenant, not public storefront or empty history', () => {
+    const contract = readFileSync('shared/storeRelationship.ts', 'utf8');
+    const service = readFileSync('server/payments/storeRelationshipService.ts', 'utf8');
+    const panel = readFileSync('src/components/CustomerStoreRelationshipPanel.tsx', 'utf8');
+    assert.match(contract, /isStoreOwner\?: boolean/);
+    assert.match(service, /isStoreOwner: clean\(tenantSnapshot\.data\(\)\?\.ownerId\) === customerId/);
+    assert.match(panel, /summary\?\.isStoreOwner/);
+    assert.match(panel, /Administrar a loja não cria compras, pontos nem vínculo de fidelidade automaticamente/);
+  });
+
   test('store relationship economy remains independent from K-Coins', () => {
     const contract = readFileSync('shared/storeRelationship.ts', 'utf8');
     const service = readFileSync(
