@@ -6,6 +6,7 @@ import {
   checkoutInitialPrepaidSubscription,
   loadInitialPrepaidSubscriptionStatus,
   quoteInitialPrepaidSubscription,
+  StoreSubscriptionRequestError,
   type InitialPrepaidSubscriptionPaymentState,
   type InitialPrepaidSubscriptionQuote,
 } from '../utils/storeSubscription';
@@ -13,6 +14,25 @@ import {
 type Props = { storeId: string; productId: string; selectedMonths: 1 | 3 | 6 | 12; billingAuthority?: 'platform'; promotionCode?: string };
 const currency = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' });
 const date = (value: string) => new Date(value).toLocaleDateString('pt-BR');
+
+/** Keep server restrictions visible to buyers without exposing tokens or internal records. */
+export const explainInitialPrepaidCheckoutError = (cause: unknown, billingAuthority?: 'platform'): string => {
+  const fallback = cause instanceof Error ? cause.message : 'Não foi possível consultar a contratação.';
+  if (billingAuthority !== 'platform' || !(cause instanceof StoreSubscriptionRequestError)) return fallback;
+  const code = cause.code;
+  if (!code || !/^OFFICIAL_PIX_[A-Z_]+$/.test(code)) return fallback;
+  const explanations: Record<string, string> = {
+    OFFICIAL_PIX_ACTIVE_ENTITLEMENT: 'Esta conta já possui um plano pago vigente. Consulte seu plano antes de iniciar outra contratação.',
+    OFFICIAL_PIX_EXISTING_SUBSCRIPTION: 'Esta conta já possui uma assinatura ou ativação em andamento. Consulte a situação do plano existente.',
+    OFFICIAL_PIX_EXISTING_CHECKOUT: 'Já existe uma contratação oficial iniciada para esta conta. Consulte a contratação anterior antes de escolher outra oferta.',
+    OFFICIAL_PIX_DISABLED: 'A geração de Pix para planos oficiais ainda não está liberada. Nenhuma cobrança foi criada.',
+    OFFICIAL_PIX_PROMOTION_DISABLED: 'A promoção informada não está liberada para esta contratação. O sistema não cobrará o valor integral sem sua confirmação.',
+    OFFICIAL_PIX_PLAN_NOT_ACTIVE: 'Este plano ainda não está disponível para nova contratação.',
+    OFFICIAL_PIX_PILOT_FORBIDDEN: 'Esta oferta piloto não está liberada para a conta conectada.',
+    OFFICIAL_PIX_PILOT_MODE_REQUIRED: 'O checkout piloto ainda não está habilitado.',
+  };
+  return `${explanations[code] ?? fallback} Código de diagnóstico: ${code}.`;
+};
 
 /** Buyer UI for the existing canonical subscription checkout; no payment truth is derived here. */
 export function InitialPrepaidSubscriptionCheckout(props: Props) {
@@ -60,7 +80,7 @@ export function InitialPrepaidSubscriptionSession({ buyerUid, ...props }: Props 
       }
     } catch (cause) {
       if (!current()) return;
-      setError(cause instanceof Error ? cause.message : 'Não foi possível consultar a contratação.');
+      setError(explainInitialPrepaidCheckoutError(cause, props.billingAuthority));
       // A lost response never authorizes another payment creation.
       if (action !== 'quote') setPayment({ state: 'recovery_required' });
     } finally {
@@ -81,10 +101,14 @@ export function InitialPrepaidSubscriptionCard({ quote, payment, accepted, busy,
   const pixExpired = payment?.pix && Date.parse(payment.pix.expiresAt) <= Date.now();
   return <section className="mt-3 space-y-3 rounded-xl border border-cyan-500/30 bg-slate-950 p-3" aria-label="Contratação pré-paga por Pix">
     <p className="font-bold text-white">Contrato de {quote?.quote.months ?? selectedMonths} meses · Pix único</p>
-    <p>Pagamento único antecipado por Pix, sem parcelamento e sem renovação automática. A assinatura termina ao final do período contratado; para continuar, será necessário escolher uma nova oferta, aceitar as condições e realizar outro pagamento.</p>
-    {!quote ? <button type="button" disabled={busy} onClick={() => onAction('quote')} className="min-h-10 rounded-lg border border-cyan-700 px-3 disabled:opacity-50">
-      {busy ? 'Consultando…' : 'Consultar preço oficial do contrato'}
-    </button> : <>
+    {!quote ? <>
+      <p className="text-sm text-slate-300">Revise o valor final e as condições deste período antes de aceitar o contrato. Este passo não gera cobrança nem adiciona o plano ao carrinho de produtos.</p>
+      <button type="button" disabled={busy} onClick={() => onAction('quote')}
+        className="min-h-11 rounded-lg bg-cyan-700 px-4 font-bold text-white disabled:opacity-50">
+        {busy ? 'Preparando resumo…' : 'Revisar valor e condições'}
+      </button>
+    </> : <>
+      <p>Pagamento único antecipado por Pix, sem parcelamento e sem renovação automática. A assinatura termina ao final do período contratado; para continuar, será necessário escolher uma nova oferta, aceitar as condições e realizar outro pagamento.</p>
       {quote.quote.promotionCode && typeof quote.quote.originalTotalMinor === 'number' && typeof quote.quote.promotionDiscountMinor === 'number' && (
         <div className="space-y-1 rounded-lg border border-emerald-500/30 bg-emerald-500/10 p-3" data-official-plan-coupon-quote={quote.quote.promotionCode}>
           <p>Preço original do contrato: <strong>{currency.format(quote.quote.originalTotalMinor / 100)}</strong></p>
