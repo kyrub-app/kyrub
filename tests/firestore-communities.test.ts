@@ -8,8 +8,12 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
+  where,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -295,4 +299,197 @@ test('active member adds a shared comment only with the atomic debate counter', 
       });
     })
   );
+});
+
+test('community wall likes, comments and immutable reports enforce membership and ownership', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'interaction_a';
+  const postId = 'interaction_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub',
+    authorAvatar: '', content: 'Publicação para testar reações.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+
+  const likeId = `${postId}__${MEMBER}`;
+  const likeData = { communityId, postId, userId: MEMBER, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(member, 'community_post_likes', likeId), likeData));
+  await assertSucceeds(getDocs(query(collection(member, 'community_post_likes'), where('communityId', '==', communityId))));
+  await assertFails(setDoc(doc(outsider, 'community_post_likes', `${postId}__${OUTSIDER}`), {
+    ...likeData, userId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_likes', likeId), likeData));
+  await assertFails(setDoc(doc(member, 'community_post_likes', 'forged'), likeData));
+  await assertSucceeds(deleteDoc(doc(member, 'community_post_likes', likeId)));
+
+  const commentId = 'interaction_comment';
+  const commentData = {
+    commentId, communityId, postId, authorId: MEMBER, authorName: 'Membro',
+    authorAvatar: '', text: 'Que publicação boa!',
+    createdAtIso: '2026-11-19T12:01:00.000Z', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(member, 'community_post_comments', commentId), commentData));
+  await assertSucceeds(getDocs(query(collection(member, 'community_post_comments'), where('communityId', '==', communityId))));
+  await assertFails(setDoc(doc(outsider, 'community_post_comments', 'outsider_comment'), {
+    ...commentData, commentId: 'outsider_comment', authorId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'forged_comment'), {
+    ...commentData, commentId: 'forged_comment', text: '',
+  }));
+  await assertFails(deleteDoc(doc(outsider, 'community_post_comments', commentId)));
+  await assertSucceeds(deleteDoc(doc(owner, 'community_post_comments', commentId)));
+
+  const reportId = `${postId}__${MEMBER}`;
+  const reportData = {
+    reportId, communityId, postId, reporterId: MEMBER, authorId: OWNER,
+    reason: 'spam', status: 'pending', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(member, 'community_post_reports', reportId), reportData));
+  await assertSucceeds(getDoc(doc(member, 'community_post_reports', reportId)));
+  await assertFails(setDoc(doc(member, 'community_post_reports', reportId), reportData));
+  await assertFails(getDoc(doc(outsider, 'community_post_reports', reportId)));
+  await assertFails(setDoc(doc(owner, 'community_post_reports', `${postId}__${OWNER}`), {
+    ...reportData, reportId: `${postId}__${OWNER}`, reporterId: OWNER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_reports', 'wrong_group'), {
+    ...reportData, reportId: 'wrong_group', communityId: 'other',
+  }));
+});
+
+test('pending members cannot comment or like in a moderated community', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const communityId = 'interaction_moderated';
+  const postId = 'moderated_post';
+  await createCommunity(owner, communityId, 'moderated');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub',
+    authorAvatar: '', content: 'Apenas membros aprovados.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const membershipId = memberId(communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(member, 'community_members', membershipId),
+    membershipData(communityId, MEMBER, 'pending')));
+  await assertFails(setDoc(doc(member, 'community_post_likes', `${postId}__${MEMBER}`), {
+    communityId, postId, userId: MEMBER, createdAt: serverTimestamp(),
+  }));
+});
+
+test('community publications can be saved privately and unsaved by their owner', async () => {
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const savedId = 'community__interaction_post';
+  const reference = doc(member, 'users', MEMBER, 'savedItems', savedId);
+  await assertSucceeds(setDoc(reference, {
+    type: 'publication', sourceKind: 'community', sourceId: 'interaction_post',
+    selectionIds: [], savedAtIso: '2026-11-19T12:00:00.000Z',
+    savedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(reference));
+  await assertFails(getDoc(doc(outsider, 'users', MEMBER, 'savedItems', savedId)));
+  await assertSucceeds(deleteDoc(reference));
+});
+
+test('a community wall author can remove own post but another participant cannot', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'author_removal_case';
+  const postId = 'author_owned_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  const post = doc(member, 'community_posts', postId);
+  await assertSucceeds(setDoc(post, {
+    postId, communityId, authorId: MEMBER, authorName: 'Membro',
+    authorAvatar: '', content: 'Publicação que seu autor poderá remover.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(outsider, 'community_posts', postId)));
+  await assertSucceeds(deleteDoc(post));
+  await environment.withSecurityRulesDisabled(async context => {
+    const result = await getDoc(doc(context.firestore(), 'community_posts', postId));
+    if (result.exists()) throw new Error('Post removido ainda existe no Firestore');
+  });
+});
+
+test('organic community metrics reuse Praça rules: unique view, active save and completed share receipts', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'organic_metrics_a';
+  const postId = 'organic_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador',
+    authorAvatar: '', content: 'Dados orgânicos auditáveis.', mediaUrls: [],
+    createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const viewId = `${postId}__view__${MEMBER}`;
+  await assertSucceeds(getDoc(doc(member, 'community_post_engagements', viewId))); // Uncreated own receipt is readable.
+  const engagement = (id: string, type: 'view' | 'save' | 'share') => ({
+    engagementId: id, communityId, postId, postAuthorId: OWNER,
+    actorId: MEMBER, type, createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(setDoc(doc(member, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertFails(setDoc(doc(member, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertFails(setDoc(doc(outsider, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertSucceeds(getDoc(doc(owner, 'community_post_engagements', viewId)));
+  await assertSucceeds(getDocs(query(collection(owner, 'community_post_engagements'), where('postAuthorId', '==', OWNER))));
+  await assertFails(getDoc(doc(outsider, 'community_post_engagements', viewId)));
+
+  const saveId = `${postId}__save__${MEMBER}`;
+  const savedRef = doc(member, 'users', MEMBER, 'savedItems', 'community__' + postId);
+  const saveRef = doc(member, 'community_post_engagements', saveId);
+  await assertSucceeds(runTransaction(member, async tx => {
+    tx.set(savedRef, {
+      type: 'publication', sourceKind: 'community', sourceId: postId,
+      selectionIds: [], savedAtIso: '2026-11-19T12:01:00.000Z', savedAt: serverTimestamp(),
+    });
+    tx.set(saveRef, engagement(saveId, 'save'));
+  }));
+  await assertSucceeds(getDoc(savedRef));
+  await assertSucceeds(getDoc(saveRef));
+  await assertSucceeds(runTransaction(member, async tx => {
+    tx.delete(savedRef);
+    tx.delete(saveRef);
+  }));
+  if ((await getDoc(saveRef)).exists()) throw new Error('Salvamento ainda contabilizado depois de remover dos Salvos.');
+
+  const shareA = doc(member, 'community_post_engagements', 'share_action_01');
+  const shareB = doc(member, 'community_post_engagements', 'share_action_02');
+  await assertSucceeds(setDoc(shareA, engagement(shareA.id, 'share')));
+  await assertSucceeds(setDoc(shareB, engagement(shareB.id, 'share')));
+  await assertFails(deleteDoc(shareA)); // Only active saves may be deleted by the user.
+  await assertFails(setDoc(doc(member, 'community_post_engagements', 'forged_author'), {
+    ...engagement('forged_author', 'share'), postAuthorId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_engagements', 'wrong_unique_id'), engagement('wrong_unique_id', 'view')));
+});
+
+test('private community organic views cannot be collected from outsiders', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'private_metrics';
+  const postId = 'private_post_metrics';
+  await createCommunity(owner, communityId, 'private');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador',
+    authorAvatar: '', content: 'Privada.', mediaUrls: [],
+    createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const receiptId = `${postId}__view__${OUTSIDER}`;
+  await assertFails(setDoc(doc(outsider, 'community_post_engagements', receiptId), {
+    engagementId: receiptId, communityId, postId, postAuthorId: OWNER,
+    actorId: OUTSIDER, type: 'view', createdAt: serverTimestamp(),
+  }));
 });

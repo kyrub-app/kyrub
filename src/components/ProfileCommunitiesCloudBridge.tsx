@@ -9,7 +9,6 @@ import {
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
-  Bookmark,
   Camera,
   ImagePlus,
   Video,
@@ -34,7 +33,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
-import { MediaCarousel } from './MediaCarousel';
+import { CommunityPostCard } from './CommunityPostCard';
 import {
   addDebateComment,
   approveCommunityMember,
@@ -64,10 +63,13 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 import { auth } from '../utils/firebase';
+import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
+import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
 import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
-import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
+import { subscribeSavedPublications } from '../utils/savedLibrary';
+import { toggleCommunityPostSaveWithMetrics } from '../utils/communityOrganicMetrics';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
@@ -230,6 +232,9 @@ export function ProfileCommunitiesCloudBridge() {
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const [posts, setPosts] = useState<CloudCommunityPost[]>([]);
+  const [postLikes, setPostLikes] = useState<CommunityPostLike[]>([]);
+  const [postComments, setPostComments] = useState<CommunityPostComment[]>([]);
+  const [postConnections, setPostConnections] = useState<CommunityPostConnection[]>([]);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
@@ -537,6 +542,8 @@ export function ProfileCommunitiesCloudBridge() {
   useEffect(() => {
     const version = ++communitySubscriptionVersion.current;
     setPosts([]);
+    setPostLikes([]);
+    setPostComments([]);
     setDebates([]);
     setMembers([]);
     if (!selectedCommunityId) return;
@@ -562,13 +569,29 @@ export function ProfileCommunitiesCloudBridge() {
       values => { if (isCurrent()) setMembers(values); },
       report
     );
+    const unsubscribePostInteractions = subscribeCommunityPostInteractions(
+      selectedCommunityId,
+      values => { if (isCurrent()) setPostLikes(values); },
+      values => { if (isCurrent()) setPostComments(values); },
+      report,
+    );
     return () => {
       ++communitySubscriptionVersion.current;
       unsubscribePosts();
       unsubscribeDebates();
       unsubscribeMembers();
+      unsubscribePostInteractions();
     };
   }, [selectedCommunityId]);
+
+  useEffect(() => {
+    setPostConnections([]);
+    if (!user?.uid || !selectedCommunityId) return;
+    return subscribeCommunityPostConnections(user.uid, setPostConnections, error => {
+      console.warn('Não foi possível acompanhar conexões do mural.', error);
+      setPostConnections([]);
+    });
+  }, [user?.uid, selectedCommunityId]);
 
   useEffect(() => {
     const version = ++groupDirectorySubscriptionVersion.current;
@@ -1758,47 +1781,23 @@ export function ProfileCommunitiesCloudBridge() {
                           </section>
                         )}
                         {posts.map(post => (
-                          <article key={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                            <div className="flex items-center gap-3">
-                              <Avatar name={post.authorName} url={post.authorAvatar} />
-                              <div className="min-w-0 flex-1">
-                                <strong className="block truncate text-xs text-white">{post.authorName}</strong>
-                                <span className="text-[11px] text-slate-600">{formatDate(post.createdAt)}</span>
-                              </div>
-                            </div>
-                            {post.content && (
-                              <p className="mt-3 whitespace-pre-line text-xs leading-relaxed text-slate-300">{post.content}</p>
-                            )}
-                            {post.mediaUrls.length > 0 && <div className="mt-3"><MediaCarousel mediaUrls={post.mediaUrls} /></div>}
-                            <div className="mt-3 flex justify-end border-t border-slate-800 pt-3">
-                              <button
-                                type="button"
-                                disabled={actionBusy === `save-${post.id}`}
-                                onClick={async () => {
-                                  const isSaved = savedPostIds.has(post.id);
-                                  setActionBusy(`save-${post.id}`);
-                                  try {
-                                    if (isSaved) await removeSavedPublication('community', post.id);
-                                    else await savePublication('community', post.id);
-                                    setMessage(isSaved ? 'Publicação removida dos Salvos.' : 'Publicação salva.');
-                                  } catch (error) {
-                                    console.warn('Falha ao atualizar Salvos da comunidade.', error);
-                                    setMessage('Não foi possível atualizar seus Salvos.');
-                                  } finally {
-                                    setActionBusy('');
-                                  }
-                                }}
-                                className={`flex min-h-9 items-center gap-1.5 rounded-xl border px-3 text-[11px] font-black uppercase ${
-                                  savedPostIds.has(post.id)
-                                    ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                                    : 'border-slate-700 bg-slate-950 text-slate-400'
-                                }`}
-                              >
-                                <Bookmark className={`h-3.5 w-3.5 ${savedPostIds.has(post.id) ? 'fill-current' : ''}`} />
-                                {savedPostIds.has(post.id) ? 'Salvo' : 'Salvar'}
-                              </button>
-                            </div>
-                          </article>
+                          <CommunityPostCard
+                            key={post.id}
+                            post={post}
+                            viewerId={user?.uid || ''}
+                            communityOwnerId={selectedCommunity.ownerId}
+                            canParticipate={canParticipate}
+                            likes={postLikes}
+                            comments={postComments}
+                            saved={savedPostIds.has(post.id)}
+                            connection={postConnections.find(item => item.senderId === post.authorId || item.receiverId === post.authorId)}
+                            onToggleSave={() => toggleCommunityPostSaveWithMetrics(post, savedPostIds.has(post.id))}
+                            onToggleLike={liked => toggleCommunityPostLike(post, liked)}
+                            onComment={value => addCommunityPostComment(post, value)}
+                            onDeleteComment={deleteCommunityPostComment}
+                            onReport={reason => submitCommunityPostReport(post, reason)}
+                            onRemove={() => removeOwnCommunityPost(post)}
+                          />
                         ))}
                         {posts.length === 0 && (
                           <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-12 text-center">

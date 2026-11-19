@@ -87,7 +87,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
-  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove' || transport === 'social-moderation-report-review' || transport === 'social-moderation-store-review-hide') {
+  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove' || transport === 'social-moderation-community-remove' || transport === 'social-moderation-report-review' || transport === 'social-moderation-store-review-hide') {
     const expectedMethod = transport === 'social-moderation-list' ? 'GET' : 'POST';
     if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
@@ -110,10 +110,44 @@ export default async function handler(request: RequestLike, response: ResponseLi
         response.status(200).json(await moderation.hideModeratedStoreReview(authorization, body.storeId, body.reviewId, body.reason));
         return;
       }
+      if (transport === 'social-moderation-community-remove') {
+        response.status(200).json(await moderation.removeModeratedCommunityPost(authorization, body.postId, body.reason));
+        return;
+      }
       response.status(200).json(await moderation.removeModeratedPost(authorization, body.postId, body.reason));
     } catch (error) {
       const mapped = mapError ? mapError(error) : unavailable('Não foi possível acessar a moderação agora.');
       response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
+  if (transport === 'community-author-remove') {
+    if (method !== 'POST') {
+      response.setHeader('allow', 'POST');
+      response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    try {
+      const { removeOwnCommunityPost } = await import('../../../server/communities/communityPostRemovalService.js');
+      const body = bodyRecord(request.body);
+      response.status(200).json(await removeOwnCommunityPost(authorization, body.postId));
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'INVALID_POST') {
+        response.status(400).json({ error: 'Publicação inválida.', code });
+      } else if (code === 'FORBIDDEN') {
+        response.status(403).json({ error: 'Somente o autor pode remover sua publicação.', code });
+      } else if (code === 'POST_NOT_FOUND') {
+        response.status(404).json({ error: 'Publicação não encontrada.', code });
+      } else if (code === 'POST_REMOVED_CLEANUP_FAILED') {
+        response.status(503).json({ error: 'Publicação removida, mas a limpeza de anexos e interações precisa ser concluída.', code });
+      } else if (code === 'AUTH_REQUIRED' || (error && typeof error === 'object' && 'status' in error && error.status === 401)) {
+        response.status(401).json({ error: 'Entre novamente no Kyrub.', code: 'AUTH_REQUIRED' });
+      } else {
+        console.error('[Community Author Removal] Operation unavailable');
+        response.status(503).json({ error: 'Não foi possível remover a publicação agora.', code: 'COMMUNITY_POST_REMOVE_UNAVAILABLE' });
+      }
     }
     return;
   }

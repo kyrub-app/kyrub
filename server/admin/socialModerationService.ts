@@ -1,12 +1,13 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import { cleanupRemovedCommunityPost } from '../communities/communityPostRemovalService.js';
 
 type ModeratorRole = 'super_admin' | 'operations' | 'compliance';
 interface AuthorizedModerator { uid: string; role: ModeratorRole; }
 export interface ModerationPost {
   id: string; authorId: string; authorName: string; content: string;
-  publicationType: 'feed' | 'status'; visibility: string; createdAtIso: string; mediaUrls: string[];
+  publicationType: 'feed' | 'status' | 'community'; visibility: string; createdAtIso: string; mediaUrls: string[]; communityId?: string;
 }
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const stringList = (value: unknown): string[] => Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0) : [];
@@ -39,7 +40,7 @@ export interface ModerationReview {
 }
 export interface ModerationReport {
   id: string;
-  kind: 'post' | 'user' | 'review';
+  kind: 'post' | 'community_post' | 'user' | 'review';
   postId: string;
   targetUserId: string;
   reporterId: string;
@@ -62,12 +63,20 @@ const asModerationPost = (id: string, data: Record<string, unknown>): Moderation
   mediaUrls: stringList(data.mediaUrls),
 });
 
+const asModerationCommunityPost = (id: string, data: Record<string, unknown>): ModerationPost => ({
+  id, authorId: clean(data.authorId), authorName: clean(data.authorName) || 'Kairubido',
+  content: clean(data.content), publicationType: 'community',
+  visibility: 'community', communityId: clean(data.communityId),
+  createdAtIso: clean(data.createdAtIso), mediaUrls: stringList(data.mediaUrls),
+});
+
 export const listModerationReports = async (authorization: string): Promise<ModerationReport[]> => {
   await authorizeModerator(authorization);
-  const [postReports, userReports, reviewReports] = await Promise.all([
+  const [postReports, userReports, reviewReports, communityReports] = await Promise.all([
     adminDb.collection('social_post_reports').where('status', '==', 'pending').limit(100).get(),
     adminDb.collection('social_user_reports').where('status', '==', 'pending').limit(100).get(),
     adminDb.collection('store_review_reports').where('status', '==', 'pending').limit(100).get(),
+    adminDb.collection('community_post_reports').where('status', '==', 'pending').limit(100).get(),
   ]);
   const postIds = [...new Set(postReports.docs.map(document => clean(document.data().postId))
     .filter(id => id.length > 0 && id.length <= 500 && !id.includes('/')))];
@@ -76,6 +85,13 @@ export const listModerationReports = async (authorization: string): Promise<Mode
     : [];
   const postById = new Map(snapshots.filter(snapshot => snapshot.exists)
     .map(snapshot => [snapshot.id, asModerationPost(snapshot.id, snapshot.data() as Record<string, unknown>)]));
+  const communityPostIds = [...new Set(communityReports.docs.map(document => clean(document.data().postId))
+    .filter(id => /^[a-zA-Z0-9_-]{1,128}$/.test(id)))];
+  const communityPostSnapshots = communityPostIds.length
+    ? await adminDb.getAll(...communityPostIds.map(id => adminDb.doc(`community_posts/${id}`)))
+    : [];
+  const communityPostById = new Map(communityPostSnapshots.filter(snapshot => snapshot.exists)
+    .map(snapshot => [snapshot.id, asModerationCommunityPost(snapshot.id, snapshot.data() as Record<string, unknown>)]));
   const safeId = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
   const reviewPaths = [...new Set(reviewReports.docs.map(document => {
     const data = document.data();
@@ -108,6 +124,14 @@ export const listModerationReports = async (authorization: string): Promise<Mode
         reporterId: clean(data.reporterId), reason: clean(data.reason), createdAtIso: toCreatedAt(data.createdAt),
         post: postById.get(postId) ?? null };
     }),
+    ...communityReports.docs.map(document => {
+      const data = document.data();
+      const postId = clean(data.postId);
+      const post = communityPostById.get(postId) ?? null;
+      return { id: document.id, kind: 'community_post' as const, postId, targetUserId: '',
+        reporterId: clean(data.reporterId), reason: clean(data.reason), createdAtIso: toCreatedAt(data.createdAt),
+        post: post && post.communityId === clean(data.communityId) ? post : null };
+    }),
     ...userReports.docs.map(document => {
       const data = document.data();
       return { id: document.id, kind: 'user' as const, postId: '',
@@ -134,10 +158,11 @@ export const dismissModerationReport = async (
   const kind = clean(kindValue);
   const reportId = clean(reportIdValue);
   const reason = clean(reasonValue);
-  if (kind !== 'post' && kind !== 'user' && kind !== 'review') throw new Error('INVALID_REPORT');
+  if (kind !== 'post' && kind !== 'community_post' && kind !== 'user' && kind !== 'review') throw new Error('INVALID_REPORT');
   if (!reportId || reportId.length > 650 || reportId.includes('/')) throw new Error('INVALID_REPORT');
   if (reason.length < 3 || reason.length > 500) throw new Error('INVALID_REASON');
   const collectionName = kind === 'post' ? 'social_post_reports'
+    : kind === 'community_post' ? 'community_post_reports'
     : kind === 'user' ? 'social_user_reports' : 'store_review_reports';
   const reference = adminDb.doc(`${collectionName}/${reportId}`);
   const auditId = `report_review_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
@@ -152,6 +177,7 @@ export const dismissModerationReport = async (
     transaction.set(adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`), {
       id: auditId, action: 'admin.social.report.dismissed', actorId: admin.uid, actorRole: admin.role,
       targetType: kind === 'post' ? 'social_post_report'
+        : kind === 'community_post' ? 'community_post_report'
         : kind === 'user' ? 'social_user_report' : 'store_review_report',
       targetId: reportId, source: 'server', reason,
       createdAt: FieldValue.serverTimestamp(),
@@ -189,6 +215,48 @@ const deleteByPostId = async (collectionName: string, postId: string): Promise<n
   snapshot.docs.forEach(document => batch.delete(document.ref));
   await batch.commit();
   return snapshot.size;
+};
+
+/** Community reports enter the same human moderation queue as Praça reports. */
+export const removeModeratedCommunityPost = async (
+  authorization: string, postIdValue: unknown, reasonValue: unknown,
+) => {
+  const admin = await authorizeModerator(authorization);
+  const postId = clean(postIdValue);
+  const reason = clean(reasonValue);
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(postId)) throw new Error('INVALID_POST');
+  if (reason.length < 3 || reason.length > 500) throw new Error('INVALID_REASON');
+  const reference = adminDb.doc(`community_posts/${postId}`);
+  const snapshot = await reference.get();
+  if (!snapshot.exists) throw new Error('POST_NOT_FOUND');
+  const data = snapshot.data() as Record<string, unknown>;
+  // Shared bounded cleanup prevents divergence from author-initiated removal.
+  await reference.delete();
+  const { deletedInteractions: deleted, deletedMedia, failedMediaCleanup } =
+    await cleanupRemovedCommunityPost(postId, data);
+  const pendingReports = (await adminDb.collection('community_post_reports').where('postId', '==', postId).get())
+    .docs.filter(item => item.data().status === 'pending');
+  for (let offset = 0; offset < pendingReports.length; offset += 400) {
+    const batch = adminDb.batch();
+    for (const report of pendingReports.slice(offset, offset + 400)) {
+      batch.update(report.ref, {
+        status: 'reviewed', resolution: 'removed', reviewedBy: admin.uid,
+        reviewReason: reason, reviewedAt: FieldValue.serverTimestamp(),
+      });
+    }
+    await batch.commit();
+  }
+  const auditId = `moderation_community_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`;
+  await adminDb.doc(`kyrub_admin/control_plane/audit_logs/${auditId}`).set({
+    id: auditId, action: 'admin.community.post.removed', actorId: admin.uid,
+    actorRole: admin.role, targetType: 'community_post', targetId: postId,
+    communityId: clean(data.communityId), targetAuthorId: clean(data.authorId),
+    source: 'server', reason, deletedDependencies: deleted,
+    resolvedReports: pendingReports.length, deletedMedia, failedMediaCleanup,
+    createdAt: FieldValue.serverTimestamp(),
+  });
+  return { status: 'removed' as const, postId, deletedDependencies: deleted,
+    resolvedReports: pendingReports.length, deletedMedia, failedMediaCleanup };
 };
 
 export const removeModeratedPost = async (authorization: string, postIdValue: unknown, reasonValue: unknown) => {

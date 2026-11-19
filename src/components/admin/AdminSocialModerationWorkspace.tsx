@@ -2,17 +2,18 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, Trash2, Flag, CheckCircle2 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
+import { MediaCarousel } from '../MediaCarousel';
 
 interface ModerationPost {
   id: string; authorId: string; authorName: string; content: string;
-  publicationType: 'feed' | 'status'; visibility: string; createdAtIso: string; mediaUrls: string[];
+  publicationType: 'feed' | 'status' | 'community'; visibility: string; communityId?: string; createdAtIso: string; mediaUrls: string[];
 }
 interface ModerationReview {
   id: string; storeId: string; authorId: string; authorName: string;
   content: string; rating: number; postId: string;
 }
 interface ModerationReport {
-  id: string; kind: 'post' | 'user' | 'review'; postId: string; targetUserId: string;
+  id: string; kind: 'post' | 'community_post' | 'user' | 'review'; postId: string; targetUserId: string;
   reporterId: string; reason: string; createdAtIso: string; post: ModerationPost | null;
   storeId?: string; reviewId?: string; review?: ModerationReview | null;
 }
@@ -51,7 +52,7 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
     if (!window.confirm('Remover a publicação e suas interações? As denúncias serão preservadas para auditoria.')) return;
     setBusy(true); setError('');
     try {
-      await request(authenticatedUser, 'social-moderation-remove', {
+      await request(authenticatedUser, post.publicationType === 'community' ? 'social-moderation-community-remove' : 'social-moderation-remove', {
         method: 'POST', body: JSON.stringify({ postId: post.id, reason }),
       });
       await load();
@@ -98,7 +99,7 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
     <section id="admin-social-moderation" className="space-y-4">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h4 className="text-xs font-black text-white">Moderação da Praça e das lojas</h4>
+          <h4 className="text-xs font-black text-white">Moderação da Praça, Comunidades e lojas</h4>
           <p className="mt-1 text-[9px] text-slate-500">Denúncias, decisões humanas e remoções auditadas.</p>
         </div>
         <button type="button" onClick={() => void load()} disabled={busy} className="rounded-xl border border-slate-700 p-2 text-slate-300" aria-label="Atualizar moderação">
@@ -110,10 +111,13 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
         <h5 className="flex items-center gap-2 text-sm font-bold text-white"><Flag className="h-4 w-4 text-amber-400"/> Denúncias pendentes ({reports.length})</h5>
         {reports.map(report => (
           <article key={`${report.kind}:${report.id}`} className="rounded-xl border border-amber-500/20 bg-slate-950 p-3">
-            <p className="text-xs font-semibold text-white">{report.kind === 'post' ? 'Publicação denunciada' : report.kind === 'review' ? 'Avaliação da loja denunciada' : 'Usuário denunciado'}</p>
+            <p className="text-xs font-semibold text-white">{report.kind === 'community_post' ? 'Publicação de comunidade denunciada' : report.kind === 'post' ? 'Publicação denunciada' : report.kind === 'review' ? 'Avaliação da loja denunciada' : 'Usuário denunciado'}</p>
             <p className="mt-1 break-all font-mono text-[10px] text-slate-400">Referência: {report.kind === 'review' ? `${report.storeId}/${report.reviewId}` : report.postId || report.targetUserId}</p>
             <p className="mt-1 text-xs text-slate-300">Motivo: {report.reason}</p>
             {report.post && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-400">{report.post.content || '(sem texto)'}</p>}
+            {report.kind === 'community_post' && report.post?.mediaUrls.length ? (
+              <div className="mt-3"><MediaCarousel mediaUrls={report.post.mediaUrls} /></div>
+            ) : null}
             {report.review && (
               <div className="mt-2 rounded-lg border border-slate-700 p-2 text-xs text-slate-300">
                 <p className="font-semibold">{report.review.authorName} · {'★'.repeat(Math.max(0, Math.min(5, report.review.rating)))}</p>
@@ -124,10 +128,10 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
             {report.kind === 'review' && !report.review && (
               <p className="mt-1 text-xs text-amber-300">Avaliação não encontrada. Preservar a denúncia para análise.</p>
             )}
-            {report.kind === 'post' && !report.post && <p className="mt-1 text-xs text-amber-300">Publicação indisponível. Preservar a denúncia para análise.</p>}
+            {(report.kind === 'post' || report.kind === 'community_post') && !report.post && <p className="mt-1 text-xs text-amber-300">Publicação indisponível. Preservar a denúncia para análise.</p>}
             <p className="mt-1 font-mono text-[9px] text-slate-500">{report.createdAtIso || 'Data indisponível'} · Denunciante {report.reporterId}</p>
             <div className="mt-3 flex gap-2">
-              {report.kind === 'post' && report.post && (
+              {(report.kind === 'post' || report.kind === 'community_post') && report.post && (
                 <button type="button" disabled={busy} onClick={() => void remove(report.post!)} className="flex items-center gap-1 rounded-lg border border-red-500/30 px-2 py-1 text-xs text-red-300">
                   <Trash2 className="h-3 w-3"/> Remover publicação
                 </button>
@@ -159,7 +163,7 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
           </article>
         ))}
       </div>
-      <p className="text-[9px] text-slate-500">Acesso: {profile.role}. Máximo de 100 denúncias pendentes de cada tipo (posts, usuários e avaliações) e 100 publicações recentes. Denúncias não aplicam punições automáticas.</p>
+      <p className="text-[9px] text-slate-500">Acesso: {profile.role}. Máximo de 100 denúncias pendentes de cada tipo (Praça, Comunidades, usuários e avaliações) e 100 publicações recentes. Denúncias não aplicam punições automáticas.</p>
     </section>
   );
 }

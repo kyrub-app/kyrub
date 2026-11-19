@@ -131,6 +131,7 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
 test('community wall editor has a single About-tab Edit, media picker and readable text', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const cloud = read('src/utils/communityCloud.ts');
+  const card = read('src/components/CommunityPostCard.tsx');
   const storage = read('storage.rules');
   const coverHeader = ui.slice(ui.indexOf('<CommunityCover community={selectedCommunity}'), ui.indexOf('<nav className="flex gap-1', ui.indexOf('<CommunityCover community={selectedCommunity}')));
   assert.doesNotMatch(coverHeader, /onClick=\{openEditor\}/);
@@ -144,7 +145,8 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
   assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls \}\)/);
-  assert.match(ui, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
+  assert.match(ui, /<CommunityPostCard/);
+  assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
   assert.doesNotMatch(ui, /text-\[(8|9|10)px\]/);
   assert.match(cloud, /community-post-media\/\$\{communityId\}\/\$\{user\.uid\}/);
@@ -167,4 +169,121 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.match(ui, /<ArrowUp className="h-5 w-5" \/>/);
   assert.match(ui, /setPageTab\(tab\.id\);[\s\S]*?setShowBackToTop\(false\);/);
   assert.match(ui, /<main className="flex-1 overflow-y-auto p-4">/); // Debate keeps its independent conversation scroll.
+});
+
+test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const card = read('src/components/CommunityPostCard.tsx');
+  const interactions = read('src/utils/communityPostInteractions.ts');
+  const connections = read('src/utils/communityPostConnections.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const moderation = read('server/admin/socialModerationService.ts');
+  assert.match(ui, /saved=\{savedPostIds\.has\(post\.id\)\}/);
+  assert.match(ui, /toggleCommunityPostSaveWithMetrics\(post, savedPostIds\.has\(post\.id\)\)/);
+  assert.match(card, /Mais opções da publicação/);
+  for (const label of ['Conectar', 'Conversar', 'Ver perfil', 'Denunciar publicação', 'Salvar']) {
+    assert.ok(card.includes(label));
+  }
+  assert.match(card, /<ChatModal/);
+  assert.match(card, /onToggleLike\(isLiked\)/);
+  assert.match(card, /onComment\(commentDraft\)/);
+  assert.match(interactions, /collection\(db, 'community_post_likes'\)/);
+  assert.match(interactions, /collection\(db, 'community_post_comments'\)/);
+  assert.match(interactions, /community_post_reports/);
+  assert.match(connections, /collection\(db, 'connections'\)/);
+  for (const collectionName of ['community_post_likes', 'community_post_comments', 'community_post_reports']) {
+    assert.ok(rules.includes('match /' + collectionName));
+  }
+  assert.match(moderation, /'community_post_reports'/);
+  assert.match(moderation, /removeModeratedCommunityPost/);
+});
+
+test('author menu removes the publication after confirmation, without self-connection or self-report', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const container = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const client = read('src/utils/communityPostInteractions.ts');
+  const api = read('api/admin/operations/health.ts');
+  const service = read('server/communities/communityPostRemovalService.ts');
+  const moderation = read('server/admin/socialModerationService.ts');
+
+  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /\{isMine && \([\s\S]*?Remover publicação/);
+  assert.match(card, /window\.confirm\('Remover esta publicação definitivamente/);
+  assert.match(card, /void run\('remove', onRemove\)/);
+  assert.doesNotMatch(card, /Ocultar publicação/);
+  assert.match(card, /\{!isMine && !connection && \(/);
+  assert.match(card, /\{!isMine && connected && \(/);
+  assert.match(card, /\{!isMine && \([\s\S]*?Denunciar publicação/);
+  assert.match(container, /onRemove=\{\(\) => removeOwnCommunityPost\(post\)\}/);
+  assert.match(client, /transport=community-author-remove/);
+  assert.match(client, /post\.authorId !== user\.uid/);
+
+  assert.match(api, /transport === 'community-author-remove'/);
+  assert.match(api, /method !== 'POST'/);
+  assert.match(service, /verifyFirebaseIdToken\(token\)/);
+  assert.match(service, /adminDb\.runTransaction\(async tx =>/);
+  assert.match(service, /post\.authorId !== actor\.uid/);
+  assert.match(service, /tx\.delete\(postRef\)/);
+  assert.match(service, /community\.post\.author_removed/);
+  assert.match(service, /cleanupRemovedCommunityPost\(postId, data\)/);
+  assert.match(service, /community_post_likes/);
+  assert.match(service, /community_post_comments/);
+  assert.match(service, /community-post-media/);
+  assert.doesNotMatch(service, /collection\('community_post_reports'\).*?delete/);
+  assert.match(moderation, /cleanupRemovedCommunityPost\(postId, data\)/);
+});
+
+test('Promover entry only appears for a community post author and never starts a paid campaign', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const preview = read('src/components/ads/KyrubAdsCommunityPromotionPreview.tsx');
+
+  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /\{isMine && \([\s\S]*?<Megaphone className="h-4 w-4" \/> Promover/);
+  assert.match(card, /setPromotionPreviewOpen\(true\)/);
+  assert.match(card, /promotionPreviewOpen && isMine/);
+  assert.match(card, /<KyrubAdsCommunityPromotionPreview post=\{post\}/);
+
+  for (const period of [7, 15, 21, 30]) {
+    assert.ok(preview.includes(String(period)), 'Campaign draft duration missing: ' + period);
+  }
+  assert.match(preview, /Kyrub Ads/);
+  assert.match(preview, /Patrocinado · Prévia/);
+  assert.match(preview, /nenhuma campanha é criada e nenhum pagamento é iniciado/);
+  assert.match(preview, /após homologação do Kyrub Ads/);
+  assert.doesNotMatch(preview, /\bfetch\s*\(|\bsetDoc\s*\(|\baddDoc\s*\(|\buploadBytes\s*\(/);
+  assert.doesNotMatch(preview, /\bMercadoPago\b|\bcheckout\b|\bPix\b/);
+});
+
+test('community organic metrics appear only for their author and never conflate Kyrub Ads data', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const cloudUI = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const metrics = read('src/utils/communityOrganicMetrics.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const cleanup = read('server/communities/communityPostRemovalService.ts');
+
+  assert.match(card, /\{isMine && \([\s\S]*?Métricas da publicação/);
+  assert.match(card, /metricsOpen && isMine/);
+  assert.match(card, /const organicCounts = \{/);
+  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Compartilhamentos', 'Comentários']) {
+    assert.ok(card.includes(label), 'Métrica orgânica ausente: ' + label);
+  }
+  assert.match(card, /<BarChart3 className="h-4 w-4" \/> Métricas da publicação/);
+  assert.match(card, /<Megaphone className="h-4 w-4"\/> Promover no Kyrub Ads/);
+  assert.match(card, /entry\.intersectionRect\.height < 0\.55 \* visibleReference/);
+  assert.match(card, /recordCommunityPostView\(post\)/);
+  assert.match(card, /shareCommunityPostWithMetrics\(post\)/);
+  assert.match(metrics, /navigator\.share\(/);
+  assert.match(metrics, /navigator\.clipboard/);
+  assert.match(metrics, /await setDoc\(reference, newEngagement\(post, actorId, 'share', reference\.id\)\)/);
+  assert.match(metrics, /runTransaction\(db/);
+  assert.match(metrics, /tx\.set\(savedRef/);
+  assert.match(metrics, /tx\.set\(metricRef/);
+  assert.match(metrics, /tx\.delete\(savedRef\)/);
+  assert.match(metrics, /tx\.delete\(metricRef\)/);
+  assert.match(cloudUI, /toggleCommunityPostSaveWithMetrics\(post, savedPostIds\.has\(post\.id\)\)/);
+  assert.match(rules, /match \/community_post_engagements\/\{engagementId\}/);
+  assert.match(rules, /incoming\(\)\.actorId == request\.auth\.uid/);
+  assert.match(rules, /existing\(\)\.postAuthorId == request\.auth\.uid/);
+  assert.match(cleanup, /'community_post_engagements'/);
+  assert.doesNotMatch(metrics, /mercadoPago|campaign|pitangas|wallet|checkout|pix/i);
 });
