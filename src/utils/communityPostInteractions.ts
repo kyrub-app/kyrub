@@ -139,3 +139,22 @@ export const submitCommunityPostReport = async (
     throw error;
   }
 };
+
+/** Author-only deletion goes through the existing backend; the server verifies
+ * Firebase ID token, current Firestore authorship and performs cleanup/audit. */
+export const removeOwnCommunityPost = async (post: CloudCommunityPost): Promise<void> => {
+  const user = auth.currentUser;
+  if (!user) throw new Error('Entre no Kyrub para remover a publicação.');
+  if (post.authorId !== user.uid) throw new Error('Somente o autor pode remover esta publicação.');
+
+  const token = await user.getIdToken();
+  const response = await fetch('/api/admin/operations/health?transport=community-author-remove', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: `Bearer ${token}` },
+    body: JSON.stringify({ postId: post.id }),
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => null) as { error?: string } | null;
+    throw new Error(data?.error || 'Não foi possível remover a publicação.');
+  }
+};
