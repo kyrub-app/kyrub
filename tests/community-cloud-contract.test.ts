@@ -151,3 +151,20 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(storage, /match \/community-post-media\/\{communityId\}\/\{ownerId\}\/\{fileName\}/);
   assert.match(storage, /canPublishCommunityMedia\(communityId\)/);
 });
+
+test('community cover, tabs and mural share one scroll region with back-to-top control', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const start = ui.indexOf('id="community-page-scroll"');
+  const end = ui.indexOf('aria-label="Voltar ao topo da comunidade"', start);
+  assert.ok(start >= 0 && end > start, 'community scroll area and top action exist');
+  const page = ui.slice(start, end);
+  assert.match(page, /ref=\{communityScrollRef\}/);
+  assert.match(page, /onScroll=\{event => setShowBackToTop\(event\.currentTarget\.scrollTop > 240\)\}/);
+  assert.ok(page.indexOf('<header') < page.indexOf('<nav') && page.indexOf('<nav') < page.indexOf('<main'));
+  assert.match(page, /<main className="p-4 pb-24">/);
+  assert.doesNotMatch(page, /<main className="flex-1 overflow-y-auto p-4">/);
+  assert.match(ui, /onClick=\{\(\) => communityScrollRef\.current\?\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)\}/);
+  assert.match(ui, /<ArrowUp className="h-5 w-5" \/>/);
+  assert.match(ui, /setPageTab\(tab\.id\);[\s\S]*?setShowBackToTop\(false\);/);
+  assert.match(ui, /<main className="flex-1 overflow-y-auto p-4">/); // Debate keeps its independent conversation scroll.
+});
