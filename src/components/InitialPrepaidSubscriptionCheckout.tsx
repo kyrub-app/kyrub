@@ -6,7 +6,6 @@ import {
   checkoutInitialPrepaidSubscription,
   loadInitialPrepaidSubscriptionStatus,
   quoteInitialPrepaidSubscription,
-  StoreSubscriptionRequestError,
   type InitialPrepaidSubscriptionPaymentState,
   type InitialPrepaidSubscriptionQuote,
 } from '../utils/storeSubscription';
@@ -18,8 +17,8 @@ const date = (value: string) => new Date(value).toLocaleDateString('pt-BR');
 /** Keep server restrictions visible to buyers without exposing tokens or internal records. */
 export const explainInitialPrepaidCheckoutError = (cause: unknown, billingAuthority?: 'platform'): string => {
   const fallback = cause instanceof Error ? cause.message : 'Não foi possível consultar a contratação.';
-  if (billingAuthority !== 'platform' || !(cause instanceof StoreSubscriptionRequestError)) return fallback;
-  const code = cause.code;
+  if (billingAuthority !== 'platform' || !(cause instanceof Error)) return fallback;
+  const code = 'code' in cause && typeof cause.code === 'string' ? cause.code : undefined;
   if (!code || !/^OFFICIAL_PIX_[A-Z_]+$/.test(code)) return fallback;
   const explanations: Record<string, string> = {
     OFFICIAL_PIX_ACTIVE_ENTITLEMENT: 'Esta conta já possui um plano pago vigente. Consulte seu plano antes de iniciar outra contratação.',
