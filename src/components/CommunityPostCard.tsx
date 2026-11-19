@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  Bookmark, EllipsisVertical, Flag, Heart, MessageCircle, MessageCircleMore,
+  Bookmark, EllipsisVertical, Flag, Heart, Megaphone, MessageCircle, MessageCircleMore,
   Trash2, UserRound, UserRoundPlus, X,
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
@@ -9,6 +9,7 @@ import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/c
 import { readCommunityPostPublicProfile, requestCommunityPostConnection } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
+import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
 import type { SocialReportReason, SocialReportOutcome } from '../utils/socialReports';
 
 interface CommunityPostCardProps {
@@ -46,6 +47,7 @@ export function CommunityPostCard({
   const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
   const [profile, setProfile] = useState<CommunityPublicProfile | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [promotionPreviewOpen, setPromotionPreviewOpen] = useState(false);
   const [chatDraft, setChatDraft] = useState('');
   const [pending, setPending] = useState('');
   const [notice, setNotice] = useState('');
@@ -109,6 +111,13 @@ export function CommunityPostCard({
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                 <UserRound className="h-4 w-4" /> {isMine ? 'Meu perfil' : 'Ver perfil'}
               </button>
+              {isMine && (
+                <button type="button" role="menuitem"
+                  onClick={() => { setMenuOpen(false); setPromotionPreviewOpen(true); }}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-sky-300 hover:bg-slate-800">
+                  <Megaphone className="h-4 w-4" /> Promover
+                </button>
+              )}
               {isMine && (
                 <button type="button" role="menuitem" disabled={Boolean(pending)}
                   onClick={() => {
@@ -220,6 +229,9 @@ export function CommunityPostCard({
             <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">{profile.bio || 'Este Kairubido ainda não adicionou uma apresentação pública.'}</p>
           </section>
         </div>
+      )}
+      {promotionPreviewOpen && isMine && (
+        <KyrubAdsCommunityPromotionPreview post={post} onClose={() => setPromotionPreviewOpen(false)} />
       )}
       <ChatModal isOpen={chatOpen && connected} onClose={() => setChatOpen(false)}
         selectedChatUser={chatOpen && connected ? {
