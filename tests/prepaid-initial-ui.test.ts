@@ -21,7 +21,7 @@ const uiBundle = await build({ entryPoints: ['src/components/InitialPrepaidSubsc
       export const quoteInitialPrepaidSubscription=()=>{};export const acceptInitialPrepaidSubscription=()=>{};export const checkoutInitialPrepaidSubscription=()=>{};export const loadInitialPrepaidSubscriptionStatus=()=>{};` }));
   } }],
 });
-const { InitialPrepaidSubscriptionCard: Card } = await import('data:text/javascript;base64,' + Buffer.from(uiBundle.outputFiles[0].text).toString('base64'));
+const { InitialPrepaidSubscriptionCard: Card, explainInitialPrepaidCheckoutError } = await import('data:text/javascript;base64,' + Buffer.from(uiBundle.outputFiles[0].text).toString('base64'));
 const quote = { checkoutId: 'a'.repeat(64), quote: { months: 3, discountPercent: 10, totalMinor: 27000, monthlyEquivalentMinor: 9000 } };
 const render = (extra: Record<string, unknown> = {}) => renderToStaticMarkup(createElement(Card, {
   quote, payment: null, accepted: false, busy: false, error: '', selectedMonths: 3, onAccept() {}, onAction() {}, ...extra,
@@ -35,6 +35,29 @@ test('first prepaid purchase requires an explicit total acceptance and describes
   assert.match(html, /disabled=""/);
   assert.doesNotMatch(render({ accepted: true }), /disabled=""/);
 });
+test('plan selection opens compact review without adding to retail cart or creating Pix', () => {
+  const html = render({ quote: null, selectedMonths: 12 });
+  assert.match(html, /Contrato de 12 meses/);
+  assert.match(html, /Revisar valor e condições/);
+  assert.match(html, /não gera cobrança nem adiciona o plano ao carrinho/);
+  assert.doesNotMatch(html, /Consultar preço oficial do contrato/);
+  assert.doesNotMatch(html, /Confirmar contratação e gerar Pix/);
+  assert.doesNotMatch(html, /Confirmo a contratação/);
+});
+
+test('official quote failures show actionable reason and safe code while keeping payment locked', () => {
+  const active = Object.assign(new Error('Não foi possível concluir a contratação oficial.'), { code: 'OFFICIAL_PIX_ACTIVE_ENTITLEMENT' });
+  assert.match(explainInitialPrepaidCheckoutError(active, 'platform'), /plano pago vigente/);
+  assert.match(explainInitialPrepaidCheckoutError(active, 'platform'), /OFFICIAL_PIX_ACTIVE_ENTITLEMENT/);
+  assert.equal(explainInitialPrepaidCheckoutError(active), active.message);
+
+  const disabled = Object.assign(new Error('Não foi possível concluir a contratação oficial.'), { code: 'OFFICIAL_PIX_DISABLED' });
+  assert.match(explainInitialPrepaidCheckoutError(disabled, 'platform'), /Nenhuma cobrança foi criada/);
+  const noQuote = render({ quote: null, error: explainInitialPrepaidCheckoutError(active, 'platform') });
+  assert.match(noQuote, /plano pago vigente/);
+  assert.doesNotMatch(noQuote, /Confirmar contratação e gerar Pix/);
+});
+
 test('pending Pix never means active; confirmed coverage only comes from server result', () => {
   const pending = render({ payment: { state: 'awaiting_payment', pix: { qrCode: 'isolated-pix', expiresAt: '2099-01-01T00:00:00Z' } } });
   assert.match(pending, /Aguardando pagamento Pix/); assert.match(pending, /isolated-pix/);
