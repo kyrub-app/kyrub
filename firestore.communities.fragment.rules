@@ -525,6 +525,98 @@
         );
     }
 
+
+    // Wall interactions are independently scoped to the existing community and post.
+    // They never grant access to a private community or allow likes for strangers.
+    function communityPostBelongsTo(postId, communityId) {
+      return postId is string
+        && postId.size() > 0
+        && postId.size() <= 128
+        && communityId is string
+        && communityId.size() > 0
+        && communityId.size() <= 128
+        && exists(/databases/$(database)/documents/community_posts/$(postId))
+        && get(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == communityId;
+    }
+
+    match /community_post_likes/{likeId} {
+      allow read: if canReadCommunity(existing().communityId);
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll(['postId','communityId','userId','createdAt'])
+        && incoming().keys().hasOnly(['postId','communityId','userId','createdAt'])
+        && incoming().userId == request.auth.uid
+        && likeId == incoming().postId + '__' + request.auth.uid
+        && incoming().createdAt == request.time
+        && communityPostBelongsTo(incoming().postId, incoming().communityId)
+        && isActiveCommunityMember(incoming().communityId);
+
+      allow update: if false;
+      allow delete: if isSignedIn() && existing().userId == request.auth.uid;
+    }
+
+    match /community_post_comments/{commentId} {
+      allow read: if canReadCommunity(existing().communityId);
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'commentId','communityId','postId','authorId','authorName',
+          'authorAvatar','text','createdAtIso','createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'commentId','communityId','postId','authorId','authorName',
+          'authorAvatar','text','createdAtIso','createdAt'
+        ])
+        && incoming().commentId == commentId
+        && incoming().authorId == request.auth.uid
+        && incoming().authorName is string
+        && incoming().authorName.size() > 0
+        && incoming().authorName.size() <= 160
+        && incoming().authorAvatar is string
+        && incoming().authorAvatar.size() <= 2048
+        && incoming().text is string
+        && incoming().text.size() > 0
+        && incoming().text.size() <= 1000
+        && incoming().createdAtIso is string
+        && incoming().createdAtIso.size() <= 64
+        && incoming().createdAt == request.time
+        && communityPostBelongsTo(incoming().postId, incoming().communityId)
+        && isActiveCommunityMember(incoming().communityId);
+
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && (existing().authorId == request.auth.uid
+          || isCommunityOwner(existing().communityId));
+    }
+
+    // One immutable complaint per reporter and community post; never auto-punish.
+    match /community_post_reports/{reportId} {
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'reportId','communityId','postId','reporterId','authorId',
+          'reason','status','createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'reportId','communityId','postId','reporterId','authorId',
+          'reason','status','createdAt'
+        ])
+        && incoming().reportId == reportId
+        && incoming().reporterId == request.auth.uid
+        && reportId == incoming().postId + '__' + request.auth.uid
+        && incoming().authorId is string
+        && incoming().authorId != request.auth.uid
+        && incoming().reason in ['spam','abuse','fraud','unsafe','other']
+        && incoming().status == 'pending'
+        && incoming().createdAt == request.time
+        && communityPostBelongsTo(incoming().postId, incoming().communityId)
+        && get(/databases/$(database)/documents/community_posts/$(incoming().postId)).data.authorId == incoming().authorId
+        && canReadCommunity(incoming().communityId);
+
+      allow read: if isSignedIn()
+        && (existing().reporterId == request.auth.uid || isAdmin());
+      allow update, delete: if false;
+    }
+
     function hasValidCommunityDebateShape(data, debateId) {
       return data.keys().hasAll([
         'debateId',
