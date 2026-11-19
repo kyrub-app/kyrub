@@ -132,7 +132,10 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [selectedOfficialPlanId, setSelectedOfficialPlanId] = useState('');
   useEffect(() => {
     if (!selectedOfficialPlanId) return;
-    document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    const section = document.getElementById('official-plan-contract-section');
+    if (typeof section?.scrollIntoView === 'function') {
+      section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
   }, [selectedOfficialPlanId]);
   const [selectedPlanMonths, setSelectedPlanMonths] = useState<1 | 3 | 6 | 12>(1);
   const [user, setUser] = useState<User | null>(auth.currentUser);
