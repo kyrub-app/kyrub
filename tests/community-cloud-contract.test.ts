@@ -332,6 +332,12 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(feed, /Date\.parse\(b\.createdAt\) - Date\.parse\(a\.createdAt\)/);
   assert.match(feed, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
   assert.match(hub, /setActiveTab\('square'\)/);
+  assert.match(hub, /const squareRows = useMemo/);
+  assert.match(hub, /communitySquareEntries/);
+  assert.match(hub, /squareRows\.map\(row =>/);
+  assert.match(hub, /<CommunitySquareFeedCard/);
+  assert.match(hub, /subscribeCommunitySquareFeed/);
+  assert.match(hub, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
   assert.match(cloudUI, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
   assert.match(rules, /match \/community_square_posts\/\{postId\}/);
   assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)\.data\.createdAt == incoming\(\)\.createdAt/);
