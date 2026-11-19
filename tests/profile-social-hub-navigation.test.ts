@@ -246,6 +246,20 @@ const sessionGuestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx'
 const sessionRewardsSource = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
 const sessionAccountSource = readFileSync('src/components/tabs/PitangaAccount.tsx', 'utf8');
 
+test('logout is immediately visible on the first profile screen, not hidden inside edit', () => {
+  const heading = profileSource.indexOf('Painel pessoal');
+  const signOut = profileSource.indexOf('id="profile-session-logout"');
+  const editor = profileSource.indexOf('{editOpen && (');
+  assert.ok(heading >= 0 && signOut > heading && editor > signOut,
+    'Sign out must live in the main profile header before the edit form');
+  assert.equal(profileSource.match(/id="profile-session-logout"/g)?.length, 1,
+    'Account logout must not be duplicated in the edit form');
+  const firstScreen = profileSource.slice(heading, profileSource.indexOf('aria-label="Fechar meu perfil"', heading));
+  assert.match(firstScreen, /Sair da conta/);
+  assert.match(firstScreen, /onClick=\\{\\(\\) => void handleProfileSignOut\\(\\)\\}/);
+  assert.match(firstScreen, /disabled=\\{sessionBusy\\}/);
+});
+
 test('the marked identity card exposes a single real sign-out action', () => {
   assert.match(profileSource, /import \{ onAuthStateChanged, signOut, updateProfile, type User \} from 'firebase\/auth'/);
   assert.match(profileSource, /id="profile-session-logout"/);
