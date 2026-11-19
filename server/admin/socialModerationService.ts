@@ -1,6 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { adminDb } from '../firebaseAdmin.js';
+import { adminDb, adminStorage } from '../firebaseAdmin.js';
 
 type ModeratorRole = 'super_admin' | 'operations' | 'compliance';
 interface AuthorizedModerator { uid: string; role: ModeratorRole; }
@@ -232,9 +232,41 @@ export const removeModeratedCommunityPost = async (
   // Remove derived engagement before the canonical post; never fabricate an auto-moderation.
   const deleted: Record<string, number> = {};
   for (const name of ['community_post_likes', 'community_post_comments']) {
-    deleted[name] = await deleteByPostId(name, postId);
+    const interactionSnapshots = await adminDb.collection(name).where('postId', '==', postId).get();
+    deleted[name] = 0;
+    for (let offset = 0; offset < interactionSnapshots.size; offset += 400) {
+      const batch = adminDb.batch();
+      const chunk = interactionSnapshots.docs.slice(offset, offset + 400);
+      for (const interaction of chunk) batch.delete(interaction.ref);
+      await batch.commit();
+      deleted[name] += chunk.length;
+    }
   }
   await reference.delete();
+  // Firebase download links can continue working after a Firestore post is gone.
+  // Only delete objects in the reported author's exact community-media prefix.
+  const communityId = clean(data.communityId);
+  const authorId = clean(data.authorId);
+  const storageBucket = 'kyrub-b8d0e.firebasestorage.app';
+  const mediaPrefix = `community-post-media/${communityId}/${authorId}/`;
+  let deletedMedia = 0;
+  let failedMediaCleanup = 0;
+  for (const mediaUrl of stringList(data.mediaUrls).slice(0, 9)) {
+    try {
+      const url = new URL(mediaUrl);
+      const objectPath = /^\/v0\/b\/([^/]+)\/o\/(.+)$/.exec(url.pathname);
+      const objectName = objectPath ? decodeURIComponent(objectPath[2]) : '';
+      if (url.protocol !== 'https:' || url.hostname !== 'firebasestorage.googleapis.com'
+        || objectPath?.[1] !== storageBucket || !objectName.startsWith(mediaPrefix)
+        || !/^[a-zA-Z0-9_-]{1,128}$/.test(communityId)
+        || !/^[a-zA-Z0-9_-]{1,128}$/.test(authorId)) continue;
+      await adminStorage.bucket(storageBucket).file(objectName).delete({ ignoreNotFound: true });
+      deletedMedia += 1;
+    } catch (error) {
+      failedMediaCleanup += 1;
+      console.error('[Community Moderation] Could not remove bounded media object', error);
+    }
+  }
   const pendingReports = (await adminDb.collection('community_post_reports').where('postId', '==', postId).get())
     .docs.filter(item => item.data().status === 'pending');
   for (let offset = 0; offset < pendingReports.length; offset += 400) {
@@ -253,10 +285,11 @@ export const removeModeratedCommunityPost = async (
     actorRole: admin.role, targetType: 'community_post', targetId: postId,
     communityId: clean(data.communityId), targetAuthorId: clean(data.authorId),
     source: 'server', reason, deletedDependencies: deleted,
-    resolvedReports: pendingReports.length, createdAt: FieldValue.serverTimestamp(),
+    resolvedReports: pendingReports.length, deletedMedia, failedMediaCleanup,
+    createdAt: FieldValue.serverTimestamp(),
   });
   return { status: 'removed' as const, postId, deletedDependencies: deleted,
-    resolvedReports: pendingReports.length };
+    resolvedReports: pendingReports.length, deletedMedia, failedMediaCleanup };
 };
 
 export const removeModeratedPost = async (authorization: string, postIdValue: unknown, reasonValue: unknown) => {
