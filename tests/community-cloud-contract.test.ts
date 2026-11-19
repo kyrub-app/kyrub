@@ -126,3 +126,28 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
   assert.ok(stores.includes("const OFFICIAL_STORE_PATH = '/@kyrub-oficial';"));
   assert.doesNotMatch(stores, /Criar comunidade|Importar teste deste aparelho/);
 });
+
+
+test('community wall editor has a single About-tab Edit, media picker and readable text', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const cloud = read('src/utils/communityCloud.ts');
+  const storage = read('storage.rules');
+  const coverHeader = ui.slice(ui.indexOf('<CommunityCover community={selectedCommunity}'), ui.indexOf('<nav className="flex gap-1', ui.indexOf('<CommunityCover community={selectedCommunity}')));
+  assert.doesNotMatch(coverHeader, /onClick=\{openEditor\}/);
+  assert.match(ui, /\{pageTab === 'about' && \(/);
+  assert.match(ui, /onClick=\{openEditor\}/);
+  assert.match(ui, /id="community-wall-attachment-button"/);
+  assert.match(ui, /aria-label="Adicionar foto, vídeo ou câmera ao mural"/);
+  assert.match(ui, /Fotos da galeria/);
+  assert.match(ui, /accept="video\/mp4,video\/webm"/);
+  assert.match(ui, /capture="environment"/);
+  assert.match(ui, /Até 4 anexos/);
+  assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls \}\)/);
+  assert.match(ui, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
+  assert.match(ui, /text-sm text-white outline-none/);
+  assert.doesNotMatch(ui, /text-\[(8|9|10)px\]/);
+  assert.match(cloud, /community-post-media\/\$\{communityId\}\/\$\{user\.uid\}/);
+  assert.match(storage, /match \/community-post-media\/\{communityId\}\/\{ownerId\}\/\{fileName\}/);
+  assert.match(storage, /canPublishCommunityMedia\(communityId\)/);
+});

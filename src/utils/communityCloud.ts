@@ -776,6 +776,43 @@ export const rejectCommunityMember = async (
   );
 };
 
+/** Uploads for community wall posts live in one owner-scoped, community-scoped
+ * Storage location. The Storage Rules independently enforce membership and MIME limits.
+ * Never store temporary blob/data URLs in a Firestore post. */
+export const uploadCommunityPostMedia = async (
+  communityId: string,
+  file: File
+): Promise<string> => {
+  const { user } = currentIdentity();
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(communityId)) {
+    throw new Error('Comunidade inválida para anexos.');
+  }
+  const extensions: Record<string, string> = {
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'video/mp4': 'mp4',
+    'video/webm': 'webm',
+  };
+  const community = await getCommunity(communityId);
+  if (!community || community.visibility === 'private') {
+    throw new Error('Anexos da comunidade privada exigem um leitor de mídia protegido. Por enquanto, publique texto.');
+  }
+  const extension = extensions[file.type];
+  const maxSize = file.type.startsWith('video/') ? 20 : 8;
+  if (!extension || file.size === 0 || file.size > maxSize * 1024 * 1024) {
+    throw new Error('Use imagem JPG/PNG/WebP de até 8 MB ou vídeo MP4/WebM de até 20 MB.');
+  }
+  const kind = file.type.startsWith('video/') ? 'video' : 'image';
+  const path = `community-post-media/${communityId}/${user.uid}/${kind}-${crypto.randomUUID()}.${extension}`;
+  const destination = ref(storage, path);
+  await uploadBytes(destination, file, {
+    contentType: file.type,
+    customMetadata: { communityId, ownerId: user.uid, purpose: 'community-wall' },
+  });
+  return getDownloadURL(destination);
+};
+
 export const createCommunityPost = async (input: {
   communityId: string;
   content: string;
