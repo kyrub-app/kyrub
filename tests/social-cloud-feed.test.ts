@@ -105,3 +105,24 @@ test('Praça shows public publications only; private posts and connected Status 
   assert.match(kyrubSource, /setInterval\(\(\) => setSquareNow\(Date\.now\(\)\), 60_000\)/);
   assert.match(kyrubSource, /posts=\{squarePosts\}/);
 });
+
+
+test('Praça applies 24-hour window to ordinary posts without deleting their originals', () => {
+  const now = Date.parse('2026-11-18T18:00:00Z');
+  const make = (id: string, ageMs: number): SocialPost => ({
+    id, authorId: 'author', user: 'Kairubido', avatar: '', time: '',
+    content: id, likes: 0, visibility: 'public', publicationType: 'feed',
+    createdAt: new Date(now - ageMs).toISOString(),
+  });
+  const canonical = [
+    make('older-than-a-day', 25 * 60 * 60 * 1000),
+    make('recent', 60 * 1000),
+    make('exactly-a-day', 24 * 60 * 60 * 1000),
+    make('newest', 1000),
+    make('future', -1000),
+  ];
+  const square = selectPublicSquarePosts(canonical, now);
+  assert.deepEqual(square.map(item => item.id), ['newest', 'recent']);
+  assert.equal(canonical.length, 5, 'the original publication collection remains intact');
+  assert.equal(canonical[0].id, 'older-than-a-day', 'the source order remains unchanged');
+});
