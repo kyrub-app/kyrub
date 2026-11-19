@@ -87,7 +87,7 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
-  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove' || transport === 'social-moderation-report-review' || transport === 'social-moderation-store-review-hide') {
+  if (transport === 'social-moderation-list' || transport === 'social-moderation-remove' || transport === 'social-moderation-community-remove' || transport === 'social-moderation-report-review' || transport === 'social-moderation-store-review-hide') {
     const expectedMethod = transport === 'social-moderation-list' ? 'GET' : 'POST';
     if (method !== expectedMethod) { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     let mapError: ((error: unknown) => HttpErrorResult) | null = null;
@@ -108,6 +108,10 @@ export default async function handler(request: RequestLike, response: ResponseLi
       }
       if (transport === 'social-moderation-store-review-hide') {
         response.status(200).json(await moderation.hideModeratedStoreReview(authorization, body.storeId, body.reviewId, body.reason));
+        return;
+      }
+      if (transport === 'social-moderation-community-remove') {
+        response.status(200).json(await moderation.removeModeratedCommunityPost(authorization, body.postId, body.reason));
         return;
       }
       response.status(200).json(await moderation.removeModeratedPost(authorization, body.postId, body.reason));
