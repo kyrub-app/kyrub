@@ -219,7 +219,8 @@ export function ProfileCommunitiesCloudBridge() {
   const { user, communities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [listTab, setListTab] = useState<CommunityListTab>('mine');
+  const [listTab, setListTab] = useState<CommunityListTab>('discover');
+  const [favoriteCommunityIds, setFavoriteCommunityIds] = useState<string[]>([]);
   const [searchValue, setSearchValue] = useState('');
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
@@ -275,6 +276,32 @@ export function ProfileCommunitiesCloudBridge() {
   const mountRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchListenerRef = useRef<((event: Event) => void) | null>(null);
+
+  useEffect(() => {
+    if (!user?.uid) {
+      setFavoriteCommunityIds([]);
+      return;
+    }
+    try {
+      const saved = JSON.parse(localStorage.getItem(`kyrub_favorite_communities:${user.uid}`) || '[]');
+      setFavoriteCommunityIds(Array.isArray(saved) ? saved.filter((id): id is string => typeof id === 'string') : []);
+    } catch {
+      setFavoriteCommunityIds([]);
+    }
+  }, [user?.uid]);
+
+  const toggleFavoriteCommunity = (id: string) => {
+    if (!user?.uid) return;
+    const next = favoriteCommunityIds.includes(id)
+      ? favoriteCommunityIds.filter(item => item !== id)
+      : [...favoriteCommunityIds, id];
+    setFavoriteCommunityIds(next);
+    try {
+      localStorage.setItem(`kyrub_favorite_communities:${user.uid}`, JSON.stringify(next));
+    } catch {
+      // Favoritos continuam disponíveis nesta sessão quando o armazenamento está indisponível.
+    }
+  };
 
   const selectedCommunity = communities.find(
     community => community.id === selectedCommunityId
@@ -602,14 +629,21 @@ export function ProfileCommunitiesCloudBridge() {
           .includes(normalizedSearch);
       if (!matches) return false;
       if (listTab === 'mine') {
-        return community.isOwner || community.isActiveMember || community.isPendingMember;
+        return favoriteCommunityIds.includes(community.id);
       }
-      return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
+      return community.visibility !== 'private' || community.isOwner || community.isActiveMember || community.isPendingMember;
     });
-    return listTab === 'trending'
-      ? [...filtered].sort((left, right) => right.memberCount - left.memberCount)
-      : filtered;
-  }, [communities, listTab, normalizedSearch]);
+    if (listTab === 'trending') {
+      return [...filtered].sort((left, right) =>
+        Date.parse(right.activityAt || right.createdAt) - Date.parse(left.activityAt || left.createdAt)
+        || right.memberCount - left.memberCount
+      );
+    }
+    if (listTab === 'discover') {
+      return [...filtered].sort((left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt));
+    }
+    return filtered;
+  }, [communities, listTab, normalizedSearch, favoriteCommunityIds]);
 
   const similarCommunities = useMemo(() => {
     const name = createDraft.name.trim().toLocaleLowerCase('pt-BR');
@@ -880,6 +914,15 @@ export function ProfileCommunitiesCloudBridge() {
             </span>
           </div>
         </button>
+        <div className="px-2 pb-1">
+          <button type="button" onClick={() => toggleFavoriteCommunity(community.id)}
+            aria-pressed={favoriteCommunityIds.includes(community.id)}
+            aria-label={favoriteCommunityIds.includes(community.id) ? `Remover ${community.name} dos favoritos` : `Favoritar ${community.name}`}
+            className="flex min-h-8 items-center gap-1 text-[9px] text-sky-200">
+            <Bookmark className={`h-3.5 w-3.5 ${favoriteCommunityIds.includes(community.id) ? 'fill-current' : ''}`} />
+            {favoriteCommunityIds.includes(community.id) ? 'Favoritada' : 'Favoritar'}
+          </button>
+        </div>
         <div className="mt-auto border-t border-slate-800 p-2">
           <button
             type="button"
@@ -1002,20 +1045,13 @@ export function ProfileCommunitiesCloudBridge() {
                   Encontre espaços para participar
                 </h3>
               </div>
-              <button
-                type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
-              >
-                <Plus className="h-4 w-4" />
-                Criar
-              </button>
+
             </header>
 
 
             <div className="flex gap-1.5 overflow-x-auto">
               {([
-                ['mine', 'Minhas'],
+                ['mine', 'Favoritas'],
                 ['discover', 'Descobrir'],
                 ['trending', 'Em alta'],
               ] as Array<[CommunityListTab, string]>).map(([id, label]) => (

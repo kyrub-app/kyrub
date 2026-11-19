@@ -116,7 +116,7 @@ export function KyrubTab(props: KyrubTabProps) {
     [socialFeed.posts, squareNow]
   );
 
-  // Match the 24-hour Status expiry used by the profile Praça surface.
+  // Re-evaluate the rolling 24-hour Praça window without deleting canonical posts.
   useEffect(() => {
     const timer = window.setInterval(() => setSquareNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);

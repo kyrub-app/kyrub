@@ -117,12 +117,24 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
   assert.doesNotMatch(communities, /Importar teste deste aparelho|showLocalImport|importLocalCommunityPrototype/);
   assert.match(communities, /Criar comunidade/);
   assert.match(stores, /id="square-stores"/);
-  assert.match(stores, /Ver todas/);
-  for (const name of ["'Minhas'", "'Descobrir'", "'Em alta'"]) {
+  assert.doesNotMatch(stores, /square-stores-view-all|Ver todas/);
+  assert.match(stores, /id === 'discover' \? onViewAll\(\)/);
+  for (const name of ["'Favoritas'", "'Descobrir'", "'Em alta'"]) {
     assert.ok(stores.includes(name));
   }
   assert.ok(stores.includes("fetch('/api/marketplace-discovery/public/kyrub-oficial'"));
   assert.match(stores, /href=\{OFFICIAL_STORE_PATH\}/);
   assert.ok(stores.includes("const OFFICIAL_STORE_PATH = '/@kyrub-oficial';"));
   assert.doesNotMatch(stores, /Criar comunidade|Importar teste deste aparelho/);
+});
+
+test('Taba community discovery separates favorites, new communities and recent activity', () => {
+  const communities = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(communities, /\['mine', 'Favoritas'\]/);
+  assert.match(communities, /favoriteCommunityIds\.includes\(community\.id\)/);
+  assert.match(communities, /toggleFavoriteCommunity\(community\.id\)/);
+  assert.match(communities, /Date\.parse\(right\.createdAt\) - Date\.parse\(left\.createdAt\)/);
+  assert.match(communities, /Date\.parse\(right\.activityAt \|\| right\.createdAt\)/);
+  assert.match(communities, /Criar comunidade/);
+  assert.doesNotMatch(communities, /className="flex min-h-9 items-center gap-1\.5 rounded-xl bg-sky-500 px-3 text-\[8px\] font-black uppercase text-slate-950"/);
 });
