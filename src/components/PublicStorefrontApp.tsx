@@ -572,7 +572,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
             <span className="font-mono text-[10px] font-black uppercase tracking-widest text-cyan-300">
               Planos da Kyrub Oficial
             </span>
-            <h2 className="mt-1 text-lg font-black text-white">Finalizar contratação do plano {selectedOfficialPlan?.name ?? 'oficial'}</h2>
+            <h2 className="mt-1 text-lg font-black text-white">Revisar contratação do plano {selectedOfficialPlan?.name ?? 'oficial'}</h2>
             <p className="mt-2 text-xs leading-5 text-slate-300">
               Planos são contratados pelo checkout oficial, com aceite de contrato e Pix único. Não entram no carrinho de produtos e serviços.
             </p>
