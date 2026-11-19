@@ -91,6 +91,8 @@ export interface StoreRelationshipSummary {
   schemaVersion: typeof STORE_RELATIONSHIP_SCHEMA_VERSION;
   storeId: string;
   customerId: string;
+  /** Verified against the tenant's canonical owner, never inferred from the storefront. */
+  isStoreOwner?: boolean;
   generatedAt: string;
   points: StoreRelationshipPointsSummary;
   level: StoreRelationshipLevel;
