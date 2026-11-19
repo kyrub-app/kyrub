@@ -47,6 +47,11 @@ service firebase.storage {
         && firestore.exists(
           /databases/(default)/documents/communities/$(communityId)
         )
+        // getDownloadURL produces a shareable bearer URL; do not create such
+        // links for private communities until an authenticated reader exists.
+        && firestore.get(
+          /databases/(default)/documents/communities/$(communityId)
+        ).data.visibility in ['public', 'moderated']
         && (
           firestore.get(
             /databases/(default)/documents/communities/$(communityId)
