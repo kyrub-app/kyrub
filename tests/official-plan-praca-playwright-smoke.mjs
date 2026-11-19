@@ -231,7 +231,7 @@ try {
   await section.waitFor({ state: 'visible', timeout: 20000 });
   await section.getByText('Cupom da Praça BIZ1 informado').waitFor({ timeout: 15000 });
   assert.equal(await section.getAttribute('data-official-plan-route'), 'canonical-prepaid');
-  await section.getByRole('button', { name: 'Consultar preço oficial do contrato' }).click();
+  await section.getByRole('button', { name: 'Revisar valor e condições' }).click();
   await section.getByText(/Preço original do contrato/).waitFor();
   assert.match(await section.innerText(), /R\$\s*397,00/);
   assert.match(await section.innerText(), /R\$\s*396,00/);
