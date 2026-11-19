@@ -149,11 +149,11 @@ export function CommunityPostCard({
           disabled={!canParticipate || Boolean(pending)}
           onClick={() => void run('like', () => onToggleLike(isLiked))}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${isLiked ? 'border-rose-500/40 bg-rose-500/10 text-rose-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
-          <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} /> {likes.filter(item => item.postId === post.id).length}
+          <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} /> {isLiked ? 'Curtido' : 'Curtir'} · {likes.filter(item => item.postId === post.id).length}
         </button>
         <button type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen(open => !open)}
           className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300">
-          <MessageCircle className="h-4 w-4" /> {postComments.length}
+          <MessageCircle className="h-4 w-4" /> Comentar · {postComments.length}
         </button>
         <button type="button" aria-label={saved ? 'Remover dos Salvos' : 'Salvar publicação'}
           disabled={Boolean(pending)}
