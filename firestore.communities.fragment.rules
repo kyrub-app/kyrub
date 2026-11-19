@@ -569,22 +569,24 @@
           || engagementId == incoming().postId + '__' + incoming().type + '__' + request.auth.uid
         );
 
-      // Allow the authenticated actor to test whether their deterministic
-      // view/save receipt exists, including BEFORE first creation. Otherwise
-      // getDoc() and Firestore save transactions fail on absent receipts.
+      // Own view/save receipts can be checked before first creation.
+      // Existing records are only visible to the actor, author or admin.
       allow get: if isSignedIn()
         && (
-          (
-            resource != null
-            && (
-              existing().actorId == request.auth.uid
+          (resource != null
+            && (existing().actorId == request.auth.uid
               || existing().postAuthorId == request.auth.uid
-              || isAdmin()
-            )
-          )
-          || (
-            resource == null
-            && engagementId.matches('^.+__(view|save)__' + request.auth.uid + '
+              || isAdmin()))
+          || (resource == null
+            && engagementId.matches('^.+__(view|save)__' + request.auth.uid + '$'))
+        );
+
+      allow list: if isSignedIn()
+        && (existing().actorId == request.auth.uid
+          || existing().postAuthorId == request.auth.uid
+          || isAdmin());
+
+      allow update: if false;
       allow delete: if isSignedIn()
         && existing().type == 'save'
         && existing().actorId == request.auth.uid;
