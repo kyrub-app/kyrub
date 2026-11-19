@@ -238,3 +238,41 @@ describe('native React profile social hub', () => {
     assert.match(socialRules, /data\.visibility in \['connections', 'public'\]/);
   });
 });
+
+
+// The session and Pitangas regression checks live in the prebuild profile suite.
+const sessionLegacySource = readFileSync('src/LegacyApp.tsx', 'utf8');
+const sessionGuestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+const sessionRewardsSource = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
+const sessionAccountSource = readFileSync('src/components/tabs/PitangaAccount.tsx', 'utf8');
+
+test('the marked identity card exposes a single real sign-out action', () => {
+  assert.match(profileSource, /import \{ onAuthStateChanged, signOut, updateProfile, type User \} from 'firebase\/auth'/);
+  assert.match(profileSource, /id="profile-session-logout"/);
+  assert.match(profileSource, /onClick=\{\(\) => void handleProfileSignOut\(\)\}/);
+  assert.match(profileSource, /disabled=\{sessionBusy\}/);
+  assert.match(profileSource, /await signOut\(auth\)/);
+  assert.match(profileSource, /setEditOpen\(false\);\s*setOpen\(false\)/);
+  assert.match(profileSource, /Não foi possível sair da conta/);
+});
+
+test('after exit, the existing guest account route offers select-account Google login', () => {
+  assert.match(appSource, /currentUser\s*\? <AuthenticatedKyrubApp operational=\{false\} \/>\s*:\s*<KyrubGuestWorkspace \/>/);
+  assert.match(sessionGuestSource, /onClick=\{\(\) => requestLogin\('acessar seu perfil'\)\}/);
+  assert.match(sessionGuestSource, /loginReason === 'acessar seu perfil' \? 'Perfil e identidade'/);
+  assert.match(sessionGuestSource, /Entrar com Google/);
+  assert.match(sessionGuestSource, /signInWithPopup\(auth, provider\)/);
+  assert.match(sessionGuestSource, /prompt: 'select_account'/);
+});
+
+test('the Pitangas icon navigates to the current account view, not a duplicate wallet', () => {
+  assert.match(sessionLegacySource, /id="header-pitangas-trigger"/);
+  assert.match(sessionLegacySource, /aria-label="Abrir Pitangas e XP"/);
+  assert.match(sessionLegacySource, /<Cherry className="w-4 h-4"/);
+  assert.match(sessionLegacySource, /setSocialSubTab\('lojas'\);\s*setOfertasFilter\('cliente'\);\s*setActiveTab\('kyrub'\)/);
+  assert.match(sessionRewardsSource, /props\.socialSubTab === 'lojas' && props\.ofertasFilter === 'cliente'/);
+  assert.match(sessionRewardsSource, /<PitangaAccount key=/);
+  assert.match(sessionAccountSource, /fetch\('\/api\/pitangas'/);
+  assert.match(sessionGuestSource, /id="header-pitangas-trigger"/);
+  assert.match(sessionGuestSource, /requestLogin\('consultar suas Pitangas e XP'\)/);
+});

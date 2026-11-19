@@ -20,6 +20,7 @@ import {
   Share2,
   Sliders,
   CheckSquare,
+  Cherry,
   Users,
   ChevronRight,
   Trash2,
@@ -1326,6 +1327,21 @@ const handleLogin = async (provider: 'google' | 'apple') => {
               aria-label="Abrir Tarefas"
             >
               <CheckSquare className="w-4 h-4" />
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSocialSubTab('lojas');
+                setOfertasFilter('cliente');
+                setActiveTab('kyrub');
+              }}
+              className="w-10 h-10 rounded-xl border border-orange-500/25 bg-slate-900 flex items-center justify-center text-orange-400 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors"
+              id="header-pitangas-trigger"
+              title="Minhas Pitangas e XP"
+              aria-label="Abrir Pitangas e XP"
+            >
+              <Cherry className="w-4 h-4" aria-hidden="true" />
             </button>
 
             <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 flex items-center justify-center" id="header-wallet-balance">

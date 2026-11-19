@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Compass, GraduationCap, ShoppingBag,
+  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, ShoppingBag,
   Sparkles, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -105,6 +105,11 @@ export function KyrubGuestWorkspace() {
           aria-label="Abrir Tarefas" id="header-tasks-trigger"
           onClick={() => requestLogin('acessar e salvar suas tarefas')}>
           <CheckSquare className="h-4 w-4" />
+        </button>
+        <button type="button" className={iconButtonClass + ' text-orange-400'} title="Pitangas e XP"
+          aria-label="Abrir Pitangas e XP" id="header-pitangas-trigger"
+          onClick={() => requestLogin('consultar suas Pitangas e XP')}>
+          <Cherry className="h-4 w-4" aria-hidden="true" />
         </button>
         <button type="button" className={iconButtonClass + ' text-teal-400'} title="Carteira"
           aria-label="Abrir Carteira" id="header-wallet-balance"
@@ -237,7 +242,8 @@ export function KyrubGuestWorkspace() {
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/90 p-4">
           <section role="dialog" aria-modal="true" aria-labelledby="guest-login-title"
             className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-6">
-            <h2 id="guest-login-title" className="text-lg font-black">Entre para continuar</h2>
+            <div className="text-[10px] font-bold uppercase tracking-wide text-orange-400">{loginReason === 'acessar seu perfil' ? 'Minha conta' : 'Acesso ao Kyrub'}</div>
+            <h2 id="guest-login-title" className="mt-1 text-lg font-black">{loginReason === 'acessar seu perfil' ? 'Perfil e identidade' : 'Entre para continuar'}</h2>
             <p className="mt-3 text-sm leading-6 text-slate-400">
               Para {loginReason}, você precisa fazer login. A navegação pública continua disponível sem conta.
             </p>
