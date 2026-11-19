@@ -233,3 +233,24 @@ test('author menu removes the publication after confirmation, without self-conne
   assert.doesNotMatch(service, /collection\('community_post_reports'\).*?delete/);
   assert.match(moderation, /cleanupRemovedCommunityPost\(postId, data\)/);
 });
+
+test('Promover entry only appears for a community post author and never starts a paid campaign', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const preview = read('src/components/ads/KyrubAdsCommunityPromotionPreview.tsx');
+
+  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /\{isMine && \([\s\S]*?<Megaphone className="h-4 w-4" \/> Promover/);
+  assert.match(card, /setPromotionPreviewOpen\(true\)/);
+  assert.match(card, /promotionPreviewOpen && isMine/);
+  assert.match(card, /<KyrubAdsCommunityPromotionPreview post=\{post\}/);
+
+  for (const period of [7, 15, 21, 30]) {
+    assert.ok(preview.includes(String(period)), 'Campaign draft duration missing: ' + period);
+  }
+  assert.match(preview, /Kyrub Ads/);
+  assert.match(preview, /Patrocinado · Prévia/);
+  assert.match(preview, /nenhuma campanha é criada e nenhum pagamento é iniciado/);
+  assert.match(preview, /após homologação do Kyrub Ads/);
+  assert.doesNotMatch(preview, /\bfetch\s*\(|\bsetDoc\s*\(|\baddDoc\s*\(|\buploadBytes\s*\(/);
+  assert.doesNotMatch(preview, /\bMercadoPago\b|\bcheckout\b|\bPix\b/);
+});
