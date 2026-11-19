@@ -73,18 +73,21 @@ export function CommunityPostCard({
     if (!viewerId || !cardRef.current) return;
     const element = cardRef.current;
     if (!('IntersectionObserver' in window)) return;
+    const postHeight = Math.max(1, element.getBoundingClientRect().height);
+    const visibleReference = Math.min(postHeight, window.innerHeight);
+    const threshold = Math.min(0.55, (0.55 * visibleReference) / postHeight);
     const observer = new IntersectionObserver(entries => {
       for (const entry of entries) {
-        if (!entry.isIntersecting || entry.intersectionRatio < 0.55) continue;
+        if (!entry.isIntersecting || entry.intersectionRect.height < 0.55 * visibleReference) continue;
         observer.unobserve(entry.target);
         void recordCommunityPostView(post).catch(error =>
           console.warn('Não foi possível registrar visualização orgânica.', error)
         );
       }
-    }, { threshold: [0.55] });
+    }, { threshold: [threshold] });
     observer.observe(element);
     return () => observer.disconnect();
-  }, [post.id, viewerId]);
+  }, [post, viewerId]);
 
   useEffect(() => {
     if (!metricsOpen || !isMine || !viewerId) return;
@@ -172,7 +175,10 @@ export function CommunityPostCard({
                 </button>
               )}
               <button type="button" role="menuitem" disabled={Boolean(pending)}
-                onClick={() => { setMenuOpen(false); void run('share', () => shareCommunityPostWithMetrics(post)); }}
+                onClick={() => { setMenuOpen(false); void run('share', async () => {
+                  const result = await shareCommunityPostWithMetrics(post);
+                  setNotice(result === 'copied' ? 'Conteúdo e endereço do Kyrub copiados.' : 'Compartilhamento concluído.');
+                }); }}
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40">
                 <Share2 className="h-4 w-4" /> Compartilhar
               </button>
@@ -320,7 +326,7 @@ export function CommunityPostCard({
                 <article key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
                   <MetricIcon className="h-5 w-5 text-sky-300"/>
                   <strong className="mt-2 block text-xl text-white">
-                    {metricsError ? '—' : metricsLoading && label !== 'Curtidas' && label !== 'Comentários' ? '—' : count}
+                    {label !== 'Curtidas' && label !== 'Comentários' && (metricsError || metricsLoading) ? '—' : count}
                   </strong>
                   <span className="text-xs text-slate-400">{label}</span>
                 </article>
