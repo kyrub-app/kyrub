@@ -103,7 +103,7 @@ export const toggleCommunityPostSaveWithMetrics = async (
 
 /** Only completed native-share or clipboard actions count, like Praça.
  * A share is not a guaranteed view and never generates rewards or revenue. */
-export const shareCommunityPostWithMetrics = async (post: CloudCommunityPost): Promise<void> => {
+export const shareCommunityPostWithMetrics = async (post: CloudCommunityPost): Promise<'shared' | 'copied'> => {
   const actorId = currentUserId();
   const title = `Publicação de ${post.authorName} no Kyrub`;
   const text = post.content.trim()
@@ -127,5 +127,12 @@ export const shareCommunityPostWithMetrics = async (post: CloudCommunityPost): P
     await navigator.clipboard.writeText(payload);
   }
   const reference = doc(collection(db, 'community_post_engagements'));
-  await setDoc(reference, newEngagement(post, actorId, 'share', reference.id));
+  try {
+    await setDoc(reference, newEngagement(post, actorId, 'share', reference.id));
+  } catch (error) {
+    // A successful native share or clipboard copy must not be reported as a failed
+    // share if analytics temporarily cannot write (e.g. before rules deployment).
+    console.warn('Compartilhamento concluído, mas registro orgânico indisponível.', error);
+  }
+  return shared ? 'shared' : 'copied';
 };
