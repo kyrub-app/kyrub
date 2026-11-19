@@ -256,11 +256,11 @@ test('logout is immediately visible on the first profile screen, not hidden insi
     'Account logout must not be duplicated in the edit form');
   const firstScreen = profileSource.slice(heading, profileSource.indexOf('aria-label="Fechar meu perfil"', heading));
   assert.match(firstScreen, /Sair da conta/);
-  assert.match(firstScreen, /onClick=\\{\\(\\) => void handleProfileSignOut\\(\\)\\}/);
-  assert.match(firstScreen, /disabled=\\{sessionBusy\\}/);
+  assert.match(firstScreen, /onClick=\{\(\) => void handleProfileSignOut\(\)\}/);
+  assert.match(firstScreen, /disabled=\{sessionBusy\}/);
 });
 
-test('the marked identity card exposes a single real sign-out action', () => {
+test('native profile provides Firebase sign-out with proper loading and failure handling', () => {
   assert.match(profileSource, /import \{ onAuthStateChanged, signOut, updateProfile, type User \} from 'firebase\/auth'/);
   assert.match(profileSource, /id="profile-session-logout"/);
   assert.match(profileSource, /onClick=\{\(\) => void handleProfileSignOut\(\)\}/);
