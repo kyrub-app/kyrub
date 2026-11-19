@@ -416,3 +416,77 @@ test('a community wall author can remove own post but another participant cannot
   const result = await getDoc(doc(member, 'community_posts', postId));
   if (result.exists()) throw new Error('Post removido ainda existe no Firestore');
 });
+
+test('organic community metrics reuse Praça rules: unique view, active save and completed share receipts', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'organic_metrics_a';
+  const postId = 'organic_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador',
+    authorAvatar: '', content: 'Dados orgânicos auditáveis.', mediaUrls: [],
+    createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const viewId = `${postId}__view__${MEMBER}`;
+  const engagement = (id: string, type: 'view' | 'save' | 'share') => ({
+    engagementId: id, communityId, postId, postAuthorId: OWNER,
+    actorId: MEMBER, type, createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(setDoc(doc(member, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertFails(setDoc(doc(member, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertFails(setDoc(doc(outsider, 'community_post_engagements', viewId), engagement(viewId, 'view')));
+  await assertSucceeds(getDoc(doc(owner, 'community_post_engagements', viewId)));
+  await assertSucceeds(getDocs(query(collection(owner, 'community_post_engagements'), where('postAuthorId', '==', OWNER))));
+  await assertFails(getDoc(doc(outsider, 'community_post_engagements', viewId)));
+
+  const saveId = `${postId}__save__${MEMBER}`;
+  const savedRef = doc(member, 'users', MEMBER, 'savedItems', 'community__' + postId);
+  const saveRef = doc(member, 'community_post_engagements', saveId);
+  await assertSucceeds(runTransaction(member, async tx => {
+    tx.set(savedRef, {
+      type: 'publication', sourceKind: 'community', sourceId: postId,
+      selectionIds: [], savedAtIso: '2026-11-19T12:01:00.000Z', savedAt: serverTimestamp(),
+    });
+    tx.set(saveRef, engagement(saveId, 'save'));
+  }));
+  await assertSucceeds(getDoc(savedRef));
+  await assertSucceeds(getDoc(saveRef));
+  await assertSucceeds(runTransaction(member, async tx => {
+    tx.delete(savedRef);
+    tx.delete(saveRef);
+  }));
+  if ((await getDoc(saveRef)).exists()) throw new Error('Salvamento ainda contabilizado depois de remover dos Salvos.');
+
+  const shareA = doc(member, 'community_post_engagements', 'share_action_01');
+  const shareB = doc(member, 'community_post_engagements', 'share_action_02');
+  await assertSucceeds(setDoc(shareA, engagement(shareA.id, 'share')));
+  await assertSucceeds(setDoc(shareB, engagement(shareB.id, 'share')));
+  await assertFails(deleteDoc(shareA)); // Only active saves may be deleted by the user.
+  await assertFails(setDoc(doc(member, 'community_post_engagements', 'forged_author'), {
+    ...engagement('forged_author', 'share'), postAuthorId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_engagements', 'wrong_unique_id'), engagement('wrong_unique_id', 'view')));
+});
+
+test('private community organic views cannot be collected from outsiders', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'private_metrics';
+  const postId = 'private_post_metrics';
+  await createCommunity(owner, communityId, 'private');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador',
+    authorAvatar: '', content: 'Privada.', mediaUrls: [],
+    createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const receiptId = `${postId}__view__${OUTSIDER}`;
+  await assertFails(setDoc(doc(outsider, 'community_post_engagements', receiptId), {
+    engagementId: receiptId, communityId, postId, postAuthorId: OWNER,
+    actorId: OUTSIDER, type: 'view', createdAt: serverTimestamp(),
+  }));
+});
