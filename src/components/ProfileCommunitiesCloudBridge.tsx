@@ -1701,7 +1701,9 @@ export function ProfileCommunitiesCloudBridge() {
                                 aria-label="Adicionar foto, vídeo ou câmera ao mural"
                                 aria-expanded={wallToolsOpen}
                                 onClick={() => setWallToolsOpen(open => !open)}
-                                disabled={actionBusy === 'wall-post'}
+                                disabled={actionBusy === 'wall-post' || selectedCommunity.visibility === 'private'}
+                                title={selectedCommunity.visibility === 'private'
+                                  ? 'Anexos em comunidades privadas ainda não estão disponíveis' : 'Adicionar foto, vídeo ou câmera'}
                                 className="flex min-h-11 min-w-11 items-center justify-center rounded-full border border-slate-600 bg-slate-950 text-slate-200 disabled:opacity-40">
                                 <Plus className="h-5 w-5" />
                               </button>
@@ -1714,6 +1716,9 @@ export function ProfileCommunitiesCloudBridge() {
                                 {actionBusy === 'wall-post' ? 'Publicando…' : 'Publicar no mural'}
                               </button>
                             </div>
+                            {selectedCommunity.visibility === 'private' && (
+                              <p className="mt-2 text-xs text-amber-300">Para preservar a privacidade, anexos estão disponíveis por enquanto nas comunidades públicas e moderadas.</p>
+                            )}
                             {wallToolsOpen && (
                               <div role="group" aria-label="Escolher anexo para o mural"
                                 className="mt-2 grid gap-1 rounded-2xl border border-slate-700 bg-slate-950 p-2">
