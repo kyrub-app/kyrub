@@ -292,15 +292,15 @@ export function ProfileCommunitiesCloudBridge() {
 
   const toggleFavoriteCommunity = (id: string) => {
     if (!user?.uid) return;
-    setFavoriteCommunityIds(current => {
-      const next = current.includes(id) ? current.filter(item => item !== id) : [...current, id];
-      try {
-        localStorage.setItem(`kyrub_favorite_communities:${user.uid}`, JSON.stringify(next));
-      } catch {
-        // Favoritos continuam disponíveis nesta sessão quando o armazenamento está indisponível.
-      }
-      return next;
-    });
+    const next = favoriteCommunityIds.includes(id)
+      ? favoriteCommunityIds.filter(item => item !== id)
+      : [...favoriteCommunityIds, id];
+    setFavoriteCommunityIds(next);
+    try {
+      localStorage.setItem(`kyrub_favorite_communities:${user.uid}`, JSON.stringify(next));
+    } catch {
+      // Favoritos continuam disponíveis nesta sessão quando o armazenamento está indisponível.
+    }
   };
 
   const selectedCommunity = communities.find(
@@ -631,7 +631,7 @@ export function ProfileCommunitiesCloudBridge() {
       if (listTab === 'mine') {
         return favoriteCommunityIds.includes(community.id);
       }
-      return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
+      return community.visibility !== 'private' || community.isOwner || community.isActiveMember || community.isPendingMember;
     });
     if (listTab === 'trending') {
       return [...filtered].sort((left, right) =>
