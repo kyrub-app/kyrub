@@ -380,3 +380,18 @@ test('pending members cannot comment or like in a moderated community', async ()
     communityId, postId, userId: MEMBER, createdAt: serverTimestamp(),
   }));
 });
+
+test('community publications can be saved privately and unsaved by their owner', async () => {
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const savedId = 'community__interaction_post';
+  const reference = doc(member, 'users', MEMBER, 'savedItems', savedId);
+  await assertSucceeds(setDoc(reference, {
+    type: 'publication', sourceKind: 'community', sourceId: 'interaction_post',
+    selectionIds: [], savedAtIso: '2026-11-19T12:00:00.000Z',
+    savedAt: serverTimestamp(),
+  }));
+  await assertSucceeds(getDoc(reference));
+  await assertFails(getDoc(doc(outsider, 'users', MEMBER, 'savedItems', savedId)));
+  await assertSucceeds(deleteDoc(reference));
+});
