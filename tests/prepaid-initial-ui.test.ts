@@ -35,6 +35,15 @@ test('first prepaid purchase requires an explicit total acceptance and describes
   assert.match(html, /disabled=""/);
   assert.doesNotMatch(render({ accepted: true }), /disabled=""/);
 });
+test('only official subscription cards use Escolher plano; ordinary goods retain Adicionar', () => {
+  const storefront = readFileSync('src/components/LegacyStorefrontPanel.tsx', 'utf8');
+  const catalog = readFileSync('src/components/pdv/SharedPdvCatalog.tsx', 'utf8');
+  assert.match(storefront, /activeConsumerStore\.id === OFFICIAL_STORE_CANONICAL_ID && isOfficialPlanProductId\(product\.id\)/);
+  assert.match(storefront, /'Escolher plano'/);
+  assert.match(catalog, /const actionLabel = productActionLabel\?\.\(product\) \?\? 'Adicionar'/);
+  assert.match(catalog, /\{actionLabel\}/);
+});
+
 test('plan selection opens compact review without adding to retail cart or creating Pix', () => {
   const html = render({ quote: null, selectedMonths: 12 });
   assert.match(html, /Contrato de 12 meses/);
