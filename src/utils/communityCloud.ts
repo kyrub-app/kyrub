@@ -851,7 +851,6 @@ export const createCommunityPost = async (input: {
     batch.set(doc(db, 'community_square_posts', reference.id), {
       postId: reference.id,
       communityId: input.communityId,
-      authorId: user.uid,
       createdAt: serverTimestamp(),
     });
   }
