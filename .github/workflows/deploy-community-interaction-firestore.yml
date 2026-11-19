@@ -1,0 +1,80 @@
+name: Deploy community interaction Firestore rules
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'firestore.communities.fragment.rules'
+      - '.github/workflows/deploy-community-interaction-firestore.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: kyrub-firestore-rules-production
+  cancel-in-progress: false
+
+jobs:
+  validate-and-deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment: firebase-production
+    env:
+      FIREBASE_SERVICE_ACCOUNT_PROJECT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT_KYRUB_B8D0E }}
+      FIREBASE_SERVICE_ACCOUNT_GENERIC: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+      FIREBASE_CI_TOKEN: ${{ secrets.FIREBASE_TOKEN }}
+    steps:
+      - name: Checkout exact integrated rules
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Set up Java for Firestore Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate Firestore rules and existing behavior in isolated emulator
+        run: npm run test:rules
+
+      - name: Confirm intended Firebase project and credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          SERVICE_ACCOUNT="${FIREBASE_SERVICE_ACCOUNT_PROJECT:-${FIREBASE_SERVICE_ACCOUNT_GENERIC:-}}"
+          if [ -n "$SERVICE_ACCOUNT" ]; then
+            CREDENTIALS_PATH="$RUNNER_TEMP/kyrub-firestore-service-account.json"
+            printf '%s' "$SERVICE_ACCOUNT" > "$CREDENTIALS_PATH"
+            chmod 600 "$CREDENTIALS_PATH"
+            echo "GOOGLE_APPLICATION_CREDENTIALS=$CREDENTIALS_PATH" >> "$GITHUB_ENV"
+            echo "FIREBASE_AUTH_MODE=service-account" >> "$GITHUB_ENV"
+          elif [ -n "${FIREBASE_CI_TOKEN:-}" ]; then
+            echo "FIREBASE_AUTH_MODE=token" >> "$GITHUB_ENV"
+          else
+            echo "Firebase production credentials are unavailable. Refusing deployment." >&2
+            exit 1
+          fi
+
+      - name: Deploy only Firestore security rules to Kyrub production
+        shell: bash
+        run: |
+          set -euo pipefail
+          # The test suite above composed the checked-in fragments into this file.
+          test -s .firebase/firestore.combined.rules
+          if [ "$FIREBASE_AUTH_MODE" = "token" ]; then
+            npx --yes firebase-tools@15.35.0 deploy --only firestore:rules \
+              --project kyrub-b8d0e --config firebase.json --non-interactive \
+              --token "$FIREBASE_CI_TOKEN"
+          else
+            npx --yes firebase-tools@15.35.0 deploy --only firestore:rules \
+              --project kyrub-b8d0e --config firebase.json --non-interactive
+          fi
