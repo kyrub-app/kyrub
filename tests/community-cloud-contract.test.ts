@@ -319,7 +319,7 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(index, /window\.setInterval\(publish, 60_000\)/);
   assert.match(index, /withinCommunitySquareWindow/);
   assert.match(index, /post\.communityId !== pointer\.communityId/);
-  assert.match(index, /post\.authorId !== pointer\.authorId/);
+  assert.doesNotMatch(index, /authorId: user\.uid,\s*createdAt/); // Public pointer stores no author ID.
   assert.match(index, /query\([\s\S]*?community_square_posts[\s\S]*?where\('createdAt', '>=',/);
   assert.match(card, /<CommunityPostCard/);
   assert.match(card, /toggleCommunityPostLike/);
