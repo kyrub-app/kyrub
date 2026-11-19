@@ -456,6 +456,7 @@ export const loadStoreRelationshipSummary = async (input: {
     schemaVersion: STORE_RELATIONSHIP_SCHEMA_VERSION,
     storeId,
     customerId,
+    isStoreOwner: clean(tenantSnapshot.data()?.ownerId) === customerId,
     generatedAt,
     points: {
       balance: pointsBalance,
