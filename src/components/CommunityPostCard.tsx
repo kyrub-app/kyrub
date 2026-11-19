@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
-  Bookmark, EllipsisVertical, Flag, Heart, Megaphone, MessageCircle, MessageCircleMore,
+  BarChart3, Bookmark, EllipsisVertical, Eye, Flag, Heart, Megaphone, MessageCircle, MessageCircleMore, Share2,
   Trash2, UserRound, UserRoundPlus, X,
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
@@ -10,6 +10,10 @@ import { readCommunityPostPublicProfile, requestCommunityPostConnection } from '
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
 import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
+import {
+  recordCommunityPostView, shareCommunityPostWithMetrics, subscribeCommunityOrganicMetrics,
+  type CommunityOrganicEngagement,
+} from '../utils/communityOrganicMetrics';
 import type { SocialReportReason, SocialReportOutcome } from '../utils/socialReports';
 
 interface CommunityPostCardProps {
@@ -48,6 +52,11 @@ export function CommunityPostCard({
   const [profile, setProfile] = useState<CommunityPublicProfile | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
   const [promotionPreviewOpen, setPromotionPreviewOpen] = useState(false);
+  const [metricsOpen, setMetricsOpen] = useState(false);
+  const [engagements, setEngagements] = useState<CommunityOrganicEngagement[]>([]);
+  const [metricsLoading, setMetricsLoading] = useState(false);
+  const [metricsError, setMetricsError] = useState('');
+  const cardRef = useRef<HTMLElement | null>(null);
   const [chatDraft, setChatDraft] = useState('');
   const [pending, setPending] = useState('');
   const [notice, setNotice] = useState('');
@@ -58,6 +67,50 @@ export function CommunityPostCard({
   const connected = connection?.status === 'accepted';
   const connectionPending = connection?.status === 'pending';
 
+  // Same view semantics as Praça: observe at least 55% of the actual post
+  // once per authenticated viewer. No mount-based synthetic impressions.
+  useEffect(() => {
+    if (!viewerId || !cardRef.current) return;
+    const element = cardRef.current;
+    if (!('IntersectionObserver' in window)) return;
+    const observer = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting || entry.intersectionRatio < 0.55) continue;
+        observer.unobserve(entry.target);
+        void recordCommunityPostView(post).catch(error =>
+          console.warn('Não foi possível registrar visualização orgânica.', error)
+        );
+      }
+    }, { threshold: [0.55] });
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [post.id, viewerId]);
+
+  useEffect(() => {
+    if (!metricsOpen || !isMine || !viewerId) return;
+    setMetricsLoading(true);
+    setMetricsError('');
+    return subscribeCommunityOrganicMetrics(
+      viewerId,
+      values => {
+        setEngagements(values.filter(item => item.postId === post.id));
+        setMetricsLoading(false);
+      },
+      () => {
+        setMetricsError('Não foi possível consultar as métricas agora.');
+        setMetricsLoading(false);
+      },
+    );
+  }, [metricsOpen, isMine, post.id, viewerId]);
+
+  const organicCounts = {
+    views: engagements.filter(item => item.type === 'view').length,
+    likes: likes.filter(item => item.postId === post.id).length,
+    saves: engagements.filter(item => item.type === 'save').length,
+    shares: engagements.filter(item => item.type === 'share').length,
+    comments: postComments.length,
+  };
+
   const run = async (key: string, action: () => Promise<void>) => {
     setPending(key);
     setNotice('');
@@ -67,7 +120,7 @@ export function CommunityPostCard({
   };
 
   return (
-    <article className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+    <article ref={cardRef} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <header className="flex items-center gap-3">
         {post.authorAvatar
           ? <img src={post.authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
@@ -110,6 +163,18 @@ export function CommunityPostCard({
                 }); }}
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                 <UserRound className="h-4 w-4" /> {isMine ? 'Meu perfil' : 'Ver perfil'}
+              </button>
+              {isMine && (
+                <button type="button" role="menuitem"
+                  onClick={() => { setMenuOpen(false); setMetricsOpen(true); }}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-sky-300 hover:bg-slate-800">
+                  <BarChart3 className="h-4 w-4" /> Métricas da publicação
+                </button>
+              )}
+              <button type="button" role="menuitem" disabled={Boolean(pending)}
+                onClick={() => { setMenuOpen(false); void run('share', () => shareCommunityPostWithMetrics(post)); }}
+                className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40">
+                <Share2 className="h-4 w-4" /> Compartilhar
               </button>
               {isMine && (
                 <button type="button" role="menuitem"
@@ -227,6 +292,55 @@ export function CommunityPostCard({
             <h3 className="mt-3 text-lg font-bold text-white">{profile.name}</h3>
             <p className="text-sm text-sky-300">{profile.role}</p>
             <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300">{profile.bio || 'Este Kairubido ainda não adicionou uma apresentação pública.'}</p>
+          </section>
+        </div>
+      )}
+      {metricsOpen && isMine && (
+        <div className="fixed inset-0 z-[205] flex items-end justify-center bg-slate-950/95 p-0 backdrop-blur-md sm:items-center sm:p-4"
+          role="dialog" aria-modal="true" aria-label="Métricas orgânicas da publicação">
+          <section className="w-full max-w-md overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
+            <header className="flex items-center justify-between border-b border-slate-800 px-4 py-3">
+              <div>
+                <span className="text-xs font-semibold uppercase tracking-wider text-sky-300">Desempenho orgânico</span>
+                <h3 className="text-base font-bold text-white">Métricas da publicação</h3>
+              </div>
+              <button type="button" aria-label="Fechar métricas" onClick={() => setMetricsOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 text-slate-300">
+                <X className="h-5 w-5"/>
+              </button>
+            </header>
+            <div className="grid grid-cols-2 gap-2 p-4">
+              {([
+                [Eye, 'Visualizações', organicCounts.views],
+                [Heart, 'Curtidas', organicCounts.likes],
+                [Bookmark, 'Salvamentos', organicCounts.saves],
+                [Share2, 'Compartilhamentos', organicCounts.shares],
+                [MessageCircle, 'Comentários', organicCounts.comments],
+              ] as const).map(([MetricIcon, label, count]) => (
+                <article key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
+                  <MetricIcon className="h-5 w-5 text-sky-300"/>
+                  <strong className="mt-2 block text-xl text-white">
+                    {metricsError ? '—' : metricsLoading && label !== 'Curtidas' && label !== 'Comentários' ? '—' : count}
+                  </strong>
+                  <span className="text-xs text-slate-400">{label}</span>
+                </article>
+              ))}
+            </div>
+            {metricsError && <p role="alert" className="mx-4 rounded-xl border border-rose-500/25 p-3 text-xs text-rose-300">{metricsError}</p>}
+            <div className="border-t border-slate-800 p-4">
+              <p className="text-xs leading-relaxed text-slate-400">
+                Visualizações são únicas por usuário autenticado. Salvamentos contam apenas enquanto ativos
+                e compartilhamentos somente após a ação concluída. Esses três indicadores começam na ativação
+                da coleta; dados antigos não são reconstruídos.
+              </p>
+              <p className="mt-2 text-xs text-slate-500">
+                Campanhas do Kyrub Ads possuem resultados patrocinados separados das métricas orgânicas.
+              </p>
+              <button type="button" onClick={() => { setMetricsOpen(false); setPromotionPreviewOpen(true); }}
+                className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 text-sm font-bold text-slate-950">
+                <Megaphone className="h-4 w-4"/> Promover no Kyrub Ads
+              </button>
+            </div>
           </section>
         </div>
       )}
