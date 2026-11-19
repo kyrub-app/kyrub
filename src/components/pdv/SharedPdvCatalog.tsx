@@ -38,6 +38,8 @@ interface SharedPdvCatalogProps {
   keywords: string[];
   selectedItems: PdvSelectedItem[];
   onAddProduct: (selection: ProductConfigurationSelection) => void;
+  /** Custom action text for special products without changing selection semantics. */
+  productActionLabel?: (product: Product) => string;
   primaryAction: PdvAction;
   secondaryAction: PdvAction;
   accentColor?: string;
@@ -172,6 +174,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
   keywords,
   selectedItems,
   onAddProduct,
+  productActionLabel,
   primaryAction,
   secondaryAction,
   accentColor = '#f97316',
@@ -598,6 +601,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                   productCategorySegments.at(-1) || product.category || 'Produto';
                 const hasOptions = parseProductOptionGroups(product.optionGroups).length > 0;
                 const basePrice = product.isComplimentary ? 0 : product.price;
+                const actionLabel = productActionLabel?.(product) ?? 'Adicionar';
 
                 return (
                   <article
@@ -677,10 +681,12 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                         >
                           {hasOptions ? (
                             <SlidersHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                          ) : actionLabel === 'Escolher plano' ? (
+                            <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           ) : (
                             <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
                           )}
-                          Adicionar
+                          {actionLabel}
                         </button>
                       </div>
                     </div>

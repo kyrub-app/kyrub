@@ -137,7 +137,7 @@ test('Praça deep link quotes, accepts and opens official Business Pix without a
     assert.match(section!.textContent||'',/BIZ1/);
     await click('button#test-select-official-product');
     const quoteButton=[...dom.window.document.querySelectorAll<HTMLButtonElement>('#official-plan-contract-section button')]
-      .find(b=>b.textContent?.includes('Consultar preço oficial do contrato'));
+      .find(b=>b.textContent?.includes('Revisar valor e condições'));
     assert.ok(quoteButton,'existing subscription component must offer a server quote');
     await act(async()=>quoteButton.click());
     await settle();
