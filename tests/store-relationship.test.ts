@@ -204,7 +204,7 @@ test('verified owner skips loyalty queries; a customer without purchases gets va
     plugins: [{
       name: 'isolated-store-relationship-db',
       setup(b) {
-        b.onResolve({ filter: /^(\\.\\.\\/firebaseAdmin\\.js|\\.\\/storePromotionService\\.js)$/ }, args =>
+        b.onResolve({ filter: /firebaseAdmin|storePromotionService/ }, args =>
           ({ path: args.path, namespace: 'relationship-fixture' }));
         b.onLoad({ filter: /.*/, namespace: 'relationship-fixture' }, args => ({
           contents: args.path === '../firebaseAdmin.js'
