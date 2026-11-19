@@ -118,12 +118,12 @@ export default async function handler(
         response.status(400).json({ error: 'Loja não identificada.' });
         return;
       }
-      const [{ verifyFirebaseIdToken }, { loadStoreRelationshipSummary }] = await Promise.all([
+      const [{ verifyFirebaseIdToken }, { loadStoreRelationshipForViewer }] = await Promise.all([
         import('../server/ai/consultantAuth.js'),
         import('../server/payments/storeRelationshipService.js'),
       ]);
       const identity = await verifyFirebaseIdToken(token);
-      const summary = await loadStoreRelationshipSummary({ storeId, customerId: identity.uid });
+      const summary = await loadStoreRelationshipForViewer({ storeId, customerId: identity.uid });
       response.status(200).json(summary);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
