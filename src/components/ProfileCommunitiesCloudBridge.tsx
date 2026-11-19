@@ -68,7 +68,8 @@ import { subscribeCommunityPostConnections, type CommunityPostConnection } from 
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
 import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
-import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
+import { subscribeSavedPublications } from '../utils/savedLibrary';
+import { toggleCommunityPostSaveWithMetrics } from '../utils/communityOrganicMetrics';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
@@ -1790,10 +1791,7 @@ export function ProfileCommunitiesCloudBridge() {
                             comments={postComments}
                             saved={savedPostIds.has(post.id)}
                             connection={postConnections.find(item => item.senderId === post.authorId || item.receiverId === post.authorId)}
-                            onToggleSave={async () => {
-                              if (savedPostIds.has(post.id)) await removeSavedPublication('community', post.id);
-                              else await savePublication('community', post.id);
-                            }}
+                            onToggleSave={() => toggleCommunityPostSaveWithMetrics(post, savedPostIds.has(post.id))}
                             onToggleLike={liked => toggleCommunityPostLike(post, liked)}
                             onComment={value => addCommunityPostComment(post, value)}
                             onDeleteComment={deleteCommunityPostComment}
