@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ArrowUpRight, Megaphone, X } from 'lucide-react';
-import type { CloudCommunityPost } from '../utils/communityCloud';
+import type { CloudCommunityPost } from '../../utils/communityCloud';
 
 export const KYRUB_ADS_DURATIONS = [7, 15, 21, 30] as const;
 type CampaignDuration = (typeof KYRUB_ADS_DURATIONS)[number];
