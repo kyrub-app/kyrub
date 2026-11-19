@@ -21,7 +21,7 @@ export const cleanupRemovedCommunityPost = async (
   postData: Record<string, unknown>
 ): Promise<CommunityPostCleanup> => {
   const deletedInteractions: Record<string, number> = {};
-  for (const name of ['community_post_likes', 'community_post_comments']) {
+  for (const name of ['community_post_likes', 'community_post_comments', 'community_post_engagements']) {
     const entries = await adminDb.collection(name).where('postId', '==', postId).get();
     deletedInteractions[name] = 0;
     for (let offset = 0; offset < entries.docs.length; offset += 400) {
