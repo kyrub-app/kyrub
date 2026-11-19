@@ -21,6 +21,7 @@ import {
   MapPin,
   Megaphone,
   MessageCircle,
+  ArrowUp,
   Pencil,
   Plus,
   Reply,
@@ -227,6 +228,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [searchValue, setSearchValue] = useState('');
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
+  const [showBackToTop, setShowBackToTop] = useState(false);
   const [posts, setPosts] = useState<CloudCommunityPost[]>([]);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
@@ -314,6 +316,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [editingCommentText, setEditingCommentText] = useState('');
   const [message, setMessage] = useState('');
   const [actionBusy, setActionBusy] = useState('');
+  const communityScrollRef = useRef<HTMLDivElement | null>(null);
   const communitySubscriptionVersion = useRef(0);
   const debateSubscriptionVersion = useRef(0);
   const groupDirectorySubscriptionVersion = useRef(0);
@@ -707,6 +710,8 @@ export function ProfileCommunitiesCloudBridge() {
   };
 
   const openCommunity = (community: CloudCommunity) => {
+    communityScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+    setShowBackToTop(false);
     // Invalidate all nested listeners before the next community becomes visible.
     closeGroupsModal();
     setMembersModalOpen(false);
@@ -1327,7 +1332,7 @@ export function ProfileCommunitiesCloudBridge() {
       {selectedCommunity &&
         createPortal(
           <div className="fixed inset-0 z-[175] bg-slate-950/95 backdrop-blur-md">
-            <section className="mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
+            <section className="relative mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
               {selectedDebate ? (
                 <>
                   <header className="border-b border-slate-800 bg-slate-900/95 p-3">
@@ -1568,6 +1573,12 @@ export function ProfileCommunitiesCloudBridge() {
                 </>
               ) : (
                 <>
+                  <div
+                    id="community-page-scroll"
+                    ref={communityScrollRef}
+                    onScroll={event => setShowBackToTop(event.currentTarget.scrollTop > 240)}
+                    className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
+                  >
                   <header className="border-b border-slate-800 bg-slate-900">
                     <div className="relative">
                       <CommunityCover community={selectedCommunity} className="h-36 sm:h-44" />
@@ -1644,7 +1655,11 @@ export function ProfileCommunitiesCloudBridge() {
                         <button
                           key={tab.id}
                           type="button"
-                          onClick={() => setPageTab(tab.id)}
+                          onClick={() => {
+                            setPageTab(tab.id);
+                            communityScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
+                            setShowBackToTop(false);
+                          }}
                           className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[11px] font-black uppercase ${
                             pageTab === tab.id
                               ? 'bg-sky-500 text-slate-950'
@@ -1658,7 +1673,7 @@ export function ProfileCommunitiesCloudBridge() {
                     })}
                   </nav>
 
-                  <main className="flex-1 overflow-y-auto p-4">
+                  <main className="p-4 pb-24">
                     {message && (
                       <p className="mb-3 rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-sky-200">
                         {message}
@@ -1957,6 +1972,18 @@ export function ProfileCommunitiesCloudBridge() {
                       </div>
                     )}
                   </main>
+                  </div>
+                  {showBackToTop && (
+                    <button
+                      type="button"
+                      aria-label="Voltar ao topo da comunidade"
+                      aria-controls="community-page-scroll"
+                      onClick={() => communityScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
+                      className="absolute bottom-6 left-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-sky-400/40 bg-slate-900/95 text-sky-200 shadow-xl backdrop-blur-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                    >
+                      <ArrowUp className="h-5 w-5" />
+                    </button>
+                  )}
                 </>
               )}
             </section>
