@@ -493,3 +493,96 @@ test('private community organic views cannot be collected from outsiders', async
     actorId: OUTSIDER, type: 'view', createdAt: serverTimestamp(),
   }));
 });
+
+test('public community publication creates one canonical Praça pointer atomically', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const reader = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'square_public';
+  const postId = 'square_original';
+  await createCommunity(owner, communityId, 'public');
+  const batch = writeBatch(owner);
+  batch.set(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+    content: 'Apenas uma publicação original.', mediaUrls: [],
+    createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+    updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(owner, 'community_square_posts', postId), {
+    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+  await assertSucceeds(getDoc(doc(reader, 'community_square_posts', postId)));
+  await assertSucceeds(getDoc(doc(reader, 'community_posts', postId)));
+  await assertFails(setDoc(doc(owner, 'community_square_posts', postId), {
+    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+  })); // No duplicate/replay of existing distribution document.
+  await assertFails(updateDoc(doc(owner, 'community_square_posts', postId), { communityId: 'other' }));
+  await assertFails(deleteDoc(doc(reader, 'community_square_posts', postId)));
+  await assertSucceeds(deleteDoc(doc(owner, 'community_square_posts', postId)));
+  await assertSucceeds(getDoc(doc(reader, 'community_posts', postId))); // Opt-out keeps source intact.
+});
+
+test('Praça pointer rejects unauthorized authors, forged sources and private/moderated communities', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  for (const visibility of ['private', 'moderated'] as const) {
+    const communityId = `square_${visibility}`;
+    const postId = `post_${visibility}`;
+    await createCommunity(owner, communityId, visibility);
+    const batch = writeBatch(owner);
+    batch.set(doc(owner, 'community_posts', postId), {
+      postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+      content: 'Não deve aparecer na Praça.', mediaUrls: [],
+      createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+      updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
+    });
+    batch.set(doc(owner, 'community_square_posts', postId), {
+      postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+    });
+    await assertFails(batch.commit());
+    await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+      postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+      content: 'Fica somente na comunidade.', mediaUrls: [],
+      createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+      updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
+    }));
+    await assertFails(setDoc(doc(owner, 'community_square_posts', postId), {
+      postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+    }));
+    await assertFails(getDoc(doc(outsider, 'community_posts', postId)));
+  }
+  await createCommunity(owner, 'square_forgery', 'public');
+  const forged = {
+    postId: 'missing_post', communityId: 'square_forgery',
+    authorId: OWNER, createdAt: serverTimestamp(),
+  };
+  await assertFails(setDoc(doc(owner, 'community_square_posts', 'missing_post'), forged));
+  await assertFails(setDoc(doc(outsider, 'community_square_posts', 'missing_post'), {
+    ...forged, authorId: OUTSIDER,
+  }));
+});
+
+test('switching a public community to private revokes the original content despite a stale pointer', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const reader = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'square_revoke';
+  const postId = 'revoked_post';
+  await createCommunity(owner, communityId, 'public');
+  const batch = writeBatch(owner);
+  batch.set(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+    content: 'Não pode vazar após alterar a privacidade.', mediaUrls: [],
+    createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+    updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
+  });
+  batch.set(doc(owner, 'community_square_posts', postId), {
+    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+  });
+  await assertSucceeds(batch.commit());
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'communities', communityId), { visibility: 'private' });
+  });
+  await assertSucceeds(getDoc(doc(reader, 'community_square_posts', postId))); // Harmless pointer metadata.
+  await assertFails(getDoc(doc(reader, 'community_posts', postId))); // Source is no longer public.
+  await assertFails(getDoc(doc(reader, 'communities', communityId)));
+});
