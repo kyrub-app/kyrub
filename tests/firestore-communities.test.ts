@@ -508,13 +508,13 @@ test('public community publication creates one canonical Praça pointer atomical
     updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
   });
   batch.set(doc(owner, 'community_square_posts', postId), {
-    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+    postId, communityId, createdAt: serverTimestamp(),
   });
   await assertSucceeds(batch.commit());
   await assertSucceeds(getDoc(doc(reader, 'community_square_posts', postId)));
   await assertSucceeds(getDoc(doc(reader, 'community_posts', postId)));
   await assertFails(setDoc(doc(owner, 'community_square_posts', postId), {
-    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+    postId, communityId, createdAt: serverTimestamp(),
   })); // No duplicate/replay of existing distribution document.
   await assertFails(updateDoc(doc(owner, 'community_square_posts', postId), { communityId: 'other' }));
   await assertFails(deleteDoc(doc(reader, 'community_square_posts', postId)));
@@ -537,7 +537,7 @@ test('Praça pointer rejects unauthorized authors, forged sources and private/mo
       updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
     });
     batch.set(doc(owner, 'community_square_posts', postId), {
-      postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+      postId, communityId, createdAt: serverTimestamp(),
     });
     await assertFails(batch.commit());
     await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
@@ -547,7 +547,7 @@ test('Praça pointer rejects unauthorized authors, forged sources and private/mo
       updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
     }));
     await assertFails(setDoc(doc(owner, 'community_square_posts', postId), {
-      postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+      postId, communityId, createdAt: serverTimestamp(),
     }));
     if (visibility === 'private') await assertFails(getDoc(doc(outsider, 'community_posts', postId)));
     else await assertSucceeds(getDoc(doc(outsider, 'community_posts', postId))); // Moderated walls are readable, not auto-distributed.
@@ -555,12 +555,25 @@ test('Praça pointer rejects unauthorized authors, forged sources and private/mo
   await createCommunity(owner, 'square_forgery', 'public');
   const forged = {
     postId: 'missing_post', communityId: 'square_forgery',
-    authorId: OWNER, createdAt: serverTimestamp(),
+    createdAt: serverTimestamp(),
   };
   await assertFails(setDoc(doc(owner, 'community_square_posts', 'missing_post'), forged));
-  await assertFails(setDoc(doc(outsider, 'community_square_posts', 'missing_post'), {
-    ...forged, authorId: OUTSIDER,
+  await assertFails(setDoc(doc(outsider, 'community_square_posts', 'missing_post'), forged));
+
+  // A valid public source cannot be syndicated by a person other than its author.
+  const sourcePostId = 'owned_source';
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', sourcePostId), {
+    postId: sourcePostId, communityId: 'square_forgery', authorId: OWNER,
+    authorName: 'Criador', authorAvatar: '', content: 'Público, mas somente o autor distribui.',
+    mediaUrls: [], createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+    updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
   }));
+  const source = await getDoc(doc(owner, 'community_posts', sourcePostId));
+  const syndication = {
+    postId: sourcePostId, communityId: 'square_forgery', createdAt: source.data()!.createdAt,
+  };
+  await assertFails(setDoc(doc(outsider, 'community_square_posts', sourcePostId), syndication));
+  await assertSucceeds(setDoc(doc(owner, 'community_square_posts', sourcePostId), syndication));
 });
 
 test('switching a public community to private revokes the original content despite a stale pointer', async () => {
@@ -577,7 +590,7 @@ test('switching a public community to private revokes the original content despi
     updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
   });
   batch.set(doc(owner, 'community_square_posts', postId), {
-    postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
+    postId, communityId, createdAt: serverTimestamp(),
   });
   await assertSucceeds(batch.commit());
   await environment.withSecurityRulesDisabled(async context => {
