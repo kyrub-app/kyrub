@@ -60,6 +60,7 @@ import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
 import { ChatModal } from './modals/ChatModal';
+import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../utils/communitySquareFeed';
 
 type ProfileTab = 'publications' | 'marked' | 'connected' | 'square';
 type ConnectionSection = 'connected' | 'favorites' | 'groups';
@@ -564,6 +565,15 @@ export function ProfileSocialHubNative() {
     return () => {
       document.removeEventListener('click', handleProfileTrigger, true);
     };
+  }, []);
+
+  useEffect(() => {
+    const openCommunityFromSquare = () => {
+      setActiveTab('square');
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, openCommunityFromSquare);
+    return () => window.removeEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, openCommunityFromSquare);
   }, []);
 
   useEffect(() => {
