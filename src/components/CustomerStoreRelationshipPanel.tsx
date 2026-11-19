@@ -336,7 +336,12 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
           </button>
         </div>
 
-        {summary && summary.level.confirmedPurchases === 0 && summary.points.balance === 0 && summary.history.length === 0 && summary.vouchers.length === 0 && (
+        {summary?.isStoreOwner && (
+          <p className="mt-4 rounded-2xl border border-cyan-500/20 bg-slate-950 px-4 py-3 text-xs text-slate-300">
+            Você está acessando sua própria loja como proprietário. Administrar a loja não cria compras, pontos nem vínculo de fidelidade automaticamente. O histórico abaixo mostra somente movimentações reais desta conta.
+          </p>
+        )}
+        {summary && !summary.isStoreOwner && summary.level.confirmedPurchases === 0 && summary.points.balance === 0 && summary.history.length === 0 && summary.vouchers.length === 0 && (
           <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-400">
             Você ainda não possui compras ou movimentações de pontos nesta loja. Isso é normal: o relacionamento começa sem histórico, e as oportunidades disponíveis aparecem abaixo.
           </p>
