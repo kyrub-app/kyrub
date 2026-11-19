@@ -256,12 +256,11 @@ test('community creator can upload image and video and members can read media', 
   await assertSucceeds(deleteObject(ref(owner, videoPath)));
 });
 
-test('active member can publish private media; nonmember cannot read or upload', async () => {
+test('private communities cannot issue shareable media download links', async () => {
   const member = environment.authenticatedContext(MEMBER_ID).storage();
   const mediaPath = `community-post-media/private_cover/${MEMBER_ID}/image-membership.png`;
-  await assertSucceeds(uploadBytes(ref(member, mediaPath), new Uint8Array([1]),
+  await assertFails(uploadBytes(ref(member, mediaPath), new Uint8Array([1]),
     wallMediaMetadata('private_cover', MEMBER_ID, 'image/png')));
-  await assertSucceeds(getBytes(ref(member, mediaPath)));
   const outsider = environment.authenticatedContext('outsider').storage();
   await assertFails(getBytes(ref(outsider, mediaPath)));
   await assertFails(uploadBytes(ref(outsider, `community-post-media/private_cover/outsider/image-bypass.png`),
