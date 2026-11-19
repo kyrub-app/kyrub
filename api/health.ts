@@ -108,7 +108,7 @@ export default async function handler(
     }
     try {
       const authorization = headerValue(request.headers.authorization ?? request.headers.Authorization);
-      const token = /^Bearer\\s+(.+)$/i.exec(authorization)?.[1]?.trim();
+      const token = /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim();
       if (!token) {
         response.status(401).json({ error: 'Faça login novamente para consultar seu relacionamento.' });
         return;
