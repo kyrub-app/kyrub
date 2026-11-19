@@ -179,8 +179,7 @@ test('community cards reuse canonical saved actions and have persisted likes, co
   const rules = read('firestore.communities.fragment.rules');
   const moderation = read('server/admin/socialModerationService.ts');
   assert.match(ui, /saved=\{savedPostIds\.has\(post\.id\)\}/);
-  assert.match(ui, /savePublication\('community', post\.id\)/);
-  assert.match(ui, /removeSavedPublication\('community', post\.id\)/);
+  assert.match(ui, /toggleCommunityPostSaveWithMetrics\(post, savedPostIds\.has\(post\.id\)\)/);
   assert.match(card, /Mais opções da publicação/);
   for (const label of ['Conectar', 'Conversar', 'Ver perfil', 'Denunciar publicação', 'Salvar']) {
     assert.ok(card.includes(label));
@@ -253,4 +252,38 @@ test('Promover entry only appears for a community post author and never starts a
   assert.match(preview, /após homologação do Kyrub Ads/);
   assert.doesNotMatch(preview, /\bfetch\s*\(|\bsetDoc\s*\(|\baddDoc\s*\(|\buploadBytes\s*\(/);
   assert.doesNotMatch(preview, /\bMercadoPago\b|\bcheckout\b|\bPix\b/);
+});
+
+test('community organic metrics appear only for their author and never conflate Kyrub Ads data', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const cloudUI = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const metrics = read('src/utils/communityOrganicMetrics.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const cleanup = read('server/communities/communityPostRemovalService.ts');
+
+  assert.match(card, /\{isMine && \([\s\S]*?Métricas da publicação/);
+  assert.match(card, /metricsOpen && isMine/);
+  assert.match(card, /const organicCounts = \{/);
+  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Compartilhamentos', 'Comentários']) {
+    assert.ok(card.includes(label), 'Métrica orgânica ausente: ' + label);
+  }
+  assert.match(card, /<BarChart3 className="h-4 w-4" \/> Métricas da publicação/);
+  assert.match(card, /<Megaphone className="h-4 w-4"\/> Promover no Kyrub Ads/);
+  assert.match(card, /entry\.intersectionRatio < 0\.55/);
+  assert.match(card, /recordCommunityPostView\(post\)/);
+  assert.match(card, /shareCommunityPostWithMetrics\(post\)/);
+  assert.match(metrics, /navigator\.share\(/);
+  assert.match(metrics, /navigator\.clipboard/);
+  assert.match(metrics, /await setDoc\(reference, newEngagement\(post, actorId, 'share', reference\.id\)\)/);
+  assert.match(metrics, /runTransaction\(db/);
+  assert.match(metrics, /tx\.set\(savedRef/);
+  assert.match(metrics, /tx\.set\(metricRef/);
+  assert.match(metrics, /tx\.delete\(savedRef\)/);
+  assert.match(metrics, /tx\.delete\(metricRef\)/);
+  assert.match(cloudUI, /toggleCommunityPostSaveWithMetrics\(post, savedPostIds\.has\(post\.id\)\)/);
+  assert.match(rules, /match \/community_post_engagements\/\{engagementId\}/);
+  assert.match(rules, /incoming\(\)\.actorId == request\.auth\.uid/);
+  assert.match(rules, /existing\(\)\.postAuthorId == request\.auth\.uid/);
+  assert.match(cleanup, /'community_post_engagements'/);
+  assert.doesNotMatch(metrics, /mercadoPago|campaign|pitangas|wallet|checkout|pix/i);
 });
