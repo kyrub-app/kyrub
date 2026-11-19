@@ -8,8 +8,12 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  query,
+  where,
   runTransaction,
   serverTimestamp,
   setDoc,
@@ -295,4 +299,84 @@ test('active member adds a shared comment only with the atomic debate counter', 
       });
     })
   );
+});
+
+test('community wall likes, comments and immutable reports enforce membership and ownership', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'interaction_a';
+  const postId = 'interaction_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub',
+    authorAvatar: '', content: 'Publicação para testar reações.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+
+  const likeId = `${postId}__${MEMBER}`;
+  const likeData = { communityId, postId, userId: MEMBER, createdAt: serverTimestamp() };
+  await assertSucceeds(setDoc(doc(member, 'community_post_likes', likeId), likeData));
+  await assertSucceeds(getDocs(query(collection(member, 'community_post_likes'), where('communityId', '==', communityId))));
+  await assertFails(setDoc(doc(outsider, 'community_post_likes', `${postId}__${OUTSIDER}`), {
+    ...likeData, userId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_likes', likeId), likeData));
+  await assertFails(setDoc(doc(member, 'community_post_likes', 'forged'), likeData));
+  await assertSucceeds(deleteDoc(doc(member, 'community_post_likes', likeId)));
+
+  const commentId = 'interaction_comment';
+  const commentData = {
+    commentId, communityId, postId, authorId: MEMBER, authorName: 'Membro',
+    authorAvatar: '', text: 'Que publicação boa!',
+    createdAtIso: '2026-11-19T12:01:00.000Z', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(member, 'community_post_comments', commentId), commentData));
+  await assertSucceeds(getDocs(query(collection(member, 'community_post_comments'), where('communityId', '==', communityId))));
+  await assertFails(setDoc(doc(outsider, 'community_post_comments', 'outsider_comment'), {
+    ...commentData, commentId: 'outsider_comment', authorId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'forged_comment'), {
+    ...commentData, commentId: 'forged_comment', text: '',
+  }));
+  await assertFails(deleteDoc(doc(outsider, 'community_post_comments', commentId)));
+  await assertSucceeds(deleteDoc(doc(owner, 'community_post_comments', commentId)));
+
+  const reportId = `${postId}__${MEMBER}`;
+  const reportData = {
+    reportId, communityId, postId, reporterId: MEMBER, authorId: OWNER,
+    reason: 'spam', status: 'pending', createdAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(doc(member, 'community_post_reports', reportId), reportData));
+  await assertSucceeds(getDoc(doc(member, 'community_post_reports', reportId)));
+  await assertFails(setDoc(doc(member, 'community_post_reports', reportId), reportData));
+  await assertFails(getDoc(doc(outsider, 'community_post_reports', reportId)));
+  await assertFails(setDoc(doc(owner, 'community_post_reports', `${postId}__${OWNER}`), {
+    ...reportData, reportId: `${postId}__${OWNER}`, reporterId: OWNER,
+  }));
+  await assertFails(setDoc(doc(member, 'community_post_reports', 'wrong_group'), {
+    ...reportData, reportId: 'wrong_group', communityId: 'other',
+  }));
+});
+
+test('pending members cannot comment or like in a moderated community', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const communityId = 'interaction_moderated';
+  const postId = 'moderated_post';
+  await createCommunity(owner, communityId, 'moderated');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub',
+    authorAvatar: '', content: 'Apenas membros aprovados.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  const membershipId = memberId(communityId, MEMBER);
+  await assertSucceeds(setDoc(doc(member, 'community_members', membershipId),
+    membershipData(communityId, MEMBER, 'pending')));
+  await assertFails(setDoc(doc(member, 'community_post_likes', `${postId}__${MEMBER}`), {
+    communityId, postId, userId: MEMBER, createdAt: serverTimestamp(),
+  }));
 });
