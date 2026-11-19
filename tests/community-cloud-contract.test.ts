@@ -131,6 +131,7 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
 test('community wall editor has a single About-tab Edit, media picker and readable text', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const cloud = read('src/utils/communityCloud.ts');
+  const card = read('src/components/CommunityPostCard.tsx');
   const storage = read('storage.rules');
   const coverHeader = ui.slice(ui.indexOf('<CommunityCover community={selectedCommunity}'), ui.indexOf('<nav className="flex gap-1', ui.indexOf('<CommunityCover community={selectedCommunity}')));
   assert.doesNotMatch(coverHeader, /onClick=\{openEditor\}/);
@@ -144,7 +145,8 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
   assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls \}\)/);
-  assert.match(ui, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
+  assert.match(ui, /<CommunityPostCard/);
+  assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
   assert.doesNotMatch(ui, /text-\[(8|9|10)px\]/);
   assert.match(cloud, /community-post-media\/\$\{communityId\}\/\$\{user\.uid\}/);
@@ -167,4 +169,32 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.match(ui, /<ArrowUp className="h-5 w-5" \/>/);
   assert.match(ui, /setPageTab\(tab\.id\);[\s\S]*?setShowBackToTop\(false\);/);
   assert.match(ui, /<main className="flex-1 overflow-y-auto p-4">/); // Debate keeps its independent conversation scroll.
+});
+
+test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const card = read('src/components/CommunityPostCard.tsx');
+  const interactions = read('src/utils/communityPostInteractions.ts');
+  const connections = read('src/utils/communityPostConnections.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const moderation = read('server/admin/socialModerationService.ts');
+  assert.match(ui, /saved=\{savedPostIds\.has\(post\.id\)\}/);
+  assert.match(ui, /savePublication\('community', post\.id\)/);
+  assert.match(ui, /removeSavedPublication\('community', post\.id\)/);
+  assert.match(card, /Mais opções da publicação/);
+  for (const label of ['Conectar', 'Conversar', 'Ver perfil', 'Denunciar publicação', 'Salvar']) {
+    assert.ok(card.includes(label));
+  }
+  assert.match(card, /<ChatModal/);
+  assert.match(card, /onToggleLike\(isLiked\)/);
+  assert.match(card, /onComment\(commentDraft\)/);
+  assert.match(interactions, /collection\(db, 'community_post_likes'\)/);
+  assert.match(interactions, /collection\(db, 'community_post_comments'\)/);
+  assert.match(interactions, /community_post_reports/);
+  assert.match(connections, /collection\(db, 'connections'\)/);
+  for (const collectionName of ['community_post_likes', 'community_post_comments', 'community_post_reports']) {
+    assert.ok(rules.includes('match /' + collectionName));
+  }
+  assert.match(moderation, /'community_post_reports'/);
+  assert.match(moderation, /removeModeratedCommunityPost/);
 });
