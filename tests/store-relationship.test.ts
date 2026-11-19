@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { build } from 'esbuild';
 import {
   deriveStoreRelationshipLevel,
   relationshipProgressPercent,
@@ -165,4 +166,77 @@ describe('customer store relationship', () => {
     assert.doesNotMatch(contract, /KCoin|K-Coins|kCoin/);
     assert.doesNotMatch(service, /KCoin|K-Coins|kCoin/);
   });
+});
+
+test('verified owner skips loyalty queries; a customer without purchases gets valid empty summary', async () => {
+  const requests: string[] = [];
+  const documents: Record<string, Record<string, unknown>> = {
+    'stores/store-a': { ownerId: 'owner-a' },
+    'tenants/store-a': { storeChallenges: [], storeRewards: [] },
+  };
+  const emptyQuerySnapshot = { docs: [] };
+  const adminDb = {
+    doc(path: string) {
+      requests.push('doc:' + path);
+      return {
+        get: async () => ({
+          exists: Boolean(documents[path]),
+          id: path.split('/').at(-1),
+          data: () => documents[path],
+        }),
+      };
+    },
+    collection(path: string) {
+      requests.push('collection:' + path);
+      return {
+        where(field: string, operator: string, value: string) {
+          requests.push('where:' + field + ':' + operator + ':' + value);
+          return { get: async () => emptyQuerySnapshot };
+        },
+      };
+    },
+  };
+  (globalThis as any).__storeRelationshipTestDb = adminDb;
+  const bundle = await build({
+    entryPoints: ['server/payments/storeRelationshipService.ts'],
+    bundle: true, platform: 'node', format: 'esm', write: false,
+    packages: 'external',
+    plugins: [{
+      name: 'isolated-store-relationship-db',
+      setup(b) {
+        b.onResolve({ filter: /^(\\.\\.\\/firebaseAdmin\\.js|\\.\\/storePromotionService\\.js)$/ }, args =>
+          ({ path: args.path, namespace: 'relationship-fixture' }));
+        b.onLoad({ filter: /.*/, namespace: 'relationship-fixture' }, args => ({
+          contents: args.path === '../firebaseAdmin.js'
+            ? 'export const adminDb = globalThis.__storeRelationshipTestDb;'
+            : 'export const listPublicStorePromotions = async () => [];',
+        }));
+      },
+    }],
+  });
+  try {
+    const url = 'data:text/javascript;base64,' + Buffer.from(bundle.outputFiles[0]!.text).toString('base64');
+    const { loadStoreRelationshipForViewer } = await import(url) as {
+      loadStoreRelationshipForViewer: (input: { storeId: string; customerId: string }) => Promise<any>;
+    };
+
+    const owner = await loadStoreRelationshipForViewer({ storeId: 'store-a', customerId: 'owner-a' });
+    assert.deepEqual(owner, { viewerRole: 'owner', storeId: 'store-a' });
+    assert.deepEqual(requests, ['doc:stores/store-a'], 'owner must never load customer history or loyalty');
+
+    requests.length = 0;
+    const customer = await loadStoreRelationshipForViewer({ storeId: 'store-a', customerId: 'new-buyer' });
+    assert.equal(customer.storeId, 'store-a');
+    assert.equal(customer.customerId, 'new-buyer');
+    assert.equal(customer.level.key, 'first_contact');
+    assert.equal(customer.level.confirmedPurchases, 0);
+    assert.equal(customer.points.balance, 0);
+    assert.deepEqual(customer.history, []);
+    assert.deepEqual(customer.vouchers, []);
+    assert.ok(requests.includes('collection:stores/store-a/payments'));
+    assert.ok(requests.includes('where:buyerId:==:new-buyer'));
+    assert.ok(!requests.some(request => request.includes('owner-a')), 'customer cannot query owner personal data');
+  } finally {
+    delete (globalThis as any).__storeRelationshipTestDb;
+  }
 });
