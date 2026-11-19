@@ -163,7 +163,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
     try {
       const result = await loadStoreRelationshipForCurrentUser(storeId);
       if (isCurrentSession()) {
-        if ('viewerRole' in result && result.viewerRole === 'owner') {
+        if ('viewerRole' in result) {
           // The proprietor has no customer loyalty relationship with their own store.
           setViewerRole('owner');
           setSummary(null);
