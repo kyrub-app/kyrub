@@ -107,7 +107,7 @@ const callbackBundle = await build({ entryPoints: ['src/components/CustomerStore
   plugins: [{ name: 'controlled-hooks', setup(plugin) {
     plugin.onResolve({ filter: /^(react|react\/jsx-runtime|firebase\/auth|lucide-react|\.\.\/utils\/)/ }, args => ({ path: args.path, namespace: 'callbacks' }));
     plugin.onLoad({ filter: /.*/, namespace: 'callbacks' }, args => ({ contents: args.path === 'react'
-      ? `export const useState=(initial)=>{ const h=globalThis.__renewalHooks; return [!h.inner ? h.identity : Array.isArray(initial) ? h.offers : initial, value=>h.writes.push(value)]; };
+      ? `export const useState=(initial)=>{ const h=globalThis.__renewalHooks; return [!h.inner ? h.identity : initial === 'pending' ? 'customer' : Array.isArray(initial) ? h.offers : initial, value=>h.writes.push(value)]; };
          export const useEffect=(callback)=>{const cleanup=callback; globalThis.__renewalHooks.cleanups.push(cleanup);};
          export const useRef=(current)=>({current}); export const useCallback=fn=>fn; export const useMemo=fn=>fn();`
       : args.path === 'react/jsx-runtime' ? 'export const jsx=(type,props,key)=>({type,props,key}); export const jsxs=jsx;'
