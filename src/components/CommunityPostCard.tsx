@@ -25,6 +25,7 @@ interface CommunityPostCardProps {
   onComment: (value: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
   onReport: (reason: SocialReportReason) => Promise<SocialReportOutcome>;
+  onRemove: () => Promise<void>;
 }
 
 const displayDate = (value: string): string => {
@@ -36,7 +37,7 @@ const displayDate = (value: string): string => {
 
 export function CommunityPostCard({
   post, viewerId, canParticipate, communityOwnerId, likes, comments, connection,
-  saved, onToggleSave, onToggleLike, onComment, onDeleteComment, onReport,
+  saved, onToggleSave, onToggleLike, onComment, onDeleteComment, onReport, onRemove,
 }: CommunityPostCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
@@ -108,6 +109,17 @@ export function CommunityPostCard({
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                 <UserRound className="h-4 w-4" /> {isMine ? 'Meu perfil' : 'Ver perfil'}
               </button>
+              {isMine && (
+                <button type="button" role="menuitem" disabled={Boolean(pending)}
+                  onClick={() => {
+                    setMenuOpen(false);
+                    if (!window.confirm('Remover esta publicação definitivamente? O texto, as fotos, os vídeos, as curtidas e os comentários serão excluídos. Essa ação não pode ser desfeita.')) return;
+                    void run('remove', onRemove);
+                  }}
+                  className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-red-300 hover:bg-slate-800 disabled:opacity-40">
+                  <Trash2 className="h-4 w-4" /> Remover publicação
+                </button>
+              )}
               {!isMine && (
                 <button type="button" role="menuitem"
                   onClick={() => { setMenuOpen(false); setReportOpen(true); }}
