@@ -117,8 +117,9 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
   assert.doesNotMatch(communities, /Importar teste deste aparelho|showLocalImport|importLocalCommunityPrototype/);
   assert.match(communities, /Criar comunidade/);
   assert.match(stores, /id="square-stores"/);
-  assert.match(stores, /Ver todas/);
-  for (const name of ["'Minhas'", "'Descobrir'", "'Em alta'"]) {
+  assert.doesNotMatch(stores, /square-stores-view-all|Ver todas/);
+  assert.match(stores, /id === 'discover' \? onViewAll\(\)/);
+  for (const name of ["'Favoritas'", "'Descobrir'", "'Em alta'"]) {
     assert.ok(stores.includes(name));
   }
   assert.ok(stores.includes("fetch('/api/marketplace-discovery/public/kyrub-oficial'"));
