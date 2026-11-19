@@ -24,6 +24,7 @@ import {
   Heart,
   ImagePlus,
   LoaderCircle,
+  LogOut,
   MessageCircle,
   Pencil,
   Plus,
@@ -41,7 +42,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { onAuthStateChanged, updateProfile, type User } from 'firebase/auth';
+import { onAuthStateChanged, signOut, updateProfile, type User } from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -457,6 +458,7 @@ export function ProfileSocialHubNative() {
   const [draftName, setDraftName] = useState('');
   const [draftBio, setDraftBio] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [sessionBusy, setSessionBusy] = useState(false);
   const [newPostText, setNewPostText] = useState('');
   const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
   const [publishToStatus, setPublishToStatus] = useState(false);
@@ -493,6 +495,22 @@ export function ProfileSocialHubNative() {
     window.setTimeout(() => setToast(null), 3500);
   };
 
+  const handleProfileSignOut = async (): Promise<void> => {
+    if (sessionBusy || !auth.currentUser) return;
+    setSessionBusy(true);
+    try {
+      // The existing Firebase auth observer remounts the read-only guest
+      // workspace, where Google sign-in can select a different account.
+      await signOut(auth);
+      setEditOpen(false);
+      setOpen(false);
+    } catch {
+      triggerToast('Não foi possível sair da conta. Tente novamente.', 'error');
+    } finally {
+      setSessionBusy(false);
+    }
+  };
+
   const directory = useSocialDirectoryV2({
     profileName: profile.name,
     profilePhotoUrl: profile.photoUrl,
@@ -517,6 +535,7 @@ export function ProfileSocialHubNative() {
     return onAuthStateChanged(auth, nextUser => {
       setUser(nextUser);
       if (!nextUser) {
+        setEditOpen(false);
         setOpen(false);
         return;
       }
@@ -2075,6 +2094,16 @@ export function ProfileSocialHubNative() {
                   </div>
                   <ShieldCheck className="h-5 w-5 shrink-0 text-orange-400" />
                 </div>
+                <button
+                  id="profile-session-logout"
+                  type="button"
+                  onClick={() => void handleProfileSignOut()}
+                  disabled={sessionBusy}
+                  className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-orange-500/35 bg-orange-500/10 px-4 py-3 text-xs font-bold text-orange-300 transition-colors hover:bg-orange-500/20 disabled:cursor-wait disabled:opacity-60"
+                >
+                  {sessionBusy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
+                  {sessionBusy ? 'Saindo da conta…' : 'Sair da conta'}
+                </button>
               </div>
 
               <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
