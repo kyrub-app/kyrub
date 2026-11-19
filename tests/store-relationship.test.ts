@@ -113,6 +113,30 @@ describe('customer store relationship', () => {
     assert.match(storefront, /CustomerStoreRelationshipPanel/);
   });
 
+  test('Vercel relationship route reuses the existing authenticated health function', () => {
+    const config = JSON.parse(readFileSync('vercel.json', 'utf8')) as {
+      rewrites: Array<{ source: string; destination: string }>;
+    };
+    assert.ok(config.rewrites.some(rule =>
+      rule.source === '/api/store-relationship' &&
+      rule.destination === '/api/health?transport=store-relationship'
+    ));
+    const health = readFileSync('api/health.ts', 'utf8');
+    assert.match(health, /transport === 'store-relationship'/);
+    assert.match(health, /verifyFirebaseIdToken\(token\)/);
+    assert.match(health, /customerId: identity\.uid/);
+    assert.match(health, /loadStoreRelationshipSummary/);
+  });
+
+  test('zero purchase history remains valid and is explained without inventing transactions', () => {
+    const panel = readFileSync('src/components/CustomerStoreRelationshipPanel.tsx', 'utf8');
+    assert.match(panel, /summary\.level\.confirmedPurchases === 0/);
+    assert.match(panel, /summary\.points\.balance === 0/);
+    assert.match(panel, /Você ainda não possui compras ou movimentações de pontos/);
+    const service = readFileSync('server/payments/storeRelationshipService.ts', 'utf8');
+    assert.match(service, /deriveStoreRelationshipLevel\(confirmedPurchases\)/);
+  });
+
   test('store relationship economy remains independent from K-Coins', () => {
     const contract = readFileSync('shared/storeRelationship.ts', 'utf8');
     const service = readFileSync(
