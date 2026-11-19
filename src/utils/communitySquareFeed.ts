@@ -22,7 +22,6 @@ export interface CommunitySquareEntry {
 type SquarePointer = {
   postId: string;
   communityId: string;
-  authorId: string;
   createdAt: Timestamp;
 };
 
@@ -48,7 +47,6 @@ export const publishCommunityPostToSquare = async (post: CloudCommunityPost): Pr
   await setDoc(doc(db, 'community_square_posts', post.id), {
     postId: post.id,
     communityId: post.communityId,
-    authorId: user.uid,
     createdAt,
   });
 };
@@ -85,7 +83,7 @@ export const subscribeCommunitySquareFeed = (
       const post = posts.get(pointer.postId);
       const community = communities.get(pointer.communityId);
       if (!post || !community || community.visibility !== 'public'
-        || post.communityId !== pointer.communityId || post.authorId !== pointer.authorId
+        || post.communityId !== pointer.communityId
         || Math.abs(Date.parse(post.createdAt) - pointer.createdAt.toMillis()) > 2000) continue;
       const count = perCommunity.get(pointer.communityId) || 0;
       if (count >= COMMUNITY_SQUARE_MAX_PER_COMMUNITY) continue;
@@ -119,13 +117,12 @@ export const subscribeCommunitySquareFeed = (
         const data = document.data();
         const postId = read(data.postId);
         const communityId = read(data.communityId);
-        const authorId = read(data.authorId);
         const createdAt = asTimestamp(data.createdAt);
-        if (!postId || postId !== document.id || !communityId || !authorId || !createdAt) continue;
+        if (!postId || postId !== document.id || !communityId || !createdAt) continue;
         if (!withinCommunitySquareWindow(createdAt.toMillis(), Date.now())) continue;
         if ((perCommunity.get(communityId) || 0) >= COMMUNITY_SQUARE_MAX_PER_COMMUNITY) continue;
         perCommunity.set(communityId, (perCommunity.get(communityId) || 0) + 1);
-        selected.set(postId, { postId, communityId, authorId, createdAt });
+        selected.set(postId, { postId, communityId, createdAt });
         if (selected.size >= COMMUNITY_SQUARE_MAX_VISIBLE) break;
       }
       selected.forEach((value, id) => pointers.set(id, value));
@@ -135,9 +132,9 @@ export const subscribeCommunitySquareFeed = (
             if (!snapshotPost.exists()) posts.delete(pointer.postId);
             else {
               const source = snapshotPost.data();
-              if (source.communityId === pointer.communityId && source.authorId === pointer.authorId) {
+              if (source.communityId === pointer.communityId && typeof source.authorId === 'string' && source.authorId) {
                 posts.set(pointer.postId, {
-                  id: pointer.postId, communityId: pointer.communityId, authorId: pointer.authorId,
+                  id: pointer.postId, communityId: pointer.communityId, authorId: source.authorId,
                   authorName: read(source.authorName) || 'Kairubido', authorAvatar: read(source.authorAvatar),
                   content: read(source.content),
                   mediaUrls: Array.isArray(source.mediaUrls) ? source.mediaUrls.filter((x): x is string => typeof x === 'string') : [],
