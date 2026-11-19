@@ -549,7 +549,8 @@ test('Praça pointer rejects unauthorized authors, forged sources and private/mo
     await assertFails(setDoc(doc(owner, 'community_square_posts', postId), {
       postId, communityId, authorId: OWNER, createdAt: serverTimestamp(),
     }));
-    await assertFails(getDoc(doc(outsider, 'community_posts', postId)));
+    if (visibility === 'private') await assertFails(getDoc(doc(outsider, 'community_posts', postId)));
+    else await assertSucceeds(getDoc(doc(outsider, 'community_posts', postId))); // Moderated walls are readable, not auto-distributed.
   }
   await createCommunity(owner, 'square_forgery', 'public');
   const forged = {
