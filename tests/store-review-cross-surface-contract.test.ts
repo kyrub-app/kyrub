@@ -77,7 +77,7 @@ test('store-only complaints can reach authorized audited moderation, hide review
   assert.match(moderation, /resolvePendingReviewReports/);
   assert.match(moderation, /status: 'hidden', reviewedBy: admin\.uid/);
   assert.match(moderation, /action: 'admin\.social\.store_review\.hidden'/);
-  assert.match(moderation, /kind !== 'post' && kind !== 'user' && kind !== 'review'/);
+  assert.match(moderation, /kind !== 'post' && kind !== 'community_post' && kind !== 'user' && kind !== 'review'/);
   assert.match(adminWorkspace, /Ocultar avaliação/);
   assert.match(adminWorkspace, /Encerrar com justificativa/);
   assert.match(adminWorkspace, /social-moderation-report-review/);
