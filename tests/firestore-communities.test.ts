@@ -395,3 +395,24 @@ test('community publications can be saved privately and unsaved by their owner',
   await assertFails(getDoc(doc(outsider, 'users', MEMBER, 'savedItems', savedId)));
   await assertSucceeds(deleteDoc(reference));
 });
+
+test('a community wall author can remove own post but another participant cannot', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'author_removal_case';
+  const postId = 'author_owned_post';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  const post = doc(member, 'community_posts', postId);
+  await assertSucceeds(setDoc(post, {
+    postId, communityId, authorId: MEMBER, authorName: 'Membro',
+    authorAvatar: '', content: 'Publicação que seu autor poderá remover.',
+    mediaUrls: [], createdAtIso: '2026-11-19T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(deleteDoc(doc(outsider, 'community_posts', postId)));
+  await assertSucceeds(deleteDoc(post));
+  const result = await getDoc(doc(member, 'community_posts', postId));
+  if (result.exists()) throw new Error('Post removido ainda existe no Firestore');
+});
