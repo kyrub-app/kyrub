@@ -432,6 +432,7 @@ test('organic community metrics reuse Praça rules: unique view, active save and
     updatedAtIso: '2026-11-19T12:00:00.000Z', updatedAt: serverTimestamp(),
   }));
   const viewId = `${postId}__view__${MEMBER}`;
+  await assertSucceeds(getDoc(doc(member, 'community_post_engagements', viewId))); // Uncreated own receipt is readable.
   const engagement = (id: string, type: 'view' | 'save' | 'share') => ({
     engagementId: id, communityId, postId, postAuthorId: OWNER,
     actorId: MEMBER, type, createdAt: serverTimestamp(),
