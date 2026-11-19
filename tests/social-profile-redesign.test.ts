@@ -18,6 +18,10 @@ const communitiesSource = readFileSync(
   'src/components/ProfileCommunitiesCloudBridge.tsx',
   'utf8'
 );
+const communityMetricsSource = readFileSync(
+  'src/utils/communityOrganicMetrics.ts',
+  'utf8'
+);
 const kyrubWrapperSource = readFileSync(
   'src/components/tabs/KyrubTab.tsx',
   'utf8'
@@ -52,7 +56,10 @@ test('Praça and Comunidades save canonical publications into the private librar
   assert.match(profileSource, /subscribeSavedPublications/);
   assert.match(profileSource, /subscribeSelections/);
   assert.match(publicFeedSource, /savePublication\('praca', post\.id\)/);
-  assert.match(communitiesSource, /savePublication\('community', post\.id\)/);
+  assert.match(communitiesSource, /toggleCommunityPostSaveWithMetrics\(post, savedPostIds\.has\(post\.id\)\)/);
+  assert.match(communityMetricsSource, /users', actorId, 'savedItems'/);
+  assert.match(communityMetricsSource, /sourceKind: 'community'/);
+  assert.match(communityMetricsSource, /runTransaction\(db/);
   assert.match(kyrubWrapperSource, /usePublicSocialFeed/);
   assert.match(kyrubWrapperSource, /<PublicSocialFeedPanel/);
 });
