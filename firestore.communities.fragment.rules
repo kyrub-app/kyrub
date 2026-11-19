@@ -539,6 +539,49 @@
         && get(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == communityId;
     }
 
+
+    // Organic publication events mirror social_post_engagements in Praça.
+    // Clients may only register their own completed actions. Authors (and the
+    // actor) can read receipts; unrelated users cannot inspect engagement data.
+    match /community_post_engagements/{engagementId} {
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'engagementId', 'communityId', 'postId', 'postAuthorId',
+          'actorId', 'type', 'createdAt'
+        ])
+        && incoming().keys().hasOnly([
+          'engagementId', 'communityId', 'postId', 'postAuthorId',
+          'actorId', 'type', 'createdAt'
+        ])
+        && incoming().engagementId == engagementId
+        && incoming().actorId == request.auth.uid
+        && incoming().postAuthorId is string
+        && incoming().postAuthorId.size() > 0
+        && incoming().postAuthorId.size() <= 128
+        && incoming().type in ['view', 'save', 'share']
+        && incoming().createdAt == request.time
+        && communityPostBelongsTo(incoming().postId, incoming().communityId)
+        && get(/databases/$(database)/documents/community_posts/$(incoming().postId)).data.authorId
+          == incoming().postAuthorId
+        && canReadCommunity(incoming().communityId)
+        && (
+          incoming().type == 'share'
+          || engagementId == incoming().postId + '__' + incoming().type + '__' + request.auth.uid
+        );
+
+      allow read: if isSignedIn()
+        && (
+          existing().actorId == request.auth.uid
+          || existing().postAuthorId == request.auth.uid
+          || isAdmin()
+        );
+
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && existing().type == 'save'
+        && existing().actorId == request.auth.uid;
+    }
+
     match /community_post_likes/{likeId} {
       allow read: if canReadCommunity(existing().communityId);
 
