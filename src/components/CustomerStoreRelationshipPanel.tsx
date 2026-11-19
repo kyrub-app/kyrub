@@ -336,6 +336,12 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
           </button>
         </div>
 
+        {summary && summary.level.confirmedPurchases === 0 && summary.points.balance === 0 && summary.history.length === 0 && summary.vouchers.length === 0 && (
+          <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-400">
+            Você ainda não possui compras ou movimentações de pontos nesta loja. Isso é normal: o relacionamento começa sem histórico, e as oportunidades disponíveis aparecem abaixo.
+          </p>
+        )}
+
         {summary ? (
           <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
             <div className="rounded-2xl border border-slate-800 bg-slate-950 p-3">
