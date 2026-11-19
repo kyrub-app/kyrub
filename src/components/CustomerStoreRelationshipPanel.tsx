@@ -18,6 +18,7 @@ import type {
   StoreRelationshipSummary,
   StoreRelationshipVoucherSummary,
 } from '../../shared/storeRelationship';
+import { OFFICIAL_STORE_CANONICAL_ID } from '../../shared/officialPlanCanonicalDisplay';
 import { auth } from '../utils/firebase';
 import { acceptMerchantPrepaidRenewal, checkoutMerchantPrepaidRenewal, listMyMerchantPrepaidRenewalProposals, loadMerchantPrepaidRenewalPaymentStatus, type MerchantPrepaidRenewalPaymentState } from '../utils/storeSubscription';
 import { redeemStoreRewardForCurrentUser } from '../utils/storeRewardRedemption';
@@ -185,7 +186,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
     let active = true;
     setRenewalOffers([]);
     setRenewalError('');
-    if (signedIn && storeId) {
+    if (signedIn && storeId && storeId !== OFFICIAL_STORE_CANONICAL_ID) {
       void listMyMerchantPrepaidRenewalProposals({ storeId }).then(result => {
         if (active && isCurrentSession()) setRenewalOffers(result.proposals);
       }).catch(error => {
