@@ -130,6 +130,10 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [couponPromotion, setCouponPromotion] = useState<PublicMarketplacePromotion | null>(null);
   const [couponLoading, setCouponLoading] = useState(false);
   const [selectedOfficialPlanId, setSelectedOfficialPlanId] = useState('');
+  useEffect(() => {
+    if (!selectedOfficialPlanId) return;
+    document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, [selectedOfficialPlanId]);
   const [selectedPlanMonths, setSelectedPlanMonths] = useState<1 | 3 | 6 | 12>(1);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [authLoading, setAuthLoading] = useState(true);
@@ -295,7 +299,6 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       store?.id === OFFICIAL_STORE_CANONICAL_ID) && isOfficialPlanProductId(product.id)) {
       // Official plans are contracts, not ordinary B2C cart items.
       setSelectedOfficialPlanId(product.id);
-      document.getElementById('official-plan-contract-section')?.scrollIntoView({ behavior: 'smooth' });
       return;
     }
     setCart(current => {
