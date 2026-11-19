@@ -11,6 +11,7 @@ import {
 import type { CartItem, Product, Store } from '../types';
 import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { SharedPdvCatalog } from './pdv/SharedPdvCatalog';
+import { OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
 
 interface StorefrontPanelProps {
   activeConsumerStore: Store | undefined;
@@ -332,6 +333,11 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
         keywords={storeKeywords}
         selectedItems={cart}
         onAddProduct={handleAddToCart}
+        productActionLabel={product =>
+          activeConsumerStore.id === OFFICIAL_STORE_CANONICAL_ID && isOfficialPlanProductId(product.id)
+            ? 'Escolher plano'
+            : 'Adicionar'
+        }
         accentColor={accentColor}
         salesByProductId={salesByProductId}
         primaryAction={{
