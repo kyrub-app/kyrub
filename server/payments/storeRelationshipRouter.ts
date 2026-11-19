@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { loadStoreRelationshipSummary } from './storeRelationshipService.js';
+import { loadStoreRelationshipForViewer } from './storeRelationshipService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -35,7 +35,7 @@ export const createStoreRelationshipRouter = (): Router => {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('STORE_RELATIONSHIP_REQUIRED');
 
-      const summary = await loadStoreRelationshipSummary({
+      const summary = await loadStoreRelationshipForViewer({
         storeId,
         customerId: identity.uid,
       });
