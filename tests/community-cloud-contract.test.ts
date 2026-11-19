@@ -198,3 +198,38 @@ test('community cards reuse canonical saved actions and have persisted likes, co
   assert.match(moderation, /'community_post_reports'/);
   assert.match(moderation, /removeModeratedCommunityPost/);
 });
+
+test('author menu removes the publication after confirmation, without self-connection or self-report', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const container = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const client = read('src/utils/communityPostInteractions.ts');
+  const api = read('api/admin/operations/health.ts');
+  const service = read('server/communities/communityPostRemovalService.ts');
+  const moderation = read('server/admin/socialModerationService.ts');
+
+  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /\{isMine && \([\s\S]*?Remover publicação/);
+  assert.match(card, /window\.confirm\('Remover esta publicação definitivamente/);
+  assert.match(card, /void run\('remove', onRemove\)/);
+  assert.doesNotMatch(card, /Ocultar publicação/);
+  assert.match(card, /\{!isMine && !connection && \(/);
+  assert.match(card, /\{!isMine && connected && \(/);
+  assert.match(card, /\{!isMine && \([\s\S]*?Denunciar publicação/);
+  assert.match(container, /onRemove=\{\(\) => removeOwnCommunityPost\(post\)\}/);
+  assert.match(client, /transport=community-author-remove/);
+  assert.match(client, /post\.authorId !== user\.uid/);
+
+  assert.match(api, /transport === 'community-author-remove'/);
+  assert.match(api, /method !== 'POST'/);
+  assert.match(service, /verifyFirebaseIdToken\(token\)/);
+  assert.match(service, /adminDb\.runTransaction\(async tx =>/);
+  assert.match(service, /post\.authorId !== actor\.uid/);
+  assert.match(service, /tx\.delete\(postRef\)/);
+  assert.match(service, /community\.post\.author_removed/);
+  assert.match(service, /cleanupRemovedCommunityPost\(postId, data\)/);
+  assert.match(service, /community_post_likes/);
+  assert.match(service, /community_post_comments/);
+  assert.match(service, /community-post-media/);
+  assert.doesNotMatch(service, /collection\('community_post_reports'\).*?delete/);
+  assert.match(moderation, /cleanupRemovedCommunityPost\(postId, data\)/);
+});
