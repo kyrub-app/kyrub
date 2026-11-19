@@ -413,8 +413,10 @@ test('a community wall author can remove own post but another participant cannot
   }));
   await assertFails(deleteDoc(doc(outsider, 'community_posts', postId)));
   await assertSucceeds(deleteDoc(post));
-  const result = await getDoc(doc(member, 'community_posts', postId));
-  if (result.exists()) throw new Error('Post removido ainda existe no Firestore');
+  await environment.withSecurityRulesDisabled(async context => {
+    const result = await getDoc(doc(context.firestore(), 'community_posts', postId));
+    if (result.exists()) throw new Error('Post removido ainda existe no Firestore');
+  });
 });
 
 test('organic community metrics reuse Praça rules: unique view, active save and completed share receipts', async () => {
