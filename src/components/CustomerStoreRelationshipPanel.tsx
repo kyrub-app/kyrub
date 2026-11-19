@@ -143,6 +143,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
   const isCurrentSession = useCallback(() => mounted.current && auth.currentUser?.uid === buyerUid, [buyerUid]);
   const [expanded, setExpanded] = useState(false);
   const [summary, setSummary] = useState<StoreRelationshipSummary | null>(null);
+  const [viewerRole, setViewerRole] = useState<'pending' | 'owner' | 'customer'>('pending');
   const [renewalOffers, setRenewalOffers] = useState<Awaited<ReturnType<typeof listMyMerchantPrepaidRenewalProposals>>['proposals']>([]);
   const [renewalBusyId, setRenewalBusyId] = useState('');
   const [renewalError, setRenewalError] = useState('');
@@ -161,7 +162,16 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
     setError('');
     try {
       const result = await loadStoreRelationshipForCurrentUser(storeId);
-      if (isCurrentSession()) setSummary(result);
+      if (isCurrentSession()) {
+        if ('viewerRole' in result && result.viewerRole === 'owner') {
+          // The proprietor has no customer loyalty relationship with their own store.
+          setViewerRole('owner');
+          setSummary(null);
+        } else {
+          setViewerRole('customer');
+          setSummary(result);
+        }
+      }
     } catch (loadError) {
       if (!isCurrentSession()) return;
       setSummary(null);
@@ -186,7 +196,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
     let active = true;
     setRenewalOffers([]);
     setRenewalError('');
-    if (signedIn && storeId && storeId !== OFFICIAL_STORE_CANONICAL_ID) {
+    if (signedIn && viewerRole === 'customer' && storeId && storeId !== OFFICIAL_STORE_CANONICAL_ID) {
       void listMyMerchantPrepaidRenewalProposals({ storeId }).then(result => {
         if (active && isCurrentSession()) setRenewalOffers(result.proposals);
       }).catch(error => {
@@ -194,7 +204,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
       });
     }
     return () => { active = false; };
-  }, [signedIn, storeId, isCurrentSession]);
+  }, [signedIn, storeId, viewerRole, isCurrentSession]);
 
   const acceptRenewal = async (id: string, acceptedTotalMinor: number): Promise<void> => {
     if (renewalBusyId || !isCurrentSession()) return;
@@ -269,6 +279,11 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
     }
   };
 
+  // Do not render customer relationship panels for the verified store owner.
+  // While resolving the viewer we also avoid advertising an unproven relationship.
+  if (signedIn && viewerRole === 'owner') return null;
+  if (signedIn && viewerRole === 'pending' && !error) return null;
+
   if (!signedIn) {
     return (
       <section
@@ -336,12 +351,7 @@ function CustomerStoreRelationshipSession({ storeId, storeName, buyerUid }: Cust
           </button>
         </div>
 
-        {summary?.isStoreOwner && (
-          <p className="mt-4 rounded-2xl border border-cyan-500/20 bg-slate-950 px-4 py-3 text-xs text-slate-300">
-            Você está acessando sua própria loja como proprietário. Administrar a loja não cria compras, pontos nem vínculo de fidelidade automaticamente. O histórico abaixo mostra somente movimentações reais desta conta.
-          </p>
-        )}
-        {summary && !summary.isStoreOwner && summary.level.confirmedPurchases === 0 && summary.points.balance === 0 && summary.history.length === 0 && summary.vouchers.length === 0 && (
+        {summary && summary.level.confirmedPurchases === 0 && summary.points.balance === 0 && summary.history.length === 0 && summary.vouchers.length === 0 && (
           <p className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 px-4 py-3 text-xs text-slate-400">
             Você ainda não possui compras ou movimentações de pontos nesta loja. Isso é normal: o relacionamento começa sem histórico, e as oportunidades disponíveis aparecem abaixo.
           </p>
