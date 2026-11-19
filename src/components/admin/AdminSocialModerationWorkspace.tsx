@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { RefreshCw, ShieldAlert, Trash2, Flag, CheckCircle2 } from 'lucide-react';
 import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
+import { MediaCarousel } from '../MediaCarousel';
 
 interface ModerationPost {
   id: string; authorId: string; authorName: string; content: string;
@@ -114,6 +115,9 @@ export default function AdminSocialModerationWorkspace({ authenticatedUser, prof
             <p className="mt-1 break-all font-mono text-[10px] text-slate-400">Referência: {report.kind === 'review' ? `${report.storeId}/${report.reviewId}` : report.postId || report.targetUserId}</p>
             <p className="mt-1 text-xs text-slate-300">Motivo: {report.reason}</p>
             {report.post && <p className="mt-2 whitespace-pre-wrap text-xs text-slate-400">{report.post.content || '(sem texto)'}</p>}
+            {report.kind === 'community_post' && report.post?.mediaUrls.length ? (
+              <div className="mt-3"><MediaCarousel mediaUrls={report.post.mediaUrls} /></div>
+            ) : null}
             {report.review && (
               <div className="mt-2 rounded-lg border border-slate-700 p-2 text-xs text-slate-300">
                 <p className="font-semibold">{report.review.authorName} · {'★'.repeat(Math.max(0, Math.min(5, report.review.rating)))}</p>
