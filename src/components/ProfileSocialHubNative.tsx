@@ -1256,6 +1256,16 @@ export function ProfileSocialHubNative() {
               <h2 className="text-base font-black text-white">
                 Painel pessoal
               </h2>
+              <button
+                id="profile-session-logout"
+                type="button"
+                onClick={() => void handleProfileSignOut()}
+                disabled={sessionBusy}
+                className="mt-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-orange-500/35 bg-orange-500/10 px-3 py-2 text-xs font-bold text-orange-300 transition-colors hover:bg-orange-500/20 disabled:cursor-wait disabled:opacity-60"
+              >
+                {sessionBusy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
+                {sessionBusy ? 'Saindo da conta…' : 'Sair da conta'}
+              </button>
             </div>
             <button
               type="button"
@@ -2094,16 +2104,6 @@ export function ProfileSocialHubNative() {
                   </div>
                   <ShieldCheck className="h-5 w-5 shrink-0 text-orange-400" />
                 </div>
-                <button
-                  id="profile-session-logout"
-                  type="button"
-                  onClick={() => void handleProfileSignOut()}
-                  disabled={sessionBusy}
-                  className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-orange-500/35 bg-orange-500/10 px-4 py-3 text-xs font-bold text-orange-300 transition-colors hover:bg-orange-500/20 disabled:cursor-wait disabled:opacity-60"
-                >
-                  {sessionBusy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
-                  {sessionBusy ? 'Saindo da conta…' : 'Sair da conta'}
-                </button>
               </div>
 
               <form onSubmit={saveProfile} className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
