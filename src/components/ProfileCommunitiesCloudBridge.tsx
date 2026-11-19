@@ -63,7 +63,7 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 import { auth } from '../utils/firebase';
-import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
+import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
 import { issueCommunityGroupInvite } from '../utils/userNotifications';
@@ -1798,6 +1798,7 @@ export function ProfileCommunitiesCloudBridge() {
                             onComment={value => addCommunityPostComment(post, value)}
                             onDeleteComment={deleteCommunityPostComment}
                             onReport={reason => submitCommunityPostReport(post, reason)}
+                            onRemove={() => removeOwnCommunityPost(post)}
                           />
                         ))}
                         {posts.length === 0 && (
