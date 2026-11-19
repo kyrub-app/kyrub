@@ -60,6 +60,14 @@ import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
 import { ChatModal } from './modals/ChatModal';
+import {
+  OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
+  withinCommunitySquareWindow, type CommunitySquareEntry,
+} from '../utils/communitySquareFeed';
+import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
+import { subscribeSavedPublications } from '../utils/savedLibrary';
+import { subscribeUserMemberships } from '../utils/communityCloud';
+import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 
 type ProfileTab = 'publications' | 'marked' | 'connected' | 'square';
 type ConnectionSection = 'connected' | 'favorites' | 'groups';
@@ -474,6 +482,10 @@ export function ProfileSocialHubNative() {
   const [groupBusy, setGroupBusy] = useState(false);
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
   const [squareSearch, setSquareSearch] = useState('');
+  const [communitySquareEntries, setCommunitySquareEntries] = useState<CommunitySquareEntry[]>([]);
+  const [squareMembershipIds, setSquareMembershipIds] = useState<Set<string>>(new Set());
+  const [squareSavedCommunityIds, setSquareSavedCommunityIds] = useState<Set<string>>(new Set());
+  const [squareConnections, setSquareConnections] = useState<CommunityPostConnection[]>([]);
   const [storeSearch, setStoreSearch] = useState('');
   const [now, setNow] = useState(Date.now());
   const [toast, setToast] = useState<{
@@ -567,6 +579,15 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
+    const openCommunityFromSquare = () => {
+      setActiveTab('square');
+      setOpen(true);
+    };
+    window.addEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, openCommunityFromSquare);
+    return () => window.removeEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, openCommunityFromSquare);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -606,6 +627,22 @@ export function ProfileSocialHubNative() {
     const timer = window.setInterval(() => setNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    setCommunitySquareEntries([]);
+    setSquareMembershipIds(new Set());
+    setSquareSavedCommunityIds(new Set());
+    setSquareConnections([]);
+    if (!user?.uid || !open || activeTab !== 'square') return;
+    const report = (error: Error) => console.warn('Praça: falha ao carregar informações das comunidades.', error);
+    const stopFeed = subscribeCommunitySquareFeed(setCommunitySquareEntries, report);
+    const stopMemberships = subscribeUserMemberships(user.uid, items =>
+      setSquareMembershipIds(new Set(items.filter(item => item.status === 'active').map(item => item.communityId))), report);
+    const stopSaved = subscribeSavedPublications(items =>
+      setSquareSavedCommunityIds(new Set(items.filter(item => item.sourceKind === 'community').map(item => item.sourceId))), report);
+    const stopConnections = subscribeCommunityPostConnections(user.uid, setSquareConnections, report);
+    return () => { stopFeed(); stopMemberships(); stopSaved(); stopConnections(); };
+  }, [user?.uid, open, activeTab]);
 
   useEffect(() => {
     if (!user) return;
@@ -750,10 +787,25 @@ export function ProfileSocialHubNative() {
       allPosts.filter(
         post =>
           post.visibility === 'public' &&
+          withinCommunitySquareWindow(Date.parse(post.createdAt || ''), now) &&
           (post.publicationType !== 'status' || isActiveStatus(post, now))
       ),
     [allPosts, now]
   );
+
+  const squareRows = useMemo(() => {
+    const term = squareSearch.trim().toLocaleLowerCase('pt-BR');
+    const publicPosts = squarePosts.filter(post =>
+      !term || `${post.user} ${post.content}`.toLocaleLowerCase('pt-BR').includes(term));
+    const communityPosts = communitySquareEntries
+      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.post.createdAt), now))
+      .filter(entry => !term || `${entry.communityName} ${entry.post.authorName} ${entry.post.content}`
+        .toLocaleLowerCase('pt-BR').includes(term));
+    return [
+      ...publicPosts.map(post => ({ kind: 'social' as const, key: 'social:' + post.id, createdAt: post.createdAt || '', post })),
+      ...communityPosts.map(entry => ({ kind: 'community' as const, key: 'community:' + entry.post.id, createdAt: entry.post.createdAt, entry })),
+    ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }, [squarePosts, communitySquareEntries, squareSearch, now]);
 
   const savedPosts = useMemo(
     () =>
@@ -1859,24 +1911,39 @@ export function ProfileSocialHubNative() {
                       className="w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-3 text-xs text-white outline-none"
                     />
                   </div>
-                  {renderPostList(
-                    squarePosts.filter(
-                      post =>
-                        !squareSearch.trim() ||
-                        `${post.user} ${post.content}`
-                          .toLocaleLowerCase('pt-BR')
-                          .includes(
-                            squareSearch
-                              .trim()
-                              .toLocaleLowerCase('pt-BR')
-                          )
-                    ),
-                    {
-                      title: 'A Praça está começando',
-                      description:
-                        'Somente conteúdos enviados para a Praça aparecerão aqui.',
-                      icon: Compass,
+                  {squareRows.map(row => {
+                    if (row.kind === 'community') {
+                      const { entry } = row;
+                      const connection = squareConnections.find(item =>
+                        item.senderId === entry.post.authorId || item.receiverId === entry.post.authorId);
+                      return <CommunitySquareFeedCard
+                        key={row.key}
+                        entry={entry}
+                        viewerId={user.uid}
+                        saved={squareSavedCommunityIds.has(entry.post.id)}
+                        canParticipate={entry.communityOwnerId === user.uid || squareMembershipIds.has(entry.communityId)}
+                        connection={connection}
+                      />;
                     }
+                    const post = row.post;
+                    return <SocialCard
+                      key={row.key}
+                      post={post}
+                      currentUserId={user.uid}
+                      saved={savedPostIds.has(post.id)}
+                      liked={socialFeed.likedPostIds.has(post.id)}
+                      now={now}
+                      onToggleSave={post.publicationType === 'status' ? undefined : () => void toggleSavedPost(post.id)}
+                      onToggleLike={() => handleLike(post.id)}
+                      onReport={() => void reportPost(post)}
+                    />;
+                  })}
+                  {squareRows.length === 0 && (
+                    <EmptyState
+                      title="A Praça está começando"
+                      description="Publicações recentes e conteúdos públicos das comunidades aparecerão aqui por 24 horas."
+                      icon={Compass}
+                    />
                   )}
                 </div>
               )}

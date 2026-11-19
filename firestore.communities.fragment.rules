@@ -526,6 +526,35 @@
     }
 
 
+    // Praça discovery stores only a pointer. The full post always comes from
+    // community_posts and remains subject to community visibility rules.
+    match /community_square_posts/{postId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll(['postId', 'communityId', 'createdAt'])
+        && incoming().keys().hasOnly(['postId', 'communityId', 'createdAt'])
+        && incoming().postId == postId
+        && incoming().postId is string
+        && incoming().postId.size() > 0
+        && incoming().postId.size() <= 128
+        && incoming().communityId is string
+        && incoming().communityId.size() > 0
+        && incoming().communityId.size() <= 128
+        && incoming().createdAt is timestamp
+        && existsAfter(/databases/$(database)/documents/community_posts/$(postId))
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == incoming().communityId
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.createdAt == incoming().createdAt
+        && exists(/databases/$(database)/documents/communities/$(incoming().communityId))
+        && get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.visibility == 'public';
+
+      allow update: if false;
+      allow delete: if isSignedIn()
+        && exists(/databases/$(database)/documents/community_posts/$(postId))
+        && get(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid;
+    }
+
     // Wall interactions are independently scoped to the existing community and post.
     // They never grant access to a private community or allow likes for strangers.
     function communityPostBelongsTo(postId, communityId) {

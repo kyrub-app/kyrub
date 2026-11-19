@@ -33,6 +33,10 @@ export const cleanupRemovedCommunityPost = async (
     }
   }
 
+  // Author removal and moderator removal must also retract Praça discovery.
+  // The canonical post is already gone; keep a stale pointer from resurfacing.
+  await adminDb.collection('community_square_posts').doc(postId).delete();
+
   const communityId = clean(postData.communityId);
   const authorId = clean(postData.authorId);
   const bucketName = 'kyrub-b8d0e.firebasestorage.app';

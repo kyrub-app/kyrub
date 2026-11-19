@@ -70,6 +70,10 @@ import { issueCommunityGroupInvite } from '../utils/userNotifications';
 
 import { subscribeSavedPublications } from '../utils/savedLibrary';
 import { toggleCommunityPostSaveWithMetrics } from '../utils/communityOrganicMetrics';
+import {
+  OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareIds,
+  withinCommunitySquareWindow, publishCommunityPostToSquare, removeCommunityPostFromSquare,
+} from '../utils/communitySquareFeed';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
@@ -269,6 +273,9 @@ export function ProfileCommunitiesCloudBridge() {
   const [editError, setEditError] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [wallDraft, setWallDraft] = useState('');
+  const [shareWallToSquare, setShareWallToSquare] = useState(true);
+  const [squarePublishedIds, setSquarePublishedIds] = useState<Set<string>>(new Set());
+  const [requestedSquareCommunityId, setRequestedSquareCommunityId] = useState('');
   const [wallToolsOpen, setWallToolsOpen] = useState(false);
   const [wallMedia, setWallMedia] = useState<Array<{ file: File; preview: string }>>([]);
   const wallMediaRef = useRef<Array<{ file: File; preview: string }>>([]);
@@ -348,6 +355,25 @@ export function ProfileCommunitiesCloudBridge() {
       error => console.warn('Não foi possível acompanhar Salvos das comunidades.', error)
     );
   }, [user?.uid]);
+
+  useEffect(() => {
+    setSquarePublishedIds(new Set());
+    if (!selectedCommunityId) return;
+    return subscribeCommunitySquareIds(
+      selectedCommunityId,
+      setSquarePublishedIds,
+      error => console.warn('Não foi possível acompanhar a Praça para esta comunidade.', error),
+    );
+  }, [selectedCommunityId]);
+
+  useEffect(() => {
+    const open = (event: Event) => {
+      const id = (event as CustomEvent<{ communityId?: string }>).detail?.communityId;
+      if (typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) setRequestedSquareCommunityId(id);
+    };
+    window.addEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, open);
+    return () => window.removeEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, open);
+  }, []);
 
   const inviteToExistingGroup = async (groupId: string): Promise<void> => {
     if (groupSaving || !auth.currentUser?.uid || !groupInviteExistingId || groupInviteTargetId !== groupId) return;
@@ -750,6 +776,18 @@ export function ProfileCommunitiesCloudBridge() {
     setMessage('');
   };
 
+  useEffect(() => {
+    if (!host || !requestedSquareCommunityId || loading) return;
+    const community = communities.find(item => item.id === requestedSquareCommunityId);
+    if (!community) {
+      setMessage('Essa comunidade não está disponível para visita.');
+      setRequestedSquareCommunityId('');
+      return;
+    }
+    openCommunity(community);
+    setRequestedSquareCommunityId('');
+  }, [host, requestedSquareCommunityId, loading, communities]);
+
   const runAction = async (key: string, action: () => Promise<void>) => {
     setActionBusy(key);
     setMessage('');
@@ -886,9 +924,10 @@ export function ProfileCommunitiesCloudBridge() {
       for (const item of attachments) {
         mediaUrls.push(await uploadCommunityPostMedia(communityId, item.file));
       }
-      await createCommunityPost({ communityId, content, mediaUrls });
+      await createCommunityPost({ communityId, content, mediaUrls, shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare });
       if (selectedCommunityId === communityId) {
         setWallDraft('');
+        setShareWallToSquare(true);
         clearWallMedia();
       }
       setMessage('Publicação adicionada ao mural.');
@@ -1754,8 +1793,18 @@ export function ProfileCommunitiesCloudBridge() {
                                 {actionBusy === 'wall-post' ? 'Publicando…' : 'Publicar no mural'}
                               </button>
                             </div>
+                            {selectedCommunity.visibility === 'public' && (
+                              <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 text-sm text-slate-200">
+                                <input type="checkbox" checked={shareWallToSquare} onChange={event => setShareWallToSquare(event.target.checked)}
+                                  disabled={actionBusy === 'wall-post'} className="h-4 w-4 accent-sky-400" />
+                                <span>Exibir também na Praça por 24 horas <span className="block text-xs text-slate-400">Público, gratuito e orgânico. Você pode retirar depois.</span></span>
+                              </label>
+                            )}
+                            {selectedCommunity.visibility === 'moderated' && (
+                              <p className="mt-2 text-xs text-slate-400">Esta comunidade moderada não envia postagens automaticamente à Praça.</p>
+                            )}
                             {selectedCommunity.visibility === 'private' && (
-                              <p className="mt-2 text-xs text-amber-300">Para preservar a privacidade, anexos estão disponíveis por enquanto nas comunidades públicas e moderadas.</p>
+                              <p className="mt-2 text-xs text-amber-300">Para preservar a privacidade, esta comunidade nunca distribui publicações na Praça. Anexos estão indisponíveis.</p>
                             )}
                             {wallToolsOpen && (
                               <div role="group" aria-label="Escolher anexo para o mural"
@@ -1797,6 +1846,12 @@ export function ProfileCommunitiesCloudBridge() {
                             onDeleteComment={deleteCommunityPostComment}
                             onReport={reason => submitCommunityPostReport(post, reason)}
                             onRemove={() => removeOwnCommunityPost(post)}
+                            squarePublished={squarePublishedIds.has(post.id)}
+                            onToggleSquare={selectedCommunity.visibility === 'public' && withinCommunitySquareWindow(Date.parse(post.createdAt), Date.now())
+                              ? () => squarePublishedIds.has(post.id)
+                                ? removeCommunityPostFromSquare(post)
+                                : publishCommunityPostToSquare(post)
+                              : undefined}
                           />
                         ))}
                         {posts.length === 0 && (

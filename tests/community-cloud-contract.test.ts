@@ -144,7 +144,7 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls \}\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare \}\)/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -286,4 +286,63 @@ test('community organic metrics appear only for their author and never conflate 
   assert.match(rules, /existing\(\)\.postAuthorId == request\.auth\.uid/);
   assert.match(cleanup, /'community_post_engagements'/);
   assert.doesNotMatch(metrics, /mercadoPago|campaign|pitangas|wallet|checkout|pix/i);
+});
+
+test('Praça shares canonical public community posts for 24h without duplicating content, rewards or paid campaigns', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const index = read('src/utils/communitySquareFeed.ts');
+  const card = read('src/components/CommunitySquareFeedCard.tsx');
+  const feed = read('src/components/PublicSocialFeedPanel.tsx');
+  const cloudUI = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const hub = read('src/components/ProfileSocialHubNative.tsx');
+  const rules = read('firestore.communities.fragment.rules');
+  const cleanup = read('server/communities/communityPostRemovalService.ts');
+
+  assert.match(cloud, /const publishToSquare = input.shareToSquare !== false && community\?\.visibility === 'public'/);
+  assert.match(cloud, /batch\.set\(reference/);
+  assert.match(cloud, /batch\.set\(doc\(db, 'community_square_posts', reference\.id\)/);
+  assert.match(cloud, /await batch\.commit\(\)/);
+  assert.match(cloudUI, /Exibir também na Praça por 24 horas/);
+  assert.match(cloudUI, /shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare/);
+  assert.match(cloudUI, /selectedCommunity.visibility === 'moderated'/);
+  assert.match(cloudUI, /selectedCommunity.visibility === 'private'/);
+  assert.match(cloudUI, /subscribeCommunitySquareIds/);
+  assert.match(read('src/components/CommunityPostCard.tsx'), /Retirar da Praça/);
+  assert.match(read('src/components/CommunityPostCard.tsx'), /Mostrar na Praça/);
+
+  assert.match(index, /24 \* 60 \* 60 \* 1000/);
+  assert.match(index, /COMMUNITY_SQUARE_MAX_VISIBLE = 30/);
+  assert.match(index, /COMMUNITY_SQUARE_MAX_PER_COMMUNITY = 3/);
+  assert.match(index, /community.visibility !== 'public'/);
+  assert.match(index, /onSnapshot\(doc\(db, 'communities', pointer\.communityId\)/);
+  assert.match(index, /onSnapshot\(doc\(db, 'community_posts', pointer\.postId\)/);
+  assert.match(index, /window\.setInterval\(publish, 60_000\)/);
+  assert.match(index, /withinCommunitySquareWindow/);
+  assert.match(index, /post\.communityId !== pointer\.communityId/);
+  assert.doesNotMatch(index, /authorId: user\.uid,\s*createdAt/); // Public pointer stores no author ID.
+  assert.match(index, /query\([\s\S]*?community_square_posts[\s\S]*?where\('createdAt', '>=',/);
+  assert.match(card, /<CommunityPostCard/);
+  assert.match(card, /toggleCommunityPostLike/);
+  assert.match(card, /addCommunityPostComment/);
+  assert.match(card, /toggleCommunityPostSaveWithMetrics/);
+  assert.match(card, /removeOwnCommunityPost/);
+  assert.match(feed, /feedRows\.map\(row =>/);
+  assert.match(feed, /kind: 'community' as const/);
+  assert.match(feed, /kind: 'social' as const/);
+  assert.match(feed, /Date\.parse\(b\.createdAt\) - Date\.parse\(a\.createdAt\)/);
+  assert.match(feed, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
+  assert.match(hub, /setActiveTab\('square'\)/);
+  assert.match(hub, /const squareRows = useMemo/);
+  assert.match(hub, /communitySquareEntries/);
+  assert.match(hub, /squareRows\.map\(row =>/);
+  assert.match(hub, /<CommunitySquareFeedCard/);
+  assert.match(hub, /subscribeCommunitySquareFeed/);
+  assert.match(hub, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
+  assert.match(cloudUI, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
+  assert.match(rules, /match \/community_square_posts\/\{postId\}/);
+  assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)\.data\.createdAt == incoming\(\)\.createdAt/);
+  assert.match(rules, /\.data\.visibility == 'public'/);
+  assert.match(rules, /allow update: if false/);
+  assert.match(cleanup, /adminDb\.collection\('community_square_posts'\)\.doc\(postId\)\.delete\(\)/);
+  assert.doesNotMatch(index, /payment|mercadoPago|pitangas|wallet|checkout|sponsored/i);
 });

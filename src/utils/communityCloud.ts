@@ -817,6 +817,7 @@ export const createCommunityPost = async (input: {
   communityId: string;
   content: string;
   mediaUrls?: string[];
+  shareToSquare?: boolean;
 }): Promise<string> => {
   const { user, name, avatar } = currentIdentity();
   const content = input.content.trim().slice(0, 3000);
@@ -828,7 +829,12 @@ export const createCommunityPost = async (input: {
   }
   const reference = doc(collection(db, 'community_posts'));
   const nowIso = new Date().toISOString();
-  await setDoc(reference, {
+  // Public community posts enter the 24h discovery feed unless the author opts out.
+  // Private/moderated communities are excluded, regardless of the checkbox.
+  const community = input.shareToSquare === false ? null : await getCommunity(input.communityId);
+  const publishToSquare = input.shareToSquare !== false && community?.visibility === 'public';
+  const batch = writeBatch(db);
+  batch.set(reference, {
     postId: reference.id,
     communityId: input.communityId,
     authorId: user.uid,
@@ -841,6 +847,14 @@ export const createCommunityPost = async (input: {
     updatedAtIso: nowIso,
     updatedAt: serverTimestamp(),
   });
+  if (publishToSquare) {
+    batch.set(doc(db, 'community_square_posts', reference.id), {
+      postId: reference.id,
+      communityId: input.communityId,
+      createdAt: serverTimestamp(),
+    });
+  }
+  await batch.commit();
   return reference.id;
 };
 

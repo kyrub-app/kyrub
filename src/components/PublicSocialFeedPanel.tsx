@@ -19,6 +19,12 @@ import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
 import { MediaCarousel } from './MediaCarousel';
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
+import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
+import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
+import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
+import {
+  subscribeCommunitySquareFeed, withinCommunitySquareWindow, type CommunitySquareEntry,
+} from '../utils/communitySquareFeed';
 
 interface PublicSocialFeedPanelProps {
   posts: SocialPost[];
@@ -175,18 +181,51 @@ export function PublicSocialFeedPanel({
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
   const [pendingAction, setPendingAction] = useState('');
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
+  const [savedCommunityPostIds, setSavedCommunityPostIds] = useState<Set<string>>(new Set());
+  const [communityEntries, setCommunityEntries] = useState<CommunitySquareEntry[]>([]);
+  const [communityConnections, setCommunityConnections] = useState<CommunityPostConnection[]>([]);
+  const [feedNow, setFeedNow] = useState(Date.now());
+  const { communities: directoryCommunities } = useCommunityDirectory();
   const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(null);
   const [reportPostId, setReportPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
 
   useEffect(() => subscribeSavedPublications(
-    items => setSavedPostIds(new Set(items.filter(item => item.sourceKind === 'praca').map(item => item.sourceId))),
+    items => {
+      setSavedPostIds(new Set(items.filter(item => item.sourceKind === 'praca').map(item => item.sourceId)));
+      setSavedCommunityPostIds(new Set(items.filter(item => item.sourceKind === 'community').map(item => item.sourceId)));
+    },
     error => console.warn('Falha ao acompanhar Salvos.', error)
   ), []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setFeedNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    setCommunityEntries([]);
+    if (!currentUserId) return;
+    return subscribeCommunitySquareFeed(
+      setCommunityEntries,
+      error => console.warn('Não foi possível carregar publicações das comunidades na Praça.', error),
+    );
+  }, [currentUserId]);
+
+  useEffect(() => {
+    setCommunityConnections([]);
+    if (!currentUserId) return;
+    return subscribeCommunityPostConnections(
+      currentUserId, setCommunityConnections,
+      error => console.warn('Falha ao acompanhar conexões da Praça.', error),
+    );
+  }, [currentUserId]);
 
   const visiblePosts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
     return posts.filter(post => {
+      // The 24h window affects only discovery in Praça, never the source post.
+      if (!withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)) return false;
       if (normalizedSearch) {
         const matches =
           matchesSearch(post.user, normalizedSearch) ||
@@ -205,7 +244,24 @@ export function PublicSocialFeedPanel({
 
       return true;
     });
-  }, [currentUserId, filter, friends, posts, searchQuery]);
+  }, [currentUserId, filter, friends, posts, searchQuery, feedNow]);
+
+  const feedRows = useMemo(() => {
+    const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
+    const communityItems = communityEntries
+      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.post.createdAt), feedNow))
+      .filter(entry => {
+        if (normalizedSearch && !`${entry.communityName} ${entry.post.authorName} ${entry.post.content}`
+          .toLocaleLowerCase('pt-BR').includes(normalizedSearch)) return false;
+        if (filter === 'favoritos' && entry.post.authorId !== currentUserId &&
+          !friends.some(friend => friend.id === entry.post.authorId && friend.favorited)) return false;
+        return true;
+      });
+    return [
+      ...visiblePosts.map(post => ({ kind: 'social' as const, id: 'social:' + post.id, createdAt: post.createdAt || '', post })),
+      ...communityItems.map(entry => ({ kind: 'community' as const, id: 'community:' + entry.post.id, createdAt: entry.post.createdAt, entry })),
+    ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  }, [communityEntries, currentUserId, feedNow, filter, friends, searchQuery, visiblePosts]);
 
   const toggleComments = (postId: string) => {
     setExpandedComments(current => {
@@ -243,7 +299,21 @@ export function PublicSocialFeedPanel({
 
   return (
     <section className="space-y-4" id="public-social-feed-panel">
-      {visiblePosts.map(post => {
+      {feedRows.map(row => {
+        if (row.kind === 'community') {
+          const { entry } = row;
+          const membership = directoryCommunities.find(community => community.id === entry.communityId);
+          const connection = communityConnections.find(item => item.senderId === entry.post.authorId || item.receiverId === entry.post.authorId);
+          return (
+            <CommunitySquareFeedCard
+              key={row.id} entry={entry} viewerId={currentUserId}
+              canParticipate={Boolean(membership?.isOwner || membership?.isActiveMember)}
+              saved={savedCommunityPostIds.has(entry.post.id)}
+              connection={connection}
+            />
+          );
+        }
+        const post = row.post;
         const comments = commentsByPost.get(post.id) ?? [];
         const isLiked = likedPostIds.has(post.id);
         const commentsOpen = expandedComments.has(post.id);
@@ -530,7 +600,7 @@ export function PublicSocialFeedPanel({
         );
       })}
 
-      {visiblePosts.length === 0 && (
+      {feedRows.length === 0 && (
         <div className="rounded-3xl border border-dashed border-slate-800 bg-slate-900/45 px-5 py-12 text-center">
           <CircleUserRound className="mx-auto h-8 w-8 text-slate-700" />
           <p className="mt-3 text-xs text-slate-500">
