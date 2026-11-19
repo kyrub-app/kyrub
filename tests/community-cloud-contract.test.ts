@@ -269,7 +269,7 @@ test('community organic metrics appear only for their author and never conflate 
   }
   assert.match(card, /<BarChart3 className="h-4 w-4" \/> Métricas da publicação/);
   assert.match(card, /<Megaphone className="h-4 w-4"\/> Promover no Kyrub Ads/);
-  assert.match(card, /entry\.intersectionRatio < 0\.55/);
+  assert.match(card, /entry\.intersectionRect\.height < 0\.55 \* visibleReference/);
   assert.match(card, /recordCommunityPostView\(post\)/);
   assert.match(card, /shareCommunityPostWithMetrics\(post\)/);
   assert.match(metrics, /navigator\.share\(/);
