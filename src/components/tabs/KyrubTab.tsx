@@ -366,7 +366,7 @@ export function KyrubTab(props: KyrubTabProps) {
     .join(' ');
 
   return (
-    <div className={wrapperClassName || undefined}>
+    <div className={wrapperClassName || undefined} data-kyrub-brand-panel="taba">
       {props.socialSubTab === 'lojas' && (
         <div
           className="mb-3 grid grid-cols-2 gap-2"
@@ -400,7 +400,7 @@ export function KyrubTab(props: KyrubTabProps) {
       )}
 
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
-        <section aria-label="Recompensas" className="mb-3 rounded-2xl border border-slate-800 bg-slate-950 p-4 text-slate-100">
+        <section aria-label="Recompensas" className="kyrub-tone-organic mb-3 rounded-2xl p-4">
           <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
           <PitangaAccount key={socialFeed.currentUserId || 'signed-out'} />
           <div className="mt-5 border-t border-slate-800 pt-5">
