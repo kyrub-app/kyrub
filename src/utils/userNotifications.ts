@@ -100,13 +100,15 @@ export const issueCommunityGroupInvite = async (
 export const issueCommunityForwardReceivedNotification = async (
   connectionId: string,
   messageId: string,
+  postId: string,
 ): Promise<void> => {
   if (!/^[a-zA-Z0-9_-]{1,128}$/.test(connectionId) ||
-    !/^[a-zA-Z0-9_-]{1,128}$/.test(messageId)) {
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(messageId) ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(postId)) {
     throw new Error('Referência de encaminhamento inválida.');
   }
   await authorizedFetch('/api/notifications/community-post-forward/received', {
     method: 'POST',
-    body: JSON.stringify({ connectionId, messageId }),
+    body: JSON.stringify({ connectionId, messageId, postId }),
   });
 };
