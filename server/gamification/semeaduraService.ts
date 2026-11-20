@@ -111,7 +111,7 @@ export const seedVerifiedPost = async (
     )) {
       throw new Error('SEMEADURA_STATS_INVALID');
     }
-    if (stats.exists && data?.closed === true && data.acceptedSeeds !== SEEDS_PER_BOSQUE) {
+    if (stats.exists && data?.closed !== (data.acceptedSeeds === SEEDS_PER_BOSQUE)) {
       throw new Error('SEMEADURA_STATS_INVALID');
     }
     // A receipt without its canonical post counter is corrupt state. Never
@@ -228,12 +228,14 @@ export const readVerifiedPostSemeadura = async (
   if (!Number.isSafeInteger(count) || count < 0 || count > SEEDS_PER_BOSQUE ||
       (stats.exists && (statsData?.authorId !== authorId ||
         statsData?.kind !== kind || statsData?.postId !== postId ||
+        statsData?.communityId !== (kind === 'community' ? postData?.communityId : '') ||
         statsData?.closed !== (count === SEEDS_PER_BOSQUE)))) {
     throw new Error('SEMEADURA_STATS_INVALID');
   }
   if (receipt.exists && (!stats.exists || receipt.data()?.actorId !== actor ||
       receipt.data()?.postId !== postId || receipt.data()?.kind !== kind ||
-      receipt.data()?.authorId !== authorId)) {
+      receipt.data()?.authorId !== authorId ||
+      receipt.data()?.communityId !== (kind === 'community' ? postData?.communityId : ''))) {
     throw new Error('SEMEADURA_RECEIPT_INVALID');
   }
   return {
