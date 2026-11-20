@@ -189,6 +189,7 @@ export function PublicSocialFeedPanel({
   const [savedCommunityPostIds, setSavedCommunityPostIds] = useState<Set<string>>(new Set());
   const [communityEntries, setCommunityEntries] = useState<CommunitySquareEntry[]>([]);
   const [communityConnections, setCommunityConnections] = useState<CommunityPostConnection[]>([]);
+  const [connectionsReady, setConnectionsReady] = useState(false);
   const [feedNow, setFeedNow] = useState(Date.now());
   const { communities: directoryCommunities } = useCommunityDirectory();
   const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(null);
@@ -219,10 +220,19 @@ export function PublicSocialFeedPanel({
 
   useEffect(() => {
     setCommunityConnections([]);
+    setConnectionsReady(false);
     if (!currentUserId) return;
     return subscribeCommunityPostConnections(
-      currentUserId, setCommunityConnections,
-      error => console.warn('Falha ao acompanhar conexões da Praça.', error),
+      currentUserId,
+      connections => {
+        setCommunityConnections(connections);
+        setConnectionsReady(true);
+      },
+      error => {
+        setCommunityConnections([]);
+        setConnectionsReady(false);
+        console.warn('Falha ao acompanhar conexões da Praça.', error);
+      },
     );
   }, [currentUserId]);
 
@@ -383,7 +393,7 @@ export function PublicSocialFeedPanel({
                   </button>
                   {openPostMenuId === post.id && (
                     <div className="absolute right-0 top-10 z-30 min-w-44 space-y-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-xl" role="menu">
-                      {authorConnection.status === 'none' && suggestedAuthor?.connectionStatus === 'none' && suggestedAuthor.isProfileVisible !== false && (
+                      {connectionsReady && authorConnection.status === 'none' && suggestedAuthor?.connectionStatus === 'none' && suggestedAuthor.isProfileVisible !== false && (
                         <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-slate-200 hover:bg-slate-800"
                           onClick={() => {
                             setOpenPostMenuId(null);
