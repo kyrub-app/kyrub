@@ -79,12 +79,18 @@ export const planPostSemeadura = (input: {
   return { status: 'accepted', count: next, nowClosed: next === SEEDS_PER_BOSQUE };
 };
 
-export const sumVerifiedPersonalSeeds = (posts: readonly { postId: string; seeds: number }[]): PitangueiraJourney => {
+export const sumVerifiedPersonalSeeds = (
+  posts: readonly { kind: SemeaduraPostKind; postId: string; seeds: number }[],
+): PitangueiraJourney => {
   const seen = new Set<string>();
   let total = 0;
   for (const post of posts) {
-    if (!post.postId || seen.has(post.postId)) throw new Error('SEMEADURA_DUPLICATE_POST');
-    seen.add(post.postId);
+    if (!post.postId || (post.kind !== 'community' && post.kind !== 'personal')) {
+      throw new Error('SEMEADURA_POST_INVALID');
+    }
+    const key = post.kind + '\\0' + post.postId;
+    if (seen.has(key)) throw new Error('SEMEADURA_DUPLICATE_POST');
+    seen.add(key);
     const seeds = nonnegativeSafe(post.seeds);
     if (seeds > SEEDS_PER_BOSQUE) throw new Error('SEMEADURA_POST_COUNT_EXCEEDS_CAP');
     total += seeds;
