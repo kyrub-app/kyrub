@@ -378,7 +378,12 @@ export function KyrubTab(props: KyrubTabProps) {
           onToggleFavoriteStore={props.handleToggleFavoriteStore}
           offerStoreIds={publishedOffers.map(offer => offer.storeId)}
           onViewAll={() => setStoreCatalogOpen(true)}
-          onOpenStore={props.setVisitingStore}
+          onOpenStore={store => {
+            // The existing shopping modal is beneath the directory overlay.
+            // Dismiss the directory first so the selected storefront is visible.
+            setStoreCatalogOpen(false);
+            props.setVisitingStore(store);
+          }}
           catalogOpen
           onCloseCatalog={() => setStoreCatalogOpen(false)}
         />
