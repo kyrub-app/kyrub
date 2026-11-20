@@ -157,7 +157,7 @@ export function CommunityPostCard({
   };
 
   return (
-    <article ref={cardRef} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+    <article ref={cardRef} data-community-post-id={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <header className="flex items-center gap-3">
         {post.authorAvatar
           ? <img src={post.authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
