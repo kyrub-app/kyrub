@@ -4,6 +4,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   query,
   serverTimestamp,
@@ -22,6 +23,7 @@ export interface SocialPostComment {
   authorAvatar: string;
   text: string;
   createdAt: string;
+  parentCommentId?: string;
 }
 
 type SocialLikeRecord = {
@@ -140,6 +142,7 @@ const mapComment = (
     authorName: readString(data.authorName) || 'Usuário Kyrub',
     authorAvatar: readString(data.authorAvatar),
     text,
+    parentCommentId: readString(data.parentCommentId) || undefined,
     createdAt:
       readString(data.createdAtIso) ||
       timestampToIso(data.createdAt, new Date().toISOString()),
@@ -384,15 +387,22 @@ export function usePublicSocialFeed() {
     });
   };
 
-  const addComment = async (postId: string, text: string) => {
+  const addComment = async (postId: string, text: string, parentCommentId?: string) => {
     const user = auth.currentUser;
     const normalizedText = text.trim();
     if (!user) throw new Error('Usuário não autenticado.');
     if (!normalizedText) throw new Error('O comentário está vazio.');
 
+    if (parentCommentId) {
+      const parent = await getDoc(doc(db, 'social_post_comments', parentCommentId));
+      if (!parent.exists() || parent.data().postId !== postId) {
+        throw new Error('O comentário original não está mais disponível nesta publicação.');
+      }
+    }
     const commentReference = doc(collection(db, 'social_post_comments'));
     await setDoc(commentReference, {
       postId,
+      ...(parentCommentId ? { parentCommentId } : {}),
       authorId: user.uid,
       authorName:
         user.displayName || user.email?.split('@')[0] || 'Usuário Kyrub',

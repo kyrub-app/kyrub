@@ -368,7 +368,8 @@
           'authorAvatar',
           'text',
           'createdAtIso',
-          'createdAt'
+          'createdAt',
+          'parentCommentId'
         ])
         && incoming().postId is string
         && incoming().postId.size() > 0
@@ -385,7 +386,15 @@
         && incoming().createdAtIso is string
         && incoming().createdAtIso.size() <= 64
         && incoming().createdAt == request.time
-        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId));
+        && exists(/databases/$(database)/documents/social_posts/$(incoming().postId))
+        && (!('parentCommentId' in incoming()) || (
+          incoming().parentCommentId is string
+          && incoming().parentCommentId.size() > 0
+          && incoming().parentCommentId.size() <= 160
+          && incoming().parentCommentId != commentId
+          && exists(/databases/$(database)/documents/social_post_comments/$(incoming().parentCommentId))
+          && get(/databases/$(database)/documents/social_post_comments/$(incoming().parentCommentId)).data.postId == incoming().postId
+        ));
 
       allow update: if false;
       allow delete: if isSignedIn()

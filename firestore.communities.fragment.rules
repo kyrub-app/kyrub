@@ -767,7 +767,7 @@
         ])
         && incoming().keys().hasOnly([
           'commentId','communityId','postId','authorId','authorName',
-          'authorAvatar','text','createdAtIso','createdAt'
+          'authorAvatar','text','createdAtIso','createdAt','parentCommentId'
         ])
         && incoming().commentId == commentId
         && incoming().authorId == request.auth.uid
@@ -783,7 +783,16 @@
         && incoming().createdAtIso.size() <= 64
         && incoming().createdAt == request.time
         && communityPostBelongsTo(incoming().postId, incoming().communityId)
-        && isActiveCommunityMember(incoming().communityId);
+        && isActiveCommunityMember(incoming().communityId)
+        && (!('parentCommentId' in incoming()) || (
+          incoming().parentCommentId is string
+          && incoming().parentCommentId.size() > 0
+          && incoming().parentCommentId.size() <= 160
+          && incoming().parentCommentId != commentId
+          && exists(/databases/$(database)/documents/community_post_comments/$(incoming().parentCommentId))
+          && get(/databases/$(database)/documents/community_post_comments/$(incoming().parentCommentId)).data.postId == incoming().postId
+          && get(/databases/$(database)/documents/community_post_comments/$(incoming().parentCommentId)).data.communityId == incoming().communityId
+        ));
 
       allow update: if false;
       allow delete: if isSignedIn()

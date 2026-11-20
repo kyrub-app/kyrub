@@ -30,6 +30,8 @@ test('like, comment and share stay together in this order', () => {
   assert.match(bridgeSource, /navigator\.clipboard\.writeText/);
   assert.match(feedSource, /commentsByPost/);
   assert.match(feedSource, /addComment/);
+  assert.match(bridgeSource, /orderCommentThreads\(commentsForSelectedPost\)/);
+  assert.match(bridgeSource, /socialFeed\.addComment\(commentsPost\.id, commentDraft, replyTarget\?\.id\)/);
 });
 
 test('the author menu exposes metrics and confirmed deletion', () => {

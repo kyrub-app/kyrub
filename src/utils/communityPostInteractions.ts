@@ -20,6 +20,7 @@ export interface CommunityPostComment {
   authorAvatar: string;
   text: string;
   createdAt: string;
+  parentCommentId?: string;
 }
 
 const currentUid = (): string => {
@@ -58,6 +59,7 @@ export const subscribeCommunityPostInteractions = (
         authorName: typeof data.authorName === 'string' ? data.authorName : 'Kairubido',
         authorAvatar: typeof data.authorAvatar === 'string' ? data.authorAvatar : '',
         text: data.text,
+        parentCommentId: typeof data.parentCommentId === 'string' ? data.parentCommentId : undefined,
         createdAt: typeof data.createdAtIso === 'string' ? data.createdAtIso : '',
       }];
     }).sort((a, b) => a.createdAt.localeCompare(b.createdAt))),
@@ -84,17 +86,24 @@ export const toggleCommunityPostLike = async (
 };
 
 export const addCommunityPostComment = async (
-  post: CloudCommunityPost, value: string,
+  post: CloudCommunityPost, value: string, parentCommentId?: string,
 ): Promise<void> => {
   const uid = currentUid();
   const user = auth.currentUser!;
   const text = value.trim();
   if (!text || text.length > 1000) throw new Error('Escreva um comentário de até 1.000 caracteres.');
+  if (parentCommentId) {
+    const parent = await getDoc(doc(db, 'community_post_comments', parentCommentId));
+    if (!parent.exists() || parent.data().postId !== post.id || parent.data().communityId !== post.communityId) {
+      throw new Error('O comentário original não está mais disponível nesta publicação.');
+    }
+  }
   const reference = doc(collection(db, 'community_post_comments'));
   await setDoc(reference, {
     commentId: reference.id,
     communityId: post.communityId,
     postId: post.id,
+    ...(parentCommentId ? { parentCommentId } : {}),
     authorId: uid,
     authorName: (user.displayName || user.email?.split('@')[0] || 'Kairubido').slice(0, 160),
     authorAvatar: (user.photoURL || '').slice(0, 2048),
