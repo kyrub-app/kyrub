@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { collection, deleteDoc, doc, onSnapshot, serverTimestamp, setDoc } from 'firebase/firestore';
 import {
   ArrowLeft,
   ArrowRight,
@@ -16,6 +17,7 @@ import {
   Check,
   CircleAlert,
   Globe2,
+  Heart,
   LockKeyhole,
   MapPin,
   Megaphone,
@@ -51,7 +53,7 @@ import {
   type CloudCommunityPost,
   type CommunityVisibility,
 } from '../utils/communityCloud';
-import { auth } from '../utils/firebase';
+import { auth, db } from '../utils/firebase';
 import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
@@ -64,13 +66,14 @@ import {
   withinCommunitySquareWindow, publishCommunityPostToSquare, removeCommunityPostFromSquare,
 } from '../utils/communitySquareFeed';
 
-type CommunityListTab = 'mine' | 'discover' | 'trending';
+type CommunityListTab = 'participating' | 'favorites' | 'trending';
 type CommunityPageTab = 'wall' | 'notices' | 'about';
 
 const selectCommunityDirectory = (
   entries: CommunityDirectoryItem[],
   tab: CommunityListTab,
   searchValue: string,
+  favorites: ReadonlySet<string>,
 ): CommunityDirectoryItem[] => {
   const normalizedSearch = searchValue.trim().toLocaleLowerCase('pt-BR');
   const filtered = entries.filter(community => {
@@ -78,11 +81,13 @@ const selectCommunityDirectory = (
       `${community.name} ${community.description} ${community.category} ${community.location}`
         .toLocaleLowerCase('pt-BR').includes(normalizedSearch);
     if (!matches) return false;
-    if (tab === 'mine') {
-      return community.isOwner || community.isActiveMember || community.isPendingMember;
+    if (tab === 'participating') {
+      return community.isOwner || community.isActiveMember;
     }
     // Private communities must never become publicly discoverable.
-    return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
+    const visible = community.visibility !== 'private' || community.isOwner || community.isActiveMember;
+    if (!visible) return false;
+    return tab !== 'favorites' || favorites.has(community.id);
   });
   return tab === 'trending'
     ? [...filtered].sort((a, b) => b.memberCount - a.memberCount || a.name.localeCompare(b.name, 'pt-BR'))
@@ -229,11 +234,14 @@ export function ProfileCommunitiesCloudBridge() {
   const { user, communities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
-  const [listTab, setListTab] = useState<CommunityListTab>('mine');
+  const [listTab, setListTab] = useState<CommunityListTab>('trending');
   const [catalogOpen, setCatalogOpen] = useState(false);
-  const [catalogTab, setCatalogTab] = useState<CommunityListTab>('discover');
+  const [catalogTab, setCatalogTab] = useState<CommunityListTab>('trending');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState('all');
+  const [favoriteCommunityIds, setFavoriteCommunityIds] = useState<Set<string>>(new Set());
+  const [favoriteBusyId, setFavoriteBusyId] = useState('');
+  const [favoriteError, setFavoriteError] = useState('');
   const [searchValue, setSearchValue] = useState('');
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
@@ -332,6 +340,49 @@ export function ProfileCommunitiesCloudBridge() {
   const mountRef = useRef<HTMLElement | null>(null);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
   const searchListenerRef = useRef<((event: Event) => void) | null>(null);
+
+  useEffect(() => {
+    setFavoriteCommunityIds(new Set());
+    setFavoriteError('');
+    if (!user?.uid) return;
+    return onSnapshot(collection(db, 'users', user.uid, 'favorites'), snapshot => {
+      const ids = new Set<string>();
+      for (const entry of snapshot.docs) {
+        const data = entry.data();
+        if (data.kind === 'community' && typeof data.communityId === 'string' && data.communityId) {
+          ids.add(data.communityId);
+        }
+      }
+      setFavoriteCommunityIds(ids);
+    }, () => setFavoriteError('Não foi possível sincronizar as comunidades favoritas.'));
+  }, [user?.uid]);
+
+  const toggleFavoriteCommunity = async (communityId: string): Promise<void> => {
+    const viewer = auth.currentUser;
+    if (!viewer || viewer.uid !== user?.uid) {
+      setFavoriteError('Faça login para favoritar comunidades.');
+      return;
+    }
+    if (favoriteBusyId) return;
+    setFavoriteBusyId(communityId);
+    setFavoriteError('');
+    try {
+      const reference = doc(db, 'users', viewer.uid, 'favorites', `community_${communityId}`);
+      if (favoriteCommunityIds.has(communityId)) {
+        await deleteDoc(reference);
+      } else {
+        await setDoc(reference, {
+          kind: 'community',
+          communityId,
+          savedAt: serverTimestamp(),
+        });
+      }
+    } catch {
+      setFavoriteError('Não foi possível atualizar seu favorito. Tente novamente.');
+    } finally {
+      setFavoriteBusyId('');
+    }
+  };
 
   const selectedCommunity = communities.find(
     community => community.id === selectedCommunityId
@@ -666,19 +717,19 @@ export function ProfileCommunitiesCloudBridge() {
   );
 
   const visibleCommunities = useMemo(
-    () => selectCommunityDirectory(communities, listTab, searchValue),
-    [communities, listTab, searchValue],
+    () => selectCommunityDirectory(communities, listTab, searchValue, favoriteCommunityIds),
+    [communities, listTab, searchValue, favoriteCommunityIds],
   );
   const catalogCategories = useMemo(
-    () => [...new Set(selectCommunityDirectory(communities, 'discover', '')
+    () => [...new Set(selectCommunityDirectory(communities, 'trending', '', favoriteCommunityIds)
       .map(community => community.category.trim()).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [communities],
+    [communities, favoriteCommunityIds],
   );
   const catalogCommunities = useMemo(
-    () => selectCommunityDirectory(communities, catalogTab, catalogSearch)
+    () => selectCommunityDirectory(communities, catalogTab, catalogSearch, favoriteCommunityIds)
       .filter(community => catalogCategory === 'all' || community.category.trim() === catalogCategory),
-    [communities, catalogTab, catalogSearch, catalogCategory],
+    [communities, catalogTab, catalogSearch, catalogCategory, favoriteCommunityIds],
   );
 
   const similarCommunities = useMemo(() => {
@@ -916,7 +967,7 @@ export function ProfileCommunitiesCloudBridge() {
     return (
       <article
         key={community.id}
-        className={`flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[172px] shrink-0'}`}
+        className={`relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[172px] shrink-0'}`}
       >
         <button type="button" onClick={() => openCommunity(community)} className="text-left">
           <CommunityCover community={community} className="h-24" />
@@ -941,6 +992,18 @@ export function ProfileCommunitiesCloudBridge() {
               </p>
             )}
           </div>
+        </button>
+        <button type="button"
+          aria-pressed={favoriteCommunityIds.has(community.id)}
+          aria-label={favoriteCommunityIds.has(community.id)
+            ? `Remover ${community.name} dos favoritos`
+            : `Favoritar comunidade ${community.name}`}
+          disabled={favoriteBusyId === community.id}
+          onClick={() => void toggleFavoriteCommunity(community.id)}
+          className={`absolute right-2 top-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-slate-950/85 disabled:opacity-40 ${favoriteCommunityIds.has(community.id)
+            ? 'border-rose-500/60 text-rose-300'
+            : 'border-slate-600 text-white'}`}>
+          <Heart className={`h-4 w-4 ${favoriteCommunityIds.has(community.id) ? 'fill-current' : ''}`} />
         </button>
         <div className="mt-auto border-t border-slate-800 p-2">
           <button
@@ -1072,7 +1135,7 @@ export function ProfileCommunitiesCloudBridge() {
               <button
                 type="button"
                 onClick={() => {
-                  setCatalogTab('discover');
+                  setCatalogTab('trending');
                   setCatalogSearch('');
                   setCatalogCategory('all');
                   setCatalogOpen(true);
@@ -1087,8 +1150,8 @@ export function ProfileCommunitiesCloudBridge() {
 
             <div className="flex gap-1.5 overflow-x-auto">
               {([
-                ['mine', 'Minhas'],
-                ['discover', 'Descobrir'],
+                ['participating', 'Participante'],
+                ['favorites', 'Favoritos'],
                 ['trending', 'Em alta'],
               ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
                 <button
@@ -1106,9 +1169,9 @@ export function ProfileCommunitiesCloudBridge() {
               ))}
             </div>
 
-            {error && (
-              <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200">
-                {error}
+            {(error || favoriteError) && (
+              <p role="alert" className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-200">
+                {error || favoriteError}
               </p>
             )}
 
@@ -1179,8 +1242,8 @@ export function ProfileCommunitiesCloudBridge() {
               </div>
               <div role="group" aria-label="Filtros do catálogo de comunidades" className="flex gap-2 overflow-x-auto">
                 {([
-                  ['discover', 'Descobrir'],
-                  ['mine', 'Minhas'],
+                  ['participating', 'Participante'],
+                  ['favorites', 'Favoritos'],
                   ['trending', 'Em alta'],
                 ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
                   <button key={id} type="button" aria-pressed={catalogTab === id}
@@ -1204,7 +1267,7 @@ export function ProfileCommunitiesCloudBridge() {
             </div>
 
             <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-12">
-              {error && <p role="alert" className="mb-3 rounded-xl border border-amber-500/20 p-3 text-xs text-amber-200">{error}</p>}
+              {(error || favoriteError) && <p role="alert" className="mb-3 rounded-xl border border-amber-500/20 p-3 text-xs text-amber-200">{error || favoriteError}</p>}
               <p className="mb-3 text-xs text-slate-400" aria-live="polite">
                 {loading ? 'Carregando comunidades…' :
                   `${catalogCommunities.length} ${catalogCommunities.length === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
