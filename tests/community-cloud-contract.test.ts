@@ -377,7 +377,7 @@ test('community Editar is independent of personal account shortcuts and edits re
   assert.match(communityCloud, /\.\.\.\(input\.category !== undefined \? \{ category: trimmed\.category \} : \{\}\)/);
   assert.match(communityCloud, /\.\.\.\(input\.location !== undefined \? \{ location: trimmed\.location \} : \{\}\)/);
 
-  const ownerRuleStart = rules.indexOf('allow update: if isSignedIn()\\n        && existing().ownerId == request.auth.uid');
+  const ownerRuleStart = rules.indexOf('allow update: if isSignedIn()\n        && existing().ownerId == request.auth.uid');
   const ownerRuleEnd = rules.indexOf('allow update: if isSignedIn()', ownerRuleStart + 25);
   assert.ok(ownerRuleStart > 0 && ownerRuleEnd > ownerRuleStart);
   const ownerRule = rules.slice(ownerRuleStart, ownerRuleEnd);
