@@ -174,51 +174,40 @@ test('another authenticated profile reads but cannot administer a public communi
   );
 });
 
-test('public membership unlocks mural and debate participation', async () => {
+test('public membership unlocks the mural, but legacy debate creation is disabled', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const member = environment.authenticatedContext(MEMBER).firestore();
   await createCommunity(owner, 'public_c', 'public');
   await assertSucceeds(joinPublic(member, 'public_c', MEMBER));
-  await assertSucceeds(
-    setDoc(doc(member, 'community_posts', 'post_a'), {
-      postId: 'post_a',
-      communityId: 'public_c',
-      authorId: MEMBER,
-      authorName: 'Membro',
-      authorAvatar: '',
-      content: 'Publicação visível em outro perfil.',
-      mediaUrls: [],
-      createdAtIso: '2026-08-05T00:02:00.000Z',
-      createdAt: serverTimestamp(),
-      updatedAtIso: '2026-08-05T00:02:00.000Z',
-      updatedAt: serverTimestamp(),
-    })
-  );
-  await assertSucceeds(
-    setDoc(
-      doc(member, 'community_debates', 'debate_a'),
-      debateData('public_c', 'debate_a')
-    )
-  );
+  await assertSucceeds(setDoc(doc(member, 'community_posts', 'post_a'), {
+    postId: 'post_a', communityId: 'public_c', authorId: MEMBER,
+    authorName: 'Membro', authorAvatar: '', content: 'Publicação no Mural.',
+    mediaUrls: [], createdAtIso: '2026-08-05T00:02:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-08-05T00:02:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(
+    doc(member, 'community_debates', 'debate_a'),
+    debateData('public_c', 'debate_a'),
+  ));
 });
 
-test('moderated membership remains pending until creator approval', async () => {
+test('moderated membership still needs owner approval before posting in Mural', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const member = environment.authenticatedContext(MEMBER).firestore();
   await createCommunity(owner, 'moderated_a', 'moderated');
   const id = memberId('moderated_a', MEMBER);
-  await assertSucceeds(
-    setDoc(
-      doc(member, 'community_members', id),
-      membershipData('moderated_a', MEMBER, 'pending')
-    )
-  );
-  await assertFails(
-    setDoc(
-      doc(member, 'community_debates', 'blocked'),
-      debateData('moderated_a', 'blocked')
-    )
-  );
+  await assertSucceeds(setDoc(
+    doc(member, 'community_members', id),
+    membershipData('moderated_a', MEMBER, 'pending'),
+  ));
+
+  const postData = {
+    postId: 'approved_mural_post', communityId: 'moderated_a', authorId: MEMBER,
+    authorName: 'Membro', authorAvatar: '', content: 'Publicado após aprovação.',
+    mediaUrls: [], createdAtIso: '2026-08-05T00:02:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-08-05T00:02:00.000Z', updatedAt: serverTimestamp(),
+  };
+  await assertFails(setDoc(doc(member, 'community_posts', 'approved_mural_post'), postData));
 
   const approval = writeBatch(owner);
   approval.update(doc(owner, 'community_members', id), {
@@ -227,79 +216,52 @@ test('moderated membership remains pending until creator approval', async () => 
     updatedAt: serverTimestamp(),
   });
   approval.update(doc(owner, 'communities', 'moderated_a'), {
-    memberCount: 2,
-    lastMembershipChangeId: id,
-    updatedAtIso: '2026-08-05T00:04:00.000Z',
-    updatedAt: serverTimestamp(),
-    activityAtIso: '2026-08-05T00:04:00.000Z',
-    activityAt: serverTimestamp(),
+    memberCount: 2, lastMembershipChangeId: id,
+    updatedAtIso: '2026-08-05T00:04:00.000Z', updatedAt: serverTimestamp(),
+    activityAtIso: '2026-08-05T00:04:00.000Z', activityAt: serverTimestamp(),
   });
   await assertSucceeds(approval.commit());
-  await assertSucceeds(
-    setDoc(
-      doc(member, 'community_debates', 'approved'),
-      debateData('moderated_a', 'approved')
-    )
-  );
+  await assertSucceeds(setDoc(doc(member, 'community_posts', 'approved_mural_post'), postData));
+  await assertFails(setDoc(
+    doc(member, 'community_debates', 'approved'),
+    debateData('moderated_a', 'approved'),
+  ));
 });
 
-test('active member adds a shared comment only with the atomic debate counter', async () => {
+test('retired historical debates and comments are retained read-only, even for their authors', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const member = environment.authenticatedContext(MEMBER).firestore();
-  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
   await createCommunity(owner, 'public_d', 'public');
   await joinPublic(member, 'public_d', MEMBER);
-  await setDoc(
-    doc(member, 'community_debates', 'debate_b'),
-    debateData('public_d', 'debate_b')
-  );
 
-  await assertFails(
-    setDoc(doc(outsider, 'community_debate_comments', 'forged'), {
-      commentId: 'forged',
-      communityId: 'public_d',
-      debateId: 'debate_b',
-      authorId: OUTSIDER,
-      authorName: 'Intruso',
-      authorAvatar: '',
-      text: 'Comentário sem participação.',
-      parentCommentId: '',
-      createdAtIso: '2026-08-05T00:05:00.000Z',
-      createdAt: serverTimestamp(),
-      updatedAtIso: '2026-08-05T00:05:00.000Z',
-      updatedAt: serverTimestamp(),
-    })
-  );
+  await environment.withSecurityRulesDisabled(async context => {
+    const privileged = context.firestore();
+    await setDoc(doc(privileged, 'community_debates', 'legacy_debate'), {
+      ...debateData('public_d', 'legacy_debate'),
+      createdAt: serverTimestamp(), updatedAt: serverTimestamp(), activityAt: serverTimestamp(),
+    });
+    await setDoc(doc(privileged, 'community_debate_comments', 'legacy_comment'), {
+      commentId: 'legacy_comment', communityId: 'public_d', debateId: 'legacy_debate',
+      authorId: MEMBER, authorName: 'Membro', authorAvatar: '',
+      text: 'Comentário histórico preservado.', parentCommentId: '',
+      createdAtIso: '2026-08-05T00:05:00.000Z', createdAt: serverTimestamp(),
+      updatedAtIso: '2026-08-05T00:05:00.000Z', updatedAt: serverTimestamp(),
+    });
+  });
 
-  await assertSucceeds(
-    runTransaction(member, async transaction => {
-      const debateRef = doc(member, 'community_debates', 'debate_b');
-      const debate = await transaction.get(debateRef);
-      const commentRef = doc(collection(member, 'community_debate_comments'));
-      transaction.set(commentRef, {
-        commentId: commentRef.id,
-        communityId: 'public_d',
-        debateId: 'debate_b',
-        authorId: MEMBER,
-        authorName: 'Membro',
-        authorAvatar: '',
-        text: 'Este comentário continua o debate em outro perfil.',
-        parentCommentId: '',
-        createdAtIso: '2026-08-05T00:05:00.000Z',
-        createdAt: serverTimestamp(),
-        updatedAtIso: '2026-08-05T00:05:00.000Z',
-        updatedAt: serverTimestamp(),
-      });
-      transaction.update(debateRef, {
-        commentCount: Number(debate.data()?.commentCount ?? 0) + 1,
-        lastCommentId: commentRef.id,
-        updatedAtIso: '2026-08-05T00:05:00.000Z',
-        updatedAt: serverTimestamp(),
-        activityAtIso: '2026-08-05T00:05:00.000Z',
-        activityAt: serverTimestamp(),
-      });
-    })
-  );
+  await assertSucceeds(getDoc(doc(member, 'community_debates', 'legacy_debate')));
+  await assertSucceeds(getDoc(doc(member, 'community_debate_comments', 'legacy_comment')));
+  await assertFails(updateDoc(doc(member, 'community_debates', 'legacy_debate'), { status: 'closed' }));
+  await assertFails(deleteDoc(doc(owner, 'community_debates', 'legacy_debate')));
+  await assertFails(updateDoc(doc(member, 'community_debate_comments', 'legacy_comment'), { text: 'Alterado' }));
+  await assertFails(deleteDoc(doc(member, 'community_debate_comments', 'legacy_comment')));
+  await assertFails(setDoc(doc(member, 'community_debate_comments', 'new_legacy_comment'), {
+    commentId: 'new_legacy_comment', communityId: 'public_d', debateId: 'legacy_debate',
+    authorId: MEMBER, authorName: 'Membro', authorAvatar: '', text: 'Novo',
+    parentCommentId: '', createdAtIso: '2026-08-05T00:05:00.000Z',
+    createdAt: serverTimestamp(), updatedAtIso: '2026-08-05T00:05:00.000Z',
+    updatedAt: serverTimestamp(),
+  }));
 });
 
 test('community wall likes, comments and immutable reports enforce membership and ownership', async () => {
