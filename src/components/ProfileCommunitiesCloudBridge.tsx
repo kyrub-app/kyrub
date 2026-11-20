@@ -1129,7 +1129,7 @@ export function ProfileCommunitiesCloudBridge() {
                 </span>
               </button>
 
-              {visibleCommunities.map(renderCard)}
+              {visibleCommunities.map(community => renderCard(community))}
 
               {!loading && visibleCommunities.length === 0 && (
                 <div className="flex min-h-[210px] min-w-[230px] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 p-5 text-center">
