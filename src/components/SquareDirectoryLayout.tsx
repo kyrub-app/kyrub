@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useState, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, Search } from 'lucide-react';
 
@@ -38,6 +38,31 @@ export function SquareDirectoryLayout({
   onCategoryChange, onClose, children,
 }: SquareDirectoryLayoutProps) {
   const [headerBottom, setHeaderBottom] = useState(0);
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+
+  useEffect(() => {
+    // Because the real header remains interactive, navigating to another
+    // workspace or opening the profile must dismiss the catalog.
+    const onWorkspaceChange = () => {
+      const workspace = document.getElementById('kyrub-workspace-main');
+      if (
+        !workspace ||
+        workspace.dataset.kyrubWorkspace !== 'kyrub' ||
+        document.getElementById('modal-user-profile') ||
+        document.getElementById('profile-social-hub-modal')
+      ) {
+        onCloseRef.current();
+      }
+    };
+    const observer = new MutationObserver(onWorkspaceChange);
+    observer.observe(document.body, {
+      childList: true, subtree: true, attributes: true,
+      attributeFilter: ['data-kyrub-workspace'],
+    });
+    return () => observer.disconnect();
+  }, []);
+
 
   useLayoutEffect(() => {
     // The workspace brand is sticky beneath the existing toolbar; measuring
