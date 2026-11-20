@@ -116,6 +116,10 @@ export interface CommunityCreateInput {
 
 export interface CommunityUpdateInput {
   communityId: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  location?: string;
   rules: string;
   coverImage?: string;
   coverPath?: string;
@@ -559,9 +563,35 @@ export const updateCommunity = async (
   input: CommunityUpdateInput
 ): Promise<void> => {
   currentIdentity();
+  const trimmed = {
+    name: input.name?.trim(),
+    description: input.description?.trim(),
+    category: input.category?.trim(),
+    location: input.location?.trim(),
+    rules: input.rules.trim(),
+  };
+  if (input.name !== undefined && (!trimmed.name || trimmed.name.length > 80)) {
+    throw new Error('Informe um nome de até 80 caracteres para a comunidade.');
+  }
+  if (input.description !== undefined && (!trimmed.description || trimmed.description.length > 500)) {
+    throw new Error('Informe uma descrição de até 500 caracteres.');
+  }
+  if (input.category !== undefined && (!trimmed.category || trimmed.category.length > 80)) {
+    throw new Error('Informe uma categoria de até 80 caracteres.');
+  }
+  if (input.location !== undefined && (trimmed.location?.length ?? 0) > 120) {
+    throw new Error('A localização deve ter até 120 caracteres.');
+  }
+  if (!trimmed.rules || trimmed.rules.length > 1200) {
+    throw new Error('Informe regras de até 1.200 caracteres.');
+  }
   const nowIso = new Date().toISOString();
   await updateDoc(doc(db, 'communities', input.communityId), {
-    rules: input.rules.trim().slice(0, 1200),
+    ...(input.name !== undefined ? { name: trimmed.name } : {}),
+    ...(input.description !== undefined ? { description: trimmed.description } : {}),
+    ...(input.category !== undefined ? { category: trimmed.category } : {}),
+    ...(input.location !== undefined ? { location: trimmed.location } : {}),
+    rules: trimmed.rules,
     ...(input.coverImage !== undefined
       ? { coverImage: input.coverImage.trim().slice(0, 4096) }
       : {}),
@@ -573,6 +603,60 @@ export const updateCommunity = async (
     activityAtIso: nowIso,
     activityAt: serverTimestamp(),
   });
+};
+
+/**
+ * Apply community details and a cover change as one Firestore update.
+ * A new image is uploaded first but only becomes public in the community
+ * after the metadata update succeeds. Failed saves discard the staged file.
+ * Existing cover files are removed only after a confirmed metadata update.
+ */
+export const saveCommunityProfile = async (
+  community: CloudCommunity,
+  input: CommunityUpdateInput,
+  coverBlob: Blob | null,
+  removeCover: boolean
+): Promise<void> => {
+  const { user } = currentIdentity();
+  if (community.ownerId !== user.uid || input.communityId !== community.id) {
+    throw new Error('Somente o criador pode editar esta comunidade.');
+  }
+
+  let coverImage = community.coverImage;
+  let coverPath = community.coverPath;
+  let stagedPath = '';
+
+  if (removeCover) {
+    coverImage = '';
+    coverPath = '';
+  } else if (coverBlob) {
+    stagedPath = `community-covers/${community.id}/${user.uid}/${Date.now()}-${crypto.randomUUID()}.jpg`;
+    const destination = ref(storage, stagedPath);
+    try {
+      await uploadBytes(destination, coverBlob, {
+        contentType: coverBlob.type || 'image/jpeg',
+        customMetadata: { communityId: community.id, ownerId: user.uid },
+      });
+      coverImage = await getDownloadURL(destination);
+      coverPath = stagedPath;
+    } catch (error) {
+      await deleteObject(destination).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  try {
+    await updateCommunity({ ...input, coverImage, coverPath });
+  } catch (error) {
+    if (stagedPath) {
+      await deleteObject(ref(storage, stagedPath)).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (community.coverPath && community.coverPath !== coverPath) {
+    void deleteObject(ref(storage, community.coverPath)).catch(() => undefined);
+  }
 };
 
 export const uploadCommunityCover = async (

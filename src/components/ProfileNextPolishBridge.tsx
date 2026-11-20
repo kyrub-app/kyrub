@@ -56,10 +56,11 @@ export function ProfileNextPolishBridge() {
 
   useEffect(() => {
     const synchronize = () => {
-      const editCloseButton =
-        document.querySelector<HTMLButtonElement>(
+      const editCloseButton = [
+        ...document.querySelectorAll<HTMLButtonElement>(
           'button[aria-label="Fechar edição"]'
-        );
+        ),
+      ].find(button => !button.closest('[data-kyrub-community-editor="true"]')) ?? null;
       const editForm = editCloseButton?.closest('form') ?? null;
       let nextSecureTarget: HTMLElement | null = null;
 

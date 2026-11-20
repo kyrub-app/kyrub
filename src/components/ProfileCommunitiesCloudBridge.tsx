@@ -45,15 +45,13 @@ import {
   leaveCommunity,
   OPEN_COMMUNITY_CLOUD_CREATE_EVENT,
   rejectCommunityMember,
-  removeCommunityCover,
   subscribeCommunityDebates,
   subscribeCommunityMemberships,
   subscribeCommunityPosts,
   subscribeDebateComments,
-  updateCommunity,
+  saveCommunityProfile,
   updateDebateComment,
   updateDebateStatus,
-  uploadCommunityCover,
   uploadCommunityPostMedia,
   type CloudCommunity,
   type CloudCommunityDebate,
@@ -266,6 +264,10 @@ export function ProfileCommunitiesCloudBridge() {
   const [createError, setCreateError] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
+  const [editCategory, setEditCategory] = useState('');
+  const [editLocation, setEditLocation] = useState('');
   const [editRules, setEditRules] = useState('');
   const [coverBlob, setCoverBlob] = useState<Blob | null>(null);
   const [coverPreview, setCoverPreview] = useState('');
@@ -845,6 +847,10 @@ export function ProfileCommunitiesCloudBridge() {
 
   const openEditor = () => {
     if (!selectedCommunity?.isOwner) return;
+    setEditName(selectedCommunity.name);
+    setEditDescription(selectedCommunity.description);
+    setEditCategory(selectedCommunity.category);
+    setEditLocation(selectedCommunity.location);
     setEditRules(selectedCommunity.rules);
     setCoverBlob(null);
     setCoverPreview(selectedCommunity.coverImage);
@@ -876,29 +882,24 @@ export function ProfileCommunitiesCloudBridge() {
 
   const submitEdit = async (event: FormEvent) => {
     event.preventDefault();
-    if (!selectedCommunity) return;
+    if (!selectedCommunity?.isOwner) return;
+    if (!editName.trim() || !editDescription.trim() || !editCategory.trim() || !editRules.trim()) {
+      setEditError('Informe nome, descrição, categoria e regras da comunidade.');
+      return;
+    }
     setEditBusy(true);
     setEditError('');
     try {
-      let coverImage = selectedCommunity.coverImage;
-      let coverPath = selectedCommunity.coverPath;
-      if (removeCoverRequested) {
-        await removeCommunityCover(selectedCommunity);
-        coverImage = '';
-        coverPath = '';
-      } else if (coverBlob) {
-        const uploaded = await uploadCommunityCover(selectedCommunity, coverBlob);
-        coverImage = uploaded.url;
-        coverPath = uploaded.path;
-      }
-      await updateCommunity({
+      await saveCommunityProfile(selectedCommunity, {
         communityId: selectedCommunity.id,
+        name: editName,
+        description: editDescription,
+        category: editCategory,
+        location: editLocation,
         rules: editRules,
-        coverImage,
-        coverPath,
-      });
+      }, coverBlob, removeCoverRequested);
       setEditOpen(false);
-      setMessage('Capa e regras atualizadas.');
+      setMessage('Informações da comunidade atualizadas.');
     } catch (value) {
       setEditError(
         value instanceof Error
@@ -2053,6 +2054,7 @@ export function ProfileCommunitiesCloudBridge() {
             role="presentation"
           >
             <form
+              data-kyrub-community-editor="true"
               onSubmit={submitEdit}
               onClick={event => event.stopPropagation()}
               className="max-h-[94dvh] w-full max-w-lg overflow-y-auto rounded-t-3xl border border-slate-800 bg-slate-900 shadow-2xl sm:rounded-3xl"
@@ -2062,13 +2064,51 @@ export function ProfileCommunitiesCloudBridge() {
                   <span className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-300">Administração</span>
                   <h3 className="mt-1 text-lg font-black text-white">Editar comunidade</h3>
                 </div>
-                <button type="button" onClick={() => setEditOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500" aria-label="Fechar edição">
+                <button type="button" onClick={() => setEditOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500" aria-label="Fechar edição da comunidade">
                   <X className="h-4 w-4" />
                 </button>
               </header>
-              <div className="space-y-4 p-4">
+              <div className="space-y-5 p-4">
+                <section className="space-y-3" aria-label="Informações da comunidade">
+                  <h4 className="text-sm font-black text-sky-300">Identidade da comunidade</h4>
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-300">Nome da comunidade</span>
+                    <input type="text" required maxLength={80} value={editName}
+                      onChange={event => setEditName(event.target.value.slice(0, 80))}
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500"
+                      placeholder="Nome da comunidade" />
+                    <span className="mt-1 block text-right text-xs text-slate-500">{editName.length}/80</span>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-bold text-slate-300">Descrição</span>
+                    <textarea rows={3} required maxLength={500} value={editDescription}
+                      onChange={event => setEditDescription(event.target.value.slice(0, 500))}
+                      className="mt-1 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500"
+                      placeholder="Apresente o propósito da comunidade" />
+                    <span className="mt-1 block text-right text-xs text-slate-500">{editDescription.length}/500</span>
+                  </label>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <label className="block">
+                      <span className="text-xs font-bold text-slate-300">Categoria</span>
+                      <input type="text" required maxLength={80} value={editCategory}
+                        onChange={event => setEditCategory(event.target.value.slice(0, 80))}
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500" />
+                    </label>
+                    <label className="block">
+                      <span className="text-xs font-bold text-slate-300">Localização (opcional)</span>
+                      <input type="text" maxLength={120} value={editLocation}
+                        onChange={event => setEditLocation(event.target.value.slice(0, 120))}
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500" />
+                    </label>
+                  </div>
+                  <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-xs leading-relaxed text-slate-400">
+                    <strong className="block text-slate-200">Acesso: {visibilityDetails(selectedCommunity.visibility).label}</strong>
+                    O tipo de acesso e o criador não mudam nesta edição. Renomear não altera os membros,
+                    as publicações nem a identidade interna da comunidade.
+                  </div>
+                </section>
                 <section>
-                  <span className="text-[11px] font-black uppercase text-slate-400">Imagem de capa</span>
+                  <span className="text-xs font-bold text-slate-300">Imagem de capa</span>
                   <div className="mt-2 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
                     <div className="relative h-44">
                       {coverPreview && !removeCoverRequested ? (
@@ -2116,9 +2156,9 @@ export function ProfileCommunitiesCloudBridge() {
                 )}
               </div>
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
-                <button type="submit" disabled={editBusy || !editRules.trim()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-xs font-black uppercase text-slate-950 disabled:opacity-40">
+                <button type="submit" disabled={editBusy || !editName.trim() || !editDescription.trim() || !editCategory.trim() || !editRules.trim()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-xs font-black uppercase text-slate-950 disabled:opacity-40">
                   <Save className="h-4 w-4" />
-                  {editBusy ? 'Salvando...' : 'Salvar capa e regras'}
+                  {editBusy ? 'Salvando...' : 'Salvar alterações'}
                 </button>
               </footer>
             </form>

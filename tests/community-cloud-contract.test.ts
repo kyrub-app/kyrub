@@ -346,3 +346,55 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(cleanup, /adminDb\.collection\('community_square_posts'\)\.doc\(postId\)\.delete\(\)/);
   assert.doesNotMatch(index, /payment|mercadoPago|pitangas|wallet|checkout|sponsored/i);
 });
+
+test('community Editar is independent of personal account shortcuts and edits real community metadata', () => {
+  const communityUI = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const communityCloud = read('src/utils/communityCloud.ts');
+  const recovered = read('src/components/ProfileRecoveredActionsBridge.tsx');
+  const polish = read('src/components/ProfileNextPolishBridge.tsx');
+  const rules = read('firestore.communities.fragment.rules');
+
+  assert.match(communityUI, /data-kyrub-community-editor="true"/);
+  assert.match(communityUI, /aria-label="Fechar edição da comunidade"/);
+  assert.match(communityUI, /setEditName\(selectedCommunity\.name\)/);
+  assert.match(communityUI, /setEditDescription\(selectedCommunity\.description\)/);
+  assert.match(communityUI, /setEditCategory\(selectedCommunity\.category\)/);
+  assert.match(communityUI, /setEditLocation\(selectedCommunity\.location\)/);
+  assert.match(communityUI, /Nome da comunidade/);
+  assert.match(communityUI, /Descrição/);
+  assert.match(communityUI, /Categoria/);
+  assert.match(communityUI, /Localização \(opcional\)/);
+  assert.match(communityUI, /Salvar alterações/);
+  assert.match(communityUI, /name: editName/);
+  assert.match(communityUI, /description: editDescription/);
+  assert.match(communityUI, /category: editCategory/);
+  assert.match(communityUI, /location: editLocation/);
+  assert.match(communityUI, /await saveCommunityProfile\(selectedCommunity/);
+  assert.match(communityCloud, /export const saveCommunityProfile = async/);
+  assert.match(communityCloud, /await updateCommunity\(\{ \.\.\.input, coverImage, coverPath \}\)/);
+  assert.match(communityCloud, /if \(stagedPath\)/);
+  assert.match(communityCloud, /if \(community\.coverPath && community\.coverPath !== coverPath\)/);
+
+  assert.match(recovered, /closest\('\[data-kyrub-community-editor="true"\]'\)/);
+  assert.match(polish, /closest\('\[data-kyrub-community-editor="true"\]'\)/);
+  assert.match(communityCloud, /\.\.\.\(input\.name !== undefined \? \{ name: trimmed\.name \} : \{\}\)/);
+  assert.match(communityCloud, /\.\.\.\(input\.description !== undefined \? \{ description: trimmed\.description \} : \{\}\)/);
+  assert.match(communityCloud, /\.\.\.\(input\.category !== undefined \? \{ category: trimmed\.category \} : \{\}\)/);
+  assert.match(communityCloud, /\.\.\.\(input\.location !== undefined \? \{ location: trimmed\.location \} : \{\}\)/);
+
+  const ownerRuleStart = rules.indexOf('allow update: if isSignedIn()\n        && existing().ownerId == request.auth.uid');
+  const ownerRuleEnd = rules.indexOf('allow update: if isSignedIn()', ownerRuleStart + 25);
+  assert.ok(ownerRuleStart > 0 && ownerRuleEnd > ownerRuleStart);
+  const ownerRule = rules.slice(ownerRuleStart, ownerRuleEnd);
+  for (const field of ["'name'", "'description'", "'category'", "'location'"]) {
+    assert.ok(ownerRule.includes(field), `Owner-only edit allowlist excludes ${field}`);
+  }
+  for (const lockedField of [
+    'incoming().communityId == existing().communityId',
+    'incoming().ownerId == existing().ownerId',
+    'incoming().visibility == existing().visibility',
+    'incoming().memberCount == existing().memberCount',
+  ]) {
+    assert.ok(ownerRule.includes(lockedField), `Immutable community guard missing: ${lockedField}`);
+  }
+});
