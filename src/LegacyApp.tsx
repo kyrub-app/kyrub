@@ -1357,7 +1357,12 @@ const handleLogin = async (provider: 'google' | 'apple') => {
           </header>
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
-          <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6">
+          <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6" id="kyrub-workspace-main" data-kyrub-workspace={activeTab}>
+            <div id="kyrub-workspace-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
+              <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
+              <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
+              <span className="ml-auto text-[9px] font-medium tracking-wide text-slate-500">Raiz brasileira</span>
+            </div>
 
             {/* JEMBOÉ: Habilidades, ensino e cursos externos em etapa inicial. */}
             {activeTab === 'habilidades' && <JemboeHabilidadesTab />}
@@ -1513,7 +1518,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
       {/* 4. MODAL DETALHADO DO ERP / GESTÃO (PRESERVA TODAS AS TELAS ANTERIORES) */}
       {isGestaoOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col">
+        <div className="fixed inset-0 z-50 bg-slate-950/95 backdrop-blur-sm flex flex-col" data-kyrub-brand-panel="erp">
           {/* Header Gestão */}
           <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex items-center justify-between gap-4 font-sans shrink-0" id="erp-main-header">
 
