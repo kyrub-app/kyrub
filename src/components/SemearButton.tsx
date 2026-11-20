@@ -15,8 +15,8 @@ type SemeaduraStatus = {
 };
 
 export async function requestSemeadura(
-  action: 'status' | 'semear' | 'journey',
-  target?: { kind: SemeaduraPostKind; postId: string },
+  action: 'status' | 'semear' | 'journey' | 'community-journey',
+  target?: { kind: SemeaduraPostKind; postId: string } | { communityId: string },
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const token = await auth.currentUser?.getIdToken();
