@@ -285,12 +285,16 @@ export function CommunityPostCard({
         </section>
       )}
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-800 pt-3">
+        {SEMEADURA_UI_ENABLED ? (
+          <SemearButton kind="community" postId={post.id} viewerId={viewerId} />
+        ) : (
         <button type="button" aria-label={isLiked ? 'Remover curtida' : 'Curtir publicação'}
           disabled={!canParticipate || Boolean(pending)}
           onClick={() => void run('like', () => onToggleLike(isLiked))}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${isLiked ? 'border-rose-500/40 bg-rose-500/10 text-rose-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
           <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} /> {isLiked ? 'Curtido' : 'Curtir'} · {likes.filter(item => item.postId === post.id).length}
         </button>
+        )}
         <button type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen(open => !open)}
           className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300">
           <MessageCircle className="h-4 w-4" /> Comentar · {postComments.length}
