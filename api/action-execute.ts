@@ -88,6 +88,12 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'semeadura') {
+    const service = await import('../server/gamification/semeaduraHandler.js');
+    await service.handleSemeadura(request, response);
+    return;
+  }
+
   if (transport === 'first-store-publication') {
     const publication = await import('../server/gamification/firstStorePublicationHandler.js');
     await publication.handleFirstStorePublication(request, response);
