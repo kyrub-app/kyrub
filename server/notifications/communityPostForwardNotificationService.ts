@@ -1,5 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
-import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
+import { buildUserNotification, buildUserNotificationId, userNotificationPath } from '../../shared/userNotifications.js';
 
 const validId = (id: unknown): id is string =>
   typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id);
@@ -35,19 +35,10 @@ export const issueCommunityPostForwardNotification = async (input: {
     const receiptId = `${postId}__${actorId}__${recipientId}`;
     const receiptRef = adminDb.doc(`community_direct_forward_receipts/${receiptId}`);
     const originalRef = adminDb.doc(`community_posts/${postId}`);
-    const notification = buildUserNotification({
-      recipientUserId: recipientId,
-      category: 'user_forward',
-      eventType: 'received',
-      sourceId: messageId,
-      actorPrincipalId: actorId,
-      title: 'Publicação encaminhada por um Kairubido',
-      body: 'Abra a publicação original dentro da comunidade.',
-      target: { kind: 'community_post', communityId: '', postId },
-      createdAt: new Date().toISOString(),
+    const notificationId = buildUserNotificationId({
+      category: 'user_forward', eventType: 'received', sourceId: messageId,
     });
-    // The final target is based on the verified canonical post, never on input.
-    const notificationRef = adminDb.doc(userNotificationPath(recipientId, notification.id));
+    const notificationRef = adminDb.doc(userNotificationPath(recipientId, notificationId));
     const [receiptSnap, postSnap, existingNotification] = await transaction.getAll(
       receiptRef, originalRef, notificationRef,
     );
@@ -66,13 +57,18 @@ export const issueCommunityPostForwardNotification = async (input: {
       throw new Error('COMMUNITY_FORWARD_NOTIFICATION_SOURCE_UNAVAILABLE');
     }
     if (existingNotification.exists) return { created: false };
-    transaction.create(notificationRef, {
-      ...notification,
-      target: {
-        ...notification.target,
-        communityId: source.communityId,
-      },
+    const notification = buildUserNotification({
+      recipientUserId: recipientId,
+      category: 'user_forward',
+      eventType: 'received',
+      sourceId: messageId,
+      actorPrincipalId: actorId,
+      title: 'Publicação encaminhada por um Kairubido',
+      body: 'Abra a publicação original dentro da comunidade.',
+      target: { kind: 'community_post', communityId: source.communityId, postId },
+      createdAt: new Date().toISOString(),
     });
+    transaction.create(notificationRef, notification);
     return { created: true };
   });
 };
