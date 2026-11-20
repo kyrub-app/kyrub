@@ -431,7 +431,7 @@ export function CommunityPostCard({
                 [Eye, 'Visualizações', organicCounts.views],
                 [Heart, 'Curtidas', organicCounts.likes],
                 [Bookmark, 'Salvamentos', organicCounts.saves],
-                [Share2, 'Compartilhamentos', organicCounts.shares],
+                [Forward, 'Encaminhamentos', organicCounts.shares],
                 [MessageCircle, 'Comentários', organicCounts.comments],
               ] as const).map(([MetricIcon, label, count]) => (
                 <article key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
@@ -447,7 +447,7 @@ export function CommunityPostCard({
             <div className="border-t border-slate-800 p-4">
               <p className="text-xs leading-relaxed text-slate-400">
                 Visualizações são únicas por usuário autenticado. Salvamentos contam apenas enquanto ativos
-                e compartilhamentos somente após a ação concluída. Esses três indicadores começam na ativação
+                e encaminhamentos somente após a ação concluída. Esses três indicadores começam na ativação
                 da coleta; dados antigos não são reconstruídos.
               </p>
               <p className="mt-2 text-xs text-slate-500">
