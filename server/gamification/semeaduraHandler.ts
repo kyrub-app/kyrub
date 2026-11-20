@@ -1,6 +1,6 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
-import { seedVerifiedPost } from './semeaduraService.js';
+import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -45,16 +45,27 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
 
   const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
     ? request.body as Record<string, unknown> : null;
-  if (!body || body.action !== 'semear' ||
-      (body.kind !== 'personal' && body.kind !== 'community') ||
-      typeof body.postId !== 'string' || Object.keys(body).some(k => !['action','kind','postId'].includes(k))) {
+  const isJourney = body?.action === 'journey' && Object.keys(body).length === 1;
+  const isPostAction = body && ['semear', 'status'].includes(String(body.action)) &&
+    (body.kind === 'personal' || body.kind === 'community') &&
+    typeof body.postId === 'string' &&
+    Object.keys(body).every(k => ['action','kind','postId'].includes(k));
+  if (!isJourney && !isPostAction) {
     response.status(400).json({ error: 'SEMEADURA_INVALID_INPUT' });
     return;
   }
   try {
-    const result = await seedVerifiedPost(adminDb, {
-      authenticatedUserId: actor, kind: body.kind, postId: body.postId,
-    });
+    if (isJourney) {
+      response.status(200).json({
+        journey: await readPersonalSemeaduraJourney(adminDb, actor),
+      });
+      return;
+    }
+    const target = { authenticatedUserId: actor, kind: body!.kind as 'personal' | 'community',
+      postId: body!.postId as string };
+    const result = body!.action === 'status'
+      ? await readVerifiedPostSemeadura(adminDb, target)
+      : await seedVerifiedPost(adminDb, target);
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
