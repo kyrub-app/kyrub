@@ -9,7 +9,6 @@ import {
   LogIn,
   NotebookPen,
   ShoppingBag,
-  Sparkles,
   Store,
 } from 'lucide-react';
 import {
@@ -104,13 +103,13 @@ export function KyrubRendaEntryApp() {
               src="/kyrub-logo.svg"
               alt=""
               aria-hidden="true"
-              className="h-10 w-10 rounded-xl object-cover"
+              className="h-11 w-11 rounded-xl object-contain"
             />
             <div className="min-w-0">
               <span className="block font-mono text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
                 Meu Kyrub
               </span>
-              <strong className="block truncate text-base font-black">Renda</strong>
+              <strong className="kyrub-brand-wordmark block truncate text-[1.55rem] leading-none">Kyrub</strong>
             </div>
           </div>
 
@@ -165,14 +164,14 @@ export function KyrubRendaEntryApp() {
           </a>
         )}
 
-        <section className="overflow-hidden rounded-[2rem] border border-orange-500/20 bg-gradient-to-br from-orange-500/[0.11] via-slate-900 to-slate-950 p-6 sm:p-8">
+        <section className="kyrub-brand-hero overflow-hidden rounded-[2rem] border border-slate-800 p-6 sm:p-8">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-500/25 bg-orange-500/10 text-orange-400">
-            <Sparkles className="h-5 w-5" />
+            <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 object-contain" />
           </div>
           <p className="mt-5 font-mono text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">
             Comece por aqui
           </p>
-          <h1 className="mt-2 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-4xl">
+          <h1 className="kyrub-editorial-heading mt-2 max-w-2xl text-3xl leading-tight sm:text-4xl">
             Encontre formas de gerar renda com o que você já sabe ou pode fazer.
           </h1>
           <p className="mt-4 max-w-2xl text-sm leading-6 text-slate-400">
@@ -190,10 +189,10 @@ export function KyrubRendaEntryApp() {
         </section>
 
         <section className="grid gap-4 sm:grid-cols-3" aria-label="Caminhos para gerar renda">
-          {incomePaths.map(({ icon: Icon, eyebrow, title, description }) => (
+          {incomePaths.map(({ icon: Icon, eyebrow, title, description }, index) => (
             <article
               key={eyebrow}
-              className="flex min-h-52 flex-col rounded-3xl border border-slate-800 bg-slate-900 p-5"
+              className={`flex min-h-52 flex-col rounded-3xl p-5 ${index === 1 ? 'kyrub-tone-organic' : 'kyrub-tone-raised'}`}
             >
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-orange-400">
                 <Icon className="h-5 w-5" />
@@ -207,14 +206,14 @@ export function KyrubRendaEntryApp() {
           ))}
         </section>
 
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5">
+        <section className="kyrub-tone-editorial rounded-3xl p-5">
           <div className="flex items-start gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-teal-400">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-[#EAE3D5] text-[#F27429]">
               <NotebookPen className="h-5 w-5" />
             </div>
             <div>
-              <h2 className="text-sm font-black">O Kyrub vai além da Renda</h2>
-              <p className="mt-1 text-[11px] leading-5 text-slate-500">
+              <h2 className="kyrub-editorial-heading text-lg text-[#121A17]">O Kyrub vai além da Renda</h2>
+              <p className="mt-1 text-[11px] leading-5 text-[#2C3833]">
                 Notas, conexões, lojas, pedidos e outras ferramentas continuam no mesmo ecossistema. Sua conta é única entre essas experiências.
               </p>
             </div>
@@ -224,7 +223,7 @@ export function KyrubRendaEntryApp() {
             type="button"
             onClick={user ? openFullApp : () => void login()}
             disabled={loginPending}
-            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl border border-slate-700 bg-slate-950 px-4 text-xs font-black text-slate-200 transition hover:border-orange-500/40 hover:text-white disabled:opacity-60"
+            className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl bg-orange-500 px-4 text-xs font-black text-[#121A17] transition hover:bg-orange-400 disabled:opacity-60"
           >
             {user ? 'Explorar meu painel completo' : 'Entrar para usar recursos pessoais'}
             <ArrowRight className="h-4 w-4" />
