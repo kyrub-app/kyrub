@@ -18,6 +18,7 @@ import type { Friend, SocialPost } from '../types';
 import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
 import { orderCommentThreads } from '../utils/commentThreads';
 import { MediaCarousel } from './MediaCarousel';
+import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
 import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
