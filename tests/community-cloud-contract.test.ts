@@ -146,6 +146,22 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.doesNotMatch(ui, /<main className="flex-1 overflow-y-auto p-4">/); // One community scroll region, no separate debate view.
 });
 
+test('reply parent reaches Firestore from both Community Mural and Praça distributed cards', () => {
+  const mural = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const square = read('src/components/CommunitySquareFeedCard.tsx');
+  const card = read('src/components/CommunityPostCard.tsx');
+  const interactions = read('src/utils/communityPostInteractions.ts');
+
+  // The Square adapter previously dropped the optional parent ID and silently
+  // turned replies into ordinary top-level comments, despite passing all rules tests.
+  assert.match(mural, /onComment=\{\(value, parentCommentId\) => addCommunityPostComment\(post, value, parentCommentId\)\}/);
+  assert.match(square, /onComment=\{\(text, parentCommentId\) => addCommunityPostComment\(post, text, parentCommentId\)\}/);
+  assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
+  assert.match(interactions, /parentCommentId \? \{ parentCommentId \} : \{\}/);
+  assert.match(interactions, /parentCommentId: typeof data\.parentCommentId === 'string'/);
+  assert.match(card, /orderCommentThreads\(postComments\)/);
+});
+
 test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const card = read('src/components/CommunityPostCard.tsx');
