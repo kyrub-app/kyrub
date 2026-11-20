@@ -11,6 +11,8 @@ export interface UserCommunicationCategoryPreferences {
   loyalty: boolean;
   marketing: boolean;
   system: boolean;
+  community_group_invite?: boolean;
+  user_forward?: boolean;
 }
 
 export interface UserCommunicationPreferences {
@@ -53,6 +55,8 @@ export const buildDefaultUserCommunicationPreferences = (
         loyalty: true,
         marketing: false,
         system: true,
+        community_group_invite: true,
+        user_forward: true,
       },
     },
     updatedAt: '',
@@ -86,6 +90,8 @@ export const buildUserCommunicationPreferences = (input: {
         marketing:
           marketingEnabled && input.categories.marketing === true,
         system: input.categories.system === true,
+        community_group_invite: input.categories.community_group_invite !== false,
+        user_forward: input.categories.user_forward !== false,
       },
     },
     updatedAt,
