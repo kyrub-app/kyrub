@@ -1,5 +1,5 @@
 import {
-  collection, doc, getDoc, runTransaction, serverTimestamp, Timestamp,
+  doc, getDoc, runTransaction, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import type { CloudCommunityPost } from './communityCloud';
