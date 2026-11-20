@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
 import type { CommunityPostComment, CommunityPostLike } from '../utils/communityPostInteractions';
+import { orderCommentThreads } from '../utils/commentThreads';
 import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/communityPostConnections';
 import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
@@ -32,7 +33,7 @@ interface CommunityPostCardProps {
   saved: boolean;
   onToggleSave: () => Promise<void>;
   onToggleLike: (liked: boolean) => Promise<void>;
-  onComment: (value: string) => Promise<void>;
+  onComment: (value: string, parentCommentId?: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
   onReport: (reason: SocialReportReason) => Promise<SocialReportOutcome>;
   onRemove: () => Promise<void>;
@@ -55,6 +56,9 @@ export function CommunityPostCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const [commentsOpen, setCommentsOpen] = useState(false);
   const [commentDraft, setCommentDraft] = useState('');
+  const [replyTarget, setReplyTarget] = useState<CommunityPostComment | null>(null);
+  const [collapsedRoots, setCollapsedRoots] = useState<Set<string>>(new Set());
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const [reportOpen, setReportOpen] = useState(false);
   const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
   const [profile, setProfile] = useState<CommunityPublicProfile | null>(null);
@@ -77,6 +81,11 @@ export function CommunityPostCard({
   const isMine = viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
+  const threadedComments = orderCommentThreads(postComments);
+  const replyCounts = new Map<string, number>();
+  for (const item of threadedComments) {
+    if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
+  }
   const connected = connection?.status === 'accepted';
 
   useEffect(() => {
@@ -294,33 +303,62 @@ export function CommunityPostCard({
       </div>
       {commentsOpen && (
         <section className="mt-3 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-3" aria-label="Comentários da publicação">
-          {postComments.map(comment => (
-            <div key={comment.id} className="rounded-xl bg-slate-900 p-3">
+          {threadedComments.filter(item => item.depth === 0 || !collapsedRoots.has(item.rootId)).map(({ comment, parent, depth }) => (
+            <div key={comment.id} className={depth > 0
+              ? 'ml-4 rounded-xl border-l-2 border-sky-700/40 bg-slate-900 p-3'
+              : 'rounded-xl bg-slate-900 p-3'}>
               <div className="flex items-start justify-between gap-2">
                 <strong className="text-xs text-slate-200">{comment.authorName}</strong>
                 {(comment.authorId === viewerId || communityOwnerId === viewerId) && (
                   <button type="button" aria-label="Excluir comentário" disabled={Boolean(pending)}
-                    onClick={() => void run('delete-comment', () => onDeleteComment(comment.id))}
+                    onClick={() => void run('delete-comment', async () => {
+                      await onDeleteComment(comment.id);
+                      if (replyTarget?.id === comment.id) setReplyTarget(null);
+                    })}
                     className="rounded-md p-1 text-red-300 disabled:opacity-40"><Trash2 className="h-4 w-4"/></button>
                 )}
               </div>
+              {depth > 0 && parent && <span className="mt-1 block text-[11px] text-sky-300">Em resposta a {parent.authorName}</span>}
               <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{comment.text}</p>
-              <span className="mt-1 block text-[11px] text-slate-500">{displayDate(comment.createdAt)}</span>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="text-[11px] text-slate-500">{displayDate(comment.createdAt)}</span>
+                {canParticipate && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => { setReplyTarget(comment); commentInputRef.current?.focus(); }}
+                    className="text-xs font-semibold text-sky-300 disabled:opacity-40">Responder</button>
+                )}
+                {depth === 0 && (replyCounts.get(comment.id) ?? 0) > 0 && (
+                  <button type="button" aria-expanded={!collapsedRoots.has(comment.id)}
+                    onClick={() => setCollapsedRoots(current => {
+                      const next = new Set(current);
+                      if (next.has(comment.id)) next.delete(comment.id); else next.add(comment.id);
+                      return next;
+                    })}
+                    className="text-xs text-slate-400">
+                    {collapsedRoots.has(comment.id) ? 'Ver' : 'Ocultar'} {replyCounts.get(comment.id)} respostas
+                  </button>
+                )}
+              </div>
             </div>
           ))}
           {postComments.length === 0 && <p className="text-xs text-slate-400">Seja o primeiro a comentar.</p>}
           {canParticipate ? (
             <div className="flex flex-col gap-2">
-              <textarea rows={2} maxLength={1000} value={commentDraft}
+              {replyTarget && <div className="flex items-center justify-between gap-2 text-xs text-sky-300">
+                <span>Respondendo a {replyTarget.authorName}</span>
+                <button type="button" onClick={() => setReplyTarget(null)} className="font-semibold">Cancelar resposta</button>
+              </div>}
+              <textarea ref={commentInputRef} rows={2} maxLength={1000} value={commentDraft}
                 onChange={event => setCommentDraft(event.target.value)}
-                placeholder="Escreva um comentário..." aria-label="Escrever comentário"
+                placeholder={replyTarget ? 'Escreva sua resposta...' : 'Escreva um comentário...'} aria-label={replyTarget ? 'Escrever resposta' : 'Escrever comentário'}
                 className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-white"/>
               <button type="button" disabled={Boolean(pending) || !commentDraft.trim()}
                 onClick={() => void run('comment', async () => {
-                  await onComment(commentDraft);
+                  await onComment(commentDraft, replyTarget?.id);
                   setCommentDraft('');
+                  setReplyTarget(null);
                 })}
-                className="min-h-10 self-end rounded-xl bg-sky-500 px-4 text-xs font-bold text-slate-950 disabled:opacity-40">Comentar</button>
+                className="min-h-10 self-end rounded-xl bg-sky-500 px-4 text-xs font-bold text-slate-950 disabled:opacity-40">{replyTarget ? 'Responder' : 'Comentar'}</button>
             </div>
           ) : <p className="text-xs text-amber-300">Participe da comunidade para comentar.</p>}
         </section>
