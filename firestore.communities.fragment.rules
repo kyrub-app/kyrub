@@ -172,10 +172,6 @@
         && incoming().ownerId == existing().ownerId
         && incoming().ownerName == existing().ownerName
         && incoming().ownerAvatar == existing().ownerAvatar
-        && incoming().name == existing().name
-        && incoming().description == existing().description
-        && incoming().category == existing().category
-        && incoming().location == existing().location
         && incoming().visibility == existing().visibility
         && incoming().memberCount == existing().memberCount
         && incoming().lastMembershipChangeId == existing().lastMembershipChangeId
@@ -184,6 +180,10 @@
         && incoming().updatedAt == request.time
         && incoming().activityAt == request.time
         && incoming().diff(existing()).affectedKeys().hasOnly([
+          'name',
+          'description',
+          'category',
+          'location',
           'rules',
           'coverImage',
           'coverPath',
