@@ -42,6 +42,10 @@ export const issueCommunityPostForwardNotification = async (input: {
     const [receiptSnap, postSnap, existingNotification] = await transaction.getAll(
       receiptRef, originalRef, notificationRef,
     );
+    // The original message has already been verified as the actor's. Keep
+    // retries idempotent even if its per-target cooldown receipt is renewed
+    // by a later forward after 24 hours.
+    if (existingNotification.exists) return { created: false };
     const receipt = receiptSnap.data();
     const source = postSnap.data();
     if (!receipt || !source || receipt.actorId !== actorId ||
@@ -56,7 +60,6 @@ export const issueCommunityPostForwardNotification = async (input: {
     if (!communitySnap.exists || communitySnap.data()?.visibility !== 'public') {
       throw new Error('COMMUNITY_FORWARD_NOTIFICATION_SOURCE_UNAVAILABLE');
     }
-    if (existingNotification.exists) return { created: false };
     const notification = buildUserNotification({
       recipientUserId: recipientId,
       category: 'user_forward',
