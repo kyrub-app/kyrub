@@ -555,6 +555,50 @@
         && get(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid;
     }
 
+    // In-app forward is an immutable reference to the original public post.
+    // One record per actor/post may refresh only once every 24 hours.
+    // Never copy media, content or private community material into the index.
+    match /community_square_forwards/{forwardId} {
+      allow read: if isSignedIn();
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'postId', 'communityId', 'actorId', 'actorName', 'forwardedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'postId', 'communityId', 'actorId', 'actorName', 'forwardedAt'
+        ])
+        && incoming().postId is string
+        && incoming().communityId is string
+        && incoming().actorId == request.auth.uid
+        && incoming().actorName is string
+        && incoming().actorName.size() > 0
+        && incoming().actorName.size() <= 160
+        && forwardId == incoming().postId + '__' + request.auth.uid
+        && incoming().forwardedAt == request.time
+        && exists(/databases/$(database)/documents/community_posts/$(incoming().postId))
+        && get(/databases/$(database)/documents/community_posts/$(incoming().postId)).data.communityId
+          == incoming().communityId
+        && exists(/databases/$(database)/documents/communities/$(incoming().communityId))
+        && get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.visibility
+          == 'public';
+
+      allow update: if isSignedIn()
+        && existing().actorId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['forwardedAt'])
+        && incoming().forwardedAt == request.time
+        && existing().forwardedAt is timestamp
+        && request.time >= existing().forwardedAt + duration.value(24, 'h')
+        && exists(/databases/$(database)/documents/community_posts/$(existing().postId))
+        && get(/databases/$(database)/documents/community_posts/$(existing().postId)).data.communityId
+          == existing().communityId
+        && exists(/databases/$(database)/documents/communities/$(existing().communityId))
+        && get(/databases/$(database)/documents/communities/$(existing().communityId)).data.visibility
+          == 'public';
+
+      allow delete: if isSignedIn() && existing().actorId == request.auth.uid;
+    }
+
     // Wall interactions are independently scoped to the existing community and post.
     // They never grant access to a private community or allow likes for strangers.
     function communityPostBelongsTo(postId, communityId) {
