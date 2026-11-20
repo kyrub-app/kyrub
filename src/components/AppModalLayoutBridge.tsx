@@ -207,7 +207,7 @@ export function AppModalLayoutBridge() {
         padding: 0 !important;
         border-radius: 0 !important;
         overflow: hidden !important;
-        background: rgb(2 6 23) !important;
+        background: rgb(18 26 23) !important;
       }
 
       [data-kyrub-top-overlay="true"] {
@@ -249,7 +249,7 @@ export function AppModalLayoutBridge() {
         position: relative !important;
         z-index: 2 !important;
         flex: 0 0 auto !important;
-        background: rgb(2 6 23 / 0.98) !important;
+        background: rgb(18 26 23 / 0.98) !important;
         backdrop-filter: blur(12px) !important;
       }
 
@@ -279,7 +279,7 @@ export function AppModalLayoutBridge() {
         position: relative !important;
         z-index: 2 !important;
         flex: 0 0 auto !important;
-        background: rgb(2 6 23 / 0.98) !important;
+        background: rgb(18 26 23 / 0.98) !important;
         backdrop-filter: blur(12px) !important;
       }
 
