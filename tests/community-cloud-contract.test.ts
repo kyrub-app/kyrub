@@ -264,7 +264,7 @@ test('community organic metrics appear only for their author and never conflate 
   assert.match(card, /\{isMine && \([\s\S]*?Métricas da publicação/);
   assert.match(card, /metricsOpen && isMine/);
   assert.match(card, /const organicCounts = \{/);
-  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Compartilhamentos', 'Comentários']) {
+  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Encaminhamentos', 'Comentários']) {
     assert.ok(card.includes(label), 'Métrica orgânica ausente: ' + label);
   }
   assert.match(card, /<BarChart3 className="h-4 w-4" \/> Métricas da publicação/);
