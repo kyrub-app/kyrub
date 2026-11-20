@@ -114,6 +114,7 @@ test('server rejects edited personal/collective progress instead of minting anot
   db.records.set('users/author-a/semeaduraProgress/summary', {
     authorId: 'author-a', acceptedSeeds: 1001, pitangueiras: 0,
   });
+  join(db, 'new-member');
   await assert.rejects(seedVerifiedPost(db.asFirestore(),
     { kind: 'community', postId: 'post-corrupt', authenticatedUserId: 'new-member' }),
   /SEMEADURA_PROJECTION_INVALID/);
