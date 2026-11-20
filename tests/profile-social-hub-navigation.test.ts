@@ -254,12 +254,12 @@ test('signed-in workspace offers logout beside the Kyrub logo, not inside a prof
     sessionLegacySource.indexOf('id="kyrub-workspace-brand"'),
     sessionLegacySource.indexOf('{/* JEMBOÉ:', sessionLegacySource.indexOf('id="kyrub-workspace-brand"'))
   );
-  assert.match(brand, /src="\\/kyrub-logo\\.svg"/);
+  assert.match(brand, /src="\/kyrub-logo\.svg"/);
   assert.match(brand, /id="kyrub-workspace-signout"/);
   assert.match(brand, /aria-label="Sair da conta Kyrub"/);
-  assert.match(brand, /onClick=\\{\\(\\) => void handleLogout\\(\\)\\}/);
-  assert.match(brand, /disabled=\\{isSigningOut\\}/);
-  assert.match(brand, /isSigningOut \\? 'Saindo…' : 'Sair'/);
+  assert.match(brand, /onClick=\{\(\) => void handleLogout\(\)\}/);
+  assert.match(brand, /disabled=\{isSigningOut\}/);
+  assert.match(brand, /isSigningOut \? 'Saindo…' : 'Sair'/);
   assert.doesNotMatch(brand, /Raiz brasileira/);
 
   assert.doesNotMatch(profileSource, /profile-session-logout|handleProfileSignOut/);
@@ -267,11 +267,11 @@ test('signed-in workspace offers logout beside the Kyrub logo, not inside a prof
 });
 
 test('workspace logout reuses the existing Firebase auth cleanup and failure handling', () => {
-  assert.match(sessionLegacySource, /const handleLogout = async \\(\\): Promise<void> =>/);
-  assert.match(sessionLegacySource, /if \\(isSigningOut\\) return/);
-  assert.match(sessionLegacySource, /await signOut\\(auth\\)/);
-  assert.match(sessionLegacySource, /retainedWorkspaceTabByUser\\.delete\\(signingOutUid\\)/);
-  assert.match(sessionLegacySource, /setIsLoggedIn\\(false\\)/);
+  assert.match(sessionLegacySource, /const handleLogout = async \(\): Promise<void> =>/);
+  assert.match(sessionLegacySource, /if \(isSigningOut\) return/);
+  assert.match(sessionLegacySource, /await signOut\(auth\)/);
+  assert.match(sessionLegacySource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
+  assert.match(sessionLegacySource, /setIsLoggedIn\(false\)/);
   assert.match(sessionLegacySource, /Não foi possível sair da conta/);
 });
 
@@ -282,10 +282,10 @@ test('guest brand offers Entrar using the existing Google account-selection dial
   );
   assert.match(brand, /id="kyrub-guest-signin"/);
   assert.match(brand, /aria-label="Entrar na conta Kyrub"/);
-  assert.match(brand, /requestLogin\\('acessar sua conta'\\)/);
-  assert.match(brand, />\\s*Entrar\\s*<\\/button>/);
+  assert.match(brand, /requestLogin\('acessar sua conta'\)/);
+  assert.match(brand, />\s*Entrar\s*<\/button>/);
   assert.doesNotMatch(brand, /Raiz brasileira/);
-  assert.match(sessionGuestSource, /signInWithPopup\\(auth, provider\\)/);
+  assert.match(sessionGuestSource, /signInWithPopup\(auth, provider\)/);
   assert.match(sessionGuestSource, /prompt: 'select_account'/);
 });
 
