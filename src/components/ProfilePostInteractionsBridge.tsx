@@ -615,6 +615,9 @@ export function ProfilePostInteractionsBridge() {
             className="mt-2 grid grid-cols-3 gap-1.5 border-t border-slate-800 pt-3"
             aria-label="Ações da publicação"
           >
+            {SEMEADURA_UI_ENABLED && item.post.visibility === 'public' && item.post.publicationType !== 'status' ? (
+              <SemearButton kind="personal" postId={item.post.id} viewerId={user?.uid || ''} />
+            ) : (
             <button
               type="button"
               onClick={() =>
@@ -640,6 +643,7 @@ export function ProfilePostInteractionsBridge() {
               />
               <span className="truncate">Curtir {item.post.likes}</span>
             </button>
+            )}
             <button
               type="button"
               onClick={() => openComments(item.post)}
