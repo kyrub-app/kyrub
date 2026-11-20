@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
+import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
 
 type Account = { pitangas: number; xp: number; initialized: boolean; entries: { id: string; unit: string; delta: number; occurredAt: string }[] };
 
