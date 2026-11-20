@@ -6,7 +6,6 @@ import {
   LogIn,
   NotebookPen,
   ShoppingBag,
-  Sparkles,
   Store,
   Users,
 } from 'lucide-react';
@@ -84,13 +83,13 @@ export function LandingView(props: LandingViewProps) {
               src="/kyrub-logo.svg"
               alt=""
               aria-hidden="true"
-              className="h-10 w-10 rounded-xl object-cover"
+              className="h-11 w-11 rounded-xl object-contain"
             />
             <div className="min-w-0">
               <span className="block font-mono text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
                 Meu Kyrub
               </span>
-              <strong className="block truncate text-base font-black">Renda</strong>
+              <strong className="kyrub-brand-wordmark block truncate text-[1.55rem] leading-none">Kyrub</strong>
             </div>
           </div>
 
@@ -128,14 +127,14 @@ export function LandingView(props: LandingViewProps) {
           </a>
         )}
 
-        <section className="overflow-hidden rounded-[2rem] border border-orange-500/20 bg-gradient-to-br from-orange-500/[0.12] via-slate-900 to-slate-950 p-6 sm:p-9">
+        <section className="kyrub-brand-hero overflow-hidden rounded-[2rem] border border-slate-800 p-6 sm:p-9">
           <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-orange-500/25 bg-orange-500/10 text-orange-400">
-            <Sparkles className="h-5 w-5" />
+            <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 object-contain" />
           </div>
           <p className="mt-5 font-mono text-[9px] font-black uppercase tracking-[0.2em] text-orange-400">
             Renda é a sua porta de entrada
           </p>
-          <h1 className="mt-2 max-w-3xl text-3xl font-black leading-tight tracking-tight sm:text-5xl">
+          <h1 className="kyrub-editorial-heading mt-2 max-w-3xl text-3xl leading-tight sm:text-5xl">
             Descubra o que você pode fazer, prestar ou vender no Kyrub.
           </h1>
           <p className="mt-4 max-w-3xl text-sm leading-6 text-slate-400 sm:text-base sm:leading-7">
@@ -156,10 +155,10 @@ export function LandingView(props: LandingViewProps) {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-3">
-            {rendaCards.map(({ icon: Icon, title, description }) => (
+            {rendaCards.map(({ icon: Icon, title, description }, index) => (
               <article
                 key={title}
-                className="flex min-h-56 flex-col rounded-3xl border border-slate-800 bg-slate-900 p-5"
+                className={`flex min-h-56 flex-col rounded-3xl p-5 ${index === 1 ? 'kyrub-tone-organic' : 'kyrub-tone-raised'}`}
               >
                 <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-orange-400">
                   <Icon className="h-5 w-5" />
@@ -181,13 +180,13 @@ export function LandingView(props: LandingViewProps) {
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5 sm:p-6">
+        <section className="kyrub-tone-editorial rounded-3xl p-5 sm:p-6">
           <div className="max-w-3xl">
-            <span className="font-mono text-[8px] font-black uppercase tracking-[0.18em] text-teal-400">
+            <span className="font-mono text-[8px] font-black uppercase tracking-[0.18em] text-[#2C3833]">
               Explore sem compromisso
             </span>
-            <h2 className="mt-1 text-lg font-black">O Kyrub é maior que a área de Renda</h2>
-            <p className="mt-2 text-[11px] leading-5 text-slate-500">
+            <h2 className="kyrub-editorial-heading mt-1 text-xl text-[#121A17]">O Kyrub é maior que a área de Renda</h2>
+            <p className="kyrub-editorial-body mt-2 text-[11px] leading-5">
               A mesma identidade acompanha você entre ferramentas pessoais, relações sociais, vitrines e atividades comerciais. Navegar e conhecer não exige cadastro antecipado.
             </p>
           </div>
@@ -196,24 +195,24 @@ export function LandingView(props: LandingViewProps) {
             {ecosystemCards.map(({ icon: Icon, title, description }) => (
               <article
                 key={title}
-                className="rounded-2xl border border-slate-800 bg-slate-950 p-4"
+                className="kyrub-editorial-card rounded-2xl p-4"
               >
-                <Icon className="h-5 w-5 text-teal-400" />
-                <h3 className="mt-3 text-sm font-black">{title}</h3>
-                <p className="mt-1 text-[10px] leading-5 text-slate-500">{description}</p>
+                <Icon className="h-5 w-5 text-[#F27429]" />
+                <h3 className="mt-3 text-sm font-black text-[#121A17]">{title}</h3>
+                <p className="mt-1 text-[10px] leading-5 text-[#2C3833]">{description}</p>
               </article>
             ))}
           </div>
         </section>
 
-        <section className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-center">
+        <section className="kyrub-tone-organic rounded-3xl p-5 text-center">
           <p className="text-xs leading-5 text-slate-400">
             Quando você entrar com Google, essa mesma conta será usada tanto no Kyrub quanto para identificar suas compras nas vitrines.
           </p>
           <button
             type="button"
             onClick={requestLogin}
-            className="mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-white px-6 text-xs font-black text-slate-950"
+            className="mt-4 inline-flex min-h-12 items-center justify-center gap-2 rounded-2xl bg-orange-500 px-6 text-xs font-black text-slate-950 transition hover:bg-orange-400"
           >
             <LogIn className="h-4 w-4" />
             Entrar com Google
