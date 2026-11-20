@@ -605,6 +605,60 @@ export const updateCommunity = async (
   });
 };
 
+/**
+ * Apply community details and a cover change as one Firestore update.
+ * A new image is uploaded first but only becomes public in the community
+ * after the metadata update succeeds. Failed saves discard the staged file.
+ * Existing cover files are removed only after a confirmed metadata update.
+ */
+export const saveCommunityProfile = async (
+  community: CloudCommunity,
+  input: CommunityUpdateInput,
+  coverBlob: Blob | null,
+  removeCover: boolean
+): Promise<void> => {
+  const { user } = currentIdentity();
+  if (community.ownerId !== user.uid || input.communityId !== community.id) {
+    throw new Error('Somente o criador pode editar esta comunidade.');
+  }
+
+  let coverImage = community.coverImage;
+  let coverPath = community.coverPath;
+  let stagedPath = '';
+
+  if (removeCover) {
+    coverImage = '';
+    coverPath = '';
+  } else if (coverBlob) {
+    stagedPath = `community-covers/${community.id}/${user.uid}/${Date.now()}-${crypto.randomUUID()}.jpg`;
+    const destination = ref(storage, stagedPath);
+    try {
+      await uploadBytes(destination, coverBlob, {
+        contentType: coverBlob.type || 'image/jpeg',
+        customMetadata: { communityId: community.id, ownerId: user.uid },
+      });
+      coverImage = await getDownloadURL(destination);
+      coverPath = stagedPath;
+    } catch (error) {
+      await deleteObject(destination).catch(() => undefined);
+      throw error;
+    }
+  }
+
+  try {
+    await updateCommunity({ ...input, coverImage, coverPath });
+  } catch (error) {
+    if (stagedPath) {
+      await deleteObject(ref(storage, stagedPath)).catch(() => undefined);
+    }
+    throw error;
+  }
+
+  if (community.coverPath && community.coverPath !== coverPath) {
+    void deleteObject(ref(storage, community.coverPath)).catch(() => undefined);
+  }
+};
+
 export const uploadCommunityCover = async (
   community: CloudCommunity,
   file: Blob
