@@ -369,6 +369,11 @@ test('community Editar is independent of personal account shortcuts and edits re
   assert.match(communityUI, /description: editDescription/);
   assert.match(communityUI, /category: editCategory/);
   assert.match(communityUI, /location: editLocation/);
+  assert.match(communityUI, /await saveCommunityProfile\(selectedCommunity/);
+  assert.match(communityCloud, /export const saveCommunityProfile = async/);
+  assert.match(communityCloud, /await updateCommunity\(\{ \.\.\.input, coverImage, coverPath \}\)/);
+  assert.match(communityCloud, /if \(stagedPath\)/);
+  assert.match(communityCloud, /if \(community\.coverPath && community\.coverPath !== coverPath\)/);
 
   assert.match(recovered, /closest\('\[data-kyrub-community-editor="true"\]'\)/);
   assert.match(polish, /closest\('\[data-kyrub-community-editor="true"\]'\)/);
