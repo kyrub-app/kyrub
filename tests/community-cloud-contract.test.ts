@@ -445,3 +445,33 @@ test('in-app Encaminhar uses canonical Praça references and accepted Kyrub conv
   assert.doesNotMatch(card, /navigator\.share|navigator\.clipboard|WhatsApp|whatsapp/);
   assert.doesNotMatch(forward, /payment|pix|mercadoPago|pitangas|wallet|checkout|sponsored/i);
 });
+
+test('participar uses an idempotent first-join transaction and never lists pending applicants to visitors', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const cloud = read('src/utils/communityCloud.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const forward = read('src/components/CommunityPostCard.tsx');
+
+  assert.match(ui, /'Participar'/);
+  assert.match(ui, /Você agora participa da comunidade/);
+  assert.match(ui, /subscribeCommunityMemberships\(/);
+  assert.match(ui, /viewerId: user\?\.uid/);
+  assert.match(ui, /isOwner: selectedCommunity\?\.isOwner/);
+  assert.match(cloud, /export const joinCommunity = async/);
+  assert.match(cloud, /transaction\.get\(membershipReference\)/);
+  assert.match(cloud, /if \(membershipSnapshot\.exists\(\)\)/);
+  assert.match(cloud, /transaction\.set\(membershipReference/);
+  assert.match(cloud, /if \(context\?\.isOwner\)/);
+  assert.match(cloud, /doc\(db, 'community_members', id\)/);
+  assert.match(cloud, /visible\.delete\(id\)/);
+  assert.match(rules, /allow get: if isSignedIn\(\)/);
+  assert.match(rules, /resource == null/);
+  assert.match(rules, /membershipId\.matches\(/);
+  assert.match(rules, /allow list: if isSignedIn\(\)/);
+  assert.match(rules, /existing\(\)\.status == 'active'/);
+
+  // Public forwards should not be dependent on community membership.
+  assert.match(forward, /getDoc\(doc\(db, 'communities', post\.communityId\)\)/);
+  assert.match(forward, /Encaminhar para um Kairubido conectado/);
+  assert.doesNotMatch(forward, /forwardPublic && canParticipate/);
+});
