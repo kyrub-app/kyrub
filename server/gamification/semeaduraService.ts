@@ -261,3 +261,35 @@ export const readPersonalSemeaduraJourney = async (db: Firestore, uid: string) =
   }
   return calculatePitangueiraJourney(data.acceptedSeeds);
 };
+
+/**
+ * Collective public journey: visual only, not a credit for community owners.
+ * Private communities remain restricted to active members or the owner.
+ */
+export const readCommunitySemeaduraJourney = async (
+  db: Firestore,
+  uid: string,
+  communityId: string,
+) => {
+  if (!safeUid(uid) || !safeUid(communityId)) throw new Error('SEMEADURA_INVALID_INPUT');
+  const [community, membership, progress] = await Promise.all([
+    db.doc(`communities/${communityId}`).get(),
+    db.doc(`community_members/${communityId}__${uid}`).get(),
+    db.doc(`communities/${communityId}/semeaduraProgress/summary`).get(),
+  ]);
+  if (!community.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
+  const owner = community.data()?.ownerId === uid;
+  const active = membership.exists && membership.data()?.userId === uid &&
+    membership.data()?.communityId === communityId && membership.data()?.status === 'active';
+  if (!['public', 'moderated'].includes(community.data()?.visibility) && !owner && !active) {
+    throw new Error('SEMEADURA_COMMUNITY_ACCESS_DENIED');
+  }
+  if (!progress.exists) return calculatePitangueiraJourney(0);
+  const data = progress.data();
+  if (data?.communityId !== communityId ||
+      !Number.isSafeInteger(data.acceptedSeeds) || data.acceptedSeeds < 0 ||
+      data.bosques !== Math.floor(data.acceptedSeeds / SEEDS_PER_BOSQUE)) {
+    throw new Error('SEMEADURA_PROJECTION_INVALID');
+  }
+  return calculatePitangueiraJourney(data.acceptedSeeds);
+};
