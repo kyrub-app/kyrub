@@ -161,7 +161,10 @@ test('community cards reuse canonical saved actions and have persisted likes, co
   }
   assert.match(card, /<ChatModal/);
   assert.match(card, /onToggleLike\(isLiked\)/);
-  assert.match(card, /onComment\(commentDraft\)/);
+  assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
+  assert.match(card, /Responder/);
+  assert.match(card, /orderCommentThreads\(postComments\)/);
+  assert.match(interactions, /parentCommentId\?: string/);
   assert.match(interactions, /collection\(db, 'community_post_likes'\)/);
   assert.match(interactions, /collection\(db, 'community_post_comments'\)/);
   assert.match(interactions, /community_post_reports/);
