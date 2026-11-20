@@ -29,6 +29,17 @@ test('accepted Firestore connection enables Conversar even when local friends ar
   assert.equal(result.friend?.added, true);
 });
 
+test('accepted connection works whether the viewed author sent or received the invitation', () => {
+  const outgoing = { ...accepted, senderId: viewer, receiverId: author };
+  const incoming = { ...accepted, senderId: author, receiverId: viewer };
+  for (const relationship of [outgoing, incoming]) {
+    const result = resolvePostAuthorConnection(viewer, post, [], [relationship]);
+    assert.equal(result.status, 'accepted');
+    assert.equal(result.friend?.id, author);
+    assert.equal(result.friend?.connectionId, accepted.id);
+  }
+});
+
 test('accepted connection from canonical Conectados uses same Friend payload while subscription loads', () => {
   const result = resolvePostAuthorConnection(viewer, post, [friend], []);
   assert.equal(result.status, 'accepted');
