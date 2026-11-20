@@ -39,7 +39,7 @@ test('ERP viewport is isolated from the global modal inset bridge and covers the
   assert.match(modalLayout, /\[data-kyrub-erp-viewport="true"\]/);
   assert.match(modalLayout, /height: 100dvh !important/);
   assert.match(modalLayout, /min-height: 100dvh !important/);
-  assert.match(modalLayout, /background: rgb\(2 6 23\) !important/);
+  assert.match(modalLayout, /background: rgb\(18 26 23\) !important/);
 });
 
 test('subscription management auth and Firebase load only after the direct module is selected', () => {
