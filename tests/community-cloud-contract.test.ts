@@ -103,6 +103,26 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
 });
 
 
+test('Community header opens a searchable full directory instead of duplicating create action', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const header = ui.slice(ui.indexOf('id="square-communities"'), ui.indexOf('aria-label="Filtros do catálogo de comunidades"'));
+  assert.match(header, /aria-label="Ver todas as comunidades"/);
+  assert.match(header, /Ver todas <ArrowRight/);
+  assert.doesNotMatch(header.slice(0, header.indexOf('<div className="flex gap-1.5 overflow-x-auto">')), /onClick=\{\(\) => setCreateOpen\(true\)\}/);
+  assert.match(ui, /Criar comunidade/); // Creation remains in the existing rail card.
+  assert.match(ui, /role="dialog"[\s\S]*?aria-modal="true" aria-label="Catálogo de comunidades"/);
+  assert.match(ui, /id="community-catalog-search"/);
+  assert.match(ui, /aria-label="Filtrar comunidades por categoria"/);
+  assert.match(ui, /catalogCommunities\.map\(community => renderCard\(community, 'catalog'\)\)/);
+  assert.match(ui, /const selectCommunityDirectory = \(/);
+  assert.match(ui, /community\.visibility !== 'private' \|\| community\.isOwner \|\| community\.isActiveMember/);
+  assert.match(ui, /const visibleCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, listTab, searchValue\)/);
+  assert.match(ui, /const catalogCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, catalogTab, catalogSearch\)/);
+  assert.match(ui, /aria-label=\{catalogOpen \? "Voltar para o catálogo de comunidades" : "Voltar para a Praça"\}/);
+  assert.equal((ui.match(/id="square-communities"/g) || []).length, 1, 'Keep only the canonical community rail');
+  assert.doesNotMatch(ui, /community_catalog_posts|community_catalog_members|community_directory_v2/);
+});
+
 test('community wall editor has a single About-tab Edit, media picker and readable text', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const cloud = read('src/utils/communityCloud.ts');
