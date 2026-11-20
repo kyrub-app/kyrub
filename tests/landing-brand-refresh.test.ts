@@ -12,9 +12,12 @@ const logoSource = readFileSync('public/kyrub-logo.svg', 'utf8');
 
 test('landing uses the supplied Kyrub brand and makes Renda the guest entry', () => {
   assert.match(landingSource, /src="\/kyrub-logo\.svg"/);
-  assert.match(logoSource, /viewBox="0 0 500 500"/);
-  assert.match(logoSource, /data:image\/jpeg;base64,/);
-  assert.match(logoSource, /<image width="500" height="500"/);
+  assert.match(logoSource, /viewBox="0 0 128 128"/);
+  assert.match(logoSource, /#F27429/);
+  assert.match(logoSource, /#8FA893/);
+  assert.match(logoSource, /caule e duas folhas verde-sálvia/);
+  assert.match(logoSource, /<path/);
+  assert.doesNotMatch(logoSource, /data:image\/jpeg;base64,|<image/);
   assert.match(landingSource, /data-kyrub-guest-entry="renda"/);
   assert.match(landingSource, /Renda é a sua porta de entrada/);
   assert.match(

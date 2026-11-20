@@ -4,8 +4,8 @@
   "description": "Ferramentas pessoais, sociais e comerciais para organizar, conectar e crescer.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#050505",
-  "theme_color": "#050505",
+  "background_color": "#121A17",
+  "theme_color": "#121A17",
   "icons": [
     {
       "src": "/kyrub-logo.svg",

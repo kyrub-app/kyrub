@@ -171,7 +171,11 @@ export function SemearButton({
         disabled={!state || !state.canSemear || busy || !viewerId}
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
-        <span aria-hidden="true" title={state?.closed ? 'Bosque concluído' : 'Semente'}>{state?.closed ? '🌲' : '🫘'}</span>
+        {state?.closed ? (
+          <span aria-hidden="true" title="Bosque concluído">🌲</span>
+        ) : (
+          <img src="/kyrub-pitanga-seed.svg" alt="" aria-hidden="true" title="Semente da pitangueira" className="h-[18px] w-[18px] shrink-0 object-contain" />
+        )}
         <span className="truncate">{!viewerId ? 'Entre para semear' : !visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
       </button>
       {error && <p role="status" className="mt-1 text-[10px] text-amber-300">{error}</p>}

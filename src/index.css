@@ -1,5 +1,144 @@
 @import "tailwindcss";
 
+/* KYRUB · Visual identity V2. The existing slate/orange/teal utilities are
+   remapped centrally so all app panels share the same night-green language. */
+@theme {
+  --color-slate-950: #121A17;
+  --color-slate-900: #1C2622;
+  --color-slate-850: #22302A;
+  --color-slate-800: #26332E;
+  --color-slate-700: #40544A;
+  --color-slate-600: #60766A;
+  --color-slate-500: #8FA893;
+  --color-slate-400: #B7C8BC;
+  --color-slate-300: #D6D1C7;
+  --color-slate-200: #F5F0E6;
+  --color-slate-100: #F5F0E6;
+  --color-slate-50: #FAF7F1;
+
+  --color-orange-300: #FFB88F;
+  --color-orange-400: #FF9250;
+  --color-orange-500: #F27429;
+  --color-orange-600: #D95D20;
+  --color-orange-700: #A94516;
+
+  --color-teal-300: #B8D0BB;
+  --color-teal-400: #A1BAA6;
+  --color-teal-500: #8FA893;
+  --color-teal-600: #6C8D75;
+  --color-teal-700: #4A6953;
+}
+
+:root {
+  --kyrub-night: #121A17;
+  --kyrub-moss: #1C2622;
+  --kyrub-moss-raised: #26332E;
+  --kyrub-sage: #8FA893;
+  --kyrub-orange: #F27429;
+  --kyrub-cream: #F5F0E6;
+  --kyrub-sand: #EAE3D5;
+  --kyrub-card-border: rgba(143, 168, 147, 0.2);
+  color-scheme: dark;
+}
+
+html, body, #root {
+  background-color: var(--kyrub-night);
+}
+
+body {
+  color: var(--kyrub-cream);
+}
+
+::selection {
+  background: rgba(242, 116, 41, 0.28);
+  color: var(--kyrub-cream);
+}
+
+/* Wordmark stays a refined editorial serif; operational data stays sans. */
+.kyrub-brand-wordmark {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.055em;
+  color: var(--kyrub-cream);
+}
+
+.kyrub-editorial-heading {
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 600;
+  letter-spacing: -0.025em;
+}
+
+/* Brand hero deliberately privileges night green; orange remains a focal accent. */
+.kyrub-brand-hero {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(143, 168, 147, 0.14), transparent 50%),
+    linear-gradient(135deg, #1C2622 0%, #121A17 90%);
+}
+
+/* Four composable tonal treatments: base, raised, editorial light, final CTA. */
+.kyrub-tone-base {
+  background-color: var(--kyrub-night);
+  color: var(--kyrub-cream);
+}
+.kyrub-tone-raised {
+  background-color: var(--kyrub-moss);
+  border: 1px solid var(--kyrub-card-border);
+  color: var(--kyrub-cream);
+}
+.kyrub-tone-organic {
+  background: linear-gradient(145deg, #26332E 0%, #1C2622 72%, #121A17 100%);
+  border: 1px solid var(--kyrub-card-border);
+  color: var(--kyrub-cream);
+}
+.kyrub-tone-editorial {
+  background: var(--kyrub-cream);
+  border: 1px solid #D9D6C9;
+  color: var(--kyrub-night);
+}
+.kyrub-tone-editorial .kyrub-editorial-body {
+  color: #2C3833;
+}
+.kyrub-tone-editorial .kyrub-editorial-card {
+  background: var(--kyrub-sand);
+  border: 1px solid rgba(44, 56, 51, 0.14);
+  color: var(--kyrub-night);
+}
+
+/* Fine sage borders add depth across all legacy and modern dark cards. */
+#root-app-container .border-slate-800,
+#landing-page .border-slate-800,
+#profile-social-hub-modal .border-slate-800 {
+  border-color: var(--kyrub-card-border);
+}
+
+/* Keep orange CTA text legible against the pumpkin tone. */
+button.bg-orange-500.text-white,
+button.bg-orange-600.text-white,
+a.bg-orange-500.text-white,
+a.bg-orange-600.text-white {
+  color: var(--kyrub-night);
+}
+
+#kyrub-workspace-brand {
+  color: var(--kyrub-cream);
+}
+
+#renda-tab-container > .grid:first-child > :nth-child(2) {
+  background-color: var(--kyrub-moss-raised);
+}
+
+#kyrub-tab-container [aria-label="Recompensas"] {
+  background: linear-gradient(155deg, #26332E, #1C2622 65%);
+  border-color: var(--kyrub-card-border);
+}
+
+#profile-social-hub-modal {
+  background: var(--kyrub-night);
+}
+
+/* ERP continues to own its scrolling context; recolor only its visual shell. */
+
+
 /* Baseline inherited text; the runtime accessibility observer adds exactly 4px. */
 body {
   font-size: 16px;
@@ -93,13 +232,13 @@ body:has([data-kyrub-erp-viewport="true"]) #root {
   max-height: 100dvh !important;
   overflow: hidden !important;
   overscroll-behavior: none !important;
-  background: rgb(2 6 23) !important;
+  background: var(--kyrub-night) !important;
 }
 
 [data-kyrub-erp-viewport="true"] {
   z-index: 200 !important;
   isolation: isolate !important;
-  background: rgb(2 6 23) !important;
+  background: var(--kyrub-night) !important;
   overscroll-behavior: none !important;
 }
 

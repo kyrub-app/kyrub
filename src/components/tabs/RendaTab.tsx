@@ -214,7 +214,7 @@ export function RendaTab({
   return (
     <div
       className="space-y-6 animate-fade-in"
-      id="renda-tab-container"
+      id="renda-tab-container" data-kyrub-brand-panel="catu"
     >
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
