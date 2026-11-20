@@ -24,7 +24,6 @@ import {
   Heart,
   ImagePlus,
   LoaderCircle,
-  LogOut,
   MessageCircle,
   Pencil,
   Plus,
@@ -42,7 +41,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { onAuthStateChanged, signOut, updateProfile, type User } from 'firebase/auth';
+import { onAuthStateChanged, updateProfile, type User } from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -492,7 +491,6 @@ export function ProfileSocialHubNative() {
   const [draftName, setDraftName] = useState('');
   const [draftBio, setDraftBio] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
-  const [sessionBusy, setSessionBusy] = useState(false);
   const [newPostText, setNewPostText] = useState('');
   const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
   const [publishToStatus, setPublishToStatus] = useState(false);
@@ -531,22 +529,6 @@ export function ProfileSocialHubNative() {
   ) => {
     setToast({ message, type });
     window.setTimeout(() => setToast(null), 3500);
-  };
-
-  const handleProfileSignOut = async (): Promise<void> => {
-    if (sessionBusy || !auth.currentUser) return;
-    setSessionBusy(true);
-    try {
-      // The existing Firebase auth observer remounts the read-only guest
-      // workspace, where Google sign-in can select a different account.
-      await signOut(auth);
-      setEditOpen(false);
-      setOpen(false);
-    } catch {
-      triggerToast('Não foi possível sair da conta. Tente novamente.', 'error');
-    } finally {
-      setSessionBusy(false);
-    }
   };
 
   const directory = useSocialDirectoryV2({
@@ -1359,16 +1341,6 @@ export function ProfileSocialHubNative() {
               <h2 className="text-base font-black text-white">
                 Painel pessoal
               </h2>
-              <button
-                id="profile-session-logout"
-                type="button"
-                onClick={() => void handleProfileSignOut()}
-                disabled={sessionBusy}
-                className="mt-2 inline-flex min-h-10 items-center justify-center gap-2 rounded-xl border border-orange-500/35 bg-orange-500/10 px-3 py-2 text-xs font-bold text-orange-300 transition-colors hover:bg-orange-500/20 disabled:cursor-wait disabled:opacity-60"
-              >
-                {sessionBusy ? <LoaderCircle className="h-4 w-4 animate-spin" aria-hidden="true" /> : <LogOut className="h-4 w-4" aria-hidden="true" />}
-                {sessionBusy ? 'Saindo da conta…' : 'Sair da conta'}
-              </button>
             </div>
             <button
               type="button"
