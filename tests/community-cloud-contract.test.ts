@@ -12,81 +12,56 @@ test('main activates the cloud community bridges instead of the local preview', 
   assert.doesNotMatch(main, /ProfilePublishingDestinationsPreviewBridge/);
 });
 
-test('community UI exposes debates and real comment continuation', () => {
-  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
-  assert.match(component, /label: 'Debates'/);
-  assert.match(component, /Iniciar debate/);
-  assert.match(component, /Escreva seu comentário neste debate/);
-  assert.match(component, /Responder/);
-  assert.match(component, /Editar/);
-  assert.match(component, /deleteDebateComment/);
-  assert.match(component, /approveCommunityMember/);
+test('Communities present one Mural with lasting post comments and no separate Debates module', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const postCard = read('src/components/CommunityPostCard.tsx');
+  const postActions = read('src/utils/communityPostInteractions.ts');
+  assert.match(ui, /type CommunityPageTab = 'wall' \| 'notices' \| 'about'/);
+  for (const tab of ["label: 'Mural'", "label: 'Avisos'", "label: 'Sobre'"]) {
+    assert.ok(ui.includes(tab), `Missing community navigation: ${tab}`);
+  }
+  assert.doesNotMatch(ui, /label: 'Debates'|Iniciar debate|Publicar debate|selectedDebateId|setDebates|subscribeCommunityDebates/);
+  assert.match(ui, /<CommunityPostCard/);
+  assert.match(postCard, /Comentar/);
+  assert.match(postActions, /collection\(db, 'community_post_comments'\)/);
+  assert.match(ui, /approveCommunityMember/);
 });
 
-test('cloud data layer persists shared community resources in Firestore', () => {
+test('community data layer uses canonical posts and retains no debate writers or import jobs', () => {
   const cloud = read('src/utils/communityCloud.ts');
-  for (const collectionName of [
-    'communities',
-    'community_members',
-    'community_posts',
-    'community_debates',
-    'community_debate_comments',
-  ]) {
-    assert.match(cloud, new RegExp(`['\"]${collectionName}['\"]`));
+  for (const name of ['communities', 'community_members', 'community_posts']) {
+    assert.match(cloud, new RegExp(`['"]${name}['"]`));
   }
+  assert.doesNotMatch(cloud, /community_debates|community_debate_comments|createCommunityDebate|localDebates/i);
   assert.match(cloud, /runTransaction/);
   assert.match(cloud, /uploadCommunityCover/);
   assert.match(cloud, /importLocalCommunityPrototype/);
 });
 
-test('debate comment subscription scopes the query to community and debate', () => {
-  const querySafe = read('src/utils/communityCloudQuerySafe.ts');
-  const vite = read('vite.config.ts');
-
-  assert.match(querySafe, /community_debates/);
-  assert.match(querySafe, /where\('communityId', '==', communityId\)/);
-  assert.match(querySafe, /where\('debateId', '==', debateId\)/);
-  assert.match(vite, /communityCloudQuerySafe\.ts/);
-});
-
-test('Firestore and Storage compose dedicated community authorization', () => {
+test('retired debate documents remain readable for historical retention, never writable again', () => {
   const fragment = read('firestore.communities.fragment.rules');
   const compose = read('scripts/compose-firestore-rules.mjs');
   const storage = read('storage.rules');
   assert.match(fragment, /match \/communities\/\{communityId\}/);
-  assert.match(fragment, /match \/community_debates\/\{debateId\}/);
-  assert.match(
-    fragment,
-    /match \/community_debate_comments\/\{commentId\}/
-  );
+  for (const collectionName of ['community_debates', 'community_debate_comments']) {
+    const section = fragment.match(new RegExp(`match /${collectionName}/\\{[^}]+\\} \\{([^}]+)\\}`))?.[1] || '';
+    assert.match(section, /allow read: if canReadCommunity\(existing\(\)\.communityId\)/);
+    assert.match(section, /allow create, update, delete: if false;/);
+  }
   assert.match(compose, /firestore\.communities\.fragment\.rules/);
   assert.match(storage, /match \/community-covers\/\{communityId\}/);
 });
 
-test('switching communities clears the previous wall and rejects late snapshots', () => {
-  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
-  assert.match(component, /const communitySubscriptionVersion = useRef\(0\)/);
-  assert.match(component, /const version = \+\+communitySubscriptionVersion\.current/);
-  assert.match(component, /const isCurrent = \(\) => communitySubscriptionVersion\.current === version/);
-  assert.match(component, /values => \{ if \(isCurrent\(\)\) setPosts\(values\); \}/);
-  assert.match(component, /values => \{ if \(isCurrent\(\)\) setDebates\(values\); \}/);
-  assert.match(component, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
-  assert.match(component, /\+\+communitySubscriptionVersion\.current;\s+setPosts\(\[\]\);\s+setDebates\(\[\]\);\s+setMembers\(\[\]\);\s+closeDebate\(\);/);
-  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);/);
-});
-
-test('switching debates resets the comment composer and ignores late debate snapshots', () => {
-  const component = read('src/components/ProfileCommunitiesCloudBridge.tsx');
-  assert.match(component, /const debateSubscriptionVersion = useRef\(0\)/);
-  assert.match(component, /const version = \+\+debateSubscriptionVersion\.current/);
-  assert.match(component, /setComments\(\[\]\);\s+if \(!selectedCommunityId \|\| !selectedDebateId\) return/);
-  assert.match(component, /const isCurrent = \(\) => debateSubscriptionVersion\.current === version/);
-  assert.match(component, /values => \{ if \(isCurrent\(\)\) setComments\(values\); \}/);
-  assert.match(component, /\[selectedCommunityId, selectedDebateId\]/);
-  assert.match(component, /const closeDebate = \(\) => \{\s+\+\+debateSubscriptionVersion\.current;\s+setComments\(\[\]\);\s+setReplyTo\(null\);\s+setCommentDraft\(''\);\s+setEditingCommentId\(''\);\s+setEditingCommentText\(''\);\s+setSelectedDebateId\(''\);/);
-  assert.match(component, /const openDebate = \(debateId: string\) => \{\s+closeDebate\(\);\s+setSelectedDebateId\(debateId\);/);
-  assert.match(component, /openDebate\(debate\.id\)/);
-  assert.match(component, /onClick=\{closeDebate\}/);
+test('switching Communities cancels previous mural and membership listeners', () => {
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(ui, /const communitySubscriptionVersion = useRef\(0\)/);
+  assert.match(ui, /const version = \+\+communitySubscriptionVersion\.current/);
+  assert.match(ui, /const isCurrent = \(\) => communitySubscriptionVersion\.current === version/);
+  assert.match(ui, /values => \{ if \(isCurrent\(\)\) setPosts\(values\); \}/);
+  assert.match(ui, /values => \{ if \(isCurrent\(\)\) setMembers\(values\); \}/);
+  assert.match(ui, /unsubscribePosts\(\)/);
+  assert.match(ui, /unsubscribeMembers\(\)/);
+  assert.doesNotMatch(ui, /debateSubscriptionVersion|subscribeDebateComments|closeDebate/);
 });
 
 test('private group navigation rejects stale messages and cross-community membership snapshots', () => {
@@ -168,7 +143,7 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.match(ui, /onClick=\{\(\) => communityScrollRef\.current\?\.scrollTo\(\{ top: 0, behavior: 'smooth' \}\)\}/);
   assert.match(ui, /<ArrowUp className="h-5 w-5" \/>/);
   assert.match(ui, /setPageTab\(tab\.id\);[\s\S]*?setShowBackToTop\(false\);/);
-  assert.match(ui, /<main className="flex-1 overflow-y-auto p-4">/); // Debate keeps its independent conversation scroll.
+  assert.doesNotMatch(ui, /<main className="flex-1 overflow-y-auto p-4">/); // One community scroll region, no separate debate view.
 });
 
 test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
