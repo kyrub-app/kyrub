@@ -123,7 +123,7 @@ const visibilityDetails = (visibility: CommunityVisibility) => {
   }
   return {
     label: 'Pública',
-    description: 'Qualquer usuário autenticado pode entrar.',
+    description: 'Qualquer Kairubido autenticado pode participar.',
     icon: Globe2,
   };
 };
@@ -1657,7 +1657,7 @@ export function ProfileCommunitiesCloudBridge() {
                           ? 'Solicitação aguardando aprovação'
                           : selectedCommunity.visibility === 'private'
                             ? 'Participação somente por convite'
-                            : 'Entre na comunidade para comentar'}
+                            : 'Participe da comunidade para comentar'}
                       </button>
                     )}
                   </footer>
