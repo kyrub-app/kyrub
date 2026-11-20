@@ -17,12 +17,17 @@ export interface CommunitySquareEntry {
   communityName: string;
   communityOwnerId: string;
   communityId: string;
+  distributedAt: string;
+  forwardedByName?: string;
+  forwardedById?: string;
 }
 
 type SquarePointer = {
   postId: string;
   communityId: string;
   createdAt: Timestamp;
+  forwardedByName?: string;
+  forwardedById?: string;
 };
 
 const read = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -70,6 +75,8 @@ export const subscribeCommunitySquareFeed = (
   const communities = new Map<string, { name: string; ownerId: string; visibility: string }>();
   let stopDetails: Unsubscribe[] = [];
   let active = true;
+  let originals: SquarePointer[] = [];
+  let forwards: SquarePointer[] = [];
 
   const publish = () => {
     if (!active) return;
@@ -84,7 +91,8 @@ export const subscribeCommunitySquareFeed = (
       const community = communities.get(pointer.communityId);
       if (!post || !community || community.visibility !== 'public'
         || post.communityId !== pointer.communityId
-        || Math.abs(Date.parse(post.createdAt) - pointer.createdAt.toMillis()) > 2000) continue;
+        || (!pointer.forwardedById
+          && Math.abs(Date.parse(post.createdAt) - pointer.createdAt.toMillis()) > 2000)) continue;
       const count = perCommunity.get(pointer.communityId) || 0;
       if (count >= COMMUNITY_SQUARE_MAX_PER_COMMUNITY) continue;
       perCommunity.set(pointer.communityId, count + 1);
@@ -93,38 +101,35 @@ export const subscribeCommunitySquareFeed = (
         communityId: pointer.communityId,
         communityName: community.name,
         communityOwnerId: community.ownerId,
+        distributedAt: pointer.createdAt.toDate().toISOString(),
+        forwardedByName: pointer.forwardedByName,
+        forwardedById: pointer.forwardedById,
       });
     }
     onChange(result);
   };
 
-  const stopIndex = onSnapshot(
-    query(
-      collection(db, 'community_square_posts'),
-      where('createdAt', '>=', Timestamp.fromMillis(Date.now() - COMMUNITY_SQUARE_WINDOW_MS)),
-      orderBy('createdAt', 'desc'),
-      limit(COMMUNITY_SQUARE_MAX_CANDIDATES),
-    ),
-    snapshot => {
-      stopDetails.forEach(stop => stop());
-      stopDetails = [];
-      pointers.clear();
-      posts.clear();
-      communities.clear();
-      const selected = new Map<string, SquarePointer>();
-      const perCommunity = new Map<string, number>();
-      for (const document of snapshot.docs) {
-        const data = document.data();
-        const postId = read(data.postId);
-        const communityId = read(data.communityId);
-        const createdAt = asTimestamp(data.createdAt);
-        if (!postId || postId !== document.id || !communityId || !createdAt) continue;
-        if (!withinCommunitySquareWindow(createdAt.toMillis(), Date.now())) continue;
-        if ((perCommunity.get(communityId) || 0) >= COMMUNITY_SQUARE_MAX_PER_COMMUNITY) continue;
-        perCommunity.set(communityId, (perCommunity.get(communityId) || 0) + 1);
-        selected.set(postId, { postId, communityId, createdAt });
-        if (selected.size >= COMMUNITY_SQUARE_MAX_VISIBLE) break;
-      }
+  const rebuild = () => {
+    if (!active) return;
+    stopDetails.forEach(stop => stop());
+    stopDetails = [];
+    pointers.clear();
+    posts.clear();
+    communities.clear();
+
+    const selected = new Map<string, SquarePointer>();
+    const perCommunity = new Map<string, number>();
+    const sorted = [...originals, ...forwards]
+      .filter(pointer => withinCommunitySquareWindow(pointer.createdAt.toMillis(), Date.now()))
+      .sort((a, b) => b.createdAt.toMillis() - a.createdAt.toMillis());
+
+    for (const pointer of sorted) {
+      if (selected.has(pointer.postId)) continue;
+      if ((perCommunity.get(pointer.communityId) || 0) >= COMMUNITY_SQUARE_MAX_PER_COMMUNITY) continue;
+      perCommunity.set(pointer.communityId, (perCommunity.get(pointer.communityId) || 0) + 1);
+      selected.set(pointer.postId, pointer);
+      if (selected.size >= COMMUNITY_SQUARE_MAX_VISIBLE) break;
+    }
       selected.forEach((value, id) => pointers.set(id, value));
       for (const pointer of pointers.values()) {
         stopDetails.push(onSnapshot(doc(db, 'community_posts', pointer.postId),
@@ -168,9 +173,56 @@ export const subscribeCommunitySquareFeed = (
           ));
         }
       }
+
       publish();
+  };
+
+  const stopOriginals = onSnapshot(
+    query(
+      collection(db, 'community_square_posts'),
+      where('createdAt', '>=', Timestamp.fromMillis(Date.now() - COMMUNITY_SQUARE_WINDOW_MS)),
+      orderBy('createdAt', 'desc'),
+      limit(COMMUNITY_SQUARE_MAX_CANDIDATES),
+    ),
+    snapshot => {
+      originals = snapshot.docs.flatMap(document => {
+        const data = document.data();
+        const postId = read(data.postId);
+        const communityId = read(data.communityId);
+        const createdAt = asTimestamp(data.createdAt);
+        return postId && postId === document.id && communityId && createdAt
+          ? [{ postId, communityId, createdAt }] : [];
+      });
+      rebuild();
     },
-    onError,
+    error => { originals = []; rebuild(); onError(error); },
+  );
+
+  const stopForwards = onSnapshot(
+    query(
+      collection(db, 'community_square_forwards'),
+      where('forwardedAt', '>=', Timestamp.fromMillis(Date.now() - COMMUNITY_SQUARE_WINDOW_MS)),
+      orderBy('forwardedAt', 'desc'),
+      limit(COMMUNITY_SQUARE_MAX_CANDIDATES),
+    ),
+    snapshot => {
+      forwards = snapshot.docs.flatMap(document => {
+        const data = document.data();
+        const postId = read(data.postId);
+        const communityId = read(data.communityId);
+        const actorId = read(data.actorId);
+        const createdAt = asTimestamp(data.forwardedAt);
+        if (!postId || !communityId || !actorId || !createdAt ||
+          document.id !== `${postId}__${actorId}`) return [];
+        return [{
+          postId, communityId, createdAt,
+          forwardedById: actorId,
+          forwardedByName: read(data.actorName) || 'Kairubido',
+        }];
+      });
+      rebuild();
+    },
+    error => { forwards = []; rebuild(); onError(error); },
   );
 
   // Evict expired posts even without a fresh Firestore event.
@@ -178,7 +230,8 @@ export const subscribeCommunitySquareFeed = (
   return () => {
     active = false;
     window.clearInterval(timer);
-    stopIndex();
+    stopOriginals();
+    stopForwards();
     stopDetails.forEach(stop => stop());
   };
 };
