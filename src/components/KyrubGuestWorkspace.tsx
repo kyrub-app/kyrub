@@ -122,7 +122,7 @@ export function KyrubGuestWorkspace() {
         </button>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-6 px-4 py-6 pb-28" data-kyrub-workspace={activeTab}>
+      <main className="mx-auto w-full max-w-lg flex-1 space-y-6 px-4 py-6 pb-28" data-kyrub-workspace={tab}>
         <div id="kyrub-guest-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
           <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
           <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
