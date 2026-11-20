@@ -79,7 +79,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
         });
         setChatMessageText('');
         onMessageSent?.(sentText);
-        void issueCommunityForwardReceivedNotification(delivered.connectionId, delivered.messageId)
+        void issueCommunityForwardReceivedNotification(delivered.connectionId, delivered.messageId, forwardingPost.id)
           .catch(error => console.warn('Mensagem enviada; notificação interna temporariamente indisponível.', error));
       } else {
         await sendMessage(sentText);
