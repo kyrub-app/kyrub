@@ -77,9 +77,18 @@ export const seedVerifiedPost = async (
     )) {
       throw new Error('SEMEADURA_STATS_INVALID');
     }
+    if (stats.exists && data?.closed === true && data.acceptedSeeds !== SEEDS_PER_BOSQUE) {
+      throw new Error('SEMEADURA_STATS_INVALID');
+    }
+    // A receipt without its canonical post counter is corrupt state. Never
+    // silently treat this as a successful vote or infer an economic award.
+    if (receipt.exists && !stats.exists) {
+      throw new Error('SEMEADURA_ORPHAN_RECEIPT');
+    }
     if (receipt.exists &&
         (receipt.data()?.actorId !== actor || receipt.data()?.postId !== postId ||
-         receipt.data()?.kind !== kind || receipt.data()?.authorId !== authorId)) {
+         receipt.data()?.kind !== kind || receipt.data()?.authorId !== authorId ||
+         receipt.data()?.communityId !== communityId)) {
       throw new Error('SEMEADURA_RECEIPT_INVALID');
     }
     // Never trust the caller for a post's author or current count.
