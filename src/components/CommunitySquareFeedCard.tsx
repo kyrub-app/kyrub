@@ -68,7 +68,7 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
         saved={saved}
         onToggleSave={() => toggleCommunityPostSaveWithMetrics(post, saved)}
         onToggleLike={isLiked => toggleCommunityPostLike(post, isLiked)}
-        onComment={text => addCommunityPostComment(post, text)}
+        onComment={(text, parentCommentId) => addCommunityPostComment(post, text, parentCommentId)}
         onDeleteComment={deleteCommunityPostComment}
         onReport={reason => submitCommunityPostReport(post, reason)}
         onRemove={() => removeOwnCommunityPost(post)}
