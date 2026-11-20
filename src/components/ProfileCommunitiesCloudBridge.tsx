@@ -13,7 +13,6 @@ import {
   ImagePlus,
   Video,
   Check,
-  ChevronRight,
   CircleAlert,
   Globe2,
   LockKeyhole,
@@ -21,9 +20,7 @@ import {
   Megaphone,
   MessageCircle,
   ArrowUp,
-  Pencil,
   Plus,
-  Reply,
   Save,
   ShieldCheck,
   Trash2,
@@ -35,27 +32,18 @@ import {
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import { CommunityPostCard } from './CommunityPostCard';
 import {
-  addDebateComment,
   approveCommunityMember,
   createCommunity,
-  createCommunityDebate,
   createCommunityPost,
-  deleteDebateComment,
   joinCommunity,
   leaveCommunity,
   OPEN_COMMUNITY_CLOUD_CREATE_EVENT,
   rejectCommunityMember,
-  subscribeCommunityDebates,
   subscribeCommunityMemberships,
   subscribeCommunityPosts,
-  subscribeDebateComments,
   saveCommunityProfile,
-  updateDebateComment,
-  updateDebateStatus,
   uploadCommunityPostMedia,
   type CloudCommunity,
-  type CloudCommunityDebate,
-  type CloudCommunityDebateComment,
   type CloudCommunityMembership,
   type CloudCommunityPost,
   type CommunityVisibility,
@@ -74,7 +62,7 @@ import {
 } from '../utils/communitySquareFeed';
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
-type CommunityPageTab = 'wall' | 'debates' | 'notices' | 'about';
+type CommunityPageTab = 'wall' | 'notices' | 'about';
 
 type CreateDraft = {
   name: string;
@@ -238,7 +226,6 @@ export function ProfileCommunitiesCloudBridge() {
   const [postComments, setPostComments] = useState<CommunityPostComment[]>([]);
   const [postConnections, setPostConnections] = useState<CommunityPostConnection[]>([]);
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
-  const [debates, setDebates] = useState<CloudCommunityDebate[]>([]);
   const [members, setMembers] = useState<CloudCommunityMembership[]>([]);
   const [membersModalOpen, setMembersModalOpen] = useState(false);
   const [groupsModalOpen, setGroupsModalOpen] = useState(false);
@@ -257,8 +244,6 @@ export function ProfileCommunitiesCloudBridge() {
   const [groupMessageDraft, setGroupMessageDraft] = useState('');
   const [groupMessageError, setGroupMessageError] = useState('');
   const [groupMessageSending, setGroupMessageSending] = useState(false);
-  const [selectedDebateId, setSelectedDebateId] = useState('');
-  const [comments, setComments] = useState<CloudCommunityDebateComment[]>([]);
   const [createOpen, setCreateOpen] = useState(false);
   const [createDraft, setCreateDraft] = useState<CreateDraft>(initialCreateDraft);
   const [createError, setCreateError] = useState('');
@@ -321,19 +306,10 @@ export function ProfileCommunitiesCloudBridge() {
     wallMediaRef.current = next;
     setWallMedia(next);
   };
-  const [debateComposerOpen, setDebateComposerOpen] = useState(false);
-  const [debateTitle, setDebateTitle] = useState('');
-  const [debateContent, setDebateContent] = useState('');
-  const [commentDraft, setCommentDraft] = useState('');
-  const [replyTo, setReplyTo] =
-    useState<CloudCommunityDebateComment | null>(null);
-  const [editingCommentId, setEditingCommentId] = useState('');
-  const [editingCommentText, setEditingCommentText] = useState('');
   const [message, setMessage] = useState('');
   const [actionBusy, setActionBusy] = useState('');
   const communityScrollRef = useRef<HTMLDivElement | null>(null);
   const communitySubscriptionVersion = useRef(0);
-  const debateSubscriptionVersion = useRef(0);
   const groupDirectorySubscriptionVersion = useRef(0);
   const groupMessageSubscriptionVersion = useRef(0);
   const mountRef = useRef<HTMLElement | null>(null);
@@ -343,7 +319,6 @@ export function ProfileCommunitiesCloudBridge() {
   const selectedCommunity = communities.find(
     community => community.id === selectedCommunityId
   );
-  const selectedDebate = debates.find(debate => debate.id === selectedDebateId);
   const canParticipate = Boolean(
     selectedCommunity?.isOwner || selectedCommunity?.isActiveMember
   );
@@ -578,7 +553,6 @@ export function ProfileCommunitiesCloudBridge() {
     setPosts([]);
     setPostLikes([]);
     setPostComments([]);
-    setDebates([]);
     setMembers([]);
     if (!selectedCommunityId) return;
     // Ignore late callbacks from a community that is no longer selected.
@@ -591,11 +565,6 @@ export function ProfileCommunitiesCloudBridge() {
     const unsubscribePosts = subscribeCommunityPosts(
       selectedCommunityId,
       values => { if (isCurrent()) setPosts(values); },
-      report
-    );
-    const unsubscribeDebates = subscribeCommunityDebates(
-      selectedCommunityId,
-      values => { if (isCurrent()) setDebates(values); },
       report
     );
     const unsubscribeMembers = subscribeCommunityMemberships(
@@ -613,7 +582,6 @@ export function ProfileCommunitiesCloudBridge() {
     return () => {
       ++communitySubscriptionVersion.current;
       unsubscribePosts();
-      unsubscribeDebates();
       unsubscribeMembers();
       unsubscribePostInteractions();
     };
@@ -656,26 +624,6 @@ export function ProfileCommunitiesCloudBridge() {
       if (isCurrent()) setGroupsLoadError('Entre no Kyrub para consultar seus grupos.');
     }
   }, [groupsModalOpen, selectedCommunityId, canParticipate, user?.uid]);
-
-  useEffect(() => {
-    const version = ++debateSubscriptionVersion.current;
-    setComments([]);
-    if (!selectedCommunityId || !selectedDebateId) return;
-    const isCurrent = () => debateSubscriptionVersion.current === version;
-    const unsubscribe = subscribeDebateComments(
-      selectedDebateId,
-      values => { if (isCurrent()) setComments(values); },
-      value => {
-        if (!isCurrent()) return;
-        console.warn('Não foi possível carregar os comentários.', value);
-        setMessage('Não foi possível carregar todos os comentários agora.');
-      }
-    );
-    return () => {
-      ++debateSubscriptionVersion.current;
-      unsubscribe();
-    };
-  }, [selectedCommunityId, selectedDebateId]);
 
   useEffect(() => {
     if (
@@ -752,21 +700,6 @@ export function ProfileCommunitiesCloudBridge() {
     setActiveGroupChatId(current => current === groupId ? '' : groupId);
   };
 
-  const closeDebate = () => {
-    ++debateSubscriptionVersion.current;
-    setComments([]);
-    setReplyTo(null);
-    setCommentDraft('');
-    setEditingCommentId('');
-    setEditingCommentText('');
-    setSelectedDebateId('');
-  };
-
-  const openDebate = (debateId: string) => {
-    closeDebate();
-    setSelectedDebateId(debateId);
-  };
-
   const openCommunity = (community: CloudCommunity) => {
     communityScrollRef.current?.scrollTo({ top: 0, behavior: 'auto' });
     setShowBackToTop(false);
@@ -775,9 +708,7 @@ export function ProfileCommunitiesCloudBridge() {
     setMembersModalOpen(false);
     ++communitySubscriptionVersion.current;
     setPosts([]);
-    setDebates([]);
     setMembers([]);
-    closeDebate();
     setSelectedCommunityId(community.id);
     clearWallMedia();
     setWallDraft('');
@@ -957,44 +888,6 @@ export function ProfileCommunitiesCloudBridge() {
     });
   };
 
-  const submitDebate = async () => {
-    if (!selectedCommunity) return;
-    await runAction('new-debate', async () => {
-      const debateId = await createCommunityDebate({
-        communityId: selectedCommunity.id,
-        title: debateTitle,
-        content: debateContent,
-      });
-      setDebateTitle('');
-      setDebateContent('');
-      setDebateComposerOpen(false);
-      openDebate(debateId);
-      setMessage('Debate iniciado.');
-    });
-  };
-
-  const submitComment = async () => {
-    if (!selectedCommunity || !selectedDebate) return;
-    await runAction('comment', async () => {
-      await addDebateComment({
-        communityId: selectedCommunity.id,
-        debateId: selectedDebate.id,
-        text: commentDraft,
-        parentCommentId: replyTo?.id,
-      });
-      setCommentDraft('');
-      setReplyTo(null);
-    });
-  };
-
-  const saveEditedComment = async (commentId: string) => {
-    await runAction(`edit-comment-${commentId}`, async () => {
-      await updateDebateComment(commentId, editingCommentText);
-      setEditingCommentId('');
-      setEditingCommentText('');
-    });
-  };
-
   const renderCard = (community: (typeof communities)[number]) => {
     const actionLabel = community.isOwner || community.isActiveMember
       ? 'Abrir'
@@ -1071,7 +964,6 @@ export function ProfileCommunitiesCloudBridge() {
     icon: typeof MessageCircle;
   }> = [
     { id: 'wall', label: 'Mural', icon: MessageCircle },
-    { id: 'debates', label: 'Debates', icon: Users },
     { id: 'notices', label: 'Avisos', icon: Megaphone },
     { id: 'about', label: 'Sobre', icon: ShieldCheck },
   ];
@@ -1424,247 +1316,9 @@ export function ProfileCommunitiesCloudBridge() {
         createPortal(
           <div className="fixed inset-0 z-[175] bg-slate-950/95 backdrop-blur-md">
             <section className="relative mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
-              {selectedDebate ? (
-                <>
-                  <header className="border-b border-slate-800 bg-slate-900/95 p-3">
-                    <div className="flex items-start gap-3">
-                      <button
-                        type="button"
-                        onClick={closeDebate}
-                        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-300"
-                        aria-label="Voltar aos debates"
-                      >
-                        <ArrowLeft className="h-4 w-4" />
-                      </button>
-                      <div className="min-w-0 flex-1">
-                        <span className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">
-                          Debate · {selectedCommunity.name}
-                        </span>
-                        <h2 className="mt-1 text-base font-black text-white">
-                          {selectedDebate.title}
-                        </h2>
-                        <span className="mt-1 block text-[11px] text-slate-500">
-                          {selectedDebate.commentCount}{' '}
-                          {selectedDebate.commentCount === 1 ? 'comentário' : 'comentários'}
-                        </span>
-                      </div>
-                      {(selectedCommunity.isOwner ||
-                        selectedDebate.authorId === user?.uid) && (
-                        <button
-                          type="button"
-                          disabled={actionBusy === 'debate-status'}
-                          onClick={() =>
-                            void runAction('debate-status', async () => {
-                              await updateDebateStatus(
-                                selectedDebate.id,
-                                selectedDebate.status === 'open' ? 'closed' : 'open'
-                              );
-                            })
-                          }
-                          className="min-h-10 shrink-0 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[11px] font-black uppercase text-slate-300 disabled:opacity-40"
-                        >
-                          {selectedDebate.status === 'open' ? 'Encerrar' : 'Reabrir'}
-                        </button>
-                      )}
-                    </div>
-                  </header>
-                  <main className="flex-1 overflow-y-auto p-4">
-                    {message && (
-                      <p className="mb-3 rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-sky-200">
-                        {message}
-                      </p>
-                    )}
-                    <article className="rounded-3xl border border-sky-500/20 bg-slate-900 p-4">
-                      <div className="flex items-center gap-3">
-                        <Avatar name={selectedDebate.authorName} url={selectedDebate.authorAvatar} />
-                        <div>
-                          <strong className="block text-xs text-white">
-                            {selectedDebate.authorName}
-                          </strong>
-                          <span className="text-[11px] text-slate-600">
-                            {formatDate(selectedDebate.createdAt)}
-                          </span>
-                        </div>
-                      </div>
-                      <p className="mt-4 whitespace-pre-line text-xs leading-relaxed text-slate-300">
-                        {selectedDebate.content}
-                      </p>
-                    </article>
-
-                    <section className="mt-4 space-y-3">
-                      {comments.map(comment => {
-                        const parent = comments.find(item => item.id === comment.parentCommentId);
-                        const canManage =
-                          comment.authorId === user?.uid || selectedCommunity.isOwner;
-                        return (
-                          <article
-                            key={comment.id}
-                            className={`rounded-3xl border border-slate-800 bg-slate-900 p-4 ${
-                              comment.parentCommentId ? 'ml-5' : ''
-                            }`}
-                          >
-                            {parent && (
-                              <p className="mb-3 rounded-xl border-l-2 border-sky-500 bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
-                                Em resposta a <strong className="text-sky-300">{parent.authorName}</strong>: {parent.text.slice(0, 100)}
-                              </p>
-                            )}
-                            <div className="flex items-start gap-3">
-                              <Avatar name={comment.authorName} url={comment.authorAvatar} />
-                              <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-3">
-                                  <strong className="truncate text-xs text-white">
-                                    {comment.authorName}
-                                  </strong>
-                                  <span className="shrink-0 text-[11px] text-slate-600">
-                                    {formatDate(comment.createdAt)}
-                                  </span>
-                                </div>
-                                {editingCommentId === comment.id ? (
-                                  <div className="mt-2 space-y-2">
-                                    <textarea
-                                      value={editingCommentText}
-                                      onChange={event =>
-                                        setEditingCommentText(event.target.value.slice(0, 1400))
-                                      }
-                                      rows={3}
-                                      className="w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-xs text-white outline-none"
-                                    />
-                                    <div className="flex gap-2">
-                                      <button
-                                        type="button"
-                                        onClick={() => void saveEditedComment(comment.id)}
-                                        className="min-h-9 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950"
-                                      >
-                                        Salvar
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => setEditingCommentId('')}
-                                        className="min-h-9 rounded-xl border border-slate-700 px-3 text-[11px] font-black uppercase text-slate-400"
-                                      >
-                                        Cancelar
-                                      </button>
-                                    </div>
-                                  </div>
-                                ) : (
-                                  <p className="mt-2 whitespace-pre-line text-[11px] leading-relaxed text-slate-300">
-                                    {comment.text}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            {editingCommentId !== comment.id && (
-                              <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-800 pt-3">
-                                {canParticipate && selectedDebate.status === 'open' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setReplyTo(comment);
-                                      setCommentDraft('');
-                                    }}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-sky-300"
-                                  >
-                                    <Reply className="h-3.5 w-3.5" />
-                                    Responder
-                                  </button>
-                                )}
-                                {comment.authorId === user?.uid && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setEditingCommentId(comment.id);
-                                      setEditingCommentText(comment.text);
-                                    }}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-slate-400"
-                                  >
-                                    <Pencil className="h-3.5 w-3.5" />
-                                    Editar
-                                  </button>
-                                )}
-                                {canManage && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      if (!window.confirm('Excluir este comentário?')) return;
-                                      void runAction(`delete-${comment.id}`, () =>
-                                        deleteDebateComment(selectedDebate.id, comment.id)
-                                      );
-                                    }}
-                                    className="flex items-center gap-1 text-[11px] font-bold text-red-300"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Excluir
-                                  </button>
-                                )}
-                              </div>
-                            )}
-                          </article>
-                        );
-                      })}
-                      {comments.length === 0 && (
-                        <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-10 text-center">
-                          <MessageCircle className="mx-auto h-8 w-8 text-slate-700" />
-                          <p className="mt-3 text-xs font-black text-slate-400">
-                            Seja o primeiro a comentar
-                          </p>
-                        </div>
-                      )}
-                    </section>
-                  </main>
-                  <footer className="border-t border-slate-800 bg-slate-900/95 p-3">
-                    {canParticipate && selectedDebate.status === 'open' ? (
-                      <div>
-                        {replyTo && (
-                          <div className="mb-2 flex items-center justify-between rounded-xl bg-slate-950 px-3 py-2 text-[11px] text-slate-500">
-                            <span>
-                              Respondendo a <strong className="text-sky-300">{replyTo.authorName}</strong>
-                            </span>
-                            <button type="button" onClick={() => setReplyTo(null)}>
-                              <X className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        )}
-                        <div className="flex items-end gap-2">
-                          <textarea
-                            value={commentDraft}
-                            onChange={event => setCommentDraft(event.target.value.slice(0, 1400))}
-                            rows={2}
-                            placeholder="Escreva seu comentário neste debate..."
-                            className="min-h-12 flex-1 resize-none rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-sky-500/60"
-                          />
-                          <button
-                            type="button"
-                            disabled={actionBusy === 'comment' || !commentDraft.trim()}
-                            onClick={() => void submitComment()}
-                            className="min-h-12 rounded-2xl bg-sky-500 px-4 text-[11px] font-black uppercase text-slate-950 disabled:opacity-35"
-                          >
-                            Comentar
-                          </button>
-                        </div>
-                      </div>
-                    ) : selectedDebate.status === 'closed' ? (
-                      <p className="rounded-xl border border-amber-500/20 bg-amber-500/5 px-3 py-3 text-center text-xs text-amber-200">
-                        Este debate foi encerrado para novos comentários.
-                      </p>
-                    ) : (
-                      <button
-                        type="button"
-                        disabled={selectedCommunity.isPendingMember || selectedCommunity.visibility === 'private'}
-                        onClick={() => void handleMembership(selectedCommunity)}
-                        className="min-h-11 w-full rounded-xl bg-sky-500 text-xs font-black uppercase text-slate-950 disabled:opacity-45"
-                      >
-                        {selectedCommunity.isPendingMember
-                          ? 'Solicitação aguardando aprovação'
-                          : selectedCommunity.visibility === 'private'
-                            ? 'Participação somente por convite'
-                            : 'Participe da comunidade para comentar'}
-                      </button>
-                    )}
-                  </footer>
-                </>
-              ) : (
-                <>
+              <>
                   <div
+                    id="community-page-scroll"                  <div
                     id="community-page-scroll"
                     ref={communityScrollRef}
                     onScroll={event => setShowBackToTop(event.currentTarget.scrollTop > 240)}
@@ -1679,8 +1333,7 @@ export function ProfileCommunitiesCloudBridge() {
                           ++communitySubscriptionVersion.current;
                           closeGroupsModal();
                           setMembersModalOpen(false);
-                          closeDebate();
-                          setSelectedCommunityId('');
+                                                setSelectedCommunityId('');
                         }}
                         className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-white backdrop-blur"
                         aria-label="Voltar para a Praça"
@@ -1892,88 +1545,6 @@ export function ProfileCommunitiesCloudBridge() {
                       </div>
                     )}
 
-                    {pageTab === 'debates' && (
-                      <div className="space-y-3">
-                        <div className="flex items-start justify-between gap-3">
-                          <div>
-                            <h3 className="text-xs font-black text-white">Debates da comunidade</h3>
-                            <p className="mt-1 text-[11px] text-slate-500">Converse, responda e retome assuntos a qualquer momento.</p>
-                          </div>
-                          {canParticipate && (
-                            <button
-                              type="button"
-                              onClick={() => setDebateComposerOpen(current => !current)}
-                              className="min-h-9 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950"
-                            >
-                              Iniciar debate
-                            </button>
-                          )}
-                        </div>
-                        {debateComposerOpen && (
-                          <section className="space-y-2 rounded-3xl border border-slate-800 bg-slate-900 p-3">
-                            <input
-                              value={debateTitle}
-                              onChange={event => setDebateTitle(event.target.value.slice(0, 140))}
-                              placeholder="Título do debate"
-                              className="min-h-11 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none"
-                            />
-                            <textarea
-                              value={debateContent}
-                              onChange={event => setDebateContent(event.target.value.slice(0, 3000))}
-                              rows={4}
-                              placeholder="Apresente o assunto e convide outras pessoas a participar..."
-                              className="w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none"
-                            />
-                            <button
-                              type="button"
-                              disabled={actionBusy === 'new-debate'}
-                              onClick={() => void submitDebate()}
-                              className="min-h-10 w-full rounded-xl bg-sky-500 text-[11px] font-black uppercase text-slate-950 disabled:opacity-40"
-                            >
-                              Publicar debate
-                            </button>
-                          </section>
-                        )}
-                        {debates.map(debate => (
-                          <button
-                            key={debate.id}
-                            type="button"
-                            onClick={() => {
-                              openDebate(debate.id);
-                              setMessage('');
-                            }}
-                            className="flex w-full items-start gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 text-left"
-                          >
-                            <Avatar name={debate.authorName} url={debate.authorAvatar} />
-                            <span className="min-w-0 flex-1">
-                              <span className="flex items-start justify-between gap-3">
-                                <strong className="text-xs font-black text-white">{debate.title}</strong>
-                                <span className={`shrink-0 rounded-full px-2 py-1 text-[7px] font-black uppercase ${
-                                  debate.status === 'open'
-                                    ? 'bg-emerald-500/10 text-emerald-300'
-                                    : 'bg-slate-800 text-slate-500'
-                                }`}>
-                                  {debate.status === 'open' ? 'Aberto' : 'Encerrado'}
-                                </span>
-                              </span>
-                              <span className="mt-2 line-clamp-2 block text-xs leading-relaxed text-slate-400">{debate.content}</span>
-                              <span className="mt-3 flex items-center justify-between text-[11px] text-slate-600">
-                                <span>{debate.authorName}</span>
-                                <span>{debate.commentCount} {debate.commentCount === 1 ? 'comentário' : 'comentários'}</span>
-                              </span>
-                            </span>
-                            <ChevronRight className="mt-1 h-4 w-4 shrink-0 text-slate-600" />
-                          </button>
-                        ))}
-                        {debates.length === 0 && (
-                          <div className="rounded-3xl border border-dashed border-slate-800 px-5 py-12 text-center">
-                            <Users className="mx-auto h-8 w-8 text-slate-700" />
-                            <p className="mt-3 text-xs font-black text-slate-400">Nenhum debate iniciado</p>
-                          </div>
-                        )}
-                      </div>
-                    )}
-
                     {pageTab === 'notices' && (
                       <div className="space-y-3">
                         <section className="rounded-3xl border border-amber-500/20 bg-amber-500/5 p-4">
@@ -2067,8 +1638,7 @@ export function ProfileCommunitiesCloudBridge() {
                       <ArrowUp className="h-5 w-5" />
                     </button>
                   )}
-                </>
-              )}
+              </>
             </section>
           </div>,
           document.body
