@@ -70,6 +70,20 @@ test('real Firestore transactions record one seed per actor, count only author p
   await assert.rejects(semear('personal','a-post','author'),/SEMEADURA_SELF_RECOGNITION_DENIED/);
 });
 
+test('one author can accumulate concurrent seeds from personal and community posts without duplicate credit', async () => {
+  await Promise.all([personal('personal-cumulative'), community('community-cumulative')]);
+  await db.doc('community_posts/community-cumulative').update({ authorId: 'author' });
+  const results = await Promise.all([
+    semear('personal', 'personal-cumulative', 'voter'),
+    semear('community', 'community-cumulative', 'voter'),
+  ]);
+  assert.deepEqual(results.map(result => result.status), ['accepted', 'accepted']);
+  assert.equal((await readPersonalSemeaduraJourney(db, 'author')).totalSeeds, 2);
+  assert.equal((await readCommunitySemeaduraJourney(db, 'voter', 'rock')).totalSeeds, 1);
+  assert.equal((await db.collection('users/author/rewardLedger').get()).size, 0);
+  assert.equal((await db.collection('users/author/xpLedger').get()).size, 0);
+});
+
 test('the two concurrent final seeds yield exactly ONE winner, then close the post forever', async () => {
   await personal('cap-post');
   const key = createHash('sha256').update('personal\0cap-post').digest('hex');
