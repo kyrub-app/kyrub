@@ -475,6 +475,7 @@ export function CommunityPostCard({
           role: 'Kairubido', connectionStatus: 'accepted', connectionId: connection?.id,
         } : null}
         setSelectedChatUser={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
+        forwardingPost={forwardRecipient ? post : null}
         onMessageSent={text => {
           if (forwardRecipient && text.includes(buildCommunityPostInternalLink(post))) {
             void recordCommunityPostForwardMetric(post).catch(error =>
