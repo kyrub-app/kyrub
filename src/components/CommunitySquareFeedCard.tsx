@@ -50,6 +50,12 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
         <span className="min-w-0 flex-1 truncate">Publicado em: <strong>{entry.communityName}</strong></span>
         <ArrowUpRight className="h-4 w-4 shrink-0" />
       </button>
+      {entry.forwardedById && (
+        <p className="px-2 text-xs text-sky-200">
+          Encaminhado à Praça por <strong>{entry.forwardedByName || 'Kairubido'}</strong>
+          {' · '}publicação original de {post.authorName}
+        </p>
+      )}
       {error && <p role="alert" className="text-xs text-amber-300">{error}</p>}
       <CommunityPostCard
         post={post}
