@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { auth } from '../../utils/firebase';
+import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
 
 type Account = { pitangas: number; xp: number; initialized: boolean; entries: { id: string; unit: string; delta: number; occurredAt: string }[] };
 
@@ -55,6 +56,7 @@ export function PitangaAccount() {
 
   return <div className="mt-4 border-t border-slate-800 pt-4">
     <h3 className="text-lg font-bold">Pitangas e XP</h3>
+    <div className="mt-3"><SemeaduraJourneyPanel viewerId={auth.currentUser?.uid || ''} /></div>
     {account && <p className="mt-2">{account.pitangas.toLocaleString('pt-BR')} Pitangas · {account.xp.toLocaleString('pt-BR')} XP</p>}
     <p className="mt-2 text-xs text-slate-400">100 Pitangas no primeiro cadastro com Google elegível. Primeira loja publicada: 2 XP. Conversão voluntária: 1.000 Pitangas = 1 XP.</p>
     <div className="mt-3 flex flex-wrap gap-3">

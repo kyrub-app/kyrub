@@ -36,6 +36,7 @@ import {
 } from 'lucide-react';
 import { useCommunityDirectory, type CommunityDirectoryItem } from '../hooks/useCommunityDirectory';
 import { CommunityPostCard } from './CommunityPostCard';
+import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
 import {
   approveCommunityMember,
   createCommunity,
@@ -1586,6 +1587,7 @@ export function ProfileCommunitiesCloudBridge() {
 
                     {pageTab === 'wall' && (
                       <div className="space-y-3">
+                        <SemeaduraJourneyPanel key={selectedCommunity.id} communityId={selectedCommunity.id} viewerId={user?.uid || ''} />
                         {canParticipate && (
                           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-3">
                             <textarea

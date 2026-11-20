@@ -18,6 +18,7 @@ import type { Friend, SocialPost } from '../types';
 import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
 import { orderCommentThreads } from '../utils/commentThreads';
 import { MediaCarousel } from './MediaCarousel';
+import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
 import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
@@ -465,6 +466,9 @@ export function PublicSocialFeedPanel({
             )}
 
             <div className="grid grid-cols-3 gap-2 border-t border-slate-800/70 pt-3">
+              {SEMEADURA_UI_ENABLED && post.visibility === 'public' && post.publicationType !== 'status' ? (
+                <SemearButton kind="personal" postId={post.id} viewerId={currentUserId} />
+              ) : (
               <button
                 type="button"
                 onClick={async () => {
@@ -488,6 +492,7 @@ export function PublicSocialFeedPanel({
                 <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} />
                 {post.likes} {post.likes === 1 ? 'curtida' : 'curtidas'}
               </button>
+              )}
               <button
                 type="button"
                 onClick={async () => {
