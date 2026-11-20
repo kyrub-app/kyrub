@@ -7,7 +7,7 @@ const read = (file: string) => readFileSync(file, 'utf8');
 test('Semear replaces the legacy like only behind BOTH deployment guards', () => {
   const button = read('src/components/SemearButton.tsx');
   const handler = read('server/gamification/semeaduraHandler.ts');
-  assert.match(button, /import\.meta\.env\.VITE_SEMEADURA_UI_ENABLED === 'true'/);
+  assert.match(button, /import\.meta\.env\?\.VITE_SEMEADURA_UI_ENABLED === 'true'/);
   assert.match(handler, /process\.env\.KYRUB_SEMEADURA_SERVER_ENABLED !== 'true'/);
   assert.match(handler, /SEMEADURA_NOT_ENABLED/);
   assert.match(button, /requestSemeadura\('status', \{ kind, postId \}/);
