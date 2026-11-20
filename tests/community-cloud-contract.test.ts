@@ -87,7 +87,7 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
   const communities = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   assert.ok(tab.indexOf('<SquareStoresSection') >= 0);
   assert.ok(tab.indexOf('<SquareStoresSection') < tab.indexOf('<LegacyKyrubTab'));
-  assert.match(tab, /props\.setSocialSubTab\('lojas'\)/);
+  assert.match(tab, /onViewAll=\{\(\) => setStoreCatalogOpen\(true\)\}/);
   assert.equal((communities.match(/id="square-communities"/g) || []).length, 1);
   assert.doesNotMatch(communities, /Importar teste deste aparelho|showLocalImport|importLocalCommunityPrototype/);
   assert.match(communities, /Criar comunidade/);
@@ -110,9 +110,13 @@ test('Community header opens a searchable full directory instead of duplicating 
   assert.match(header, /Ver todas <ArrowRight/);
   assert.doesNotMatch(header.slice(0, header.indexOf('<div className="flex gap-1.5 overflow-x-auto">')), /onClick=\{\(\) => setCreateOpen\(true\)\}/);
   assert.match(ui, /Criar comunidade/); // Creation remains in the existing rail card.
-  assert.match(ui, /role="dialog"[\s\S]*?aria-modal="true" aria-label="Catálogo de comunidades"/);
-  assert.match(ui, /id="community-catalog-search"/);
-  assert.match(ui, /aria-label="Filtrar comunidades por categoria"/);
+  const layout = read('src/components/SquareDirectoryLayout.tsx');
+  assert.match(ui, /<SquareDirectoryLayout/);
+  assert.match(ui, /ariaLabel="Catálogo de comunidades"/);
+  assert.match(layout, /role="dialog"/);
+  assert.match(layout, /aria-modal="false"/);
+  assert.match(ui, /searchId="community-catalog-search"/);
+  assert.match(layout, /aria-label="Filtrar por categoria"/);
   assert.match(ui, /catalogCommunities\.map\(community => renderCard\(community, 'catalog'\)\)/);
   assert.match(ui, /const selectCommunityDirectory = \(/);
   assert.match(ui, /community\.visibility !== 'private' \|\| community\.isOwner \|\| community\.isActiveMember/);

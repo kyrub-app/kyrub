@@ -106,6 +106,7 @@ export function KyrubTab(props: KyrubTabProps) {
   const [discoveryFilter, setDiscoveryFilter] = useState<DiscoveryFilter>('none');
   const [discoverySignals, setDiscoverySignals] = useState<MarketplaceStoreDiscoverySignal[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
+  const [storeCatalogOpen, setStoreCatalogOpen] = useState(false);
   const [clubSummaries, setClubSummaries] = useState<Array<{ storeId: string; summary: StoreRelationshipSummary }>>([]);
   const [participatingStoreIds, setParticipatingStoreIds] = useState<string[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
@@ -365,6 +366,31 @@ export function KyrubTab(props: KyrubTabProps) {
     .filter(Boolean)
     .join(' ');
 
+  // Render the complete store directory without switching to the legacy
+  // marketplace view. The shared shell preserves the existing global header.
+  if (storeCatalogOpen) {
+    return (
+      <div data-kyrub-brand-panel="taba">
+        <SquareStoresSection
+          stores={allPublishedStores}
+          favoriteStoreIds={props.favoriteStoreIds}
+          participatingStoreIds={participatingStoreIds}
+          onToggleFavoriteStore={props.handleToggleFavoriteStore}
+          offerStoreIds={publishedOffers.map(offer => offer.storeId)}
+          onViewAll={() => setStoreCatalogOpen(true)}
+          onOpenStore={store => {
+            // The existing shopping modal is beneath the directory overlay.
+            // Dismiss the directory first so the selected storefront is visible.
+            setStoreCatalogOpen(false);
+            props.setVisitingStore(store);
+          }}
+          catalogOpen
+          onCloseCatalog={() => setStoreCatalogOpen(false)}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className={wrapperClassName || undefined} data-kyrub-brand-panel="taba">
       {props.socialSubTab === 'lojas' && (
@@ -449,10 +475,7 @@ export function KyrubTab(props: KyrubTabProps) {
           participatingStoreIds={participatingStoreIds}
           onToggleFavoriteStore={props.handleToggleFavoriteStore}
           offerStoreIds={publishedOffers.map(offer => offer.storeId)}
-          onViewAll={() => {
-            props.setOfertasFilter('todas');
-            props.setSocialSubTab('lojas');
-          }}
+          onViewAll={() => setStoreCatalogOpen(true)}
           onOpenStore={props.setVisitingStore}
         />
       )}

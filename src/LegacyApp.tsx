@@ -1359,7 +1359,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6" id="kyrub-workspace-main" data-kyrub-workspace={activeTab}>
-            <div id="kyrub-workspace-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
+            <div id="kyrub-workspace-brand" className="sticky top-16 z-40 flex min-h-10 items-center gap-2 border-b border-slate-800 bg-slate-950 pb-3" aria-label="Kyrub — ecossistema">
               <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
               <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
               <button
