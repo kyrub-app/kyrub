@@ -133,7 +133,13 @@ export function SemearButton({
       }
       // Query the authoritative status after the write. Never infer account
       // awards or allow an optimistic increment on a potentially failed write.
-      await refresh();
+      try {
+        await refresh();
+      } catch {
+        // An accepted write is not a failure when the follow-up status read
+        // times out. The immutable receipt prevents duplicate seed credits.
+        setError('Semente recebida; o progresso ainda não foi atualizado.');
+      }
       window.dispatchEvent(new CustomEvent('kyrub-semeadura-updated', {
         detail: { kind, postId },
       }));
@@ -149,7 +155,13 @@ export function SemearButton({
   const journey = calculatePitangueiraJourney(state?.count ?? 0);
   const label = state?.closed
     ? 'Bosque concluído'
-    : state?.seeded ? 'Semeado' : 'Semear';
+    : state?.seeded
+      ? 'Semeado'
+      : state?.authorId === viewerId
+        ? 'Sua publicação'
+        : state && !state.canSemear
+          ? 'Participe para semear'
+          : 'Semear';
   return (
     <div ref={holderRef} className="min-w-0">
       <button type="button"
@@ -160,7 +172,7 @@ export function SemearButton({
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
         <span aria-hidden="true">{state?.closed ? '🌲' : '🌱'}</span>
-        <span className="truncate">{!visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
+        <span className="truncate">{!viewerId ? 'Entre para semear' : !visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
       </button>
       {error && <p role="status" className="mt-1 text-[10px] text-amber-300">{error}</p>}
     </div>
