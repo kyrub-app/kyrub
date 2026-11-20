@@ -798,12 +798,12 @@ export function ProfileSocialHubNative() {
     const publicPosts = squarePosts.filter(post =>
       !term || `${post.user} ${post.content}`.toLocaleLowerCase('pt-BR').includes(term));
     const communityPosts = communitySquareEntries
-      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.post.createdAt), now))
+      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.distributedAt), now))
       .filter(entry => !term || `${entry.communityName} ${entry.post.authorName} ${entry.post.content}`
         .toLocaleLowerCase('pt-BR').includes(term));
     return [
       ...publicPosts.map(post => ({ kind: 'social' as const, key: 'social:' + post.id, createdAt: post.createdAt || '', post })),
-      ...communityPosts.map(entry => ({ kind: 'community' as const, key: 'community:' + entry.post.id, createdAt: entry.post.createdAt, entry })),
+      ...communityPosts.map(entry => ({ kind: 'community' as const, key: 'community:' + entry.post.id, createdAt: entry.distributedAt, entry })),
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [squarePosts, communitySquareEntries, squareSearch, now]);
 
