@@ -45,15 +45,13 @@ import {
   leaveCommunity,
   OPEN_COMMUNITY_CLOUD_CREATE_EVENT,
   rejectCommunityMember,
-  removeCommunityCover,
   subscribeCommunityDebates,
   subscribeCommunityMemberships,
   subscribeCommunityPosts,
   subscribeDebateComments,
-  updateCommunity,
+  saveCommunityProfile,
   updateDebateComment,
   updateDebateStatus,
-  uploadCommunityCover,
   uploadCommunityPostMedia,
   type CloudCommunity,
   type CloudCommunityDebate,
@@ -892,27 +890,14 @@ export function ProfileCommunitiesCloudBridge() {
     setEditBusy(true);
     setEditError('');
     try {
-      let coverImage = selectedCommunity.coverImage;
-      let coverPath = selectedCommunity.coverPath;
-      if (removeCoverRequested) {
-        await removeCommunityCover(selectedCommunity);
-        coverImage = '';
-        coverPath = '';
-      } else if (coverBlob) {
-        const uploaded = await uploadCommunityCover(selectedCommunity, coverBlob);
-        coverImage = uploaded.url;
-        coverPath = uploaded.path;
-      }
-      await updateCommunity({
+      await saveCommunityProfile(selectedCommunity, {
         communityId: selectedCommunity.id,
         name: editName,
         description: editDescription,
         category: editCategory,
         location: editLocation,
         rules: editRules,
-        coverImage,
-        coverPath,
-      });
+      }, coverBlob, removeCoverRequested);
       setEditOpen(false);
       setMessage('Informações da comunidade atualizadas.');
     } catch (value) {
