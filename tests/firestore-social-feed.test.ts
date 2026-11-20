@@ -277,6 +277,44 @@ test('viewer comments and only the comment author may delete it', async () => {
   await assertSucceeds(deleteDoc(commentReference));
 });
 
+test('social comments support reply-to-reply without allowing cross-post parent links', async () => {
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'social_posts', POST_ID), {
+      ...postPayload(), createdAt: new Date('2026-11-20T12:00:00.000Z'),
+      updatedAt: new Date('2026-11-20T12:00:00.000Z'),
+    });
+    await setDoc(doc(db, 'social_posts', PRIVATE_POST_ID), {
+      ...privatePostPayload(), createdAt: new Date('2026-11-20T12:00:00.000Z'),
+      updatedAt: new Date('2026-11-20T12:00:00.000Z'),
+    });
+  });
+  const viewer = environment.authenticatedContext(VIEWER_ID).firestore();
+  const stranger = environment.authenticatedContext(STRANGER_ID).firestore();
+  const comment = (id: string, postId: string, parentCommentId?: string) => ({
+    postId, authorId: VIEWER_ID, authorName: 'Visitante', authorAvatar: '',
+    text: 'Resposta ' + id, createdAtIso: '2026-11-20T12:01:00.000Z',
+    createdAt: serverTimestamp(), ...(parentCommentId ? { parentCommentId } : {}),
+  });
+  await assertSucceeds(setDoc(doc(viewer, 'social_post_comments', 'social_root'),
+    comment('social_root', POST_ID)));
+  await assertSucceeds(setDoc(doc(viewer, 'social_post_comments', 'social_reply'),
+    comment('social_reply', POST_ID, 'social_root')));
+  await assertSucceeds(setDoc(doc(viewer, 'social_post_comments', 'social_nested'),
+    comment('social_nested', POST_ID, 'social_reply')));
+  await assertFails(setDoc(doc(viewer, 'social_post_comments', 'social_missing'),
+    comment('social_missing', POST_ID, 'not_found')));
+  await assertFails(setDoc(doc(viewer, 'social_post_comments', 'social_self'),
+    comment('social_self', POST_ID, 'social_self')));
+  await assertFails(setDoc(doc(viewer, 'social_post_comments', 'social_cross_post'),
+    comment('social_cross_post', PRIVATE_POST_ID, 'social_root')));
+  await assertFails(setDoc(doc(stranger, 'social_post_comments', 'social_forgery'), {
+    ...comment('social_forgery', POST_ID, 'social_root'), authorId: VIEWER_ID,
+  }));
+  await assertSucceeds(deleteDoc(doc(viewer, 'social_post_comments', 'social_root')));
+  const surviving = await assertSucceeds(getDoc(doc(viewer, 'social_post_comments', 'social_reply')));
+  if (!surviving.exists()) throw new Error('Uma resposta desapareceu após remover o comentário original.');
+});
 test('viewer records a unique view that only the actor and post author can read', async () => {
   await environment.withSecurityRulesDisabled(async context => {
     await setDoc(doc(context.firestore(), 'social_posts', POST_ID), {
