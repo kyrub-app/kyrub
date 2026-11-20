@@ -123,7 +123,7 @@ const visibilityDetails = (visibility: CommunityVisibility) => {
   }
   return {
     label: 'Pública',
-    description: 'Qualquer usuário autenticado pode entrar.',
+    description: 'Qualquer Kairubido autenticado pode participar.',
     icon: Globe2,
   };
 };
@@ -601,7 +601,8 @@ export function ProfileCommunitiesCloudBridge() {
     const unsubscribeMembers = subscribeCommunityMemberships(
       selectedCommunityId,
       values => { if (isCurrent()) setMembers(values); },
-      report
+      report,
+      { viewerId: user?.uid, ownerId: selectedCommunity?.ownerId, isOwner: selectedCommunity?.isOwner },
     );
     const unsubscribePostInteractions = subscribeCommunityPostInteractions(
       selectedCommunityId,
@@ -616,7 +617,7 @@ export function ProfileCommunitiesCloudBridge() {
       unsubscribeMembers();
       unsubscribePostInteractions();
     };
-  }, [selectedCommunityId]);
+  }, [selectedCommunityId, selectedCommunity?.ownerId, selectedCommunity?.isOwner, user?.uid]);
 
   useEffect(() => {
     setPostConnections([]);
@@ -843,7 +844,7 @@ export function ProfileCommunitiesCloudBridge() {
       setMessage(
         status === 'pending'
           ? 'Solicitação enviada ao criador.'
-          : 'Você entrou na comunidade.'
+          : 'Você agora participa da comunidade.'
       );
     });
   };
@@ -1003,7 +1004,7 @@ export function ProfileCommunitiesCloudBridge() {
           ? 'Por convite'
           : community.visibility === 'moderated'
             ? 'Solicitar'
-            : 'Entrar';
+            : 'Participar';
     return (
       <article
         key={community.id}
@@ -1123,6 +1124,12 @@ export function ProfileCommunitiesCloudBridge() {
               <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar membros" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-2">
+              {!selectedCommunity.isOwner && selectedCommunity.memberCount > members.filter(member => member.status === 'active').length && (
+                <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">
+                  Exibindo o criador e seu perfil. Há {selectedCommunity.memberCount} participantes nesta comunidade;
+                  as solicitações pendentes permanecem privadas.
+                </p>
+              )}
               {members.filter(member => member.status === 'active').map(member => (
                 <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
                   <Avatar name={member.userName} url={member.userAvatar} />
@@ -1650,7 +1657,7 @@ export function ProfileCommunitiesCloudBridge() {
                           ? 'Solicitação aguardando aprovação'
                           : selectedCommunity.visibility === 'private'
                             ? 'Participação somente por convite'
-                            : 'Entre na comunidade para comentar'}
+                            : 'Participe da comunidade para comentar'}
                       </button>
                     )}
                   </footer>
@@ -1726,7 +1733,7 @@ export function ProfileCommunitiesCloudBridge() {
                                 ? 'Solicitar'
                                 : selectedCommunity.visibility === 'private'
                                   ? 'Por convite'
-                                  : 'Entrar'}
+                                  : 'Participar'}
                         </button>
                       )}
                     </div>

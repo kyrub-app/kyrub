@@ -330,7 +330,25 @@
     }
 
     match /community_members/{membershipId} {
-      allow read: if isSignedIn()
+      // A new participant may read their own missing deterministic membership
+      // document before it is created in the same join transaction.
+      allow get: if isSignedIn()
+        && (
+          (resource == null
+            && membershipId.matches('^.+__' + request.auth.uid + '$'))
+          || (resource != null && (
+            existing().userId == request.auth.uid
+            || isCommunityOwner(existing().communityId)
+            || (
+              existing().status == 'active'
+              && canReadCommunity(existing().communityId)
+            )
+          ))
+        );
+
+      // A visitor cannot list every request awaiting approval; owner-only
+      // administration retains the full list. Active members are readable.
+      allow list: if isSignedIn()
         && (
           existing().userId == request.auth.uid
           || isCommunityOwner(existing().communityId)

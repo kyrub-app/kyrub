@@ -322,7 +322,7 @@ export function CommunityPostCard({
                 })}
                 className="min-h-10 self-end rounded-xl bg-sky-500 px-4 text-xs font-bold text-slate-950 disabled:opacity-40">Comentar</button>
             </div>
-          ) : <p className="text-xs text-amber-300">Entre na comunidade para comentar.</p>}
+          ) : <p className="text-xs text-amber-300">Participe da comunidade para comentar.</p>}
         </section>
       )}
       {forwardOpen && (
@@ -368,7 +368,7 @@ export function CommunityPostCard({
                   <h4 className="text-sm font-bold text-white">Encaminhar para um Kairubido conectado</h4>
                   {forwardConnections.filter(item => item.status === 'accepted' &&
                     (item.senderId === viewerId || item.receiverId === viewerId)).length === 0 &&
-                    <p className="text-xs text-slate-400">Nenhuma conexão aceita disponível para encaminhamento privado.</p>}
+                    <p className="text-xs text-slate-400">Você ainda não tem conexões aceitas. Para encaminhar a uma pessoa, vocês precisam estar conectados. Não é necessário participar desta comunidade.</p>}
                   {forwardConnections.filter(item => item.status === 'accepted' &&
                     (item.senderId === viewerId || item.receiverId === viewerId)).map(item => {
                     const recipientId = item.senderId === viewerId ? item.receiverId : item.senderId;
@@ -387,7 +387,7 @@ export function CommunityPostCard({
                       </button>
                     );
                   })}
-                  <p className="text-xs text-slate-500">O chat abre com a referência pronta. Você confirma o envio; nada é disparado automaticamente.</p>
+                  <p className="text-xs text-slate-500">O chat abre com a referência pronta, e você confirma o envio. Você pode encaminhar publicações próprias a outros Kairubidos conectados, mas não à sua própria conta.</p>
                 </section>
                 <p className="rounded-xl border border-slate-700 p-3 text-xs text-slate-400">
                   Encaminhar para outra comunidade como colaboração exigirá aprovação da administração de destino.
