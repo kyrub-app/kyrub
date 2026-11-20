@@ -8,7 +8,20 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { db } from './firebase';
-import type { CloudCommunityDebateComment } from './communityCloud.ts';
+// Archived discussion comments remain readable for legacy data integrity.
+// This compatibility model is not part of the active Communities/Mural API.
+interface CloudCommunityDebateComment {
+  id: string;
+  communityId: string;
+  debateId: string;
+  authorId: string;
+  authorName: string;
+  authorAvatar: string;
+  text: string;
+  parentCommentId: string;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export * from './communityCloud.ts';
 
