@@ -126,6 +126,21 @@ test('fails closed on malformed stats and forged receipt before any writes', asy
   assert.equal([...db.records.keys()].filter(p => p.includes('/receipts/')).length, 1);
 });
 
+test('invalid early closure and orphan receipt are never accepted as successful seeds', async () => {
+  const db = new FakeDb(); personal(db, 'post-e');
+  await seedVerifiedPost(db.asFirestore(),
+    { kind: 'personal', postId: 'post-e', authenticatedUserId: 'one' });
+  const path = statsPath(db);
+  db.records.set(path, { ...db.records.get(path), acceptedSeeds: 50, closed: true });
+  await assert.rejects(seedVerifiedPost(db.asFirestore(),
+    { kind: 'personal', postId: 'post-e', authenticatedUserId: 'two' }),
+  /SEMEADURA_STATS_INVALID/);
+  db.records.delete(path);
+  await assert.rejects(seedVerifiedPost(db.asFirestore(),
+    { kind: 'personal', postId: 'post-e', authenticatedUserId: 'one' }),
+  /SEMEADURA_ORPHAN_RECEIPT/);
+});
+
 test('transport is explicitly OFF by default, does not create a serverless function', async () => {
   const previous = process.env.KYRUB_SEMEADURA_SERVER_ENABLED;
   delete process.env.KYRUB_SEMEADURA_SERVER_ENABLED;
