@@ -29,7 +29,7 @@
   bottom: 0;
   z-index: 25;
   border-top: 0 !important;
-  background: linear-gradient(to top, rgb(2 6 23) 72%, rgb(2 6 23 / 0));
+  background: linear-gradient(to top, rgb(18 26 23) 72%, rgb(18 26 23 / 0));
   padding: 1rem !important;
   padding-top: 2rem !important;
 }
@@ -43,8 +43,8 @@
 
 #kyrub-ai-workspace > form > .items-end {
   border-radius: 1.75rem !important;
-  border-color: rgb(51 65 85 / 0.9) !important;
-  background: rgb(15 23 42 / 0.96) !important;
+  border-color: rgba(143, 168, 147, 0.28) !important;
+  background: rgba(28, 38, 34, 0.96) !important;
   padding: 0.4rem !important;
   box-shadow: 0 10px 35px rgb(0 0 0 / 0.22);
 }
