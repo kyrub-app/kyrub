@@ -74,7 +74,9 @@ test('both actual Praça surfaces get canonical connection and chat opening from
 
   assert.match(publicFeed, /resolvePostAuthorConnection\(\s*currentUserId, post, friends, communityConnections/);
   assert.match(publicFeed, /onOpenChat\(connectedAuthor\)/);
-  assert.match(publicFeed, /authorConnection\.status === 'none' && suggestedAuthor/);
+  assert.match(publicFeed, /setConnectionsReady\(true\)/);
+  assert.match(publicFeed, /setConnectionsReady\(false\)/);
+  assert.match(publicFeed, /connectionsReady && authorConnection\.status === 'none' && suggestedAuthor/);
   assert.match(native, /resolvePostAuthorConnection\(currentUserId, post, friends, connections\)/);
   assert.match(native, /authorConnection\.status === 'accepted' && authorConnection\.friend/);
   assert.match(native, /onOpenChat\(authorConnection\.friend!\)/);
