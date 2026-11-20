@@ -28,7 +28,6 @@ import { auth, db, storage } from './firebase';
 export type CommunityVisibility = 'public' | 'moderated' | 'private';
 export type CommunityMembershipStatus = 'active' | 'pending';
 export type CommunityMemberRole = 'owner' | 'moderator' | 'member';
-export type CommunityDebateStatus = 'open' | 'closed';
 
 export interface CloudCommunity {
   id: string;
@@ -74,37 +73,6 @@ export interface CloudCommunityPost {
   updatedAt: string;
 }
 
-export interface CloudCommunityDebate {
-  id: string;
-  communityId: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  title: string;
-  content: string;
-  status: CommunityDebateStatus;
-  pinned: boolean;
-  resolved: boolean;
-  commentCount: number;
-  lastCommentId: string;
-  createdAt: string;
-  updatedAt: string;
-  activityAt: string;
-}
-
-export interface CloudCommunityDebateComment {
-  id: string;
-  communityId: string;
-  debateId: string;
-  authorId: string;
-  authorName: string;
-  authorAvatar: string;
-  text: string;
-  parentCommentId: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
 export interface CommunityCreateInput {
   name: string;
   description: string;
@@ -130,7 +98,6 @@ export const OPEN_COMMUNITY_CLOUD_CREATE_EVENT =
 
 const LOCAL_COMMUNITIES_KEY = 'kyrub_preview_communities_v1';
 const LOCAL_POSTS_KEY = 'kyrub_preview_community_posts_v1';
-const LOCAL_DEBATES_KEY = 'kyrub_preview_community_discussions_v1';
 
 const readString = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -274,67 +241,6 @@ const mapPost = (
   };
 };
 
-const mapDebate = (
-  id: string,
-  data: Record<string, unknown>
-): CloudCommunityDebate | null => {
-  const communityId = readString(data.communityId);
-  const authorId = readString(data.authorId);
-  const title = readString(data.title);
-  if (!communityId || !authorId || !title) return null;
-  const createdAt =
-    readString(data.createdAtIso) ||
-    timestampToIso(data.createdAt, new Date().toISOString());
-  const updatedAt =
-    readString(data.updatedAtIso) || timestampToIso(data.updatedAt, createdAt);
-  return {
-    id,
-    communityId,
-    authorId,
-    authorName: readString(data.authorName) || 'Usuário Kyrub',
-    authorAvatar: readString(data.authorAvatar),
-    title,
-    content: readString(data.content),
-    status: data.status === 'closed' ? 'closed' : 'open',
-    pinned: readBoolean(data.pinned),
-    resolved: readBoolean(data.resolved),
-    commentCount: Math.max(0, Math.floor(readNumber(data.commentCount))),
-    lastCommentId: readString(data.lastCommentId),
-    createdAt,
-    updatedAt,
-    activityAt:
-      readString(data.activityAtIso) ||
-      timestampToIso(data.activityAt, updatedAt),
-  };
-};
-
-const mapComment = (
-  id: string,
-  data: Record<string, unknown>
-): CloudCommunityDebateComment | null => {
-  const communityId = readString(data.communityId);
-  const debateId = readString(data.debateId);
-  const authorId = readString(data.authorId);
-  const text = readString(data.text);
-  if (!communityId || !debateId || !authorId || !text) return null;
-  const createdAt =
-    readString(data.createdAtIso) ||
-    timestampToIso(data.createdAt, new Date().toISOString());
-  return {
-    id,
-    communityId,
-    debateId,
-    authorId,
-    authorName: readString(data.authorName) || 'Usuário Kyrub',
-    authorAvatar: readString(data.authorAvatar),
-    text,
-    parentCommentId: readString(data.parentCommentId),
-    createdAt,
-    updatedAt:
-      readString(data.updatedAtIso) || timestampToIso(data.updatedAt, createdAt),
-  };
-};
-
 const snapshotItems = <T>(
   snapshot: QuerySnapshot<DocumentData>,
   mapper: (id: string, data: Record<string, unknown>) => T | null
@@ -456,39 +362,6 @@ export const subscribeCommunityPosts = (
       onChange(
         snapshotItems(snapshot, mapPost).sort(
           (left, right) => Date.parse(right.createdAt) - Date.parse(left.createdAt)
-        )
-      ),
-    error => onError?.(error)
-  );
-
-export const subscribeCommunityDebates = (
-  communityId: string,
-  onChange: (debates: CloudCommunityDebate[]) => void,
-  onError?: (error: Error) => void
-): Unsubscribe =>
-  onSnapshot(
-    query(
-      collection(db, 'community_debates'),
-      where('communityId', '==', communityId)
-    ),
-    snapshot => onChange(byActivity(snapshotItems(snapshot, mapDebate))),
-    error => onError?.(error)
-  );
-
-export const subscribeDebateComments = (
-  debateId: string,
-  onChange: (comments: CloudCommunityDebateComment[]) => void,
-  onError?: (error: Error) => void
-): Unsubscribe =>
-  onSnapshot(
-    query(
-      collection(db, 'community_debate_comments'),
-      where('debateId', '==', debateId)
-    ),
-    snapshot =>
-      onChange(
-        snapshotItems(snapshot, mapComment).sort(
-          (left, right) => Date.parse(left.createdAt) - Date.parse(right.createdAt)
         )
       ),
     error => onError?.(error)
@@ -969,158 +842,6 @@ export const createCommunityPost = async (input: {
   return reference.id;
 };
 
-export const createCommunityDebate = async (input: {
-  communityId: string;
-  title: string;
-  content: string;
-}): Promise<string> => {
-  const { user, name, avatar } = currentIdentity();
-  const title = input.title.trim().slice(0, 140);
-  const content = input.content.trim().slice(0, 3000);
-  if (!title) throw new Error('Informe o título do debate.');
-  if (!content) throw new Error('Explique o assunto do debate.');
-  const reference = doc(collection(db, 'community_debates'));
-  const nowIso = new Date().toISOString();
-  await setDoc(reference, {
-    debateId: reference.id,
-    communityId: input.communityId,
-    authorId: user.uid,
-    authorName: name,
-    authorAvatar: avatar,
-    title,
-    content,
-    status: 'open',
-    pinned: false,
-    resolved: false,
-    commentCount: 0,
-    lastCommentId: '',
-    createdAtIso: nowIso,
-    createdAt: serverTimestamp(),
-    updatedAtIso: nowIso,
-    updatedAt: serverTimestamp(),
-    activityAtIso: nowIso,
-    activityAt: serverTimestamp(),
-  });
-  return reference.id;
-};
-
-export const updateDebateStatus = async (
-  debateId: string,
-  status: CommunityDebateStatus
-): Promise<void> => {
-  currentIdentity();
-  const nowIso = new Date().toISOString();
-  await updateDoc(doc(db, 'community_debates', debateId), {
-    status,
-    updatedAtIso: nowIso,
-    updatedAt: serverTimestamp(),
-    activityAtIso: nowIso,
-    activityAt: serverTimestamp(),
-  });
-};
-
-export const addDebateComment = async (input: {
-  communityId: string;
-  debateId: string;
-  text: string;
-  parentCommentId?: string;
-}): Promise<string> => {
-  const { user, name, avatar } = currentIdentity();
-  const text = input.text.trim().slice(0, 1400);
-  if (!text) throw new Error('O comentário está vazio.');
-  const debateReference = doc(db, 'community_debates', input.debateId);
-  const commentReference = doc(collection(db, 'community_debate_comments'));
-  const nowIso = new Date().toISOString();
-
-  await runTransaction(db, async transaction => {
-    const debateSnapshot = await transaction.get(debateReference);
-    if (!debateSnapshot.exists()) throw new Error('Debate não encontrado.');
-    const debate = mapDebate(
-      debateSnapshot.id,
-      debateSnapshot.data() as Record<string, unknown>
-    );
-    if (!debate || debate.communityId !== input.communityId) {
-      throw new Error('Debate inválido.');
-    }
-    if (debate.status !== 'open') {
-      throw new Error('Este debate está encerrado para novos comentários.');
-    }
-    transaction.set(commentReference, {
-      commentId: commentReference.id,
-      communityId: input.communityId,
-      debateId: input.debateId,
-      authorId: user.uid,
-      authorName: name,
-      authorAvatar: avatar,
-      text,
-      parentCommentId: input.parentCommentId?.trim().slice(0, 500) || '',
-      createdAtIso: nowIso,
-      createdAt: serverTimestamp(),
-      updatedAtIso: nowIso,
-      updatedAt: serverTimestamp(),
-    });
-    transaction.update(debateReference, {
-      commentCount: debate.commentCount + 1,
-      lastCommentId: commentReference.id,
-      updatedAtIso: nowIso,
-      updatedAt: serverTimestamp(),
-      activityAtIso: nowIso,
-      activityAt: serverTimestamp(),
-    });
-  });
-  return commentReference.id;
-};
-
-export const updateDebateComment = async (
-  commentId: string,
-  text: string
-): Promise<void> => {
-  currentIdentity();
-  const normalizedText = text.trim().slice(0, 1400);
-  if (!normalizedText) throw new Error('O comentário está vazio.');
-  const nowIso = new Date().toISOString();
-  await updateDoc(doc(db, 'community_debate_comments', commentId), {
-    text: normalizedText,
-    updatedAtIso: nowIso,
-    updatedAt: serverTimestamp(),
-  });
-};
-
-export const deleteDebateComment = async (
-  debateId: string,
-  commentId: string
-): Promise<void> => {
-  currentIdentity();
-  const debateReference = doc(db, 'community_debates', debateId);
-  const commentReference = doc(db, 'community_debate_comments', commentId);
-  await runTransaction(db, async transaction => {
-    const [debateSnapshot, commentSnapshot] = await Promise.all([
-      transaction.get(debateReference),
-      transaction.get(commentReference),
-    ]);
-    if (!commentSnapshot.exists()) return;
-    if (!debateSnapshot.exists()) {
-      transaction.delete(commentReference);
-      return;
-    }
-    const debate = mapDebate(
-      debateSnapshot.id,
-      debateSnapshot.data() as Record<string, unknown>
-    );
-    if (!debate) throw new Error('Debate inválido.');
-    const nowIso = new Date().toISOString();
-    transaction.delete(commentReference);
-    transaction.update(debateReference, {
-      commentCount: Math.max(0, debate.commentCount - 1),
-      lastCommentId: commentId,
-      updatedAtIso: nowIso,
-      updatedAt: serverTimestamp(),
-      activityAtIso: nowIso,
-      activityAt: serverTimestamp(),
-    });
-  });
-};
-
 const parseLocalArray = (key: string): Array<Record<string, unknown>> => {
   if (typeof window === 'undefined') return [];
   try {
@@ -1164,7 +885,6 @@ export const importLocalCommunityPrototype = async (): Promise<number> => {
   );
   if (localCommunities.length === 0) return 0;
   const localPosts = parseLocalArray(LOCAL_POSTS_KEY);
-  const localDebates = parseLocalArray(LOCAL_DEBATES_KEY);
   let imported = 0;
 
   for (const localCommunity of localCommunities) {
@@ -1226,19 +946,6 @@ export const importLocalCommunityPrototype = async (): Promise<number> => {
         }
       }
 
-      for (const localDebate of localDebates.filter(
-        item => readString(item.communityId) === localId
-      )) {
-        try {
-          await createCommunityDebate({
-            communityId,
-            title: readString(localDebate.title),
-            content: readString(localDebate.content),
-          });
-        } catch {
-          // Skip invalid local entries without aborting the whole migration.
-        }
-      }
     }
   }
 
