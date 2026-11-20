@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
-import { auth, db } from '../utils/firebase';
+import { db } from '../utils/firebase';
 import {
   BarChart3, Bookmark, EllipsisVertical, Eye, Flag, Forward, Heart, Megaphone, MessageCircle, MessageCircleMore, Share2,
   Trash2, UserRound, UserRoundPlus, UsersRound, X,
