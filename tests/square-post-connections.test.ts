@@ -90,7 +90,7 @@ test('both actual Praça surfaces get canonical connection and chat opening from
 test('Semear uses a reddish seed and native personal posts use canonical Semear when enabled', () => {
   const button = readFileSync('src/components/SemearButton.tsx', 'utf8');
   const native = readFileSync('src/components/ProfileSocialHubNative.tsx', 'utf8');
-  assert.match(button, /state\?\.closed \? '🌲' : '🫘'/);
+  assert.match(button, /src="\/kyrub-pitanga-seed\.svg"/);
   assert.match(native, /SEMEADURA_UI_ENABLED && post\.visibility === 'public' && post\.publicationType !== 'status'/);
   assert.match(native, /<SemearButton kind="personal" postId=\{post\.id\} viewerId=\{currentUserId\}/);
   assert.match(native, /onClick=\{onToggleLike\}/); // Existing non-eligible posts remain unchanged.
