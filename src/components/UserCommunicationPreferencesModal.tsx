@@ -56,6 +56,18 @@ const CATEGORY_ITEMS: Array<{
     icon: Megaphone,
   },
   {
+    key: 'community_group_invite',
+    label: 'Comunidades',
+    description: 'Convites e acontecimentos das comunidades.',
+    icon: BellRing,
+  },
+  {
+    key: 'user_forward',
+    label: 'Pessoas',
+    description: 'Publicações encaminhadas por Kairubidos conectados.',
+    icon: MessageSquareText,
+  },
+  {
     key: 'system',
     label: 'Sistema',
     description: 'Avisos técnicos e de segurança compatíveis com este canal.',
