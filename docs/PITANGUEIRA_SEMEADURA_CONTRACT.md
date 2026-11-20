@@ -62,16 +62,28 @@ equivalem a um milhão de sementes / mil Pitangas, sem precisar de um post viral
 3. `api/action-execute.ts?transport=semeadura` usa a função Vercel existente,
    token Firebase validado e a flag `KYRUB_SEMEADURA_SERVER_ENABLED`.
    Por padrão, responde `SEMEADURA_NOT_ENABLED` antes de tocar no banco.
-4. **Não** migra curtidas antigas, não modifica a interface, não dá Pitangas,
-   não converte XP e não publica eventos econômicos. As curtidas atuais
-   continuam como estavam até uma migração deliberada.
+4. As interfaces de Mural, Praça e perfil pessoal já contêm **Semear**,
+   mas exibem a ação nova somente com a flag de build
+   `VITE_SEMEADURA_UI_ENABLED=true`. Com flag desligada, o botão Curtir
+   anterior segue intacto e funcional.
+5. As leituras autenticadas `status`, `journey` e `community-journey`
+   distinguem publicação fechada/semear já realizado, mostram progresso
+   acumulado do autor e bosques visuais da comunidade.
+6. Cada semeadura atualiza, na mesma transação, o contador do post e
+   projeções **não econômicas** do autor e da comunidade; a comunidade
+   não recebe Pitangas. Nenhuma coleção nova está exposta por regras do
+   cliente: o acesso passa somente pelo serviço autenticado.
+7. **Não** migra curtidas antigas, **não concede Pitangas ou XP**, nem
+   publica eventos econômicos. As curtidas atuais só mudam mediante
+   liberação explícita do modo Semear e migração segura do histórico.
 
 ## Bloqueios de ativação
 
 - Definir e testar a migração de curtidas antigas para semeaduras sem criar
   recompensas duplicadas.
-- Implementar a leitura autorizada/eficiente de progresso para UI e telas de
-  perfil e Comunidade; telas devem identificar post fechado e reação já feita.
+- Validar no navegador real os cards nas três superfícies e os painéis
+  de jornada. A leitura autorizada já está implementada; ainda requer testes
+  visuais, experiência mobile e validação de volume/concorrência.
 - Validar o comportamento de desfazer (por enquanto, recibos imutáveis; nunca
   permitir farming sem reversão econômica segura).
 - Desenvolver antifraude, elegibilidade, retenção e conciliação do ledger
