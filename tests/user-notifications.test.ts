@@ -9,6 +9,7 @@ import {
   isUserNotificationUnread,
   userNotificationPath,
 } from '../shared/userNotifications';
+import { USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin } from '../shared/userNotificationOrigins';
 
 describe('canonical user notifications', () => {
   test('notification id and path are deterministic for one source event', () => {
@@ -145,4 +146,89 @@ describe('canonical user notifications', () => {
     assert.doesNotMatch(shared, /preference|campaign/i);
     assert.doesNotMatch(service, /preference|campaign/i);
   });
+
+  test('existing notification categories map to the proper single-header tabs without changing the inbox', () => {
+    assert.deepEqual(USER_NOTIFICATION_ORIGIN_TABS.map(tab => tab.label), [
+      'Todas', 'Comunidades', 'Lojas', 'Pessoas', 'Plataforma',
+    ]);
+    assert.equal(userNotificationOrigin('community_group_invite'), 'communities');
+    assert.equal(userNotificationOrigin('store_chat'), 'stores');
+    assert.equal(userNotificationOrigin('order'), 'stores');
+    assert.equal(userNotificationOrigin('loyalty'), 'stores');
+    assert.equal(userNotificationOrigin('marketing'), 'stores');
+    assert.equal(userNotificationOrigin('system'), 'platform');
+    assert.equal(userNotificationOrigin('user_forward'), 'people');
+
+    const base = {
+      recipientUserId: 'recipient-1',
+      eventType: 'received',
+      actorPrincipalId: 'actor-1',
+      title: 'Evento',
+      body: 'Aviso operacional',
+      createdAt: '2026-11-20T12:00:00.000Z',
+    };
+    const items = [
+      buildUserNotification({ ...base, category: 'community_group_invite', sourceId: 'g1', target: {
+        kind: 'community_group_invite', groupId: 'group1', communityId: 'community1',
+      } }),
+      buildUserNotification({ ...base, category: 'store_chat', sourceId: 'm1' }),
+      buildUserNotification({ ...base, category: 'user_forward', sourceId: 'f1', target: {
+        kind: 'community_post', postId: 'post1', communityId: 'community1',
+      } }),
+      buildUserNotification({ ...base, category: 'system', sourceId: 's1' }),
+    ];
+    assert.equal(filterUserNotificationsByOrigin(items, 'all').length, 4);
+    assert.equal(filterUserNotificationsByOrigin(items, 'communities').length, 1);
+    assert.equal(filterUserNotificationsByOrigin(items, 'stores').length, 1);
+    assert.equal(filterUserNotificationsByOrigin(items, 'people').length, 1);
+    assert.equal(filterUserNotificationsByOrigin(items, 'platform').length, 1);
+  });
+
+  test('notification center preserves one global badge and actions across origin tabs', () => {
+    const bridge = readFileSync('src/components/UserNotificationCenterBridge.tsx', 'utf8');
+    const service = readFileSync('server/notifications/userNotificationService.ts', 'utf8');
+    assert.match(bridge, /USER_NOTIFICATION_ORIGIN_TABS\.map\(tab =>/);
+    assert.match(bridge, /filterUserNotificationsByOrigin\(notifications, activeOrigin\)/);
+    assert.match(bridge, /role="tablist"/);
+    assert.match(bridge, /aria-selected=\{activeOrigin === tab\.id\}/);
+    assert.match(bridge, /visibleNotifications\.map\(notification =>/);
+    assert.match(bridge, /id="canonical-notification-trigger"/);
+    assert.match(bridge, /unreadCount > 0/);
+    assert.match(bridge, /markAllUserNotificationsRead\(\)/);
+    assert.match(bridge, /respondToCommunityGroupInvite\(groupId, decision\)/);
+    assert.match(bridge, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
+    assert.match(service, /'community_group_invite'/);
+    assert.match(service, /'user_forward'/);
+    assert.match(service, /'community_post'/);
+  });
+
+  test('person forwarded publication notifications are authenticated, canonical and idempotent', () => {
+    const service = readFileSync('server/notifications/communityPostForwardNotificationService.ts', 'utf8');
+    const router = readFileSync('server/notifications/userNotificationRouter.ts', 'utf8');
+    const client = readFileSync('src/utils/userNotifications.ts', 'utf8');
+    const modal = readFileSync('src/components/modals/ChatModal.tsx', 'utf8');
+    const forward = readFileSync('src/utils/communityPostForwarding.ts', 'utf8');
+    const rules = readFileSync('firestore.communities.fragment.rules', 'utf8');
+    assert.match(router, /issueCommunityPostForwardNotification/);
+    assert.match(router, /actorId: identity\.uid/);
+    assert.doesNotMatch(router, /recipientId: clean\(request\.body/);
+    assert.match(service, /transaction\.getAll\(connectionRef, messageRef\)/);
+    assert.match(service, /receipt\.messageId !== messageId/);
+    assert.match(service, /conn\.status !== 'accepted'/);
+    assert.match(service, /sent\.senderId !== actorId/);
+    assert.match(service, /recipientId = sent\.receiverId/);
+    assert.match(service, /communitySnap\.data\(\)\?\.visibility !== 'public'/);
+    assert.match(service, /if \(existingNotification\.exists\) return \{ created: false \}/);
+    assert.match(service, /transaction\.create\(notificationRef, notification\)/);
+    assert.match(client, /issueCommunityForwardReceivedNotification/);
+    assert.match(modal, /sendCommunityPostToConnectedUser/);
+    assert.match(modal, /issueCommunityForwardReceivedNotification/);
+    assert.match(forward, /tx\.set\(messageRef/);
+    assert.match(forward, /tx\.set\(receiptRef/);
+    assert.match(forward, /community_direct_forward_receipts/);
+    assert.match(rules, /match \/community_direct_forward_receipts\/\{receiptId\}/);
+    assert.match(rules, /duration\.value\(24, 'h'\)/);
+    assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/social_chats/);
+  });
+
 });
