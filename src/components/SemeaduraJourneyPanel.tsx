@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { calculatePitangueiraJourney, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
+import { calculatePitangueiraJourney, SEEDS_PER_BROTO, SEEDS_PER_MUDA, SEEDS_PER_PITANGUEIRA, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
 import { requestSemeadura, SEMEADURA_UI_ENABLED } from './SemearButton';
 
 /**
@@ -55,29 +55,29 @@ export function SemeaduraJourneyPanel({
       className="rounded-2xl border border-emerald-800/30 bg-emerald-950/10 p-3 text-slate-200">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-black text-emerald-200">🌳 Jornada da Pitangueira</h3>
-        <span className="text-xs font-bold text-emerald-300">🌲 {journey.bosques.toLocaleString('pt-BR')} bosques</span>
+        <span className="text-xs font-bold text-emerald-300">🌲 {total === null ? '…' : journey.bosques.toLocaleString('pt-BR')} bosques</span>
       </div>
       <p className="mt-1 text-xs text-slate-400">
         {communityId
           ? 'Crescimento coletivo de todas as publicações desta comunidade.'
           : 'Suas semeaduras recebidas em publicações pessoais e comunitárias.'}
       </p>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center">
-        <div className="rounded-xl bg-slate-900 p-2">
-          <span className="block text-lg" aria-hidden="true">🌰</span>
-          <strong className="block text-sm">{total === null ? '…' : journey.totalSeeds.toLocaleString('pt-BR')}</strong>
-          <span className="text-[10px] text-slate-400">Sementes</span>
-        </div>
-        <div className="rounded-xl bg-slate-900 p-2">
-          <span className="block text-lg" aria-hidden="true">🌱</span>
-          <strong className="block text-sm">{total === null ? '…' : journey.mudas.toLocaleString('pt-BR')}</strong>
-          <span className="text-[10px] text-slate-400">Mudas atuais</span>
-        </div>
-        <div className="rounded-xl bg-slate-900 p-2">
-          <span className="block text-lg" aria-hidden="true">🌳</span>
-          <strong className="block text-sm">{total === null ? '…' : journey.pitangueiras.toLocaleString('pt-BR')}</strong>
-          <span className="text-[10px] text-slate-400">Pitangueiras</span>
-        </div>
+      <div className="mt-3 grid grid-cols-3 gap-2 text-center sm:grid-cols-5" aria-label="Etapas acumuladas da Jornada da Pitangueira">
+        {([
+          ['🌰', 'Sementes', journey.totalSeeds],
+          ['🌱', 'Brotos', Math.floor(journey.totalSeeds / SEEDS_PER_BROTO)],
+          ['🌿', 'Mudas', Math.floor(journey.totalSeeds / SEEDS_PER_MUDA)],
+          ['🌳', 'Pitangueiras', Math.floor(journey.totalSeeds / SEEDS_PER_PITANGUEIRA)],
+          ['🌲', 'Bosques', journey.bosques],
+        ] as Array<[string, string, number]>).map(([symbol, stage, count]) => (
+          <div key={stage} className="min-w-0 rounded-xl bg-slate-900 p-2">
+            <span className="block text-lg" aria-hidden="true">{symbol}</span>
+            <strong className="block text-sm tabular-nums">
+              {total === null ? '…' : count.toLocaleString('pt-BR')}
+            </strong>
+            <span className="block text-[10px] text-slate-400">{stage}</span>
+          </div>
+        ))}
       </div>
       <progress className="mt-3 block h-2 w-full accent-emerald-500"
         aria-label="Progresso até o próximo bosque"
