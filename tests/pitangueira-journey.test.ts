@@ -30,15 +30,19 @@ test('one tree earns exactly one Pitanga equivalent and 100 trees form one bosqu
 
 test('ten bosques across several publications equal 1000 Pitangas / 1 XP, not one post', () => {
   const posts = Array.from({ length: 10 }, (_, i) => ({
-    postId: `post-${i}`, seeds: 100_000,
+    kind: 'personal' as const, postId: `post-${i}`, seeds: 100_000,
   }));
   const total = sumVerifiedPersonalSeeds(posts);
   assert.equal(total.totalSeeds, 1_000_000);
   assert.equal(total.bosques, 10);
   assert.equal(total.pitangasEquivalent, PITANGAS_PER_XP);
   assert.equal(total.xpEquivalent, 1);
+  assert.equal(sumVerifiedPersonalSeeds([
+    { kind: 'personal', postId: 'shared-id', seeds: 500 },
+    { kind: 'community', postId: 'shared-id', seeds: 500 },
+  ]).pitangasEquivalent, 1, 'different post kinds with same ID must both count');
   assert.throws(() => sumVerifiedPersonalSeeds([...posts, posts[0]!]), /SEMEADURA_DUPLICATE_POST/);
-  assert.throws(() => sumVerifiedPersonalSeeds([{ postId: 'one', seeds: 100_001 }]), /EXCEEDS_CAP/);
+  assert.throws(() => sumVerifiedPersonalSeeds([{ kind: 'personal', postId: 'one', seeds: 100_001 }]), /EXCEEDS_CAP/);
 });
 
 test('a post stops accepting seeds after the FIRST bosque, even on later requests', () => {
@@ -64,8 +68,8 @@ test('self-recognition is rejected, duplicate seed receipts do not increment, in
 
 test('community progress can display bosques, but only personal author may earn Pitangas', () => {
   const communityPublicProgress = calculatePitangueiraJourney(100_000);
-  const authorA = sumVerifiedPersonalSeeds([{ postId: 'a', seeds: 75_000 }]);
-  const authorB = sumVerifiedPersonalSeeds([{ postId: 'b', seeds: 25_000 }]);
+  const authorA = sumVerifiedPersonalSeeds([{ kind: 'personal', postId: 'a', seeds: 75_000 }]);
+  const authorB = sumVerifiedPersonalSeeds([{ kind: 'community', postId: 'b', seeds: 25_000 }]);
   assert.equal(communityPublicProgress.bosques, 1);
   assert.equal(authorA.pitangasEquivalent, 75);
   assert.equal(authorB.pitangasEquivalent, 25);
