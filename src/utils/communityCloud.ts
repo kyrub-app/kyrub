@@ -8,7 +8,6 @@ import {
   query,
   runTransaction,
   serverTimestamp,
-  setDoc,
   updateDoc,
   where,
   writeBatch,
@@ -109,8 +108,6 @@ const readStringList = (value: unknown): string[] =>
         .map(item => item.trim())
         .filter(Boolean)
     : [];
-
-const readBoolean = (value: unknown): boolean => value === true;
 
 const readNumber = (value: unknown, fallback = 0): number =>
   typeof value === 'number' && Number.isFinite(value) ? value : fallback;
