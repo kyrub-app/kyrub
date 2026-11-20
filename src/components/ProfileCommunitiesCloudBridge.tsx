@@ -278,6 +278,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [shareWallToSquare, setShareWallToSquare] = useState(true);
   const [squarePublishedIds, setSquarePublishedIds] = useState<Set<string>>(new Set());
   const [requestedSquareCommunityId, setRequestedSquareCommunityId] = useState('');
+  const [requestedSquarePostId, setRequestedSquarePostId] = useState('');
   const [wallToolsOpen, setWallToolsOpen] = useState(false);
   const [wallMedia, setWallMedia] = useState<Array<{ file: File; preview: string }>>([]);
   const wallMediaRef = useRef<Array<{ file: File; preview: string }>>([]);
@@ -370,8 +371,13 @@ export function ProfileCommunitiesCloudBridge() {
 
   useEffect(() => {
     const open = (event: Event) => {
-      const id = (event as CustomEvent<{ communityId?: string }>).detail?.communityId;
-      if (typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) setRequestedSquareCommunityId(id);
+      const detail = (event as CustomEvent<{ communityId?: string; postId?: string }>).detail;
+      const id = detail?.communityId;
+      const postId = detail?.postId;
+      if (typeof id === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(id)) {
+        setRequestedSquareCommunityId(id);
+        setRequestedSquarePostId(typeof postId === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(postId) ? postId : '');
+      }
     };
     window.addEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, open);
     return () => window.removeEventListener(OPEN_COMMUNITY_FROM_SQUARE_EVENT, open);
@@ -789,6 +795,21 @@ export function ProfileCommunitiesCloudBridge() {
     openCommunity(community);
     setRequestedSquareCommunityId('');
   }, [host, requestedSquareCommunityId, loading, communities]);
+
+  useEffect(() => {
+    if (!requestedSquarePostId || !selectedCommunityId ||
+      pageTab !== 'wall' || !posts.some(post => post.id === requestedSquarePostId)) return;
+    const postId = requestedSquarePostId;
+    const frame = window.requestAnimationFrame(() => {
+      const target = [...(communityScrollRef.current?.querySelectorAll<HTMLElement>(
+        '[data-community-post-id]') || [])].find(item => item.dataset.communityPostId === postId);
+      if (target) {
+        target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setRequestedSquarePostId('');
+      }
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [requestedSquarePostId, selectedCommunityId, pageTab, posts]);
 
   const runAction = async (key: string, action: () => Promise<void>) => {
     setActionBusy(key);
