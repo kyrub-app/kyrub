@@ -38,7 +38,17 @@ const parsePreferences = (
   if (!marketing.enabled && categories.marketing) {
     throw new Error('USER_COMMUNICATION_PREFERENCES_MARKETING_CHANNEL_INVALID');
   }
-  return data as UserCommunicationPreferences;
+  return {
+    ...(data as UserCommunicationPreferences),
+    browser: {
+      enabled: browser.enabled!,
+      categories: {
+        ...(categories as UserCommunicationCategoryPreferences),
+        community_group_invite: categories.community_group_invite !== false,
+        user_forward: categories.user_forward !== false,
+      },
+    },
+  };
 };
 
 export const loadUserCommunicationPreferences = async (
