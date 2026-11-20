@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, ShoppingBag, Store as StoreIcon } from 'lucide-react';
+import { ArrowRight, Heart, ShoppingBag, Store as StoreIcon } from 'lucide-react';
 import type { Store } from '../../types';
 
-type StoreListTab = 'mine' | 'discover' | 'trending';
+type StoreListTab = 'participating' | 'favorites' | 'trending';
 type PublicStoreCard = {
   id: string;
   name: string;
@@ -16,7 +16,8 @@ type PublicStoreCard = {
 type SquareStoresSectionProps = {
   stores: Store[];
   favoriteStoreIds: string[];
-  purchasedStoreIds: string[];
+  participatingStoreIds: string[];
+  onToggleFavoriteStore: (storeId: string) => void;
   offerStoreIds: string[];
   onViewAll: () => void;
   onOpenStore: (store: Store) => void;
@@ -26,10 +27,10 @@ const OFFICIAL_STORE_SLUG = 'kyrub-oficial';
 const OFFICIAL_STORE_PATH = '/@kyrub-oficial';
 
 export function SquareStoresSection({
-  stores, favoriteStoreIds, purchasedStoreIds, offerStoreIds,
-  onViewAll, onOpenStore,
+  stores, favoriteStoreIds, participatingStoreIds, offerStoreIds,
+  onToggleFavoriteStore, onViewAll, onOpenStore,
 }: SquareStoresSectionProps) {
-  const [listTab, setListTab] = useState<StoreListTab>('discover');
+  const [listTab, setListTab] = useState<StoreListTab>('trending');
   const [officialStore, setOfficialStore] = useState<PublicStoreCard | null>(null);
   const [loadingOfficial, setLoadingOfficial] = useState(true);
   const [officialError, setOfficialError] = useState(false);
@@ -103,10 +104,13 @@ export function SquareStoresSection({
 
   const visible = useMemo(() => {
     const favoriteIds = new Set(favoriteStoreIds);
-    const purchasedIds = new Set(purchasedStoreIds);
+    const participatingIds = new Set(participatingStoreIds);
     const offerIds = new Set(offerStoreIds);
-    if (listTab === 'mine') {
-      return cards.filter(store => favoriteIds.has(store.id) || purchasedIds.has(store.id));
+    if (listTab === 'participating') {
+      return cards.filter(store => participatingIds.has(store.id));
+    }
+    if (listTab === 'favorites') {
+      return cards.filter(store => favoriteIds.has(store.id));
     }
     if (listTab === 'trending') {
       // Early showcase: published offers and the platform's own store.
@@ -114,7 +118,7 @@ export function SquareStoresSection({
       return cards.filter(store => store.official || offerIds.has(store.id));
     }
     return cards;
-  }, [cards, favoriteStoreIds, purchasedStoreIds, offerStoreIds, listTab]);
+  }, [cards, favoriteStoreIds, participatingStoreIds, offerStoreIds, listTab]);
 
   return (
     <section id="square-stores" aria-label="Lojas na Praça"
@@ -131,8 +135,8 @@ export function SquareStoresSection({
       </header>
       <div role="group" aria-label="Filtros de lojas" className="flex gap-1.5 overflow-x-auto">
         {([
-          ['mine', 'Minhas'],
-          ['discover', 'Descobrir'],
+          ['participating', 'Participante'],
+          ['favorites', 'Favoritos'],
           ['trending', 'Em alta'],
         ] as const).map(([id, label]) => (
           <button key={id} type="button"
@@ -147,8 +151,8 @@ export function SquareStoresSection({
           </button>
         ))}
       </div>
-      {listTab === 'mine' && (
-        <p className="text-[9px] text-slate-500">Suas lojas favoritas e com compras anteriores.</p>
+      {listTab === 'participating' && (
+        <p className="text-[9px] text-slate-500">Lojas com histórico de fidelidade confirmado. Sua própria loja não entra.</p>
       )}
       {listTab === 'trending' && (
         <p className="text-[9px] text-slate-500">Destaques e lojas com ofertas publicadas; sem ranking de vendas.</p>
@@ -157,10 +161,17 @@ export function SquareStoresSection({
         {visible.slice(0, 8).map(store => (
           <article key={store.slug || store.id}
             className="flex w-[172px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-            <div className="flex h-24 items-center justify-center bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
+            <div className="relative flex h-24 items-center justify-center bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
               {store.logo
                 ? <img src={store.logo} alt={store.name} className="h-14 w-14 rounded-xl object-cover" referrerPolicy="no-referrer" />
                 : <StoreIcon className="h-10 w-10 text-orange-400" aria-hidden="true" />}
+              <button type="button"
+                aria-label={favoriteStoreIds.includes(store.id) ? `Remover ${store.name} dos favoritos` : `Favoritar loja ${store.name}`}
+                aria-pressed={favoriteStoreIds.includes(store.id)}
+                onClick={() => onToggleFavoriteStore(store.id)}
+                className={`absolute right-2 top-2 flex h-10 w-10 items-center justify-center rounded-full border bg-slate-950/85 ${favoriteStoreIds.includes(store.id) ? 'border-rose-500/60 text-rose-300' : 'border-slate-600 text-slate-200'}`}>
+                <Heart className={`h-4 w-4 ${favoriteStoreIds.includes(store.id) ? 'fill-current' : ''}`} />
+              </button>
             </div>
             <div className="flex-1 p-3">
               <strong className="block line-clamp-2 text-[11px] font-black text-white">{store.name}</strong>
@@ -189,8 +200,10 @@ export function SquareStoresSection({
         )}
         {!loadingOfficial && visible.length === 0 && (
           <p className="self-center rounded-xl border border-slate-800 p-4 text-xs text-slate-400">
-            {listTab === 'mine'
-              ? 'Suas lojas favoritas ou com compras aparecerão aqui.'
+            {listTab === 'participating'
+              ? 'Lojas com participação de fidelidade confirmada aparecerão aqui.'
+              : listTab === 'favorites'
+                ? 'Favorite uma loja tocando no coração do card.'
               : officialError && cards.length === 0
                 ? 'Não foi possível consultar as vitrines agora.'
                 : 'Nenhuma loja encontrada neste filtro.'}

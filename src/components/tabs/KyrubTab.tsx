@@ -107,6 +107,7 @@ export function KyrubTab(props: KyrubTabProps) {
   const [discoverySignals, setDiscoverySignals] = useState<MarketplaceStoreDiscoverySignal[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
   const [clubSummaries, setClubSummaries] = useState<Array<{ storeId: string; summary: StoreRelationshipSummary }>>([]);
+  const [participatingStoreIds, setParticipatingStoreIds] = useState<string[]>([]);
   const [clubsLoading, setClubsLoading] = useState(false);
   const [clubsError, setClubsError] = useState(false);
   const socialFeed = usePublicSocialFeed();
@@ -298,6 +299,36 @@ export function KyrubTab(props: KyrubTabProps) {
 
   useEffect(() => {
     let cancelled = false;
+    setParticipatingStoreIds([]);
+    const viewerId = socialFeed.currentUserId;
+    if (props.socialSubTab !== 'usuarios' || !viewerId || purchasedStoreIds.length === 0) {
+      return () => { cancelled = true; };
+    }
+    // This is intentionally stronger than a pending/order-only match: the
+    // read-only loyalty endpoint verifies confirmed purchase/point activity and
+    // explicitly returns viewerRole=owner for the proprietor's own store.
+    void Promise.allSettled(
+      purchasedStoreIds.map(storeId => loadStoreRelationshipForCurrentUser(storeId))
+    ).then(results => {
+      if (cancelled || auth.currentUser?.uid !== viewerId) return;
+      const verified = purchasedStoreIds.filter((storeId, index) => {
+        const result = results[index];
+        if (result?.status !== 'fulfilled' || 'viewerRole' in result.value) return false;
+        const relationship = result.value;
+        return relationship.storeId === storeId
+          && relationship.customerId === viewerId
+          && (relationship.level.confirmedPurchases > 0
+            || relationship.points.lifetimeEarned > 0
+            || relationship.history.length > 0
+            || relationship.vouchers.length > 0);
+      });
+      setParticipatingStoreIds(verified);
+    });
+    return () => { cancelled = true; };
+  }, [props.socialSubTab, purchasedStoreIds, socialFeed.currentUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
     setClubSummaries([]);
     setClubsError(false);
     if (props.socialSubTab !== 'lojas' || props.ofertasFilter !== 'cliente' || purchasedStoreIds.length === 0) {
@@ -415,7 +446,8 @@ export function KyrubTab(props: KyrubTabProps) {
         <SquareStoresSection
           stores={allPublishedStores}
           favoriteStoreIds={props.favoriteStoreIds}
-          purchasedStoreIds={purchasedStoreIds}
+          participatingStoreIds={participatingStoreIds}
+          onToggleFavoriteStore={props.handleToggleFavoriteStore}
           offerStoreIds={publishedOffers.map(offer => offer.storeId)}
           onViewAll={() => {
             props.setOfertasFilter('todas');
