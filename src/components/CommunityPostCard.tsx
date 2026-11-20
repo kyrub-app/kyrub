@@ -12,6 +12,7 @@ import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/c
 import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
+import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
 import {
   recordCommunityPostView, recordCommunityPostForwardMetric, subscribeCommunityOrganicMetrics,
