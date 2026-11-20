@@ -600,3 +600,63 @@ test('switching a public community to private revokes the original content despi
   await assertFails(getDoc(doc(reader, 'community_posts', postId))); // Source is no longer public.
   await assertFails(getDoc(doc(reader, 'communities', communityId)));
 });
+
+test('creator can edit community display metadata without changing identity, visibility or membership', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'editable_community';
+  await createCommunity(owner, communityId, 'public');
+
+  const original = await getDoc(doc(owner, 'communities', communityId));
+  if (!original.exists()) throw new Error('Comunidade de teste não encontrada.');
+  const originalId = original.data().communityId;
+  const originalCreatedAt = original.data().createdAt.toMillis();
+
+  const ownerEdit = {
+    name: 'Nação Renomeada',
+    description: 'Nova apresentação legítima da mesma comunidade.',
+    category: 'Música',
+    location: 'São Paulo',
+    rules: 'Respeite o tema, participantes e regras de convivência.',
+    updatedAtIso: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
+    activityAtIso: new Date().toISOString(),
+    activityAt: serverTimestamp(),
+  };
+
+  await assertSucceeds(updateDoc(doc(owner, 'communities', communityId), ownerEdit));
+  const updated = await assertSucceeds(getDoc(doc(outsider, 'communities', communityId)));
+  if (updated.data()?.name !== ownerEdit.name || updated.data()?.description !== ownerEdit.description
+    || updated.data()?.category !== ownerEdit.category || updated.data()?.location !== ownerEdit.location
+    || updated.data()?.rules !== ownerEdit.rules) {
+    throw new Error('As novas informações públicas não foram persistidas.');
+  }
+  if (updated.data()?.communityId !== originalId || updated.data()?.createdAt.toMillis() !== originalCreatedAt
+    || updated.data()?.ownerId !== OWNER || updated.data()?.visibility !== 'public'
+    || updated.data()?.memberCount !== 1) {
+    throw new Error('A identidade ou os participantes foram alterados por uma edição de metadados.');
+  }
+  await assertSucceeds(getDoc(doc(owner, 'community_members', memberId(communityId, OWNER))));
+
+  await assertFails(updateDoc(doc(outsider, 'communities', communityId), {
+    ...ownerEdit, name: 'Sequestro de nome',
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, name: '',
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, name: 'x'.repeat(81),
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, visibility: 'private',
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, ownerId: OUTSIDER,
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, communityId: 'different_community',
+  }));
+  await assertFails(updateDoc(doc(owner, 'communities', communityId), {
+    ...ownerEdit, memberCount: 200,
+  }));
+});
