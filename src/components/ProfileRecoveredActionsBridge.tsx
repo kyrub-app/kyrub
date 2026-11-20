@@ -277,9 +277,13 @@ export function ProfileRecoveredActionsBridge() {
           : nextReviewPortals
       );
 
-      const editCloseButton = document.querySelector<HTMLButtonElement>(
-        'button[aria-label="Fechar edição"]'
-      );
+      // Profile security shortcuts must never decorate another editor,
+      // especially the independent Community configuration form.
+      const editCloseButton = [
+        ...document.querySelectorAll<HTMLButtonElement>(
+          'button[aria-label="Fechar edição"]'
+        ),
+      ].find(button => !button.closest('[data-kyrub-community-editor="true"]')) ?? null;
       const editForm = editCloseButton?.closest('form') ?? null;
       let nextTabsTarget: HTMLElement | null = null;
       let nextContentTarget: HTMLElement | null = null;
