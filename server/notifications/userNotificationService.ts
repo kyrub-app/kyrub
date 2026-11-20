@@ -30,12 +30,16 @@ const CATEGORIES = new Set<UserNotificationCategory>([
   'order',
   'loyalty',
   'marketing',
+  'community_group_invite',
+  'user_forward',
   'system',
 ]);
 const TARGET_KINDS = new Set<UserNotificationTargetKind>([
   'store_chat',
   'storefront',
   'order',
+  'community_group_invite',
+  'community_post',
   'none',
 ]);
 
@@ -61,7 +65,11 @@ const parseNotification = (
     !TARGET_KINDS.has(target.kind as UserNotificationTargetKind) ||
     typeof target.storeId !== 'string' ||
     typeof target.customerId !== 'string' ||
-    typeof target.orderId !== 'string'
+    typeof target.orderId !== 'string' ||
+    (target.kind === 'community_group_invite' &&
+      (!clean(target.communityId) || !clean(target.groupId))) ||
+    (target.kind === 'community_post' &&
+      (!clean(target.communityId) || !clean(target.postId)))
   ) {
     throw new Error('USER_NOTIFICATION_INVALID');
   }
