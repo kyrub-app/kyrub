@@ -16,6 +16,7 @@ import {
   where,
   runTransaction,
   serverTimestamp,
+  Timestamp,
   setDoc,
   updateDoc,
   writeBatch,
@@ -658,5 +659,77 @@ test('creator can edit community display metadata without changing identity, vis
   }));
   await assertFails(updateDoc(doc(owner, 'communities', communityId), {
     ...ownerEdit, memberCount: 200,
+  }));
+});
+
+test('another Kairubido can forward a public original into Praça once per 24h, not clone it', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const actor = environment.authenticatedContext(MEMBER).firestore();
+  const other = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'forward_public';
+  const postId = 'original_to_forward';
+  await createCommunity(owner, communityId, 'public');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Criador', authorAvatar: '',
+    content: 'Texto da publicação original.', mediaUrls: [],
+    createdAtIso: '2026-11-10T00:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-10T00:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+
+  const ref = doc(actor, 'community_square_forwards', postId + '__' + MEMBER);
+  const forward = {
+    postId, communityId, actorId: MEMBER, actorName: 'Membro conectado',
+    forwardedAt: serverTimestamp(),
+  };
+  await assertSucceeds(setDoc(ref, forward));
+  await assertSucceeds(getDoc(doc(other, 'community_square_forwards', ref.id)));
+  await assertFails(updateDoc(ref, { forwardedAt: serverTimestamp() })); // 24h anti-spam.
+  await assertFails(setDoc(ref, forward)); // Cannot overwrite to bypass cooldown.
+  await assertFails(updateDoc(doc(other, 'community_square_forwards', ref.id), {
+    forwardedAt: serverTimestamp(),
+  }));
+  await assertFails(setDoc(doc(other, 'community_square_forwards', postId + '__' + MEMBER), {
+    ...forward, actorId: OUTSIDER,
+  }));
+  await assertFails(setDoc(doc(actor, 'community_square_forwards', postId + '__' + MEMBER + '_fake'), forward));
+  await assertFails(updateDoc(ref, { actorName: 'Outro usuário' }));
+
+  // The original post, author and metrics remain canonical and untouched.
+  const original = await assertSucceeds(getDoc(doc(actor, 'community_posts', postId)));
+  if (original.data()?.authorId !== OWNER || original.data()?.content !== 'Texto da publicação original.') {
+    throw new Error('Encaminhamento alterou a publicação original.');
+  }
+
+  // The server permits a new forward only after the previous 24h period.
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'community_square_forwards', ref.id), {
+      forwardedAt: Timestamp.fromMillis(Date.now() - 25 * 60 * 60 * 1000),
+    });
+  });
+  await assertSucceeds(updateDoc(ref, { forwardedAt: serverTimestamp() }));
+  await assertFails(updateDoc(ref, { forwardedAt: serverTimestamp() }));
+});
+
+test('forwarding a private or moderated post and impersonating the sender is denied', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const actor = environment.authenticatedContext(MEMBER).firestore();
+  for (const visibility of ['private', 'moderated'] as const) {
+    const communityId = 'forward_' + visibility;
+    const postId = 'forward_post_' + visibility;
+    await createCommunity(owner, communityId, visibility);
+    await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+      postId, communityId, authorId: OWNER, authorName: 'Criador', authorAvatar: '',
+      content: 'Este conteúdo não pode ser encaminhado para o público.', mediaUrls: [],
+      createdAtIso: new Date().toISOString(), createdAt: serverTimestamp(),
+      updatedAtIso: new Date().toISOString(), updatedAt: serverTimestamp(),
+    }));
+    await assertFails(setDoc(doc(actor, 'community_square_forwards', postId + '__' + MEMBER), {
+      postId, communityId, actorId: MEMBER, actorName: 'Membro',
+      forwardedAt: serverTimestamp(),
+    }));
+  }
+  await assertFails(setDoc(doc(actor, 'community_square_forwards', 'does_not_exist__' + MEMBER), {
+    postId: 'does_not_exist', communityId: 'forward_private',
+    actorId: MEMBER, actorName: 'Membro', forwardedAt: serverTimestamp(),
   }));
 });

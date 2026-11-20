@@ -101,38 +101,10 @@ export const toggleCommunityPostSaveWithMetrics = async (
   });
 };
 
-/** Only completed native-share or clipboard actions count, like Praça.
- * A share is not a guaranteed view and never generates rewards or revenue. */
-export const shareCommunityPostWithMetrics = async (post: CloudCommunityPost): Promise<'shared' | 'copied'> => {
+/** An internal forward contributes to the same organic share total only
+ * after Firestore has acknowledged the destination action. */
+export const recordCommunityPostForwardMetric = async (post: CloudCommunityPost): Promise<void> => {
   const actorId = currentUserId();
-  const title = `Publicação de ${post.authorName} no Kyrub`;
-  const text = post.content.trim()
-    ? `${title}: ${post.content.trim().slice(0, 220)}`
-    : `${title} com mídia. Conheça as Comunidades no Kyrub.`;
-  const url = window.location.origin + window.location.pathname;
-  let shared = false;
-  if (navigator.share) {
-    try {
-      await navigator.share({ title, text, url });
-      shared = true;
-    } catch (error) {
-      if (error instanceof DOMException && error.name === 'AbortError') return;
-    }
-  }
-  if (!shared) {
-    const payload = `${text}\n${url}`;
-    if (!navigator.clipboard?.writeText) {
-      throw new Error('O compartilhamento não está disponível neste dispositivo.');
-    }
-    await navigator.clipboard.writeText(payload);
-  }
   const reference = doc(collection(db, 'community_post_engagements'));
-  try {
-    await setDoc(reference, newEngagement(post, actorId, 'share', reference.id));
-  } catch (error) {
-    // A successful native share or clipboard copy must not be reported as a failed
-    // share if analytics temporarily cannot write (e.g. before rules deployment).
-    console.warn('Compartilhamento concluído, mas registro orgânico indisponível.', error);
-  }
-  return shared ? 'shared' : 'copied';
+  await setDoc(reference, newEngagement(post, actorId, 'share', reference.id));
 };

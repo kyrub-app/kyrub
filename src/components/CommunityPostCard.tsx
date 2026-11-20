@@ -1,20 +1,25 @@
 import { useEffect, useRef, useState } from 'react';
+import { doc, getDoc } from 'firebase/firestore';
+import { db } from '../utils/firebase';
 import {
-  BarChart3, Bookmark, EllipsisVertical, Eye, Flag, Heart, Megaphone, MessageCircle, MessageCircleMore, Share2,
+  BarChart3, Bookmark, EllipsisVertical, Eye, Flag, Forward, Heart, Megaphone, MessageCircle, MessageCircleMore, Share2,
   Trash2, UserRound, UserRoundPlus, UsersRound, X,
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
 import type { CommunityPostComment, CommunityPostLike } from '../utils/communityPostInteractions';
 import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/communityPostConnections';
-import { readCommunityPostPublicProfile, requestCommunityPostConnection } from '../utils/communityPostConnections';
+import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
 import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
 import {
-  recordCommunityPostView, shareCommunityPostWithMetrics, subscribeCommunityOrganicMetrics,
+  recordCommunityPostView, recordCommunityPostForwardMetric, subscribeCommunityOrganicMetrics,
   type CommunityOrganicEngagement,
 } from '../utils/communityOrganicMetrics';
 import type { SocialReportReason, SocialReportOutcome } from '../utils/socialReports';
+import {
+  forwardCommunityPostToSquare, buildCommunityPostInternalLink, composeCommunityForwardMessage,
+} from '../utils/communityPostForwarding';
 
 interface CommunityPostCardProps {
   post: CloudCommunityPost;
@@ -54,6 +59,11 @@ export function CommunityPostCard({
   const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
   const [profile, setProfile] = useState<CommunityPublicProfile | null>(null);
   const [chatOpen, setChatOpen] = useState(false);
+  const [forwardOpen, setForwardOpen] = useState(false);
+  const [forwardPublic, setForwardPublic] = useState<boolean | null>(null);
+  const [forwardError, setForwardError] = useState('');
+  const [forwardConnections, setForwardConnections] = useState<CommunityPostConnection[]>([]);
+  const [forwardRecipient, setForwardRecipient] = useState<{ id: string; name: string; connectionId: string } | null>(null);
   const [promotionPreviewOpen, setPromotionPreviewOpen] = useState(false);
   const [metricsOpen, setMetricsOpen] = useState(false);
   const [engagements, setEngagements] = useState<CommunityOrganicEngagement[]>([]);
@@ -68,6 +78,27 @@ export function CommunityPostCard({
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
   const connected = connection?.status === 'accepted';
+
+  useEffect(() => {
+    if (!forwardOpen || !viewerId) return;
+    let current = true;
+    setForwardPublic(null);
+    setForwardError('');
+    void getDoc(doc(db, 'communities', post.communityId)).then(snapshot => {
+      if (current) setForwardPublic(snapshot.exists() && snapshot.data().visibility === 'public');
+    }).catch(() => {
+      if (current) setForwardError('Não foi possível verificar a privacidade desta comunidade.');
+    });
+    return () => { current = false; };
+  }, [forwardOpen, post.communityId, viewerId]);
+
+  useEffect(() => {
+    if (!forwardOpen || !viewerId) return;
+    return subscribeCommunityPostConnections(
+      viewerId, setForwardConnections,
+      () => setForwardError('Não foi possível consultar suas conexões.'),
+    );
+  }, [forwardOpen, viewerId]);
   const connectionPending = connection?.status === 'pending';
 
   // Same view semantics as Praça: observe at least 55% of the actual post
@@ -126,7 +157,7 @@ export function CommunityPostCard({
   };
 
   return (
-    <article ref={cardRef} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
+    <article ref={cardRef} data-community-post-id={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <header className="flex items-center gap-3">
         {post.authorAvatar
           ? <img src={post.authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
@@ -156,7 +187,7 @@ export function CommunityPostCard({
               {!isMine && connectionPending && <p className="px-2 py-2 text-xs text-slate-400">Conexão pendente</p>}
               {!isMine && connected && (
                 <button type="button" role="menuitem"
-                  onClick={() => { setMenuOpen(false); setChatOpen(true); }}
+                  onClick={() => { setMenuOpen(false); setForwardRecipient(null); setChatDraft(''); setChatOpen(true); }}
                   className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                   <MessageCircleMore className="h-4 w-4" /> Conversar
                 </button>
@@ -178,12 +209,9 @@ export function CommunityPostCard({
                 </button>
               )}
               <button type="button" role="menuitem" disabled={Boolean(pending)}
-                onClick={() => { setMenuOpen(false); void run('share', async () => {
-                  const result = await shareCommunityPostWithMetrics(post);
-                  setNotice(result === 'copied' ? 'Conteúdo e endereço do Kyrub copiados.' : 'Compartilhamento concluído.');
-                }); }}
+                onClick={() => { setMenuOpen(false); setForwardOpen(true); }}
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-slate-200 hover:bg-slate-800 disabled:opacity-40">
-                <Share2 className="h-4 w-4" /> Compartilhar
+                <Forward className="h-4 w-4" /> Encaminhar
               </button>
               {isMine && onToggleSquare && (
                 <button type="button" role="menuitem" disabled={Boolean(pending)}
@@ -297,6 +325,79 @@ export function CommunityPostCard({
           ) : <p className="text-xs text-amber-300">Entre na comunidade para comentar.</p>}
         </section>
       )}
+      {forwardOpen && (
+        <div className="fixed inset-0 z-[205] flex items-end justify-center bg-slate-950/95 p-0 backdrop-blur-md sm:items-center sm:p-4"
+          role="dialog" aria-modal="true" aria-label="Encaminhar publicação dentro do Kyrub">
+          <section className="max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl border border-slate-700 bg-slate-900 p-4 sm:rounded-3xl">
+            <header className="flex items-center justify-between gap-3">
+              <div>
+                <span className="text-xs uppercase tracking-wide text-sky-300">Distribuição orgânica</span>
+                <h3 className="text-lg font-bold text-white">Encaminhar publicação</h3>
+              </div>
+              <button type="button" aria-label="Fechar encaminhamento" onClick={() => setForwardOpen(false)}
+                className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 text-slate-300">
+                <X className="h-5 w-5"/>
+              </button>
+            </header>
+            <p className="mt-3 text-sm text-slate-300">
+              A publicação continua na comunidade original, com o mesmo autor, conteúdo e interações.
+            </p>
+            {forwardError && <p role="alert" className="mt-3 rounded-xl border border-rose-600/30 p-3 text-xs text-rose-300">{forwardError}</p>}
+            {forwardPublic === null && !forwardError && <p className="mt-3 text-xs text-slate-400">Verificando acesso da publicação...</p>}
+            {forwardPublic === false && (
+              <p className="mt-3 rounded-xl border border-amber-600/30 p-3 text-sm text-amber-200">
+                Esta publicação não pertence a uma comunidade pública. Não é possível encaminhá-la para outros públicos.
+              </p>
+            )}
+            {forwardPublic && (
+              <div className="mt-4 space-y-4">
+                <button type="button" disabled={Boolean(pending)} onClick={() => {
+                  setPending('forward-square');
+                  setForwardError('');
+                  void forwardCommunityPostToSquare(post).then(() => {
+                    setForwardOpen(false);
+                    setNotice('Publicação encaminhada à Praça por mais 24 horas.');
+                  }).catch(error => {
+                    setForwardError(error instanceof Error ? error.message : 'Não foi possível encaminhar à Praça.');
+                  }).finally(() => setPending(''));
+                }}
+                  className="flex min-h-14 w-full items-center gap-3 rounded-xl border border-sky-500/40 bg-sky-500/10 p-3 text-left text-sm font-bold text-sky-100 disabled:opacity-50">
+                  <UsersRound className="h-5 w-5"/> Encaminhar à Praça — 24 horas
+                </button>
+                <section className="space-y-2">
+                  <h4 className="text-sm font-bold text-white">Encaminhar para um Kairubido conectado</h4>
+                  {forwardConnections.filter(item => item.status === 'accepted' &&
+                    (item.senderId === viewerId || item.receiverId === viewerId)).length === 0 &&
+                    <p className="text-xs text-slate-400">Nenhuma conexão aceita disponível para encaminhamento privado.</p>}
+                  {forwardConnections.filter(item => item.status === 'accepted' &&
+                    (item.senderId === viewerId || item.receiverId === viewerId)).map(item => {
+                    const recipientId = item.senderId === viewerId ? item.receiverId : item.senderId;
+                    const name = (item.senderId === viewerId ? item.receiverName : item.senderName)
+                      || 'Kairubido conectado';
+                    return (
+                      <button key={item.id} type="button"
+                        onClick={() => {
+                          setForwardRecipient({ id: recipientId, name, connectionId: item.id });
+                          setChatDraft(composeCommunityForwardMessage(post));
+                          setChatOpen(true);
+                          setForwardOpen(false);
+                        }}
+                        className="flex min-h-11 w-full items-center gap-2 rounded-lg border border-slate-700 px-3 text-left text-sm text-slate-200 hover:bg-slate-800">
+                        <UserRound className="h-4 w-4 shrink-0"/> <span className="truncate">{name}</span>
+                      </button>
+                    );
+                  })}
+                  <p className="text-xs text-slate-500">O chat abre com a referência pronta. Você confirma o envio; nada é disparado automaticamente.</p>
+                </section>
+                <p className="rounded-xl border border-slate-700 p-3 text-xs text-slate-400">
+                  Encaminhar para outra comunidade como colaboração exigirá aprovação da administração de destino.
+                  Essa etapa ainda não está disponível.
+                </p>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
       {profile && (
         <div className="fixed inset-0 z-[190] flex items-center justify-center bg-slate-950/95 p-4" role="dialog" aria-modal="true" aria-label={`Perfil público de ${profile.name}`}>
           <section className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-5">
@@ -330,7 +431,7 @@ export function CommunityPostCard({
                 [Eye, 'Visualizações', organicCounts.views],
                 [Heart, 'Curtidas', organicCounts.likes],
                 [Bookmark, 'Salvamentos', organicCounts.saves],
-                [Share2, 'Compartilhamentos', organicCounts.shares],
+                [Forward, 'Encaminhamentos', organicCounts.shares],
                 [MessageCircle, 'Comentários', organicCounts.comments],
               ] as const).map(([MetricIcon, label, count]) => (
                 <article key={label} className="rounded-2xl border border-slate-800 bg-slate-900 p-3">
@@ -346,7 +447,7 @@ export function CommunityPostCard({
             <div className="border-t border-slate-800 p-4">
               <p className="text-xs leading-relaxed text-slate-400">
                 Visualizações são únicas por usuário autenticado. Salvamentos contam apenas enquanto ativos
-                e compartilhamentos somente após a ação concluída. Esses três indicadores começam na ativação
+                e encaminhamentos somente após a ação concluída. Esses três indicadores começam na ativação
                 da coleta; dados antigos não são reconstruídos.
               </p>
               <p className="mt-2 text-xs text-slate-500">
@@ -363,12 +464,25 @@ export function CommunityPostCard({
       {promotionPreviewOpen && isMine && (
         <KyrubAdsCommunityPromotionPreview post={post} onClose={() => setPromotionPreviewOpen(false)} />
       )}
-      <ChatModal isOpen={chatOpen && connected} onClose={() => setChatOpen(false)}
-        selectedChatUser={chatOpen && connected ? {
+      <ChatModal isOpen={chatOpen && (Boolean(forwardRecipient) || connected)}
+        onClose={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
+        selectedChatUser={chatOpen && forwardRecipient ? {
+          id: forwardRecipient.id, name: forwardRecipient.name, avatar: '',
+          role: 'Kairubido conectado', connectionStatus: 'accepted',
+          connectionId: forwardRecipient.connectionId,
+        } : chatOpen && connected ? {
           id: post.authorId, name: post.authorName, avatar: post.authorAvatar,
           role: 'Kairubido', connectionStatus: 'accepted', connectionId: connection?.id,
         } : null}
-        setSelectedChatUser={() => setChatOpen(false)}
+        setSelectedChatUser={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
+        onMessageSent={text => {
+          if (forwardRecipient && text.includes(buildCommunityPostInternalLink(post))) {
+            void recordCommunityPostForwardMetric(post).catch(error =>
+              console.warn('Mensagem encaminhada, mas a métrica orgânica não foi registrada.', error));
+            setForwardRecipient(null);
+            setChatOpen(false);
+          }
+        }}
         chatMessageText={chatDraft} setChatMessageText={setChatDraft}/>
     </article>
   );

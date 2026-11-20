@@ -249,7 +249,7 @@ export function PublicSocialFeedPanel({
   const feedRows = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
     const communityItems = communityEntries
-      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.post.createdAt), feedNow))
+      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.distributedAt), feedNow))
       .filter(entry => {
         if (normalizedSearch && !`${entry.communityName} ${entry.post.authorName} ${entry.post.content}`
           .toLocaleLowerCase('pt-BR').includes(normalizedSearch)) return false;
@@ -259,7 +259,7 @@ export function PublicSocialFeedPanel({
       });
     return [
       ...visiblePosts.map(post => ({ kind: 'social' as const, id: 'social:' + post.id, createdAt: post.createdAt || '', post })),
-      ...communityItems.map(entry => ({ kind: 'community' as const, id: 'community:' + entry.post.id, createdAt: entry.post.createdAt, entry })),
+      ...communityItems.map(entry => ({ kind: 'community' as const, id: 'community:' + entry.post.id, createdAt: entry.distributedAt, entry })),
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [communityEntries, currentUserId, feedNow, filter, friends, searchQuery, visiblePosts]);
 

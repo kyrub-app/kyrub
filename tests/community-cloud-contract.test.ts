@@ -264,16 +264,18 @@ test('community organic metrics appear only for their author and never conflate 
   assert.match(card, /\{isMine && \([\s\S]*?Métricas da publicação/);
   assert.match(card, /metricsOpen && isMine/);
   assert.match(card, /const organicCounts = \{/);
-  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Compartilhamentos', 'Comentários']) {
+  for (const label of ['Visualizações', 'Curtidas', 'Salvamentos', 'Encaminhamentos', 'Comentários']) {
     assert.ok(card.includes(label), 'Métrica orgânica ausente: ' + label);
   }
   assert.match(card, /<BarChart3 className="h-4 w-4" \/> Métricas da publicação/);
   assert.match(card, /<Megaphone className="h-4 w-4"\/> Promover no Kyrub Ads/);
   assert.match(card, /entry\.intersectionRect\.height < 0\.55 \* visibleReference/);
   assert.match(card, /recordCommunityPostView\(post\)/);
-  assert.match(card, /shareCommunityPostWithMetrics\(post\)/);
-  assert.match(metrics, /navigator\.share\(/);
-  assert.match(metrics, /navigator\.clipboard/);
+  assert.match(card, /Encaminhar publicação/);
+  assert.match(card, /forwardCommunityPostToSquare\(post\)/);
+  assert.match(metrics, /recordCommunityPostForwardMetric/);
+  assert.doesNotMatch(card, /shareCommunityPostWithMetrics/);
+  assert.doesNotMatch(metrics, /navigator\.share|navigator\.clipboard/);
   assert.match(metrics, /await setDoc\(reference, newEngagement\(post, actorId, 'share', reference\.id\)\)/);
   assert.match(metrics, /runTransaction\(db/);
   assert.match(metrics, /tx\.set\(savedRef/);
@@ -397,4 +399,49 @@ test('community Editar is independent of personal account shortcuts and edits re
   ]) {
     assert.ok(ownerRule.includes(lockedField), `Immutable community guard missing: ${lockedField}`);
   }
+});
+
+test('in-app Encaminhar uses canonical Praça references and accepted Kyrub conversations', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const forward = read('src/utils/communityPostForwarding.ts');
+  const feed = read('src/utils/communitySquareFeed.ts');
+  const squareUI = read('src/components/CommunitySquareFeedCard.tsx');
+  const publicFeed = read('src/components/PublicSocialFeedPanel.tsx');
+  const profileFeed = read('src/components/ProfileSocialHubNative.tsx');
+  const chat = read('src/components/modals/ChatModal.tsx');
+  const directory = read('src/utils/communityPostConnections.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const cleanup = read('server/communities/communityPostRemovalService.ts');
+
+  assert.match(card, /<Forward className="h-4 w-4" \/> Encaminhar/);
+  assert.match(card, /Encaminhar à Praça — 24 horas/);
+  assert.match(card, /Encaminhar para um Kairubido conectado/);
+  assert.match(card, /status === 'accepted'/);
+  assert.match(card, /getDoc\(doc\(db, 'communities', post\.communityId\)\)/);
+  assert.match(card, /setChatDraft\(composeCommunityForwardMessage\(post\)\)/);
+  assert.match(card, /onMessageSent=\{text =>/);
+  assert.match(chat, /await sendMessage\(sentText\)/);
+  assert.match(chat, /onMessageSent\?\.\(sentText\)/);
+  assert.match(chat, /Abrir publicação no Kyrub/);
+  assert.match(directory, /subscribeCommunityPostConnections/);
+  assert.match(forward, /community_square_forwards/);
+  assert.match(forward, /runTransaction\(db/);
+  assert.match(forward, /COMMUNITY_SQUARE_WINDOW_MS/);
+  assert.match(forward, /forwardedAt: serverTimestamp\(\)/);
+  assert.match(forward, /searchParams\.set\('community', post\.communityId\)/);
+  assert.match(forward, /searchParams\.set\('post', post\.id\)/);
+  assert.match(feed, /where\('forwardedAt', '>=',/);
+  assert.match(feed, /forwardedByName/);
+  assert.match(feed, /distributedAt/);
+  assert.match(squareUI, /Encaminhado à Praça por/);
+  assert.match(publicFeed, /Date\.parse\(entry\.distributedAt\)/);
+  assert.match(profileFeed, /Date\.parse\(entry\.distributedAt\)/);
+  assert.match(profileFeed, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
+  assert.match(read('src/components/ProfileCommunitiesCloudBridge.tsx'), /requestedSquarePostId/);
+  assert.match(rules, /match \/community_square_forwards\/\{forwardId\}/);
+  assert.match(rules, /duration\.value\(24, 'h'\)/);
+  assert.match(rules, /data\.visibility\s*== 'public'/);
+  assert.match(cleanup, /'community_square_forwards'/);
+  assert.doesNotMatch(card, /navigator\.share|navigator\.clipboard|WhatsApp|whatsapp/);
+  assert.doesNotMatch(forward, /payment|pix|mercadoPago|pitangas|wallet|checkout|sponsored/i);
 });

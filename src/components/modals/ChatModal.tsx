@@ -1,6 +1,7 @@
 import React, { useEffect, useRef } from 'react';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { auth } from '../../utils/firebase';
+import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../../utils/communitySquareFeed';
 
 interface ChatModalProps {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface ChatModalProps {
   setSelectedChatUser: (user: any | null) => void;
   chatMessageText: string;
   setChatMessageText: (text: string) => void;
+  onMessageSent?: (text: string) => void;
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({
@@ -17,7 +19,8 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   selectedChatUser,
   setSelectedChatUser,
   chatMessageText,
-  setChatMessageText
+  setChatMessageText,
+  onMessageSent
 }) => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const isChatEnabled = Boolean(
@@ -57,11 +60,29 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (!isChatEnabled || isSending || !chatMessageText.trim()) return;
 
     try {
-      await sendMessage(chatMessageText);
+      const sentText = chatMessageText;
+      await sendMessage(sentText);
       setChatMessageText('');
+      onMessageSent?.(sentText);
     } catch {
       // O hook preserva o erro para exibição e o texto permanece no campo.
     }
+  };
+
+  const readInternalPostLink = (messageText: string): { communityId: string; postId: string } | null => {
+    const links = messageText.match(/https?:\/\/[^\s]+/g) || [];
+    for (const link of links) {
+      try {
+        const url = new URL(link);
+        if (url.origin !== window.location.origin &&
+          !(url.protocol === 'https:' && ['kyrub.com', 'www.kyrub.com'].includes(url.hostname))) continue;
+        const communityId = url.searchParams.get('community') || '';
+        const postId = url.searchParams.get('post') || '';
+        if (/^[a-zA-Z0-9_-]{1,128}$/.test(communityId) &&
+          /^[a-zA-Z0-9_-]{1,128}$/.test(postId)) return { communityId, postId };
+      } catch { /* Invalid/untrusted URL is not an in-app publication link. */ }
+    }
+    return null;
   };
 
   const contactInitial = String(selectedChatUser.name || 'K')
@@ -155,6 +176,21 @@ export const ChatModal: React.FC<ChatModalProps> = ({
                     <p className="break-words text-xs leading-relaxed">
                       {message.text}
                     </p>
+                    {readInternalPostLink(message.text) && (
+                      <button type="button" onClick={() => {
+                        const link = readInternalPostLink(message.text);
+                        if (!link) return;
+                        closeChat();
+                        window.dispatchEvent(new CustomEvent(OPEN_COMMUNITY_FROM_SQUARE_EVENT, {
+                          detail: link,
+                        }));
+                      }}
+                        className={`mt-2 min-h-9 rounded-lg border px-3 text-xs font-bold ${isMe
+                          ? 'border-orange-200/50 bg-orange-400/20 text-white'
+                          : 'border-sky-500/35 bg-sky-500/10 text-sky-200'}`}>
+                        Abrir publicação no Kyrub
+                      </button>
+                    )}
                     <span
                       className={`block text-right font-mono text-[8px] ${
                         isMe ? 'text-orange-200' : 'text-slate-500'

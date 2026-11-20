@@ -588,6 +588,25 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
+    // Internal post links received in Kyrub chat resolve after an authenticated
+    // page load. They navigate to the original community, never to a copy.
+    const current = new URL(window.location.href);
+    const communityId = current.searchParams.get('community') || '';
+    const postId = current.searchParams.get('post') || '';
+    if (!/^[a-zA-Z0-9_-]{1,128}$/.test(communityId) ||
+      !/^[a-zA-Z0-9_-]{1,128}$/.test(postId)) return;
+    const frame = window.requestAnimationFrame(() => {
+      window.dispatchEvent(new CustomEvent(OPEN_COMMUNITY_FROM_SQUARE_EVENT, {
+        detail: { communityId, postId },
+      }));
+    });
+    current.searchParams.delete('community');
+    current.searchParams.delete('post');
+    window.history.replaceState(window.history.state, '', current.pathname + current.search + current.hash);
+    return () => window.cancelAnimationFrame(frame);
+  }, []);
+
+  useEffect(() => {
     if (!open) return;
     const previousOverflow = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
@@ -798,12 +817,12 @@ export function ProfileSocialHubNative() {
     const publicPosts = squarePosts.filter(post =>
       !term || `${post.user} ${post.content}`.toLocaleLowerCase('pt-BR').includes(term));
     const communityPosts = communitySquareEntries
-      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.post.createdAt), now))
+      .filter(entry => withinCommunitySquareWindow(Date.parse(entry.distributedAt), now))
       .filter(entry => !term || `${entry.communityName} ${entry.post.authorName} ${entry.post.content}`
         .toLocaleLowerCase('pt-BR').includes(term));
     return [
       ...publicPosts.map(post => ({ kind: 'social' as const, key: 'social:' + post.id, createdAt: post.createdAt || '', post })),
-      ...communityPosts.map(entry => ({ kind: 'community' as const, key: 'community:' + entry.post.id, createdAt: entry.post.createdAt, entry })),
+      ...communityPosts.map(entry => ({ kind: 'community' as const, key: 'community:' + entry.post.id, createdAt: entry.distributedAt, entry })),
     ].sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
   }, [squarePosts, communitySquareEntries, squareSearch, now]);
 

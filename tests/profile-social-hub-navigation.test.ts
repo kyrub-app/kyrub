@@ -187,7 +187,8 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /<ChatModal/);
     assert.match(profileSource, /setChatTarget\(friend\)/);
     assert.match(chatSource, /useChatMessages/);
-    assert.match(chatSource, /sendMessage\(chatMessageText\)/);
+    assert.match(chatSource, /sendMessage\(sentText\)/);
+    assert.match(chatSource, /const sentText = chatMessageText/);
     assert.match(profileSource, /contact_groups/);
     assert.match(profileSource, /const MAX_GROUPS = 30/);
     assert.match(profileSource, /const MAX_GROUP_MEMBERS = 200/);

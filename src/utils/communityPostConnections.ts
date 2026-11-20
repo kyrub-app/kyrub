@@ -9,6 +9,8 @@ export interface CommunityPostConnection {
   senderId: string;
   receiverId: string;
   status: 'pending' | 'accepted';
+  senderName?: string;
+  receiverName?: string;
 }
 
 export interface CommunityPublicProfile {
@@ -37,6 +39,8 @@ export const subscribeCommunityPostConnections = (
           senderId: data.senderId as string,
           receiverId: data.receiverId as string,
           status: data.status as 'pending' | 'accepted',
+          senderName: typeof data.senderName === 'string' ? data.senderName : '',
+          receiverName: typeof data.receiverName === 'string' ? data.receiverName : '',
         }] : [];
   })),
   onError,
