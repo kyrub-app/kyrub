@@ -30,6 +30,7 @@ describe('Praça catalog parity', () => {
     assert.match(square, /onViewAll=\{\(\) => setStoreCatalogOpen\(true\)\}/);
     assert.match(square, /catalogOpen\s+onCloseCatalog=\{\(\) => setStoreCatalogOpen\(false\)\}/);
     assert.match(stores, /onClose=\{\(\) => onCloseCatalog\?\.\(\)\}/);
+    assert.match(square, /setStoreCatalogOpen\(false\);\s*props\.setVisitingStore\(store\);/);
     assert.match(communities, /onClose=\{\(\) => setCatalogOpen\(false\)\}/);
     assert.doesNotMatch(communities, /\{catalogOpen && createPortal\(/);
   });
