@@ -828,3 +828,83 @@ test('private forward receipt cannot fake connection, source or recipient', asyn
   const blockedPrivateMessage = await assertSucceeds(getDoc(doc(sender, 'social_chats', 'forward_private_link', 'messages', 'message_private')));
   if (blockedPrivateMessage.exists()) throw new Error('Encaminhamento privado foi publicado sem autorização.');
 });
+
+test('fresh public join transaction reads own missing membership, creates it once and increments memberCount', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const visitor = environment.authenticatedContext(MEMBER).firestore();
+  const other = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'join_fresh_public';
+  const selfId = memberId(communityId, MEMBER);
+  await createCommunity(owner, communityId, 'public');
+
+  const missing = await assertSucceeds(getDoc(doc(visitor, 'community_members', selfId)));
+  if (missing.exists()) throw new Error('O novo participante já tinha um registro.');
+  await assertFails(getDoc(doc(visitor, 'community_members', memberId(communityId, OUTSIDER))));
+
+  const join = () => runTransaction(visitor, async tx => {
+    const communityRef = doc(visitor, 'communities', communityId);
+    const membershipRef = doc(visitor, 'community_members', selfId);
+    const [community, existing] = await Promise.all([
+      tx.get(communityRef), tx.get(membershipRef),
+    ]);
+    if (existing.exists()) return;
+    if (!community.exists()) throw new Error('Comunidade não encontrada.');
+    const nowIso = new Date().toISOString();
+    tx.set(membershipRef, {
+      membershipId: selfId, communityId, userId: MEMBER,
+      userName: 'Participante', userAvatar: '', role: 'member', status: 'active',
+      joinedAtIso: nowIso, joinedAt: serverTimestamp(),
+      updatedAtIso: nowIso, updatedAt: serverTimestamp(),
+    });
+    tx.update(communityRef, {
+      memberCount: community.data().memberCount + 1,
+      lastMembershipChangeId: selfId,
+      updatedAtIso: nowIso, updatedAt: serverTimestamp(),
+      activityAtIso: nowIso, activityAt: serverTimestamp(),
+    });
+  });
+
+  await assertSucceeds(join());
+  await assertSucceeds(join()); // Repeated click is idempotent.
+  const joined = await assertSucceeds(getDoc(doc(visitor, 'community_members', selfId)));
+  const community = await assertSucceeds(getDoc(doc(other, 'communities', communityId)));
+  if (joined.data()?.status !== 'active' || community.data()?.memberCount !== 2) {
+    throw new Error('O membro não foi ativado exatamente uma vez.');
+  }
+  await assertSucceeds(getDoc(doc(other, 'community_members', selfId)));
+});
+
+test('pending memberships remain private to applicant and community owner', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const applicant = environment.authenticatedContext(MEMBER).firestore();
+  const visitor = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'join_pending_moderated';
+  const pendingId = memberId(communityId, MEMBER);
+  await createCommunity(owner, communityId, 'moderated');
+
+  await assertSucceeds(runTransaction(applicant, async tx => {
+    const community = await tx.get(doc(applicant, 'communities', communityId));
+    const pendingRef = doc(applicant, 'community_members', pendingId);
+    const missing = await tx.get(pendingRef);
+    if (!community.exists() || missing.exists()) throw new Error('Estado inválido.');
+    const nowIso = new Date().toISOString();
+    tx.set(pendingRef, {
+      membershipId: pendingId, communityId, userId: MEMBER,
+      userName: 'Participante', userAvatar: '', role: 'member', status: 'pending',
+      joinedAtIso: nowIso, joinedAt: serverTimestamp(),
+      updatedAtIso: nowIso, updatedAt: serverTimestamp(),
+    });
+  }));
+  await assertSucceeds(getDoc(doc(applicant, 'community_members', pendingId)));
+  await assertSucceeds(getDoc(doc(owner, 'community_members', pendingId)));
+  await assertFails(getDoc(doc(visitor, 'community_members', pendingId)));
+  const ownerList = await assertSucceeds(
+    getDocs(query(collection(owner, 'community_members'), where('communityId', '==', communityId))),
+  );
+  if (!ownerList.docs.some(item => item.id === pendingId)) {
+    throw new Error('O criador não consegue administrar solicitações pendentes.');
+  }
+  await assertFails(
+    getDocs(query(collection(visitor, 'community_members'), where('communityId', '==', communityId))),
+  );
+});
