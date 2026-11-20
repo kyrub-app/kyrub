@@ -1,5 +1,5 @@
 import {
-  doc, getDoc, runTransaction, serverTimestamp, Timestamp,
+  collection, doc, getDoc, runTransaction, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import type { CloudCommunityPost } from './communityCloud';
@@ -54,6 +54,71 @@ export const forwardCommunityPostToSquare = async (post: CloudCommunityPost): Pr
   void recordCommunityPostForwardMetric(post).catch(error =>
     console.warn('Encaminhamento concluído, mas a métrica orgânica não foi registrada.', error)
   );
+};
+
+export interface CommunityForwardReceipt {
+  messageId: string;
+  recipientId: string;
+  connectionId: string;
+}
+
+/** The private message and per-target cooldown receipt are written atomically.
+ * No chat message is sent when the same actor has forwarded the same publication
+ * to this recipient within 24 hours. Firestore rules enforce the same constraint
+ * using authoritative server time. Other recipients are independent destinations.
+ */
+export const sendCommunityPostToConnectedUser = async (input: {
+  post: CloudCommunityPost;
+  connectionId: string;
+  recipientId: string;
+  text: string;
+}): Promise<CommunityForwardReceipt> => {
+  const actorId = auth.currentUser?.uid;
+  if (!actorId) throw new Error('Faça login para encaminhar a publicação.');
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(input.connectionId)
+    || !/^[a-zA-Z0-9_-]{1,128}$/.test(input.recipientId)
+    || input.recipientId === actorId) throw new Error('Destinatário inválido.');
+  const text = input.text.trim();
+  if (!text || text.length > 4000 || !text.includes(buildCommunityPostInternalLink(input.post))) {
+    throw new Error('O encaminhamento precisa conter a referência original da publicação.');
+  }
+  const receiptId = `${input.post.id}__${actorId}__${input.recipientId}`;
+  const receiptRef = doc(db, 'community_direct_forward_receipts', receiptId);
+  const messageRef = doc(collection(db, 'social_chats', input.connectionId, 'messages'));
+  await runTransaction(db, async tx => {
+    const receipt = await tx.get(receiptRef);
+    if (receipt.exists()) {
+      const last = receipt.data().forwardedAt;
+      if (!(last instanceof Timestamp) ||
+        Date.now() - last.toMillis() < COMMUNITY_SQUARE_WINDOW_MS) {
+        throw new Error('Você já encaminhou esta publicação para esta pessoa nas últimas 24 horas.');
+      }
+    }
+
+    tx.set(messageRef, {
+      senderId: actorId,
+      receiverId: input.recipientId,
+      text,
+      createdAt: serverTimestamp(),
+    });
+    if (receipt.exists()) {
+      tx.update(receiptRef, {
+        messageId: messageRef.id,
+        forwardedAt: serverTimestamp(),
+      });
+    } else {
+      tx.set(receiptRef, {
+        postId: input.post.id,
+        communityId: input.post.communityId,
+        actorId,
+        receiverId: input.recipientId,
+        connectionId: input.connectionId,
+        messageId: messageRef.id,
+        forwardedAt: serverTimestamp(),
+      });
+    }
+  });
+  return { messageId: messageRef.id, recipientId: input.recipientId, connectionId: input.connectionId };
 };
 
 export const buildCommunityPostInternalLink = (post: CloudCommunityPost): string => {
