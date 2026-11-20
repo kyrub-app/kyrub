@@ -777,7 +777,8 @@ test('private forward to a connected Kairubido is atomic and rate limited per po
   await assertSucceeds(send('message_first'));
   await assertSucceeds(getDoc(doc(other, 'social_chats', connectionId, 'messages', 'message_first')));
   await assertFails(send('message_repeat'));
-  await assertFails(getDoc(doc(other, 'social_chats', connectionId, 'messages', 'message_repeat')));
+  const blockedMessage = await assertSucceeds(getDoc(doc(other, 'social_chats', connectionId, 'messages', 'message_repeat')));
+  if (blockedMessage.exists()) throw new Error('Um envio bloqueado não pode criar mensagem.');
   await assertFails(getDoc(doc(other, 'community_direct_forward_receipts', receiptId)));
   await assertFails(getDocs(collection(sender, 'community_direct_forward_receipts')));
 
@@ -824,5 +825,6 @@ test('private forward receipt cannot fake connection, source or recipient', asyn
       messageId: 'message_private', forwardedAt: serverTimestamp(),
     });
   }));
-  await assertFails(getDoc(doc(sender, 'social_chats', 'forward_private_link', 'messages', 'message_private')));
+  const blockedPrivateMessage = await assertSucceeds(getDoc(doc(sender, 'social_chats', 'forward_private_link', 'messages', 'message_private')));
+  if (blockedPrivateMessage.exists()) throw new Error('Encaminhamento privado foi publicado sem autorização.');
 });
