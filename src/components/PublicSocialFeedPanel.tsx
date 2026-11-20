@@ -16,6 +16,7 @@ import {
 } from 'lucide-react';
 import type { Friend, SocialPost } from '../types';
 import type { SocialPostComment } from '../hooks/usePublicSocialFeed';
+import { orderCommentThreads } from '../utils/commentThreads';
 import { MediaCarousel } from './MediaCarousel';
 import { removeSavedPublication, savePublication, subscribeSavedPublications } from '../utils/savedLibrary';
 import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
@@ -39,7 +40,7 @@ interface PublicSocialFeedPanelProps {
   searchQuery: string;
   filter: 'recentes' | 'favoritos';
   onToggleLike: (postId: string) => Promise<void>;
-  onAddComment: (postId: string, text: string) => Promise<void>;
+  onAddComment: (postId: string, text: string, parentCommentId?: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
   triggerToast: (
     message: string,
@@ -179,6 +180,8 @@ export function PublicSocialFeedPanel({
     new Set()
   );
   const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [replyTargets, setReplyTargets] = useState<Record<string, SocialPostComment | undefined>>({});
+  const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set());
   const [pendingAction, setPendingAction] = useState('');
   const [savedPostIds, setSavedPostIds] = useState<Set<string>>(new Set());
   const [savedCommunityPostIds, setSavedCommunityPostIds] = useState<Set<string>>(new Set());
@@ -278,7 +281,8 @@ export function PublicSocialFeedPanel({
 
     setPendingAction(`comment-${postId}`);
     try {
-      await onAddComment(postId, text);
+      await onAddComment(postId, text, replyTargets[postId]?.id);
+      setReplyTargets(current => ({ ...current, [postId]: undefined }));
       setCommentDrafts(current => ({ ...current, [postId]: '' }));
       setExpandedComments(current => new Set(current).add(postId));
     } catch (error) {
@@ -315,6 +319,11 @@ export function PublicSocialFeedPanel({
         }
         const post = row.post;
         const comments = commentsByPost.get(post.id) ?? [];
+        const threadedComments = orderCommentThreads(comments);
+        const replyCounts = new Map<string, number>();
+        for (const item of threadedComments) {
+          if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
+        }
         const isLiked = likedPostIds.has(post.id);
         const commentsOpen = expandedComments.has(post.id);
         const isStatus = post.publicationType === 'status';
@@ -519,10 +528,13 @@ export function PublicSocialFeedPanel({
             {commentsOpen && (
               <div className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950 p-3">
                 <div className="max-h-64 space-y-2 overflow-y-auto">
-                  {comments.map(comment => (
+                  {threadedComments.filter(item => item.depth === 0 ||
+                    !collapsedThreads.has(post.id + ':' + item.rootId)).map(({ comment, parent, depth }) => (
                     <div
                       key={comment.id}
-                      className="flex items-start gap-2 rounded-xl bg-slate-900 p-2.5"
+                      className={depth > 0
+                        ? 'ml-4 flex items-start gap-2 rounded-xl border-l-2 border-teal-700/40 bg-slate-900 p-2.5'
+                        : 'flex items-start gap-2 rounded-xl bg-slate-900 p-2.5'}
                     >
                       <Avatar
                         src={comment.authorAvatar}
@@ -531,33 +543,42 @@ export function PublicSocialFeedPanel({
                       />
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <strong className="truncate text-[9px] text-slate-200">
-                            {comment.authorName}
-                          </strong>
+                          <strong className="truncate text-xs text-slate-200">{comment.authorName}</strong>
                           {comment.authorId === currentUserId && (
-                            <button
-                              type="button"
-                              onClick={async () => {
-                                try {
-                                  await onDeleteComment(comment.id);
-                                } catch (error) {
-                                  console.warn('Falha ao excluir comentário.', error);
-                                  triggerToast(
-                                    'Não foi possível excluir o comentário.',
-                                    'error'
-                                  );
+                            <button type="button" onClick={async () => {
+                              try {
+                                await onDeleteComment(comment.id);
+                                if (replyTargets[post.id]?.id === comment.id) {
+                                  setReplyTargets(current => ({ ...current, [post.id]: undefined }));
                                 }
-                              }}
-                              className="text-slate-600 hover:text-red-400"
-                              aria-label="Excluir comentário"
-                            >
+                              } catch (error) {
+                                console.warn('Falha ao excluir comentário.', error);
+                                triggerToast('Não foi possível excluir o comentário.', 'error');
+                              }
+                            }} className="text-slate-600 hover:text-red-400" aria-label="Excluir comentário">
                               <Trash2 className="h-3 w-3" />
                             </button>
                           )}
                         </div>
-                        <p className="mt-1 whitespace-pre-line text-[10px] leading-relaxed text-slate-400">
-                          {comment.text}
-                        </p>
+                        {depth > 0 && parent && <span className="block text-xs text-teal-300">Em resposta a {parent.authorName}</span>}
+                        <p className="mt-1 whitespace-pre-line break-words text-xs leading-relaxed text-slate-400">{comment.text}</p>
+                        <div className="mt-2 flex flex-wrap gap-3">
+                          {currentUserId && <button type="button" onClick={() => setReplyTargets(current => ({ ...current, [post.id]: comment }))}
+                            className="text-xs font-semibold text-teal-300">Responder</button>}
+                          {depth === 0 && (replyCounts.get(comment.id) ?? 0) > 0 && (
+                            <button type="button"
+                              aria-expanded={!collapsedThreads.has(post.id + ':' + comment.id)}
+                              onClick={() => setCollapsedThreads(current => {
+                                const key = post.id + ':' + comment.id;
+                                const next = new Set(current);
+                                if (next.has(key)) next.delete(key); else next.add(key);
+                                return next;
+                              })}
+                              className="text-xs text-slate-400">
+                              {collapsedThreads.has(post.id + ':' + comment.id) ? 'Ver' : 'Ocultar'} {replyCounts.get(comment.id)} respostas
+                            </button>
+                          )}
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -568,6 +589,10 @@ export function PublicSocialFeedPanel({
                   )}
                 </div>
 
+                {replyTargets[post.id] && <div className="flex items-center justify-between gap-2 text-xs text-teal-300">
+                  <span>Respondendo a {replyTargets[post.id]?.authorName}</span>
+                  <button type="button" onClick={() => setReplyTargets(current => ({ ...current, [post.id]: undefined }))}>Cancelar resposta</button>
+                </div>}
                 <div className="flex items-end gap-2">
                   <textarea
                     value={commentDrafts[post.id] ?? ''}
@@ -577,7 +602,7 @@ export function PublicSocialFeedPanel({
                         [post.id]: event.target.value.slice(0, 1000),
                       }))
                     }
-                    placeholder="Escreva um comentário..."
+                    placeholder={replyTargets[post.id] ? "Escreva sua resposta..." : "Escreva um comentário..."}
                     rows={2}
                     className="min-h-10 flex-1 resize-none rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[10px] text-white outline-none focus:border-teal-500/50"
                   />
