@@ -397,7 +397,7 @@ test('Vercel sends direct public, staff and legacy app routes to the SPA entry',
   assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
 
-test('app header shows profile first while logout is only available inside the profile', () => {
+test('app header keeps profile first and session actions live in the Kyrub brand row', () => {
   const profileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
   const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
   const appHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
@@ -415,11 +415,14 @@ test('app header shows profile first while logout is only available inside the p
   assert.doesNotMatch(guestHeader, /<LogIn|<LogOut/);
   assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
 
-  assert.match(profileSource, /id="profile-logout-button"/);
-  assert.match(profileSource, /onClick=\{onLogout\}/);
-  assert.match(profileSource, /disabled=\{isSigningOut\}/);
-  assert.match(profileSource, /Sair da conta/);
-  assert.match(legacyAppSource, /onLogout=\{\(\) => \{ void handleLogout\(\); \}\}/);
+  assert.match(legacyAppSource, /id="kyrub-workspace-brand"/);
+  assert.match(legacyAppSource, /id="kyrub-workspace-signout"/);
+  assert.match(legacyAppSource, /onClick=\{\(\) => void handleLogout\(\)\}/);
+  assert.match(legacyAppSource, /disabled=\{isSigningOut\}/);
+  assert.match(guestSource, /id="kyrub-guest-brand"/);
+  assert.match(guestSource, /id="kyrub-guest-signin"/);
+  assert.match(guestSource, /requestLogin\('acessar sua conta'\)/);
+  assert.doesNotMatch(profileSource, /profile-logout-button|profile-session-actions|onLogout/);
   assert.match(legacyAppSource, /await signOut\(auth\)/);
   assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
   assert.match(legacyAppSource, /triggerToast\('Não foi possível sair da conta\. Tente novamente\.'/);
