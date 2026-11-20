@@ -26,7 +26,6 @@ import {
   Plus,
   Pencil,
   Save,
-  Search,
   ShieldCheck,
   Trash2,
   UserCheck,
@@ -35,6 +34,7 @@ import {
   X,
 } from 'lucide-react';
 import { useCommunityDirectory, type CommunityDirectoryItem } from '../hooks/useCommunityDirectory';
+import { SquareDirectoryLayout } from './SquareDirectoryLayout';
 import { CommunityPostCard } from './CommunityPostCard';
 import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
 import {
@@ -698,8 +698,7 @@ export function ProfileCommunitiesCloudBridge() {
     if (
       !selectedCommunityId &&
       !createOpen &&
-      !editOpen &&
-      !catalogOpen
+      !editOpen
     ) {
       return;
     }
@@ -708,7 +707,7 @@ export function ProfileCommunitiesCloudBridge() {
     return () => {
       document.body.style.overflow = previous;
     };
-  }, [createOpen, editOpen, selectedCommunityId, catalogOpen]);
+  }, [createOpen, editOpen, selectedCommunityId]);
 
   useEffect(
     () => () => {
@@ -1213,77 +1212,41 @@ export function ProfileCommunitiesCloudBridge() {
           host
         )}
 
-      {catalogOpen && createPortal(
-        <div className="fixed inset-0 z-[170] bg-slate-950/95 backdrop-blur-md" role="dialog"
-          aria-modal="true" aria-label="Catálogo de comunidades">
-          <section className="mx-auto flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
-            <header className="flex shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
-              <button type="button" onClick={() => setCatalogOpen(false)}
-                aria-label="Voltar à Praça"
-                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-200">
-                <ArrowLeft className="h-5 w-5" />
-              </button>
-              <div className="min-w-0 flex-1">
-                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">Catálogo</span>
-                <h2 className="text-lg font-black text-white">Todas as comunidades</h2>
-                <p className="text-xs text-slate-400">Descubra espaços para participar no Kairube.</p>
-              </div>
-            </header>
-
-            <div className="shrink-0 space-y-3 border-b border-slate-800 p-4">
-              <label className="block text-xs font-bold text-slate-300" htmlFor="community-catalog-search">
-                Buscar comunidades
-              </label>
-              <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3">
-                <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
-                <input id="community-catalog-search" type="search" value={catalogSearch}
-                  onChange={event => setCatalogSearch(event.target.value)}
-                  placeholder="Nome, categoria ou assunto..."
-                  className="min-h-11 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500" />
-              </div>
-              <div role="group" aria-label="Filtros do catálogo de comunidades" className="flex gap-2 overflow-x-auto">
-                {([
-                  ['participating', 'Participante'],
-                  ['favorites', 'Favoritos'],
-                  ['trending', 'Em alta'],
-                ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
-                  <button key={id} type="button" aria-pressed={catalogTab === id}
-                    onClick={() => setCatalogTab(id)}
-                    className={`min-h-10 shrink-0 rounded-xl px-4 text-xs font-bold ${catalogTab === id
-                      ? 'bg-sky-500/15 text-sky-200'
-                      : 'border border-slate-800 bg-slate-900 text-slate-400'}`}>
-                    {label}
-                  </button>
-                ))}
-              </div>
-              <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
-                Categoria
-                <select value={catalogCategory} onChange={event => setCatalogCategory(event.target.value)}
-                  aria-label="Filtrar comunidades por categoria"
-                  className="min-h-10 min-w-0 max-w-[70%] rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-white">
-                  <option value="all">Todas as categorias</option>
-                  {catalogCategories.map(category => <option key={category} value={category}>{category}</option>)}
-                </select>
-              </label>
-            </div>
-
-            <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-12">
-              {(error || favoriteError) && <p role="alert" className="mb-3 rounded-xl border border-amber-500/20 p-3 text-xs text-amber-200">{error || favoriteError}</p>}
-              <p className="mb-3 text-xs text-slate-400" aria-live="polite">
-                {loading ? 'Carregando comunidades…' :
-                  `${catalogCommunities.length} ${catalogCommunities.length === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
-              </p>
-              <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
-                {catalogCommunities.map(community => renderCard(community, 'catalog'))}
-              </div>
-              {!loading && catalogCommunities.length === 0 && (
-                <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
-                  Nenhuma comunidade encontrada. Experimente outra busca ou filtro.
-                </p>
-              )}
-            </main>
-          </section>
-        </div>, document.body
+      {catalogOpen && (
+        <SquareDirectoryLayout
+          ariaLabel="Catálogo de comunidades"
+          title="Todas as comunidades"
+          subtitle="Descubra espaços para participar no Kairube."
+          searchId="community-catalog-search"
+          searchLabel="Buscar comunidades"
+          searchPlaceholder="Nome, categoria ou assunto..."
+          searchValue={catalogSearch}
+          onSearchChange={setCatalogSearch}
+          selectedTab={catalogTab}
+          onTabChange={setCatalogTab}
+          categories={catalogCategories}
+          category={catalogCategory}
+          onCategoryChange={setCatalogCategory}
+          onClose={() => setCatalogOpen(false)}
+        >
+          {(error || favoriteError) && (
+            <p role="alert" className="mb-3 rounded-xl border border-amber-500/20 p-3 text-xs text-amber-200">
+              {error || favoriteError}
+            </p>
+          )}
+          <p className="mb-3 text-xs text-slate-400" aria-live="polite">
+            {loading ? 'Carregando comunidades…' :
+              `${catalogCommunities.length} ${catalogCommunities.length === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
+          </p>
+          <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
+            {catalogCommunities.map(community => renderCard(community, 'catalog'))}
+          </div>
+          {!loading && catalogCommunities.length === 0 && (
+            <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
+              Nenhuma comunidade encontrada. Experimente outra busca ou filtro.
+            </p>
+          )}
+        </SquareDirectoryLayout>
       )}
 
       {createOpen &&
