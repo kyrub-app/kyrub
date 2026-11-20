@@ -9,6 +9,7 @@ import {
 import { createPortal } from 'react-dom';
 import {
   ArrowLeft,
+  ArrowRight,
   Camera,
   ImagePlus,
   Video,
@@ -23,6 +24,7 @@ import {
   Plus,
   Pencil,
   Save,
+  Search,
   ShieldCheck,
   Trash2,
   UserCheck,
@@ -30,7 +32,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
+import { useCommunityDirectory, type CommunityDirectoryItem } from '../hooks/useCommunityDirectory';
 import { CommunityPostCard } from './CommunityPostCard';
 import {
   approveCommunityMember,
@@ -64,6 +66,28 @@ import {
 
 type CommunityListTab = 'mine' | 'discover' | 'trending';
 type CommunityPageTab = 'wall' | 'notices' | 'about';
+
+const selectCommunityDirectory = (
+  entries: CommunityDirectoryItem[],
+  tab: CommunityListTab,
+  searchValue: string,
+): CommunityDirectoryItem[] => {
+  const normalizedSearch = searchValue.trim().toLocaleLowerCase('pt-BR');
+  const filtered = entries.filter(community => {
+    const matches = !normalizedSearch ||
+      `${community.name} ${community.description} ${community.category} ${community.location}`
+        .toLocaleLowerCase('pt-BR').includes(normalizedSearch);
+    if (!matches) return false;
+    if (tab === 'mine') {
+      return community.isOwner || community.isActiveMember || community.isPendingMember;
+    }
+    // Private communities must never become publicly discoverable.
+    return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
+  });
+  return tab === 'trending'
+    ? [...filtered].sort((a, b) => b.memberCount - a.memberCount || a.name.localeCompare(b.name, 'pt-BR'))
+    : filtered;
+};
 
 type CreateDraft = {
   name: string;
@@ -206,6 +230,10 @@ export function ProfileCommunitiesCloudBridge() {
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [listTab, setListTab] = useState<CommunityListTab>('mine');
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogTab, setCatalogTab] = useState<CommunityListTab>('discover');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState('all');
   const [searchValue, setSearchValue] = useState('');
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
   const [pageTab, setPageTab] = useState<CommunityPageTab>('wall');
@@ -618,7 +646,8 @@ export function ProfileCommunitiesCloudBridge() {
     if (
       !selectedCommunityId &&
       !createOpen &&
-      !editOpen
+      !editOpen &&
+      !catalogOpen
     ) {
       return;
     }
@@ -627,7 +656,7 @@ export function ProfileCommunitiesCloudBridge() {
     return () => {
       document.body.style.overflow = previous;
     };
-  }, [createOpen, editOpen, selectedCommunityId]);
+  }, [createOpen, editOpen, selectedCommunityId, catalogOpen]);
 
   useEffect(
     () => () => {
@@ -636,24 +665,21 @@ export function ProfileCommunitiesCloudBridge() {
     [coverPreview]
   );
 
-  const normalizedSearch = searchValue.trim().toLocaleLowerCase('pt-BR');
-  const visibleCommunities = useMemo(() => {
-    const filtered = communities.filter(community => {
-      const matches =
-        !normalizedSearch ||
-        `${community.name} ${community.description} ${community.category} ${community.location}`
-          .toLocaleLowerCase('pt-BR')
-          .includes(normalizedSearch);
-      if (!matches) return false;
-      if (listTab === 'mine') {
-        return community.isOwner || community.isActiveMember || community.isPendingMember;
-      }
-      return community.visibility !== 'private' || community.isOwner || community.isActiveMember;
-    });
-    return listTab === 'trending'
-      ? [...filtered].sort((left, right) => right.memberCount - left.memberCount)
-      : filtered;
-  }, [communities, listTab, normalizedSearch]);
+  const visibleCommunities = useMemo(
+    () => selectCommunityDirectory(communities, listTab, searchValue),
+    [communities, listTab, searchValue],
+  );
+  const catalogCategories = useMemo(
+    () => [...new Set(selectCommunityDirectory(communities, 'discover', '')
+      .map(community => community.category.trim()).filter(Boolean))]
+      .sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [communities],
+  );
+  const catalogCommunities = useMemo(
+    () => selectCommunityDirectory(communities, catalogTab, catalogSearch)
+      .filter(community => catalogCategory === 'all' || community.category.trim() === catalogCategory),
+    [communities, catalogTab, catalogSearch, catalogCategory],
+  );
 
   const similarCommunities = useMemo(() => {
     const name = createDraft.name.trim().toLocaleLowerCase('pt-BR');
@@ -877,7 +903,7 @@ export function ProfileCommunitiesCloudBridge() {
     });
   };
 
-  const renderCard = (community: (typeof communities)[number]) => {
+  const renderCard = (community: (typeof communities)[number], layout: 'rail' | 'catalog' = 'rail') => {
     const actionLabel = community.isOwner || community.isActiveMember
       ? 'Abrir'
       : community.isPendingMember
@@ -890,7 +916,7 @@ export function ProfileCommunitiesCloudBridge() {
     return (
       <article
         key={community.id}
-        className="flex w-[172px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
+        className={`flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[172px] shrink-0'}`}
       >
         <button type="button" onClick={() => openCommunity(community)} className="text-left">
           <CommunityCover community={community} className="h-24" />
@@ -909,6 +935,11 @@ export function ProfileCommunitiesCloudBridge() {
             <span className="mt-1 block truncate text-[11px] text-sky-300/75">
               {community.category}
             </span>
+            {layout === 'catalog' && community.description && (
+              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-400">
+                {community.description}
+              </p>
+            )}
           </div>
         </button>
         <div className="mt-auto border-t border-slate-800 p-2">
@@ -1040,11 +1071,16 @@ export function ProfileCommunitiesCloudBridge() {
               </div>
               <button
                 type="button"
-                onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950"
+                onClick={() => {
+                  setCatalogTab('discover');
+                  setCatalogSearch('');
+                  setCatalogCategory('all');
+                  setCatalogOpen(true);
+                }}
+                aria-label="Ver todas as comunidades"
+                className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950"
               >
-                <Plus className="h-4 w-4" />
-                Criar
+                Ver todas <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
             </header>
 
@@ -1112,6 +1148,79 @@ export function ProfileCommunitiesCloudBridge() {
           </section>,
           host
         )}
+
+      {catalogOpen && createPortal(
+        <div className="fixed inset-0 z-[170] bg-slate-950/95 backdrop-blur-md" role="dialog"
+          aria-modal="true" aria-label="Catálogo de comunidades">
+          <section className="mx-auto flex h-[100dvh] w-full max-w-4xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
+            <header className="flex shrink-0 items-center gap-3 border-b border-slate-800 bg-slate-900 p-4">
+              <button type="button" onClick={() => setCatalogOpen(false)}
+                aria-label="Voltar à Praça"
+                className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-200">
+                <ArrowLeft className="h-5 w-5" />
+              </button>
+              <div className="min-w-0 flex-1">
+                <span className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">Catálogo</span>
+                <h2 className="text-lg font-black text-white">Todas as comunidades</h2>
+                <p className="text-xs text-slate-400">Descubra espaços para participar no Kairube.</p>
+              </div>
+            </header>
+
+            <div className="shrink-0 space-y-3 border-b border-slate-800 p-4">
+              <label className="block text-xs font-bold text-slate-300" htmlFor="community-catalog-search">
+                Buscar comunidades
+              </label>
+              <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3">
+                <Search className="h-4 w-4 shrink-0 text-slate-400" aria-hidden="true" />
+                <input id="community-catalog-search" type="search" value={catalogSearch}
+                  onChange={event => setCatalogSearch(event.target.value)}
+                  placeholder="Nome, categoria ou assunto..."
+                  className="min-h-11 min-w-0 flex-1 bg-transparent text-sm text-white outline-none placeholder:text-slate-500" />
+              </div>
+              <div role="group" aria-label="Filtros do catálogo de comunidades" className="flex gap-2 overflow-x-auto">
+                {([
+                  ['discover', 'Descobrir'],
+                  ['mine', 'Minhas'],
+                  ['trending', 'Em alta'],
+                ] as Array<[CommunityListTab, string]>).map(([id, label]) => (
+                  <button key={id} type="button" aria-pressed={catalogTab === id}
+                    onClick={() => setCatalogTab(id)}
+                    className={`min-h-10 shrink-0 rounded-xl px-4 text-xs font-bold ${catalogTab === id
+                      ? 'bg-sky-500/15 text-sky-200'
+                      : 'border border-slate-800 bg-slate-900 text-slate-400'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
+                Categoria
+                <select value={catalogCategory} onChange={event => setCatalogCategory(event.target.value)}
+                  aria-label="Filtrar comunidades por categoria"
+                  className="min-h-10 min-w-0 max-w-[70%] rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm text-white">
+                  <option value="all">Todas as categorias</option>
+                  {catalogCategories.map(category => <option key={category} value={category}>{category}</option>)}
+                </select>
+              </label>
+            </div>
+
+            <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-12">
+              {error && <p role="alert" className="mb-3 rounded-xl border border-amber-500/20 p-3 text-xs text-amber-200">{error}</p>}
+              <p className="mb-3 text-xs text-slate-400" aria-live="polite">
+                {loading ? 'Carregando comunidades…' :
+                  `${catalogCommunities.length} ${catalogCommunities.length === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
+              </p>
+              <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
+                {catalogCommunities.map(community => renderCard(community, 'catalog'))}
+              </div>
+              {!loading && catalogCommunities.length === 0 && (
+                <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
+                  Nenhuma comunidade encontrada. Experimente outra busca ou filtro.
+                </p>
+              )}
+            </main>
+          </section>
+        </div>, document.body
+      )}
 
       {createOpen &&
         createPortal(
@@ -1324,7 +1433,7 @@ export function ProfileCommunitiesCloudBridge() {
                                                 setSelectedCommunityId('');
                         }}
                         className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-white backdrop-blur"
-                        aria-label="Voltar para a Praça"
+                        aria-label={catalogOpen ? "Voltar para o catálogo de comunidades" : "Voltar para a Praça"}
                       >
                         <ArrowLeft className="h-4 w-4" />
                       </button>
