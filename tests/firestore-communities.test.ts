@@ -324,6 +324,51 @@ test('community wall likes, comments and immutable reports enforce membership an
   }));
 });
 
+test('threaded community replies preserve scope, author permissions and existing records', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'threaded_a';
+  const otherCommunityId = 'threaded_b';
+  await createCommunity(owner, communityId, 'public');
+  await createCommunity(owner, otherCommunityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+  await joinPublic(member, otherCommunityId, MEMBER);
+  const createPost = (id: string, group: string) => setDoc(doc(owner, 'community_posts', id), {
+    postId: id, communityId: group, authorId: OWNER, authorName: 'Criador Kyrub',
+    authorAvatar: '', content: 'Publicação para respostas.',
+    mediaUrls: [], createdAtIso: '2026-11-20T12:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-20T12:00:00.000Z', updatedAt: serverTimestamp(),
+  });
+  await assertSucceeds(createPost('thread_post_a', communityId));
+  await assertSucceeds(createPost('thread_post_b', communityId));
+  await assertSucceeds(createPost('thread_post_other', otherCommunityId));
+  const comment = (id: string, postId: string, group: string, parentCommentId?: string) => ({
+    commentId: id, communityId: group, postId,
+    authorId: MEMBER, authorName: 'Membro', authorAvatar: '', text: 'Participação.',
+    createdAtIso: '2026-11-20T12:01:00.000Z', createdAt: serverTimestamp(),
+    ...(parentCommentId ? { parentCommentId } : {}),
+  });
+  await assertSucceeds(setDoc(doc(member, 'community_post_comments', 'thread_root'),
+    comment('thread_root', 'thread_post_a', communityId)));
+  await assertSucceeds(setDoc(doc(member, 'community_post_comments', 'thread_reply'),
+    comment('thread_reply', 'thread_post_a', communityId, 'thread_root')));
+  await assertSucceeds(setDoc(doc(member, 'community_post_comments', 'thread_nested'),
+    comment('thread_nested', 'thread_post_a', communityId, 'thread_reply')));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'thread_missing'),
+    comment('thread_missing', 'thread_post_a', communityId, 'not_found')));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'thread_self'),
+    comment('thread_self', 'thread_post_a', communityId, 'thread_self')));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'thread_cross_post'),
+    comment('thread_cross_post', 'thread_post_b', communityId, 'thread_root')));
+  await assertFails(setDoc(doc(member, 'community_post_comments', 'thread_cross_group'),
+    comment('thread_cross_group', 'thread_post_other', otherCommunityId, 'thread_root')));
+  await assertFails(setDoc(doc(outsider, 'community_post_comments', 'thread_unauthorized'),
+    { ...comment('thread_unauthorized', 'thread_post_a', communityId, 'thread_root'), authorId: OUTSIDER }));
+  await assertSucceeds(deleteDoc(doc(member, 'community_post_comments', 'thread_root')));
+  const surviving = await assertSucceeds(getDoc(doc(member, 'community_post_comments', 'thread_reply')));
+  if (!surviving.exists()) throw new Error('Uma resposta foi apagada junto com o comentário original.');
+});
 test('pending members cannot comment or like in a moderated community', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const member = environment.authenticatedContext(MEMBER).firestore();
