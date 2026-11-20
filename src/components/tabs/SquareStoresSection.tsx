@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Heart, ShoppingBag, Store as StoreIcon } from 'lucide-react';
+import { SquareDirectoryLayout, type SquareDirectoryTab } from '../SquareDirectoryLayout';
 import type { Store } from '../../types';
 
-type StoreListTab = 'participating' | 'favorites' | 'trending';
+type StoreListTab = SquareDirectoryTab;
 type PublicStoreCard = {
   id: string;
   name: string;
@@ -21,6 +22,8 @@ type SquareStoresSectionProps = {
   offerStoreIds: string[];
   onViewAll: () => void;
   onOpenStore: (store: Store) => void;
+  catalogOpen?: boolean;
+  onCloseCatalog?: () => void;
 };
 
 const OFFICIAL_STORE_SLUG = 'kyrub-oficial';
@@ -28,9 +31,12 @@ const OFFICIAL_STORE_PATH = '/@kyrub-oficial';
 
 export function SquareStoresSection({
   stores, favoriteStoreIds, participatingStoreIds, offerStoreIds,
-  onToggleFavoriteStore, onViewAll, onOpenStore,
+  onToggleFavoriteStore, onViewAll, onOpenStore, catalogOpen = false, onCloseCatalog,
 }: SquareStoresSectionProps) {
   const [listTab, setListTab] = useState<StoreListTab>('trending');
+  const [catalogTab, setCatalogTab] = useState<StoreListTab>('trending');
+  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogCategory, setCatalogCategory] = useState('all');
   const [officialStore, setOfficialStore] = useState<PublicStoreCard | null>(null);
   const [loadingOfficial, setLoadingOfficial] = useState(true);
   const [officialError, setOfficialError] = useState(false);
@@ -119,6 +125,128 @@ export function SquareStoresSection({
     }
     return cards;
   }, [cards, favoriteStoreIds, participatingStoreIds, offerStoreIds, listTab]);
+
+  // The catalog must show every discoverable store in "Em alta", with
+  // highlighted stores first; the rail retains its narrower preview policy.
+  const catalogCategories = useMemo(
+    () => [...new Set(cards.flatMap(store => store.source?.keywords ?? [])
+      .map(keyword => keyword.trim()).filter(Boolean))]
+      .sort((left, right) => left.localeCompare(right, 'pt-BR')),
+    [cards],
+  );
+  const catalogStores = useMemo(() => {
+    const query = catalogSearch.trim().toLocaleLowerCase('pt-BR');
+    const favoriteIds = new Set(favoriteStoreIds);
+    const participatingIds = new Set(participatingStoreIds);
+    const offerIds = new Set(offerStoreIds);
+    return cards.filter(store => {
+      if (catalogTab === 'participating' && !participatingIds.has(store.id)) return false;
+      if (catalogTab === 'favorites' && !favoriteIds.has(store.id)) return false;
+      if (catalogCategory !== 'all' && !store.source?.keywords?.includes(catalogCategory)) return false;
+      return !query || [
+        store.name, store.description, store.slug, store.source?.address ?? '',
+        ...(store.source?.keywords ?? []),
+      ].join(' ').toLocaleLowerCase('pt-BR').includes(query);
+    }).sort((left, right) => {
+      if (catalogTab !== 'trending') return left.name.localeCompare(right.name, 'pt-BR');
+      const score = (store: PublicStoreCard) =>
+        (store.official ? 2 : 0) + (offerIds.has(store.id) ? 1 : 0);
+      return score(right) - score(left) || left.name.localeCompare(right.name, 'pt-BR');
+    });
+  }, [cards, catalogSearch, catalogCategory, catalogTab,
+    favoriteStoreIds, participatingStoreIds, offerStoreIds]);
+
+  if (catalogOpen) {
+    return (
+      <SquareDirectoryLayout
+        ariaLabel="Catálogo de lojas"
+        title="Todas as lojas"
+        subtitle="Descubra lojas, produtos e ofertas no Kyrub."
+        searchId="store-catalog-search"
+        searchLabel="Buscar lojas"
+        searchPlaceholder="Nome, categoria, produto ou assunto..."
+        searchValue={catalogSearch}
+        onSearchChange={setCatalogSearch}
+        selectedTab={catalogTab}
+        onTabChange={setCatalogTab}
+        categories={catalogCategories}
+        category={catalogCategory}
+        onCategoryChange={setCatalogCategory}
+        onClose={() => onCloseCatalog?.()}
+      >
+        <p className="mb-3 text-xs text-slate-400" aria-live="polite">
+          {loadingOfficial && catalogStores.length === 0
+            ? 'Carregando lojas publicadas…'
+            : `${catalogStores.length} ${catalogStores.length === 1 ? 'loja encontrada' : 'lojas encontradas'}`}
+        </p>
+        <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
+          {catalogStores.map(store => {
+            const favorite = favoriteStoreIds.includes(store.id);
+            const participating = participatingStoreIds.includes(store.id);
+            return (
+              <article key={store.slug || store.id}
+                className="relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+                <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
+                  {store.source?.banner && (
+                    <img src={store.source.banner} alt="" aria-hidden="true"
+                      className="absolute inset-0 h-full w-full object-cover opacity-65" referrerPolicy="no-referrer" />
+                  )}
+                  {store.logo
+                    ? <img src={store.logo} alt={store.name}
+                        className="relative h-14 w-14 rounded-xl object-cover" referrerPolicy="no-referrer" />
+                    : <StoreIcon className="relative h-10 w-10 text-orange-400" aria-hidden="true" />}
+                </div>
+                <button type="button"
+                  aria-label={favorite ? `Remover ${store.name} dos favoritos` : `Favoritar loja ${store.name}`}
+                  aria-pressed={favorite}
+                  onClick={() => onToggleFavoriteStore(store.id)}
+                  className={`absolute right-2 top-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-slate-950/85 ${favorite
+                    ? 'border-rose-500/60 text-rose-300'
+                    : 'border-slate-600 text-slate-200'}`}>
+                  <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} aria-hidden="true" />
+                </button>
+                <div className="flex-1 p-3">
+                  <strong className="block line-clamp-2 text-[11px] font-black text-white">{store.name}</strong>
+                  {store.official && <span className="mt-1 block text-[9px] font-bold text-teal-300">Loja Oficial</span>}
+                  {participating && <span className="mt-1 block text-[9px] font-bold text-emerald-300">Você participa</span>}
+                  {store.source?.keywords?.length ? (
+                    <span className="mt-1 block truncate text-[11px] text-sky-300/75">
+                      {store.source.keywords.slice(0, 2).join(', ')}
+                    </span>
+                  ) : null}
+                  {store.description && (
+                    <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-400">
+                      {store.description}
+                    </p>
+                  )}
+                </div>
+                <div className="border-t border-slate-800 p-2">
+                  {store.official ? (
+                    <a href={OFFICIAL_STORE_PATH}
+                      className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-slate-800 px-2 text-xs font-bold text-slate-200">
+                      <ShoppingBag className="h-4 w-4" aria-hidden="true" /> Abrir
+                    </a>
+                  ) : (
+                    <button type="button" onClick={() => store.source && onOpenStore(store.source)}
+                      className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-xs font-bold text-slate-200">
+                      Abrir
+                    </button>
+                  )}
+                </div>
+              </article>
+            );
+          })}
+        </div>
+        {!loadingOfficial && catalogStores.length === 0 && (
+          <p className="mt-3 rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
+            {officialError && cards.length === 0
+              ? 'Não foi possível consultar as vitrines agora.'
+              : 'Nenhuma loja encontrada. Experimente outra busca ou filtro.'}
+          </p>
+        )}
+      </SquareDirectoryLayout>
+    );
+  }
 
   return (
     <section id="square-stores" aria-label="Lojas na Praça"
