@@ -1307,7 +1307,6 @@ export function ProfileCommunitiesCloudBridge() {
             <section className="relative mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
               <>
                   <div
-                    id="community-page-scroll"                  <div
                     id="community-page-scroll"
                     ref={communityScrollRef}
                     onScroll={event => setShowBackToTop(event.currentTarget.scrollTop > 240)}
