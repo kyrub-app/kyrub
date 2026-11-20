@@ -101,6 +101,14 @@ export const toggleCommunityPostSaveWithMetrics = async (
   });
 };
 
+/** An internal forward contributes to the same organic share total only
+ * after Firestore has acknowledged the destination action. */
+export const recordCommunityPostForwardMetric = async (post: CloudCommunityPost): Promise<void> => {
+  const actorId = currentUserId();
+  const reference = doc(collection(db, 'community_post_engagements'));
+  await setDoc(reference, newEngagement(post, actorId, 'share', reference.id));
+};
+
 /** Only completed native-share or clipboard actions count, like Praça.
  * A share is not a guaranteed view and never generates rewards or revenue. */
 export const shareCommunityPostWithMetrics = async (post: CloudCommunityPost): Promise<'shared' | 'copied'> => {
