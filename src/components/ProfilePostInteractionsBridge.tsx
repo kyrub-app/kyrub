@@ -36,6 +36,7 @@ import {
   type SocialPostComment,
 } from '../hooks/usePublicSocialFeed';
 import { auth, db } from '../utils/firebase';
+import { orderCommentThreads } from '../utils/commentThreads';
 
 type PostTarget = {
   key: string;
@@ -153,6 +154,8 @@ export function ProfilePostInteractionsBridge() {
   const [commentsPost, setCommentsPost] = useState<SocialPost | null>(null);
   const [metricsPost, setMetricsPost] = useState<SocialPost | null>(null);
   const [commentDraft, setCommentDraft] = useState('');
+  const [replyTarget, setReplyTarget] = useState<SocialPostComment | null>(null);
+  const [collapsedThreads, setCollapsedThreads] = useState<Set<string>>(new Set());
   const [commentBusy, setCommentBusy] = useState(false);
   const [deleteCandidate, setDeleteCandidate] = useState<SocialPost | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -448,6 +451,12 @@ export function ProfilePostInteractionsBridge() {
     ? socialFeed.commentsByPost.get(commentsPost.id) ?? []
     : [];
 
+  const threadedComments = orderCommentThreads(commentsForSelectedPost);
+  const replyCounts = new Map<string, number>();
+  for (const item of threadedComments) {
+    if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
+  }
+
   const selectedMetrics = useMemo(() => {
     if (!metricsPost) {
       return {
@@ -473,6 +482,8 @@ export function ProfilePostInteractionsBridge() {
   const openComments = (post: SocialPost) => {
     setCommentsPost(post);
     setCommentDraft('');
+    setReplyTarget(null);
+    setCollapsedThreads(new Set());
   };
 
   const submitComment = async (event: FormEvent) => {
@@ -480,8 +491,9 @@ export function ProfilePostInteractionsBridge() {
     if (!commentsPost || !commentDraft.trim()) return;
     setCommentBusy(true);
     try {
-      await socialFeed.addComment(commentsPost.id, commentDraft);
+      await socialFeed.addComment(commentsPost.id, commentDraft, replyTarget?.id);
       setCommentDraft('');
+      setReplyTarget(null);
     } catch {
       showNotice('Não foi possível enviar o comentário.');
     } finally {
@@ -696,7 +708,7 @@ export function ProfilePostInteractionsBridge() {
               </div>
               <button
                 type="button"
-                onClick={() => setCommentsPost(null)}
+                onClick={() => { setCommentsPost(null); setReplyTarget(null); }}
                 className="flex h-9 w-9 items-center justify-center rounded-full bg-slate-900 text-slate-500"
                 aria-label="Fechar comentários"
               >
@@ -705,37 +717,44 @@ export function ProfilePostInteractionsBridge() {
             </header>
 
             <div className="flex-1 space-y-3 overflow-y-auto p-4">
-              {commentsForSelectedPost.map(comment => (
+              {threadedComments.filter(item => item.depth === 0 || !collapsedThreads.has(item.rootId))
+                .map(({ comment, parent, depth }) => (
                 <article
                   key={comment.id}
-                  className="min-h-[104px] rounded-2xl border border-slate-800 bg-slate-900 p-3"
+                  className={depth > 0
+                    ? 'ml-4 rounded-2xl border border-slate-800 border-l-2 border-l-orange-500/40 bg-slate-900 p-3'
+                    : 'rounded-2xl border border-slate-800 bg-slate-900 p-3'}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div>
-                      <h4 className="text-[10px] font-black text-white">
-                        {comment.authorName}
-                      </h4>
-                      <span className="text-[8px] text-slate-600">
-                        {new Date(comment.createdAt).toLocaleString('pt-BR')}
-                      </span>
+                      <h4 className="text-xs font-black text-white">{comment.authorName}</h4>
+                      <span className="text-xs text-slate-500">{new Date(comment.createdAt).toLocaleString('pt-BR')}</span>
                     </div>
                     {comment.authorId === user?.uid && (
-                      <button
-                        type="button"
-                        onClick={() => void deleteComment(comment.id)}
+                      <button type="button" onClick={() => void deleteComment(comment.id)}
                         className="flex h-8 w-8 items-center justify-center rounded-lg text-red-300 hover:bg-red-500/10"
-                        aria-label="Excluir comentário"
-                      >
-                        <Trash2 className="h-4 w-4" />
+                        aria-label="Excluir comentário"><Trash2 className="h-4 w-4" /></button>
+                    )}
+                  </div>
+                  {depth > 0 && parent && <span className="mt-1 block text-xs text-orange-300">Em resposta a {parent.authorName}</span>}
+                  <p className="mt-2 whitespace-pre-line break-words text-xs leading-relaxed text-slate-300">{comment.text}</p>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    {user?.uid && <button type="button" onClick={() => setReplyTarget(comment)}
+                      className="text-xs font-semibold text-orange-300">Responder</button>}
+                    {depth === 0 && (replyCounts.get(comment.id) ?? 0) > 0 && (
+                      <button type="button" aria-expanded={!collapsedThreads.has(comment.id)}
+                        onClick={() => setCollapsedThreads(current => {
+                          const next = new Set(current);
+                          if (next.has(comment.id)) next.delete(comment.id); else next.add(comment.id);
+                          return next;
+                        })}
+                        className="text-xs text-slate-400">
+                        {collapsedThreads.has(comment.id) ? 'Ver' : 'Ocultar'} {replyCounts.get(comment.id)} respostas
                       </button>
                     )}
                   </div>
-                  <p className="mt-2 whitespace-pre-line text-[10px] leading-relaxed text-slate-300">
-                    {comment.text}
-                  </p>
                 </article>
               ))}
-
               {commentsForSelectedPost.length === 0 && (
                 <p className="rounded-2xl border border-dashed border-slate-800 px-4 py-10 text-center text-[10px] text-slate-500">
                   Seja a primeira pessoa a comentar.
@@ -743,6 +762,10 @@ export function ProfilePostInteractionsBridge() {
               )}
             </div>
 
+            {replyTarget && <div className="flex items-center justify-between gap-2 border-t border-slate-900 px-3 pt-3 text-xs text-orange-300">
+              <span>Respondendo a {replyTarget.authorName}</span>
+              <button type="button" onClick={() => setReplyTarget(null)}>Cancelar resposta</button>
+            </div>}
             <form
               onSubmit={submitComment}
               className="flex gap-2 border-t border-slate-900 p-3"
@@ -752,7 +775,7 @@ export function ProfilePostInteractionsBridge() {
                 onChange={event =>
                   setCommentDraft(event.target.value.slice(0, 1000))
                 }
-                placeholder="Escreva um comentário..."
+                placeholder={replyTarget ? 'Escreva sua resposta...' : 'Escreva um comentário...'}
                 className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-900 px-3 text-xs text-white outline-none focus:border-orange-500/60"
               />
               <button
