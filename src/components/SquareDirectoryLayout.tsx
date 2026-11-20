@@ -40,9 +40,8 @@ export function SquareDirectoryLayout({
   const [headerBottom, setHeaderBottom] = useState(0);
 
   useLayoutEffect(() => {
-    // A catalog is a new view. Bring the existing brand/header into view
-    // before measuring, including when opened after scrolling the Praça.
-    window.scrollTo(0, 0);
+    // The workspace brand is sticky beneath the existing toolbar; measuring
+    // it leaves the scroll position intact when returning to the Praça.
     const toolbar = document.getElementById('app-header');
     const brand = document.getElementById('kyrub-workspace-brand');
     const updatePosition = () => {
@@ -72,7 +71,7 @@ export function SquareDirectoryLayout({
       className="fixed inset-x-0 bottom-0 z-[170] bg-slate-950/95 backdrop-blur-md"
       style={{ top: headerBottom }}
       role="dialog"
-      aria-modal="true"
+      aria-modal="false"
       aria-label={ariaLabel}
     >
       <section className="mx-auto flex h-full w-full max-w-4xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
