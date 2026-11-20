@@ -2,22 +2,23 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Firestore } from 'firebase-admin/firestore';
-import { seedVerifiedPost } from '../server/gamification/semeaduraService';
+import { readCommunitySemeaduraJourney, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from '../server/gamification/semeaduraService';
 import { handleSemeadura } from '../server/gamification/semeaduraHandler';
 
 type RecordValue = Record<string, unknown>;
 class FakeDoc {
-  constructor(readonly path: string) {}
-  collection(name: string) { return new FakeCollection(this.path + '/' + name); }
+  constructor(readonly path: string, private readonly records: Map<string, RecordValue>) {}
+  collection(name: string) { return new FakeCollection(this.path + '/' + name, this.records); }
+  async get() { return { exists: this.records.has(this.path), data: () => this.records.get(this.path) }; }
 }
 class FakeCollection {
-  constructor(readonly path: string) {}
-  doc(id: string) { return new FakeDoc(this.path + '/' + id); }
+  constructor(readonly path: string, private readonly records: Map<string, RecordValue>) {}
+  doc(id: string) { return new FakeDoc(this.path + '/' + id, this.records); }
 }
 class FakeDb {
   readonly records = new Map<string, RecordValue>();
-  doc(path: string) { return new FakeDoc(path); }
-  collection(path: string) { return new FakeCollection(path); }
+  doc(path: string) { return new FakeDoc(path, this.records); }
+  collection(path: string) { return new FakeCollection(path, this.records); }
   async runTransaction<T>(run: (tx: {
     get: (ref: FakeDoc) => Promise<{ exists: boolean; data: () => RecordValue | undefined }>;
     create: (ref: FakeDoc, data: RecordValue) => void;
@@ -71,6 +72,51 @@ test('Semear writes one immutable receipt per user/post, and awards nothing dire
   assert.equal(db.records.get(statsPath(db))?.acceptedSeeds, 2);
   assert.equal([...db.records.keys()].filter(key => key.includes('/receipts/')).length, 2);
   assert.equal([...db.records.keys()].filter(key => /rewardLedger|xpLedger|pitangaBalance/.test(key)).length, 0);
+});
+
+test('authenticated status reads canonical receipts and increments the personal display journey', async () => {
+  const db = new FakeDb(); personal(db, 'post-read');
+  const target = { kind: 'personal' as const, postId: 'post-read', authenticatedUserId: 'actor-1' };
+  const initial = await readVerifiedPostSemeadura(db.asFirestore(), target);
+  assert.equal(initial.count, 0);
+  assert.equal(initial.canSemear, true);
+  assert.equal(initial.seeded, false);
+  await seedVerifiedPost(db.asFirestore(), target);
+  const result = await readVerifiedPostSemeadura(db.asFirestore(), target);
+  assert.equal(result.count, 1);
+  assert.equal(result.seeded, true);
+  assert.equal(result.canSemear, false);
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'author-a')).totalSeeds, 1);
+  assert.deepEqual((await readPersonalSemeaduraJourney(db.asFirestore(), 'actor-1')).totalSeeds, 0);
+  assert.equal(db.records.get('users/author-a/semeaduraProgress/summary')?.acceptedSeeds, 1);
+  assert.equal([...db.records.keys()].filter(k => /rewardLedger|xpLedger|pitangaBalance/.test(k)).length, 0);
+});
+
+test('community projections accrue only visually and do not credit community owner', async () => {
+  const db = new FakeDb(); community(db, 'post-collective');
+  join(db, 'active-voter');
+  await seedVerifiedPost(db.asFirestore(), {
+    kind: 'community', postId: 'post-collective', authenticatedUserId: 'active-voter',
+  });
+  const journey = await readCommunitySemeaduraJourney(db.asFirestore(), 'owner-a', 'community-a');
+  assert.equal(journey.totalSeeds, 1);
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'author-a')).totalSeeds, 1);
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'owner-a')).totalSeeds, 0);
+  assert.equal(db.records.get('communities/community-a/semeaduraProgress/summary')?.acceptedSeeds, 1);
+  db.records.set('communities/community-a', { ownerId: 'owner-a', visibility: 'private' });
+  await assert.rejects(readCommunitySemeaduraJourney(db.asFirestore(), 'outsider', 'community-a'),
+    /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
+});
+
+test('server rejects edited personal/collective progress instead of minting another tree', async () => {
+  const db = new FakeDb(); community(db, 'post-corrupt'); join(db, 'member');
+  await seedVerifiedPost(db.asFirestore(), { kind: 'community', postId: 'post-corrupt', authenticatedUserId: 'member' });
+  db.records.set('users/author-a/semeaduraProgress/summary', {
+    authorId: 'author-a', acceptedSeeds: 1001, pitangueiras: 0,
+  });
+  await assert.rejects(seedVerifiedPost(db.asFirestore(),
+    { kind: 'community', postId: 'post-corrupt', authenticatedUserId: 'new-member' }),
+  /SEMEADURA_PROJECTION_INVALID/);
 });
 
 test('one bosque closes each canonical post forever, even with new users', async () => {
