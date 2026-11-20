@@ -24,6 +24,7 @@ import { submitSocialPostReport, type SocialReportReason } from '../utils/social
 import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
+import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import {
   subscribeCommunitySquareFeed, withinCommunitySquareWindow, type CommunitySquareEntry,
 } from '../utils/communitySquareFeed';
@@ -328,7 +329,10 @@ export function PublicSocialFeedPanel({
         const isLiked = likedPostIds.has(post.id);
         const commentsOpen = expandedComments.has(post.id);
         const isStatus = post.publicationType === 'status';
-        const connectedAuthor = friends.find(friend => friend.id === post.authorId && friend.added);
+        const authorConnection = resolvePostAuthorConnection(
+          currentUserId, post, friends, communityConnections,
+        );
+        const connectedAuthor = authorConnection.friend;
         const suggestedAuthor = suggestedUsers.find(friend => friend.id === post.authorId);
         const canReport = Boolean(post.authorId && post.authorId !== currentUserId);
 
@@ -379,7 +383,7 @@ export function PublicSocialFeedPanel({
                   </button>
                   {openPostMenuId === post.id && (
                     <div className="absolute right-0 top-10 z-30 min-w-44 space-y-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-xl" role="menu">
-                      {suggestedAuthor?.connectionStatus === 'none' && suggestedAuthor.isProfileVisible !== false && (
+                      {authorConnection.status === 'none' && suggestedAuthor?.connectionStatus === 'none' && suggestedAuthor.isProfileVisible !== false && (
                         <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-slate-200 hover:bg-slate-800"
                           onClick={() => {
                             setOpenPostMenuId(null);
@@ -389,8 +393,12 @@ export function PublicSocialFeedPanel({
                           <UserRoundPlus className="h-4 w-4" /> Conectar
                         </button>
                       )}
-                      {suggestedAuthor?.connectionStatus === 'pending_sent' && (
+                      {(authorConnection.status === 'pending_sent' || 
+                        (authorConnection.status === 'none' && suggestedAuthor?.connectionStatus === 'pending_sent')) && (
                         <p className="px-2 py-1 text-xs text-slate-400">Solicitação de conexão pendente</p>
+                      )}
+                      {authorConnection.status === 'pending_received' && (
+                        <p className="px-2 py-1 text-xs text-slate-400">Solicitação de conexão recebida</p>
                       )}
                       {connectedAuthor && (
                         <button type="button" role="menuitem" className="flex w-full items-center gap-2 rounded-lg p-2 text-left text-xs text-slate-200 hover:bg-slate-800"
