@@ -491,15 +491,15 @@ export function WorkspacePrimaryNavigationBridge() {
 
         nav[${PRIMARY_NAV_ATTRIBUTE}="true"][${DISCOVERY_ACTIVE_ATTRIBUTE}]
           button[${KYRUB_ENTRY_ATTRIBUTE}="true"] {
-          color: rgb(100 116 139) !important;
+          color: #8FA893 !important;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] {
-          color: rgb(100 116 139) !important;
+          color: #8FA893 !important;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"][data-kyrub-social-active="true"] {
-          color: rgb(249 115 22) !important;
+          color: #F27429 !important;
         }
 
         button[${SOCIAL_ENTRY_ATTRIBUTE}="true"] > svg {
@@ -531,7 +531,7 @@ export function WorkspacePrimaryNavigationBridge() {
           padding: 0 !important;
           align-items: stretch !important;
           justify-content: center !important;
-          background: rgb(2 6 23) !important;
+          background: #121A17 !important;
           backdrop-filter: none !important;
           z-index: 120 !important;
         }
