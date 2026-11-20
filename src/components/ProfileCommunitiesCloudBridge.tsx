@@ -1512,7 +1512,7 @@ export function ProfileCommunitiesCloudBridge() {
                             connection={postConnections.find(item => item.senderId === post.authorId || item.receiverId === post.authorId)}
                             onToggleSave={() => toggleCommunityPostSaveWithMetrics(post, savedPostIds.has(post.id))}
                             onToggleLike={liked => toggleCommunityPostLike(post, liked)}
-                            onComment={value => addCommunityPostComment(post, value)}
+                            onComment={(value, parentCommentId) => addCommunityPostComment(post, value, parentCommentId)}
                             onDeleteComment={deleteCommunityPostComment}
                             onReport={reason => submitCommunityPostReport(post, reason)}
                             onRemove={() => removeOwnCommunityPost(post)}
