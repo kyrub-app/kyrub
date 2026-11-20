@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../utils/firebase';
 import { calculatePitangueiraJourney, SEEDS_PER_BOSQUE, type SemeaduraPostKind } from '../../shared/pitangueiraJourney';
 
-export const SEMEADURA_UI_ENABLED = import.meta.env.VITE_SEMEADURA_UI_ENABLED === 'true';
+export const SEMEADURA_UI_ENABLED = import.meta.env?.VITE_SEMEADURA_UI_ENABLED === 'true';
 
 type SemeaduraStatus = {
   count: number;
