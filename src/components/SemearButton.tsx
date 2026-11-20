@@ -69,7 +69,26 @@ export function SemearButton({
   const [state, setState] = useState<SemeaduraStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [visible, setVisible] = useState(false);
+  const holderRef = useRef<HTMLDivElement | null>(null);
   const inFlight = useRef(false);
+
+  useEffect(() => {
+    const target = holderRef.current;
+    if (!target) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(entries => {
+      if (entries.some(entry => entry.isIntersecting)) {
+        setVisible(true);
+        observer.disconnect();
+      }
+    }, { rootMargin: '160px' });
+    observer.observe(target);
+    return () => observer.disconnect();
+  }, [kind, postId]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     const next = normalizeSemeadura(await requestSemeadura('status', { kind, postId }, signal));
@@ -83,14 +102,14 @@ export function SemearButton({
     const controller = new AbortController();
     setState(null);
     setError('');
-    if (viewerId) {
+    if (viewerId && visible) {
       void refresh(controller.signal).catch(() => {
         if (!controller.signal.aborted) setError('Não foi possível carregar as sementes.');
       });
     }
     const sync = (event: Event) => {
       const detail = (event as CustomEvent<{ kind?: string; postId?: string }>).detail;
-      if (detail?.kind === kind && detail.postId === postId && viewerId) {
+      if (detail?.kind === kind && detail.postId === postId && viewerId && visible) {
         void refresh(controller.signal).catch(() => undefined);
       }
     };
@@ -99,7 +118,7 @@ export function SemearButton({
       controller.abort();
       window.removeEventListener('kyrub-semeadura-updated', sync);
     };
-  }, [kind, postId, viewerId, refresh]);
+  }, [kind, postId, viewerId, visible, refresh]);
 
   const semear = async () => {
     if (!state?.canSemear || inFlight.current || !viewerId) return;
@@ -132,7 +151,7 @@ export function SemearButton({
     ? 'Bosque concluído'
     : state?.seeded ? 'Semeado' : 'Semear';
   return (
-    <div className="min-w-0">
+    <div ref={holderRef} className="min-w-0">
       <button type="button"
         aria-label={`${label} · ${state?.count ?? 0} sementes recebidas`}
         aria-pressed={Boolean(state?.seeded)}
@@ -141,7 +160,7 @@ export function SemearButton({
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
         <span aria-hidden="true">{state?.closed ? '🌲' : '🌱'}</span>
-        <span className="truncate">{label} · {(state?.count ?? 0).toLocaleString('pt-BR')}</span>
+        <span className="truncate">{!visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
       </button>
       {error && <p role="status" className="mt-1 text-[10px] text-amber-300">{error}</p>}
     </div>
