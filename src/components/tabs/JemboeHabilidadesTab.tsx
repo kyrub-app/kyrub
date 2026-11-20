@@ -18,7 +18,7 @@ export function JemboeHabilidadesTab() {
           A disponibilidade dos cursos deve ser conferida na sala de aula.
         </p>
         <a id="jemboe-kyrub-cursos-link" href={KYRUB_CURSOS_URL} target="_blank" rel="noopener noreferrer"
-          className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-black uppercase text-[#121A17] transition hover:bg-teal-400">
+          className="mt-4 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-xs font-black uppercase text-[#121A17] transition hover:bg-orange-400">
           Acessar Kyrub Cursos <ExternalLink className="h-4 w-4" aria-hidden="true" />
         </a>
       </section>
