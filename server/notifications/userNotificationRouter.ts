@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
+import { issueCommunityPostForwardNotification } from './communityPostForwardNotificationService.js';
 import { respondToCommunityGroupInvitation } from './communityGroupInvitationResponseService.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import {
@@ -84,6 +85,29 @@ export const createUserNotificationRouter = (): Router => {
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message });
+    }
+  });
+
+  router.post('/community-post-forward/received', async (request, response) => {
+    try {
+      const identity = await requireIdentity(request.get('authorization') ?? '');
+      const result = await issueCommunityPostForwardNotification({
+        actorId: identity.uid,
+        connectionId: clean(request.body?.connectionId),
+        messageId: clean(request.body?.messageId),
+        postId: clean(request.body?.postId),
+      });
+      response.status(200).json(result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : '';
+      if (message === 'COMMUNITY_FORWARD_NOTIFICATION_INVALID') {
+        response.status(400).json({ error: 'Encaminhamento inválido.' });
+      } else if (message.startsWith('COMMUNITY_FORWARD_')) {
+        response.status(403).json({ error: 'Este encaminhamento não está disponível.' });
+      } else {
+        const mapped = mapError(error);
+        response.status(mapped.status).json({ error: mapped.message });
+      }
     }
   });
 
