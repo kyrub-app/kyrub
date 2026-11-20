@@ -39,7 +39,7 @@ describe('Praça catalog parity', () => {
     assert.match(layout, /document\.getElementById\('kyrub-workspace-brand'\)/);
     assert.match(layout, /getBoundingClientRect\(\)\.bottom/);
     assert.match(layout, /style=\{\{ top: headerBottom \}\}/);
-    assert.match(layout, /window\.scrollTo\(0, 0\)/);
+    assert.doesNotMatch(layout, /window\.scrollTo\(0, 0\)/);
     assert.match(app, /id="app-header"/);
     assert.match(app, /sticky top-0/);
     assert.match(app, /id="kyrub-workspace-brand" className="sticky top-16/);
