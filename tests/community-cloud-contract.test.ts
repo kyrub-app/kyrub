@@ -93,7 +93,7 @@ test('Taba shows Lojas before a single Comunidades panel without device-test imp
   assert.match(communities, /Criar comunidade/);
   assert.match(stores, /id="square-stores"/);
   assert.match(stores, /Ver todas/);
-  for (const name of ["'Minhas'", "'Descobrir'", "'Em alta'"]) {
+  for (const name of ["'Participante'", "'Favoritos'", "'Em alta'"]) {
     assert.ok(stores.includes(name));
   }
   assert.ok(stores.includes("fetch('/api/marketplace-discovery/public/kyrub-oficial'"));
@@ -116,11 +116,47 @@ test('Community header opens a searchable full directory instead of duplicating 
   assert.match(ui, /catalogCommunities\.map\(community => renderCard\(community, 'catalog'\)\)/);
   assert.match(ui, /const selectCommunityDirectory = \(/);
   assert.match(ui, /community\.visibility !== 'private' \|\| community\.isOwner \|\| community\.isActiveMember/);
-  assert.match(ui, /const visibleCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, listTab, searchValue\)/);
-  assert.match(ui, /const catalogCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, catalogTab, catalogSearch\)/);
+  assert.match(ui, /const visibleCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, listTab, searchValue, favoriteCommunityIds\)/);
+  assert.match(ui, /const catalogCommunities = useMemo\([\s\S]*?selectCommunityDirectory\(communities, catalogTab, catalogSearch, favoriteCommunityIds\)/);
   assert.match(ui, /aria-label=\{catalogOpen \? "Voltar para o catálogo de comunidades" : "Voltar para a Praça"\}/);
   assert.equal((ui.match(/id="square-communities"/g) || []).length, 1, 'Keep only the canonical community rail');
   assert.doesNotMatch(ui, /community_catalog_posts|community_catalog_members|community_directory_v2/);
+});
+
+test('Square store and community filters separate participating customers from favorites', () => {
+  const stores = read('src/components/tabs/SquareStoresSection.tsx');
+  const social = read('src/components/tabs/KyrubTab.tsx');
+  const communities = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const rules = read('firestore.rules');
+
+  // Both rails use identical labels and retain Em alta for discovery.
+  for (const file of [stores, communities]) {
+    for (const label of ["'Participante'", "'Favoritos'", "'Em alta'"]) {
+      assert.ok(file.includes(label), `Missing ${label} on Square rail`);
+    }
+    assert.doesNotMatch(file, /\['mine', 'Minhas'\]|\['discover', 'Descobrir'\]/);
+  }
+  assert.match(stores, /aria-pressed=\{favoriteStoreIds\.includes\(store\.id\)\}/);
+  assert.match(stores, /onClick=\{\(\) => onToggleFavoriteStore\(store\.id\)\}/);
+  assert.match(stores, /if \(listTab === 'participating'\)/);
+  assert.match(stores, /participatingIds\.has\(store\.id\)/);
+  assert.match(stores, /if \(listTab === 'favorites'\)/);
+  assert.match(stores, /favoriteIds\.has\(store\.id\)/);
+  assert.match(social, /onToggleFavoriteStore=\{props\.handleToggleFavoriteStore\}/);
+  assert.match(social, /'viewerRole' in result\.value/);
+  assert.match(social, /relationship\.level\.confirmedPurchases > 0/);
+  assert.match(social, /relationship\.customerId === viewerId/);
+
+  assert.match(communities, /if \(tab === 'participating'\) \{\s*return community\.isOwner \|\| community\.isActiveMember;/);
+  assert.match(communities, /return tab !== 'favorites' \|\| favorites\.has\(community\.id\);/);
+  assert.match(communities, /aria-pressed=\{favoriteCommunityIds\.has\(community\.id\)\}/);
+  assert.match(communities, /onClick=\{\(\) => void toggleFavoriteCommunity\(community\.id\)\}/);
+  assert.match(communities, /collection\(db, 'users', user\.uid, 'favorites'\)/);
+  assert.match(communities, /kind: 'community',\s*communityId/);
+  assert.match(rules, /match \/favorites\/\{favoriteId\} \{\s*allow read, write: if isSignedIn\(\) && request\.auth\.uid == userId;/);
+  // Favoriting never joins a community.
+  const favoriteBlock = communities.slice(communities.indexOf('const toggleFavoriteCommunity'), communities.indexOf('const selectedCommunity'));
+  assert.doesNotMatch(favoriteBlock, /joinCommunity\(/);
 });
 
 test('community wall editor has a single About-tab Edit, media picker and readable text', () => {
