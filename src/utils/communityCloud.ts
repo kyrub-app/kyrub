@@ -116,6 +116,10 @@ export interface CommunityCreateInput {
 
 export interface CommunityUpdateInput {
   communityId: string;
+  name?: string;
+  description?: string;
+  category?: string;
+  location?: string;
   rules: string;
   coverImage?: string;
   coverPath?: string;
@@ -559,9 +563,35 @@ export const updateCommunity = async (
   input: CommunityUpdateInput
 ): Promise<void> => {
   currentIdentity();
+  const trimmed = {
+    name: input.name?.trim(),
+    description: input.description?.trim(),
+    category: input.category?.trim(),
+    location: input.location?.trim(),
+    rules: input.rules.trim(),
+  };
+  if (input.name !== undefined && (!trimmed.name || trimmed.name.length > 80)) {
+    throw new Error('Informe um nome de até 80 caracteres para a comunidade.');
+  }
+  if (input.description !== undefined && (!trimmed.description || trimmed.description.length > 500)) {
+    throw new Error('Informe uma descrição de até 500 caracteres.');
+  }
+  if (input.category !== undefined && (!trimmed.category || trimmed.category.length > 80)) {
+    throw new Error('Informe uma categoria de até 80 caracteres.');
+  }
+  if (input.location !== undefined && (trimmed.location?.length ?? 0) > 120) {
+    throw new Error('A localização deve ter até 120 caracteres.');
+  }
+  if (!trimmed.rules || trimmed.rules.length > 1200) {
+    throw new Error('Informe regras de até 1.200 caracteres.');
+  }
   const nowIso = new Date().toISOString();
   await updateDoc(doc(db, 'communities', input.communityId), {
-    rules: input.rules.trim().slice(0, 1200),
+    ...(input.name !== undefined ? { name: trimmed.name } : {}),
+    ...(input.description !== undefined ? { description: trimmed.description } : {}),
+    ...(input.category !== undefined ? { category: trimmed.category } : {}),
+    ...(input.location !== undefined ? { location: trimmed.location } : {}),
+    rules: trimmed.rules,
     ...(input.coverImage !== undefined
       ? { coverImage: input.coverImage.trim().slice(0, 4096) }
       : {}),
