@@ -68,6 +68,13 @@ body {
   letter-spacing: -0.025em;
 }
 
+/* Brand hero deliberately privileges night green; orange remains a focal accent. */
+.kyrub-brand-hero {
+  background:
+    radial-gradient(circle at 90% 0%, rgba(143, 168, 147, 0.14), transparent 50%),
+    linear-gradient(135deg, #1C2622 0%, #121A17 90%);
+}
+
 /* Four composable tonal treatments: base, raised, editorial light, final CTA. */
 .kyrub-tone-base {
   background-color: var(--kyrub-night);
