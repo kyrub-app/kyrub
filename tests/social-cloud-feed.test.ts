@@ -61,7 +61,10 @@ test('public feed cards expose realtime likes and comments', () => {
   assert.match(feedSource, /comentário/);
   assert.match(feedSource, /Escreva um comentário/);
   assert.match(feedSource, /onToggleLike\(post\.id\)/);
-  assert.match(feedSource, /onAddComment\(postId, text\)/);
+  assert.match(feedSource, /onAddComment\(postId, text, replyTargets\[postId\]\?\.id\)/);
+  assert.match(feedSource, /orderCommentThreads\(comments\)/);
+  assert.match(feedSource, /Responder/);
+  assert.match(hookSource, /parentCommentId\?: string/);
 });
 
 test('Firebase deploy configuration includes social Firestore and Storage security', () => {
