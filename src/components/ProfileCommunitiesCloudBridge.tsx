@@ -32,6 +32,7 @@ import {
 } from 'lucide-react';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import { CommunityPostCard } from './CommunityPostCard';
+import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
 import {
   approveCommunityMember,
   createCommunity,
