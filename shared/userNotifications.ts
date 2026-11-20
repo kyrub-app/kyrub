@@ -8,6 +8,7 @@ export type UserNotificationCategory =
   | 'loyalty'
   | 'marketing'
   | 'community_group_invite'
+  | 'user_forward'
   | 'system';
 
 export type UserNotificationTargetKind =
@@ -15,6 +16,7 @@ export type UserNotificationTargetKind =
   | 'storefront'
   | 'order'
   | 'community_group_invite'
+  | 'community_post'
   | 'none';
 
 export interface UserNotificationTarget {
@@ -24,6 +26,7 @@ export interface UserNotificationTarget {
   orderId: string;
   communityId?: string;
   groupId?: string;
+  postId?: string;
 }
 
 export interface UserNotification {
@@ -125,6 +128,7 @@ export const buildUserNotification = (input: {
     targetKind !== 'storefront' &&
     targetKind !== 'order' &&
     targetKind !== 'community_group_invite' &&
+    targetKind !== 'community_post' &&
     targetKind !== 'none'
   ) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
@@ -132,6 +136,10 @@ export const buildUserNotification = (input: {
 
   if (targetKind === 'community_group_invite' &&
     (!validPathId(clean(input.target?.communityId)) || !validPathId(clean(input.target?.groupId)))) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
+  if (targetKind === 'community_post' &&
+    (!validPathId(clean(input.target?.communityId)) || !validPathId(clean(input.target?.postId)))) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
 
@@ -152,6 +160,9 @@ export const buildUserNotification = (input: {
       orderId: clean(input.target?.orderId),
       ...(targetKind === 'community_group_invite'
         ? { communityId: clean(input.target?.communityId), groupId: clean(input.target?.groupId) }
+        : {}),
+      ...(targetKind === 'community_post'
+        ? { communityId: clean(input.target?.communityId), postId: clean(input.target?.postId) }
         : {}),
     },
     createdAt,
