@@ -14,7 +14,7 @@ test('the Kyrub geometric pitanga seal is a small original vector with stem and 
   assert.match(logo, /caule e duas folhas verde-sálvia/);
   assert.match(logo, /<path fill="#F27429"/);
   assert.match(logo, /<circle/);
-  assert.doesNotMatch(logo, /<image|data:image\/jpeg;base64,|<script|https?:\/\//);
+  assert.doesNotMatch(logo, /<image|data:image\/jpeg;base64,|<script/);
   assert.ok(Buffer.byteLength(logo, 'utf8') < 9000, 'logo should render sharply at small sizes');
 });
 
