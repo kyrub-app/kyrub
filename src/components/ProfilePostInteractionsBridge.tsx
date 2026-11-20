@@ -37,6 +37,7 @@ import {
 } from '../hooks/usePublicSocialFeed';
 import { auth, db } from '../utils/firebase';
 import { orderCommentThreads } from '../utils/commentThreads';
+import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 
 type PostTarget = {
   key: string;
