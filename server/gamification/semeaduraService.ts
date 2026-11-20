@@ -188,7 +188,7 @@ export const readVerifiedPostSemeadura = async (
   if (!safeUid(actor) || !safePostId(postId) || (kind !== 'personal' && kind !== 'community')) {
     throw new Error('SEMEADURA_INVALID_INPUT');
   }
-  const key = createHash('sha256').update(kind + '\\0' + postId).digest('hex');
+  const key = createHash('sha256').update(kind + '\0' + postId).digest('hex');
   const postRef = db.doc(`${kind === 'community' ? 'community_posts' : 'social_posts'}/${postId}`);
   const statsRef = db.collection('semeadura_post_stats').doc(key);
   const receiptRef = statsRef.collection('receipts').doc(actor);
