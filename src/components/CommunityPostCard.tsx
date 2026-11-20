@@ -187,7 +187,7 @@ export function CommunityPostCard({
               {!isMine && connectionPending && <p className="px-2 py-2 text-xs text-slate-400">Conexão pendente</p>}
               {!isMine && connected && (
                 <button type="button" role="menuitem"
-                  onClick={() => { setMenuOpen(false); setChatOpen(true); }}
+                  onClick={() => { setMenuOpen(false); setForwardRecipient(null); setChatDraft(''); setChatOpen(true); }}
                   className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                   <MessageCircleMore className="h-4 w-4" /> Conversar
                 </button>
@@ -465,7 +465,7 @@ export function CommunityPostCard({
         <KyrubAdsCommunityPromotionPreview post={post} onClose={() => setPromotionPreviewOpen(false)} />
       )}
       <ChatModal isOpen={chatOpen && (Boolean(forwardRecipient) || connected)}
-        onClose={() => { setChatOpen(false); setForwardRecipient(null); }}
+        onClose={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
         selectedChatUser={chatOpen && forwardRecipient ? {
           id: forwardRecipient.id, name: forwardRecipient.name, avatar: '',
           role: 'Kairubido conectado', connectionStatus: 'accepted',
@@ -474,12 +474,13 @@ export function CommunityPostCard({
           id: post.authorId, name: post.authorName, avatar: post.authorAvatar,
           role: 'Kairubido', connectionStatus: 'accepted', connectionId: connection?.id,
         } : null}
-        setSelectedChatUser={() => { setChatOpen(false); setForwardRecipient(null); }}
+        setSelectedChatUser={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
         onMessageSent={text => {
           if (forwardRecipient && text.includes(buildCommunityPostInternalLink(post))) {
             void recordCommunityPostForwardMetric(post).catch(error =>
               console.warn('Mensagem encaminhada, mas a métrica orgânica não foi registrada.', error));
             setForwardRecipient(null);
+            setChatOpen(false);
           }
         }}
         chatMessageText={chatDraft} setChatMessageText={setChatDraft}/>
