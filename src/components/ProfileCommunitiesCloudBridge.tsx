@@ -21,6 +21,7 @@ import {
   MessageCircle,
   ArrowUp,
   Plus,
+  Pencil,
   Save,
   ShieldCheck,
   Trash2,
@@ -80,18 +81,6 @@ const initialCreateDraft: CreateDraft = {
   location: '',
   visibility: 'public',
   rules: '',
-};
-
-const formatDate = (value: string): string => {
-  const date = new Date(value);
-  return Number.isNaN(date.getTime())
-    ? 'Agora'
-    : new Intl.DateTimeFormat('pt-BR', {
-        day: '2-digit',
-        month: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-      }).format(date);
 };
 
 const visibilityDetails = (visibility: CommunityVisibility) => {
