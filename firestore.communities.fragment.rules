@@ -599,6 +599,64 @@
       allow delete: if isSignedIn() && existing().actorId == request.auth.uid;
     }
 
+    // One private-forward receipt per post, sender and destination person.
+    // The actual DM and its cooldown marker must arrive in the SAME transaction.
+    match /community_direct_forward_receipts/{receiptId} {
+      function validForwardDestination(data) {
+        return data.postId is string
+          && data.postId.size() > 0 && data.postId.size() <= 128
+          && data.communityId is string
+          && data.communityId.size() > 0 && data.communityId.size() <= 128
+          && data.receiverId is string
+          && data.receiverId.size() > 0 && data.receiverId.size() <= 128
+          && data.connectionId is string
+          && data.connectionId.size() > 0 && data.connectionId.size() <= 128
+          && data.messageId is string
+          && data.messageId.size() > 0 && data.messageId.size() <= 128
+          && data.actorId == request.auth.uid
+          && data.receiverId != request.auth.uid
+          && receiptId == data.postId + '__' + request.auth.uid + '__' + data.receiverId
+          && exists(/databases/$(database)/documents/community_posts/$(data.postId))
+          && get(/databases/$(database)/documents/community_posts/$(data.postId)).data.communityId == data.communityId
+          && exists(/databases/$(database)/documents/communities/$(data.communityId))
+          && get(/databases/$(database)/documents/communities/$(data.communityId)).data.visibility == 'public'
+          && exists(/databases/$(database)/documents/connections/$(data.connectionId))
+          && get(/databases/$(database)/documents/connections/$(data.connectionId)).data.status == 'accepted'
+          && request.auth.uid in get(/databases/$(database)/documents/connections/$(data.connectionId)).data.participantIds
+          && data.receiverId in get(/databases/$(database)/documents/connections/$(data.connectionId)).data.participantIds
+          && existsAfter(/databases/$(database)/documents/social_chats/$(data.connectionId)/messages/$(data.messageId))
+          && getAfter(/databases/$(database)/documents/social_chats/$(data.connectionId)/messages/$(data.messageId)).data.senderId == request.auth.uid
+          && getAfter(/databases/$(database)/documents/social_chats/$(data.connectionId)/messages/$(data.messageId)).data.receiverId == data.receiverId
+          && getAfter(/databases/$(database)/documents/social_chats/$(data.connectionId)/messages/$(data.messageId)).data.createdAt == request.time;
+      }
+
+      allow get: if isSignedIn()
+        && ((resource == null && receiptId.matches('^.+__' + request.auth.uid + '__.+$'))
+          || (resource != null && existing().actorId == request.auth.uid));
+      allow list: if false;
+
+      allow create: if isSignedIn()
+        && incoming().keys().hasAll([
+          'postId', 'communityId', 'actorId', 'receiverId', 'connectionId', 'messageId', 'forwardedAt'
+        ])
+        && incoming().keys().hasOnly([
+          'postId', 'communityId', 'actorId', 'receiverId', 'connectionId', 'messageId', 'forwardedAt'
+        ])
+        && incoming().forwardedAt == request.time
+        && validForwardDestination(incoming());
+
+      allow update: if isSignedIn()
+        && existing().actorId == request.auth.uid
+        && incoming().diff(existing()).affectedKeys().hasOnly(['messageId', 'forwardedAt'])
+        && incoming().messageId != existing().messageId
+        && incoming().forwardedAt == request.time
+        && existing().forwardedAt is timestamp
+        && request.time >= existing().forwardedAt + duration.value(24, 'h')
+        && validForwardDestination(incoming());
+
+      allow delete: if false;
+    }
+
     // Wall interactions are independently scoped to the existing community and post.
     // They never grant access to a private community or allow likes for strangers.
     function communityPostBelongsTo(postId, communityId) {

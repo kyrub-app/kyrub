@@ -733,3 +733,98 @@ test('forwarding a private or moderated post and impersonating the sender is den
     actorId: MEMBER, actorName: 'Membro', forwardedAt: serverTimestamp(),
   }));
 });
+
+test('private forward to a connected Kairubido is atomic and rate limited per post/person for 24 hours', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const sender = environment.authenticatedContext(MEMBER).firestore();
+  const other = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'private_forward_public_origin';
+  const postId = 'source_public_dm';
+  const connectionId = 'accepted_forward_pair';
+  await createCommunity(owner, communityId, 'public');
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId, authorId: OWNER, authorName: 'Autor', authorAvatar: '',
+    content: 'Encaminhar sem duplicar.', mediaUrls: [],
+    createdAtIso: '2026-11-20T09:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-20T09:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'connections', connectionId), {
+      senderId: MEMBER, receiverId: OUTSIDER, participantIds: [MEMBER, OUTSIDER],
+      status: 'accepted',
+    });
+  });
+  const receiptId = postId + '__' + MEMBER + '__' + OUTSIDER;
+  const receiptRef = doc(sender, 'community_direct_forward_receipts', receiptId);
+  const send = (messageId: string) => runTransaction(sender, async tx => {
+    const existing = await tx.get(receiptRef);
+    const messageRef = doc(sender, 'social_chats', connectionId, 'messages', messageId);
+    tx.set(messageRef, {
+      senderId: MEMBER, receiverId: OUTSIDER,
+      text: 'Encaminhando esta publicação pelo Kyrub.',
+      createdAt: serverTimestamp(),
+    });
+    if (existing.exists()) {
+      tx.update(receiptRef, { messageId, forwardedAt: serverTimestamp() });
+    } else {
+      tx.set(receiptRef, {
+        postId, communityId, actorId: MEMBER, receiverId: OUTSIDER, connectionId,
+        messageId, forwardedAt: serverTimestamp(),
+      });
+    }
+  });
+
+  await assertSucceeds(send('message_first'));
+  await assertSucceeds(getDoc(doc(other, 'social_chats', connectionId, 'messages', 'message_first')));
+  await assertFails(send('message_repeat'));
+  const blockedMessage = await assertSucceeds(getDoc(doc(other, 'social_chats', connectionId, 'messages', 'message_repeat')));
+  if (blockedMessage.exists()) throw new Error('Um envio bloqueado não pode criar mensagem.');
+  await assertFails(getDoc(doc(other, 'community_direct_forward_receipts', receiptId)));
+  await assertFails(getDocs(collection(sender, 'community_direct_forward_receipts')));
+
+  await environment.withSecurityRulesDisabled(async context => {
+    await updateDoc(doc(context.firestore(), 'community_direct_forward_receipts', receiptId), {
+      forwardedAt: Timestamp.fromMillis(Date.now() - 25 * 60 * 60 * 1000),
+    });
+  });
+  await assertSucceeds(send('message_after_24h'));
+  await assertFails(send('message_after_24h_duplicate'));
+
+  const source = await getDoc(doc(sender, 'community_posts', postId));
+  if (source.data()?.authorId !== OWNER || source.data()?.content !== 'Encaminhar sem duplicar.') {
+    throw new Error('O encaminhamento duplicou ou alterou a publicação original.');
+  }
+});
+
+test('private forward receipt cannot fake connection, source or recipient', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const sender = environment.authenticatedContext(MEMBER).firestore();
+  await createCommunity(owner, 'forward_protected_private', 'private');
+  const postId = 'forward_protected_post';
+  await assertSucceeds(setDoc(doc(owner, 'community_posts', postId), {
+    postId, communityId: 'forward_protected_private', authorId: OWNER,
+    authorName: 'Autor', authorAvatar: '', content: 'Conteúdo protegido', mediaUrls: [],
+    createdAtIso: '2026-11-20T09:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-20T09:00:00.000Z', updatedAt: serverTimestamp(),
+  }));
+  await environment.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'connections', 'forward_private_link'), {
+      senderId: MEMBER, receiverId: OUTSIDER, participantIds: [MEMBER, OUTSIDER],
+      status: 'accepted',
+    });
+  });
+  const receipt = doc(sender, 'community_direct_forward_receipts', postId + '__' + MEMBER + '__' + OUTSIDER);
+  await assertFails(runTransaction(sender, async tx => {
+    await tx.get(receipt);
+    tx.set(doc(sender, 'social_chats', 'forward_private_link', 'messages', 'message_private'), {
+      senderId: MEMBER, receiverId: OUTSIDER, text: 'Inadequado', createdAt: serverTimestamp(),
+    });
+    tx.set(receipt, {
+      postId, communityId: 'forward_protected_private', actorId: MEMBER,
+      receiverId: OUTSIDER, connectionId: 'forward_private_link',
+      messageId: 'message_private', forwardedAt: serverTimestamp(),
+    });
+  }));
+  const blockedPrivateMessage = await assertSucceeds(getDoc(doc(sender, 'social_chats', 'forward_private_link', 'messages', 'message_private')));
+  if (blockedPrivateMessage.exists()) throw new Error('Encaminhamento privado foi publicado sem autorização.');
+});

@@ -93,3 +93,22 @@ export const issueCommunityGroupInvite = async (
       body: JSON.stringify({ groupId, inviteeUserId }),
     })
   );
+
+/** Notify the connected recipient only after the actual DM has been
+ * committed. The server derives both people and the source from Firestore,
+ * never from a caller-supplied recipient id or post content. */
+export const issueCommunityForwardReceivedNotification = async (
+  connectionId: string,
+  messageId: string,
+  postId: string,
+): Promise<void> => {
+  if (!/^[a-zA-Z0-9_-]{1,128}$/.test(connectionId) ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(messageId) ||
+    !/^[a-zA-Z0-9_-]{1,128}$/.test(postId)) {
+    throw new Error('Referência de encaminhamento inválida.');
+  }
+  await authorizedFetch('/api/notifications/community-post-forward/received', {
+    method: 'POST',
+    body: JSON.stringify({ connectionId, messageId, postId }),
+  });
+};

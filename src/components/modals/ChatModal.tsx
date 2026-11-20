@@ -2,6 +2,9 @@ import React, { useEffect, useRef } from 'react';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { auth } from '../../utils/firebase';
 import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../../utils/communitySquareFeed';
+import { buildCommunityPostInternalLink, sendCommunityPostToConnectedUser } from '../../utils/communityPostForwarding';
+import { issueCommunityForwardReceivedNotification } from '../../utils/userNotifications';
+import type { CloudCommunityPost } from '../../utils/communityCloud';
 
 interface ChatModalProps {
   isOpen: boolean;
@@ -11,6 +14,7 @@ interface ChatModalProps {
   chatMessageText: string;
   setChatMessageText: (text: string) => void;
   onMessageSent?: (text: string) => void;
+  forwardingPost?: CloudCommunityPost | null;
 }
 
 export const ChatModal: React.FC<ChatModalProps> = ({
@@ -20,9 +24,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   setSelectedChatUser,
   chatMessageText,
   setChatMessageText,
-  onMessageSent
+  onMessageSent,
+  forwardingPost,
 }) => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const [forwardSendError, setForwardSendError] = React.useState('');
   const isChatEnabled = Boolean(
     isOpen
     && selectedChatUser
@@ -60,12 +66,30 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     if (!isChatEnabled || isSending || !chatMessageText.trim()) return;
 
     try {
+      setForwardSendError('');
       const sentText = chatMessageText;
-      await sendMessage(sentText);
-      setChatMessageText('');
-      onMessageSent?.(sentText);
-    } catch {
-      // O hook preserva o erro para exibição e o texto permanece no campo.
+      const isForward = Boolean(forwardingPost &&
+        sentText.includes(buildCommunityPostInternalLink(forwardingPost)));
+      if (isForward && forwardingPost) {
+        const delivered = await sendCommunityPostToConnectedUser({
+          post: forwardingPost,
+          connectionId: selectedChatUser.connectionId,
+          recipientId: selectedChatUser.id,
+          text: sentText,
+        });
+        setChatMessageText('');
+        onMessageSent?.(sentText);
+        void issueCommunityForwardReceivedNotification(delivered.connectionId, delivered.messageId, forwardingPost.id)
+          .catch(error => console.warn('Mensagem enviada; notificação interna temporariamente indisponível.', error));
+      } else {
+        await sendMessage(sentText);
+        setChatMessageText('');
+        onMessageSent?.(sentText);
+      }
+    } catch (error) {
+      // A transação privada também pode bloquear um segundo encaminhamento
+      // para a mesma pessoa dentro de 24h. O texto permanece para revisão.
+      setForwardSendError(error instanceof Error ? error.message : 'Não foi possível enviar esta mensagem.');
     }
   };
 
@@ -140,9 +164,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               </div>
             )}
 
-            {error && (
-              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-center text-[10px] text-red-300">
-                {error}
+            {(error || forwardSendError) && (
+              <div className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-center text-[10px] text-red-300" role="alert">
+                {forwardSendError || error}
               </div>
             )}
 

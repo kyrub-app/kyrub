@@ -53,6 +53,8 @@ describe('user communication preferences', () => {
       loyalty: true,
       marketing: false,
       system: true,
+      community_group_invite: true,
+      user_forward: true,
     });
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'store_chat'), true);
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'marketing'), false);

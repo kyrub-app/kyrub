@@ -16,8 +16,13 @@ import {
   type UserCommunicationPreferences,
 } from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
+import {
+  USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin,
+  type UserNotificationOrigin,
+} from '../../shared/userNotificationOrigins';
 import { auth } from '../utils/firebase';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
+import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../utils/communitySquareFeed';
 import { loadUserCommunicationPreferences } from '../utils/userCommunicationPreferences';
 import {
   loadUserNotificationInbox,
@@ -41,6 +46,15 @@ const openNotificationTarget = (
   notification: UserNotification,
   user: User
 ): boolean => {
+  if (notification.target.kind === 'community_post') {
+    const communityId = notification.target.communityId;
+    const postId = notification.target.postId;
+    if (!communityId || !postId) return false;
+    window.dispatchEvent(new CustomEvent(OPEN_COMMUNITY_FROM_SQUARE_EVENT, {
+      detail: { communityId, postId },
+    }));
+    return true;
+  }
   if (notification.target.kind !== 'store_chat') return false;
   const perspective = notification.target.customerId === user.uid
     ? 'customer'
@@ -91,6 +105,7 @@ export function UserNotificationCenterBridge() {
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [activeOrigin, setActiveOrigin] = useState<UserNotificationOrigin>('all');
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(false);
   const [pendingInviteResponse, setPendingInviteResponse] = useState<string | null>(null);
@@ -111,6 +126,7 @@ export function UserNotificationCenterBridge() {
     setPendingInviteResponse(null);
     setNotifications([]);
     setUnreadCount(0);
+    setActiveOrigin('all');
     setPreferences(null);
     if (!user) return;
     let cancelled = false;
@@ -219,6 +235,11 @@ export function UserNotificationCenterBridge() {
   const unreadIds = useMemo(
     () => new Set(notifications.filter(item => !item.readAt).map(item => item.id)),
     [notifications]
+  );
+
+  const visibleNotifications = useMemo(
+    () => filterUserNotificationsByOrigin(notifications, activeOrigin),
+    [notifications, activeOrigin],
   );
 
   const effectivePreferences = useMemo(
@@ -368,6 +389,32 @@ export function UserNotificationCenterBridge() {
               </div>
             </header>
 
+            <nav className="border-b border-slate-800 px-2 py-2" aria-label="Filtrar notificações por origem">
+              <div className="flex gap-1 overflow-x-auto pb-1 [scrollbar-width:thin]" role="tablist" aria-label="Origens das notificações">
+                {USER_NOTIFICATION_ORIGIN_TABS.map(tab => {
+                  const count = tab.id === 'all'
+                    ? unreadCount
+                    : notifications.filter(item => !item.readAt &&
+                      userNotificationOrigin(item.category) === tab.id).length;
+                  return (
+                    <button key={tab.id} type="button" role="tab"
+                      aria-selected={activeOrigin === tab.id}
+                      onClick={() => setActiveOrigin(tab.id)}
+                      className={`flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-semibold transition-colors ${activeOrigin === tab.id
+                        ? 'border-sky-500/50 bg-sky-500/15 text-sky-200'
+                        : 'border-slate-800 bg-slate-900/70 text-slate-400 hover:text-white'}`}>
+                      {tab.label}
+                      {count > 0 && (
+                        <span className="rounded-full bg-orange-500/20 px-1.5 text-[10px] text-orange-300">
+                          {count > 99 ? '99+' : count}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </nav>
+
             {errorMessage && (
               <div className="m-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[9px] text-red-300" role="alert">
                 {errorMessage}
@@ -380,12 +427,14 @@ export function UserNotificationCenterBridge() {
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   Carregando notificações…
                 </div>
-              ) : notifications.length === 0 ? (
+              ) : visibleNotifications.length === 0 ? (
                 <div className="px-4 py-12 text-center text-xs leading-relaxed text-slate-500">
-                  Nenhuma notificação real ainda. Eventos do Kyrub aparecerão aqui quando acontecerem.
+                  {activeOrigin === 'all'
+                    ? 'Nenhuma notificação real ainda. Eventos do Kyrub aparecerão aqui quando acontecerem.'
+                    : 'Ainda não há notificações desta origem.'}
                 </div>
               ) : (
-                notifications.map(notification => {
+                visibleNotifications.map(notification => {
                   const unread = unreadIds.has(notification.id);
                   return (
                     <div
