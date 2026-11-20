@@ -59,6 +59,8 @@ import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
+import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
+import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
@@ -261,6 +263,9 @@ function SocialCard({
   onToggleSave,
   onToggleLike,
   onReport,
+  friends,
+  connections,
+  onOpenChat,
 }: {
   post: ExtendedSocialPost;
   currentUserId: string;
@@ -270,10 +275,14 @@ function SocialCard({
   onToggleSave?: () => void;
   onToggleLike: () => void;
   onReport: () => void;
+  friends: Friend[];
+  connections: CommunityPostConnection[];
+  onOpenChat: (friend: Friend) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const isStatus = post.publicationType === 'status';
   const isOwnPost = post.authorId === currentUserId;
+  const authorConnection = resolvePostAuthorConnection(currentUserId, post, friends, connections);
 
   return (
     <article className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 shadow-lg">
@@ -324,7 +333,20 @@ function SocialCard({
           </button>
         </div>
         {menuOpen && (
-          <div className="absolute right-0 top-10 z-20 min-w-48 rounded-2xl border border-slate-700 bg-slate-950 p-1.5 shadow-2xl">
+          <div className="absolute right-0 top-10 z-20 min-w-48 rounded-2xl border border-slate-700 bg-slate-950 p-1.5 shadow-2xl" role="menu">
+            {!isOwnPost && authorConnection.status === 'accepted' && authorConnection.friend && (
+              <button type="button" role="menuitem"
+                onClick={() => {
+                  setMenuOpen(false);
+                  onOpenChat(authorConnection.friend!);
+                }}
+                className="flex min-h-10 w-full items-center gap-2 rounded-xl px-3 py-2 text-left text-xs font-semibold text-sky-200 hover:bg-slate-800">
+                <MessageCircle className="h-4 w-4" /> Conversar
+              </button>
+            )}
+            {!isOwnPost && (authorConnection.status === 'pending_sent' || authorConnection.status === 'pending_received') && (
+              <p className="px-3 py-2 text-xs text-slate-400">Conexão pendente</p>
+            )}
             {isOwnPost ? (
               <div className="px-3 py-2 text-[9px] text-slate-600">
                 Esta publicação é sua.
@@ -362,18 +384,22 @@ function SocialCard({
         <MediaCarousel mediaUrls={post.mediaUrls} />
       )}
 
-      <button
-        type="button"
-        onClick={onToggleLike}
-        className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] font-black uppercase ${
-          liked
-            ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-            : 'border-slate-800 bg-slate-950 text-slate-400'
-        }`}
-      >
-        <Heart className={`h-4 w-4 ${liked ? 'fill-current' : ''}`} />
-        {post.likes} {post.likes === 1 ? 'curtida' : 'curtidas'}
-      </button>
+      {SEMEADURA_UI_ENABLED && post.visibility === 'public' && post.publicationType !== 'status' ? (
+        <SemearButton kind="personal" postId={post.id} viewerId={currentUserId} />
+      ) : (
+        <button
+          type="button"
+          onClick={onToggleLike}
+          className={`flex w-full items-center justify-center gap-2 rounded-xl border px-3 py-2 text-[9px] font-black uppercase ${
+            liked
+              ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+              : 'border-slate-800 bg-slate-950 text-slate-400'
+          }`}
+        >
+          <Heart className={`h-4 w-4 ${liked ? 'fill-current' : ''}`} />
+          {post.likes} {post.likes === 1 ? 'curtida' : 'curtidas'}
+        </button>
+      )}
     </article>
   );
 }
@@ -1300,6 +1326,12 @@ export function ProfileSocialHubNative() {
           }
           onToggleLike={() => handleLike(post.id)}
           onReport={() => void reportPost(post)}
+          friends={directory.friends}
+          connections={squareConnections}
+          onOpenChat={friend => {
+            setChatMessageText('');
+            setChatTarget(friend);
+          }}
         />
       ))}
       {posts.length === 0 && (
@@ -1955,6 +1987,12 @@ export function ProfileSocialHubNative() {
                       onToggleSave={post.publicationType === 'status' ? undefined : () => void toggleSavedPost(post.id)}
                       onToggleLike={() => handleLike(post.id)}
                       onReport={() => void reportPost(post)}
+                      friends={directory.friends}
+                      connections={squareConnections}
+                      onOpenChat={friend => {
+                        setChatMessageText('');
+                        setChatTarget(friend);
+                      }}
                     />;
                   })}
                   {squareRows.length === 0 && (
