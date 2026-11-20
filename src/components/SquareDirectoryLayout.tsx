@@ -44,13 +44,15 @@ export function SquareDirectoryLayout({
   useEffect(() => {
     // Because the real header remains interactive, navigating to another
     // workspace or opening the profile must dismiss the catalog.
+    const initialTab = document.getElementById('kyrub-workspace-main')?.dataset.kyrubWorkspace;
+    const profileInitiallyOpen = Boolean(document.getElementById('profile-social-hub-modal'));
     const onWorkspaceChange = () => {
       const workspace = document.getElementById('kyrub-workspace-main');
       if (
         !workspace ||
-        workspace.dataset.kyrubWorkspace !== 'kyrub' ||
+        workspace.dataset.kyrubWorkspace !== initialTab ||
         document.getElementById('modal-user-profile') ||
-        document.getElementById('profile-social-hub-modal')
+        (!profileInitiallyOpen && document.getElementById('profile-social-hub-modal'))
       ) {
         onCloseRef.current();
       }
