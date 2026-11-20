@@ -247,28 +247,46 @@ const sessionGuestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx'
 const sessionRewardsSource = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
 const sessionAccountSource = readFileSync('src/components/tabs/PitangaAccount.tsx', 'utf8');
 
-test('logout is immediately visible on the first profile screen, not hidden inside edit', () => {
-  const heading = profileSource.indexOf('Painel pessoal');
-  const signOut = profileSource.indexOf('id="profile-session-logout"');
-  const editor = profileSource.indexOf('{editOpen && (');
-  assert.ok(heading >= 0 && signOut > heading && editor > signOut,
-    'Sign out must live in the main profile header before the edit form');
-  assert.equal(profileSource.match(/id="profile-session-logout"/g)?.length, 1,
-    'Account logout must not be duplicated in the edit form');
-  const firstScreen = profileSource.slice(heading, profileSource.indexOf('aria-label="Fechar meu perfil"', heading));
-  assert.match(firstScreen, /Sair da conta/);
-  assert.match(firstScreen, /onClick=\{\(\) => void handleProfileSignOut\(\)\}/);
-  assert.match(firstScreen, /disabled=\{sessionBusy\}/);
+const legacyProfileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+
+test('signed-in workspace offers logout beside the Kyrub logo, not inside a profile', () => {
+  const brand = sessionLegacySource.slice(
+    sessionLegacySource.indexOf('id="kyrub-workspace-brand"'),
+    sessionLegacySource.indexOf('{/* JEMBOÉ:', sessionLegacySource.indexOf('id="kyrub-workspace-brand"'))
+  );
+  assert.match(brand, /src="\/kyrub-logo\.svg"/);
+  assert.match(brand, /id="kyrub-workspace-signout"/);
+  assert.match(brand, /aria-label="Sair da conta Kyrub"/);
+  assert.match(brand, /onClick=\{\(\) => void handleLogout\(\)\}/);
+  assert.match(brand, /disabled=\{isSigningOut\}/);
+  assert.match(brand, /isSigningOut \? 'Saindo…' : 'Sair'/);
+  assert.doesNotMatch(brand, /Raiz brasileira/);
+
+  assert.doesNotMatch(profileSource, /profile-session-logout|handleProfileSignOut/);
+  assert.doesNotMatch(legacyProfileSource, /profile-logout-button|profile-session-actions|onLogout/);
 });
 
-test('native profile provides Firebase sign-out with proper loading and failure handling', () => {
-  assert.match(profileSource, /import \{ onAuthStateChanged, signOut, updateProfile, type User \} from 'firebase\/auth'/);
-  assert.match(profileSource, /id="profile-session-logout"/);
-  assert.match(profileSource, /onClick=\{\(\) => void handleProfileSignOut\(\)\}/);
-  assert.match(profileSource, /disabled=\{sessionBusy\}/);
-  assert.match(profileSource, /await signOut\(auth\)/);
-  assert.match(profileSource, /setEditOpen\(false\);\s*setOpen\(false\)/);
-  assert.match(profileSource, /Não foi possível sair da conta/);
+test('workspace logout reuses the existing Firebase auth cleanup and failure handling', () => {
+  assert.match(sessionLegacySource, /const handleLogout = async \(\): Promise<void> =>/);
+  assert.match(sessionLegacySource, /if \(isSigningOut\) return/);
+  assert.match(sessionLegacySource, /await signOut\(auth\)/);
+  assert.match(sessionLegacySource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
+  assert.match(sessionLegacySource, /setIsLoggedIn\(false\)/);
+  assert.match(sessionLegacySource, /Não foi possível sair da conta/);
+});
+
+test('guest brand offers Entrar using the existing Google account-selection dialog', () => {
+  const brand = sessionGuestSource.slice(
+    sessionGuestSource.indexOf('id="kyrub-guest-brand"'),
+    sessionGuestSource.indexOf('{origin &&', sessionGuestSource.indexOf('id="kyrub-guest-brand"'))
+  );
+  assert.match(brand, /id="kyrub-guest-signin"/);
+  assert.match(brand, /aria-label="Entrar na conta Kyrub"/);
+  assert.match(brand, /requestLogin\('acessar sua conta'\)/);
+  assert.match(brand, />\s*Entrar\s*<\/button>/);
+  assert.doesNotMatch(brand, /Raiz brasileira/);
+  assert.match(sessionGuestSource, /signInWithPopup\(auth, provider\)/);
+  assert.match(sessionGuestSource, /prompt: 'select_account'/);
 });
 
 test('after exit, the existing guest account route offers select-account Google login', () => {

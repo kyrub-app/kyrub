@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, ShoppingBag,
+  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, LogIn, ShoppingBag,
   Sparkles, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
@@ -126,7 +126,16 @@ export function KyrubGuestWorkspace() {
         <div id="kyrub-guest-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
           <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
           <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
-          <span className="ml-auto text-[9px] text-slate-500">Raiz brasileira</span>
+          <button
+            id="kyrub-guest-signin"
+            type="button"
+            onClick={() => requestLogin('acessar sua conta')}
+            aria-label="Entrar na conta Kyrub"
+            className="ml-auto inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-orange-500 px-3 text-xs font-bold text-slate-950 transition-colors hover:bg-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500"
+          >
+            <LogIn className="h-4 w-4" aria-hidden="true" />
+            Entrar
+          </button>
         </div>
         {origin && (
           <a href={origin.path} className="block rounded-xl border border-orange-500/30 bg-orange-500/10 px-4 py-3 text-xs font-bold text-orange-200">
