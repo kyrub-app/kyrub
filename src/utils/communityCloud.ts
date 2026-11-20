@@ -396,24 +396,51 @@ export const subscribeUserMemberships = (
 export const subscribeCommunityMemberships = (
   communityId: string,
   onChange: (memberships: CloudCommunityMembership[]) => void,
-  onError?: (error: Error) => void
-): Unsubscribe =>
-  onSnapshot(
-    query(
-      collection(db, 'community_members'),
-      where('communityId', '==', communityId)
-    ),
-    snapshot =>
-      onChange(
-        snapshotItems(snapshot, mapMembership).sort((left, right) => {
-          if (left.role === 'owner') return -1;
-          if (right.role === 'owner') return 1;
-          if (left.status !== right.status) return left.status === 'pending' ? -1 : 1;
-          return left.userName.localeCompare(right.userName, 'pt-BR');
-        })
-      ),
-    error => onError?.(error)
-  );
+  onError?: (error: Error) => void,
+  context?: { viewerId?: string; ownerId?: string; isOwner?: boolean },
+): Unsubscribe => {
+  const sortMembers = (memberships: CloudCommunityMembership[]) =>
+    [...memberships].sort((left, right) => {
+      if (left.role === 'owner') return -1;
+      if (right.role === 'owner') return 1;
+      if (left.status !== right.status) return left.status === 'pending' ? -1 : 1;
+      return left.userName.localeCompare(right.userName, 'pt-BR');
+    });
+
+  if (context?.isOwner) {
+    // The owner may list all active participants and pending requests.
+    return onSnapshot(
+      query(collection(db, 'community_members'), where('communityId', '==', communityId)),
+      snapshot => onChange(sortMembers(snapshotItems(snapshot, mapMembership))),
+      error => onError?.(error),
+    );
+  }
+
+  // Public readers must not query all memberships: that would also include
+  // pending requests, which the Firestore rules correctly keep private.
+  // Listen only to the creator and the current viewer; no composite index or
+  // list-level access to private applications is required.
+  const ids = Array.from(new Set(
+    [context?.ownerId, context?.viewerId]
+      .filter((uid): uid is string => Boolean(uid))
+      .map(uid => communityMembershipId(communityId, uid)),
+  ));
+  const visible = new Map<string, CloudCommunityMembership>();
+  const stops = ids.map(id => onSnapshot(
+    doc(db, 'community_members', id),
+    snapshot => {
+      const member = snapshot.exists()
+        ? mapMembership(snapshot.id, snapshot.data() as Record<string, unknown>)
+        : null;
+      if (member && member.communityId === communityId) visible.set(id, member);
+      else visible.delete(id);
+      onChange(sortMembers([...visible.values()]));
+    },
+    error => onError?.(error),
+  ));
+  if (ids.length === 0) onChange([]);
+  return () => stops.forEach(stop => stop());
+};
 
 export const subscribeCommunityPosts = (
   communityId: string,
