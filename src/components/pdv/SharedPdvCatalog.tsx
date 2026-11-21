@@ -678,6 +678,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                           className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
                           style={{ backgroundColor: accentColor }}
                           id={`${idPrefix}-add-${product.id}`}
+                          data-compact-add-action={actionLabel === 'Adicionar' ? 'true' : undefined}
                         >
                           {hasOptions ? (
                             <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />

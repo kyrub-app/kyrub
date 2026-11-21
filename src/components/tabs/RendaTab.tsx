@@ -254,7 +254,7 @@ export function RendaTab({
               onClick={() => guestReadOnly
                 ? onGuestLoginRequired?.('solicitar uma entrega')
                 : setShowDeliveryModal(true)}
-              className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-all hover:bg-orange-500"
+              className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-white transition-colors hover:bg-orange-500"
               id="btn-solicitar-entrega"
             >
               Solicitar entrega
@@ -265,7 +265,7 @@ export function RendaTab({
                 ? onGuestBrowseDeliveries?.()
                 : setShowFazerEntregasModal(true)
               }
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-all hover:text-orange-300"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-colors hover:text-orange-300"
               id="btn-fazer-entregas"
             >
               <span>Fazer entregas</span>
@@ -305,7 +305,7 @@ export function RendaTab({
               onClick={() => guestReadOnly
                 ? onGuestLoginRequired?.('contratar um freela')
                 : setShowFreelaModal(true)}
-              className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-teal-400"
+              className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-teal-400"
               id="btn-solicitar-freela"
             >
               Solicitar freela
@@ -316,7 +316,7 @@ export function RendaTab({
                 ? onGuestBrowseFreelas?.()
                 : setShowFazerFreelasModal(true)
               }
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-all hover:text-teal-300"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-colors hover:text-teal-300"
               id="btn-fazer-freela"
             >
               <span>Fazer freela</span>
@@ -359,7 +359,7 @@ export function RendaTab({
             type="button"
             onClick={openRetailerWorkspace}
             disabled={isCheckingStore || isProvisioningFree}
-            className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-all hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
+            className="w-full rounded-xl bg-orange-600 py-2.5 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-orange-500 disabled:cursor-wait disabled:opacity-60"
             id="btn-criar-loja-ofertas"
           >
             {isCheckingStore
@@ -396,7 +396,7 @@ export function RendaTab({
                 'info'
               )
             }
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase tracking-wider text-teal-300 transition-all hover:bg-teal-500/20"
+            className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase tracking-wider text-teal-300 transition-colors hover:bg-teal-500/20"
             id="btn-kyrub-formaliza"
           >
             <FileCheck2 className="h-3.5 w-3.5" />

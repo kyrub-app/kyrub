@@ -56,7 +56,7 @@ test('runtime observer adjusts new screens without reapplying existing text', ()
   assert.match(hookSource, /isWithinManagedScope\(addedRoot\)/);
   assert.match(hookSource, /SPECIALIZED_TYPOGRAPHY_SELECTOR/);
   assert.match(hookSource, /refreshResponsiveFontSizes/);
-  assert.match(hookSource, /restoreAllAdjustedElements\(\);\s*applySnapshots\(captureSnapshots\(collectManagedElements\(\)\)\)/);
+  assert.match(hookSource, /restoreAllAdjustedElements\(\);\s*void rootElement\.offsetWidth;\s*applySnapshots\(captureSnapshots\(collectManagedElements\(\)\)\)/);
   assert.match(hookSource, /window\.addEventListener\('resize', onResponsiveResize\)/);
   assert.match(hookSource, /window\.visualViewport\?\.addEventListener\('resize', onResponsiveResize\)/);
   assert.match(hookSource, /window\.removeEventListener\('resize', onResponsiveResize\)/);
@@ -138,12 +138,20 @@ test('font-size follows viewport in both directions without accumulating 4px', a
     }
     Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
     let width = 1024;
+    let simulateInterpolatedFont = false;
     Object.defineProperty(dom.window, 'innerWidth', { configurable: true, get: () => width });
     const nativeGetComputedStyle = dom.window.getComputedStyle.bind(dom.window);
     dom.window.getComputedStyle = ((element: Element) => {
       const node = element as HTMLElement;
       // Simulate a Tailwind media query, while respecting a previously
       // applied inline size (so failure to restore would double-amplify).
+      if (node.id === 'animated-button' && !node.style.getPropertyValue('font-size')) {
+        // Chromium can report an in-flight transition-all size while the
+        // font is temporarily restored. A stale reading must never become
+        // the new +4px baseline on the second resize.
+        const animationActive = node.style.getPropertyValue('transition-property') !== 'none';
+        return { fontSize: simulateInterpolatedFont && animationActive ? '75.58px' : '10px' } as CSSStyleDeclaration;
+      }
       if (node.id === 'responsive-text' && !node.style.getPropertyValue('font-size')) {
         return { fontSize: width < 640 ? '10px' : '12px' } as CSSStyleDeclaration;
       }
@@ -154,11 +162,17 @@ test('font-size follows viewport in both directions without accumulating 4px', a
     root = createRoot(document.getElementById('root')!);
     const Harness = () => {
       useFontSizeAccessibility();
-      return createElement('p', { id: 'responsive-text', className: 'text-[10px] sm:text-xs' }, 'Descrição responsiva');
+      return createElement('div', null,
+        createElement('p', { id: 'responsive-text', className: 'text-[10px] sm:text-xs' }, 'Descrição responsiva'),
+        createElement('button', { id: 'animated-button', className: 'transition-all text-[10px]' }, 'Catu')
+      );
     };
     await act(async () => { root!.render(createElement(Harness)); });
     const paragraph = document.getElementById('responsive-text')!;
     assert.equal(paragraph.style.fontSize, '16px', 'desktop: 12px + 4px');
+    const animated = document.getElementById('animated-button')!;
+    assert.equal(animated.style.fontSize, '14px', 'Catu initial button size');
+    simulateInterpolatedFont = true;
 
     const changeWidth = async (nextWidth: number) => {
       width = nextWidth;
@@ -167,10 +181,15 @@ test('font-size follows viewport in both directions without accumulating 4px', a
     };
     await changeWidth(340);
     assert.equal(paragraph.style.fontSize, '14px', 'mobile: 10px + 4px without reload');
+    assert.equal(animated.style.fontSize, '14px', 'Catu font remains 14px despite stale 75.58px transition');
     await changeWidth(1024);
     assert.equal(paragraph.style.fontSize, '16px', 'wider again: responsive class is remeasured');
+    assert.equal(animated.style.fontSize, '14px', 'Catu return to desktop does not accumulate font size');
     await changeWidth(340);
     assert.equal(paragraph.style.fontSize, '14px', 'repeated resizes do not compound the adjustment');
+    assert.equal(animated.style.fontSize, '14px', 'Catu second cycle stays at 14px');
+    assert.equal(animated.style.getPropertyValue('transition-property'), '',
+      'Temporary transition override is restored after the resize');
 
     // Height-only browser resize cannot re-run the font calculation.
     dom.window.dispatchEvent(new dom.window.Event('resize'));
@@ -206,4 +225,16 @@ test('admin login disclosure reaches WCAG AA contrast for normal text', () => {
   const background = luminance('0f172a'); // slate-900
   const ratio = (foreground + 0.05) / (background + 0.05);
   assert.ok(ratio >= 4.5, `Expected WCAG AA >=4.5:1, got ${ratio.toFixed(2)}:1`);
+});
+
+
+test('Catu buttons animate colors only; resize logic cancels transitions for source measurement', () => {
+  const catu = readFileSync('src/components/tabs/RendaTab.tsx', 'utf8');
+  const hook = readFileSync('src/hooks/useFontSizeAccessibility.ts', 'utf8');
+  assert.doesNotMatch(catu, /transition-all/);
+  assert.match(catu, /transition-colors/);
+  assert.match(hook, /element\.style\.setProperty\('transition-property', 'none', 'important'\)/);
+  assert.match(hook, /void rootElement\.offsetWidth;/);
+  assert.match(hook, /element\.style\.removeProperty\('transition-property'\)/);
+  assert.match(hook, /restoreAllAdjustedElements\(\);\s*void rootElement\.offsetWidth;\s*applySnapshots/);
 });
