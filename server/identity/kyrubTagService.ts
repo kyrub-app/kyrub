@@ -5,7 +5,7 @@ import {parseCardTargets,isBoundTarget,cardLink,CARD_LIMIT,type CardLink} from '
 import {resolveTarget} from './publicVisitCardService.js';
 const tags=()=>adminDb.collection('kyrub_official_tags');
 const validActor=(actor:string)=>{if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('TAG_FORBIDDEN');};
-const hash=(id:string,code:string)=>createHash('sha256').update('kyrub-tag-v1:'+id+':'+code).digest('hex');
+export const hashKyrubTagActivation=(id:string,code:string)=>createHash('sha256').update('kyrub-tag-v1:'+id+':'+code).digest('hex');
 function owned(id:string,data:Record<string,unknown>):OwnedKyrubTag{
  if(!isTagId(id)||!isTagModel(data.model))throw Error('TAG_UNAVAILABLE');
  const targets=Array.isArray(data.targets)?data.targets.filter(isBoundTarget).slice(0,CARD_LIMIT):[];
@@ -16,7 +16,7 @@ function owned(id:string,data:Record<string,unknown>):OwnedKyrubTag{
 export async function provisionKyrubTag(model:KyrubTagModel){
  if(!isTagModel(model))throw Error('TAG_INVALID');
  const id=randomBytes(16).toString('hex'),code=randomBytes(16).toString('hex');
- await tags().doc(id).create({model,ownerId:null,enabled:false,targets:[],activationHash:hash(id,code),createdAt:new Date().toISOString()});
+ await tags().doc(id).create({model,ownerId:null,enabled:false,targets:[],activationHash:hashKyrubTagActivation(id,code),createdAt:new Date().toISOString()});
  return {id,code,url:tagUrl(id)};
 }
 export async function claimKyrubTag(actor:string,id:string,code:unknown){
@@ -30,7 +30,7 @@ export async function claimKyrubTag(actor:string,id:string,code:unknown){
   // A consumed code can never change the original owner. Even disabled tags
   // remain bound. Use GET to recover after a successful claim.
   if(data.ownerId!==null||typeof data.activationHash!=='string'||!/^[a-f0-9]{64}$/.test(data.activationHash))throw Error('TAG_FORBIDDEN');
-  if(!timingSafeEqual(Buffer.from(data.activationHash,'hex'),Buffer.from(hash(id,code),'hex')))throw Error('TAG_FORBIDDEN');
+  if(!timingSafeEqual(Buffer.from(data.activationHash,'hex'),Buffer.from(hashKyrubTagActivation(id,code),'hex')))throw Error('TAG_FORBIDDEN');
   const next={model:data.model,ownerId:actor,enabled:false,targets:[],activationHash:null,claimedAt:new Date().toISOString()};
   tx.update(ref,next);
   return owned(id,next);
