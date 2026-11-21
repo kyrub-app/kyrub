@@ -32,6 +32,10 @@
       "destination": "/api/admin/operations/health?transport=global-challenges"
     },
     {
+      "source": "/api/public-social/:kind/:identifier",
+      "destination": "/api/health?transport=public-social-address&kind=:kind&identifier=:identifier"
+    },
+    {
       "source": "/api/square/public",
       "destination": "/api/health?transport=public-square-discovery"
     },
@@ -216,6 +220,18 @@
     },
     {
       "source": "/@:slug/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/kairubido/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/comunidade/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/cartao/:path*",
       "destination": "/index.html"
     },
     {

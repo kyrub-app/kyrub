@@ -85,6 +85,9 @@ jobs:
       - name: Global challenge API and transaction tests
         run: npm run test:global-challenges
 
+      - name: Public identity and visit card isolated Firestore lifecycle
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project demo-public-visit-card --only firestore "node --test --import tsx tests/firestore-public-visit-card.test.ts"
+
       - name: Prebuild validation
         run: npm run prebuild
 

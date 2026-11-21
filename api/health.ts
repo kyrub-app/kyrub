@@ -80,6 +80,117 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'public-visit-card' || transport === 'manage-public-visit-card') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    const method=(request.method??'GET').toUpperCase();
+    const managing=transport==='manage-public-visit-card';
+    if ((!managing && method!=='GET') || (managing && !['GET','POST','DELETE'].includes(method))) {
+      response.setHeader('Allow',managing?'GET, POST, DELETE':'GET');
+      response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;
+    }
+    let actor='';
+    if(managing){
+      try{
+        const {authenticateConsultantRequest}=await import('../server/ai/consultantAuth.js');
+        actor=(await authenticateConsultantRequest(headerValue(request.headers.authorization??request.headers.Authorization))).uid;
+        if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('AUTH_REQUIRED');
+      }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
+    }
+    try{
+      const service=await import('../server/identity/publicVisitCardService.js');
+      if(!managing){
+        const result=await service.resolvePublicCard(queryValue(request.query?.id));
+        response.status(result?200:404).json(result??{error:'CARD_NOT_FOUND'});return;
+      }
+      if(method==='GET'){response.status(200).json({card:await service.loadOwnedCard(actor)});return;}
+      if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}
+      const body=request.body;
+      const urls=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).urls:null;
+      response.status(200).json({card:await service.saveOwnedCard(actor,urls)});
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      if(code==='INVALID_CARD')response.status(400).json({error:code});
+      else if(code==='CARD_TARGET_UNAVAILABLE')response.status(409).json({error:code});
+      else response.status(503).json({error:'CARD_UNAVAILABLE'});
+    }
+    return;
+  }
+
+  if (transport === 'manage-public-social-address') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      response.setHeader('Allow', 'GET, POST');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let actor: string;
+    try {
+      const { authenticateConsultantRequest } = await import('../server/ai/consultantAuth.js');
+      actor = (await authenticateConsultantRequest(headerValue(request.headers.authorization ?? request.headers.Authorization))).uid;
+    } catch (error) {
+      const status = (error as {status?: number; statusCode?: number} | null)?.status ??
+        (error as {statusCode?: number} | null)?.statusCode;
+      response.status(status === 503 ? 503 : 401).json({error:'AUTH_REQUIRED'});
+      return;
+    }
+    const kind = queryValue(request.query?.kind);
+    if (kind !== 'profile' && kind !== 'community') {
+      response.status(400).json({error:'INVALID_PUBLIC_ADDRESS'});
+      return;
+    }
+    const communityId = queryValue(request.query?.communityId);
+    try {
+      const { getOwnedSocialAddress, reserveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
+      if (method === 'GET') {
+        response.status(200).json(await getOwnedSocialAddress(actor,kind,communityId));
+        return;
+      }
+      const body = request.body;
+      const identifier = body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string,unknown>).identifier : null;
+      if (typeof identifier !== 'string' || identifier.length > 120) {
+        response.status(400).json({error:'INVALID_PUBLIC_ADDRESS'});
+        return;
+      }
+      const result = await reserveSocialAddress(actor,kind,identifier,communityId);
+      response.status(200).json(result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'INVALID_PUBLIC_ADDRESS') response.status(400).json({error:code});
+      else if (code === 'PUBLIC_ADDRESS_FORBIDDEN') response.status(403).json({error:code});
+      else if (code === 'PUBLIC_ADDRESS_CONFLICT') response.status(409).json({error:code});
+      else response.status(503).json({error:'PUBLIC_ADDRESS_UNAVAILABLE'});
+    }
+    return;
+  }
+
+  if (transport === 'public-social-address') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    try {
+      const { isSocialAddress } = await import('../server/identity/publicSocialAddressPolicy.js');
+      const kind = queryValue(request.query?.kind);
+      const identifier = queryValue(request.query?.identifier);
+      if (!isSocialAddress(kind,identifier)) {
+        response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
+        return;
+      }
+      const { resolveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
+      const result = await resolveSocialAddress(kind,identifier);
+      if (!result) response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
+      else response.status(200).json(result);
+    } catch {
+      response.status(503).json({ error: 'PUBLIC_ADDRESS_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (transport === 'public-community-page') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {

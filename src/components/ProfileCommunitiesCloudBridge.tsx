@@ -1,3 +1,4 @@
+import { PublicSocialAddressEditor } from './PublicSocialAddressEditor';
 import {
   useCallback,
   useEffect,
@@ -1847,6 +1848,7 @@ export function ProfileCommunitiesCloudBridge() {
 
                     {pageTab === 'about' && (
                       <div className="space-y-3">
+                        {selectedCommunity.isOwner && user?.uid && <PublicSocialAddressEditor key={selectedCommunity.id} kind="community" ownerId={user.uid} communityId={selectedCommunity.id} suggested={selectedCommunity.name.normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'-').replace(/^-+|-+$/g,'')} />}
                         <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
                           <div className="flex items-center justify-between gap-3">
                             <h3 className="text-xs font-black uppercase text-white">Sobre a comunidade</h3>
