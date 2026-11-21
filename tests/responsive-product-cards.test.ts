@@ -188,3 +188,20 @@ test('desktop storefront CSS never overrides stacked price and Adicionar actions
   assert.match(sharedPdv, /className="flex min-h-11 min-w-0 w-full items-center/);
   assert.match(sharedPdv, /<span className="min-w-0 text-center leading-tight whitespace-normal break-words">\{actionLabel\}<\/span>/);
 });
+
+
+test('337px official storefront keeps Adicionar on one line without hiding longer actions', () => {
+  const narrow = responsiveProductCards.match(/@media \(max-width: 379px\) \{([\s\S]*?)\n\}\n\n\/\* The seller workspace/);
+  assert.ok(narrow, 'The narrow mobile action override must be scoped under 380px');
+  const styles = narrow[1];
+  assert.match(sharedPdv, /data-compact-add-action=\{actionLabel === 'Adicionar' \? 'true' : undefined\}/);
+  assert.match(styles, /button\[id\^='storefront-add-'\]\[data-compact-add-action='true'\]/);
+  assert.match(styles, /gap:\s*0;\s*padding-inline:\s*0\.375rem;\s*letter-spacing:\s*normal;/);
+  assert.match(styles, /> svg \{\s*display:\s*none;/, 'Hide decorative icon to reserve label width');
+  assert.match(styles, /> span \{\s*white-space:\s*nowrap;\s*overflow-wrap:\s*normal;/);
+  assert.match(responsiveProductCards, /repeat\(2, minmax\(0, 1fr\)\)/,
+    'Do not remove the two-column catalog for a single action');
+  assert.match(sharedPdv, /text-\[10px\] font-black uppercase tracking-wide/,
+    'Preserve the Catu-aligned accessible source size');
+  assert.doesNotMatch(styles, /font-size:/, 'Do not shrink the font to make text fit');
+});
