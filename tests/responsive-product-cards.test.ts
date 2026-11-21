@@ -34,6 +34,7 @@ const sharedPdv = readFileSync(
   'src/components/pdv/SharedPdvCatalog.tsx',
   'utf8'
 );
+const responsiveProductCards = readFileSync('src/styles/responsive-product-cards.css', 'utf8');
 const unifiedProductModal = readFileSync(
   'src/components/store/UnifiedProductModal.tsx',
   'utf8'
@@ -169,4 +170,21 @@ test('the unified product modal supports hierarchy, complimentary items and choi
   assert.match(unifiedProductModal, /id="product-complimentary-control"/);
   assert.match(unifiedProductModal, /ProductQuickNotesEditor/);
   assert.match(unifiedProductModal, /ProductOptionGroupsEditor/);
+});
+
+
+test('desktop storefront CSS never overrides stacked price and Adicionar actions', () => {
+  const media640 = responsiveProductCards.split('@media (min-width: 640px)')[1]?.split('@media (min-width: 1024px)')[0];
+  assert.ok(media640, 'The storefront should have a 640px responsive block');
+  assert.doesNotMatch(media640, /flex-direction:\s*row\s*;/,
+    'No desktop override may put price beside the add action');
+  assert.match(media640, /align-items:\s*stretch\s*;\s*flex-direction:\s*column\s*;/);
+  assert.match(media640, /min-height:\s*2\.75rem\s*;\s*width:\s*100%\s*;\s*min-width:\s*0\s*;/);
+  assert.match(responsiveProductCards, /button\[id\^='storefront-add-'\]/,
+    'Product button selectors must match SharedPdvCatalog idPrefix=storefront');
+  assert.doesNotMatch(responsiveProductCards, /button\[id\^='add-to'\]/,
+    'Remove obsolete selectors that never matched canonical storefront buttons');
+  assert.match(sharedPdv, /className="mt-auto flex flex-col gap-2 border-t border-slate-800/);
+  assert.match(sharedPdv, /className="flex min-h-11 min-w-0 w-full items-center/);
+  assert.match(sharedPdv, /<span className="min-w-0 text-center leading-tight whitespace-normal break-words">\{actionLabel\}<\/span>/);
 });
