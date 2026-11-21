@@ -24,6 +24,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
     name: user.displayName || '', bio: '', photoUrl: user.photoURL || '',
   });
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [saving, setSaving] = useState(false);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [message, setMessage] = useState('');
@@ -32,6 +33,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
+    setLoadFailed(false);
     setMessage('');
     const originalGoogle = user.providerData.find(provider => provider.providerId === 'google.com')?.photoURL
       || localStorage.getItem('kyrub_google_profile_photo_' + user.uid)
@@ -51,7 +53,10 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
         photoUrl: clean(publicData?.photoUrl) || clean(accountData?.photoUrl) || user.photoURL || '',
       });
     }).catch(() => {
-      if (!cancelled) setMessage('Não foi possível carregar o perfil salvo. Verifique sua conexão antes de editar.');
+      if (!cancelled) {
+        setLoadFailed(true);
+        setMessage('Não foi possível carregar seu perfil. Feche e reabra quando estiver conectado. Nenhuma edição será enviada.');
+      }
     }).finally(() => {
       if (!cancelled) setLoading(false);
     });
@@ -60,7 +65,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
 
   const savePublicProfile = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (saving || photoBusy || loading) return;
+    if (saving || photoBusy || loading || loadFailed) return;
     const name = draft.name.trim().slice(0, 80);
     const bio = draft.bio.trim().slice(0, 280);
     if (!name) {
@@ -89,6 +94,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
   };
 
   const setPhoto = async (photoUrl: string) => {
+    if (loadFailed) return;
     setPhotoBusy(true);
     setMessage('');
     try {
@@ -114,7 +120,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
   const uploadPhoto = async (event: ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     event.target.value = '';
-    if (!file) return;
+    if (!file || loadFailed) return;
     const extension = ALLOWED_PHOTOS[file.type];
     if (!extension || file.size > MAX_PHOTO_BYTES) {
       setMessage('Use JPG, PNG ou WEBP de até 8 MB.');
@@ -166,9 +172,9 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
             <Camera className="h-4 w-4" aria-hidden="true" />
             {photoBusy ? 'Enviando…' : 'Alterar foto'}
             <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only"
-              disabled={photoBusy || saving} onChange={event => void uploadPhoto(event)} />
+              disabled={photoBusy || saving || loadFailed} onChange={event => void uploadPhoto(event)} />
           </label>
-          <button type="button" disabled={!googlePhoto || photoBusy || saving}
+          <button type="button" disabled={!googlePhoto || photoBusy || saving || loadFailed}
             onClick={() => void setPhoto(googlePhoto)}
             className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 px-3 text-sm font-bold text-slate-200 disabled:opacity-50">
             <RotateCcw className="h-4 w-4" aria-hidden="true" /> Usar Google
@@ -189,7 +195,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
             className="mt-2 w-full resize-none rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-base text-white" />
           <span className="mt-1 block text-right text-xs text-slate-400">{draft.bio.length}/280</span>
         </label>
-        <button type="submit" disabled={saving || photoBusy}
+        <button type="submit" disabled={saving || photoBusy || loadFailed}
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 text-sm font-black text-slate-950 disabled:opacity-50">
           {saving ? <LoaderCircle className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
           Salvar perfil
