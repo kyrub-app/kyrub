@@ -1,4 +1,5 @@
 import { getApps } from 'firebase/app';
+import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc } from 'firebase/firestore/lite';
 import {
   collection, doc, getDocFromCache, getDocFromServer, getDocsFromServer,
   query, where,
@@ -21,6 +22,11 @@ export interface PublicCommunityReadProbe {
   firestoreHost: string;
   initializedApps: string;
   googleRestDocument: string;
+  firestoreLiteDocument: string;
+  sdkSnapshotSource: string;
+  sdkPendingWrites: string;
+  querySnapshotSource: string;
+  queryPendingWrites: string;
 }
 
 /**
@@ -68,6 +74,11 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
     firestoreHost: 'não verificado',
     initializedApps: 'não verificado',
     googleRestDocument: 'não executado',
+    firestoreLiteDocument: 'não executado',
+    sdkSnapshotSource: 'não verificada',
+    sdkPendingWrites: 'não verificado',
+    querySnapshotSource: 'não verificada',
+    queryPendingWrites: 'não verificado',
   };
   const user = auth.currentUser;
   if (!user || !/^[A-Za-z0-9_-]{1,128}$/.test(communityId)) {
@@ -110,6 +121,18 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
     : 'não informado pelo SDK';
   await Promise.all([
     (async () => {
+      // Firestore Lite uses a direct REST read and no persistent local cache.
+      // Uses the same FirebaseApp/Auth identity; no credentials are disclosed.
+      try {
+        const lite = getLiteFirestore(auth.app);
+        const snapshot = await withDeadline(getLiteDoc(liteDoc(lite, 'communities', communityId)));
+        result.firestoreLiteDocument = snapshot.exists()
+          ? 'documento encontrado' : 'documento não encontrado';
+      } catch (error) {
+        result.firestoreLiteDocument = failure(error);
+      }
+    })(),
+    (async () => {
       result.googleRestDocument = await probeCommunityGoogleRest(user, communityId);
     })(),
     (async () => {
@@ -124,6 +147,8 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
     (async () => {
       try {
         const snapshot = await withDeadline(getDocFromServer(reference));
+        result.sdkSnapshotSource = snapshot.metadata.fromCache ? 'cache' : 'servidor';
+        result.sdkPendingWrites = snapshot.metadata.hasPendingWrites ? 'sim' : 'não';
         if (!snapshot.exists()) {
           result.directServer = 'documento não encontrado';
         } else {
@@ -148,6 +173,8 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
           collection(db, 'communities'),
           where('visibility', 'in', ['public', 'moderated']),
         )));
+        result.querySnapshotSource = publicSnapshot.metadata.fromCache ? 'cache' : 'servidor';
+        result.queryPendingWrites = publicSnapshot.metadata.hasPendingWrites ? 'sim' : 'não';
         result.publicQuery = publicSnapshot.docs.some(snapshot => snapshot.id === communityId)
           ? 'incluído (' + publicSnapshot.size + ' encontrados)'
           : 'ausente (' + publicSnapshot.size + ' encontrados)';
