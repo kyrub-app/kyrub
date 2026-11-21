@@ -334,7 +334,7 @@ export function UserNotificationCenterBridge() {
 
   const panel = open
     ? createPortal(
-        <div className="fixed inset-0 z-[215] bg-slate-950/70 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none" onClick={() => setOpen(false)}>
+        <div data-kyrub-font-scope="true" className="fixed inset-0 z-[215] bg-slate-950/70 backdrop-blur-sm sm:bg-transparent sm:backdrop-blur-none" onClick={() => setOpen(false)}>
           <section
             className="absolute inset-x-2 top-[max(4.5rem,env(safe-area-inset-top))] max-h-[78dvh] overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl sm:inset-x-auto sm:right-4 sm:top-16 sm:w-[min(26rem,calc(100vw-2rem))]"
             role="dialog"

@@ -751,3 +751,41 @@ test('Praça store and community catalogs scroll their titles, filters and cards
   assert.match(owner, /<SquareDirectoryLayout/);
   assert.match(trigger, /closest\('\[data-square-directory-scroll\]'\)/);
 });
+
+test('typography in Praça portals follows the Catu/Renda baseline without double enlargement', () => {
+  const fontHook = read('src/hooks/useFontSizeAccessibility.ts');
+  const renda = read('src/components/tabs/RendaTab.tsx');
+  const notifications = read('src/components/UserNotificationCenterBridge.tsx');
+  const community = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const directory = read('src/components/SquareDirectoryLayout.tsx');
+  const profile = read('src/components/modals/UserProfileModal.tsx');
+
+  // Catu establishes a 10px source body / 12px source title, which receives
+  // the existing +4px increase only once (14px / 16px displayed).
+  assert.match(renda, /<p className="text-\[10px\] leading-relaxed text-slate-400">/);
+  assert.match(renda, /<h3 className="text-xs font-black uppercase/);
+  assert.match(fontHook, /ACCESSIBILITY_FONT_INCREASE_PX = 4/);
+  assert.match(fontHook, /PORTAL_TYPOGRAPHY_SELECTOR/);
+  assert.match(fontHook, /rootElement\.contains\(element\) \|\| Boolean\(element\.closest\(PORTAL_TYPOGRAPHY_SELECTOR\)\)/);
+  assert.match(fontHook, /observer\.observe\(document\.body,/);
+  assert.match(fontHook, /adjustedElements\.has\(element\)/);
+  assert.match(fontHook, /!element\.closest\(SPECIALIZED_TYPOGRAPHY_SELECTOR\)/);
+  assert.match(fontHook, /temporarilyRestoreAdjustedAncestors/);
+  assert.doesNotMatch(fontHook, /document\.body\.style\.fontSize\s*=/);
+
+  // Only owned app portals opt in: ERP/admin and unrelated widgets do not.
+  assert.match(notifications, /data-kyrub-font-scope="true" className="fixed inset-0 z-\[215\]/);
+  assert.equal((community.match(/data-kyrub-font-scope="true"/g) || []).length, 6);
+  assert.match(directory, /data-kyrub-font-scope="true"/);
+  assert.match(directory, /data-square-directory-scroll="true"/);
+
+  // The modal bridge already has its own typography scale: do not add +4px
+  // to it again through the root observer.
+  assert.match(profile, /data-kyrub-font-managed="true"/);
+  // Personal center had 14px source descriptions; normalize them to Catu's
+  // body baseline while retaining heading/card-label hierarchy.
+  assert.match(profile, /<h3 className="text-xs font-black text-white">Carteira Kairube<\/h3>/);
+  assert.match(profile, /<p className="mt-1 text-\[10px\] leading-relaxed text-slate-400">/);
+  assert.match(profile, /<strong className="mt-2 block text-xs font-bold text-slate-100">\{card\.label\}<\/strong>/);
+  assert.match(profile, /<span className="mt-1 block text-\[10px\] leading-relaxed text-slate-400">\{card\.description\}<\/span>/);
+});

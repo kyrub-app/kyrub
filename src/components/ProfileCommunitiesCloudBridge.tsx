@@ -1140,7 +1140,7 @@ export function ProfileCommunitiesCloudBridge() {
   return (
     <>
       {groupsModalOpen && selectedCommunity && createPortal(
-        <div className="fixed inset-0 z-[211] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={closeGroupsModal}>
+        <div data-kyrub-font-scope="true" className="fixed inset-0 z-[211] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={closeGroupsModal}>
           <section role="dialog" aria-modal="true" aria-label="Grupos da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div><h3 className="text-base font-black text-white">Grupos</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
@@ -1178,7 +1178,7 @@ export function ProfileCommunitiesCloudBridge() {
         </div>, document.body
       )}
       {membersModalOpen && selectedCommunity && createPortal(
-        <div className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setMembersModalOpen(false)}>
+        <div data-kyrub-font-scope="true" className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setMembersModalOpen(false)}>
           <section role="dialog" aria-modal="true" aria-label="Membros da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
               <div><h3 className="text-base font-black text-white">Membros</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
@@ -1300,7 +1300,7 @@ export function ProfileCommunitiesCloudBridge() {
         )}
 
       {selectedPublicPreview && createPortal(
-        <div className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/95 p-4"
+        <div data-kyrub-font-scope="true" className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/95 p-4"
           role="presentation" onClick={() => setSelectedPublicPreview(null)}>
           <section role="dialog" aria-modal="true" aria-label={`Conhecer ${selectedPublicPreview.name}`}
             onClick={event => event.stopPropagation()}
@@ -1413,7 +1413,7 @@ export function ProfileCommunitiesCloudBridge() {
       {createOpen &&
         createPortal(
           <div
-            className="fixed inset-0 z-[185] flex items-end justify-center bg-slate-950/92 backdrop-blur-md sm:items-center sm:p-4"
+            data-kyrub-font-scope="true" className="fixed inset-0 z-[185] flex items-end justify-center bg-slate-950/92 backdrop-blur-md sm:items-center sm:p-4"
             onClick={() => setCreateOpen(false)}
             role="presentation"
           >
@@ -1600,7 +1600,7 @@ export function ProfileCommunitiesCloudBridge() {
 
       {selectedCommunity &&
         createPortal(
-          <div className="fixed inset-0 z-[175] bg-slate-950/95 backdrop-blur-md">
+          <div data-kyrub-font-scope="true" className="fixed inset-0 z-[175] bg-slate-950/95 backdrop-blur-md">
             <section className="relative mx-auto flex h-[100dvh] w-full max-w-3xl flex-col overflow-hidden border-x border-slate-800 bg-slate-950">
               <>
                   <div
@@ -1933,7 +1933,7 @@ export function ProfileCommunitiesCloudBridge() {
       {editOpen && selectedCommunity?.isOwner &&
         createPortal(
           <div
-            className="fixed inset-0 z-[195] flex items-end justify-center bg-slate-950/92 backdrop-blur-md sm:items-center sm:p-4"
+            data-kyrub-font-scope="true" className="fixed inset-0 z-[195] flex items-end justify-center bg-slate-950/92 backdrop-blur-md sm:items-center sm:p-4"
             onClick={() => setEditOpen(false)}
             role="presentation"
           >

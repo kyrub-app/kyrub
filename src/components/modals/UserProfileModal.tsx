@@ -215,6 +215,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-md animate-fade-in sm:p-4"
         id="modal-user-profile"
+        data-kyrub-font-managed="true"
       >
         <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl animate-scale-up">
           <header className="flex items-center justify-between border-b border-slate-900 bg-slate-950/95 px-4 py-3 sm:px-5">
@@ -308,8 +309,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
 
             <section className="space-y-4 border-b border-slate-900 bg-slate-950 p-4 sm:p-5" id="profile-personal-center">
               <div>
-                <h3 className="text-base font-black text-white">Carteira Kairube</h3>
-                <p className="mt-1 text-sm text-slate-400">
+                <h3 className="text-xs font-black text-white">Carteira Kairube</h3>
+                <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
                   Planejamento, movimentações e evolução pessoal em um só lugar, com saldos separados.
                 </p>
               </div>
@@ -325,8 +326,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                           : 'border-slate-700 bg-slate-900 hover:border-slate-500'
                       }`}>
                       <Icon className="h-5 w-5 text-orange-300" aria-hidden="true" />
-                      <strong className="mt-2 block text-sm font-bold text-slate-100">{card.label}</strong>
-                      <span className="mt-1 block text-xs leading-relaxed text-slate-400">{card.description}</span>
+                      <strong className="mt-2 block text-xs font-bold text-slate-100">{card.label}</strong>
+                      <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">{card.description}</span>
                     </button>
                   );
                 })}

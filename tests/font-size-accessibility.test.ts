@@ -38,8 +38,11 @@ test('runtime observer adjusts new screens without reapplying existing text', ()
   assert.match(hookSource, /adjustedElements\.has\(element\)/);
   assert.match(
     hookSource,
-    /observer\.observe\(rootElement,\s*\{\s*childList:\s*true,\s*subtree:\s*true,\s*\}\)/
+    /observer\.observe\(document\.body,\s*\{\s*childList:\s*true,\s*subtree:\s*true,\s*\}\)/
   );
+  assert.match(hookSource, /PORTAL_TYPOGRAPHY_SELECTOR/);
+  assert.match(hookSource, /isWithinManagedScope\(addedRoot\)/);
+  assert.match(hookSource, /SPECIALIZED_TYPOGRAPHY_SELECTOR/);
   assert.doesNotMatch(hookSource, /attributes:\s*true/);
   assert.doesNotMatch(hookSource, /requestAnimationFrame/);
   assert.match(appSource, /useFontSizeAccessibility\(\);/);
