@@ -46,6 +46,8 @@ const restoreInlineFontSize = (
   }
 };
 
+const PORTAL_TYPOGRAPHY_SELECTOR = '[data-kyrub-font-scope="true"]';
+
 const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
   root,
   ...Array.from(root.querySelectorAll('*')).filter(
@@ -56,8 +58,9 @@ const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
 /**
  * Applies the accessibility font increase to the rendered DOM. Existing
  * elements are adjusted once and are never globally restored/reapplied after
- * clicks. Newly mounted tabs and modals are measured and adjusted separately,
- * preventing the repeated zoom-like animation caused by interaction updates.
+ * clicks. Explicitly marked portal panels get the same +4px accessibility
+ * baseline as the Renda workspace; unrelated third-party/ERP portals are not
+ * touched. Newly mounted controls inherit the same rule without zooming again.
  */
 export const useFontSizeAccessibility = (
   rootElementId = 'root',
@@ -66,6 +69,9 @@ export const useFontSizeAccessibility = (
   useEffect(() => {
     const rootElement = document.getElementById(rootElementId);
     if (!rootElement) return;
+
+    const isWithinManagedScope = (element: HTMLElement): boolean =>
+      rootElement.contains(element) || Boolean(element.closest(PORTAL_TYPOGRAPHY_SELECTOR));
 
     const originalInlineFontSizes = new WeakMap<
       HTMLElement,
@@ -118,7 +124,7 @@ export const useFontSizeAccessibility = (
       }> = [];
 
       let ancestor = element.parentElement;
-      while (ancestor && rootElement.contains(ancestor)) {
+      while (ancestor && isWithinManagedScope(ancestor)) {
         if (adjustedElements.has(ancestor)) {
           const original = originalInlineFontSizes.get(ancestor);
           if (original) {
@@ -141,7 +147,7 @@ export const useFontSizeAccessibility = (
     };
 
     const applyToAddedSubtree = (addedRoot: HTMLElement): void => {
-      if (!rootElement.contains(addedRoot)) return;
+      if (!isWithinManagedScope(addedRoot)) return;
 
       // Newly mounted elements may inherit the already enlarged size from an
       // adjusted parent. Restore only their ancestors while measuring, then put
@@ -152,7 +158,15 @@ export const useFontSizeAccessibility = (
       applySnapshots(snapshots);
     };
 
-    applySnapshots(captureSnapshots(collectElementSubtree(rootElement)));
+    // A portal may already be mounted by the time this effect is registered.
+    // Keep its elements independent from #root so no node is enlarged twice.
+    const existingPortals = Array.from(
+      document.querySelectorAll<HTMLElement>(PORTAL_TYPOGRAPHY_SELECTOR)
+    ).filter(portal => !rootElement.contains(portal));
+    applySnapshots(captureSnapshots([
+      ...collectElementSubtree(rootElement),
+      ...existingPortals.flatMap(collectElementSubtree),
+    ]));
 
     const observer = new MutationObserver(mutations => {
       const addedRoots: HTMLElement[] = [];
@@ -181,7 +195,9 @@ export const useFontSizeAccessibility = (
     // Class changes caused by presses, focus and active states are deliberately
     // ignored. Only newly mounted DOM is adjusted, so interaction cannot keep
     // increasing or reanimating existing text.
-    observer.observe(rootElement, {
+    // React portals are direct body children, outside #root. The scope marker
+    // ensures the broader observer skips notifications from unrelated widgets.
+    observer.observe(document.body, {
       childList: true,
       subtree: true,
     });
