@@ -32,7 +32,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
-import { useCommunityDirectory, type CommunityDirectoryItem } from '../hooks/useCommunityDirectory';
+import { useCommunityDirectory, type CommunityDirectoryItem, type PublicDirectoryCommunity } from '../hooks/useCommunityDirectory';
 import { SquareDirectoryLayout } from './SquareDirectoryLayout';
 import { CommunityPostCard } from './CommunityPostCard';
 import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
@@ -231,7 +231,7 @@ function CommunityCover({
 }
 
 export function ProfileCommunitiesCloudBridge() {
-  const { user, communities, loading, error, activeCommunities } =
+  const { user, communities, publicCommunities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [listTab, setListTab] = useState<CommunityListTab>('trending');
@@ -239,6 +239,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [catalogTab, setCatalogTab] = useState<CommunityListTab>('trending');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState('all');
+  const [selectedPublicPreview, setSelectedPublicPreview] = useState<PublicDirectoryCommunity | null>(null);
   const [favoriteCommunityIds, setFavoriteCommunityIds] = useState<Set<string>>(new Set());
   const [favoriteBusyId, setFavoriteBusyId] = useState('');
   const [favoriteError, setFavoriteError] = useState('');
@@ -715,21 +716,42 @@ export function ProfileCommunitiesCloudBridge() {
     [coverPreview]
   );
 
+  const publicOnlyCommunities = useMemo(() => {
+    const authenticatedIds = new Set(communities.map(community => community.id));
+    return publicCommunities.filter(community => !authenticatedIds.has(community.id));
+  }, [communities, publicCommunities]);
+
+  const selectPublicOnly = (tab: CommunityListTab, search: string, category = 'all') => {
+    if (tab !== 'trending') return [];
+    const normalizedSearch = search.trim().toLocaleLowerCase('pt-BR');
+    return publicOnlyCommunities.filter(community =>
+      (category === 'all' || community.category.trim() === category) &&
+      (!normalizedSearch ||
+        [community.name, community.description, community.category]
+          .join(' ').toLocaleLowerCase('pt-BR').includes(normalizedSearch))
+    );
+  };
+
   const visibleCommunities = useMemo(
     () => selectCommunityDirectory(communities, listTab, searchValue, favoriteCommunityIds),
     [communities, listTab, searchValue, favoriteCommunityIds],
   );
+  const visiblePublicOnly = selectPublicOnly(listTab, searchValue);
   const catalogCategories = useMemo(
-    () => [...new Set(selectCommunityDirectory(communities, 'trending', '', favoriteCommunityIds)
-      .map(community => community.category.trim()).filter(Boolean))]
-      .sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [communities, favoriteCommunityIds],
+    () => [...new Set([
+      ...selectCommunityDirectory(communities, 'trending', '', favoriteCommunityIds)
+        .map(community => community.category.trim()),
+      ...publicOnlyCommunities.map(community => community.category.trim()),
+    ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    [communities, publicOnlyCommunities, favoriteCommunityIds],
   );
   const catalogCommunities = useMemo(
     () => selectCommunityDirectory(communities, catalogTab, catalogSearch, favoriteCommunityIds)
       .filter(community => catalogCategory === 'all' || community.category.trim() === catalogCategory),
     [communities, catalogTab, catalogSearch, catalogCategory, favoriteCommunityIds],
   );
+  const catalogPublicOnly = selectPublicOnly(catalogTab, catalogSearch, catalogCategory);
+  const catalogResultCount = catalogCommunities.length + catalogPublicOnly.length;
 
   const similarCommunities = useMemo(() => {
     const name = createDraft.name.trim().toLocaleLowerCase('pt-BR');
@@ -1033,6 +1055,40 @@ export function ProfileCommunitiesCloudBridge() {
     );
   };
 
+  /** Public discovery fallback. Never infer owner or membership from a card. */
+  const renderPublicFallbackCard = (
+    community: PublicDirectoryCommunity,
+    layout: 'rail' | 'catalog' = 'rail',
+  ) => (
+    <article
+      key={'public-' + community.id}
+      data-public-community-fallback={community.id}
+      className={`flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
+    >
+      <button type="button" onClick={() => setSelectedPublicPreview(community)} className="text-left">
+        <div className="flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-sky-950 via-emerald-950 to-slate-800">
+          {community.coverImage
+            ? <img src={community.coverImage} alt="" aria-hidden="true" className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
+            : <Users className="h-9 w-9 text-sky-300" aria-hidden="true" />}
+        </div>
+        <div className="p-3">
+          <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">{community.name}</strong>
+          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} membros</span>
+          <span className="mt-1 block truncate text-xs text-sky-300/75">{community.category}</span>
+          {layout === 'catalog' && community.description && (
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
+          )}
+        </div>
+      </button>
+      <div className="mt-auto border-t border-slate-800 p-2">
+        <button type="button" onClick={() => setSelectedPublicPreview(community)}
+          className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 text-xs font-black uppercase text-slate-200">
+          Conhecer
+        </button>
+      </div>
+    </article>
+  );
+
   const pageTabs: Array<{
     id: CommunityPageTab;
     label: string;
@@ -1185,8 +1241,9 @@ export function ProfileCommunitiesCloudBridge() {
               </button>
 
               {visibleCommunities.map(community => renderCard(community))}
+              {visiblePublicOnly.map(community => renderPublicFallbackCard(community))}
 
-              {!loading && visibleCommunities.length === 0 && (
+              {!loading && visibleCommunities.length + visiblePublicOnly.length === 0 && (
                 <div className="flex min-h-[210px] min-w-[230px] items-center justify-center rounded-2xl border border-dashed border-slate-800 bg-slate-950/50 p-5 text-center">
                   <div>
                     <Users className="mx-auto h-7 w-7 text-slate-700" />
@@ -1203,6 +1260,27 @@ export function ProfileCommunitiesCloudBridge() {
           </section>,
           host
         )}
+
+      {selectedPublicPreview && createPortal(
+        <div className="fixed inset-0 z-[205] flex items-center justify-center bg-slate-950/95 p-4"
+          role="presentation" onClick={() => setSelectedPublicPreview(null)}>
+          <section role="dialog" aria-modal="true" aria-label={`Conhecer ${selectedPublicPreview.name}`}
+            onClick={event => event.stopPropagation()}
+            className="w-full max-w-md space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
+            <h3 className="text-xl font-black text-white">{selectedPublicPreview.name}</h3>
+            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} membros</p>
+            <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{selectedPublicPreview.description}</p>
+            <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200">
+              Esta comunidade consta na Praça pública, mas os dados completos não foram disponibilizados pela leitura autenticada.
+              Por segurança, participar, editar e excluir permanecem indisponíveis até confirmar as permissões do registro.
+            </p>
+            <button type="button" onClick={() => setSelectedPublicPreview(null)}
+              className="min-h-11 w-full rounded-xl border border-slate-600 text-sm font-semibold text-white">
+              Voltar
+            </button>
+          </section>
+        </div>, document.body
+      )}
 
       {catalogOpen && (
         <SquareDirectoryLayout
@@ -1228,12 +1306,13 @@ export function ProfileCommunitiesCloudBridge() {
           )}
           <p className="mb-3 text-xs text-slate-400" aria-live="polite">
             {loading ? 'Carregando comunidades…' :
-              `${catalogCommunities.length} ${catalogCommunities.length === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
+              `${catalogResultCount} ${catalogResultCount === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
           </p>
           <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {catalogCommunities.map(community => renderCard(community, 'catalog'))}
+            {catalogPublicOnly.map(community => renderPublicFallbackCard(community, 'catalog'))}
           </div>
-          {!loading && catalogCommunities.length === 0 && (
+          {!loading && catalogResultCount === 0 && (
             <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
               Nenhuma comunidade encontrada. Experimente outra busca ou filtro.
             </p>
