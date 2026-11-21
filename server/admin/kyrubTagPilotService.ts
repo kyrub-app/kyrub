@@ -18,8 +18,8 @@ export async function authorizePilot(authorization:string){
  return decoded.uid;
 }
 function project(id:string,data:FirebaseFirestore.DocumentData|undefined){
- if(!isTagId(id)||!data||data.pilotBatch!==batch||data.pilotSlot!==slot||data.model!=='pitanga'||!(data.ownerId===null||typeof data.ownerId==='string'))throw Error('PILOT_UNAVAILABLE');
- return {id,url:tagUrl(id),claimed:data.ownerId!==null,batch,slot,experimental:true};
+ if(!isTagId(id)||!data||data.pilotBatch!==batch||data.pilotSlot!==slot||data.model!=='adesivo'||!(data.ownerId===null||typeof data.ownerId==='string'))throw Error('PILOT_UNAVAILABLE');
+ return {id,url:tagUrl(id),claimed:data.ownerId!==null,model:'adesivo' as const,batch,slot,experimental:true};
 }
 export async function readPilot(actor:string){
  return adminDb.runTransaction(async tx=>{
@@ -47,7 +47,7 @@ export async function mutatePilot(actor:string,action:unknown){
   let result;
   if(action==='issue'){
    if(tag.exists)throw Error('PILOT_UNAVAILABLE');
-   const data={model:'pitanga',ownerId:null,enabled:false,targets:[],activationHash:hashKyrubTagActivation(id,code),createdAt:FieldValue.serverTimestamp(),pilotBatch:batch,pilotSlot:slot};
+   const data={model:'adesivo',ownerId:null,enabled:false,targets:[],activationHash:hashKyrubTagActivation(id,code),createdAt:FieldValue.serverTimestamp(),pilotBatch:batch,pilotSlot:slot};
    tx.create(ref,data);
    tx.create(slotRef(),{tagId:id,batch,slot,createdAt:FieldValue.serverTimestamp()});
    result=project(id,data);

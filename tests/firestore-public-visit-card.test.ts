@@ -136,7 +136,8 @@ test('pilot issuance authority, one unit, code recovery and audit are transactio
  const responses=await Promise.all([handlePilot(admin,'POST',{action:'issue'}),handlePilot(admin,'POST',{action:'issue'})]);
  assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
  const issued=responses.find(r=>r.status===200)?.body as Awaited<ReturnType<typeof mutatePilot>>;
- assert.ok(issued.code);const id=issued.unit.id;
+ assert.ok(issued.code);assert.equal(issued.unit.model,'adesivo');const id=issued.unit.id;
+ assert.equal((await resolveKyrubTag(id))?.model,'adesivo');
  assert.deepEqual((await readPilot('pilot-admin')).unit,issued.unit);
  assert.equal(JSON.stringify(await resolveKyrubTag(id)).includes(issued.code),false);
  assert.equal(JSON.stringify((await adminDb.doc('kyrub_official_tags/'+id).get()).data()).includes(issued.code),false);

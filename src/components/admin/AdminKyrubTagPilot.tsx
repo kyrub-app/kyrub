@@ -2,13 +2,13 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
-type Unit={id:string;url:string;claimed:boolean;batch:string;slot:string;experimental:boolean};
+type Unit={id:string;url:string;claimed:boolean;batch:string;slot:string;model:'adesivo';experimental:boolean};
 type NfcWriter={write(message:{records:{recordType:'url';data:string}[]},options:{overwrite:false;signal:AbortSignal}):Promise<void>};
 const endpoint='/api/admin/operations/health?transport=kyrub-tag-pilot';
 const button='min-h-11 rounded-xl border border-slate-600 px-3 py-2 text-sm font-bold text-slate-100 disabled:opacity-50';
 function checkUnit(unit:Unit|null):Unit|null{
  if(unit===null)return null;
- if(!unit||!isTagId(unit.id)||unit.url!==tagUrl(unit.id)||unit.batch!=='experimental-001'||unit.slot!=='001'||unit.experimental!==true||typeof unit.claimed!=='boolean')throw Error('PILOT_UNAVAILABLE');
+ if(!unit||!isTagId(unit.id)||unit.url!==tagUrl(unit.id)||unit.batch!=='experimental-001'||unit.slot!=='001'||unit.model!=='adesivo'||unit.experimental!==true||typeof unit.claimed!=='boolean')throw Error('PILOT_UNAVAILABLE');
  return unit;
 }
 export default function AdminKyrubTagPilot({user}:{user:User}){
@@ -45,7 +45,7 @@ export default function AdminKyrubTagPilot({user}:{user:User}){
   finally{if(writer.current===ctrl){writer.current=null;if(active.current)setWriting(false);}}
  }
  return <div className="space-y-3 text-sm text-slate-200">
- <p><strong>Lote experimental 001 · Unidade 001</strong> — somente teste. Não comercializar. Chip Type 2, autenticidade física não comprovada.</p>
+ <p><strong>Lote experimental 001 · Unidade 001 · Adesivo NFC</strong> — somente teste. Não comercializar. Chip Type 2, autenticidade física não comprovada.</p>
  <p>Uma única identidade pode ser emitida. O endereço é público; o código de ativação é secreto e separado. Nenhum bloqueio permanente será aplicado.</p>
  {!ready?<p role="status">Consulta pendente ou indisponível.</p>:<>
  {unit?<div className="space-y-2 rounded-xl border border-slate-700 p-3"><p>{unit.claimed?'Vinculada definitivamente':'Não vinculada'}</p><a href={unit.url} target="_blank" rel="noopener noreferrer" className="block break-all text-orange-300 underline">{unit.url}</a>
