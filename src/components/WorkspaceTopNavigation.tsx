@@ -30,7 +30,7 @@ export function WorkspaceTopNavigation({
   onGuestNotifications,
 }: WorkspaceTopNavigationProps) {
   return (
-    <header id="app-header" className="sticky top-0 z-40 flex items-center gap-2 border-b border-slate-900 bg-slate-950/90 px-3 py-3 backdrop-blur-md">
+    <>
       <button
         id="header-user-profile-trigger"
         type="button"
@@ -95,6 +95,6 @@ export function WorkspaceTopNavigation({
           <Bell className="h-4 w-4" aria-hidden="true" />
         </button>
       )}
-    </header>
+    </>
   );
 }
