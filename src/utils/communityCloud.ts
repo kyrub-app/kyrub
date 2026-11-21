@@ -6,6 +6,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
+  limit,
   query,
   runTransaction,
   serverTimestamp,
@@ -269,7 +270,8 @@ export const subscribeDiscoverableCommunities = (
   onSnapshot(
     query(
       collection(db, 'communities'),
-      where('visibility', 'in', ['public', 'moderated'])
+      where('visibility', 'in', ['public', 'moderated']),
+      limit(24)
     ),
     snapshot => onChange(byActivity(snapshotItems(snapshot, mapCommunity))),
     error => onError?.(error)
