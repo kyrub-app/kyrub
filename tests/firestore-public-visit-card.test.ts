@@ -134,6 +134,15 @@ test('pilot issuance authority, one unit, code recovery and audit are transactio
  assert.equal((await handlePilot(user,'POST',action)).status,403);
  assert.equal((await handlePilot(suspended,'POST',action)).status,403);
  assert.deepEqual(await readPilot('pilot-admin'),{unit:null});
+ const issued=await Promise.all([handlePilot(admin,'POST',action),handlePilot(admin,'POST',action)]);
+ assert.deepEqual(issued.map(x=>x.status).sort(),[200,409]);
+ const fresh=issued.find(x=>x.status===200)?.body as Awaited<ReturnType<typeof mutatePilot>>;
+ assert.equal(fresh.unit.reserved,true);assert.equal(fresh.unit.model,'adesivo');
+ assert.equal((await resolveKyrubTag(fresh.unit.id))?.activation,'account');
+ assert.equal((await adminDb.doc('kyrub_official_tags/'+fresh.unit.id).get()).get('activationHash'),null);
+ // Reset only this isolated emulator slot to exercise upgrade of an existing physical tag.
+ await adminDb.doc('kyrub_official_tags/'+fresh.unit.id).delete();
+ await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').delete();
  // Simulate a previously issued code-only pilot, with the real immutable tag ID.
  const legacy=await (await import('../server/identity/kyrubTagService.js')).provisionKyrubTag('adesivo');
  await adminDb.doc('kyrub_official_tags/'+legacy.id).update({pilotBatch:'experimental-001',pilotSlot:'001'});

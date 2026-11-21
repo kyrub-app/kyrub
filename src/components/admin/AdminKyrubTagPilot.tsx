@@ -29,7 +29,7 @@ export default function AdminKyrubTagPilot({user}:{user:User}){
  },[user.uid]);
  async function mutate(action:'issue'|'reserve'){
   if(!ready||requestLock.current||writing||!confirm)return;
-  requestLock.current=true;setBusy(true);setCode('');setShow(false);setConfirm(false);
+  requestLock.current=true;setBusy(true);setConfirm(false);
   try{const data=await request('POST',action);if(!active.current||auth.currentUser?.uid!==user.uid)return;const next=checkUnit(data.unit);if(!next||!next.reserved)throw Error('PILOT_UNAVAILABLE');setUnit(next);setEmail('');setNotice('Destinatária reservada. Entregue somente a etiqueta gravada; ela deverá entrar com a conta indicada e confirmar.');}
   catch{if(active.current){setNotice('Não foi possível confirmar a operação. Recarregue a página antes de tentar novamente.');setReady(false);}}
   finally{requestLock.current=false;if(active.current)setBusy(false);}
