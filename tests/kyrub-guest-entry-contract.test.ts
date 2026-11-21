@@ -98,6 +98,16 @@ test('anonymous Praça projections do not disclose restricted documents or owner
   }
   assert.equal(projectPublicSquareStore({ publicationStatus: 'draft', name: 'Rascunho', storeId: 's', slug: 'draft' }), null);
   assert.equal(projectPublicSquareCommunity({ communityId: 'private', name: 'Privada', visibility: 'private' }), null);
+  // Both catalogs must require the same canonical ownership shape.
+  assert.equal(projectPublicSquareCommunity({
+    communityId: 'legacy-test', name: 'Legado sem proprietário', visibility: 'public',
+  }), null);
+  const verified = projectPublicSquareCommunity({
+    communityId: 'community-public', name: 'Comunidade válida', ownerId: 'owner-123',
+    visibility: 'public', memberCount: 2,
+  });
+  assert.equal(verified?.name, 'Comunidade válida');
+  assert.equal(JSON.stringify(verified).includes('owner-123'), false);
   assert.equal(projectPublicSquareSocialPost('post-x', { authorName: 'Pessoa', visibility: 'private', createdAtIso: new Date().toISOString() }), null);
   const community = { visibility: 'public', name: 'Comunidade aberta' };
   const post = { communityId: 'community-1', authorName: 'Autor', content: 'Público' };
