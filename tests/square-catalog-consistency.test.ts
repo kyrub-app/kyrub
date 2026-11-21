@@ -35,7 +35,7 @@ describe('Praça catalog parity', () => {
     assert.doesNotMatch(communities, /\{catalogOpen && createPortal\(/);
   });
 
-  test('catalog overlay leaves original sticky Kyrub toolbar, brand and session actions visible', () => {
+  test('catalog overlay preserves sticky Kyrub toolbar and brand, with session control in Central', () => {
     assert.match(layout, /document\.getElementById\('app-header'\)/);
     assert.match(layout, /document\.getElementById\('kyrub-workspace-brand'\)/);
     assert.match(layout, /getBoundingClientRect\(\)\.bottom/);
@@ -44,7 +44,10 @@ describe('Praça catalog parity', () => {
     assert.match(app, /id="app-header"/);
     assert.match(app, /sticky top-0/);
     assert.match(app, /id="kyrub-workspace-brand" className="sticky top-16/);
-    assert.match(app, /id="kyrub-workspace-signout"/);
+    assert.doesNotMatch(app, /id="kyrub-workspace-signout"/);
+    assert.match(app, /onAuthAction=\{\(\) => \{/);
+    const personalCenter = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+    assert.match(personalCenter, /id="personal-profile-auth-trigger"/);
   });
 
   test('store directory reuses official discovery, real participation and favorite state', () => {
