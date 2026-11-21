@@ -25,6 +25,17 @@ export default async function handler(request: RequestLike, response: ResponseLi
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
+  if (transport === 'kyrub-tag-pilot') {
+    response.setHeader('Referrer-Policy','no-referrer');
+    response.setHeader('Allow','GET, POST');
+    try {
+      const {handlePilot}=await import('../../../server/admin/kyrubTagPilotService.js');
+      const result=await handlePilot(authorization,method,request.body);
+      response.status(result.status).json(result.body);
+    } catch { response.status(503).json({error:'PILOT_UNAVAILABLE'}); }
+    return;
+  }
+
   if (transport === 'global-challenges') {
     const { default: handler } = await import('../../../server/gamification/globalChallengeAdminHandler.js');
     await handler(request, response);
