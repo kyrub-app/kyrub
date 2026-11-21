@@ -184,7 +184,7 @@ export const listPublicSquareDiscovery = async () => {
   // the 40-item response and failure falls back to the existing post snapshot.
   const authorUids = [...new Set(publicPosts.map(post => authorUidByCardId.get(post.id) || '')
     .filter(uid => /^[A-Za-z0-9_-]{1,128}$/.test(uid)))];
-  const names = new Map<string, { name: string; avatar: string }>();
+  const names = new Map<string, { name: string; avatar?: string }>();
   await Promise.all(authorUids.map(async uid => {
     try {
       const profile = await adminDb.collection('users').doc(uid).get();
