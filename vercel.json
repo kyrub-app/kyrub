@@ -36,6 +36,10 @@
       "destination": "/api/health?transport=public-square-discovery"
     },
     {
+      "source": "/api/square/communities",
+      "destination": "/api/health?transport=public-community-page"
+    },
+    {
       "source": "/api/delivery-opportunities/public",
       "destination": "/api/health?transport=public-delivery-discovery"
     },
