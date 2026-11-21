@@ -366,6 +366,14 @@ export function KyrubTab(props: KyrubTabProps) {
     .filter(Boolean)
     .join(' ');
 
+  const openStoreReviews = (store: Store): void => {
+    // The canonical MomentsModal is mounted by LegacyApp at a lower z-index
+    // than the directory, so close the directory before opening reviews.
+    setStoreCatalogOpen(false);
+    props.setSelectedStoreForMoments(store);
+    props.setShowMomentsModal(true);
+  };
+
   // Render the complete store directory without switching to the legacy
   // marketplace view. The shared shell preserves the existing global header.
   if (storeCatalogOpen) {
@@ -384,6 +392,7 @@ export function KyrubTab(props: KyrubTabProps) {
             setStoreCatalogOpen(false);
             props.setVisitingStore(store);
           }}
+          onOpenReviews={openStoreReviews}
           catalogOpen
           onCloseCatalog={() => setStoreCatalogOpen(false)}
         />
@@ -477,6 +486,7 @@ export function KyrubTab(props: KyrubTabProps) {
           offerStoreIds={publishedOffers.map(offer => offer.storeId)}
           onViewAll={() => setStoreCatalogOpen(true)}
           onOpenStore={props.setVisitingStore}
+          onOpenReviews={openStoreReviews}
         />
       )}
 

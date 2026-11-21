@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Heart, ShoppingBag, Store as StoreIcon } from 'lucide-react';
+import { ArrowRight, Heart, MessageCircle, ShoppingBag, Store as StoreIcon } from 'lucide-react';
 import { SquareDirectoryLayout, type SquareDirectoryTab } from '../SquareDirectoryLayout';
 import type { Store } from '../../types';
 
@@ -22,6 +22,7 @@ type SquareStoresSectionProps = {
   offerStoreIds: string[];
   onViewAll: () => void;
   onOpenStore: (store: Store) => void;
+  onOpenReviews: (store: Store) => void;
   catalogOpen?: boolean;
   onCloseCatalog?: () => void;
 };
@@ -29,9 +30,24 @@ type SquareStoresSectionProps = {
 const OFFICIAL_STORE_SLUG = 'kyrub-oficial';
 const OFFICIAL_STORE_PATH = '/@kyrub-oficial';
 
+// Official discovery cards can arrive before their Store listing. Reviews
+// only require the verified public identity (store ID and name); preserve
+// that identity when opening the existing canonical reviews modal.
+const storeForReviews = (store: PublicStoreCard): Store => store.source ?? {
+  id: store.id,
+  name: store.name,
+  slug: store.slug,
+  description: store.description,
+  logo: store.logo,
+  banner: '',
+  primaryColor: '',
+  plan: 'free',
+  ownerEmail: '',
+};
+
 export function SquareStoresSection({
   stores, favoriteStoreIds, participatingStoreIds, offerStoreIds,
-  onToggleFavoriteStore, onViewAll, onOpenStore, catalogOpen = false, onCloseCatalog,
+  onToggleFavoriteStore, onViewAll, onOpenStore, onOpenReviews, catalogOpen = false, onCloseCatalog,
 }: SquareStoresSectionProps) {
   const [listTab, setListTab] = useState<StoreListTab>('trending');
   const [catalogTab, setCatalogTab] = useState<StoreListTab>('trending');
@@ -220,16 +236,24 @@ export function SquareStoresSection({
                     </p>
                   )}
                 </div>
-                <div className="border-t border-slate-800 p-2">
+                <div className="grid grid-cols-2 gap-2 border-t border-slate-800 p-2">
+                  <button type="button"
+                    aria-label={`Abrir avaliações da loja ${store.name}`}
+                    title={`Avaliações de ${store.name}`}
+                    onClick={() => onOpenReviews(storeForReviews(store))}
+                    className="flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-[11px] font-bold text-amber-300">
+                    <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    Avaliações
+                  </button>
                   {store.official ? (
                     <a href={OFFICIAL_STORE_PATH}
-                      className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-slate-800 px-2 text-xs font-bold text-slate-200">
-                      <ShoppingBag className="h-4 w-4" aria-hidden="true" /> Abrir
+                      className="flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                      <ShoppingBag className="h-4 w-4 shrink-0" aria-hidden="true" /> Entrar
                     </a>
                   ) : (
                     <button type="button" onClick={() => store.source && onOpenStore(store.source)}
-                      className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-xs font-bold text-slate-200">
-                      Abrir
+                      className="flex min-h-10 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                      Entrar
                     </button>
                   )}
                 </div>
