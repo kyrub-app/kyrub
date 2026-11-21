@@ -44,3 +44,19 @@ export async function resolveSocialAddress(kind: SocialDestinationKind, identifi
     return projectSocialAddress({kind,identifier,targetId:mapping.targetId},source,profile);
   },{readOnly:true});
 }
+
+export async function getOwnedSocialAddress(actor: string, kind: SocialDestinationKind, communityId?: string) {
+  const targetId = kind === 'profile' ? actor : communityId;
+  if (!isDocumentId(actor) || !isDocumentId(targetId)) throw Error('INVALID_PUBLIC_ADDRESS');
+  return adminDb.runTransaction(async tx => {
+    const source = (await tx.get(sourceRef(kind,targetId))).data();
+    if (!source || (kind === 'profile' ? actor !== targetId : source.ownerId !== actor))
+      throw Error('PUBLIC_ADDRESS_FORBIDDEN');
+    const record = (await tx.get(reverse().doc(targetKey(kind,targetId)))).data();
+    return {
+      identifier: record && record.kind === kind && record.targetId === targetId &&
+        typeof record.identifier === 'string' && isSocialAddress(kind,record.identifier) ? record.identifier : null,
+      eligible: canReserveSocialAddress(kind,actor,targetId,source),
+    };
+  },{readOnly:true});
+}

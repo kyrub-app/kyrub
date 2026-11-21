@@ -1,7 +1,18 @@
+import { parsePublicDestinationPath } from '../../shared/publicDestinationRoutes';
+
 export type KyrubAppRoute =
   | {
       kind: 'public-storefront';
       slug: string;
+      canonicalPath: string;
+    }
+  | {
+      kind: 'public-profile' | 'public-community';
+      identifier: string;
+      canonicalPath: string;
+    }
+  | {
+      kind: 'invalid-public-social';
       canonicalPath: string;
     }
   | {
@@ -46,6 +57,17 @@ export const buildPublicStorefrontUrl = (
 export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
   const cleanPath =
     `/${pathname}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+
+  // Category namespaces take precedence over old /:slug/staff aliases.
+  if (cleanPath === '/kairubido' || cleanPath.startsWith('/kairubido/') ||
+      cleanPath === '/comunidade' || cleanPath.startsWith('/comunidade/')) {
+    const destination = parsePublicDestinationPath(cleanPath);
+    if (destination?.kind === 'profile' || destination?.kind === 'community') {
+      return {kind: destination.kind === 'profile' ? 'public-profile' : 'public-community',
+        identifier:destination.identifier,canonicalPath:cleanPath};
+    }
+    return {kind:'invalid-public-social',canonicalPath:cleanPath};
+  }
 
   const isLegacyOperationalPath =
     cleanPath === LEGACY_OPERATIONAL_PATH ||

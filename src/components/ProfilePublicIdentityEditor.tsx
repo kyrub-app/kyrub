@@ -1,3 +1,4 @@
+import { PublicSocialAddressEditor } from './PublicSocialAddressEditor';
 import { useEffect, useState, type ChangeEvent, type FormEvent } from 'react';
 import { Camera, Check, LoaderCircle, RotateCcw, Save, UserRound } from 'lucide-react';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -181,6 +182,7 @@ export function ProfilePublicIdentityEditor({ user }: { user: User }) {
           </button>
         </div>
       </div>
+      <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} />
       <form className="space-y-4 rounded-2xl border border-slate-800 bg-slate-900 p-4" onSubmit={event => void savePublicProfile(event)}>
         <label className="block text-sm font-semibold text-slate-200">
           Nome de exibição

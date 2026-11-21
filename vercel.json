@@ -223,6 +223,14 @@
       "destination": "/index.html"
     },
     {
+      "source": "/kairubido/:path*",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/comunidade/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/:slug/staff",
       "destination": "/index.html"
     }

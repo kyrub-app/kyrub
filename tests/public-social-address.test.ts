@@ -25,3 +25,12 @@ test('only source owner can reserve an eligible social address',()=>{
   assert.equal(canReserveSocialAddress('community','uid-1','community-1',{ownerId:'uid-1',visibility:'private'}),false);
   for (const x of ['../staff','a/b','x','A','%2F','']) assert.equal(isSocialAddress('community',x),false);
 });
+
+import { resolveKyrubAppRoute } from '../src/utils/appRoutes';
+test('public social routes are isolated from marketplace and legacy staff paths',()=>{
+  assert.deepEqual(resolveKyrubAppRoute('/kairubido/maufco'),{kind:'public-profile',identifier:'maufco',canonicalPath:'/kairubido/maufco'});
+  assert.deepEqual(resolveKyrubAppRoute('/comunidade/nacao-roqueira'),{kind:'public-community',identifier:'nacao-roqueira',canonicalPath:'/comunidade/nacao-roqueira'});
+  assert.equal(resolveKyrubAppRoute('/comunidade/rocks/staff').kind,'invalid-public-social');
+  assert.equal(resolveKyrubAppRoute('/@kyrub-oficial').kind,'public-storefront');
+  assert.equal(resolveKyrubAppRoute('/do-mau/staff').kind,'staff-app');
+});

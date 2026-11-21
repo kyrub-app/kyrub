@@ -80,6 +80,55 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'manage-public-social-address') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && method !== 'POST') {
+      response.setHeader('Allow', 'GET, POST');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    let actor: string;
+    try {
+      const { authenticateConsultantRequest } = await import('../server/ai/consultantAuth.js');
+      actor = (await authenticateConsultantRequest(headerValue(request.headers.authorization ?? request.headers.Authorization))).uid;
+    } catch (error) {
+      const status = (error as {status?: number; statusCode?: number} | null)?.status ??
+        (error as {statusCode?: number} | null)?.statusCode;
+      response.status(status === 503 ? 503 : 401).json({error:'AUTH_REQUIRED'});
+      return;
+    }
+    const kind = queryValue(request.query?.kind);
+    if (kind !== 'profile' && kind !== 'community') {
+      response.status(400).json({error:'INVALID_PUBLIC_ADDRESS'});
+      return;
+    }
+    const communityId = queryValue(request.query?.communityId);
+    try {
+      const { getOwnedSocialAddress, reserveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
+      if (method === 'GET') {
+        response.status(200).json(await getOwnedSocialAddress(actor,kind,communityId));
+        return;
+      }
+      const body = request.body;
+      const identifier = body && typeof body === 'object' && !Array.isArray(body)
+        ? (body as Record<string,unknown>).identifier : null;
+      if (typeof identifier !== 'string' || identifier.length > 120) {
+        response.status(400).json({error:'INVALID_PUBLIC_ADDRESS'});
+        return;
+      }
+      const result = await reserveSocialAddress(actor,kind,identifier,communityId);
+      response.status(200).json(result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'INVALID_PUBLIC_ADDRESS') response.status(400).json({error:code});
+      else if (code === 'PUBLIC_ADDRESS_FORBIDDEN') response.status(403).json({error:code});
+      else if (code === 'PUBLIC_ADDRESS_CONFLICT') response.status(409).json({error:code});
+      else response.status(503).json({error:'PUBLIC_ADDRESS_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'public-social-address') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     const method = (request.method ?? 'GET').toUpperCase();
