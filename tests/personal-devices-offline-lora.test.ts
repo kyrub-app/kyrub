@@ -133,6 +133,9 @@ test('smartphone NFC phase zero is a user-initiated reader test, never HCE emula
   assert.match(ui, /onClick=\{preparePhone\}/);
   assert.match(ui, /onClick=\{\(\) => void readNfc\(SMARTPHONE_SCAN_ID\)\}/);
   assert.match(ui, /API disponível; hardware a confirmar/);
+  assert.match(ui, /phone\?\.lastNfcReadAt \? 'Funcionamento confirmado no último teste'/);
+  assert.match(ui, /API Web NFC indisponível neste navegador/);
+  assert.doesNotMatch(ui, /Seu espaço de dispositivos/);
   assert.match(ui, /Requer integração nativa Android \(HCE\)/);
   assert.match(ui, /reader\.onreading = event => \{/);
   assert.match(ui, /if \(isPhoneTest\) \{[\s\S]*?saveLocalSmartphone\(window\.localStorage, userId, next\)/);

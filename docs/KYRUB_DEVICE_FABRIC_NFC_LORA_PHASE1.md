@@ -70,3 +70,6 @@ Referências:
 - NFC requer clique/permissão do usuário; cancelar, remover ou fechar painel aborta leitura; sem gravação e sem persistência de tokens.
 - LoRa sem hardware retorna estado **pendente**, não "conectado".
 - Sem alterações em Firebase Rules, contratos de pagamento, ledger, escritores XP/Pitangas, gamificação ou roteamento de produção.
+
+## Aceite físico da fase zero — 21/11/2026
+O responsável pelo projeto confirmou no Android, por captura de tela do fluxo Meu smartphone, a mensagem "Teste NFC confirmado por aproximação. Nenhum conteúdo da tag foi salvo." e o último teste registrado às 14:21:54 (horário exibido no aparelho). Evidência da leitura NDEF real, não de gravação, propriedade, autenticação, HCE ou vinculação oficial. Ajuste visual solicitado: remover o bloco introdutório "Seu espaço de dispositivos". A interface passa a distinguir funcionamento confirmado no último teste de mera disponibilidade da API; uma leitura histórica não garante NFC atualmente ligado.
