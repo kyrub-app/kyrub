@@ -215,6 +215,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
       <div
         className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/90 p-3 backdrop-blur-md animate-fade-in sm:p-4"
         id="modal-user-profile"
+        data-kyrub-font-managed="true"
       >
         <div className="flex max-h-[94vh] w-full max-w-2xl flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl animate-scale-up">
           <header className="flex items-center justify-between border-b border-slate-900 bg-slate-950/95 px-4 py-3 sm:px-5">
