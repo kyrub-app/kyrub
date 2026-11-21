@@ -476,6 +476,7 @@ export default function App() {
 
   // New states for restructure
   const [isProfileVisible, setIsProfileVisible] = useState(true);
+  const [profileVisibilityReadyFor, setProfileVisibilityReadyFor] = useState('');
   const [ofertasFilter, setOfertasFilter] = useState<'todas' | 'novas' | 'favoritas' | 'cliente'>('todas');
   const [pracaFilter, setPracaFilter] = useState<ActivePracaFilter>(
     () => retainedWorkspaceTabByUser.get(auth.currentUser?.uid ?? '')?.pracaFilter ?? 'recentes'
@@ -906,6 +907,7 @@ export default function App() {
         setProfileName(user.displayName ?? '');
         setProfileEmail(user.email ?? '');
         setProfilePhotoUrl(user.photoURL ?? '');
+        setProfileVisibilityReadyFor('');
 
         let cachedStore: Store | null = null;
         const cachedStoreValue = localStorage.getItem(
@@ -942,13 +944,20 @@ export default function App() {
         try {
           const userRef = doc(db, 'users', user.uid);
           const userSnapshot = await getDoc(userRef);
+          const storedUser = userSnapshot.exists() ? userSnapshot.data() : null;
+          // The saved user choice is authoritative. Logging in must never
+          // re-publish a profile that was deliberately made private.
+          const savedVisibility =
+            typeof storedUser?.isProfileVisible === 'boolean'
+              ? storedUser.isProfileVisible
+              : true;
 
           const userPayload = {
             uid: user.uid,
             name: user.displayName ?? '',
             email: user.email ?? '',
             photoUrl: user.photoURL ?? '',
-            isProfileVisible: true,
+            isProfileVisible: savedVisibility,
             updatedAt: serverTimestamp(),
             ...(userSnapshot.exists()
               ? {}
@@ -956,6 +965,11 @@ export default function App() {
           };
 
           await setDoc(userRef, userPayload, { merge: true });
+          // Ignore a stale auth callback if another account signed in.
+          if (auth.currentUser?.uid === user.uid) {
+            setIsProfileVisible(savedVisibility);
+            setProfileVisibilityReadyFor(user.uid);
+          }
         } catch (error) {
           console.error(
             'Falha ao registrar o usuário autenticado no Firestore:',
@@ -1009,6 +1023,8 @@ export default function App() {
         }
 
       } else {
+        setProfileVisibilityReadyFor('');
+        setIsProfileVisible(true);
         setIsLoggedIn(false);
         setAuthenticatedUserId('');
         setUserStore(null);
@@ -1805,6 +1821,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       <UserProfileModal
         isOpen={showUserProfileModal}
         onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
+        onOpenFromEditor={() => { setProfileOpenSaved(false); setShowUserProfileModal(true); }}
         walletHistory={walletHistory}
         openSavedInitially={profileOpenSaved}
         profileName={profileName}
@@ -1819,6 +1836,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
         setAccountTypeLojista={setAccountTypeLojista}
         isProfileVisible={isProfileVisible}
         setIsProfileVisible={setIsProfileVisible}
+        profileVisibilityReady={profileVisibilityReadyFor === authenticatedUserId}
         biometricsActive={biometricsActive}
         setBiometricsActive={setBiometricsActive}
         transactionPin={transactionPin}
