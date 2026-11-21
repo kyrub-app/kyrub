@@ -80,6 +80,32 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'public-social-address') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    const method = (request.method ?? 'GET').toUpperCase();
+    if (method !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    try {
+      const { isSocialAddress } = await import('../server/identity/publicSocialAddressPolicy.js');
+      const kind = queryValue(request.query?.kind);
+      const identifier = queryValue(request.query?.identifier);
+      if (!isSocialAddress(kind,identifier)) {
+        response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
+        return;
+      }
+      const { resolveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
+      const result = await resolveSocialAddress(kind,identifier);
+      if (!result) response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
+      else response.status(200).json(result);
+    } catch {
+      response.status(503).json({ error: 'PUBLIC_ADDRESS_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (transport === 'public-community-page') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {

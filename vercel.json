@@ -28,6 +28,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/public-social/:kind/:identifier",
+      "destination": "/api/health?transport=public-social-address&kind=:kind&identifier=:identifier"
+    },
+    {
       "source": "/api/admin/global-challenges",
       "destination": "/api/admin/operations/health?transport=global-challenges"
     },
