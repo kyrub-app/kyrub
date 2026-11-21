@@ -69,12 +69,12 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(profile, /item\.sourceKind === 'community'/);
   });
 
-  test('three cards in the wallet consolidate rewards without duplicating Clubs or Pitangas', () => {
+  test('Central Pessoal preserves three wallet areas and adds a separate platform challenge card', () => {
     const cards = profile.slice(profile.indexOf('const financeCards = ['), profile.indexOf('] as const;', profile.indexOf('const financeCards = [')));
     const cardIds = [...cards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]);
-    assert.deepEqual(cardIds, ['movements', 'finance', 'xp']);
+    assert.deepEqual(cardIds, ['movements', 'finance', 'xp', 'challenges']);
     assert.doesNotMatch(cards, /id: 'pitangas'/);
-    assert.match(profile, /card\.id === 'xp' \? 'col-span-2'/);
+    assert.match(profile, /card\.id === 'xp' \|\| card\.id === 'challenges' \? 'col-span-2'/);
     assert.match(profile, /<WalletMovementsPanel walletHistory=\{walletHistory\}/);
     assert.match(profile, /<PersonalFinancePlanner userId=\{currentUserId\}/);
     assert.match(profile, /<PitangaAccount mode="xp"/);
