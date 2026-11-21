@@ -56,7 +56,7 @@ test('runtime observer adjusts new screens without reapplying existing text', ()
   assert.match(hookSource, /isWithinManagedScope\(addedRoot\)/);
   assert.match(hookSource, /SPECIALIZED_TYPOGRAPHY_SELECTOR/);
   assert.match(hookSource, /refreshResponsiveFontSizes/);
-  assert.match(hookSource, /restoreAllAdjustedElements\(\);\s*applySnapshots\(captureSnapshots\(collectManagedElements\(\)\)\)/);
+  assert.match(hookSource, /restoreAllAdjustedElements\(\);\s*void rootElement\.offsetWidth;\s*applySnapshots\(captureSnapshots\(collectManagedElements\(\)\)\)/);
   assert.match(hookSource, /window\.addEventListener\('resize', onResponsiveResize\)/);
   assert.match(hookSource, /window\.visualViewport\?\.addEventListener\('resize', onResponsiveResize\)/);
   assert.match(hookSource, /window\.removeEventListener\('resize', onResponsiveResize\)/);
