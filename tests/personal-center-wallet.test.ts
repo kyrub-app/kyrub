@@ -41,6 +41,21 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(app, /walletHistory=\{walletHistory\}/);
   });
 
+  test('session door moves from workspace brand to private Central, keeping real Firebase login/logout', () => {
+    assert.match(profile, /id="personal-profile-auth-trigger"/);
+    assert.match(profile, /isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'/);
+    assert.match(profile, /onClick=\{onAuthAction\}/);
+    assert.match(profile, /disabled=\{isAuthBusy\}/);
+    assert.match(profile, /<LogOut className="h-5 w-5"/);
+    assert.match(profile, /<LogIn className="h-5 w-5"/);
+    assert.match(app, /onAuthAction=\{\(\) => \{/);
+    assert.match(app, /void handleLogout\(\)/);
+    assert.match(app, /setShowLoginModal\(true\)/);
+    assert.match(app, /await signOut\(auth\)/);
+    assert.match(app, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
+    assert.doesNotMatch(app, /id="kyrub-workspace-signout"/);
+  });
+
   test('Salvos opens existing private multi-source library from header', () => {
     assert.match(app, /setProfileOpenSaved\(true\); setShowUserProfileModal\(true\)/);
     assert.match(app, /openSavedInitially=\{profileOpenSaved\}/);
