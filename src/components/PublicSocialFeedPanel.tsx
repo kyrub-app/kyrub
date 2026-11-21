@@ -23,6 +23,7 @@ import { removeSavedPublication, savePublication, subscribeSavedPublications } f
 import { submitSocialPostReport, type SocialReportReason } from '../utils/socialReports';
 import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
+import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import {
@@ -192,6 +193,14 @@ export function PublicSocialFeedPanel({
   const [connectionsReady, setConnectionsReady] = useState(false);
   const [feedNow, setFeedNow] = useState(Date.now());
   const { communities: directoryCommunities } = useCommunityDirectory();
+  const liveSocialAuthors = useLiveAuthorIdentities(
+    posts.filter(post => withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow))
+      .map(post => post.authorId),
+  );
+  const currentNamePosts = useMemo(() => posts.map(post => {
+    const identity = liveSocialAuthors[post.authorId];
+    return identity ? { ...post, user: identity.name, avatar: identity.avatar } : post;
+  }), [posts, liveSocialAuthors]);
   const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(null);
   const [reportPostId, setReportPostId] = useState<string | null>(null);
   const [reportReason, setReportReason] = useState<SocialReportReason>('spam');
@@ -238,7 +247,7 @@ export function PublicSocialFeedPanel({
 
   const visiblePosts = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
-    return posts.filter(post => {
+    return currentNamePosts.filter(post => {
       // The 24h window affects only discovery in Praça, never the source post.
       if (!withinCommunitySquareWindow(Date.parse(post.createdAt || ''), feedNow)) return false;
       if (normalizedSearch) {
@@ -259,7 +268,7 @@ export function PublicSocialFeedPanel({
 
       return true;
     });
-  }, [currentUserId, filter, friends, posts, searchQuery, feedNow]);
+  }, [currentUserId, filter, friends, currentNamePosts, searchQuery, feedNow]);
 
   const feedRows = useMemo(() => {
     const normalizedSearch = searchQuery.trim().toLocaleLowerCase('pt-BR');
