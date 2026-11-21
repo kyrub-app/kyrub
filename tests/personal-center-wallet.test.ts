@@ -30,7 +30,8 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(app, /setProfileOpenSaved\(false\); setShowUserProfileModal\(true\)/);
     assert.match(profile, /Central Pessoal/);
     assert.match(profile, /profile-personal-center/);
-    assert.match(profile, /Editar perfil/);
+    assert.match(profile, /id="personal-profile-settings-trigger"/);
+    assert.match(profile, /aria-label="Editar perfil"/);
     assert.match(profile, /window\.dispatchEvent\(new Event\('kyrub:open-unified-profile-editor'\)\)/);
     assert.match(unifiedEditor, /window\.addEventListener\('kyrub:open-unified-profile-editor'/);
     assert.doesNotMatch(profile, />\s*Conta e segurança\s*</);
