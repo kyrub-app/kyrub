@@ -8,6 +8,7 @@ import {
   ACCESSIBILITY_FONT_INCREASE_PX,
   MIN_ACCESSIBLE_TEXT_PX,
   getAccessibleFontSize,
+  useFontSizeAccessibility,
 } from '../src/hooks/useFontSizeAccessibility';
 
 test('font accessibility follows Catu baseline and never leaves tiny operational labels', () => {
