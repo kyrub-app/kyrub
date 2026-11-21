@@ -569,3 +569,22 @@ test('optional community diagnostic compares live Firestore reads without writin
   assert.match(ui, /Resultado do diagnóstico de acesso/);
   assert.doesNotMatch(diagnostic, /ownerId:|email:|uid:|token:/);
 });
+
+test('read-only community diagnostic compares client Firebase identity without exposing values', () => {
+  const probe = read('src/utils/communityReadDiagnostic.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(probe, /auth\.app\.options\.projectId/);
+  assert.match(probe, /db\.app\.options\.projectId/);
+  assert.match(probe, /auth\.app\.name === db\.app\.name/);
+  assert.match(probe, /getApps\(\)\.length === 1/);
+  assert.match(probe, /_databaseId\?\.database/);
+  assert.match(probe, /_databaseId\?\.projectId/);
+  assert.match(probe, /_settings\?\.host/);
+  assert.match(probe, /'projeto esperado'/);
+  assert.match(probe, /'projeto divergente'/);
+  assert.match(ui, /Projeto Firebase:<\/strong>/);
+  assert.match(ui, /Banco Firestore:<\/strong>/);
+  assert.match(ui, /Servidor Firestore:<\/strong>/);
+  assert.doesNotMatch(probe, /setDoc\(|updateDoc\(|deleteDoc\(|getIdToken\(|console\.|fetch\(/);
+  assert.doesNotMatch(ui, /publicProbe\.uid|publicProbe\.token|publicProbe\.projectId/);
+});

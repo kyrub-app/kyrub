@@ -1305,6 +1305,12 @@ export function ProfileCommunitiesCloudBridge() {
                   <p><strong>Consulta pública:</strong> {publicProbe.publicQuery}</p>
                   <p><strong>Consulta do proprietário:</strong> {publicProbe.ownerQuery}</p>
                   <p><strong>Cache:</strong> {publicProbe.cache}</p>
+                  <p><strong>Projeto Firebase:</strong> {publicProbe.runtimeProject}</p>
+                  <p><strong>Autenticação/Firestore:</strong> {publicProbe.authFirestoreApp}</p>
+                  <p><strong>Banco Firestore:</strong> {publicProbe.database}</p>
+                  <p><strong>Projeto do banco:</strong> {publicProbe.databaseProject}</p>
+                  <p><strong>Servidor Firestore:</strong> {publicProbe.firestoreHost}</p>
+                  <p><strong>Aplicativos Firebase ativos:</strong> {publicProbe.initializedApps}</p>
                 </div>
               )}
             </div>

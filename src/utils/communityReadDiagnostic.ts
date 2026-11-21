@@ -1,3 +1,4 @@
+import { getApps } from 'firebase/app';
 import {
   collection, doc, getDocFromCache, getDocFromServer, getDocsFromServer,
   query, where,
@@ -12,6 +13,12 @@ export interface PublicCommunityReadProbe {
   publicQuery: string;
   ownerQuery: string;
   cache: string;
+  runtimeProject: string;
+  authFirestoreApp: string;
+  database: string;
+  databaseProject: string;
+  firestoreHost: string;
+  initializedApps: string;
 }
 
 /**
@@ -52,6 +59,12 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
     publicQuery: 'não executada',
     ownerQuery: 'não executada',
     cache: 'não verificado',
+    runtimeProject: 'não verificado',
+    authFirestoreApp: 'não verificado',
+    database: 'não verificado',
+    databaseProject: 'não verificado',
+    firestoreHost: 'não verificado',
+    initializedApps: 'não verificado',
   };
   const user = auth.currentUser;
   if (!user || !/^[A-Za-z0-9_-]{1,128}$/.test(communityId)) {
@@ -60,6 +73,38 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
 
   const reference = doc(db, 'communities', communityId);
   const result = { ...empty };
+  // Compare local Firebase identity with the canonical production project.
+  // Only yes/no and non-identifying environment classifications are displayed;
+  // never show project IDs, app identifiers, hostnames, user IDs or credentials.
+  const expectedProject = 'kyrub-b8d0e';
+  const authProjectId = auth.app.options.projectId;
+  const dbProjectId = db.app.options.projectId;
+  result.runtimeProject =
+    authProjectId === expectedProject && dbProjectId === expectedProject
+      ? 'projeto esperado' : 'projeto divergente';
+  result.authFirestoreApp =
+    auth.app.name === db.app.name && authProjectId === dbProjectId
+      ? 'mesmo aplicativo' : 'aplicativos diferentes';
+  result.initializedApps = getApps().length === 1 ? 'um' : 'mais de um';
+
+  // Firebase's internal database settings are read-only and optional. If an
+  // SDK update changes their shape, report unknown instead of guessing.
+  const internal = db as unknown as {
+    _databaseId?: { projectId?: string; database?: string };
+    _settings?: { host?: string };
+  };
+  result.database = internal._databaseId?.database === '(default)'
+    ? 'banco padrão' : typeof internal._databaseId?.database === 'string'
+      ? 'banco alternativo' : 'não informado pelo SDK';
+  result.databaseProject = typeof internal._databaseId?.projectId === 'string'
+    ? internal._databaseId.projectId === expectedProject
+      ? 'projeto esperado' : 'projeto divergente'
+    : 'não informado pelo SDK';
+  const currentHost = internal._settings?.host;
+  result.firestoreHost = typeof currentHost === 'string'
+    ? currentHost === 'firestore.googleapis.com'
+      ? 'servidor padrão do Firebase' : 'servidor alternativo'
+    : 'não informado pelo SDK';
   await Promise.all([
     (async () => {
       try {
