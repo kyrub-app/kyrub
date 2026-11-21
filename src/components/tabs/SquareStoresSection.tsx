@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Heart, MessageCircle, ShoppingBag, Store as StoreIcon } from 'lucide-react';
+import { ArrowRight, Heart, Store as StoreIcon } from 'lucide-react';
 import { SquareDirectoryLayout, type SquareDirectoryTab } from '../SquareDirectoryLayout';
 import type { Store } from '../../types';
 
@@ -190,7 +190,7 @@ export function SquareStoresSection({
         onCategoryChange={setCatalogCategory}
         onClose={() => onCloseCatalog?.()}
       >
-        <p className="mb-3 text-xs text-slate-400" aria-live="polite">
+        <p className="mb-3 text-sm text-slate-400" aria-live="polite">
           {loadingOfficial && catalogStores.length === 0
             ? 'Carregando lojas publicadas…'
             : `${catalogStores.length} ${catalogStores.length === 1 ? 'loja encontrada' : 'lojas encontradas'}`}
@@ -222,37 +222,36 @@ export function SquareStoresSection({
                   <Heart className={`h-4 w-4 ${favorite ? 'fill-current' : ''}`} aria-hidden="true" />
                 </button>
                 <div className="flex-1 p-3">
-                  <strong className="block line-clamp-2 text-[11px] font-black text-white">{store.name}</strong>
-                  {store.official && <span className="mt-1 block text-[9px] font-bold text-teal-300">Loja Oficial</span>}
-                  {participating && <span className="mt-1 block text-[9px] font-bold text-emerald-300">Você participa</span>}
+                  <strong className="block line-clamp-2 text-sm font-black text-white">{store.name}</strong>
+                  {store.official && <span className="mt-1 block text-xs font-bold text-teal-300">Loja Oficial</span>}
+                  {participating && <span className="mt-1 block text-xs font-bold text-emerald-300">Você participa</span>}
                   {store.source?.keywords?.length ? (
-                    <span className="mt-1 block truncate text-[11px] text-sky-300/75">
+                    <span className="mt-1 block truncate text-xs text-sky-300/75">
                       {store.source.keywords.slice(0, 2).join(', ')}
                     </span>
                   ) : null}
                   {store.description && (
-                    <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-400">
+                    <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
                       {store.description}
                     </p>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2 border-t border-slate-800 p-2">
+                <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800 p-1.5">
                   <button type="button"
                     aria-label={`Abrir avaliações da loja ${store.name}`}
                     title={`Avaliações de ${store.name}`}
                     onClick={() => onOpenReviews(storeForReviews(store))}
-                    className="flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-[11px] font-bold text-amber-300">
-                    <MessageCircle className="h-4 w-4 shrink-0" aria-hidden="true" />
+                    className="flex min-h-11 min-w-0 items-center justify-center rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-xs font-bold tracking-tight text-amber-300">
                     Avaliações
                   </button>
                   {store.official ? (
                     <a href={OFFICIAL_STORE_PATH}
-                      className="flex min-h-10 min-w-0 items-center justify-center gap-1 rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
-                      <ShoppingBag className="h-4 w-4 shrink-0" aria-hidden="true" /> Entrar
+                      className="flex min-h-11 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                      Entrar
                     </a>
                   ) : (
                     <button type="button" onClick={() => store.source && onOpenStore(store.source)}
-                      className="flex min-h-10 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                      className="flex min-h-11 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
                       Entrar
                     </button>
                   )}
@@ -274,14 +273,14 @@ export function SquareStoresSection({
 
   return (
     <section id="square-stores" aria-label="Lojas na Praça"
-      className="mb-4 space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-3">
+      className="mb-4 space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">Lojas</span>
-          <h2 className="mt-0.5 text-xs font-black text-white">Descubra lojas e ofertas</h2>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">Lojas</span>
+          <h2 className="mt-1 text-base font-black text-white">Descubra lojas e ofertas</h2>
         </div>
         <button type="button" id="square-stores-view-all" onClick={onViewAll}
-          className="flex min-h-9 shrink-0 items-center gap-1 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950">
+          className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-black uppercase text-slate-950">
           Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </header>
@@ -294,7 +293,7 @@ export function SquareStoresSection({
           <button key={id} type="button"
             aria-pressed={listTab === id}
             onClick={() => setListTab(id)}
-            className={`shrink-0 rounded-xl px-3 py-2 text-[8px] font-black uppercase ${
+            className={`shrink-0 rounded-xl px-3 py-2 text-xs font-black uppercase ${
               listTab === id
                 ? 'bg-sky-500/15 text-sky-200'
                 : 'border border-slate-800 bg-slate-950 text-slate-500'
@@ -304,15 +303,15 @@ export function SquareStoresSection({
         ))}
       </div>
       {listTab === 'participating' && (
-        <p className="text-[9px] text-slate-500">Lojas com histórico de fidelidade confirmado. Sua própria loja não entra.</p>
+        <p className="text-xs leading-relaxed text-slate-400">Lojas com histórico de fidelidade confirmado. Sua própria loja não entra.</p>
       )}
       {listTab === 'trending' && (
-        <p className="text-[9px] text-slate-500">Destaques e lojas com ofertas publicadas; sem ranking de vendas.</p>
+        <p className="text-xs leading-relaxed text-slate-400">Destaques e lojas com ofertas publicadas; sem ranking de vendas.</p>
       )}
       <div className="flex gap-2.5 overflow-x-auto pb-1" aria-label="Vitrines de lojas">
         {visible.slice(0, 8).map(store => (
           <article key={store.slug || store.id}
-            className="flex w-[172px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
+            className="flex w-[206px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
             <div className="relative flex h-24 items-center justify-center bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
               {store.logo
                 ? <img src={store.logo} alt={store.name} className="h-14 w-14 rounded-xl object-cover" referrerPolicy="no-referrer" />
@@ -326,22 +325,29 @@ export function SquareStoresSection({
               </button>
             </div>
             <div className="flex-1 p-3">
-              <strong className="block line-clamp-2 text-[11px] font-black text-white">{store.name}</strong>
-              {store.official && <span className="mt-1 block text-[8px] font-bold text-teal-300">Loja Oficial</span>}
+              <strong className="block line-clamp-2 text-sm font-black text-white">{store.name}</strong>
+              {store.official && <span className="mt-1 block text-xs font-bold text-teal-300">Loja Oficial</span>}
               {store.description && (
-                <p className="mt-1 line-clamp-2 text-[9px] leading-relaxed text-slate-400">{store.description}</p>
+                <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{store.description}</p>
               )}
             </div>
-            <div className="border-t border-slate-800 p-2">
+            <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800 p-1.5">
+              <button type="button"
+                aria-label={`Abrir avaliações da loja ${store.name}`}
+                title={`Avaliações de ${store.name}`}
+                onClick={() => onOpenReviews(storeForReviews(store))}
+                className="flex min-h-11 min-w-0 items-center justify-center rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-xs font-bold tracking-tight text-amber-300">
+                Avaliações
+              </button>
               {store.official ? (
                 <a href={OFFICIAL_STORE_PATH}
-                  className="flex min-h-9 items-center justify-center gap-1 rounded-xl bg-slate-800 px-2 text-[9px] font-black uppercase text-slate-200">
-                  <ShoppingBag className="h-3.5 w-3.5" aria-hidden="true" /> Abrir loja
+                  className="flex min-h-11 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                  Entrar
                 </a>
               ) : (
                 <button type="button" onClick={() => store.source && onOpenStore(store.source)}
-                  className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-[9px] font-black uppercase text-slate-200">
-                  Abrir loja
+                  className="flex min-h-11 min-w-0 items-center justify-center rounded-xl bg-slate-800 px-1 text-xs font-bold text-slate-200">
+                  Entrar
                 </button>
               )}
             </div>
