@@ -187,3 +187,22 @@ test('font-size follows viewport in both directions without accumulating 4px', a
     dom.window.close();
   }
 });
+
+
+test('admin login disclosure reaches WCAG AA contrast for normal text', () => {
+  const admin = readFileSync('src/components/admin/AdminControlPlaneApp.tsx', 'utf8');
+  assert.match(admin, /id="admin-access-provisioning-notice" className="mt-4 text-center text-\[10px\] leading-relaxed text-slate-300"/);
+  const luminance = (hex: string) => {
+    const rgb = hex.match(/.{2}/g)!.map(pair => Number.parseInt(pair, 16) / 255);
+    const [r, g, b] = rgb.map(value => value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  // Conservative solid slate-900 background; the actual /80 layer over
+  // slate-950 is darker and gives the light text still more contrast.
+  const foreground = luminance('cbd5e1'); // slate-300
+  const background = luminance('0f172a'); // slate-900
+  const ratio = (foreground + 0.05) / (background + 0.05);
+  assert.ok(ratio >= 4.5, \`Expected WCAG AA >=4.5:1, got \${ratio.toFixed(2)}:1\`);
+});
