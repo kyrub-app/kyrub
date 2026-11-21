@@ -791,7 +791,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                 Meu espaço
               </span>
               <h2 className="truncate text-base font-black text-white">
-                Central Pessoal
+                {isSavedOpen ? 'Salvos' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -805,6 +805,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
           </header>
 
           <div className="flex-1 overflow-y-auto">
+            {!isSavedOpen && (
+              <>
             <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
               <div className="flex items-center gap-4">
                 <Avatar
@@ -895,8 +897,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               )}
             </section>
 
+              </>
+            )}
+
             {isSavedOpen && (
               <section className="space-y-4 border-b border-slate-900 bg-slate-900/45 p-4 sm:p-5" id="profile-saved-library">
+                <button type="button" onClick={() => setIsSavedOpen(false)}
+                  className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm font-bold text-slate-200">
+                  Voltar à Central Pessoal
+                </button>
                 <div>
                   <h3 className="text-xs font-black uppercase text-slate-100">Salvos</h3>
                   <p className="mt-1 text-[9px] text-slate-500">Biblioteca privada de publicações guardadas na Praça e nas Comunidades.</p>
