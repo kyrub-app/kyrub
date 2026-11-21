@@ -896,6 +896,30 @@ export default function App() {
     }
   }, []);
 
+  // The single unified editor returns to Central Pessoal when closed.
+  // Persisted profile identity also refreshes the visible header immediately.
+  useEffect(() => {
+    const returnToPersonalCenter = () => {
+      if (!auth.currentUser) return;
+      setProfileOpenSaved(false);
+      setShowUserProfileModal(true);
+    };
+    const refreshPublicIdentity = (event: Event) => {
+      const detail = (event as CustomEvent<{
+        uid: string; name: string; photoUrl: string;
+      }>).detail;
+      if (!detail || detail.uid !== auth.currentUser?.uid) return;
+      setProfileName(detail.name);
+      setProfilePhotoUrl(detail.photoUrl);
+    };
+    window.addEventListener('kyrub:unified-profile-editor-closed', returnToPersonalCenter);
+    window.addEventListener('kyrub:profile-updated', refreshPublicIdentity);
+    return () => {
+      window.removeEventListener('kyrub:unified-profile-editor-closed', returnToPersonalCenter);
+      window.removeEventListener('kyrub:profile-updated', refreshPublicIdentity);
+    };
+  }, []);
+
   // Firebase auth state listener and authorized profile/store initialization
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
@@ -1821,7 +1845,6 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       <UserProfileModal
         isOpen={showUserProfileModal}
         onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
-        onOpenFromEditor={() => { setProfileOpenSaved(false); setShowUserProfileModal(true); }}
         walletHistory={walletHistory}
         openSavedInitially={profileOpenSaved}
         profileName={profileName}
