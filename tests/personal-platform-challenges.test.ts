@@ -64,7 +64,7 @@ test('legacy reward units are read-only and cannot be awarded from the profile',
   assert.match(component, /Disponíveis/);
   assert.match(component, /Concluídos/);
   assert.match(profile, /id: 'challenges', label: 'Desafios da plataforma'/);
-  assert.match(profile, /card\.id === 'xp' \|\| card\.id === 'challenges' \? 'col-span-2'/);
+  assert.match(profile, /card\.id === 'challenges' \? 'col-span-2'/);
   assert.match(profile, /personalPanel === 'challenges' && <PlatformChallengesPanel/);
   assert.ok(profile.indexOf("id: 'challenges'") > profile.indexOf("id: 'xp'"),
     'Challenge card is below XP and conquistas');
