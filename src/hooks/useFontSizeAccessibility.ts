@@ -187,6 +187,15 @@ export const useFontSizeAccessibility = (
       const addedRoots: HTMLElement[] = [];
 
       for (const mutation of mutations) {
+        if (
+          mutation.type === 'attributes' &&
+          mutation.target instanceof HTMLElement &&
+          mutation.target.matches(PORTAL_TYPOGRAPHY_SELECTOR)
+        ) {
+          // The shared modal bridge marks a body-level ERP portal after mount.
+          // Observing this one scoped attribute avoids font changes on clicks.
+          addedRoots.push(mutation.target);
+        }
         for (const node of mutation.addedNodes) {
           if (node instanceof HTMLElement) addedRoots.push(node);
         }
@@ -207,14 +216,13 @@ export const useFontSizeAccessibility = (
       }
     });
 
-    // Class changes caused by presses, focus and active states are deliberately
-    // ignored. Only newly mounted DOM is adjusted, so interaction cannot keep
-    // increasing or reanimating existing text.
-    // React portals are direct body children, outside #root. The scope marker
-    // ensures the broader observer skips notifications from unrelated widgets.
+    // Ignore ordinary class/state changes. Only added nodes or explicit
+    // Kyrub-owned font-scope registration are observed. No repeated zoom.
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      attributes: true,
+      attributeFilter: ['data-kyrub-font-scope'],
     });
 
     return () => {
