@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react';
-import { PitangaAccount } from './PitangaAccount';
 import type React from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import {
@@ -435,19 +434,9 @@ export function KyrubTab(props: KyrubTabProps) {
       )}
 
       {props.socialSubTab === 'lojas' && props.ofertasFilter === 'cliente' && (
-        <section aria-label="Recompensas" className="kyrub-tone-organic mb-3 rounded-2xl p-4">
-          <h2 className="mb-4 text-xl font-bold">Recompensas</h2>
-          <PitangaAccount key={socialFeed.currentUserId || 'signed-out'} />
-          <div className="mt-5 border-t border-slate-800 pt-5">
-            <h3 className="text-lg font-bold">Desafios e conquistas</h3>
-            <div className="mt-3 rounded-2xl bg-slate-800 p-4 text-sm text-slate-300">
-              Campanhas, objetivos, progresso e recompensas disponíveis.
-              <p className="mt-2 text-xs text-slate-400">Desafios personalizados ainda não conectados nesta tela.</p>
-            </div>
-          </div>
-
-          <div className="mt-5 border-t border-slate-800 pt-5">
-            <h3 className="text-lg font-bold">Meus clubes</h3>
+        <section aria-label="Meus clubes" className="kyrub-tone-organic mb-3 rounded-2xl p-4">
+          <h2 className="text-xl font-bold">Meus clubes</h2>
+          <div className="mt-3">
             <p className="mt-1 text-xs text-slate-400">Pontos próprios, benefícios e vouchers de cada estabelecimento.</p>
             {clubsLoading && <p className="mt-3 text-sm" role="status">Consultando seus clubes…</p>}
             {clubsError && <p className="mt-3 text-xs text-amber-300" role="status">Não foi possível consultar todos os relacionamentos.</p>}
