@@ -55,7 +55,8 @@ test('one unified editor keeps account, data, documents and security with Centra
   assert.match(unifiedEditorSource, /'seguranca', label: 'Segurança'/);
   assert.match(unifiedEditorSource, /'documentos', label: 'Documentos'/);
   assert.match(unifiedEditorSource, /'validacao', label: 'Validação'/);
-  assert.match(profileSource, /Visibilidade do perfil/);
+  assert.match(profileSource, /id="personal-profile-visibility"/);
+  assert.match(profileSource, /aria-pressed=\{isProfileVisible\}/);
   assert.match(profileSource, /Perfil visível na Praça|Visível na Praça/);
 });
 
