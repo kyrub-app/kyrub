@@ -33,8 +33,8 @@ test('Meu perfil is a private financial and identity center instead of a publish
   assert.match(profileSource, /Central Pessoal/);
   assert.match(profileSource, /Carteira Kairube/);
   const walletCards = profileSource.slice(profileSource.indexOf('const financeCards = ['), profileSource.indexOf('] as const;', profileSource.indexOf('const financeCards = [')));
-  assert.deepEqual([...walletCards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]), ['movements', 'finance', 'xp', 'challenges']);
-  for (const title of ['Movimentações', 'Controle financeiro', 'XP e conquistas', 'Desafios da plataforma']) {
+  assert.deepEqual([...walletCards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]), ['movements', 'finance', 'xp', 'devices', 'challenges']);
+  for (const title of ['Movimentações', 'Controle financeiro', 'Conquistas', 'Dispositivos', 'Desafios da plataforma']) {
     assert.ok(walletCards.includes(title));
   }
   assert.doesNotMatch(walletCards, /id: 'pitangas'/);
