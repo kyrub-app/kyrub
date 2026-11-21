@@ -190,7 +190,9 @@ export const listPublicSquareDiscovery = async () => {
       const profile = await adminDb.collection('users').doc(uid).get();
       const data = profile.data();
       const name = str(data?.name, 80);
-      if (name) names.set(uid, { name, avatar: publicImage(data?.photoUrl) });
+      if (name) names.set(uid, { name,
+        avatar: data?.isProfileVisible === false ? undefined : publicImage(data?.photoUrl),
+      });
     } catch {
       // A public feed still works when author metadata is temporarily missing.
     }
