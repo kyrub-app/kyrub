@@ -45,7 +45,15 @@ test('private economic account stays separate from informational seed journeys',
   const community = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const panel = read('src/components/SemeaduraJourneyPanel.tsx');
   const rules = read('firestore.rules');
-  assert.match(account, /<SemeaduraJourneyPanel viewerId=\{auth\.currentUser\?\.uid \|\| ''\}/);
+  assert.match(account, /<SemeaduraJourneyPanel/);
+  assert.match(account, /viewerId=\{auth\.currentUser\?\.uid \|\| ''\}/);
+  assert.match(account, /xp=\{mode === 'xp' \? \(account\?\.xp \?\? null\) : undefined\}/);
+  assert.match(panel, /function CocarXpIcon\(\)/);
+  assert.match(panel, /const showCanonicalXp = !communityId && xp !== undefined/);
+  assert.match(panel, /showCanonicalXp && \(/);
+  assert.match(panel, /Cocar · XP/);
+  assert.match(panel, /aria-label="Cocar, XP da conta de recompensas"/);
+  assert.match(panel, /xp\.toLocaleString\('pt-BR'\)/);
   assert.match(community, /<SemeaduraJourneyPanel key=\{selectedCommunity\.id\} communityId=\{selectedCommunity\.id\}/);
   assert.match(panel, /Esta jornada é visual\. As recompensas pertencem aos autores, não à comunidade\./);
   assert.match(panel, /Pitangas equivalentes/);
