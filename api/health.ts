@@ -80,6 +80,87 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  // TEMPORARY PREVIEW-ONLY, READ-ONLY: fixed public community schema audit.
+  // Never include owner UID, emails, contact information or document payloads.
+  if (transport === 'manual-community-preflight') {
+    const targetId = 'fIemZnVFXZsagd6EA6sN';
+    if (process.env.VERCEL_ENV !== 'preview' ||
+        request.method !== 'GET' ||
+        queryValue(request.query?.communityId) !== targetId) {
+      response.status(404).json({ error: 'NOT_FOUND' });
+      return;
+    }
+    try {
+      const { adminDb, getFirebaseAdminProjectId } = await import('../server/firebaseAdmin.js');
+      if (getFirebaseAdminProjectId() !== 'kyrub-b8d0e') throw Error('PROJECT_MISMATCH');
+      const [record, official, nation] = await Promise.all([
+        adminDb.collection('communities').doc(targetId).get(),
+        adminDb.collection('communities').doc('eD2ExLGyHmggQY6g4nNe').get(),
+        adminDb.collection('communities').doc('tann2kI0CiPCVYWAStSJ').get(),
+      ]);
+      if (!record.exists) {
+        response.status(404).json({ code: 'COMMUNITY_NOT_FOUND' });
+        return;
+      }
+      const d = record.data() ?? {};
+      const ownerId = typeof d.ownerId === 'string' ? d.ownerId.trim() : '';
+      const ownerMembershipId = ownerId ? targetId + '__' + ownerId : '';
+      const required = [
+        'communityId','ownerId','ownerName','ownerAvatar','name','description',
+        'category','location','visibility','rules','coverImage','coverPath',
+        'memberCount','lastMembershipChangeId','createdAtIso','createdAt',
+        'updatedAtIso','updatedAt','activityAtIso','activityAt',
+      ];
+      const [member, ownerUser, members, posts, groups, comments, likes, reports, pointers] = await Promise.all([
+        ownerMembershipId ? adminDb.collection('community_members').doc(ownerMembershipId).get() : Promise.resolve(null),
+        ownerId ? adminDb.collection('users').doc(ownerId).get() : Promise.resolve(null),
+        adminDb.collection('community_members').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_posts').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_groups').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_post_comments').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_post_likes').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_post_reports').where('communityId','==',targetId).count().get(),
+        adminDb.collection('community_square_posts').where('communityId','==',targetId).count().get(),
+      ]);
+      const memberData = member?.exists ? member.data() ?? {} : {};
+      response.setHeader('Cache-Control','no-store');
+      response.status(200).json({
+        projectMatched: true,
+        name: typeof d.name === 'string' ? d.name : '',
+        createdAtIso: typeof d.createdAtIso === 'string' ? d.createdAtIso : null,
+        updatedAtIso: typeof d.updatedAtIso === 'string' ? d.updatedAtIso : null,
+        visibility: d.visibility,
+        ownerName: typeof d.ownerName === 'string' ? d.ownerName.slice(0,160) : '',
+        ownerIdPresent: Boolean(ownerId),
+        sameOwnerAsKyrubOficial: Boolean(ownerId && official.exists && ownerId === official.data()?.ownerId),
+        sameOwnerAsNacaoRoqueira: Boolean(ownerId && nation.exists && ownerId === nation.data()?.ownerId),
+        ownerUserDocumentExists: Boolean(ownerUser?.exists),
+        ownerMembershipExists: Boolean(member?.exists),
+        ownerMembershipRole: typeof memberData.role === 'string' ? memberData.role : null,
+        ownerMembershipStatus: typeof memberData.status === 'string' ? memberData.status : null,
+        storedCommunityIdMatchesDocumentId: d.communityId === targetId,
+        lastMembershipChangeIdMatchesOwner: d.lastMembershipChangeId === ownerMembershipId,
+        recordedMemberCount: typeof d.memberCount === 'number' ? d.memberCount : null,
+        missingSchemaFields: required.filter(field => !(field in d)),
+        extraSchemaFields: Object.keys(d).filter(field => !required.includes(field)),
+        relatedCounts: {
+          memberships: members.data().count,
+          posts: posts.data().count,
+          groups: groups.data().count,
+          comments: comments.data().count,
+          likes: likes.data().count,
+          reports: reports.data().count,
+          squarePointers: pointers.data().count,
+        },
+        writesPerformed: false,
+      });
+    } catch (error) {
+      console.warn('[manual-community-preflight]', error instanceof Error ? error.message : 'unavailable');
+      response.status(503).json({ error: 'MANUAL_COMMUNITY_PREFLIGHT_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (transport === 'public-square-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
