@@ -133,6 +133,7 @@ const inputClass =
 export function ProfileVerificationBridge() {
   const [open, setOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>('perfil');
+  const [openedFromCentral, setOpenedFromCentral] = useState(false);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [record, setRecord] = useState<IdentityVerificationRecord | null>(null);
   const [draft, setDraft] = useState<IdentityVerificationRecord | null>(null);
@@ -196,10 +197,12 @@ export function ProfileVerificationBridge() {
     // Both the Central Pessoal shortcut and legacy edit entrypoints open
     // exactly this editor; no DOM-injected second profile button.
     const openFromProfile = () => {
+      setOpenedFromCentral(true);
       setActiveTab('perfil');
       setOpen(true);
     };
     const openFromVerification = () => {
+      setOpenedFromCentral(false);
       setActiveTab('conta');
       setOpen(true);
     };
@@ -220,6 +223,7 @@ export function ProfileVerificationBridge() {
       event.preventDefault();
       event.stopPropagation();
       if ('stopImmediatePropagation' in event) event.stopImmediatePropagation();
+      setOpenedFromCentral(false);
       setActiveTab('documentos');
       setOpen(true);
       showToast(result.reason, 'warning');
@@ -425,6 +429,14 @@ export function ProfileVerificationBridge() {
     }
   };
 
+  const closeEditor = () => {
+    setOpen(false);
+    if (openedFromCentral && auth.currentUser?.uid === user.uid) {
+      window.dispatchEvent(new Event('kyrub:unified-profile-editor-closed'));
+    }
+    setOpenedFromCentral(false);
+  };
+
   const modal = (
     <div className="fixed inset-0 z-[190] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
       <section className="flex h-[100dvh] w-full max-w-xl flex-col overflow-hidden bg-slate-950 text-slate-100 sm:h-[min(820px,94dvh)] sm:rounded-3xl sm:border sm:border-slate-800">
@@ -444,7 +456,7 @@ export function ProfileVerificationBridge() {
           </div>
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closeEditor}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-slate-400"
             aria-label="Fechar verificação e segurança"
           >
@@ -777,7 +789,7 @@ export function ProfileVerificationBridge() {
         <footer className="flex shrink-0 gap-2 border-t border-slate-800 bg-slate-950 px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closeEditor}
             className="flex-1 rounded-xl bg-slate-800 px-4 py-3 text-[10px] font-black uppercase text-slate-300"
           >
             Fechar
