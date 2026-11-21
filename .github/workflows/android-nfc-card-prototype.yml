@@ -1,0 +1,43 @@
+name: Android NFC card prototype
+on:
+  pull_request:
+    paths:
+      - 'native/android-card/**'
+      - '.github/workflows/android-nfc-card-prototype.yml'
+permissions:
+  contents: read
+jobs:
+  prototype:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Use Java 17 and run protocol unit test
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          output="$(mktemp -d)"
+          javac -d "$output" native/android-card/app/src/main/java/com/kyrub/cardprototype/Type4PublicCard.java native/android-card/tests/Type4PublicCardTest.java
+          java -cp "$output" com.kyrub.cardprototype.Type4PublicCardTest
+      - name: Build experimental APK with verified Gradle distribution
+        shell: bash
+        run: |
+          set -euo pipefail
+          export JAVA_HOME="$JAVA_HOME_17_X64"
+          export PATH="$JAVA_HOME/bin:$PATH"
+          output="$(mktemp -d)"
+          curl --fail --location --retry 2 https://services.gradle.org/distributions/gradle-8.9-bin.zip -o "$output/gradle.zip"
+          echo "d725d707bfabd4dfdc958c624003b3c80accc03f7037b5122c4b1d0ef15cecab  $output/gradle.zip" | sha256sum --check -
+          unzip -q "$output/gradle.zip" -d "$output"
+          "$output/gradle-8.9/bin/gradle" --no-daemon -p native/android-card :app:assembleDebug
+      - name: Upload debug APK for controlled physical test
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: kairub-nfc-card-experimental-debug
+          path: native/android-card/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+          retention-days: 7
