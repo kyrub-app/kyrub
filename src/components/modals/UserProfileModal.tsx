@@ -262,7 +262,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   className="h-20 w-20 shrink-0 rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10 sm:h-24 sm:w-24"
                 />
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate text-lg font-black text-white">{displayName}</h3>
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                    <h3 className="max-w-full truncate text-lg font-black text-white">{displayName}</h3>
                   <button
                     id="personal-profile-visibility"
                     type="button"
@@ -276,7 +277,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                     aria-describedby="personal-profile-visibility-help"
                     disabled={!profileVisibilityReady || visibilityBusy}
                     onClick={() => void toggleProfileVisibility()}
-                    className={`mt-1 inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-wait disabled:opacity-60 ${
+                    className={`inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-wait disabled:opacity-60 ${
                       isProfileVisible
                         ? 'border-teal-500/40 bg-teal-500/10 text-teal-300 hover:bg-teal-500/20'
                         : 'border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700'
@@ -289,6 +290,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                         ? (isProfileVisible ? 'Visível na Praça' : 'Perfil reservado')
                         : 'Consultando…'}
                   </button>
+                  </div>
                   <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
                     @{profileHandle}
                   </p>
