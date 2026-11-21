@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   getCommunity,
+  getPublicCommunityFromServer,
   subscribeDiscoverableCommunities,
   subscribeOwnedCommunities,
   subscribeUserMemberships,
@@ -28,6 +29,7 @@ const mergeCommunities = (...sources: CloudCommunity[][]): CloudCommunity[] => {
 export function useCommunityDirectory() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [discoverable, setDiscoverable] = useState<CloudCommunity[]>([]);
+  const [publicReconciled, setPublicReconciled] = useState<CloudCommunity[]>([]);
   const [owned, setOwned] = useState<CloudCommunity[]>([]);
   const [privateMembershipCommunities, setPrivateMembershipCommunities] =
     useState<CloudCommunity[]>([]);
@@ -41,6 +43,7 @@ export function useCommunityDirectory() {
     onAuthStateChanged(auth, currentUser => {
       setUser(currentUser);
       setDiscoverable([]);
+      setPublicReconciled([]);
       setOwned([]);
       setPrivateMembershipCommunities([]);
       setMemberships([]);
@@ -110,6 +113,63 @@ export function useCommunityDirectory() {
     };
   }, [user]);
 
+  // Guest and signed-in views discover the same public community IDs.
+  // Hydrate them with an authenticated, server-forced Firestore read so owner
+  // and membership semantics remain canonical and cached listeners cannot
+  // silently hide older public communities.
+  useEffect(() => {
+    if (!user) {
+      setPublicReconciled([]);
+      return;
+    }
+    let active = true;
+    let running = false;
+    const controller = new AbortController();
+    const refreshPublic = async () => {
+      if (running) return;
+      running = true;
+      try {
+        const response = await fetch('/api/square/public', {
+          cache: 'no-store',
+          headers: { accept: 'application/json' },
+          signal: controller.signal,
+        });
+        if (!response.ok) throw Error('PUBLIC_COMMUNITY_DISCOVERY_UNAVAILABLE');
+        const payload = await response.json() as {
+          communities?: Array<{ id?: unknown }>;
+        };
+        const ids = Array.from(new Set(
+          (Array.isArray(payload.communities) ? payload.communities : [])
+            .map(entry => typeof entry?.id === 'string' ? entry.id : '')
+            .filter((id): id is string => /^[a-zA-Z0-9_-]{1,128}$/.test(id))
+        )).slice(0, 30);
+        const settled = await Promise.allSettled(
+          ids.map(id => getPublicCommunityFromServer(id))
+        );
+        if (!active) return;
+        setPublicReconciled(settled.flatMap(item =>
+          item.status === 'fulfilled' && item.value ? [item.value] : []
+        ));
+        if (settled.some(item => item.status === 'rejected')) {
+          console.warn('Algumas comunidades públicas não puderam ser sincronizadas com o Firestore.');
+        }
+      } catch (cause) {
+        if (active && !controller.signal.aborted) {
+          console.warn('Reconciliação de comunidades públicas indisponível; consulta autenticada preservada.', cause);
+        }
+      } finally {
+        running = false;
+      }
+    };
+    void refreshPublic();
+    const interval = window.setInterval(() => void refreshPublic(), 5 * 60 * 1000);
+    return () => {
+      active = false;
+      controller.abort();
+      window.clearInterval(interval);
+    };
+  }, [user]);
+
   useEffect(() => {
     if (!user || memberships.length === 0) {
       setPrivateMembershipCommunities([]);
@@ -153,6 +213,7 @@ export function useCommunityDirectory() {
     );
     return mergeCommunities(
       discoverable,
+      publicReconciled,
       owned,
       privateMembershipCommunities
     ).map(community => {
@@ -165,7 +226,7 @@ export function useCommunityDirectory() {
         isPendingMember: membership?.status === 'pending',
       };
     });
-  }, [discoverable, memberships, owned, privateMembershipCommunities, user]);
+  }, [discoverable, publicReconciled, memberships, owned, privateMembershipCommunities, user]);
 
   return {
     user,
