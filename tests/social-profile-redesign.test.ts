@@ -28,11 +28,15 @@ const kyrubWrapperSource = readFileSync(
 );
 const globalCss = readFileSync('src/index.css', 'utf8');
 
-test('Meu perfil is a private personal center instead of a publishing surface', () => {
-  assert.match(profileSource, /Seu centro pessoal é privado/);
-  assert.match(profileSource, />Comunidades<\/strong>/);
-  assert.match(profileSource, /Salvos/);
-  assert.match(profileSource, /Conta/);
+test('Meu perfil is a private financial and identity center instead of a publishing surface', () => {
+  assert.match(profileSource, /Central Pessoal/);
+  assert.match(profileSource, /Carteira Kairube/);
+  for (const title of ['Movimentações', 'Controle financeiro', 'Pitangas', 'XP e conquistas']) {
+    assert.ok(profileSource.includes(title));
+  }
+  assert.match(profileSource, /Editar perfil/);
+  assert.match(profileSource, /Conta e segurança/);
+  assert.match(profileSource, /profile-saved-library/);
   assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
   assert.doesNotMatch(profileSource, /id="profile-publication-register"/);
   assert.doesNotMatch(profileSource, /publicationType: 'feed' \| 'status'/);
