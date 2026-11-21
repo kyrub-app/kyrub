@@ -188,11 +188,38 @@ export const useFontSizeAccessibility = (
     applySnapshots(captureSnapshots(collectManagedElements()));
 
     const refreshResponsiveFontSizes = (): void => {
-      // Restore every original inline style *before* taking new computed
-      // measurements, including inherited styles and responsive Tailwind
-      // classes. This avoids cumulative zoom on desktop/mobile resizing.
-      restoreAllAdjustedElements();
-      applySnapshots(captureSnapshots(collectManagedElements()));
+      // A Tailwind transition-all may still be interpolating font-size after
+      // the previous resize. Temporarily cancel CSS transitions *before*
+      // restoring the source styles, otherwise getComputedStyle can read an
+      // intermediate enlarged value and compound another +4px.
+      const transitionStates = Array.from(adjustedElements, element => ({
+        element,
+        value: element.style.getPropertyValue('transition-property'),
+        priority: element.style.getPropertyPriority('transition-property'),
+      }));
+      for (const { element } of transitionStates) {
+        element.style.setProperty('transition-property', 'none', 'important');
+      }
+
+      try {
+        // Commit transition cancellation, source restoration and the final
+        // accessible size to layout in distinct synchronous style passes.
+        // The last flush is important: re-enabling transition-all must not
+        // animate a stale intermediate font-size.
+        void rootElement.offsetWidth;
+        restoreAllAdjustedElements();
+        void rootElement.offsetWidth;
+        applySnapshots(captureSnapshots(collectManagedElements()));
+        void rootElement.offsetWidth;
+      } finally {
+        for (const { element, value, priority } of transitionStates) {
+          if (value) {
+            element.style.setProperty('transition-property', value, priority);
+          } else {
+            element.style.removeProperty('transition-property');
+          }
+        }
+      }
     };
 
     const viewportWidthKey = (): string =>
