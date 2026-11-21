@@ -4,6 +4,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocFromServer,
   onSnapshot,
   query,
   runTransaction,
@@ -371,6 +372,21 @@ export const getCommunity = async (
   return snapshot.exists()
     ? mapCommunity(snapshot.id, snapshot.data() as Record<string, unknown>)
     : null;
+};
+
+/**
+ * Canonical server read for reconciling public directory cards with the
+ * anonymous discovery API. Unlike getDoc(), this bypasses stale local cache.
+ * The same Firestore read rules still apply; no privileged data is exposed.
+ */
+export const getPublicCommunityFromServer = async (
+  communityId: string
+): Promise<CloudCommunity | null> => {
+  const snapshot = await getDocFromServer(doc(db, 'communities', communityId));
+  if (!snapshot.exists()) return null;
+  const data = snapshot.data() as Record<string, unknown>;
+  if (data.visibility !== 'public' && data.visibility !== 'moderated') return null;
+  return mapCommunity(snapshot.id, data);
 };
 
 const createCommunityWithId = async (
