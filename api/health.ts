@@ -134,6 +134,7 @@ export default async function handler(
       // protected Vercel preview. Never return the credential or raw rules.
       let rulesStatus: string = 'NOT_CHECKED';
       let allowsPublicRead: boolean | null = null;
+      let rulesDiagnostic: Record<string, unknown> = {};
       try {
         const { getFirebaseAdminAccessToken } = await import('../server/firebaseAdmin.js');
         const accessToken = await getFirebaseAdminAccessToken();
@@ -150,8 +151,19 @@ export default async function handler(
             if (rulesResponse.ok) {
               const rules = await rulesResponse.json() as { source?: { files?: Array<{ content?: string }> } };
               const all = (rules.source?.files ?? []).map(item => item.content ?? '').join('\n');
-              const communitySection = all.match(/match \/communities\/\\{communityId\\} \\{([\\s\\S]*?)allow create:/)?.[1] ?? '';
-              allowsPublicRead = communitySection.includes("existing().visibility in ['public', 'moderated']");
+              const matchIndex = all.indexOf('match /communities/{communityId}');
+              const nextCreate = matchIndex < 0 ? -1 : all.indexOf('allow create:', matchIndex);
+              const section = matchIndex >= 0 && nextCreate > matchIndex
+                ? all.slice(matchIndex, nextCreate) : '';
+              allowsPublicRead = section.includes("existing().visibility in ['public', 'moderated']");
+              rulesDiagnostic = {
+                fileCount: rules.source?.files?.length ?? 0,
+                matchFound: matchIndex >= 0,
+                readBlockFound: section.includes('allow read:'),
+                visibilityPredicateFound: allowsPublicRead,
+                excerpt: section.slice(0, 950),
+                sourceLength: all.length,
+              };
               rulesStatus = 'RULESET_READ';
             } else rulesStatus = 'RULESET_HTTP_' + rulesResponse.status;
           } else rulesStatus = 'RULESET_NAME_UNAVAILABLE';
@@ -188,7 +200,7 @@ export default async function handler(
           squarePointers: pointers.data().count,
         },
         postStats,
-        liveRules: { status: rulesStatus, publicReadRulePresent: allowsPublicRead },
+        liveRules: { status: rulesStatus, publicReadRulePresent: allowsPublicRead, diagnostic: rulesDiagnostic },
         writesPerformed: false,
       });
     } catch (error) {
