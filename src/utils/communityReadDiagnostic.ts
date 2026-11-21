@@ -5,6 +5,7 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import { getPublicCommunityFromServer } from './communityCloud';
+import { probeCommunityGoogleRest } from './communityRestReadProbe';
 
 export interface PublicCommunityReadProbe {
   directServer: string;
@@ -19,6 +20,7 @@ export interface PublicCommunityReadProbe {
   databaseProject: string;
   firestoreHost: string;
   initializedApps: string;
+  googleRestDocument: string;
 }
 
 /**
@@ -65,6 +67,7 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
     databaseProject: 'não verificado',
     firestoreHost: 'não verificado',
     initializedApps: 'não verificado',
+    googleRestDocument: 'não executado',
   };
   const user = auth.currentUser;
   if (!user || !/^[A-Za-z0-9_-]{1,128}$/.test(communityId)) {
@@ -106,6 +109,9 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
       ? 'servidor padrão do Firebase' : 'servidor alternativo'
     : 'não informado pelo SDK';
   await Promise.all([
+    (async () => {
+      result.googleRestDocument = await probeCommunityGoogleRest(user, communityId);
+    })(),
     (async () => {
       try {
         const snapshot = await withDeadline(getDocFromCache(reference));
