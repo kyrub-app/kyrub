@@ -6,7 +6,7 @@ import { cardLink, isCardId, isBoundTarget, parseCardTargets, CARD_LIMIT, type C
 type Bound = CardTarget & {bindingId:string};
 const cards=()=>adminDb.collection('public_visit_cards');
 const owners=()=>adminDb.collection('public_visit_card_owners');
-async function resolveTarget(actor:string,target:CardTarget,expected?:string):Promise<{binding:Bound;link:CardLink}|null>{
+export async function resolveTarget(actor:string,target:CardTarget,expected?:string):Promise<{binding:Bound;link:CardLink}|null>{
   if(target.kind==='store'){
     const result=await loadPublicStorefrontBySlug(target.identifier);
     if(!result||result.store.slug!==target.identifier||!result.store.name||!/^[A-Za-z0-9_-]{1,128}$/.test(result.store.id))return null;

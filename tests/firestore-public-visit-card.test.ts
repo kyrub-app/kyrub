@@ -81,3 +81,36 @@ test('isolated lifecycle: collisions, ownership, persistent card, live privacy, 
  assert.deepEqual((await loadOwnedCard('owner-a'))?.urls,[urls[0]]);
  assert.equal((await resolvePublicCard(id))?.links.length,1);
 });
+
+test('official physical units are permanently bound, private by default and individually revocable',async()=>{
+ const {provisionKyrubTag,claimKyrubTag,configureKyrubTag,disableKyrubTag,resolveKyrubTag,listOwnedKyrubTags}=await import('../server/identity/kyrubTagService.js');
+ const {resolveKyrubAppRoute}=await import('../src/utils/appRoutes.js');
+ const a=await provisionKyrubTag('pitanga'),b=await provisionKyrubTag('pulseira');
+ assert.notEqual(a.id,b.id);assert.equal(resolveKyrubAppRoute('/tag/'+a.id).kind,'public-tag');
+ assert.equal((await resolveKyrubTag(a.id))?.status,'unclaimed');
+ assert.equal(JSON.stringify(await resolveKyrubTag(a.id)).includes(a.code),false);
+ await assert.rejects(claimKyrubTag('owner-a',a.id,'0'.repeat(32)),/TAG_FORBIDDEN/);
+ const claims=await Promise.allSettled([claimKyrubTag('owner-a',a.id,a.code),claimKyrubTag('owner-b',a.id,a.code)]);
+ assert.equal(claims.filter(x=>x.status==='fulfilled').length,1);
+ const actor=claims[0].status==='fulfilled'?'owner-a':'owner-b',other=actor==='owner-a'?'owner-b':'owner-a';
+ assert.equal(await resolveKyrubTag(a.id),null);
+ assert.equal((await adminDb.doc('kyrub_official_tags/'+a.id).get()).data()?.activationHash,null);
+ await assert.rejects(claimKyrubTag(other,a.id,a.code),/TAG_FORBIDDEN/);
+ await claimKyrubTag(actor,b.id,b.code);
+ await adminDb.doc('communities/rock-1').update({visibility:'public'});
+ const urls=['https://kyrub.com/comunidade/rock'];
+ await configureKyrubTag(actor,a.id,urls);await configureKyrubTag(actor,b.id,urls);
+ await assert.rejects(configureKyrubTag(other,a.id,urls),/TAG_FORBIDDEN/);
+ await assert.rejects(disableKyrubTag(other,a.id),/TAG_FORBIDDEN/);
+ const projected=await resolveKyrubTag(a.id);
+ assert.deepEqual(Object.keys(projected??{}).sort(),['id','links','model','status']);
+ for(const link of projected?.links??[])assert.deepEqual(Object.keys(link).sort(),['identifier','kind','name','url']);
+ await disableKyrubTag(actor,a.id);
+ assert.equal(await resolveKyrubTag(a.id),null);assert.equal((await resolveKyrubTag(b.id))?.links.length,1);
+ await assert.rejects(claimKyrubTag(other,a.id,a.code),/TAG_FORBIDDEN/);
+ await configureKyrubTag(actor,a.id,urls);assert.equal((await resolveKyrubTag(a.id))?.links.length,1);
+ assert.equal((await listOwnedKyrubTags(actor)).tags.length,2);
+ const browser=env.authenticatedContext(actor).firestore(),anon=env.unauthenticatedContext().firestore();
+ const path='kyrub_official_tags/'+a.id;
+ await assertFails(getDoc(doc(browser,path)));await assertFails(getDoc(doc(anon,path)));await assertFails(setDoc(doc(browser,path),{ownerId:other}));
+});

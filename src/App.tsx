@@ -28,6 +28,7 @@ import { ProfilePostInteractionsBridge } from './components/ProfilePostInteracti
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
+import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
 import { PublicStorefrontApp } from './components/PublicStorefrontApp';
@@ -296,6 +297,7 @@ export default function App() {
     return <PublicStorefrontApp slug={route.slug} />;
   }
 
+  if (route.kind === 'public-tag') return <PublicKyrubTagPage identifier={route.identifier} />;
   if (route.kind === 'public-card') return <PublicVisitCardPage identifier={route.identifier} />;
 
   if (route.kind === 'public-profile' || route.kind === 'public-community') {

@@ -1,3 +1,4 @@
+import { OfficialKyrubTagPanel } from './OfficialKyrubTagPanel';
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bluetooth, CheckCircle2, CircleHelp, Nfc, RadioTower, ScanLine, Smartphone, Trash2, WifiOff } from 'lucide-react';
 import { KyrubBusinessCard } from './KyrubBusinessCard';
@@ -263,6 +264,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
       </section>
 
       <KyrubBusinessCard key={userId} userId={userId} nfcSupported={nfcSupported} busy={!!readingId} onWriting={setCardWriting} />
+      <OfficialKyrubTagPanel key={'official-'+userId} userId={userId} />
 
       <div className="grid gap-2 sm:grid-cols-2">
         <section className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 p-3">

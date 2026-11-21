@@ -80,6 +80,44 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
+    if((!managing&&method!=='GET')||(managing&&!['GET','POST','DELETE'].includes(method))){
+      response.setHeader('Allow',managing?'GET, POST, DELETE':'GET');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;
+    }
+    let actor='';
+    if(managing){
+      try{
+        const bearer=/^Bearer ([^\s]+)$/i.exec(headerValue(request.headers.authorization??request.headers.Authorization))?.[1];
+        if(!bearer||bearer.length>8192)throw Error('AUTH_REQUIRED');
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        actor=(await adminAuth.verifyIdToken(bearer,true)).uid;
+        if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('AUTH_REQUIRED');
+      }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
+    }
+    const id=queryValue(request.query?.id);
+    try{
+      const service=await import('../server/identity/kyrubTagService.js');
+      if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
+      if(method==='GET'){response.status(200).json(await service.listOwnedKyrubTags(actor));return;}
+      if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
+      const body=request.body;
+      if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
+      const data=body as Record<string,unknown>;
+      if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
+      if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
+      response.status(400).json({error:'TAG_INVALID'});
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      if(code==='TAG_INVALID'||code==='INVALID_CARD')response.status(400).json({error:'TAG_INVALID'});
+      else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
+      else if(code==='CARD_TARGET_UNAVAILABLE')response.status(409).json({error:code});
+      else response.status(503).json({error:'TAG_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'public-visit-card' || transport === 'manage-public-visit-card') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase();

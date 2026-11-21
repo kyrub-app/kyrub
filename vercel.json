@@ -235,6 +235,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/tag/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/:slug/staff",
       "destination": "/index.html"
     }
