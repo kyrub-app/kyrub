@@ -2303,18 +2303,6 @@ export function ProfileSocialHubNative() {
                 <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
               </button>
 
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-slate-400">
-                    <FileText className="h-4 w-4" />
-                  </span>
-                  <div>
-                    <h4 className="text-[10px] font-black text-white">Conta e seus dados</h4>
-                    <p className="mt-1 text-[9px] text-slate-500">Dados da conta e solicitações relacionadas às suas informações.</p>
-                  </div>
-                </div>
-              </div>
-
               <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
                 <span className="text-[8px] font-black uppercase tracking-wide text-red-300">Zona de risco</span>
                 <h4 className="mt-1 text-[10px] font-black text-white">Excluir minha conta</h4>
