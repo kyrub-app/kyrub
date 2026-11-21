@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowUpRight, UsersRound } from 'lucide-react';
 import { CommunityPostCard } from './CommunityPostCard';
 import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
+import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import {
   subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment,
   deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost,
@@ -28,10 +29,10 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
   const [error, setError] = useState('');
   const { post } = entry;
   const liveAuthors = useLiveAuthorIdentities([post.authorId, entry.forwardedById || '']);
-  const authorName = liveAuthors[post.authorId]?.name || post.authorName;
-  const displayPost = { ...post, authorName, authorAvatar: liveAuthors[post.authorId]?.avatar ?? post.authorAvatar };
+  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const displayPost = { ...post, authorName, authorAvatar: displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors) };
   const forwardedByName = entry.forwardedById
-    ? liveAuthors[entry.forwardedById]?.name || entry.forwardedByName || 'Kairubido'
+    ? displayAuthorName(entry.forwardedById, entry.forwardedByName || 'Kairubido', liveAuthors)
     : '';
 
   useEffect(() => {
