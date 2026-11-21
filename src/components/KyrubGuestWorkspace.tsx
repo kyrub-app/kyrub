@@ -1,13 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, LogIn,
-  Sparkles, UserRound, Wallet, X,
+  Briefcase, Compass, GraduationCap, LogIn, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { RendaTab } from './tabs/RendaTab';
 import { KyrubiaWelcomePanel } from './KyrubiaWelcomePanel';
 import { JemboeHabilidadesTab } from './tabs/JemboeHabilidadesTab';
 import { GuestSquarePanel } from './GuestSquarePanel';
+import { WorkspaceTopNavigation } from './WorkspaceTopNavigation';
 import { auth } from '../utils/firebase';
 import { loadStorefrontOriginContext } from '../utils/storefrontOriginContext';
 
@@ -92,35 +92,14 @@ export function KyrubGuestWorkspace() {
     <div id="kyrub-guest-workspace" data-kyrub-guest-workspace="true"
       className="flex min-h-[100dvh] flex-col bg-slate-950 text-slate-100">
       <header id="app-header" className="sticky top-0 z-40 flex items-center gap-2 border-b border-slate-900 bg-slate-950/95 px-3 py-3 backdrop-blur-md">
-        <button type="button" className={iconButtonClass + ' mr-auto'} title="Meu perfil"
-          aria-label="Abrir meu perfil" id="header-user-profile-trigger"
-          onClick={() => requestLogin('acessar seu perfil')}>
-          <UserRound className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass + ' text-orange-400'}
-          title="Cairúbia" aria-label="Abrir Cairúbia" id="header-kyrubia-trigger"
-          onClick={() => setTab('cairubia')}>
-          <Sparkles className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass} title="Tarefas"
-          aria-label="Abrir Tarefas" id="header-tasks-trigger"
-          onClick={() => requestLogin('acessar e salvar suas tarefas')}>
-          <CheckSquare className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass + ' text-orange-400'} title="Pitangas e XP"
-          aria-label="Abrir Pitangas e XP" id="header-pitangas-trigger"
-          onClick={() => requestLogin('consultar suas Pitangas e XP')}>
-          <Cherry className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button type="button" className={iconButtonClass + ' text-teal-400'} title="Carteira"
-          aria-label="Abrir Carteira" id="header-wallet-balance"
-          onClick={() => requestLogin('consultar sua carteira')}>
-          <Wallet className="h-4 w-4" />
-        </button>
-        <button type="button" className={iconButtonClass} title="Notificações"
-          aria-label="Abrir notificações" onClick={() => requestLogin('consultar suas notificações')}>
-          <Bell className="h-4 w-4" />
-        </button>
+        <WorkspaceTopNavigation
+          onProfile={() => requestLogin('acessar seu perfil')}
+          onKyrubia={() => setTab('cairubia')}
+          onTasks={() => requestLogin('acessar e salvar suas tarefas')}
+          onConnections={() => requestLogin('conectar com pessoas')}
+          onSaved={() => requestLogin('consultar suas publicações salvas')}
+          onGuestNotifications={() => requestLogin('consultar suas notificações')}
+        />
       </header>
 
       <main id="kyrub-workspace-main" className="mx-auto w-full max-w-lg flex-1 space-y-6 px-4 py-6 pb-28" data-kyrub-workspace={tab}>
