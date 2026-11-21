@@ -84,7 +84,10 @@ export function CommunityPostCard({
   const isMine = viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
-  const liveAuthors = useLiveAuthorIdentities([post.authorId, ...postComments.map(comment => comment.authorId)]);
+  const liveAuthors = useLiveAuthorIdentities([
+    post.authorId,
+    ...(commentsOpen ? postComments.map(comment => comment.authorId) : []),
+  ]);
   const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
   const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
   const displayPost = { ...post, authorName, authorAvatar };
