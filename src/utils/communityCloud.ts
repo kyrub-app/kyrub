@@ -1,5 +1,5 @@
 import type { User } from 'firebase/auth';
-import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs } from 'firebase/firestore/lite';
+import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs, documentId as liteDocumentId, orderBy as liteOrderBy, limit as liteLimit, startAfter as liteStartAfter } from 'firebase/firestore/lite';
 import {
   collection,
   deleteDoc,
@@ -395,6 +395,42 @@ export const getPublicCommunityFromServer = async (
   const data = snapshot.data() as Record<string, unknown>;
   if (data.visibility !== 'public' && data.visibility !== 'moderated') return null;
   return mapCommunity(snapshot.id, data);
+};
+
+/**
+ * Paginated authenticated discovery uses the same uncached Lite path that
+ * recovered Manual KYRUB. Both visitor API and Lite order by document ID;
+ * only public/moderated communities are eligible for this list.
+ */
+export const listPublicCommunityPageLite = async (
+  cursor: string | null,
+): Promise<{ items: CloudCommunity[]; nextCursor: string | null }> => {
+  const { user } = currentIdentity();
+  if (cursor && !/^[A-Za-z0-9_-]{1,128}$/.test(cursor)) {
+    throw Error('INVALID_COMMUNITY_CURSOR');
+  }
+  const liteDb = getLiteFirestore(auth.app);
+  const constraints = [
+    liteWhere('visibility', 'in', ['public', 'moderated']),
+    liteOrderBy(liteDocumentId()),
+    ...(cursor ? [liteStartAfter(cursor)] : []),
+    liteLimit(21),
+  ];
+  const snapshot = await getLiteDocs(liteQuery(
+    liteCollection(liteDb, 'communities'), ...constraints,
+  ));
+  if (auth.currentUser?.uid !== user.uid) throw Error('COMMUNITY_SESSION_CHANGED');
+  const docs = snapshot.docs.slice(0, 20);
+  const items = docs.flatMap(item => {
+    const data = item.data() as Record<string, unknown>;
+    if (data.visibility !== 'public' && data.visibility !== 'moderated') return [];
+    const mapped = mapCommunity(item.id, data);
+    return mapped ? [mapped] : [];
+  });
+  return {
+    items,
+    nextCursor: snapshot.docs.length > 20 ? docs[docs.length - 1].id : null,
+  };
 };
 
 /**
