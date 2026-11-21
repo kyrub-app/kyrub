@@ -397,7 +397,7 @@ test('Vercel sends direct public, staff and legacy app routes to the SPA entry',
   assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
 
-test('app header keeps profile first and session door moves to private Central', () => {
+test('navigation headers stay sticky while brand session buttons scroll on both account states', () => {
   const profileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
   const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
   const appHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
@@ -415,14 +415,18 @@ test('app header keeps profile first and session door moves to private Central',
   assert.doesNotMatch(guestHeader, /<LogIn|<LogOut/);
   assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
 
-  assert.match(legacyAppSource, /id="kyrub-workspace-brand"/);
-  assert.doesNotMatch(legacyAppSource, /id="kyrub-workspace-signout"/);
-  assert.match(profileSource, /id="personal-profile-auth-trigger"/);
-  assert.match(profileSource, /isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'/);
-  assert.match(profileSource, /disabled=\{isAuthBusy\}/);
-  assert.match(legacyAppSource, /onAuthAction=\{\(\) => \{/);
-  assert.match(legacyAppSource, /void handleLogout\(\)/);
-  assert.match(legacyAppSource, /setShowLoginModal\(true\)/);
+  assert.match(legacyAppSource, /id="app-header"/);
+  assert.match(legacyAppSource, /sticky top-0 z-40/);
+  assert.match(guestSource, /id="app-header" className="sticky top-0 z-40/);
+  assert.match(legacyAppSource, /id="kyrub-workspace-brand" className="flex min-h-10/);
+  assert.doesNotMatch(legacyAppSource, /id="kyrub-workspace-brand" className="sticky/);
+  assert.match(legacyAppSource, /id="kyrub-workspace-signout"/);
+  assert.match(legacyAppSource, /onClick=\{\(\) => void handleLogout\(\)\}/);
+  assert.match(legacyAppSource, /disabled=\{isSigningOut\}/);
+  assert.match(guestSource, /id="kyrub-guest-brand" className="flex min-h-10/);
+  assert.doesNotMatch(guestSource, /id="kyrub-guest-brand" className="sticky/);
+  assert.doesNotMatch(profileSource, /personal-profile-auth-trigger|onAuthAction|isAuthBusy/);
+  assert.match(profileSource, /id="personal-profile-settings-trigger"/);
   assert.match(guestSource, /id="kyrub-guest-brand"/);
   assert.match(guestSource, /id="kyrub-guest-signin"/);
   assert.match(guestSource, /requestLogin\('acessar sua conta'\)/);
