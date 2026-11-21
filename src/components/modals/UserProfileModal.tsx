@@ -190,7 +190,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
     { id: 'xp', label: 'Conquistas', description: 'XP, Pitangas e recompensas', icon: KyrubCocarIcon },
-    { id: 'devices', label: 'Dispositivos', description: 'Tags NFC e chaveiro LoRa', icon: RadioTower },
+    { id: 'devices', label: 'Dispositivos', description: 'Smartphone, NFC e LoRa', icon: RadioTower },
     { id: 'challenges', label: 'Desafios da plataforma', description: 'Acompanhe missões e recompensas de XP e Pitangas', icon: Flag },
   ] as const;
 
@@ -349,7 +349,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} />}
                   {personalPanel === 'finance' && <PersonalFinancePlanner userId={currentUserId} />}
                   {personalPanel === 'xp' && <PitangaAccount mode="xp" />}
-                  {personalPanel === 'devices' && <KyrubDevicesPanel userId={currentUserId} />}
+                  {personalPanel === 'devices' && <KyrubDevicesPanel userId={currentUserId} key={currentUserId} />}
                   {personalPanel === 'challenges' && <PlatformChallengesPanel catalog={challengeCatalog.catalog}
                     loading={challengeCatalog.loading} error={challengeCatalog.error} onRetry={challengeCatalog.retry} />}
                 </div>
