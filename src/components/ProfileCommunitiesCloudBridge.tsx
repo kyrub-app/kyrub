@@ -1,4 +1,5 @@
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -34,6 +35,8 @@ import {
 } from 'lucide-react';
 import { useCommunityDirectory, type CommunityDirectoryItem, type PublicDirectoryCommunity } from '../hooks/useCommunityDirectory';
 import { SquareDirectoryLayout } from './SquareDirectoryLayout';
+import { InfiniteScrollTrigger } from './InfiniteScrollTrigger';
+import { useInfiniteCursor } from '../hooks/useInfiniteCursor';
 import { CommunityPostCard } from './CommunityPostCard';
 import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
 import {
@@ -42,6 +45,7 @@ import {
   createCommunityPost,
   joinCommunity,
   leaveCommunity,
+  listPublicCommunityPageLite,
   OPEN_COMMUNITY_CLOUD_CREATE_EVENT,
   rejectCommunityMember,
   subscribeCommunityMemberships,
@@ -240,6 +244,12 @@ export function ProfileCommunitiesCloudBridge() {
   const [catalogTab, setCatalogTab] = useState<CommunityListTab>('trending');
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState('all');
+  const readPublicPage = useCallback((cursor: string | null) => listPublicCommunityPageLite(cursor), []);
+  const catalogPage = useInfiniteCursor(
+    catalogOpen && catalogTab === 'trending' && Boolean(user),
+    user?.uid ?? '',
+    readPublicPage,
+  );
   const [selectedPublicPreview, setSelectedPublicPreview] = useState<PublicDirectoryCommunity | null>(null);
   const [publicProbe, setPublicProbe] = useState<PublicCommunityReadProbe | null>(null);
   const [publicProbeBusy, setPublicProbeBusy] = useState(false);
@@ -746,15 +756,32 @@ export function ProfileCommunitiesCloudBridge() {
       ...selectCommunityDirectory(communities, 'trending', '', favoriteCommunityIds)
         .map(community => community.category.trim()),
       ...publicOnlyCommunities.map(community => community.category.trim()),
+      ...catalogPage.items.map(community => community.category.trim()),
     ].filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [communities, publicOnlyCommunities, favoriteCommunityIds],
+    [communities, publicOnlyCommunities, favoriteCommunityIds, catalogPage.items],
   );
-  const catalogCommunities = useMemo(
-    () => selectCommunityDirectory(communities, catalogTab, catalogSearch, favoriteCommunityIds)
-      .filter(community => catalogCategory === 'all' || community.category.trim() === catalogCategory),
-    [communities, catalogTab, catalogSearch, catalogCategory, favoriteCommunityIds],
-  );
-  const catalogPublicOnly = selectPublicOnly(catalogTab, catalogSearch, catalogCategory);
+  const catalogCommunities = useMemo(() => {
+    if (catalogTab !== 'trending') {
+      return selectCommunityDirectory(communities, catalogTab, catalogSearch, favoriteCommunityIds)
+        .filter(community => catalogCategory === 'all' || community.category.trim() === catalogCategory);
+    }
+    const membershipByCommunity = new Map(memberships.map(membership => [membership.communityId, membership]));
+    const normalizedSearch = catalogSearch.trim().toLocaleLowerCase('pt-BR');
+    return catalogPage.items.flatMap(community => {
+      if (catalogCategory !== 'all' && community.category.trim() !== catalogCategory) return [];
+      if (normalizedSearch && ![community.name, community.description, community.category, community.location]
+        .join(' ').toLocaleLowerCase('pt-BR').includes(normalizedSearch)) return [];
+      const membership = membershipByCommunity.get(community.id) ?? null;
+      return [{
+        ...community, membership,
+        isOwner: community.ownerId === user?.uid,
+        isActiveMember: membership?.status === 'active',
+        isPendingMember: membership?.status === 'pending',
+      } satisfies CommunityDirectoryItem];
+    });
+  }, [communities, memberships, catalogPage.items, catalogTab, catalogSearch, catalogCategory, favoriteCommunityIds, user?.uid]);
+  const catalogPublicOnly = catalogTab === 'trending'
+    ? [] : selectPublicOnly(catalogTab, catalogSearch, catalogCategory);
   const catalogResultCount = catalogCommunities.length + catalogPublicOnly.length;
 
   const similarCommunities = useMemo(() => {
@@ -1359,14 +1386,23 @@ export function ProfileCommunitiesCloudBridge() {
             </p>
           )}
           <p className="mb-3 text-xs text-slate-400" aria-live="polite">
-            {loading ? 'Carregando comunidades…' :
-              `${catalogResultCount} ${catalogResultCount === 1 ? 'comunidade encontrada' : 'comunidades encontradas'}`}
+            {(catalogTab === 'trending' ? catalogPage.loading : loading)
+              ? 'Carregando comunidades…'
+              : `${catalogResultCount} ${catalogResultCount === 1 ? 'comunidade carregada' : 'comunidades carregadas'}`}
           </p>
           <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {catalogCommunities.map(community => renderCard(community, 'catalog'))}
             {catalogPublicOnly.map(community => renderPublicFallbackCard(community, 'catalog'))}
           </div>
-          {!loading && catalogResultCount === 0 && (
+          {catalogTab === 'trending' && (
+            <InfiniteScrollTrigger
+              hasMore={catalogPage.hasMore}
+              loading={catalogPage.loading}
+              error={catalogPage.error}
+              onLoadMore={catalogPage.loadMore}
+            />
+          )}
+          {!loading && !catalogPage.loading && catalogResultCount === 0 && !catalogPage.hasMore && (
             <p className="rounded-xl border border-dashed border-slate-700 p-6 text-center text-sm text-slate-400">
               Nenhuma comunidade encontrada. Experimente outra busca ou filtro.
             </p>
