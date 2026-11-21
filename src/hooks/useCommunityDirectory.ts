@@ -18,6 +18,37 @@ export interface CommunityDirectoryItem extends CloudCommunity {
   isPendingMember: boolean;
 }
 
+/** Public discovery metadata only. Does not imply membership, ownership,
+ * access to private posts or permission to administer the community. */
+export interface PublicDirectoryCommunity {
+  id: string;
+  name: string;
+  description: string;
+  category: string;
+  coverImage: string;
+  visibility: 'public' | 'moderated';
+  memberCount: number;
+}
+
+const parsePublicDirectoryCommunity = (input: unknown): PublicDirectoryCommunity | null => {
+  if (!input || typeof input !== 'object') return null;
+  const value = input as Record<string, unknown>;
+  if (typeof value.id !== 'string' || !/^[a-zA-Z0-9_-]{1,128}$/.test(value.id) ||
+      typeof value.name !== 'string' || !value.name.trim() ||
+      (value.visibility !== 'public' && value.visibility !== 'moderated')) return null;
+  return {
+    id: value.id,
+    name: value.name.slice(0, 80),
+    description: typeof value.description === 'string' ? value.description.slice(0, 500) : '',
+    category: typeof value.category === 'string' ? value.category.slice(0, 80) : '',
+    coverImage: typeof value.coverImage === 'string' && /^https:\/\//.test(value.coverImage)
+      ? value.coverImage.slice(0, 2048) : '',
+    visibility: value.visibility,
+    memberCount: typeof value.memberCount === 'number' && Number.isInteger(value.memberCount)
+      ? Math.max(0, value.memberCount) : 0,
+  };
+};
+
 const mergeCommunities = (...sources: CloudCommunity[][]): CloudCommunity[] => {
   const byId = new Map<string, CloudCommunity>();
   for (const community of sources.flat()) byId.set(community.id, community);
@@ -30,6 +61,7 @@ export function useCommunityDirectory() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [discoverable, setDiscoverable] = useState<CloudCommunity[]>([]);
   const [publicReconciled, setPublicReconciled] = useState<CloudCommunity[]>([]);
+  const [publicCommunities, setPublicCommunities] = useState<PublicDirectoryCommunity[]>([]);
   const knownPublicIdsRef = useRef<Set<string>>(new Set());
   const [owned, setOwned] = useState<CloudCommunity[]>([]);
   const [privateMembershipCommunities, setPrivateMembershipCommunities] =
@@ -45,6 +77,7 @@ export function useCommunityDirectory() {
       setUser(currentUser);
       setDiscoverable([]);
       setPublicReconciled([]);
+      setPublicCommunities([]);
       setOwned([]);
       setPrivateMembershipCommunities([]);
       setMemberships([]);
@@ -127,6 +160,7 @@ export function useCommunityDirectory() {
   useEffect(() => {
     if (!user) {
       setPublicReconciled([]);
+      setPublicCommunities([]);
       return;
     }
     let active = true;
@@ -142,16 +176,17 @@ export function useCommunityDirectory() {
           signal: controller.signal,
         });
         if (!response.ok) throw Error('PUBLIC_COMMUNITY_DISCOVERY_UNAVAILABLE');
-        const payload = await response.json() as {
-          communities?: Array<{ id?: unknown }>;
-        };
-        const ids = Array.from(new Set(
-          (Array.isArray(payload.communities) ? payload.communities : [])
-            .map(entry => typeof entry?.id === 'string' ? entry.id : '')
-            .filter((id): id is string =>
-              /^[a-zA-Z0-9_-]{1,128}$/.test(id) &&
-              !knownPublicIdsRef.current.has(id))
-        )).slice(0, 30);
+        const payload = await response.json() as { communities?: unknown };
+        // The public API is the canonical source of discoverable card IDs for
+        // both sessions. A missing authenticated Firestore record may still be
+        // shown as public, read-only metadata instead of silently disappearing.
+        const cards = (Array.isArray(payload.communities) ? payload.communities : [])
+          .map(parsePublicDirectoryCommunity)
+          .filter((item): item is PublicDirectoryCommunity => item !== null)
+          .slice(0, 30);
+        if (active) setPublicCommunities(cards);
+        const ids = [...new Set(cards.map(item => item.id))]
+          .filter(id => !knownPublicIdsRef.current.has(id));
         const settled = await Promise.allSettled(
           ids.map(id => getPublicCommunityFromServer(id))
         );
@@ -240,6 +275,7 @@ export function useCommunityDirectory() {
   return {
     user,
     communities: directory,
+    publicCommunities,
     memberships,
     loading,
     error,

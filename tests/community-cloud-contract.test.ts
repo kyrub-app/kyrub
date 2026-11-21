@@ -529,3 +529,25 @@ test('participar uses an idempotent first-join transaction and never lists pendi
   assert.match(forward, /Encaminhar para um Kairubido conectado/);
   assert.doesNotMatch(forward, /forwardPublic && canParticipate/);
 });
+
+test('authenticated Praça keeps public-only communities discoverable without claiming owner permissions', () => {
+  const hook = read('src/hooks/useCommunityDirectory.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(hook, /const \[publicCommunities, setPublicCommunities\]/);
+  assert.match(hook, /setPublicCommunities\(cards\)/);
+  assert.match(hook, /publicCommunities,/);
+  assert.match(hook, /getPublicCommunityFromServer/);
+  assert.match(hook, /visibility: 'public' \| 'moderated'/);
+  assert.match(ui, /const publicOnlyCommunities = useMemo/);
+  assert.match(ui, /const authenticatedIds = new Set\(communities\.map/);
+  assert.match(ui, /publicCommunities\.filter\(community => !authenticatedIds\.has\(community\.id\)\)/);
+  assert.match(ui, /catalogResultCount = catalogCommunities\.length \+ catalogPublicOnly\.length/);
+  assert.match(ui, /catalogPublicOnly\.map\(community => renderPublicFallbackCard\(community, 'catalog'\)\)/);
+  assert.match(ui, /visiblePublicOnly\.map\(community => renderPublicFallbackCard\(community\)\)/);
+  assert.match(ui, /data-public-community-fallback=\{community\.id\}/);
+  assert.match(ui, /Por segurança, participar, editar e excluir permanecem indisponíveis/);
+  assert.match(ui, /tab !== 'trending'/);
+  // A public card must never call the privileged community opener or update operations.
+  const fallback = ui.slice(ui.indexOf('const renderPublicFallbackCard'), ui.indexOf('const pageTabs:'));
+  assert.doesNotMatch(fallback, /openCommunity\(|handleMembership\(|setEditOpen\(|deleteDoc\(/);
+});
