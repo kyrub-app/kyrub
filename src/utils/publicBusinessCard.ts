@@ -1,9 +1,11 @@
+import { buildPublicDestinationUrl } from '../../shared/publicDestinationRoutes';
+
 /** Public storefront links only, never arbitrary URLs, credentials or private routes. */
 export function publicBusinessCardUrl(input: string): string | null {
   const raw = input.trim();
   const match = /^(?:https:\/\/kyrub\.com\/@|@?)([a-z0-9]+(?:-[a-z0-9]+)*)$/i.exec(raw);
   if (!match || match[1].length > 120) return null;
-  return `https://kyrub.com/@${match[1].toLowerCase()}`;
+  return buildPublicDestinationUrl('store', match[1].toLowerCase());
 }
 export function publicStoreCardMessage(url: string) {
   if (publicBusinessCardUrl(url) !== url) throw Error('INVALID_PUBLIC_CARD');
