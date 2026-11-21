@@ -80,6 +80,32 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'global-challenge-catalog') {
+    if (method !== 'GET') {
+      response.status(405).json({ code: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    const token = bearerToken(authorization);
+    if (!token) {
+      response.status(401).json({ code: 'AUTH_REQUIRED' });
+      return;
+    }
+    try {
+      const [{ verifyFirebaseIdToken }, { adminDb }, { readUserPlatformChallengeCatalog }] = await Promise.all([
+        import('../server/ai/consultantAuth.js'),
+        import('../server/firebaseAdmin.js'),
+        import('../server/gamification/userPlatformChallengeCatalogService.js'),
+      ]);
+      const identity = await verifyFirebaseIdToken(token);
+      response.status(200).json(await readUserPlatformChallengeCatalog(adminDb, identity.uid));
+    } catch (error) {
+      const status = typeof error === 'object' && error !== null && 'status' in error &&
+        (error.status === 401 || error.status === 503) ? error.status : 503;
+      response.status(status).json({ code: status === 401 ? 'AUTH_INVALID' : 'CHALLENGE_CATALOG_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (method !== 'POST') {
     response.status(405).json({
       error: 'Método não permitido.',

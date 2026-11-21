@@ -5,6 +5,7 @@ import {
   Settings,
   LoaderCircle,
   Trophy,
+  Flag,
   Bookmark,
   CircleUserRound,
   X,
@@ -18,6 +19,8 @@ import { auth, db } from '../../utils/firebase';
 import { PersonalFinancePlanner } from '../PersonalFinancePlanner';
 import { WalletMovementsPanel } from './WalletModal';
 import { PitangaAccount } from '../tabs/PitangaAccount';
+import { usePlatformChallenges } from '../../hooks/usePlatformChallenges';
+import { PlatformChallengeSummary, PlatformChallengesPanel } from '../PlatformChallengesPanel';
 import { createSelection, resolveSavedPublication, setSavedPublicationSelections, subscribeSavedPublications, subscribeSelections, type ResolvedSavedPublication, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
 
 interface UserProfileModalProps {
@@ -74,7 +77,7 @@ interface UserProfileModalProps {
   ) => void;
 }
 
-type PersonalPanel = 'movements' | 'finance' | 'xp' | null;
+type PersonalPanel = 'movements' | 'finance' | 'xp' | 'challenges' | null;
 
 const getProfileHandle = (email: string, name: string): string => {
   const emailHandle = email.split('@')[0]?.trim();
@@ -140,6 +143,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const [isSavedOpen, setIsSavedOpen] = useState(false);
   const [newSelectionName, setNewSelectionName] = useState('');
   const [isCreatingSelection, setIsCreatingSelection] = useState(false);
+  const challengeCatalog = usePlatformChallenges(isOpen && !isSavedOpen);
 
   const currentUser = auth.currentUser;
   const currentUserId = currentUser?.uid ?? '';
@@ -184,6 +188,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
     { id: 'xp', label: 'XP e conquistas', description: 'Jornada, Pitangas, XP e recompensas', icon: Trophy },
+    { id: 'challenges', label: 'Desafios da plataforma', description: 'Acompanhe missões e recompensas de XP e Pitangas', icon: Flag },
   ] as const;
 
   useEffect(() => {
@@ -320,7 +325,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   return (
                     <button key={card.id} type="button" aria-pressed={personalPanel === card.id}
                       onClick={() => setPersonalPanel(current => current === card.id ? null : card.id)}
-                      className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${card.id === 'xp' ? 'col-span-2' : ''} ${
+                      className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${card.id === 'xp' || card.id === 'challenges' ? 'col-span-2' : ''} ${
                         personalPanel === card.id
                           ? 'border-orange-500/60 bg-orange-500/10'
                           : 'border-slate-700 bg-slate-900 hover:border-slate-500'
@@ -328,6 +333,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                       <Icon className="h-5 w-5 text-orange-300" aria-hidden="true" />
                       <strong className="mt-2 block text-xs font-bold text-slate-100">{card.label}</strong>
                       <span className="mt-1 block text-[10px] leading-relaxed text-slate-400">{card.description}</span>
+                      {card.id === 'challenges' && <PlatformChallengeSummary catalog={challengeCatalog.catalog} loading={challengeCatalog.loading} error={challengeCatalog.error} />}
                     </button>
                   );
                 })}
@@ -340,6 +346,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} />}
                   {personalPanel === 'finance' && <PersonalFinancePlanner userId={currentUserId} />}
                   {personalPanel === 'xp' && <PitangaAccount mode="xp" />}
+                  {personalPanel === 'challenges' && <PlatformChallengesPanel catalog={challengeCatalog.catalog}
+                    loading={challengeCatalog.loading} error={challengeCatalog.error} onRetry={challengeCatalog.retry} />}
                 </div>
               )}
             </section>
