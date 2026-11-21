@@ -47,6 +47,7 @@ const restoreInlineFontSize = (
 };
 
 const PORTAL_TYPOGRAPHY_SELECTOR = '[data-kyrub-font-scope="true"]';
+const SPECIALIZED_TYPOGRAPHY_SELECTOR = '[data-kyrub-font-managed="true"]';
 
 const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
   root,
@@ -60,7 +61,7 @@ const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
  * elements are adjusted once and are never globally restored/reapplied after
  * clicks. Explicitly marked portal panels get the same +4px accessibility
  * baseline as the Renda workspace; unrelated third-party/ERP portals are not
- * touched. Newly mounted controls inherit the same rule without zooming again.
+ * touched. Panels with an existing typography manager are deliberately skipped. Newly mounted controls inherit the same rule without zooming again.
  */
 export const useFontSizeAccessibility = (
   rootElementId = 'root',
@@ -81,7 +82,10 @@ export const useFontSizeAccessibility = (
 
     const captureSnapshots = (elements: HTMLElement[]): FontSizeSnapshot[] =>
       elements
-        .filter(element => !adjustedElements.has(element))
+        .filter(element =>
+          !adjustedElements.has(element) &&
+          !element.closest(SPECIALIZED_TYPOGRAPHY_SELECTOR)
+        )
         .map(element => ({
           element,
           computedFontSize: window.getComputedStyle(element).fontSize,
