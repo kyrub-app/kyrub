@@ -1,3 +1,4 @@
+import {isTagId} from '../../shared/kyrubTagContract';
 import { parsePublicDestinationPath } from '../../shared/publicDestinationRoutes';
 
 export type KyrubAppRoute =
@@ -7,7 +8,7 @@ export type KyrubAppRoute =
       canonicalPath: string;
     }
   | {
-      kind: 'public-profile' | 'public-community' | 'public-card';
+      kind: 'public-profile' | 'public-community' | 'public-card' | 'public-tag';
       identifier: string;
       canonicalPath: string;
     }
@@ -57,6 +58,11 @@ export const buildPublicStorefrontUrl = (
 export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
   const cleanPath =
     `/${pathname}`.replace(/\/{2,}/g, '/').replace(/\/$/, '') || '/';
+
+  if(cleanPath==='/tag'||cleanPath.startsWith('/tag/')){
+    const identifier=cleanPath.slice('/tag/'.length);
+    return isTagId(identifier)?{kind:'public-tag',identifier,canonicalPath:cleanPath}:{kind:'invalid-public-social',canonicalPath:cleanPath};
+  }
 
   // Category namespaces take precedence over old /:slug/staff aliases.
   if (cleanPath === '/kairubido' || cleanPath.startsWith('/kairubido/') ||

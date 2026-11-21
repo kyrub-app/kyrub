@@ -88,6 +88,16 @@ Planos, entitlements, consumo de IA, custos, Firestore/Storage, upgrades e gover
 
 Radar, fidelidade, Ads, B2B, agenda/reservas, integrações, pagamentos e entregas.
 
+
+### 7.T — Família Kyrub Tag: dispositivos físicos e rede de revenda
+
+- **7.T.1 — identidade individual:** ID permanente por acessório; vínculo definitivo ao primeiro titular mediante código secreto de ativação separado; conteúdo modificável pelo titular; acesso público revogável por unidade; múltiplos acessórios por conta. Sem transferência ou reaproveitamento do identificador, inclusive após desativação.
+- **7.T.2 — produto e fabricação:** Kyrub Tag é a família; Pitanga é o primeiro modelo de chaveiro. Outros modelos: pulseira, cartão e adesivo (on-metal quando aplicável). Tag econômica com URI NDEF bloqueada na fabricação; não é anticlonagem. Versão avançada com autenticação criptográfica e proteção contra replay sujeita a validação de hardware. Evoluções de produto: **Kyrub Tag LoRa** (dispositivo eletrônico ativo, BLE/LoRa; Kyrub Link permanece a frente técnica de comunicação) e **Kyrub Tag Smart** (smartwatch, capacidades a definir após protótipo). HCE no smartphone permanece uma frente independente. Nenhum hardware ativo é apresentado como disponível antes de homologação física.
+- **7.T.3 — Loja Oficial e Renda:** cadastrar SKUs e lotes, custo integral, estoque serializado, venda unitária e atacado, revendedores parceiros, rastreabilidade por lote e devoluções/garantia. Preços de referência NÃO aprovados nem publicados: custo estimado R$ 5, parceiro R$ 8, varejo sugerido R$ 15; custo de R$ 5 para ações subsidiadas, sujeito a orçamento. Não exigir ERP próprio para revenda; definir regras comerciais, fiscais e de elegibilidade.
+- **7.T.4 — campanhas e premiações:** distribuição de cortesia, aquisição, recompensas físicas por XP conforme regras aprovadas e estoque disponível. Não emitir Pitangas/XP automaticamente por ativação; financiamento e trilha de auditoria separados.
+- **7.T.5 — emergência:** dados voluntários e atualizáveis, consentimento específico revogável, contato autorizado, informação declarada (não substitui avaliação médica), sem CPF/RG/endereço. Não gravar dados sensíveis no chip; avaliar LGPD, proteção de menores e acesso, QR e modo offline em fase própria antes da implementação. Sem promessa de atendimento ou socorro.
+- **7.T.6 — gate comercial:** validar provisionamento, autenticação, concorrência, recusa de transferência, isolamento entre contas, desativação seletiva, revogação de consentimento, compatibilidade física e custo real antes de fabricar em escala/vender. Nenhum lote, preço, pagamento ou campanha ativado por esta PR.
+
 ## Fase 8 — Escala e autonomia
 
 Equipe, permissões, automações, autonomia graduada, auditoria completa, concorrência e plataforma para terceiros.

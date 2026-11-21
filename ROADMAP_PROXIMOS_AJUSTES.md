@@ -930,3 +930,19 @@ Os **#63–#67** voltam a reunir tudo para validação final.
 
 - ⏸️ #11 — primeiro E2E Pix real do X-Burger: aguarda produto legitimamente vendável e confirmação explícita imediatamente antes de dinheiro real.
 - ⏸️ Teste real BYO-AI fora desta bateria de 67: proprietário fará diretamente em `Minha IA`, sem enviar chave em chat.
+
+## Extensão oficial 68 — Família Kyrub Tag e revendedores (21/11/2026)
+
+🟡 68.1 — Registro permanente por acessório e gestão individual; primeira vinculação autenticada, código de posse separado e consumido, intransferibilidade, conteúdo editável e revogação individual. Em implementação; gate de emulador/interface/físico.
+
+⬜ 68.2 — Produto Kyrub Tag, modelo inicial Pitanga, variantes pulseira/cartão/adesivo; SKU e lote na Loja Oficial, provisionamento fabril, bloqueio de URI e QR, controle de estoque, garantia. Chip comum copiável; criptografia em evolução separada. Evoluções previstas: Kyrub Tag LoRa e Kyrub Tag Smart (smartwatch), com projeto de hardware, firmware, autonomia, rádio e homologação próprios.
+
+⬜ 68.3 — Revendedores parceiros na Renda, venda atacado/varejo, custo integral e margem, controle de lote, sem liberar preço/pagamento/estoque antes de validação. Referências propostas: R$ 5 custo, R$ 8 atacado, R$ 15 varejo; não preços oficiais.
+
+⬜ 68.4 — Cortesias, divulgação e premiações físicas com orçamento e estoque; não alterar emissão XP/Pitangas.
+
+⬜ 68.5 — Dados de emergência opt-in e revogáveis; revisão LGPD e segurança, acesso sem login exclusivamente autorizado, sem CPF ou NDEF com dados sensíveis.
+
+⬜ 68.6 — Gate de lançamento comercial e homologação de hardware; HCE e hardware criptográfico em fases independentes.
+
+Prioridade: identidade do acessório e segurança agora; comercialização e dados sensíveis após gates da primeira versão comercial confiável. Detalhes em docs/ROADMAP_MASTER.md (7.T).
