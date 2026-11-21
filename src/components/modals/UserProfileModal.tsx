@@ -843,10 +843,19 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   <h3 className="text-base font-black text-white">Meu perfil</h3>
                   <p className="mt-1 text-xs text-slate-400">Identidade, informações e segurança.</p>
                 </div>
-                <button type="button" onClick={() => setIsSettingsOpen(true)}
-                  className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-bold text-slate-100">
-                  <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => {
+                    onClose();
+                    window.dispatchEvent(new Event('kyrub:open-profile-editor'));
+                  }}
+                    className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-bold text-slate-100">
+                    <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
+                  </button>
+                  <button type="button" onClick={() => setIsSettingsOpen(true)}
+                    className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm font-semibold text-slate-300">
+                    Conta e segurança
+                  </button>
+                </div>
               </div>
 
               <div className="border-t border-slate-800 pt-4">
