@@ -1,6 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import {
   BadgeCheck,
+  ArrowLeftRight,
+  ChartPie,
+  Cherry,
+  Pencil,
+  Trophy,
   Bookmark,
   Bike,
   Building2,
@@ -27,11 +32,16 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
+import { PersonalFinancePlanner } from '../PersonalFinancePlanner';
+import { WalletMovementsPanel } from './WalletModal';
+import { PitangaAccount } from '../tabs/PitangaAccount';
 import { createSelection, resolveSavedPublication, setSavedPublicationSelections, subscribeSavedPublications, subscribeSelections, type ResolvedSavedPublication, type SavedPublication, type SavedSelection } from '../../utils/savedLibrary';
 
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
+  walletHistory: any[];
+  openSavedInitially?: boolean;
   profileName: string;
   setProfileName: React.Dispatch<React.SetStateAction<string>>;
   profileEmail: string;
@@ -81,6 +91,7 @@ interface UserProfileModalProps {
 }
 
 type ProfileSection = 'conta' | 'dados' | 'seguranca' | 'verificacao';
+type PersonalPanel = 'movements' | 'finance' | 'pitangas' | 'xp' | null;
 
 const getProfileHandle = (email: string, name: string): string => {
   const emailHandle = email.split('@')[0]?.trim();
@@ -711,13 +722,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     profileEmail,
     profilePhotoUrl,
     isProfileVisible,
-    friends,
-    connectionRequests,
-    onOpenCommunities,
-    onOpenConnections,
+    walletHistory,
+    openSavedInitially = false,
     triggerToast,
   } = props;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [personalPanel, setPersonalPanel] = useState<PersonalPanel>(null);
   const [savedItems, setSavedItems] = useState<SavedPublication[]>([]);
   const [resolvedSavedItems, setResolvedSavedItems] = useState<ResolvedSavedPublication[]>([]);
   const [selections, setSelections] = useState<SavedSelection[]>([]);
@@ -731,6 +741,18 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     profileName.trim() || currentUser?.displayName || profileEmail || 'Você';
   const displayAvatar = profilePhotoUrl || currentUser?.photoURL || '';
   const profileHandle = getProfileHandle(profileEmail, displayName);
+  useEffect(() => {
+    if (!isOpen) return;
+    setPersonalPanel(null);
+    setIsSavedOpen(openSavedInitially);
+  }, [isOpen, openSavedInitially]);
+
+  const financeCards = [
+    { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
+    { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
+    { id: 'pitangas', label: 'Pitangas', description: 'Saldo e extrato de recompensas', icon: Cherry },
+    { id: 'xp', label: 'XP e conquistas', description: 'Evolução e desafios', icon: Trophy },
+  ] as const;
 
   useEffect(() => {
     if (!isOpen || !auth.currentUser) return;
@@ -766,10 +788,10 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
           <header className="flex items-center justify-between border-b border-slate-900 bg-slate-950/95 px-4 py-3 sm:px-5">
             <div className="min-w-0">
               <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
-                Meu perfil
+                Meu espaço
               </span>
               <h2 className="truncate text-base font-black text-white">
-                {displayName}
+                {isSavedOpen ? 'Salvos' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -783,6 +805,8 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
           </header>
 
           <div className="flex-1 overflow-y-auto">
+            {!isSavedOpen && (
+              <>
             <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
               <div className="flex items-center gap-4">
                 <Avatar
@@ -815,26 +839,73 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               </div>
             </section>
 
-            <section className="grid grid-cols-1 gap-2 border-b border-slate-900 bg-slate-950 p-4 sm:grid-cols-3 sm:p-5" id="profile-personal-center">
-              <button type="button" onClick={onOpenCommunities} className="rounded-2xl border border-sky-500/20 bg-sky-500/10 p-3 text-left hover:border-sky-500/40">
-                <UsersRound className="h-5 w-5 text-sky-300" />
-                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Comunidades</strong>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Seus espaços, membros e conexões.</span>
-              </button>
-              <button type="button" onClick={() => setIsSavedOpen(current => !current)} className="rounded-2xl border border-amber-500/20 bg-amber-500/10 p-3 text-left hover:border-amber-500/40">
-                <Bookmark className="h-5 w-5 text-amber-300" />
-                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Salvos</strong>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">{savedItems.length} publicações · {selections.length} Seleções</span>
-              </button>
-              <button type="button" onClick={() => setIsSettingsOpen(true)} className="rounded-2xl border border-slate-700 bg-slate-900 p-3 text-left hover:border-slate-600">
-                <ShieldCheck className="h-5 w-5 text-slate-300" />
-                <strong className="mt-3 block text-[10px] font-black uppercase text-slate-100">Conta</strong>
-                <span className="mt-1 block text-[8px] leading-relaxed text-slate-500">Dados, segurança e verificação.</span>
-              </button>
+            <section className="space-y-4 border-b border-slate-900 bg-slate-950 p-4 sm:p-5" id="profile-personal-center">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-base font-black text-white">Meu perfil</h3>
+                  <p className="mt-1 text-xs text-slate-400">Identidade, informações e segurança.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={() => {
+                    onClose();
+                    window.dispatchEvent(new Event('kyrub:open-profile-editor'));
+                  }}
+                    className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-bold text-slate-100">
+                    <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
+                  </button>
+                  <button type="button" onClick={() => setIsSettingsOpen(true)}
+                    className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm font-semibold text-slate-300">
+                    Conta e segurança
+                  </button>
+                </div>
+              </div>
+
+              <div className="border-t border-slate-800 pt-4">
+                <h3 className="text-base font-black text-white">Carteira Kairube</h3>
+                <p className="mt-1 text-sm text-slate-400">
+                  Planejamento, movimentações e evolução pessoal em um só lugar, com saldos separados.
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-2.5" aria-label="Áreas da Carteira Kairube">
+                {financeCards.map(card => {
+                  const Icon = card.icon;
+                  return (
+                    <button key={card.id} type="button" aria-pressed={personalPanel === card.id}
+                      onClick={() => setPersonalPanel(current => current === card.id ? null : card.id)}
+                      className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${
+                        personalPanel === card.id
+                          ? 'border-orange-500/60 bg-orange-500/10'
+                          : 'border-slate-700 bg-slate-900 hover:border-slate-500'
+                      }`}>
+                      <Icon className="h-5 w-5 text-orange-300" aria-hidden="true" />
+                      <strong className="mt-2 block text-sm font-bold text-slate-100">{card.label}</strong>
+                      <span className="mt-1 block text-xs leading-relaxed text-slate-400">{card.description}</span>
+                    </button>
+                  );
+                })}
+              </div>
+              {personalPanel && (
+                <div className="rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4" id="personal-center-active-panel">
+                  <h4 className="mb-2 text-base font-black text-white">
+                    {financeCards.find(card => card.id === personalPanel)?.label}
+                  </h4>
+                  {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} />}
+                  {personalPanel === 'finance' && <PersonalFinancePlanner userId={currentUserId} />}
+                  {personalPanel === 'pitangas' && <PitangaAccount mode="pitangas" />}
+                  {personalPanel === 'xp' && <PitangaAccount mode="xp" />}
+                </div>
+              )}
             </section>
+
+              </>
+            )}
 
             {isSavedOpen && (
               <section className="space-y-4 border-b border-slate-900 bg-slate-900/45 p-4 sm:p-5" id="profile-saved-library">
+                <button type="button" onClick={() => setIsSavedOpen(false)}
+                  className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-3 text-sm font-bold text-slate-200">
+                  Voltar à Central Pessoal
+                </button>
                 <div>
                   <h3 className="text-xs font-black uppercase text-slate-100">Salvos</h3>
                   <p className="mt-1 text-[9px] text-slate-500">Biblioteca privada de publicações guardadas na Praça e nas Comunidades.</p>

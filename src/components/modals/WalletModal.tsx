@@ -7,63 +7,62 @@ interface WalletModalProps {
   walletHistory: any[];
 }
 
+/** Read-only financial surface. Never infer an available cash balance from legacy local history. */
+export const WalletMovementsPanel: React.FC<{ walletHistory: any[] }> = ({ walletHistory }) => (
+  <div className="space-y-4" id="wallet-movements-panel">
+    <div className="rounded-2xl border border-amber-500/20 bg-amber-500/5 p-4">
+      <span className="block text-xs font-bold uppercase text-amber-300">Movimentações reais em preparação</span>
+      <p className="mt-2 text-sm leading-relaxed text-slate-300">
+        Ainda não há conta financeira canônica vinculada. Saldo bancário,
+        Pix, depósitos, saques e Open Finance permanecerão indisponíveis
+        até a ativação dos provedores e a confirmação segura da liquidação.
+      </p>
+    </div>
+    <div className="space-y-3">
+      <h4 className="text-sm font-bold text-white">Histórico local anterior</h4>
+      <p className="text-xs leading-relaxed text-slate-400">
+        Registros informativos do aparelho — não representam saldo,
+        pagamento confirmado ou extrato bancário.
+      </p>
+      <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+        {walletHistory.length === 0 ? (
+          <div className="rounded-xl border border-slate-800 bg-slate-950 p-5 text-center text-sm text-slate-400">
+            Nenhum registro local.
+          </div>
+        ) : (
+          walletHistory.map((hist, index) => (
+            <div key={hist.id ?? index} className="flex items-center justify-between gap-3 rounded-xl border border-slate-800 bg-slate-950 p-3">
+              <div className="min-w-0">
+                <strong className="block truncate text-sm text-slate-200">{hist.desc}</strong>
+                <span className="text-xs text-slate-400">{hist.date} · {hist.type}</span>
+              </div>
+              <strong className="shrink-0 text-xs text-slate-400">
+                {hist.val > 0 ? '+' : ''}R$ {Number(hist.val || 0).toFixed(2)}
+              </strong>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  </div>
+);
+
 export const WalletModal: React.FC<WalletModalProps> = ({
-  isOpen,
-  onClose,
-  walletHistory,
+  isOpen, onClose, walletHistory,
 }) => {
   if (!isOpen) return null;
-
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-sm flex justify-end animate-fade-in" id="modal-wallet">
-      <div className="bg-slate-900 border-l border-slate-800 w-full max-w-md h-full p-6 overflow-y-auto animate-scale-up text-xs">
-        <div className="space-y-6">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Wallet className="w-5 h-5 text-teal-400" />
-              <h3 className="text-lg font-black text-white uppercase tracking-wider">Carteira Kyrub</h3>
-            </div>
-            <button
-              onClick={onClose}
-              className="text-slate-500 hover:text-slate-300 font-bold bg-slate-950 w-7 h-7 rounded-full flex items-center justify-center text-xs cursor-pointer"
-            >
-              ✕
-            </button>
+    <div className="fixed inset-0 z-50 flex justify-end bg-slate-950/80 backdrop-blur-sm" id="modal-wallet">
+      <div className="h-full w-full max-w-md space-y-5 overflow-y-auto border-l border-slate-800 bg-slate-900 p-5">
+        <header className="flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2">
+            <Wallet className="h-5 w-5 text-teal-400" />
+            <h3 className="text-lg font-black text-white">Movimentações</h3>
           </div>
-
-          <div className="bg-slate-950 border border-slate-800 rounded-3xl p-5 space-y-2">
-            <span className="text-[9px] font-mono text-amber-400 uppercase block">Movimentação financeira indisponível</span>
-            <p className="text-slate-300 leading-relaxed">
-              Esta área ainda não possui uma conta financeira canônica vinculada. PIX, depósitos, saques e saldo disponível só serão habilitados quando houver liquidação real confirmada pelo backend.
-            </p>
-          </div>
-
-          <div className="space-y-3">
-            <span className="text-[10px] font-mono uppercase text-slate-500 block">Histórico local anterior</span>
-            <p className="text-[10px] text-slate-500">
-              Registros abaixo são apenas históricos locais existentes e não comprovam saldo, pagamento ou liquidação.
-            </p>
-            <div className="space-y-2 max-h-[360px] overflow-y-auto pr-1">
-              {walletHistory.length === 0 ? (
-                <div className="text-center py-6 text-slate-500 text-xs italic bg-slate-950 rounded-xl border border-slate-800">
-                  Nenhum registro local.
-                </div>
-              ) : (
-                walletHistory.map(hist => (
-                  <div key={hist.id} className="bg-slate-950 p-3 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
-                    <div>
-                      <span className="text-slate-300 font-bold block">{hist.desc}</span>
-                      <span className="text-[9px] text-slate-500">{hist.date} • {hist.type}</span>
-                    </div>
-                    <strong className="font-mono font-black text-slate-400">
-                      {hist.val > 0 ? '+' : ''}R$ {Number(hist.val || 0).toFixed(2)}
-                    </strong>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
-        </div>
+          <button type="button" onClick={onClose} aria-label="Fechar movimentações"
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-950 text-slate-300">✕</button>
+        </header>
+        <WalletMovementsPanel walletHistory={walletHistory} />
       </div>
     </div>
   );

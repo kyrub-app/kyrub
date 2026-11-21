@@ -298,13 +298,16 @@ test('after exit, the existing guest account route offers select-account Google 
   assert.match(sessionGuestSource, /prompt: 'select_account'/);
 });
 
-test('the Pitangas icon navigates to the current account view, not a duplicate wallet', () => {
-  assert.match(sessionLegacySource, /id="header-pitangas-trigger"/);
-  assert.match(sessionLegacySource, /aria-label="Abrir Pitangas e XP"/);
-  assert.match(sessionLegacySource, /<Cherry className="w-4 h-4"/);
-  assert.match(sessionLegacySource, /setSocialSubTab\('lojas'\);\s*setOfertasFilter\('cliente'\);\s*setActiveTab\('kyrub'\)/);
-  assert.match(sessionRewardsSource, /props\.socialSubTab === 'lojas' && props\.ofertasFilter === 'cliente'/);
-  assert.match(sessionRewardsSource, /<PitangaAccount key=/);
+test('the signed-in header moves Pitangas/XP to the private Central and retains the guest login gate', () => {
+  const personalCenter = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+  assert.match(sessionLegacySource, /id="header-connected-trigger"/);
+  assert.match(sessionLegacySource, /id="header-saved-trigger"/);
+  assert.doesNotMatch(sessionLegacySource, /id="header-pitangas-trigger"/);
+  assert.doesNotMatch(sessionLegacySource, /id="header-wallet-balance"/);
+  assert.match(personalCenter, /<PitangaAccount mode="pitangas"/);
+  assert.match(personalCenter, /<PitangaAccount mode="xp"/);
+  assert.match(sessionRewardsSource, /aria-label="Meus clubes"/);
+  assert.doesNotMatch(sessionRewardsSource, /<PitangaAccount key=/);
   assert.match(sessionAccountSource, /fetch\('\/api\/pitangas'/);
   assert.match(sessionGuestSource, /id="header-pitangas-trigger"/);
   assert.match(sessionGuestSource, /requestLogin\('consultar suas Pitangas e XP'\)/);

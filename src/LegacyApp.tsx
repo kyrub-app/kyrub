@@ -20,7 +20,7 @@ import {
   Share2,
   Sliders,
   CheckSquare,
-  Cherry,
+  Bookmark,
   Users,
   ChevronRight,
   Trash2,
@@ -578,6 +578,7 @@ export default function App() {
 
   // User Profile state
   const [showUserProfileModal, setShowUserProfileModal] = useState(false);
+  const [profileOpenSaved, setProfileOpenSaved] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [profileName, setProfileName] = useState('');
   const [profileEmail, setProfileEmail] = useState('');
@@ -1296,7 +1297,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
           {/* 1. TOP MOBILE NAV HEADER */}
           <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
             <button
-              onClick={() => setShowUserProfileModal(true)}
+              onClick={() => { setProfileOpenSaved(false); setShowUserProfileModal(true); }}
               className="mr-auto w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
               id="header-user-profile-trigger"
               title="Meu perfil"
@@ -1332,29 +1333,25 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
             <button
               type="button"
-              onClick={() => {
-                setSocialSubTab('lojas');
-                setOfertasFilter('cliente');
-                setActiveTab('kyrub');
-              }}
-              className="w-10 h-10 rounded-xl border border-orange-500/25 bg-slate-900 flex items-center justify-center text-orange-400 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors"
-              id="header-pitangas-trigger"
-              title="Minhas Pitangas e XP"
-              aria-label="Abrir Pitangas e XP"
+              onClick={() => window.dispatchEvent(new Event('kyrub:open-connections'))}
+              className="h-10 w-10 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-orange-500/40 hover:text-orange-300"
+              id="header-connected-trigger"
+              title="Conectados"
+              aria-label="Abrir Conectados"
             >
-              <Cherry className="w-4 h-4" aria-hidden="true" />
+              <Users className="mx-auto h-4 w-4" aria-hidden="true" />
             </button>
 
-            <div className="w-10 h-10 rounded-xl bg-slate-900 border border-slate-800 text-teal-400 flex items-center justify-center" id="header-wallet-balance">
-              <button
-                onClick={() => setIsWalletOpen(true)}
-                className="w-full h-full flex items-center justify-center hover:text-teal-300 transition-all"
-                title="Abrir Carteira"
-                aria-label="Abrir Carteira"
-              >
-                <Wallet className="w-4 h-4" />
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={() => { setProfileOpenSaved(true); setShowUserProfileModal(true); }}
+              className="h-10 w-10 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-orange-500/40 hover:text-orange-300"
+              id="header-saved-trigger"
+              title="Salvos"
+              aria-label="Abrir Salvos"
+            >
+              <Bookmark className="mx-auto h-4 w-4" aria-hidden="true" />
+            </button>
           </header>
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
@@ -1807,7 +1804,9 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       {/* MODAL MEU PERFIL E SEGURANÇA */}
       <UserProfileModal
         isOpen={showUserProfileModal}
-        onClose={() => setShowUserProfileModal(false)}
+        onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
+        walletHistory={walletHistory}
+        openSavedInitially={profileOpenSaved}
         profileName={profileName}
         setProfileName={setProfileName}
         profileEmail={profileEmail}

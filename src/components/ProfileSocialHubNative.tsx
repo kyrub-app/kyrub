@@ -109,6 +109,8 @@ type MarketplaceStore = {
   banner: string;
 };
 
+// The former personal feed is retired; its legacy renderer is retained only for safe rollback.
+const PERSONAL_FEED_RETIRED = true;
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_STATUSES = 9;
 const MAX_GROUPS = 30;
@@ -473,6 +475,7 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [returnToCentralAfterEdit, setReturnToCentralAfterEdit] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
@@ -569,22 +572,35 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
-    const handleProfileTrigger = (event: Event) => {
-      const target = event.target as Element | null;
-      const trigger = target?.closest('#header-user-profile-trigger');
-      if (!trigger) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      setActiveTab('publications');
+    // The profile icon opens the private UserProfileModal directly.
+    // This legacy social overlay remains available only for contacts and
+    // deep-linked communities; it must not intercept the profile shortcut.
+    const openConnections = () => {
+      setConnectionSection('connected');
+      setActiveTab('connected');
       setOpen(true);
     };
-
-    document.addEventListener('click', handleProfileTrigger, true);
-    return () => {
-      document.removeEventListener('click', handleProfileTrigger, true);
-    };
+    window.addEventListener('kyrub:open-connections', openConnections);
+    return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
+
+  useEffect(() => {
+    const openOriginalEditor = () => {
+      setReturnToCentralAfterEdit(true);
+      setActiveTab('publications');
+      setOpen(true);
+      setEditOpen(true);
+    };
+    window.addEventListener('kyrub:open-profile-editor', openOriginalEditor);
+    return () => window.removeEventListener('kyrub:open-profile-editor', openOriginalEditor);
+  }, []);
+
+  useEffect(() => {
+    if (!returnToCentralAfterEdit || editOpen || !open) return;
+    setReturnToCentralAfterEdit(false);
+    setOpen(false);
+    document.getElementById('header-user-profile-trigger')?.click();
+  }, [returnToCentralAfterEdit, editOpen, open]);
 
   useEffect(() => {
     const openCommunityFromSquare = () => {
@@ -1339,7 +1355,7 @@ export function ProfileSocialHubNative() {
                 Meu perfil
               </span>
               <h2 className="text-base font-black text-white">
-                Painel pessoal
+                {activeTab === 'connected' ? 'Conectados' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -1353,6 +1369,7 @@ export function ProfileSocialHubNative() {
           </header>
 
           <div className="flex-1 overflow-y-auto">
+            {!PERSONAL_FEED_RETIRED && (
             <section className="relative overflow-hidden border-b border-slate-900 bg-slate-950">
               <div className="h-36 bg-gradient-to-br from-orange-500/25 via-slate-900 to-teal-500/20 sm:h-44" />
               <div className="-mt-16 px-4 pb-5 sm:px-5">
@@ -1408,9 +1425,26 @@ export function ProfileSocialHubNative() {
 
               </div>
             </section>
+            )}
+
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
+                <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <h3 className="text-base font-bold text-white">Sua Central Pessoal mudou</h3>
+                  <p className="text-sm text-slate-400">
+                    As publicações são feitas na Praça e nas Comunidades.
+                    A Carteira, seus dados e recompensas ficam na Central Pessoal.
+                  </p>
+                  <button type="button" onClick={() => {
+                    setOpen(false);
+                    document.getElementById('header-user-profile-trigger')?.click();
+                  }} className="min-h-11 rounded-xl bg-orange-500 px-4 text-sm font-bold text-slate-950">
+                    Abrir Central Pessoal
+                  </button>
+                </section>
+              )}
+              {!PERSONAL_FEED_RETIRED && activeTab === 'publications' && (
                 <>
                   <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
                     <div className="relative">
@@ -1708,8 +1742,11 @@ export function ProfileSocialHubNative() {
                 <div className="space-y-4">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('publications')}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+                    onClick={() => {
+                      setOpen(false);
+                      document.getElementById('header-user-profile-trigger')?.click();
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-black uppercase text-slate-300"
                   >
                     <span aria-hidden="true">←</span>
                     Voltar ao perfil
