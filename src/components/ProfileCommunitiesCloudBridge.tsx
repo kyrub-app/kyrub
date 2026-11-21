@@ -1301,6 +1301,11 @@ export function ProfileCommunitiesCloudBridge() {
                   className="space-y-2 text-xs leading-5 text-slate-300">
                   <p><strong>Documento direto:</strong> {publicProbe.directServer}</p>
                   <p><strong>REST Google autenticada:</strong> {publicProbe.googleRestDocument}</p>
+                  <p><strong>Firestore Lite (sem cache persistente):</strong> {publicProbe.firestoreLiteDocument}</p>
+                  <p><strong>Origem do snapshot SDK:</strong> {publicProbe.sdkSnapshotSource}</p>
+                  <p><strong>Gravação local pendente:</strong> {publicProbe.sdkPendingWrites}</p>
+                  <p><strong>Origem da consulta geral:</strong> {publicProbe.querySnapshotSource}</p>
+                  <p><strong>Gravações pendentes na consulta:</strong> {publicProbe.queryPendingWrites}</p>
                   <p><strong>Proprietário da sessão:</strong> {publicProbe.ownerMatchesSession}</p>
                   <p><strong>Leitor canônico:</strong> {publicProbe.canonicalMapper}</p>
                   <p><strong>Consulta pública:</strong> {publicProbe.publicQuery}</p>

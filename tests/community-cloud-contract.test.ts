@@ -608,3 +608,21 @@ test('one-shot authenticated Firestore REST comparison never logs or forwards th
   assert.match(ui, /REST Google autenticada:<\/strong>/);
   assert.doesNotMatch(ui, /publicProbe\.token|publicProbe\.uid|publicProbe\.resource/);
 });
+
+test('Firestore Lite no-cache diagnostic distinguishes local overlays from server results', () => {
+  const diagnostic = read('src/utils/communityReadDiagnostic.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(diagnostic, /from 'firebase\/firestore\/lite'/);
+  assert.match(diagnostic, /getLiteFirestore\(auth\.app\)/);
+  assert.match(diagnostic, /getLiteDoc\(liteDoc\(lite, 'communities', communityId\)\)/);
+  assert.match(diagnostic, /snapshot\.metadata\.fromCache/);
+  assert.match(diagnostic, /snapshot\.metadata\.hasPendingWrites/);
+  assert.match(diagnostic, /publicSnapshot\.metadata\.fromCache/);
+  assert.match(diagnostic, /publicSnapshot\.metadata\.hasPendingWrites/);
+  assert.match(ui, /Firestore Lite \(sem cache persistente\):<\/strong>/);
+  assert.match(ui, /Origem do snapshot SDK:<\/strong>/);
+  assert.match(ui, /Gravação local pendente:<\/strong>/);
+  assert.match(ui, /Origem da consulta geral:<\/strong>/);
+  assert.doesNotMatch(diagnostic, /deleteDoc\(|setDoc\(|updateDoc\(|clearIndexedDbPersistence\(|terminate\(|enableNetwork\(|disableNetwork\(/);
+  assert.doesNotMatch(ui, /publicProbe\.ownerId|publicProbe\.uid|publicProbe\.token/);
+});
