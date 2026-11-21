@@ -397,7 +397,7 @@ test('Vercel sends direct public, staff and legacy app routes to the SPA entry',
   assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
 
-test('app header keeps profile first and session actions live in the Kyrub brand row', () => {
+test('app header keeps profile first and session door moves to private Central', () => {
   const profileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
   const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
   const appHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
@@ -416,9 +416,13 @@ test('app header keeps profile first and session actions live in the Kyrub brand
   assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
 
   assert.match(legacyAppSource, /id="kyrub-workspace-brand"/);
-  assert.match(legacyAppSource, /id="kyrub-workspace-signout"/);
-  assert.match(legacyAppSource, /onClick=\{\(\) => void handleLogout\(\)\}/);
-  assert.match(legacyAppSource, /disabled=\{isSigningOut\}/);
+  assert.doesNotMatch(legacyAppSource, /id="kyrub-workspace-signout"/);
+  assert.match(profileSource, /id="personal-profile-auth-trigger"/);
+  assert.match(profileSource, /isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'/);
+  assert.match(profileSource, /disabled=\{isAuthBusy\}/);
+  assert.match(legacyAppSource, /onAuthAction=\{\(\) => \{/);
+  assert.match(legacyAppSource, /void handleLogout\(\)/);
+  assert.match(legacyAppSource, /setShowLoginModal\(true\)/);
   assert.match(guestSource, /id="kyrub-guest-brand"/);
   assert.match(guestSource, /id="kyrub-guest-signin"/);
   assert.match(guestSource, /requestLogin\('acessar sua conta'\)/);

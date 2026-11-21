@@ -48,8 +48,7 @@ import {
   ClipboardList,
   Calendar,
   Fingerprint,
-  LayoutGrid,
-  LogOut
+  LayoutGrid
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
 
@@ -1137,7 +1136,7 @@ export default function App() {
     return () => clearInterval(checkAlarms);
   }, [notes, dismissedAlarms, activeAlarmNote]);
 
-  // The brand row exposes the existing Firebase sign-out action.
+  // Reused by the session icon in the private Central Pessoal.
   // Sign-out remains distinct from navigation/back and uses the same session cleanup.
   const handleLogout = async (): Promise<void> => {
     if (isSigningOut) return;
@@ -1399,18 +1398,6 @@ const handleLogin = async (provider: 'google' | 'apple') => {
             <div id="kyrub-workspace-brand" className="sticky top-16 z-40 flex min-h-10 items-center gap-2 border-b border-slate-800 bg-slate-950 pb-3" aria-label="Kyrub — ecossistema">
               <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
               <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
-              <button
-                id="kyrub-workspace-signout"
-                type="button"
-                onClick={() => void handleLogout()}
-                disabled={isSigningOut}
-                aria-label="Sair da conta Kyrub"
-                title="Sair da conta"
-                className="ml-auto inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs font-semibold text-slate-200 transition-colors hover:border-orange-500/40 hover:text-orange-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-wait disabled:opacity-60"
-              >
-                <LogOut className="h-4 w-4" aria-hidden="true" />
-                {isSigningOut ? 'Saindo…' : 'Sair'}
-              </button>
             </div>
 
             {/* JEMBOÉ: Habilidades, ensino e cursos externos em etapa inicial. */}
@@ -1845,6 +1832,16 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       <UserProfileModal
         isOpen={showUserProfileModal}
         onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
+        onAuthAction={() => {
+          if (auth.currentUser) {
+            void handleLogout();
+          } else {
+            setShowUserProfileModal(false);
+            setShowLoginModal(true);
+          }
+        }}
+        isAuthenticated={isLoggedIn && Boolean(auth.currentUser)}
+        isAuthBusy={isSigningOut}
         walletHistory={walletHistory}
         openSavedInitially={profileOpenSaved}
         profileName={profileName}

@@ -43,6 +43,9 @@ test('Meu perfil is a private financial and identity center instead of a publish
   assert.match(profileSource, /id="personal-profile-visibility"/);
   assert.match(profileSource, /aria-pressed=\{isProfileVisible\}/);
   assert.match(profileSource, /id="personal-profile-settings-trigger"/);
+  assert.match(profileSource, /className="absolute -bottom-3 -right-3 z-10/);
+  assert.match(profileSource, /id="personal-profile-auth-trigger"/);
+  assert.match(profileSource, /aria-label=\{isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'\}/);
   assert.doesNotMatch(profileSource, /<Toggle|<h3[^>]*>Meu perfil<\/h3>/);
   assert.match(profileSource, /profile-saved-library/);
   assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
