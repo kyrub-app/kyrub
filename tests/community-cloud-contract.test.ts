@@ -668,7 +668,7 @@ test('future communities remain visible after commit and fresh login without a d
   assert.match(directory, /window\.setInterval\(onFocus, 5 \* 60 \* 1000\)/);
   assert.match(directory, /setCommittedCreated\(\[\]\)/);
   assert.match(directory, /setOwnedReconciled\(\[\]\)/);
-  assert.match(directory, /committedCreated,\s*discoverable,\s*owned,\s*privateMembershipCommunities,\s*publicReconciled,\s*ownedReconciled/);
+  assert.match(directory, /committedCreated,\s*ownedReconciled,\s*publicReconciled,\s*discoverable,\s*owned,\s*privateMembershipCommunities/);
   assert.match(view, /const community = await createCommunity\(createDraft\);\s*registerCommittedCommunity\(community\)/);
   assert.match(view, /if \(createInFlightRef\.current\) return/);
   assert.match(view, /createInFlightRef\.current = false/);
