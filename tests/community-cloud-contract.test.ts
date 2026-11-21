@@ -769,6 +769,7 @@ test('typography in Praça portals follows the Catu/Renda baseline without doubl
   assert.match(fontHook, /rootElement\.contains\(element\) \|\| Boolean\(element\.closest\(PORTAL_TYPOGRAPHY_SELECTOR\)\)/);
   assert.match(fontHook, /observer\.observe\(document\.body,/);
   assert.match(fontHook, /adjustedElements\.has\(element\)/);
+  assert.match(fontHook, /!element\.closest\(SPECIALIZED_TYPOGRAPHY_SELECTOR\)/);
   assert.match(fontHook, /temporarilyRestoreAdjustedAncestors/);
   assert.doesNotMatch(fontHook, /document\.body\.style\.fontSize\s*=/);
 
@@ -778,6 +779,9 @@ test('typography in Praça portals follows the Catu/Renda baseline without doubl
   assert.match(directory, /data-kyrub-font-scope="true"/);
   assert.match(directory, /data-square-directory-scroll="true"/);
 
+  // The modal bridge already has its own typography scale: do not add +4px
+  // to it again through the root observer.
+  assert.match(profile, /data-kyrub-font-managed="true"/);
   // Personal center had 14px source descriptions; normalize them to Catu's
   // body baseline while retaining heading/card-label hierarchy.
   assert.match(profile, /<h3 className="text-xs font-black text-white">Carteira Kairube<\/h3>/);
