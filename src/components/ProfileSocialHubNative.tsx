@@ -475,6 +475,7 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [returnToCentralAfterEdit, setReturnToCentralAfterEdit] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
@@ -582,6 +583,24 @@ export function ProfileSocialHubNative() {
     window.addEventListener('kyrub:open-connections', openConnections);
     return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
+
+  useEffect(() => {
+    const openOriginalEditor = () => {
+      setReturnToCentralAfterEdit(true);
+      setActiveTab('publications');
+      setOpen(true);
+      setEditOpen(true);
+    };
+    window.addEventListener('kyrub:open-profile-editor', openOriginalEditor);
+    return () => window.removeEventListener('kyrub:open-profile-editor', openOriginalEditor);
+  }, []);
+
+  useEffect(() => {
+    if (!returnToCentralAfterEdit || editOpen || !open) return;
+    setReturnToCentralAfterEdit(false);
+    setOpen(false);
+    document.getElementById('header-user-profile-trigger')?.click();
+  }, [returnToCentralAfterEdit, editOpen, open]);
 
   useEffect(() => {
     const openCommunityFromSquare = () => {
