@@ -551,3 +551,21 @@ test('authenticated Praça keeps public-only communities discoverable without cl
   const fallback = ui.slice(ui.indexOf('const renderPublicFallbackCard'), ui.indexOf('const pageTabs:'));
   assert.doesNotMatch(fallback, /openCommunity\(|handleMembership\(|setEditOpen\(|deleteDoc\(/);
 });
+
+test('optional community diagnostic compares live Firestore reads without writing or leaking identity', () => {
+  const diagnostic = read('src/utils/communityReadDiagnostic.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(diagnostic, /getDocFromServer\(reference\)/);
+  assert.match(diagnostic, /getDocFromCache\(reference\)/);
+  assert.match(diagnostic, /getPublicCommunityFromServer\(communityId\)/);
+  assert.match(diagnostic, /getDocsFromServer\(query\(/);
+  assert.match(diagnostic, /where\('visibility', 'in', \['public', 'moderated'\]\)/);
+  assert.match(diagnostic, /where\('ownerId', '==', user\.uid\)/);
+  assert.doesNotMatch(diagnostic, /setDoc\(|updateDoc\(|deleteDoc\(|addDoc\(|writeBatch\(|runTransaction\(/);
+  assert.doesNotMatch(diagnostic, /fetch\(|console\.|getIdToken|Authorization|localStorage/);
+  assert.match(ui, /selectedPublicPreview && createPortal/);
+  assert.match(ui, /Verificar leitura no meu aparelho/);
+  assert.match(ui, /probePublicCommunityRead\(targetId\)/);
+  assert.match(ui, /Resultado do diagnóstico de acesso/);
+  assert.doesNotMatch(diagnostic, /ownerId:|email:|uid:|token:/);
+});
