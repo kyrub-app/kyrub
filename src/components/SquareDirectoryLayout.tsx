@@ -112,13 +112,13 @@ export function SquareDirectoryLayout({
             <ArrowLeft className="h-5 w-5" aria-hidden="true" />
           </button>
           <div className="min-w-0 flex-1">
-            <span className="text-[11px] font-black uppercase tracking-[0.16em] text-sky-300">Catálogo</span>
-            <h2 className="text-lg font-black text-white">{title}</h2>
-            <p className="text-xs text-slate-400">{subtitle}</p>
+            <span className="text-xs font-black uppercase tracking-[0.16em] text-sky-300">Catálogo</span>
+            <h2 className="text-xl font-black text-white">{title}</h2>
+            <p className="text-sm text-slate-400">{subtitle}</p>
           </div>
         </header>
         <div className="shrink-0 space-y-3 border-b border-slate-800 p-4">
-          <label className="block text-xs font-bold text-slate-300" htmlFor={searchId}>
+          <label className="block text-sm font-bold text-slate-300" htmlFor={searchId}>
             {searchLabel}
           </label>
           <div className="flex items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3">
@@ -140,7 +140,7 @@ export function SquareDirectoryLayout({
                 type="button"
                 aria-pressed={selectedTab === id}
                 onClick={() => onTabChange(id)}
-                className={`min-h-10 shrink-0 rounded-xl px-4 text-xs font-bold ${
+                className={`min-h-11 shrink-0 rounded-xl px-3.5 text-sm font-bold ${
                   selectedTab === id
                     ? 'bg-sky-500/15 text-sky-200'
                     : 'border border-slate-800 bg-slate-900 text-slate-400'
@@ -150,7 +150,7 @@ export function SquareDirectoryLayout({
               </button>
             ))}
           </div>
-          <label className="flex items-center justify-between gap-3 text-xs text-slate-300">
+          <label className="flex items-center justify-between gap-3 text-sm text-slate-300">
             Categoria
             <select
               value={category}
