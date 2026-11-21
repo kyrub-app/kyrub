@@ -3,8 +3,6 @@ import {
   ArrowLeftRight,
   ChartPie,
   Settings,
-  LogIn,
-  LogOut,
   LoaderCircle,
   Trophy,
   Bookmark,
@@ -25,9 +23,6 @@ import { createSelection, resolveSavedPublication, setSavedPublicationSelections
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onAuthAction: () => void;
-  isAuthenticated: boolean;
-  isAuthBusy: boolean;
   walletHistory: any[];
   openSavedInitially?: boolean;
   profileName: string;
@@ -127,9 +122,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const {
     isOpen,
     onClose,
-    onAuthAction,
-    isAuthenticated,
-    isAuthBusy,
     profileName,
     profileEmail,
     profilePhotoUrl,
@@ -247,22 +239,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
           <div className="flex-1 overflow-y-auto">
             {!isSavedOpen && (
               <>
-            <section className="relative border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 pr-16 sm:px-5 sm:pr-20" id="personal-profile-identity">
-              <button
-                id="personal-profile-auth-trigger"
-                type="button"
-                title={isAuthenticated ? 'Sair da conta Kyrub' : 'Entrar no Kyrub'}
-                aria-label={isAuthenticated ? 'Sair da conta Kyrub' : 'Entrar no Kyrub'}
-                disabled={isAuthBusy}
-                onClick={onAuthAction}
-                className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 transition-colors hover:border-orange-500/60 hover:text-orange-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-wait disabled:opacity-50 sm:right-5 sm:top-5"
-              >
-                {isAuthBusy
-                  ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
-                  : isAuthenticated
-                    ? <LogOut className="h-5 w-5" aria-hidden="true" />
-                    : <LogIn className="h-5 w-5" aria-hidden="true" />}
-              </button>
+            <section className="relative border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5" id="personal-profile-identity">
               <div className="flex items-center gap-3 sm:gap-4">
                 <div className="relative h-20 w-20 shrink-0 sm:h-24 sm:w-24">
                   <Avatar

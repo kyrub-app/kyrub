@@ -249,22 +249,20 @@ const sessionAccountSource = readFileSync('src/components/tabs/PitangaAccount.ts
 
 const legacyProfileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
 
-test('private Central uses one session icon while workspace brand stays visible without duplicate logout', () => {
+test('authenticated brand scrolls and owns the only sign-out; private Central only edits identity', () => {
   const brand = sessionLegacySource.slice(
     sessionLegacySource.indexOf('id="kyrub-workspace-brand"'),
     sessionLegacySource.indexOf('{/* JEMBOÉ:', sessionLegacySource.indexOf('id="kyrub-workspace-brand"'))
   );
   assert.match(brand, /src="\/kyrub-logo\.svg"/);
-  assert.doesNotMatch(brand, /kyrub-workspace-signout|handleLogout/);
-  assert.doesNotMatch(brand, /Raiz brasileira/);
-  assert.match(legacyProfileSource, /id="personal-profile-auth-trigger"/);
-  assert.match(legacyProfileSource, /isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'/);
-  assert.match(legacyProfileSource, /onClick=\{onAuthAction\}/);
-  assert.match(legacyProfileSource, /disabled=\{isAuthBusy\}/);
-  assert.match(legacyProfileSource, /<LogOut className="h-5 w-5"/);
-  assert.match(legacyProfileSource, /<LogIn className="h-5 w-5"/);
-  assert.match(sessionLegacySource, /void handleLogout\(\)/);
-  assert.match(sessionLegacySource, /setShowLoginModal\(true\)/);
+  assert.match(brand, /id="kyrub-workspace-signout"/);
+  assert.match(brand, /onClick=\{\(\) => void handleLogout\(\)\}/);
+  assert.match(brand, /disabled=\{isSigningOut\}/);
+  assert.match(brand, /<LogOut className="h-4 w-4"/);
+  assert.doesNotMatch(brand, /sticky top-16|Raiz brasileira/);
+  assert.doesNotMatch(legacyProfileSource, /personal-profile-auth-trigger|onAuthAction|isAuthBusy/);
+  assert.match(legacyProfileSource, /id="personal-profile-settings-trigger"/);
+  assert.match(sessionLegacySource, /sticky top-0 z-40/);
   assert.doesNotMatch(profileSource, /profile-session-logout|handleProfileSignOut/);
 });
 

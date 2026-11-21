@@ -35,19 +35,22 @@ describe('Praça catalog parity', () => {
     assert.doesNotMatch(communities, /\{catalogOpen && createPortal\(/);
   });
 
-  test('catalog overlay preserves sticky Kyrub toolbar and brand, with session control in Central', () => {
+  test('catalog overlay attaches only to fixed icon navigation, not scrollable brand row', () => {
     assert.match(layout, /document\.getElementById\('app-header'\)/);
-    assert.match(layout, /document\.getElementById\('kyrub-workspace-brand'\)/);
-    assert.match(layout, /getBoundingClientRect\(\)\.bottom/);
+    assert.doesNotMatch(layout, /document\.getElementById\('kyrub-workspace-brand'\)/);
+    assert.match(layout, /toolbar\?\.getBoundingClientRect\(\)\.bottom/);
     assert.match(layout, /style=\{\{ top: headerBottom \}\}/);
     assert.doesNotMatch(layout, /window\.scrollTo\(0, 0\)/);
     assert.match(app, /id="app-header"/);
-    assert.match(app, /sticky top-0/);
-    assert.match(app, /id="kyrub-workspace-brand" className="sticky top-16/);
-    assert.doesNotMatch(app, /id="kyrub-workspace-signout"/);
-    assert.match(app, /onAuthAction=\{\(\) => \{/);
+    assert.match(app, /sticky top-0 z-40/);
+    assert.match(app, /id="kyrub-workspace-brand" className="flex min-h-10/);
+    assert.doesNotMatch(app, /id="kyrub-workspace-brand" className="sticky/);
+    assert.match(app, /id="kyrub-workspace-signout"/);
     const personalCenter = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
-    assert.match(personalCenter, /id="personal-profile-auth-trigger"/);
+    assert.doesNotMatch(personalCenter, /id="personal-profile-auth-trigger"/);
+    const guest = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+    assert.match(guest, /id="kyrub-guest-brand" className="flex min-h-10/);
+    assert.match(guest, /id="kyrub-guest-signin"/);
   });
 
   test('store directory reuses official discovery, real participation and favorite state', () => {

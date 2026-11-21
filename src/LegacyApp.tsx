@@ -48,7 +48,8 @@ import {
   ClipboardList,
   Calendar,
   Fingerprint,
-  LayoutGrid
+  LayoutGrid,
+  LogOut
 } from 'lucide-react';
 import { Tenant, Store, Product, Order, CartItem, Note, Friend, SocialPost, DeliveryJob, FreelanceJob, type UserStoreDocument } from './types';
 
@@ -1136,8 +1137,8 @@ export default function App() {
     return () => clearInterval(checkAlarms);
   }, [notes, dismissedAlarms, activeAlarmNote]);
 
-  // Reused by the session icon in the private Central Pessoal.
-  // Sign-out remains distinct from navigation/back and uses the same session cleanup.
+  // Reused by the brand session action, distinct from navigation/back.
+  // Session cleanup remains canonical across all authenticated screens.
   const handleLogout = async (): Promise<void> => {
     if (isSigningOut) return;
     const signingOutUid = auth.currentUser?.uid;
@@ -1395,9 +1396,22 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}
           <main className="flex-1 max-w-lg w-full mx-auto px-4 py-6 pb-24 relative space-y-6" id="kyrub-workspace-main" data-kyrub-workspace={activeTab}>
-            <div id="kyrub-workspace-brand" className="sticky top-16 z-40 flex min-h-10 items-center gap-2 border-b border-slate-800 bg-slate-950 pb-3" aria-label="Kyrub — ecossistema">
+            <div id="kyrub-workspace-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
               <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
               <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
+              <button
+                id="kyrub-workspace-signout"
+                type="button"
+                onClick={() => void handleLogout()}
+                disabled={isSigningOut}
+                aria-label="Sair da conta Kyrub"
+                title="Sair da conta"
+                className="ml-auto inline-flex min-h-10 shrink-0 items-center justify-center gap-2 rounded-xl bg-orange-500 px-3 text-xs font-bold text-slate-950 transition-colors hover:bg-orange-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-500 disabled:cursor-wait disabled:opacity-60"
+              >
+                {isSigningOut
+                  ? <span className="text-xs">Saindo…</span>
+                  : <><LogOut className="h-4 w-4" aria-hidden="true" /> Sair</>}
+              </button>
             </div>
 
             {/* JEMBOÉ: Habilidades, ensino e cursos externos em etapa inicial. */}
@@ -1832,16 +1846,6 @@ const handleLogin = async (provider: 'google' | 'apple') => {
       <UserProfileModal
         isOpen={showUserProfileModal}
         onClose={() => { setShowUserProfileModal(false); setProfileOpenSaved(false); }}
-        onAuthAction={() => {
-          if (auth.currentUser) {
-            void handleLogout();
-          } else {
-            setShowUserProfileModal(false);
-            setShowLoginModal(true);
-          }
-        }}
-        isAuthenticated={isLoggedIn && Boolean(auth.currentUser)}
-        isAuthBusy={isSigningOut}
         walletHistory={walletHistory}
         openSavedInitially={profileOpenSaved}
         profileName={profileName}

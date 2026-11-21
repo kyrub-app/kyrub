@@ -29,8 +29,8 @@ const DIRECTORY_TABS: ReadonlyArray<{ id: SquareDirectoryTab; label: string }> =
 ];
 
 /**
- * Shared Praça directory shell. Both catalogs use the real workspace header,
- * never a copied logo/session toolbar. Only the directory body scrolls.
+ * Shared Praça directory shell. Both catalogs keep the fixed navigation bar
+ * visible; the brand/login row belongs to scrollable page content, not the overlay.
  */
 export function SquareDirectoryLayout({
   ariaLabel, title, subtitle, searchId, searchLabel, searchPlaceholder,
@@ -67,19 +67,16 @@ export function SquareDirectoryLayout({
 
 
   useLayoutEffect(() => {
-    // The workspace brand is sticky beneath the existing toolbar; measuring
-    // it leaves the scroll position intact when returning to the Praça.
+    // Only the icon navigation is sticky. Never reserve a permanent gap
+    // for the Kyrub logo/session row, which scrolls with the page.
     const toolbar = document.getElementById('app-header');
-    const brand = document.getElementById('kyrub-workspace-brand');
     const updatePosition = () => {
       const toolbarBottom = toolbar?.getBoundingClientRect().bottom ?? 0;
-      const brandBottom = brand?.getBoundingClientRect().bottom ?? toolbarBottom;
-      setHeaderBottom(Math.max(toolbarBottom, brandBottom, 0));
+      setHeaderBottom(Math.max(toolbarBottom, 0));
     };
     updatePosition();
     const observer = typeof ResizeObserver === 'undefined' ? null : new ResizeObserver(updatePosition);
     if (toolbar) observer?.observe(toolbar);
-    if (brand) observer?.observe(brand);
     window.addEventListener('resize', updatePosition);
     return () => {
       observer?.disconnect();
