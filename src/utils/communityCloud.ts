@@ -1,5 +1,5 @@
 import type { User } from 'firebase/auth';
-import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc } from 'firebase/firestore/lite';
+import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs } from 'firebase/firestore/lite';
 import {
   collection,
   deleteDoc,
@@ -395,6 +395,32 @@ export const getPublicCommunityFromServer = async (
   const data = snapshot.data() as Record<string, unknown>;
   if (data.visibility !== 'public' && data.visibility !== 'moderated') return null;
   return mapCommunity(snapshot.id, data);
+};
+
+/**
+ * Server-authoritative recovery for the current creator's entire directory,
+ * including private communities. Unlike the public Praça API, this is not
+ * capped at 30 records and never reads another person's private communities.
+ * Firestore rules still enforce ownerId == request.auth.uid.
+ */
+export const getOwnedCommunitiesFromServer = async (
+  user: User
+): Promise<CloudCommunity[]> => {
+  if (auth.currentUser?.uid !== user.uid) {
+    throw new Error('COMMUNITY_SESSION_CHANGED');
+  }
+  const liteDb = getLiteFirestore(auth.app);
+  const result = await getLiteDocs(liteQuery(
+    liteCollection(liteDb, 'communities'),
+    liteWhere('ownerId', '==', user.uid)
+  ));
+  if (auth.currentUser?.uid !== user.uid) {
+    throw new Error('COMMUNITY_SESSION_CHANGED');
+  }
+  return byActivity(result.docs.flatMap(item => {
+    const mapped = mapCommunity(item.id, item.data() as Record<string, unknown>);
+    return mapped && mapped.ownerId === user.uid ? [mapped] : [];
+  }));
 };
 
 const createCommunityWithId = async (
