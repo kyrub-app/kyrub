@@ -626,3 +626,23 @@ test('Firestore Lite no-cache diagnostic distinguishes local overlays from serve
   assert.doesNotMatch(diagnostic, /deleteDoc\(|setDoc\(|updateDoc\(|clearIndexedDbPersistence\(|terminate\(|enableNetwork\(|disableNetwork\(/);
   assert.doesNotMatch(ui, /publicProbe\.ownerId|publicProbe\.uid|publicProbe\.token/);
 });
+
+test('public community reconciliation uses the same authenticated Lite read that recovered legacy records', () => {
+  const hook = read('src/hooks/useCommunityDirectory.ts');
+  const cloud = read('src/utils/communityCloud.ts');
+  const view = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const start = cloud.indexOf('export const getPublicCommunityFromServer = async (');
+  const end = cloud.indexOf('const createCommunityWithId', start);
+  assert.ok(start > 0 && end > start, 'public reconciliation function exists');
+  const readThrough = cloud.slice(start, end);
+  assert.match(cloud, /from 'firebase\/firestore\/lite'/);
+  assert.match(readThrough, /getLiteFirestore\(auth\.app\)/);
+  assert.match(readThrough, /getLiteDoc\(liteDoc\(liteDb, 'communities', communityId\)\)/);
+  assert.doesNotMatch(readThrough, /getDocFromServer|db\.|writeBatch|updateDoc|deleteDoc|setDoc/);
+  assert.match(readThrough, /data\.visibility !== 'public' && data\.visibility !== 'moderated'/);
+  assert.match(readThrough, /mapCommunity\(snapshot\.id, data\)/);
+  assert.match(hook, /ids\.map\(id => getPublicCommunityFromServer\(id\)\)/);
+  assert.match(hook, /publicReconciled,/);
+  assert.match(view, /publicCommunities\.filter\(community => !authenticatedIds\.has\(community\.id\)\)/);
+  assert.doesNotMatch(readThrough, /localStorage|clearIndexedDbPersistence|disableNetwork|enableNetwork/);
+});

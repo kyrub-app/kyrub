@@ -1,10 +1,10 @@
 import type { User } from 'firebase/auth';
+import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc } from 'firebase/firestore/lite';
 import {
   collection,
   deleteDoc,
   doc,
   getDoc,
-  getDocFromServer,
   onSnapshot,
   query,
   runTransaction,
@@ -375,14 +375,22 @@ export const getCommunity = async (
 };
 
 /**
- * Canonical server read for reconciling public directory cards with the
- * anonymous discovery API. Unlike getDoc(), this bypasses stale local cache.
- * The same Firestore read rules still apply; no privileged data is exposed.
+ * Read-through repair for public directory IDs discovered by the Praça API.
+ *
+ * The full Firestore SDK can return a server-labelled missing snapshot for an
+ * existing public community when its persistent multi-tab listener state is
+ * out of sync. Firestore Lite uses the same authenticated FirebaseApp and
+ * security rules, but issues a direct REST read without a persistent cache.
+ *
+ * Only public/moderated documents may be reconciled here; private community
+ * reads, membership queries and all writes keep their existing guarded paths.
+ * No extra server endpoint or second directory model is introduced.
  */
 export const getPublicCommunityFromServer = async (
   communityId: string
 ): Promise<CloudCommunity | null> => {
-  const snapshot = await getDocFromServer(doc(db, 'communities', communityId));
+  const liteDb = getLiteFirestore(auth.app);
+  const snapshot = await getLiteDoc(liteDoc(liteDb, 'communities', communityId));
   if (!snapshot.exists()) return null;
   const data = snapshot.data() as Record<string, unknown>;
   if (data.visibility !== 'public' && data.visibility !== 'moderated') return null;

@@ -153,10 +153,10 @@ export function useCommunityDirectory() {
     );
   }, [discoverable, owned]);
 
-  // Guest and signed-in views discover the same public community IDs.
-  // Hydrate them with an authenticated, server-forced Firestore read so owner
-  // and membership semantics remain canonical and cached listeners cannot
-  // silently hide older public communities.
+  // Guests and signed-in users discover the same public community IDs.
+  // Recover missing public records with the authenticated Firestore Lite reader
+  // (no persistent listener cache). Full SDK listeners remain responsible for
+  // membership, private communities, and mutations; permissions are unchanged.
   useEffect(() => {
     if (!user) {
       setPublicReconciled([]);
