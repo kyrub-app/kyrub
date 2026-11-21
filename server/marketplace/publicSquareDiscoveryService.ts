@@ -53,7 +53,11 @@ export function projectPublicSquareCommunity(data: Record<string, unknown>) {
   if (data.visibility !== 'public' && data.visibility !== 'moderated') return null;
   const id = str(data.communityId, 128);
   const name = str(data.name, 80);
-  if (!id || !name) return null;
+  const ownerId = str(data.ownerId, 128);
+  // The authenticated directory's canonical mapper requires ownerId.
+  // Do not showcase unsupported legacy/orphan documents only to guests:
+  // these cannot be opened or administrated through the current UI.
+  if (!id || !name || !ownerId) return null;
   return {
     id, name,
     description: str(data.description, 500),
