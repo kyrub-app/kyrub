@@ -10,9 +10,13 @@ import {
   collection,
   deleteDoc,
   doc,
+  documentId,
   getDoc,
   getDocs,
+  limit,
+  orderBy,
   query,
+  startAfter,
   where,
   runTransaction,
   serverTimestamp,
@@ -199,6 +203,45 @@ test('new public and private communities persist for their creator across a fres
   await assertFails(updateDoc(doc(outsider, 'communities', 'future_public'), {
     name: 'Nome alterado por outro usuário',
   }));
+});
+
+test('cursor pages public communities without duplicates or private disclosures', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const guestAccount = environment.authenticatedContext(OUTSIDER).firestore();
+  for (const [id, visibility] of [
+    ['cursor_a', 'public'], ['cursor_b', 'private'],
+    ['cursor_c', 'moderated'], ['cursor_d', 'public'],
+    ['cursor_e', 'public'],
+  ] as const) {
+    await assertSucceeds(createCommunity(owner, id, visibility));
+  }
+  const first = await assertSucceeds(getDocs(query(
+    collection(guestAccount, 'communities'),
+    where('visibility', 'in', ['public', 'moderated']),
+    orderBy(documentId()), limit(2),
+  )));
+  const ids1 = first.docs.map(item => item.id);
+  if (ids1.join(',') !== 'cursor_a,cursor_c') {
+    throw Error('Unexpected first cursor batch: ' + ids1.join(','));
+  }
+  const second = await assertSucceeds(getDocs(query(
+    collection(guestAccount, 'communities'),
+    where('visibility', 'in', ['public', 'moderated']),
+    orderBy(documentId()), startAfter(ids1[1]), limit(2),
+  )));
+  const ids2 = second.docs.map(item => item.id);
+  if (ids2.join(',') !== 'cursor_d,cursor_e') {
+    throw Error('Unexpected second cursor batch: ' + ids2.join(','));
+  }
+  const third = await assertSucceeds(getDocs(query(
+    collection(guestAccount, 'communities'),
+    where('visibility', 'in', ['public', 'moderated']),
+    orderBy(documentId()), startAfter(ids2[1]), limit(2),
+  )));
+  if (third.docs.length !== 0 || new Set([...ids1, ...ids2]).size !== 4) {
+    throw Error('Cursor discovery duplicates or omits communities');
+  }
+  await assertFails(getDoc(doc(guestAccount, 'communities', 'cursor_b')));
 });
 
 test('another authenticated profile reads but cannot administer a public community', async () => {
