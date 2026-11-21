@@ -141,8 +141,15 @@ export const listPublicSquareDiscovery = async () => {
     .sort((a, b) => b.memberCount - a.memberCount || a.name.localeCompare(b.name, 'pt-BR'))
     .slice(0, 30);
 
+  // Preserve a stable internal link from each public post to its author.
+  // The API response never exposes user IDs or account documents.
+  const authorUidByCardId = new Map<string, string>();
   const socialCards = socialPosts.docs
-    .map(document => projectPublicSquareSocialPost(document.id, document.data()))
+    .map(document => {
+      const data = document.data();
+      authorUidByCardId.set(document.id, str(data.authorId, 128));
+      return projectPublicSquareSocialPost(document.id, data);
+    })
     .filter((entry): entry is NonNullable<typeof entry> => entry !== null);
 
   // Recheck the canonical community and post before disclosing a forwarded
@@ -162,15 +169,42 @@ export const listPublicSquareDiscovery = async () => {
       adminDb.collection('community_posts').doc(postId).get(),
     ]);
     if (!community.exists || !post.exists) return null;
-    return projectPublicSquareCommunityPost(postId, data, community.data() ?? {}, post.data() ?? {});
+    const card = projectPublicSquareCommunityPost(postId, data, community.data() ?? {}, post.data() ?? {});
+    if (card) authorUidByCardId.set(card.id, str(post.data()?.authorId, 128));
+    return card;
+  }));
+
+  const publicPosts = [...socialCards, ...forwardedCards.filter((entry): entry is NonNullable<typeof entry> => entry !== null)]
+    .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
+    .slice(0, 40);
+
+  // Only hydrate authors whose publications passed all public visibility
+  // checks. A name change updates historical public cards without rewriting
+  // immutable posts or exposing private account fields. Reads are capped by
+  // the 40-item response and failure falls back to the existing post snapshot.
+  const authorUids = [...new Set(publicPosts.map(post => authorUidByCardId.get(post.id) || '')
+    .filter(uid => /^[A-Za-z0-9_-]{1,128}$/.test(uid)))];
+  const names = new Map<string, { name: string; avatar?: string }>();
+  await Promise.all(authorUids.map(async uid => {
+    try {
+      const profile = await adminDb.collection('users').doc(uid).get();
+      const data = profile.data();
+      const name = str(data?.name, 80);
+      if (name) names.set(uid, { name,
+        avatar: data?.isProfileVisible === false ? undefined : publicImage(data?.photoUrl),
+      });
+    } catch {
+      // A public feed still works when author metadata is temporarily missing.
+    }
   }));
 
   return {
     stores: [...storesById.values()].slice(0, 40),
     offerStoreIds: [...new Set(offerStoreIds)].slice(0, 60),
     communities: communityCards,
-    posts: [...socialCards, ...forwardedCards.filter((entry): entry is NonNullable<typeof entry> => entry !== null)]
-      .sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt))
-      .slice(0, 40),
+    posts: publicPosts.map(post => {
+      const current = names.get(authorUidByCardId.get(post.id) || '');
+      return current ? { ...post, authorName: current.name, authorAvatar: current.avatar ?? post.authorAvatar } : post;
+    }),
   };
 };

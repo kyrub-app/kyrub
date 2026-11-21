@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ArrowUpRight, UsersRound } from 'lucide-react';
 import { CommunityPostCard } from './CommunityPostCard';
+import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
+import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import {
   subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment,
   deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost,
@@ -26,6 +28,12 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
   const [comments, setComments] = useState<CommunityPostComment[]>([]);
   const [error, setError] = useState('');
   const { post } = entry;
+  const liveAuthors = useLiveAuthorIdentities([post.authorId, entry.forwardedById || '']);
+  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const displayPost = { ...post, authorName, authorAvatar: displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors) };
+  const forwardedByName = entry.forwardedById
+    ? displayAuthorName(entry.forwardedById, entry.forwardedByName || 'Kairubido', liveAuthors)
+    : '';
 
   useEffect(() => {
     setLikes([]);
@@ -52,13 +60,13 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
       </button>
       {entry.forwardedById && (
         <p className="px-2 text-xs text-sky-200">
-          Encaminhado à Praça por <strong>{entry.forwardedByName || 'Kairubido'}</strong>
-          {' · '}publicação original de {post.authorName}
+          Encaminhado à Praça por <strong>{forwardedByName}</strong>
+          {' · '}publicação original de {authorName}
         </p>
       )}
       {error && <p role="alert" className="text-xs text-amber-300">{error}</p>}
       <CommunityPostCard
-        post={post}
+        post={displayPost}
         viewerId={viewerId}
         canParticipate={canParticipate}
         communityOwnerId={entry.communityOwnerId}

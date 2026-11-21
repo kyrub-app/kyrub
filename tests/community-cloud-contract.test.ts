@@ -220,7 +220,7 @@ test('reply parent reaches Firestore from both Community Mural and Praça distri
   assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
   assert.match(interactions, /parentCommentId \? \{ parentCommentId \} : \{\}/);
   assert.match(interactions, /parentCommentId: typeof data\.parentCommentId === 'string'/);
-  assert.match(card, /orderCommentThreads\(postComments\)/);
+  assert.match(card, /orderCommentThreads\(displayComments\)/);
 });
 
 test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
@@ -240,7 +240,7 @@ test('community cards reuse canonical saved actions and have persisted likes, co
   assert.match(card, /onToggleLike\(isLiked\)/);
   assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
   assert.match(card, /Responder/);
-  assert.match(card, /orderCommentThreads\(postComments\)/);
+  assert.match(card, /orderCommentThreads\(displayComments\)/);
   assert.match(interactions, /parentCommentId\?: string/);
   assert.match(interactions, /collection\(db, 'community_post_likes'\)/);
   assert.match(interactions, /collection\(db, 'community_post_comments'\)/);
@@ -473,7 +473,7 @@ test('in-app Encaminhar uses canonical Praça references and accepted Kyrub conv
   assert.match(card, /Encaminhar para um Kairubido conectado/);
   assert.match(card, /status === 'accepted'/);
   assert.match(card, /getDoc\(doc\(db, 'communities', post\.communityId\)\)/);
-  assert.match(card, /setChatDraft\(composeCommunityForwardMessage\(post\)\)/);
+  assert.match(card, /setChatDraft\(composeCommunityForwardMessage\(displayPost\)\)/);
   assert.match(card, /onMessageSent=\{text =>/);
   assert.match(chat, /await sendMessage\(sentText\)/);
   assert.match(chat, /onMessageSent\?\.\(sentText\)/);

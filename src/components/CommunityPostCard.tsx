@@ -12,6 +12,8 @@ import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/c
 import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
+import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
+import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
 import {
@@ -82,7 +84,19 @@ export function CommunityPostCard({
   const isMine = viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
-  const threadedComments = orderCommentThreads(postComments);
+  const liveAuthors = useLiveAuthorIdentities([
+    post.authorId,
+    ...(commentsOpen ? postComments.map(comment => comment.authorId) : []),
+  ]);
+  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
+  const displayPost = { ...post, authorName, authorAvatar };
+  const displayComments = postComments.map(comment => ({
+    ...comment,
+    authorName: displayAuthorName(comment.authorId, comment.authorName, liveAuthors),
+    authorAvatar: displayAuthorAvatar(comment.authorId, comment.authorAvatar, liveAuthors),
+  }));
+  const threadedComments = orderCommentThreads(displayComments);
   const replyCounts = new Map<string, number>();
   for (const item of threadedComments) {
     if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
@@ -169,15 +183,15 @@ export function CommunityPostCard({
   return (
     <article ref={cardRef} data-community-post-id={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <header className="flex items-center gap-3">
-        {post.authorAvatar
-          ? <img src={post.authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
+        {authorAvatar
+          ? <img src={authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
           : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white"><UserRound className="h-5 w-5" /></span>}
         <div className="min-w-0 flex-1">
-          <strong className="block truncate text-sm text-white">{post.authorName}</strong>
+          <strong className="block truncate text-sm text-white">{authorName}</strong>
           <span className="text-xs text-slate-400">{displayDate(post.createdAt)}</span>
         </div>
         <div className="relative">
-          <button type="button" aria-label={`Mais opções da publicação de ${post.authorName}`}
+          <button type="button" aria-label={`Mais opções da publicação de ${authorName}`}
             aria-expanded={menuOpen} onClick={() => setMenuOpen(open => !open)}
             className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-700 text-slate-300">
             <EllipsisVertical className="h-5 w-5" />
@@ -350,7 +364,7 @@ export function CommunityPostCard({
           {canParticipate ? (
             <div className="flex flex-col gap-2">
               {replyTarget && <div className="flex items-center justify-between gap-2 text-xs text-sky-300">
-                <span>Respondendo a {replyTarget.authorName}</span>
+                <span>Respondendo a {displayAuthorName(replyTarget.authorId, replyTarget.authorName, liveAuthors)}</span>
                 <button type="button" onClick={() => setReplyTarget(null)} className="font-semibold">Cancelar resposta</button>
               </div>}
               <textarea ref={commentInputRef} rows={2} maxLength={1000} value={commentDraft}
@@ -421,7 +435,7 @@ export function CommunityPostCard({
                       <button key={item.id} type="button"
                         onClick={() => {
                           setForwardRecipient({ id: recipientId, name, connectionId: item.id });
-                          setChatDraft(composeCommunityForwardMessage(post));
+                          setChatDraft(composeCommunityForwardMessage(displayPost));
                           setChatOpen(true);
                           setForwardOpen(false);
                         }}
@@ -514,11 +528,11 @@ export function CommunityPostCard({
           role: 'Kairubido conectado', connectionStatus: 'accepted',
           connectionId: forwardRecipient.connectionId,
         } : chatOpen && connected ? {
-          id: post.authorId, name: post.authorName, avatar: post.authorAvatar,
+          id: post.authorId, name: authorName, avatar: authorAvatar,
           role: 'Kairubido', connectionStatus: 'accepted', connectionId: connection?.id,
         } : null}
         setSelectedChatUser={() => { setChatOpen(false); setForwardRecipient(null); setChatDraft(''); }}
-        forwardingPost={forwardRecipient ? post : null}
+        forwardingPost={forwardRecipient ? displayPost : null}
         onMessageSent={text => {
           if (forwardRecipient && text.includes(buildCommunityPostInternalLink(post))) {
             void recordCommunityPostForwardMetric(post).catch(error =>
