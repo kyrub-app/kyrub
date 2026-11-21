@@ -87,6 +87,7 @@ import { RendaTab } from './components/tabs/RendaTab';
 import { JemboeHabilidadesTab } from './components/tabs/JemboeHabilidadesTab';
 import { KyrubTab } from './components/tabs/KyrubTab';
 import { MobileErpMenu } from './components/MobileErpMenu';
+import { WorkspaceTopNavigation } from './components/WorkspaceTopNavigation';
 
 // Import helper functions
 import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/helpers';
@@ -1336,62 +1337,14 @@ const handleLogin = async (provider: 'google' | 'apple') => {
 
           {/* 1. TOP MOBILE NAV HEADER */}
           <header className="border-b border-slate-900 bg-slate-950/90 backdrop-blur-md sticky top-0 z-40 px-3 py-3 flex items-center gap-2" id="app-header">
-            <button
-              onClick={() => { setProfileOpenSaved(false); setShowUserProfileModal(true); }}
-              className="mr-auto w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center overflow-hidden hover:border-orange-500/40 transition-colors"
-              id="header-user-profile-trigger"
-              title="Meu perfil"
-              aria-label="Abrir meu perfil"
-            >
-              {profilePhotoUrl ? (
-                <img src={profilePhotoUrl} alt="" className="w-full h-full object-cover" />
-              ) : (
-                <User className="w-4 h-4 text-slate-400" />
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => setActiveTab('cairubia')}
-              className="w-10 h-10 rounded-xl border border-orange-500/25 bg-slate-900 flex items-center justify-center text-orange-400 hover:border-orange-500/50 hover:bg-orange-500/10 transition-colors"
-              id="header-kyrubia-trigger"
-              title="Cairúbia"
-              aria-label="Abrir Cairúbia"
-            >
-              <Sparkles className="w-4 h-4" />
-            </button>
-
-            <button
-              onClick={() => setActiveTab('perfil')}
-              className="w-10 h-10 rounded-xl border border-slate-800 bg-slate-900 flex items-center justify-center text-slate-400 hover:text-orange-300 hover:border-orange-500/40 transition-colors"
-              id="header-tasks-trigger"
-              title="Tarefas"
-              aria-label="Abrir Tarefas"
-            >
-              <CheckSquare className="w-4 h-4" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => window.dispatchEvent(new Event('kyrub:open-connections'))}
-              className="h-10 w-10 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-orange-500/40 hover:text-orange-300"
-              id="header-connected-trigger"
-              title="Conectados"
-              aria-label="Abrir Conectados"
-            >
-              <Users className="mx-auto h-4 w-4" aria-hidden="true" />
-            </button>
-
-            <button
-              type="button"
-              onClick={() => { setProfileOpenSaved(true); setShowUserProfileModal(true); }}
-              className="h-10 w-10 shrink-0 rounded-xl border border-slate-800 bg-slate-900 text-slate-400 hover:border-orange-500/40 hover:text-orange-300"
-              id="header-saved-trigger"
-              title="Salvos"
-              aria-label="Abrir Salvos"
-            >
-              <Bookmark className="mx-auto h-4 w-4" aria-hidden="true" />
-            </button>
+            <WorkspaceTopNavigation
+              profilePhotoUrl={profilePhotoUrl}
+              onProfile={() => { setProfileOpenSaved(false); setShowUserProfileModal(true); }}
+              onKyrubia={() => setActiveTab('cairubia')}
+              onTasks={() => setActiveTab('perfil')}
+              onConnections={() => window.dispatchEvent(new Event('kyrub:open-connections'))}
+              onSaved={() => { setProfileOpenSaved(true); setShowUserProfileModal(true); }}
+            />
           </header>
 
           {/* MAIN TAB CONTENT DISPLAY ROUTER */}

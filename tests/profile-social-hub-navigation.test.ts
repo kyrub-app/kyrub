@@ -244,6 +244,7 @@ describe('native React profile social hub', () => {
 // The session and Pitangas regression checks live in the prebuild profile suite.
 const sessionLegacySource = readFileSync('src/LegacyApp.tsx', 'utf8');
 const sessionGuestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+const sessionNavigationSource = readFileSync('src/components/WorkspaceTopNavigation.tsx', 'utf8');
 const sessionRewardsSource = readFileSync('src/components/tabs/KyrubTab.tsx', 'utf8');
 const sessionAccountSource = readFileSync('src/components/tabs/PitangaAccount.tsx', 'utf8');
 
@@ -291,7 +292,7 @@ test('guest brand offers Entrar using the existing Google account-selection dial
 
 test('after exit, the existing guest account route offers select-account Google login', () => {
   assert.match(appSource, /currentUser\s*\? <AuthenticatedKyrubApp operational=\{false\} \/>\s*:\s*<KyrubGuestWorkspace \/>/);
-  assert.match(sessionGuestSource, /onClick=\{\(\) => requestLogin\('acessar seu perfil'\)\}/);
+  assert.match(sessionGuestSource, /onProfile=\{\(\) => requestLogin\('acessar seu perfil'\)\}/);
   assert.match(sessionGuestSource, /loginReason === 'acessar seu perfil' \? 'Perfil e identidade'/);
   assert.match(sessionGuestSource, /Entrar com Google/);
   assert.match(sessionGuestSource, /signInWithPopup\(auth, provider\)/);
@@ -300,8 +301,9 @@ test('after exit, the existing guest account route offers select-account Google 
 
 test('the signed-in header moves Pitangas/XP to the private Central and retains the guest login gate', () => {
   const personalCenter = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
-  assert.match(sessionLegacySource, /id="header-connected-trigger"/);
-  assert.match(sessionLegacySource, /id="header-saved-trigger"/);
+  assert.match(sessionLegacySource, /<WorkspaceTopNavigation/);
+  assert.match(sessionNavigationSource, /id="header-connected-trigger"/);
+  assert.match(sessionNavigationSource, /id="header-saved-trigger"/);
   assert.doesNotMatch(sessionLegacySource, /id="header-pitangas-trigger"/);
   assert.doesNotMatch(sessionLegacySource, /id="header-wallet-balance"/);
   assert.doesNotMatch(personalCenter, /<PitangaAccount mode="pitangas"/);
@@ -310,6 +312,10 @@ test('the signed-in header moves Pitangas/XP to the private Central and retains 
   assert.match(sessionRewardsSource, /aria-label="Meus clubes"/);
   assert.doesNotMatch(sessionRewardsSource, /<PitangaAccount key=/);
   assert.match(sessionAccountSource, /fetch\('\/api\/pitangas'/);
-  assert.match(sessionGuestSource, /id="header-pitangas-trigger"/);
-  assert.match(sessionGuestSource, /requestLogin\('consultar suas Pitangas e XP'\)/);
+  assert.match(sessionGuestSource, /<WorkspaceTopNavigation/);
+  assert.doesNotMatch(sessionGuestSource, /header-pitangas-trigger|header-wallet-balance/);
+  assert.match(sessionGuestSource, /onSaved=\{\(\) => requestLogin\('consultar suas publicações salvas'\)\}/);
+  assert.match(sessionNavigationSource, /id="header-guest-notifications-trigger"/);
+  assert.match(sessionNavigationSource, /id="header-connected-trigger"/);
+  assert.match(sessionNavigationSource, /id="header-saved-trigger"/);
 });

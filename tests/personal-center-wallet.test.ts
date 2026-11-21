@@ -4,6 +4,7 @@ import { describe, test } from 'node:test';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 const app = read('src/LegacyApp.tsx');
+const navigation = read('src/components/WorkspaceTopNavigation.tsx');
 const profile = read('src/components/modals/UserProfileModal.tsx');
 const socialHub = read('src/components/ProfileSocialHubNative.tsx');
 const unifiedEditor = read('src/components/ProfileVerificationBridge.tsx');
@@ -14,11 +15,12 @@ const square = read('src/components/tabs/KyrubTab.tsx');
 
 describe('Carteira e Central Pessoal', () => {
   test('header maintains identity, AI, tasks and notifications while moving Conectados/Salvos', () => {
-    assert.match(app, /id="header-user-profile-trigger"/);
-    assert.match(app, /id="header-kyrubia-trigger"/);
-    assert.match(app, /id="header-tasks-trigger"/);
-    assert.match(app, /id="header-connected-trigger"/);
-    assert.match(app, /id="header-saved-trigger"/);
+    assert.match(app, /<WorkspaceTopNavigation/);
+    assert.match(navigation, /id="header-user-profile-trigger"/);
+    assert.match(navigation, /id="header-kyrubia-trigger"/);
+    assert.match(navigation, /id="header-tasks-trigger"/);
+    assert.match(navigation, /id="header-connected-trigger"/);
+    assert.match(navigation, /id="header-saved-trigger"/);
     assert.match(app, /new Event\('kyrub:open-connections'\)/);
     assert.doesNotMatch(app, /id="header-pitangas-trigger"/);
     assert.doesNotMatch(app, /id="header-wallet-balance"/);
