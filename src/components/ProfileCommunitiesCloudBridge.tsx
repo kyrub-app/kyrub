@@ -54,6 +54,7 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 import { auth, db } from '../utils/firebase';
+import { probePublicCommunityRead, type PublicCommunityReadProbe } from '../utils/communityReadDiagnostic';
 import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
@@ -240,6 +241,8 @@ export function ProfileCommunitiesCloudBridge() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogCategory, setCatalogCategory] = useState('all');
   const [selectedPublicPreview, setSelectedPublicPreview] = useState<PublicDirectoryCommunity | null>(null);
+  const [publicProbe, setPublicProbe] = useState<PublicCommunityReadProbe | null>(null);
+  const [publicProbeBusy, setPublicProbeBusy] = useState(false);
   const [favoriteCommunityIds, setFavoriteCommunityIds] = useState<Set<string>>(new Set());
   const [favoriteBusyId, setFavoriteBusyId] = useState('');
   const [favoriteError, setFavoriteError] = useState('');
@@ -1065,7 +1068,7 @@ export function ProfileCommunitiesCloudBridge() {
       data-public-community-fallback={community.id}
       className={`flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
     >
-      <button type="button" onClick={() => setSelectedPublicPreview(community)} className="text-left">
+      <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }} className="text-left">
         <div className="flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-sky-950 via-emerald-950 to-slate-800">
           {community.coverImage
             ? <img src={community.coverImage} alt="" aria-hidden="true" className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
@@ -1081,7 +1084,7 @@ export function ProfileCommunitiesCloudBridge() {
         </div>
       </button>
       <div className="mt-auto border-t border-slate-800 p-2">
-        <button type="button" onClick={() => setSelectedPublicPreview(community)}
+        <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }}
           className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 text-xs font-black uppercase text-slate-200">
           Conhecer
         </button>
@@ -1274,6 +1277,37 @@ export function ProfileCommunitiesCloudBridge() {
               Esta comunidade consta na Praça pública, mas os dados completos não foram disponibilizados pela leitura autenticada.
               Por segurança, participar, editar e excluir permanecem indisponíveis até confirmar as permissões do registro.
             </p>
+            <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-950 p-3">
+              <p className="text-xs leading-5 text-slate-400">
+                Diagnóstico opcional: compara a consulta do Firebase com o cache deste aparelho.
+                Não modifica dados nem envia informações pessoais.
+              </p>
+              <button type="button" disabled={publicProbeBusy}
+                onClick={() => {
+                  if (!selectedPublicPreview || publicProbeBusy) return;
+                  const targetId = selectedPublicPreview.id;
+                  setPublicProbeBusy(true);
+                  setPublicProbe(null);
+                  void probePublicCommunityRead(targetId)
+                    .then(result => setPublicProbe(result))
+                    .catch(() => setPublicProbe(null))
+                    .finally(() => setPublicProbeBusy(false));
+                }}
+                className="min-h-11 w-full rounded-xl border border-sky-600/50 bg-sky-950 text-sm font-bold text-sky-200 disabled:opacity-50">
+                {publicProbeBusy ? 'Verificando acesso…' : 'Verificar leitura no meu aparelho'}
+              </button>
+              {publicProbe && (
+                <div role="status" aria-label="Resultado do diagnóstico de acesso"
+                  className="space-y-2 text-xs leading-5 text-slate-300">
+                  <p><strong>Documento direto:</strong> {publicProbe.directServer}</p>
+                  <p><strong>Proprietário da sessão:</strong> {publicProbe.ownerMatchesSession}</p>
+                  <p><strong>Leitor canônico:</strong> {publicProbe.canonicalMapper}</p>
+                  <p><strong>Consulta pública:</strong> {publicProbe.publicQuery}</p>
+                  <p><strong>Consulta do proprietário:</strong> {publicProbe.ownerQuery}</p>
+                  <p><strong>Cache:</strong> {publicProbe.cache}</p>
+                </div>
+              )}
+            </div>
             <button type="button" onClick={() => setSelectedPublicPreview(null)}
               className="min-h-11 w-full rounded-xl border border-slate-600 text-sm font-semibold text-white">
               Voltar
