@@ -208,14 +208,6 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
 
   return (
     <div id="personal-devices-panel" className="space-y-4 text-slate-200">
-      <div className="rounded-xl border border-orange-500/25 bg-orange-500/5 p-3">
-        <h5 className="text-sm font-bold text-orange-200">Seu espaço de dispositivos</h5>
-        <p className="mt-1 text-sm leading-relaxed text-slate-300">
-          Comece pelo próprio smartphone e prepare tags NFC e chaveiros Kyrub Link para identificação e futuras comunicações offline.
-          A preparação fica neste celular; ainda não representa pareamento ou autorização pela plataforma.
-        </p>
-      </div>
-
       <section id="personal-smartphone-device" className="min-w-0 space-y-3 rounded-2xl border border-slate-700 bg-slate-950 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <Smartphone className="h-7 w-7 shrink-0 text-orange-300" aria-hidden="true" />
@@ -229,8 +221,10 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
         </p>
         <div className="space-y-2 border-t border-slate-800 pt-3 text-sm">
           <p className="text-slate-300">Preparação: <strong className="text-orange-200">{phone ? 'Salva neste navegador' : 'Ainda não preparada'}</strong></p>
-          <p className="text-slate-300">Leitor NFC: <strong className="text-orange-200">
-            {nfcSupported ? 'API disponível; hardware a confirmar' : 'API Web NFC indisponível'}
+          <p className="text-slate-300">Leitor NFC: <strong className={nfcSupported && phone?.lastNfcReadAt ? 'text-emerald-300' : 'text-orange-200'}>
+            {nfcSupported
+              ? (phone?.lastNfcReadAt ? 'Funcionamento confirmado no último teste' : 'API disponível; hardware a confirmar')
+              : 'API Web NFC indisponível neste navegador'}
           </strong></p>
           {phone?.lastNfcReadAt && <p className="break-words text-emerald-300">
             Último teste por aproximação: {new Date(phone.lastNfcReadAt).toLocaleString('pt-BR')}
