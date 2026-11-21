@@ -120,8 +120,10 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
       reader.onreading = event => {
         if (controller.signal.aborted || scanner.current !== controller) return;
         if (!event.message?.records?.length) {
+          controller.abort();
+          scanner.current = null;
+          setReadingId('');
           setNotice('Uma tag foi detectada, mas não há registros NDEF legíveis. Ela não foi vinculada.');
-          stopReading();
           return;
         }
         const readAt = new Date().toISOString();
