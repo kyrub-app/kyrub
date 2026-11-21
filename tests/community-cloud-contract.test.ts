@@ -789,3 +789,19 @@ test('typography in Praça portals follows the Catu/Renda baseline without doubl
   assert.match(profile, /<strong className="mt-2 block text-xs font-bold text-slate-100">\{card\.label\}<\/strong>/);
   assert.match(profile, /<span className="mt-1 block text-\[10px\] leading-relaxed text-slate-400">\{card\.description\}<\/span>/);
 });
+
+
+test('340px community catalog keeps Conhecer and Participar labels complete', () => {
+  const guest = read('src/components/GuestSquarePanel.tsx');
+  const member = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+
+  // Each mobile catalog card already shares half of a two-column grid:
+  // stacking its two actions prevents another 50/50 split inside the card.
+  assert.match(guest, /catalog \? 'grid-cols-1' : 'grid-cols-2'/);
+  assert.match(guest, /min-h-11 min-w-0 rounded-xl border border-slate-700/);
+  assert.match(guest, /leading-tight whitespace-normal break-words/);
+  assert.match(guest, /Conhecer[\s\S]*?Participar/);
+  // Membership/fallback actions are also allowed to wrap, not clip.
+  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
+  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-center/);
+});
