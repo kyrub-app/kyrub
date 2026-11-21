@@ -569,21 +569,16 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
-    const handleProfileTrigger = (event: Event) => {
-      const target = event.target as Element | null;
-      const trigger = target?.closest('#header-user-profile-trigger');
-      if (!trigger) return;
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-      setActiveTab('publications');
+    // The profile icon opens the private UserProfileModal directly.
+    // This legacy social overlay remains available only for contacts and
+    // deep-linked communities; it must not intercept the profile shortcut.
+    const openConnections = () => {
+      setConnectionSection('connected');
+      setActiveTab('connected');
       setOpen(true);
     };
-
-    document.addEventListener('click', handleProfileTrigger, true);
-    return () => {
-      document.removeEventListener('click', handleProfileTrigger, true);
-    };
+    window.addEventListener('kyrub:open-connections', openConnections);
+    return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
 
   useEffect(() => {
@@ -1708,8 +1703,11 @@ export function ProfileSocialHubNative() {
                 <div className="space-y-4">
                   <button
                     type="button"
-                    onClick={() => setActiveTab('publications')}
-                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-[9px] font-black uppercase text-slate-300"
+                    onClick={() => {
+                      setOpen(false);
+                      document.getElementById('header-user-profile-trigger')?.click();
+                    }}
+                    className="inline-flex items-center gap-2 rounded-xl border border-slate-800 bg-slate-900 px-3 py-2 text-xs font-black uppercase text-slate-300"
                   >
                     <span aria-hidden="true">←</span>
                     Voltar ao perfil
