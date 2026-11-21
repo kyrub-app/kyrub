@@ -55,40 +55,52 @@ export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | '
   };
 
   return <div className="space-y-3">
-    <h3 className="text-lg font-bold text-white">
-      {mode === 'xp' ? 'XP e conquistas' : mode === 'pitangas' ? 'Minhas Pitangas' : 'Pitangas e XP'}
-    </h3>
-    {mode !== 'pitangas' && <div className="mt-3"><SemeaduraJourneyPanel viewerId={auth.currentUser?.uid || ''} /></div>}
-    {account && (
-      <p className="text-sm text-slate-200">
-        {mode === 'xp'
-          ? `${account.xp.toLocaleString('pt-BR')} XP`
-          : mode === 'pitangas'
-            ? `${account.pitangas.toLocaleString('pt-BR')} Pitangas`
-            : `${account.pitangas.toLocaleString('pt-BR')} Pitangas · ${account.xp.toLocaleString('pt-BR')} XP`}
-      </p>
-    )}
-    {mode === 'xp'
-      ? <p className="text-sm leading-relaxed text-slate-400">Sua experiência e a jornada de conquistas ficam aqui. Desafios personalizados ainda serão conectados; não são concedidos pontos extras nesta tela.</p>
-      : <p className="text-sm leading-relaxed text-slate-400">100 Pitangas no primeiro cadastro elegível. Primeira loja publicada: 2 XP. Conversão voluntária: 1.000 Pitangas = 1 XP.</p>}
     {mode !== 'xp' && (
-      <div className="flex flex-wrap gap-2">
-        <button type="button" disabled={busy || !account?.initialized || (account.pitangas < 1000 && !requestId.current)} onClick={() => void convert()}
-          className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm disabled:opacity-50">
-          {busy ? 'Confirmando…' : requestId.current ? 'Consultar / tentar novamente' : 'Converter 1.000 Pitangas em 1 XP'}
-        </button>
-        <button type="button" onClick={() => setShowStatement(!showStatement)} aria-expanded={showStatement}
-          className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Extrato</button>
-        <button type="button" disabled={busy} onClick={() => void reload.current()}
-          className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Atualizar</button>
-      </div>
+      <h3 className="text-lg font-bold text-white">
+        {mode === 'pitangas' ? 'Minhas Pitangas' : 'Pitangas e XP'}
+      </h3>
     )}
     {mode === 'xp' && (
-      <button type="button" disabled={busy} onClick={() => void reload.current()}
-        className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Atualizar XP</button>
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-700 bg-slate-950 p-3"
+        aria-label="Saldo de Pitangas creditadas">
+        <span className="text-sm font-semibold text-slate-300">Pitangas disponíveis</span>
+        <strong className="text-base font-bold tabular-nums text-orange-300">
+          {account ? account.pitangas.toLocaleString('pt-BR') : '…'} Pitangas
+        </strong>
+      </div>
     )}
-    <p role="status" className="text-sm text-slate-300">{message}</p>
-    {showStatement && account && mode !== 'xp' && (
+    {mode !== 'pitangas' && (
+      <SemeaduraJourneyPanel
+        viewerId={auth.currentUser?.uid || ''}
+        xp={mode === 'xp' ? (account?.xp ?? null) : undefined}
+      />
+    )}
+    {account && mode !== 'xp' && (
+      <p className="text-sm text-slate-200">
+        {mode === 'pitangas'
+          ? `${account.pitangas.toLocaleString('pt-BR')} Pitangas`
+          : `${account.pitangas.toLocaleString('pt-BR')} Pitangas · ${account.xp.toLocaleString('pt-BR')} XP`}
+      </p>
+    )}
+    <p className="text-sm leading-relaxed text-slate-400">
+      100 Pitangas no primeiro cadastro elegível. Primeira loja publicada: 2 XP.
+      Conversão voluntária: 1.000 Pitangas = 1 XP.
+      {mode === 'xp' && ' O saldo de Pitangas creditadas não se confunde com sementes ou equivalências visuais da jornada.'}
+    </p>
+    <div className="flex flex-wrap gap-2">
+      <button type="button"
+        disabled={busy || !account?.initialized || (account.pitangas < 1000 && !requestId.current)}
+        onClick={() => void convert()}
+        className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm disabled:opacity-50">
+        {busy ? 'Confirmando…' : requestId.current ? 'Consultar / tentar novamente' : 'Converter 1.000 Pitangas em 1 XP'}
+      </button>
+      <button type="button" onClick={() => setShowStatement(!showStatement)} aria-expanded={showStatement}
+        className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Extrato</button>
+      <button type="button" disabled={busy} onClick={() => void reload.current()}
+        className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm">Atualizar</button>
+    </div>
+    {message && <p role="status" className="text-sm text-slate-300">{message}</p>}
+    {showStatement && account && (
       <ul aria-label="Extrato de recompensas" className="space-y-2 text-sm">
         {account.entries.length === 0 && <li>Nenhum lançamento.</li>}
         {account.entries.map(e => (
