@@ -34,7 +34,8 @@ export function useLiveAuthorIdentities(authorIds: readonly string[]): Record<st
         if (!active) return;
         const data = snapshot.data();
         const name = typeof data?.name === 'string' ? data.name.trim().slice(0, 80) : '';
-        const avatar = typeof data?.photoUrl === 'string' ? data.photoUrl.trim() : '';
+        const avatar = data?.isProfileVisible === false ? undefined
+          : typeof data?.photoUrl === 'string' ? data.photoUrl.trim() : '';
         setProfiles(current => {
           const existing = current[uid];
           if (!name) {
