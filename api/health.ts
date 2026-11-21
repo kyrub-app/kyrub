@@ -80,64 +80,6 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
-  // TEMPORARY: fixed-ID, preview-only, read-only Firestore transport comparison.
-  // No user document fields, owner IDs, timestamps, tokens or secrets returned.
-  if (transport === 'manual-community-transport-probe') {
-    response.setHeader('Cache-Control', 'no-store, max-age=0');
-    const targetId = 'fIemZnVFXZsagd6EA6sN';
-    if (process.env.VERCEL_ENV !== 'preview' ||
-        (request.method ?? 'GET').toUpperCase() !== 'GET' ||
-        queryValue(request.query?.communityId) !== targetId) {
-      response.status(404).json({ error: 'NOT_FOUND' });
-      return;
-    }
-    try {
-      const { adminDb, getFirebaseAdminProjectId, getFirebaseAdminAccessToken } =
-        await import('../server/firebaseAdmin.js');
-      if (getFirebaseAdminProjectId() !== 'kyrub-b8d0e') {
-        response.status(503).json({ error: 'PROJECT_MISMATCH' });
-        return;
-      }
-      const reference = adminDb.collection('communities').doc(targetId);
-      const [snapshot, publicQuery] = await Promise.all([
-        reference.get(),
-        adminDb.collection('communities')
-          .where('visibility', 'in', ['public', 'moderated']).limit(50).get(),
-      ]);
-      const token = await getFirebaseAdminAccessToken();
-      const restUrl =
-        'https://firestore.googleapis.com/v1/projects/kyrub-b8d0e' +
-        '/databases/(default)/documents/communities/' + targetId +
-        '?mask.fieldPaths=name';
-      const remote = await fetch(restUrl, {
-        method: 'GET', cache: 'no-store',
-        headers: { Authorization: 'Bearer ' + token, Accept: 'application/json' },
-        signal: AbortSignal.timeout(8500),
-      });
-      // Only inspect the stable document resource identifier and updateTime.
-      // Never return data fields, response body or raw error payloads.
-      const rest: { name?: string; updateTime?: string } = remote.ok
-        ? await remote.json() as { name?: string; updateTime?: string } : {};
-      const expectedResource =
-        'projects/kyrub-b8d0e/databases/(default)/documents/communities/' + targetId;
-      const sdkTime = snapshot.updateTime?.toDate()?.toISOString() ?? '';
-      const restTime = rest.updateTime ? new Date(rest.updateTime).toISOString() : '';
-      response.status(200).json({
-        adminGetExists: snapshot.exists,
-        adminQueryContains: publicQuery.docs.some(document => document.id === targetId),
-        restHttpStatus: remote.status,
-        restResourceMatches: rest.name === expectedResource,
-        restAndSdkUpdateTimeMatch: Boolean(sdkTime && restTime && sdkTime === restTime),
-        adminProjectMatches: true,
-        adminEmulatorEnvConfigured: Boolean(process.env.FIRESTORE_EMULATOR_HOST),
-        writesPerformed: false,
-      });
-    } catch {
-      response.status(503).json({ error: 'TRANSPORT_PROBE_UNAVAILABLE' });
-    }
-    return;
-  }
-
   if (transport === 'public-square-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
