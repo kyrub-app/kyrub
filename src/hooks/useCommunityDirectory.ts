@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   getCommunity,
@@ -30,6 +30,7 @@ export function useCommunityDirectory() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [discoverable, setDiscoverable] = useState<CloudCommunity[]>([]);
   const [publicReconciled, setPublicReconciled] = useState<CloudCommunity[]>([]);
+  const knownPublicIdsRef = useRef<Set<string>>(new Set());
   const [owned, setOwned] = useState<CloudCommunity[]>([]);
   const [privateMembershipCommunities, setPrivateMembershipCommunities] =
     useState<CloudCommunity[]>([]);
@@ -113,6 +114,12 @@ export function useCommunityDirectory() {
     };
   }, [user]);
 
+  useEffect(() => {
+    knownPublicIdsRef.current = new Set(
+      [...discoverable, ...owned].map(community => community.id)
+    );
+  }, [discoverable, owned]);
+
   // Guest and signed-in views discover the same public community IDs.
   // Hydrate them with an authenticated, server-forced Firestore read so owner
   // and membership semantics remain canonical and cached listeners cannot
@@ -141,7 +148,9 @@ export function useCommunityDirectory() {
         const ids = Array.from(new Set(
           (Array.isArray(payload.communities) ? payload.communities : [])
             .map(entry => typeof entry?.id === 'string' ? entry.id : '')
-            .filter((id): id is string => /^[a-zA-Z0-9_-]{1,128}$/.test(id))
+            .filter((id): id is string =>
+              /^[a-zA-Z0-9_-]{1,128}$/.test(id) &&
+              !knownPublicIdsRef.current.has(id))
         )).slice(0, 30);
         const settled = await Promise.allSettled(
           ids.map(id => getPublicCommunityFromServer(id))
@@ -212,8 +221,8 @@ export function useCommunityDirectory() {
       memberships.map(membership => [membership.communityId, membership])
     );
     return mergeCommunities(
-      discoverable,
       publicReconciled,
+      discoverable,
       owned,
       privateMembershipCommunities
     ).map(community => {
