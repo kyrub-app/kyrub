@@ -69,12 +69,12 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(profile, /item\.sourceKind === 'community'/);
   });
 
-  test('Central Pessoal preserves three wallet areas and adds a separate platform challenge card', () => {
+  test('Central Pessoal preserves wallet areas and adds devices alongside achievements', () => {
     const cards = profile.slice(profile.indexOf('const financeCards = ['), profile.indexOf('] as const;', profile.indexOf('const financeCards = [')));
     const cardIds = [...cards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]);
-    assert.deepEqual(cardIds, ['movements', 'finance', 'xp', 'challenges']);
+    assert.deepEqual(cardIds, ['movements', 'finance', 'xp', 'devices', 'challenges']);
     assert.doesNotMatch(cards, /id: 'pitangas'/);
-    assert.match(profile, /card\.id === 'xp' \|\| card\.id === 'challenges' \? 'col-span-2'/);
+    assert.match(profile, /card\.id === 'challenges' \? 'col-span-2'/);
     assert.match(profile, /<WalletMovementsPanel walletHistory=\{walletHistory\}/);
     assert.match(profile, /<PersonalFinancePlanner userId=\{currentUserId\}/);
     assert.match(profile, /<PitangaAccount mode="xp"/);

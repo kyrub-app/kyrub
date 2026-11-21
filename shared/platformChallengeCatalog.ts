@@ -52,7 +52,8 @@ export const projectPlatformChallengeCatalog = (
       ...(challenge.endsAt ? { endsAt: challenge.endsAt } : {}),
     });
   }
-  items.sort((a, b) => (a.status === b.status ? a.title.localeCompare(b.title, 'pt-BR') :
+  items.sort((a, b) => (a.status === b.status ?
+    a.title.localeCompare(b.title, 'pt-BR') || a.id.localeCompare(b.id) :
     a.status === 'available' ? -1 : 1));
   return {
     challenges: items,
