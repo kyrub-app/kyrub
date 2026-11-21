@@ -80,7 +80,7 @@ export function KyrubBusinessCard({ userId, nfcSupported, busy, onWriting }: {
   const button = 'inline-flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 px-3 py-2 text-sm font-bold text-slate-200 disabled:opacity-50';
   return <section id="personal-business-card" className="space-y-3 rounded-2xl border border-slate-700 bg-slate-950 p-4">
     <h5 className="flex items-center gap-2 text-sm font-bold text-white"><Nfc className="h-5 w-5 shrink-0 text-orange-300" aria-hidden="true" /> Cartão de visita digital</h5>
-    <p className="text-sm leading-relaxed text-slate-300">Compartilhe uma vitrine pública do Kyrub por link ou grave seu endereço em uma tag NFC física. Não é preciso vincular a tag à conta para divulgar uma loja.</p>
+    <p className="text-sm leading-relaxed text-slate-300">Compartilhe seu cartão multifuncional ou uma vitrine pública por link ou por uma tag NFC física.</p>
     <MultifunctionCardEditor userId={userId} locked={locked || checking} onSelect={setCard} />
     <h6 className="text-sm font-bold text-white">Compartilhar vitrine diretamente</h6>
     <label className="block text-sm text-slate-300">Endereço da loja
@@ -99,7 +99,7 @@ export function KyrubBusinessCard({ userId, nfcSupported, busy, onWriting }: {
         {writing ? <button type="button" className={button} onClick={cancel}>Cancelar gravação</button> :
           <button type="button" className={button} disabled={!nfcSupported || locked} onClick={() => void write()}><Nfc className="h-4 w-4" aria-hidden="true" /> Gravar na tag NFC</button>}
       </div>
-      <p className="text-xs leading-relaxed text-slate-400">Somente tags vazias. Não use tags de pagamento, acesso ou de terceiros. O destinatário precisa de internet para carregar a loja atualizada.</p>
+      <p className="text-xs leading-relaxed text-slate-400">Somente tags vazias. Não use tags de pagamento, acesso ou de terceiros. O destinatário precisa de internet para carregar o destino atualizado.</p>
     </div>}
     <div role="status" aria-live="polite" className="text-sm leading-relaxed text-slate-300">{notice}</div>
     <p className="flex items-start gap-2 text-xs leading-relaxed text-slate-400"><Smartphone className="mt-0.5 h-4 w-4 shrink-0 text-orange-300" aria-hidden="true" /> Celular como cartão NFC: depende de aplicativo Android nativo HCE e validação entre aparelhos. Esta versão web não transmite por aproximação entre celulares.</p>
