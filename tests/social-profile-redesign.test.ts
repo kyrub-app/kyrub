@@ -32,9 +32,12 @@ const globalCss = readFileSync('src/index.css', 'utf8');
 test('Meu perfil is a private financial and identity center instead of a publishing surface', () => {
   assert.match(profileSource, /Central Pessoal/);
   assert.match(profileSource, /Carteira Kairube/);
-  for (const title of ['Movimentações', 'Controle financeiro', 'Pitangas', 'XP e conquistas']) {
-    assert.ok(profileSource.includes(title));
+  const walletCards = profileSource.slice(profileSource.indexOf('const financeCards = ['), profileSource.indexOf('] as const;', profileSource.indexOf('const financeCards = [')));
+  assert.deepEqual([...walletCards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]), ['movements', 'finance', 'xp']);
+  for (const title of ['Movimentações', 'Controle financeiro', 'XP e conquistas']) {
+    assert.ok(walletCards.includes(title));
   }
+  assert.doesNotMatch(walletCards, /id: 'pitangas'/);
   assert.match(profileSource, /Editar perfil/);
   assert.doesNotMatch(profileSource, />\s*Conta e segurança\s*</);
   assert.match(profileSource, /id="personal-profile-visibility"/);

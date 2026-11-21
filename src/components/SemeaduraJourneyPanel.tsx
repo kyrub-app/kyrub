@@ -2,13 +2,27 @@ import { useEffect, useState } from 'react';
 import { calculatePitangueiraJourney, SEEDS_PER_BROTO, SEEDS_PER_MUDA, SEEDS_PER_PITANGUEIRA, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
 import { requestSemeadura, SEMEADURA_UI_ENABLED } from './SemearButton';
 
+/** The cocar marks XP from the canonical rewards account, never converted from seeds. */
+function CocarXpIcon() {
+  return (
+    <svg viewBox="0 0 40 40" className="mx-auto h-6 w-6 text-amber-300"
+      fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"
+      strokeWidth="1.8" aria-hidden="true">
+      <path d="M20 21V3M16 21 10 5M24 21 30 5M12 23 4 12M28 23 36 12M9 26 2 22M31 26 38 22" />
+      <path d="M20 3 17 8l3 6 3-6-3-5ZM10 5 7 12l5 4 1-7-3-4ZM30 5l-3 4 1 7 5-4-3-7ZM4 12l-2 7 7 3-1-7-4-3ZM36 12l-4 3-1 7 7-3-2-7Z" />
+      <path d="M9 26c5-6 17-6 22 0v4H9v-4ZM13 30v4c4 4 10 4 14 0v-4M16 26h8" />
+      <path d="M17 30h6" />
+    </svg>
+  );
+}
+
 /**
  * Informational only: rewards are NOT credited by this panel. This one panel
  * works for the private author's trajectory and a community's public history.
  */
 export function SemeaduraJourneyPanel({
-  viewerId, communityId,
-}: { viewerId: string; communityId?: string }) {
+  viewerId, communityId, xp,
+}: { viewerId: string; communityId?: string; xp?: number | null }) {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState('');
 
@@ -50,6 +64,7 @@ export function SemeaduraJourneyPanel({
   if (!SEMEADURA_UI_ENABLED) return null;
   const journey = calculatePitangueiraJourney(total ?? 0);
   const remainingToBosque = SEEDS_PER_BOSQUE - journey.totalSeeds % SEEDS_PER_BOSQUE;
+  const showCanonicalXp = !communityId && xp !== undefined;
   return (
     <section aria-label={communityId ? 'Jornada coletiva da Pitangueira' : 'Minha Jornada da Pitangueira'}
       className="rounded-2xl border border-emerald-800/30 bg-emerald-950/10 p-3 text-slate-200">
@@ -62,7 +77,7 @@ export function SemeaduraJourneyPanel({
           ? 'Crescimento coletivo de todas as publicações desta comunidade.'
           : 'Suas semeaduras recebidas em publicações pessoais e comunitárias.'}
       </p>
-      <div className="mt-3 grid grid-cols-3 gap-2 text-center sm:grid-cols-5" aria-label="Etapas acumuladas da Jornada da Pitangueira">
+      <div className={`mt-3 grid grid-cols-3 gap-2 text-center ${showCanonicalXp ? "sm:grid-cols-3" : "sm:grid-cols-5"}`} aria-label="Etapas da Jornada da Pitangueira">
         {([
           ['🌰', 'Sementes', journey.totalSeeds],
           ['🌱', 'Brotos', Math.floor(journey.totalSeeds / SEEDS_PER_BROTO)],
@@ -78,6 +93,15 @@ export function SemeaduraJourneyPanel({
             <span className="block text-[10px] text-slate-400">{stage}</span>
           </div>
         ))}
+        {showCanonicalXp && (
+          <div className="min-w-0 rounded-xl border border-amber-500/25 bg-amber-500/5 p-2" aria-label="Cocar, XP da conta de recompensas">
+            <CocarXpIcon />
+            <strong className="block text-sm tabular-nums">
+              {xp === null ? '…' : (Number.isSafeInteger(xp) && xp >= 0 ? xp.toLocaleString('pt-BR') : '…')}
+            </strong>
+            <span className="block text-[10px] text-amber-200">Cocar · XP</span>
+          </div>
+        )}
       </div>
       <progress className="mt-3 block h-2 w-full accent-emerald-500"
         aria-label="Progresso até o próximo bosque"

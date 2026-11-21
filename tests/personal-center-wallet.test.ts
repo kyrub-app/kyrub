@@ -51,14 +51,16 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(profile, /item\.sourceKind === 'community'/);
   });
 
-  test('four panels are independent and have no duplicate Clubs card', () => {
-    for (const title of ['Movimentações', 'Controle financeiro', 'Pitangas', 'XP e conquistas']) {
-      assert.ok(profile.includes(title), title);
-    }
+  test('three cards in the wallet consolidate rewards without duplicating Clubs or Pitangas', () => {
+    const cards = profile.slice(profile.indexOf('const financeCards = ['), profile.indexOf('] as const;', profile.indexOf('const financeCards = [')));
+    const cardIds = [...cards.matchAll(/\{ id: '(\w+)'/g)].map(match => match[1]);
+    assert.deepEqual(cardIds, ['movements', 'finance', 'xp']);
+    assert.doesNotMatch(cards, /id: 'pitangas'/);
+    assert.match(profile, /card\.id === 'xp' \? 'col-span-2'/);
     assert.match(profile, /<WalletMovementsPanel walletHistory=\{walletHistory\}/);
     assert.match(profile, /<PersonalFinancePlanner userId=\{currentUserId\}/);
-    assert.match(profile, /<PitangaAccount mode="pitangas"/);
     assert.match(profile, /<PitangaAccount mode="xp"/);
+    assert.doesNotMatch(profile, /<PitangaAccount mode="pitangas"/);
     assert.doesNotMatch(profile, /id: 'clubs'/);
     assert.match(square, /aria-label="Meus clubes"/);
     assert.doesNotMatch(square, /<PitangaAccount/);
@@ -80,14 +82,19 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(wallet, /Open Finance permanecerão indisponíveis/);
   });
 
-  test('Pitangas and XP are views of the existing canonical account, not new balances', () => {
+  test('XP, real Pitangas balance, conversion and statement share the existing canonical account', () => {
     assert.match(pitangas, /mode = 'all'/);
-    assert.match(pitangas, /mode !== 'pitangas'/);
-    assert.match(pitangas, /mode !== 'xp'/);
+    assert.match(pitangas, /mode === 'xp'/);
+    assert.match(pitangas, /Pitangas disponíveis/);
+    assert.match(pitangas, /account\.pitangas\.toLocaleString\('pt-BR'\)/);
     assert.match(pitangas, /fetch\('\/api\/pitangas'/);
     assert.match(pitangas, /requestId: requestId\.current/);
     assert.match(pitangas, /1\.000 Pitangas = 1 XP/);
     assert.match(pitangas, /<SemeaduraJourneyPanel/);
+    assert.match(pitangas, /xp=\{mode === 'xp' \? \(account\?\.xp \?\? null\) : undefined\}/);
+    assert.match(pitangas, /Extrato de recompensas/);
+    assert.match(pitangas, /saldo de Pitangas creditadas não se confunde com sementes/);
+    assert.doesNotMatch(pitangas, /{mode === 'xp'\s*\? \x60\$\{account\.xp/);
   });
 
   test('legacy personal feed is no longer rendered while Praça and communities remain intact', () => {

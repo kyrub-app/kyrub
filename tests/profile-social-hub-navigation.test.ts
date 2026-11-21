@@ -304,8 +304,9 @@ test('the signed-in header moves Pitangas/XP to the private Central and retains 
   assert.match(sessionLegacySource, /id="header-saved-trigger"/);
   assert.doesNotMatch(sessionLegacySource, /id="header-pitangas-trigger"/);
   assert.doesNotMatch(sessionLegacySource, /id="header-wallet-balance"/);
-  assert.match(personalCenter, /<PitangaAccount mode="pitangas"/);
-  assert.match(personalCenter, /<PitangaAccount mode="xp"/);
+  assert.doesNotMatch(personalCenter, /<PitangaAccount mode="pitangas"/);
+  assert.equal((personalCenter.match(/<PitangaAccount mode="xp"/g) ?? []).length, 1);
+  assert.match(personalCenter, /id: 'xp'/);
   assert.match(sessionRewardsSource, /aria-label="Meus clubes"/);
   assert.doesNotMatch(sessionRewardsSource, /<PitangaAccount key=/);
   assert.match(sessionAccountSource, /fetch\('\/api\/pitangas'/);
