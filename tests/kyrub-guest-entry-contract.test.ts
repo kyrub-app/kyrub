@@ -8,6 +8,7 @@ import {
   projectPublicSquareSocialPost,
   projectPublicSquareCommunityPost,
 } from '../server/marketplace/publicSquareDiscoveryService';
+import { PUBLIC_COMMUNITY_PAGE_SIZE, parsePublicCommunityCursor } from '../server/marketplace/publicCommunityPageService';
 
 const app = readFileSync('src/App.tsx', 'utf8');
 const guest = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
@@ -118,4 +119,25 @@ test('signed-in community directory reconciles the same public IDs without weake
   assert.match(cloud, /getLiteDoc\(liteDoc\(liteDb, 'communities', communityId\)\)/);
   assert.match(cloud, /const liteDb = getLiteFirestore\(auth\.app\)/);
   assert.match(cloud, /data\.visibility !== 'public' && data\.visibility !== 'moderated'/);
+});
+
+test('community discovery cursor is bounded and never accepts forged paths or private data', () => {
+  assert.equal(PUBLIC_COMMUNITY_PAGE_SIZE, 20);
+  assert.equal(parsePublicCommunityCursor(undefined), null);
+  assert.equal(parsePublicCommunityCursor(''), null);
+  assert.equal(parsePublicCommunityCursor('fIemZnVFXZsagd6EA6sN'), 'fIemZnVFXZsagd6EA6sN');
+  for (const malformed of ['../community', 'x/y', ' ', 'a'.repeat(129), '%2F', 'a?x=1']) {
+    assert.throws(() => parsePublicCommunityCursor(malformed), /INVALID_COMMUNITY_CURSOR/);
+  }
+  assert.equal(projectPublicSquareCommunity({
+    communityId: 'private', name: 'Privada', visibility: 'private',
+  }), null);
+  const service = readFileSync('server/marketplace/publicCommunityPageService.ts', 'utf8');
+  assert.match(service, /where\('visibility', 'in', \['public', 'moderated'\]\)/);
+  assert.match(service, /orderBy\('__name__'\)/);
+  assert.match(service, /startAfter\(cursor\)/);
+  assert.match(service, /limit\(PUBLIC_COMMUNITY_PAGE_SIZE \+ 1\)/);
+  assert.doesNotMatch(service, /delete\(|update\(|set\(|writeBatch\(|ownerId:/);
+  assert.match(api, /transport === 'public-community-page'/);
+  assert.match(vercel, /"source": "\/api\/square\/communities"/);
 });
