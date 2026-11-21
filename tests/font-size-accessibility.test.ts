@@ -204,5 +204,5 @@ test('admin login disclosure reaches WCAG AA contrast for normal text', () => {
   const foreground = luminance('cbd5e1'); // slate-300
   const background = luminance('0f172a'); // slate-900
   const ratio = (foreground + 0.05) / (background + 0.05);
-  assert.ok(ratio >= 4.5, \`Expected WCAG AA >=4.5:1, got \${ratio.toFixed(2)}:1\`);
+  assert.ok(ratio >= 4.5, `Expected WCAG AA >=4.5:1, got ${ratio.toFixed(2)}:1`);
 });
