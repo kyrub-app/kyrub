@@ -1,7 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Heart, MessageCircle, Users } from 'lucide-react';
 import type { Store } from '../types';
 import { SquareDirectoryLayout } from './SquareDirectoryLayout';
+import { InfiniteScrollTrigger } from './InfiniteScrollTrigger';
+import { useInfiniteCursor } from '../hooks/useInfiniteCursor';
 import { SquareStoresSection } from './tabs/SquareStoresSection';
 
 interface PublicSquareStore {
@@ -83,6 +85,31 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
   const [error, setError] = useState('');
   const [storeCatalogOpen, setStoreCatalogOpen] = useState(false);
   const [communityCatalogOpen, setCommunityCatalogOpen] = useState(false);
+  const readCommunityPage = useCallback(async (cursor: string | null, signal: AbortSignal) => {
+    const params = new URLSearchParams();
+    if (cursor) params.set('cursor', cursor);
+    const response = await fetch('/api/square/communities?' + params.toString(), {
+      cache: 'no-store',
+      headers: { accept: 'application/json' },
+      signal,
+    });
+    if (!response.ok) throw Error('PUBLIC_COMMUNITY_PAGE_UNAVAILABLE');
+    const payload = await response.json() as {
+      communities?: PublicSquareCommunity[];
+      nextCursor?: string | null;
+    };
+    if (!Array.isArray(payload.communities) ||
+        (payload.nextCursor !== null && typeof payload.nextCursor !== 'string')) {
+      throw Error('INVALID_PUBLIC_COMMUNITY_PAGE');
+    }
+    return {
+      items: payload.communities.filter(item =>
+        Boolean(item && /^[A-Za-z0-9_-]{1,128}$/.test(item.id) &&
+          (item.visibility === 'public' || item.visibility === 'moderated'))),
+      nextCursor: payload.nextCursor ?? null,
+    };
+  }, []);
+  const communityPage = useInfiniteCursor(communityCatalogOpen, 'guest-public', readCommunityPage);
   const [communitySearch, setCommunitySearch] = useState('');
   const [communityCategory, setCommunityCategory] = useState('all');
   const [selectedCommunity, setSelectedCommunity] = useState<PublicSquareCommunity | null>(null);
@@ -122,18 +149,18 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
 
   const stores = useMemo(() => data.stores.map(toStore), [data.stores]);
   const categories = useMemo(
-    () => [...new Set(data.communities.map(community => community.category).filter(Boolean))]
+    () => [...new Set(communityPage.items.map(community => community.category).filter(Boolean))]
       .sort((a, b) => a.localeCompare(b, 'pt-BR')),
-    [data.communities],
+    [communityPage.items],
   );
   const filteredCommunities = useMemo(() => {
     const search = communitySearch.trim().toLocaleLowerCase('pt-BR');
-    return data.communities.filter(community =>
+    return communityPage.items.filter(community =>
       (communityCategory === 'all' || community.category === communityCategory) &&
       (!search || [community.name, community.description, community.category]
         .join(' ').toLocaleLowerCase('pt-BR').includes(search))
     );
-  }, [data.communities, communitySearch, communityCategory]);
+  }, [communityPage.items, communitySearch, communityCategory]);
   const feed = useMemo(
     () => data.posts.filter(post => post.publicationType !== 'status' ||
       (Date.now() - Date.parse(post.createdAt) < 86_400_000)),
@@ -289,10 +316,18 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
           onCategoryChange={setCommunityCategory}
           onClose={() => setCommunityCatalogOpen(false)}
         >
-          <p className="mb-3 text-sm text-slate-400" aria-live="polite">{filteredCommunities.length} comunidades encontradas</p>
+          <p className="mb-3 text-sm text-slate-400" aria-live="polite">
+            {filteredCommunities.length} comunidades carregadas
+          </p>
           <div className="grid grid-cols-2 items-stretch gap-3 sm:grid-cols-3 lg:grid-cols-4">
             {filteredCommunities.map(community => communityCard(community, true))}
           </div>
+          <InfiniteScrollTrigger
+            hasMore={communityPage.hasMore}
+            loading={communityPage.loading}
+            error={communityPage.error}
+            onLoadMore={communityPage.loadMore}
+          />
         </SquareDirectoryLayout>
       )}
 

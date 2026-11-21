@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
 const read = (path: string) => readFileSync(path, 'utf8');
 
@@ -676,4 +677,49 @@ test('future communities remain visible after commit and fresh login without a d
   assert.match(view, /if \(createInFlightRef\.current\) return/);
   assert.match(view, /createInFlightRef\.current = false/);
   assert.doesNotMatch(directory, /deleteDoc\(|updateDoc\(|writeBatch\(|clearIndexedDbPersistence\(/);
+});
+
+test('continuous cursor pages append unique cards and preserve their original order', () => {
+  const old = [{ id: 'a', name: 'A' }, { id: 'b', name: 'B' }];
+  assert.deepEqual(appendUniqueById(old, [
+    { id: 'b', name: 'stale' }, { id: 'c', name: 'C' },
+    { id: 'c', name: 'duplicate' }, { id: 'd', name: 'D' },
+  ]), [
+    { id: 'a', name: 'A' }, { id: 'b', name: 'B' },
+    { id: 'c', name: 'C' }, { id: 'd', name: 'D' },
+  ]);
+});
+
+test('both community catalogs use one scroll mechanism and bounded cursor batches', () => {
+  const guest = read('src/components/GuestSquarePanel.tsx');
+  const owner = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const cloud = read('src/utils/communityCloud.ts');
+  const service = read('server/marketplace/publicCommunityPageService.ts');
+  const shared = read('src/hooks/useInfiniteCursor.ts');
+  const trigger = read('src/components/InfiniteScrollTrigger.tsx');
+  const layout = read('src/components/SquareDirectoryLayout.tsx');
+  const api = read('api/health.ts');
+  const vercel = read('vercel.json');
+  assert.match(guest, /useInfiniteCursor\(communityCatalogOpen/);
+  assert.match(owner, /useInfiniteCursor\(/);
+  assert.match(guest, /<InfiniteScrollTrigger/);
+  assert.match(owner, /<InfiniteScrollTrigger/);
+  assert.match(guest, /\/api\/square\/communities\?/);
+  assert.match(owner, /listPublicCommunityPageLite\(cursor\)/);
+  assert.match(service, /\.limit\(PUBLIC_COMMUNITY_PAGE_SIZE \+ 1\)/);
+  assert.match(service, /\.where\('visibility', 'in', \['public', 'moderated'\]\)/);
+  assert.match(service, /orderBy\('__name__'\)/);
+  assert.match(cloud, /liteOrderBy\(liteDocumentId\(\)\)/);
+  assert.match(cloud, /liteLimit\(21\)/);
+  assert.match(cloud, /limit\(24\)/);
+  assert.match(shared, /version !== versionRef\.current/);
+  assert.match(shared, /controllerRef\.current\?\.abort\(\)/);
+  assert.match(shared, /appendUniqueById/);
+  assert.match(trigger, /IntersectionObserver/);
+  assert.match(trigger, /rootMargin: '280px 0px'/);
+  assert.match(layout, /data-square-directory-scroll/);
+  assert.match(api, /transport === 'public-community-page'/);
+  assert.match(vercel, /"source": "\/api\/square\/communities"/);
+  assert.doesNotMatch(service, /ownerId:|authorEmail:|userId:|\.update\(|\.delete\(/);
+  assert.doesNotMatch(guest, /\bsetDoc\(|\bupdateDoc\(|\bdeleteDoc\(/);
 });

@@ -80,6 +80,30 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'public-community-page') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    try {
+      const { listPublicCommunityPage, parsePublicCommunityCursor } = await import(
+        '../server/marketplace/publicCommunityPageService.js'
+      );
+      const cursor = parsePublicCommunityCursor(queryValue(request.query?.cursor));
+      response.status(200).json(await listPublicCommunityPage(cursor ?? undefined));
+    } catch (error) {
+      if (error instanceof Error && error.message === 'INVALID_COMMUNITY_CURSOR') {
+        response.status(400).json({ error: 'INVALID_COMMUNITY_CURSOR' });
+        return;
+      }
+      console.warn('[public-community-page]', error instanceof Error ? error.message : 'unavailable');
+      response.status(503).json({ error: 'PUBLIC_COMMUNITY_PAGE_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (transport === 'public-square-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
