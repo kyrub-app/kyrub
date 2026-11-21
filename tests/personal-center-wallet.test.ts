@@ -32,7 +32,10 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(profile, /Editar perfil/);
     assert.match(profile, /window\.dispatchEvent\(new Event\('kyrub:open-profile-editor'\)\)/);
     assert.match(socialHub, /window\.addEventListener\('kyrub:open-profile-editor'/);
-    assert.match(profile, /Conta e segurança/);
+    assert.doesNotMatch(profile, />\s*Conta e segurança\s*</);
+    assert.match(profile, /id="personal-profile-visibility"/);
+    assert.match(profile, /window\.addEventListener\('kyrub:open-profile-settings'/);
+    assert.match(socialHub, /window\.dispatchEvent\(new Event\('kyrub:open-profile-settings'\)\)/);
     assert.match(profile, /ProfileSettingsPanel/);
     assert.match(app, /walletHistory=\{walletHistory\}/);
   });
