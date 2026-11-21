@@ -12,8 +12,11 @@ const rules = read('firestore.rules');
 
 test('Central Pessoal opens one React-owned editor, not nested settings modals', () => {
   const main = center.slice(center.indexOf('export const UserProfileModal'));
-  assert.match(main, /> Editar perfil/);
-  assert.equal((main.match(/> Editar perfil/g) ?? []).length, 1);
+  assert.match(main, /id="personal-profile-settings-trigger"/);
+  assert.match(main, /aria-label="Editar perfil"/);
+  assert.match(main, /<Settings className="h-5 w-5"/);
+  assert.doesNotMatch(main, />\s*Editar perfil\s*</);
+  assert.doesNotMatch(main, /<h3[^>]*>Meu perfil<\/h3>/);
   assert.doesNotMatch(main, />\s*Conta e segurança\s*</);
   assert.doesNotMatch(main, /ProfileSettingsPanel|kyrub:open-profile-settings/);
   assert.match(main, /window\.dispatchEvent\(new Event\('kyrub:open-unified-profile-editor'\)\)/);
@@ -44,13 +47,18 @@ test('one editor retains public identity, secure documents, work approval and PI
 test('Central owns the only visibility control with a real cloud write', () => {
   const main = center.slice(center.indexOf('export const UserProfileModal'));
   assert.match(main, /id="personal-profile-visibility"/);
-  assert.match(main, /label="Alternar visibilidade do perfil"/);
+  assert.match(main, /aria-pressed=\{isProfileVisible\}/);
+  assert.match(main, /onClick=\{\(\) => void toggleProfileVisibility\(\)\}/);
   assert.match(main, /disabled=\{!profileVisibilityReady \|\| visibilityBusy\}/);
+  assert.match(main, /Visível na Praça/);
+  assert.match(main, /Perfil reservado/);
+  assert.match(main, /Salvando…/);
+  assert.doesNotMatch(main, /<Toggle|<h3[^>]*>Visibilidade do perfil<\/h3>/);
   assert.match(main, /updateDoc\(doc\(db, 'users', user\.uid\), \{/);
   assert.match(main, /isProfileVisible: nextVisibility,/);
   assert.match(main, /setIsProfileVisible\(nextVisibility\)/);
   assert.match(main, /Não foi possível salvar a visibilidade/);
-  assert.match(main, /Isso não altera publicações ou comunidades/);
+  assert.match(main, /Não modifica publicações nem comunidades/);
   assert.doesNotMatch(unified, /setProfileVisible|isProfileVisible: profileVisible/);
 });
 
