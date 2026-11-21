@@ -1300,6 +1300,7 @@ export function ProfileCommunitiesCloudBridge() {
                 <div role="status" aria-label="Resultado do diagnóstico de acesso"
                   className="space-y-2 text-xs leading-5 text-slate-300">
                   <p><strong>Documento direto:</strong> {publicProbe.directServer}</p>
+                  <p><strong>REST Google autenticada:</strong> {publicProbe.googleRestDocument}</p>
                   <p><strong>Proprietário da sessão:</strong> {publicProbe.ownerMatchesSession}</p>
                   <p><strong>Leitor canônico:</strong> {publicProbe.canonicalMapper}</p>
                   <p><strong>Consulta pública:</strong> {publicProbe.publicQuery}</p>

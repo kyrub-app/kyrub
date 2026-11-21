@@ -588,3 +588,23 @@ test('read-only community diagnostic compares client Firebase identity without e
   assert.doesNotMatch(probe, /setDoc\(|updateDoc\(|deleteDoc\(|getIdToken\(|console\.|fetch\(/);
   assert.doesNotMatch(ui, /publicProbe\.uid|publicProbe\.token|publicProbe\.projectId/);
 });
+
+test('one-shot authenticated Firestore REST comparison never logs or forwards the session token', () => {
+  const rest = read('src/utils/communityRestReadProbe.ts');
+  const diagnostic = read('src/utils/communityReadDiagnostic.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(rest, /user\.getIdToken\(\)/);
+  assert.match(rest, /https:\/\/firestore\.googleapis\.com\/v1\//);
+  assert.match(rest, /\?mask\.fieldPaths=name/);
+  assert.match(rest, /method: 'GET'/);
+  assert.match(rest, /redirect: 'error'/);
+  assert.match(rest, /referrerPolicy: 'no-referrer'/);
+  assert.match(rest, /cache: 'no-store'/);
+  assert.match(rest, /Authorization: 'Bearer ' \+ idToken/);
+  assert.match(rest, /body\?\.name === resource/);
+  assert.doesNotMatch(rest, /console\.|localStorage|sessionStorage|POST|setDoc\(|updateDoc\(|deleteDoc\(/);
+  assert.doesNotMatch(rest, /fetch\('\/api\//);
+  assert.match(diagnostic, /probeCommunityGoogleRest\(user, communityId\)/);
+  assert.match(ui, /REST Google autenticada:<\/strong>/);
+  assert.doesNotMatch(ui, /publicProbe\.token|publicProbe\.uid|publicProbe\.resource/);
+});
