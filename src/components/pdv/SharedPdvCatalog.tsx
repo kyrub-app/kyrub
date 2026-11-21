@@ -654,7 +654,7 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                         )}
                       </div>
 
-                      <div className="mt-auto flex flex-col gap-2 border-t border-slate-800 pt-3 sm:flex-row sm:items-end sm:justify-between sm:gap-3 sm:pt-4">
+                      <div className="mt-auto flex flex-col gap-2 border-t border-slate-800 pt-3 sm:gap-3 sm:pt-4">
                         <div>
                           <span className="block font-mono text-[7px] uppercase tracking-wide text-slate-500 sm:text-[8px]">
                             {hasOptions ? 'A partir de' : 'Valor'}
@@ -675,18 +675,18 @@ export const SharedPdvCatalog: React.FC<SharedPdvCatalogProps> = ({
                           type="button"
                           onClick={() => startProductSelection(product)}
                           disabled={isUnavailable}
-                          className="flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[8px] font-black uppercase tracking-wide text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-35 sm:min-h-11 sm:w-auto sm:px-4 sm:text-[10px]"
+                          className="flex min-h-11 min-w-0 w-full items-center justify-center gap-1.5 rounded-xl px-2 py-2 text-[10px] font-black uppercase tracking-wide text-white transition-opacity disabled:cursor-not-allowed disabled:opacity-35"
                           style={{ backgroundColor: accentColor }}
                           id={`${idPrefix}-add-${product.id}`}
                         >
                           {hasOptions ? (
-                            <SlidersHorizontal className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            <SlidersHorizontal className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
                           ) : actionLabel === 'Escolher plano' ? (
-                            <ChevronRight className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            <ChevronRight className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
                           ) : (
-                            <Plus className="h-3.5 w-3.5 sm:h-4 sm:w-4" />
+                            <Plus className="h-3.5 w-3.5 shrink-0 sm:h-4 sm:w-4" />
                           )}
-                          {actionLabel}
+                          <span className="min-w-0 text-center leading-tight whitespace-normal break-words">{actionLabel}</span>
                         </button>
                       </div>
                     </div>
