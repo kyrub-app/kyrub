@@ -2280,64 +2280,28 @@ export function ProfileSocialHubNative() {
                 </button>
               </form>
 
-              {[
-                {
-                  title: 'Identidade e verificação',
-                  description: 'Documento de identidade, CPF, reconhecimento facial e biometria.',
-                  detail: 'Privado · usado somente quando necessário',
-                  icon: Fingerprint,
-                },
-                {
-                  title: 'Habilitações profissionais',
-                  description: 'CNH e documentos exigidos conforme atividade, veículo e serviço.',
-                  detail: 'Entrega · carro · moto · frete',
-                  icon: FileText,
-                },
-                {
-                  title: 'Privacidade e dados',
-                  description: 'Visibilidade, consentimentos, uso de dados e Política de Privacidade.',
-                  detail: 'Você controla suas preferências',
-                  icon: LockKeyhole,
-                },
-                {
-                  title: 'Segurança e acesso',
-                  description: 'Conta Google, métodos de acesso, sessões e dispositivos.',
-                  detail: profile.email || 'Conta autenticada',
-                  icon: ShieldCheck,
-                },
-              ].map(item => {
-                const Icon = item.icon;
-                return (
-                  <button
-                    key={item.title}
-                    type="button"
-                    onClick={() => triggerToast(`${item.title}: detalhamento será conectado ao fluxo existente na próxima etapa.`, 'info')}
-                    className="flex w-full items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/60 p-3 text-left"
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-slate-950 text-orange-300">
-                      <Icon className="h-4 w-4" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <strong className="block text-[10px] font-black text-white">{item.title}</strong>
-                      <span className="mt-1 block text-[9px] leading-relaxed text-slate-400">{item.description}</span>
-                      <span className="mt-1 block truncate text-[8px] text-slate-600">{item.detail}</span>
-                    </span>
-                    <ChevronRight className="h-4 w-4 shrink-0 text-slate-600" />
-                  </button>
-                );
-              })}
-
-              <div className="rounded-2xl border border-slate-800 bg-slate-900/60 p-3">
-                <div className="flex items-center gap-3">
-                  <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-slate-950 text-slate-400">
-                    <FileText className="h-4 w-4" />
+              <button
+                type="button"
+                onClick={() => {
+                  // Continue editing in the existing structured account form.
+                  // Keep one public entry point and preserve the secure Docs/Bio/Face tabs.
+                  setReturnToCentralAfterEdit(false);
+                  setEditOpen(false);
+                  setOpen(false);
+                  window.dispatchEvent(new Event('kyrub:open-profile-settings'));
+                }}
+                className="flex w-full items-center gap-3 rounded-2xl border border-teal-500/25 bg-teal-500/5 p-3 text-left hover:border-teal-500/40"
+                aria-label="Abrir dados e configurações do perfil"
+              >
+                <ShieldCheck className="h-5 w-5 shrink-0 text-teal-300" aria-hidden="true" />
+                <span className="min-w-0 flex-1">
+                  <strong className="block text-sm font-black text-white">Dados e configurações</strong>
+                  <span className="mt-1 block text-xs leading-relaxed text-slate-400">
+                    Conta, dados de contato, segurança e verificação.
                   </span>
-                  <div>
-                    <h4 className="text-[10px] font-black text-white">Conta e seus dados</h4>
-                    <p className="mt-1 text-[9px] text-slate-500">Dados da conta e solicitações relacionadas às suas informações.</p>
-                  </div>
-                </div>
-              </div>
+                </span>
+                <ChevronRight className="h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+              </button>
 
               <div className="rounded-2xl border border-red-500/20 bg-red-500/5 p-3">
                 <span className="text-[8px] font-black uppercase tracking-wide text-red-300">Zona de risco</span>

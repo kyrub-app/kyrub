@@ -35,7 +35,9 @@ test('Meu perfil is a private financial and identity center instead of a publish
     assert.ok(profileSource.includes(title));
   }
   assert.match(profileSource, /Editar perfil/);
-  assert.match(profileSource, /Conta e segurança/);
+  assert.doesNotMatch(profileSource, />\s*Conta e segurança\s*</);
+  assert.match(profileSource, /id="personal-profile-visibility"/);
+  assert.match(profileSource, /label="Alternar visibilidade do perfil"/);
   assert.match(profileSource, /profile-saved-library/);
   assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
   assert.doesNotMatch(profileSource, /id="profile-publication-register"/);
@@ -49,7 +51,8 @@ test('Conta keeps account, data, security and verification settings', () => {
   assert.match(profileSource, /label: 'Dados'/);
   assert.match(profileSource, /label: 'Segurança'/);
   assert.match(profileSource, /label: 'Verificação'/);
-  assert.match(profileSource, /Perfil visível na Praça/);
+  assert.match(profileSource, /Visibilidade do perfil/);
+  assert.match(profileSource, /Perfil visível na Praça|Visível na Praça/);
 });
 
 test('Praça and Comunidades save canonical publications into the private library', () => {
