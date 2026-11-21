@@ -92,6 +92,7 @@ export function SquareDirectoryLayout({
 
   return createPortal(
     <div
+      data-kyrub-font-scope="true"
       className="fixed inset-x-0 bottom-0 z-[170] bg-slate-950/95 backdrop-blur-md"
       style={{ top: headerBottom }}
       role="dialog"
