@@ -110,7 +110,7 @@ test('anonymous Praça projections do not disclose restricted documents or owner
 test('signed-in community directory reconciles the same public IDs without weakening private reads', () => {
   const directory = readFileSync('src/hooks/useCommunityDirectory.ts', 'utf8');
   const cloud = readFileSync('src/utils/communityCloud.ts', 'utf8');
-  assert.match(directory, /fetch\('\\/api\\/square\\/public'/);
+  assert.match(directory, /fetch\('\/api\/square\/public'/);
   assert.match(directory, /getPublicCommunityFromServer/);
   assert.match(directory, /publicReconciled/);
   assert.match(directory, /subscribeDiscoverableCommunities/);
