@@ -29,6 +29,7 @@ import {
   doc,
   serverTimestamp,
   setDoc,
+  updateDoc,
 } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { formatWhatsApp, formatCpf, formatCnpj } from '../../utils/helpers';
@@ -40,6 +41,7 @@ import { createSelection, resolveSavedPublication, setSavedPublicationSelections
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onOpenFromEditor: () => void;
   walletHistory: any[];
   openSavedInitially?: boolean;
   profileName: string;
@@ -54,6 +56,7 @@ interface UserProfileModalProps {
   setAccountTypeLojista: React.Dispatch<React.SetStateAction<boolean>>;
   isProfileVisible: boolean;
   setIsProfileVisible: React.Dispatch<React.SetStateAction<boolean>>;
+  profileVisibilityReady: boolean;
   biometricsActive: boolean;
   setBiometricsActive: React.Dispatch<React.SetStateAction<boolean>>;
   transactionPin: string;
@@ -139,10 +142,12 @@ const Toggle = ({
   active,
   onClick,
   label,
+  disabled = false,
 }: {
   active: boolean;
   onClick: () => void;
   label: string;
+  disabled?: boolean;
 }) => (
   <button
     type="button"
@@ -154,6 +159,7 @@ const Toggle = ({
     }`}
     aria-pressed={active}
     aria-label={label}
+    disabled={disabled}
   >
     <span
       className={`h-4 w-4 rounded-full bg-slate-950 shadow transition-transform ${
@@ -178,7 +184,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
     accountTypeLojista,
     setAccountTypeLojista,
     isProfileVisible,
-    setIsProfileVisible,
     biometricsActive,
     setBiometricsActive,
     transactionPin,
@@ -225,7 +230,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
           name: profileName.trim() || user.displayName || '',
           email: user.email ?? profileEmail,
           photoUrl: user.photoURL ?? profilePhotoUrl,
-          isProfileVisible,
           updatedAt: serverTimestamp(),
         },
         { merge: true }
@@ -287,10 +291,10 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
             </div>
             <div className="min-w-0">
               <h3 className="truncate text-base font-black text-white">
-                Informações e configurações
+                Editar perfil · Dados e configurações
               </h3>
               <p className="truncate text-[10px] text-slate-500">
-                Conta, dados, segurança, verificação e visibilidade
+                Conta, dados, segurança e verificação
               </p>
             </div>
           </div>
@@ -418,21 +422,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
                 </div>
               </section>
 
-              <section className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950 p-4">
-                <div className="min-w-0">
-                  <h4 className="text-[10px] font-black uppercase text-slate-200">
-                    Perfil visível na Praça
-                  </h4>
-                  <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-                    Permite que outros usuários encontrem você para conexões e colaboração.
-                  </p>
-                </div>
-                <Toggle
-                  active={isProfileVisible}
-                  onClick={() => setIsProfileVisible(!isProfileVisible)}
-                  label="Alternar visibilidade do perfil"
-                />
-              </section>
             </div>
           )}
 
@@ -706,7 +695,7 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
             </button>
           </div>
           <p className="mt-2 text-center text-[8px] text-slate-600">
-            Nome e visibilidade são sincronizados na nuvem. Dados sensíveis permanecem fora do diretório público.
+            Nome e foto são sincronizados. A visibilidade é controlada na Central Pessoal.
           </p>
         </footer>
       </div>
@@ -722,11 +711,15 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     profileEmail,
     profilePhotoUrl,
     isProfileVisible,
+    setIsProfileVisible,
+    profileVisibilityReady,
+    onOpenFromEditor,
     walletHistory,
     openSavedInitially = false,
     triggerToast,
   } = props;
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [visibilityBusy, setVisibilityBusy] = useState(false);
   const [personalPanel, setPersonalPanel] = useState<PersonalPanel>(null);
   const [savedItems, setSavedItems] = useState<SavedPublication[]>([]);
   const [resolvedSavedItems, setResolvedSavedItems] = useState<ResolvedSavedPublication[]>([]);
@@ -741,6 +734,45 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
     profileName.trim() || currentUser?.displayName || profileEmail || 'Você';
   const displayAvatar = profilePhotoUrl || currentUser?.photoURL || '';
   const profileHandle = getProfileHandle(profileEmail, displayName);
+
+  // A single entry point remains in the Central. The existing structured
+  // account editor is reachable from inside the full identity editor.
+  useEffect(() => {
+    const openStructuredSettings = () => {
+      setIsSavedOpen(false);
+      setIsSettingsOpen(true);
+      onOpenFromEditor();
+    };
+    window.addEventListener('kyrub:open-profile-settings', openStructuredSettings);
+    return () => window.removeEventListener('kyrub:open-profile-settings', openStructuredSettings);
+  }, [onOpenFromEditor]);
+
+  const toggleProfileVisibility = async () => {
+    const user = auth.currentUser;
+    if (!user || !profileVisibilityReady || visibilityBusy) return;
+    const nextVisibility = !isProfileVisible;
+    setVisibilityBusy(true);
+    try {
+      await updateDoc(doc(db, 'users', user.uid), {
+        isProfileVisible: nextVisibility,
+        updatedAt: serverTimestamp(),
+      });
+      // The preference is only presented as saved after the cloud write.
+      if (auth.currentUser?.uid === user.uid) {
+        setIsProfileVisible(nextVisibility);
+        triggerToast(
+          nextVisibility ? 'Seu perfil está visível para descoberta.' : 'Seu perfil foi ocultado da descoberta.',
+          'success'
+        );
+      }
+    } catch (error) {
+      console.error('Falha ao atualizar a visibilidade do perfil:', error);
+      triggerToast('Não foi possível salvar a visibilidade. Tente novamente.', 'error');
+    } finally {
+      setVisibilityBusy(false);
+    }
+  };
+
   useEffect(() => {
     if (!isOpen) return;
     setPersonalPanel(null);
@@ -845,19 +877,31 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   <h3 className="text-base font-black text-white">Meu perfil</h3>
                   <p className="mt-1 text-xs text-slate-400">Identidade, informações e segurança.</p>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  <button type="button" onClick={() => {
-                    onClose();
-                    window.dispatchEvent(new Event('kyrub:open-profile-editor'));
-                  }}
-                    className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-3 text-sm font-bold text-slate-100">
-                    <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
-                  </button>
-                  <button type="button" onClick={() => setIsSettingsOpen(true)}
-                    className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm font-semibold text-slate-300">
-                    Conta e segurança
-                  </button>
+                <button type="button" onClick={() => {
+                  onClose();
+                  window.dispatchEvent(new Event('kyrub:open-profile-editor'));
+                }}
+                  className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm font-bold text-slate-100">
+                  <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
+                </button>
+              </div>
+
+              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4" id="personal-profile-visibility">
+                <div className="min-w-0">
+                  <h3 className="text-sm font-bold text-white">Visibilidade do perfil</h3>
+                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
+                    {profileVisibilityReady
+                      ? (isProfileVisible ? 'Seu perfil pode aparecer na descoberta de usuários.' : 'Seu perfil não aparece na descoberta de usuários.')
+                      : 'Consultando a preferência da sua conta…'}
+                    {' '}Isso não altera publicações ou comunidades.
+                  </p>
                 </div>
+                <Toggle
+                  active={isProfileVisible}
+                  onClick={() => void toggleProfileVisibility()}
+                  label="Alternar visibilidade do perfil"
+                  disabled={!profileVisibilityReady || visibilityBusy}
+                />
               </div>
 
               <div className="border-t border-slate-800 pt-4">
