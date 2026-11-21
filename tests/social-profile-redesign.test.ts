@@ -38,7 +38,9 @@ test('Meu perfil is a private financial and identity center instead of a publish
   assert.match(profileSource, /Editar perfil/);
   assert.doesNotMatch(profileSource, />\s*Conta e segurança\s*</);
   assert.match(profileSource, /id="personal-profile-visibility"/);
-  assert.match(profileSource, /label="Alternar visibilidade do perfil"/);
+  assert.match(profileSource, /aria-pressed=\{isProfileVisible\}/);
+  assert.match(profileSource, /id="personal-profile-settings-trigger"/);
+  assert.doesNotMatch(profileSource, /<Toggle|<h3[^>]*>Meu perfil<\/h3>/);
   assert.match(profileSource, /profile-saved-library/);
   assert.doesNotMatch(profileSource, /id="profile-publication-composer"/);
   assert.doesNotMatch(profileSource, /id="profile-publication-register"/);
