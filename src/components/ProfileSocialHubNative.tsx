@@ -109,6 +109,8 @@ type MarketplaceStore = {
   banner: string;
 };
 
+// The former personal feed is retired; its legacy renderer is retained only for safe rollback.
+const PERSONAL_FEED_RETIRED = true;
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_STATUSES = 9;
 const MAX_GROUPS = 30;
@@ -1406,6 +1408,21 @@ export function ProfileSocialHubNative() {
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
+                <section className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4">
+                  <h3 className="text-base font-bold text-white">Sua Central Pessoal mudou</h3>
+                  <p className="text-sm text-slate-400">
+                    As publicações são feitas na Praça e nas Comunidades.
+                    A Carteira, seus dados e recompensas ficam na Central Pessoal.
+                  </p>
+                  <button type="button" onClick={() => {
+                    setOpen(false);
+                    document.getElementById('header-user-profile-trigger')?.click();
+                  }} className="min-h-11 rounded-xl bg-orange-500 px-4 text-sm font-bold text-slate-950">
+                    Abrir Central Pessoal
+                  </button>
+                </section>
+              )}
+              {!PERSONAL_FEED_RETIRED && activeTab === 'publications' && (
                 <>
                   <section className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
                     <div className="relative">
