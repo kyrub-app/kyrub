@@ -160,7 +160,7 @@ export function SquareDirectoryLayout({
             </select>
           </label>
         </div>
-        <main className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-12">
+        <main data-square-directory-scroll="true" className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-4 pb-12">
           {children}
         </main>
       </section>
