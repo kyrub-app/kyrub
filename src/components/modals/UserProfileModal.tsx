@@ -2,7 +2,6 @@ import React, { useEffect, useState } from 'react';
 import {
   ArrowLeftRight,
   ChartPie,
-  Cherry,
   Settings,
   LoaderCircle,
   Trophy,
@@ -75,7 +74,7 @@ interface UserProfileModalProps {
   ) => void;
 }
 
-type PersonalPanel = 'movements' | 'finance' | 'pitangas' | 'xp' | null;
+type PersonalPanel = 'movements' | 'finance' | 'xp' | null;
 
 const getProfileHandle = (email: string, name: string): string => {
   const emailHandle = email.split('@')[0]?.trim();
@@ -184,8 +183,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const financeCards = [
     { id: 'movements', label: 'Movimentações', description: 'Saldo e operações quando disponíveis', icon: ArrowLeftRight },
     { id: 'finance', label: 'Controle financeiro', description: 'Planejamento manual pessoal', icon: ChartPie },
-    { id: 'pitangas', label: 'Pitangas', description: 'Saldo e extrato de recompensas', icon: Cherry },
-    { id: 'xp', label: 'XP e conquistas', description: 'Evolução e desafios', icon: Trophy },
+    { id: 'xp', label: 'XP e conquistas', description: 'Jornada, Pitangas, XP e recompensas', icon: Trophy },
   ] as const;
 
   useEffect(() => {
@@ -317,7 +315,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   return (
                     <button key={card.id} type="button" aria-pressed={personalPanel === card.id}
                       onClick={() => setPersonalPanel(current => current === card.id ? null : card.id)}
-                      className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${
+                      className={`min-w-0 rounded-2xl border p-3 text-left transition-colors ${card.id === 'xp' ? 'col-span-2' : ''} ${
                         personalPanel === card.id
                           ? 'border-orange-500/60 bg-orange-500/10'
                           : 'border-slate-700 bg-slate-900 hover:border-slate-500'
@@ -336,7 +334,6 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                   </h4>
                   {personalPanel === 'movements' && <WalletMovementsPanel walletHistory={walletHistory} />}
                   {personalPanel === 'finance' && <PersonalFinancePlanner userId={currentUserId} />}
-                  {personalPanel === 'pitangas' && <PitangaAccount mode="pitangas" />}
                   {personalPanel === 'xp' && <PitangaAccount mode="xp" />}
                 </div>
               )}
