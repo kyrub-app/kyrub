@@ -646,3 +646,34 @@ test('public community reconciliation uses the same authenticated Lite read that
   assert.match(view, /publicCommunities\.filter\(community => !authenticatedIds\.has\(community\.id\)\)/);
   assert.doesNotMatch(readThrough, /localStorage|clearIndexedDbPersistence|disableNetwork|enableNetwork/);
 });
+
+test('future communities remain visible after commit and fresh login without a duplicate catalogue', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const directory = read('src/hooks/useCommunityDirectory.ts');
+  const view = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(cloud, /const batch = writeBatch\(db\)/);
+  assert.match(cloud, /await batch\.commit\(\)/);
+  assert.match(cloud, /getOwnedCommunitiesFromServer = async/);
+  assert.match(cloud, /getLiteDocs\(liteQuery\(/);
+  assert.match(cloud, /liteWhere\('ownerId', '==', user\.uid\)/);
+  assert.match(cloud, /if \(auth\.currentUser\?\.uid !== user\.uid\)/);
+  assert.match(cloud, /mapped\.ownerId === user\.uid/);
+  const getOwned = cloud.slice(cloud.indexOf('export const getOwnedCommunitiesFromServer'), cloud.indexOf('const createCommunityWithId'));
+  assert.doesNotMatch(getOwned, /setDoc\(|updateDoc\(|deleteDoc\(|writeBatch\(|clearIndexedDbPersistence\(/);
+  assert.match(directory, /registerCommittedCommunity = useCallback/);
+  assert.match(directory, /auth\.currentUser\.uid !== community\.ownerId/);
+  assert.match(directory, /setCommittedCreated\(previous =>/);
+  assert.match(directory, /setOwnedReconciled\(values\)/);
+  assert.match(directory, /window\.addEventListener\('focus', onFocus\)/);
+  assert.match(directory, /window\.setInterval\(onFocus, 5 \* 60 \* 1000\)/);
+  assert.match(directory, /setCommittedCreated\(\[\]\)/);
+  assert.match(directory, /setOwnedReconciled\(\[\]\)/);
+  assert.match(directory, /committedCreated,\s*ownedReconciled,\s*publicReconciled,\s*discoverable,\s*owned,\s*privateMembershipCommunities/);
+  const submit = view.slice(view.indexOf('const submitCreate = async'), view.indexOf('const openEditor =', view.indexOf('const submitCreate = async')));
+  assert.match(submit, /const community = await createCommunity\(createDraft\)/);
+  assert.match(submit, /registerCommittedCommunity\(community\)/);
+  assert.ok(submit.indexOf('await createCommunity(createDraft)') < submit.indexOf('registerCommittedCommunity(community)'));
+  assert.match(view, /if \(createInFlightRef\.current\) return/);
+  assert.match(view, /createInFlightRef\.current = false/);
+  assert.doesNotMatch(directory, /deleteDoc\(|updateDoc\(|writeBatch\(|clearIndexedDbPersistence\(/);
+});

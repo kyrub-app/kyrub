@@ -232,7 +232,7 @@ function CommunityCover({
 }
 
 export function ProfileCommunitiesCloudBridge() {
-  const { user, communities, publicCommunities, loading, error, activeCommunities } =
+  const { user, communities, registerCommittedCommunity, publicCommunities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [listTab, setListTab] = useState<CommunityListTab>('trending');
@@ -277,6 +277,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [createDraft, setCreateDraft] = useState<CreateDraft>(initialCreateDraft);
   const [createError, setCreateError] = useState('');
   const [createBusy, setCreateBusy] = useState(false);
+  const createInFlightRef = useRef(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
@@ -872,10 +873,16 @@ export function ProfileCommunitiesCloudBridge() {
 
   const submitCreate = async (event: FormEvent) => {
     event.preventDefault();
+    // Prevent a fast double tap from producing two distinct communities.
+    if (createInFlightRef.current) return;
+    createInFlightRef.current = true;
     setCreateBusy(true);
     setCreateError('');
     try {
       const community = await createCommunity(createDraft);
+      // A resolved commit is durable; do not wait for an unreliable listener
+      // to make this newly created community visible to its creator.
+      registerCommittedCommunity(community);
       setCreateDraft(initialCreateDraft);
       setCreateOpen(false);
       openCommunity(community);
@@ -884,6 +891,7 @@ export function ProfileCommunitiesCloudBridge() {
         value instanceof Error ? value.message : 'Não foi possível criar a comunidade.'
       );
     } finally {
+      createInFlightRef.current = false;
       setCreateBusy(false);
     }
   };
