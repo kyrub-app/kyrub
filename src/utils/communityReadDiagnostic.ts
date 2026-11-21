@@ -34,6 +34,16 @@ export const describeCommunityReadError = (error: unknown): string => {
 
 const failure = (error: unknown): string => 'ERRO: ' + describeCommunityReadError(error);
 
+const withDeadline = <T>(operation: Promise<T>): Promise<T> => {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  const deadline = new Promise<T>((_resolve, reject) => {
+    timeout = setTimeout(() => reject({ code: 'deadline-exceeded' }), 8_000);
+  });
+  return Promise.race([operation, deadline]).finally(() => {
+    if (timeout) clearTimeout(timeout);
+  });
+};
+
 export const probePublicCommunityRead = async (communityId: string): Promise<PublicCommunityReadProbe> => {
   const empty: PublicCommunityReadProbe = {
     directServer: 'não executado',
@@ -50,57 +60,64 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
 
   const reference = doc(db, 'communities', communityId);
   const result = { ...empty };
-  try {
-    const snapshot = await getDocFromCache(reference);
-    result.cache = snapshot.exists() ? 'documento presente' : 'documento ausente';
-  } catch (error) {
-    const code = describeCommunityReadError(error);
-    result.cache = code === 'unavailable' ? 'sem documento em cache' : 'ERRO: ' + code;
-  }
-
-  try {
-    const snapshot = await getDocFromServer(reference);
-    if (!snapshot.exists()) {
-      result.directServer = 'documento não encontrado';
-    } else {
-      result.directServer = 'documento encontrado';
-      const data = snapshot.data();
-      result.ownerMatchesSession = data.ownerId === user.uid ? 'sim' : 'não';
-    }
-  } catch (error) {
-    result.directServer = failure(error);
-  }
-
-  try {
-    const mapped = await getPublicCommunityFromServer(communityId);
-    result.canonicalMapper = mapped ? 'documento reconhecido' : 'documento não reconhecido';
-  } catch (error) {
-    result.canonicalMapper = failure(error);
-  }
-
-  try {
-    const publicSnapshot = await getDocsFromServer(query(
-      collection(db, 'communities'),
-      where('visibility', 'in', ['public', 'moderated']),
-    ));
-    result.publicQuery = publicSnapshot.docs.some(snapshot => snapshot.id === communityId)
-      ? 'incluído (' + publicSnapshot.size + ' encontrados)'
-      : 'ausente (' + publicSnapshot.size + ' encontrados)';
-  } catch (error) {
-    result.publicQuery = failure(error);
-  }
-
-  try {
-    const ownedSnapshot = await getDocsFromServer(query(
-      collection(db, 'communities'),
-      where('ownerId', '==', user.uid),
-    ));
-    result.ownerQuery = ownedSnapshot.docs.some(snapshot => snapshot.id === communityId)
-      ? 'incluído'
-      : 'não incluído';
-  } catch (error) {
-    result.ownerQuery = failure(error);
-  }
+  await Promise.all([
+    (async () => {
+      try {
+        const snapshot = await withDeadline(getDocFromCache(reference));
+        result.cache = snapshot.exists() ? 'documento presente' : 'documento ausente';
+      } catch (error) {
+        const code = describeCommunityReadError(error);
+        result.cache = code === 'unavailable' ? 'sem documento em cache' : 'ERRO: ' + code;
+      }
+    })(),
+    (async () => {
+      try {
+        const snapshot = await withDeadline(getDocFromServer(reference));
+        if (!snapshot.exists()) {
+          result.directServer = 'documento não encontrado';
+        } else {
+          result.directServer = 'documento encontrado';
+          result.ownerMatchesSession = snapshot.data().ownerId === user.uid ? 'sim' : 'não';
+        }
+      } catch (error) {
+        result.directServer = failure(error);
+      }
+    })(),
+    (async () => {
+      try {
+        const mapped = await withDeadline(getPublicCommunityFromServer(communityId));
+        result.canonicalMapper = mapped ? 'documento reconhecido' : 'documento não reconhecido';
+      } catch (error) {
+        result.canonicalMapper = failure(error);
+      }
+    })(),
+    (async () => {
+      try {
+        const publicSnapshot = await withDeadline(getDocsFromServer(query(
+          collection(db, 'communities'),
+          where('visibility', 'in', ['public', 'moderated']),
+        )));
+        result.publicQuery = publicSnapshot.docs.some(snapshot => snapshot.id === communityId)
+          ? 'incluído (' + publicSnapshot.size + ' encontrados)'
+          : 'ausente (' + publicSnapshot.size + ' encontrados)';
+      } catch (error) {
+        result.publicQuery = failure(error);
+      }
+    })(),
+    (async () => {
+      try {
+        const ownedSnapshot = await withDeadline(getDocsFromServer(query(
+          collection(db, 'communities'),
+          where('ownerId', '==', user.uid),
+        )));
+        result.ownerQuery = ownedSnapshot.docs.some(snapshot => snapshot.id === communityId)
+          ? 'incluído'
+          : 'não incluído';
+      } catch (error) {
+        result.ownerQuery = failure(error);
+      }
+    })(),
+  ]);
 
   return result;
 };
