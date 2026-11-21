@@ -5,7 +5,7 @@
  */
 export interface AuthorDisplayIdentity {
   name: string;
-  avatar: string;
+  avatar?: string;
 }
 
 export const displayAuthorName = (
