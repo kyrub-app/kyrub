@@ -1355,7 +1355,7 @@ export function ProfileSocialHubNative() {
                 Meu perfil
               </span>
               <h2 className="text-base font-black text-white">
-                Painel pessoal
+                {activeTab === 'connected' ? 'Conectados' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -1369,6 +1369,7 @@ export function ProfileSocialHubNative() {
           </header>
 
           <div className="flex-1 overflow-y-auto">
+            {!PERSONAL_FEED_RETIRED && (
             <section className="relative overflow-hidden border-b border-slate-900 bg-slate-950">
               <div className="h-36 bg-gradient-to-br from-orange-500/25 via-slate-900 to-teal-500/20 sm:h-44" />
               <div className="-mt-16 px-4 pb-5 sm:px-5">
@@ -1424,6 +1425,8 @@ export function ProfileSocialHubNative() {
 
               </div>
             </section>
+            )}
+
 
             <main className="space-y-4 p-4 sm:p-5">
               {activeTab === 'publications' && (
