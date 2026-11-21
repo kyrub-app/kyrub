@@ -88,7 +88,6 @@ test('audits typography coverage across personal app, all ERP source modules and
       counts.nine += (source.match(/text-\[9px\]/g) || []).length;
       if (source.includes('createPortal(')) portalHosts++;
     }
-    assert.ok(counts.seven + counts.eight + counts.nine >= 0);
     return { family: ['personal', 'erp', 'admin'][index], files: group.length, portalHosts, ...counts };
   });
 
@@ -102,6 +101,7 @@ test('audits typography coverage across personal app, all ERP source modules and
   assert.match(hook, /rootElement\.contains\(element\)/);
   assert.match(hook, /data-kyrub-top-panel="true"/);
   assert.match(modalBridge, /markOwnedSelfManagedPortal\(overlay\)/);
+  assert.match(modalBridge, /font-size: 0\.8125rem !important/);
   assert.match(hook, /attributeFilter: \['data-kyrub-font-scope'\]/);
 
   for (const [size, expected] of [['7px', '13px'], ['8px', '13px'], ['9px', '13px'], ['10px', '14px']]) {
