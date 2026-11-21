@@ -3,7 +3,8 @@ import {
   ArrowLeftRight,
   ChartPie,
   Cherry,
-  Pencil,
+  Settings,
+  LoaderCircle,
   Trophy,
   Bookmark,
   CircleUserRound,
@@ -117,37 +118,6 @@ const Avatar = ({
     </div>
   );
 };
-
-const Toggle = ({
-  active,
-  onClick,
-  label,
-  disabled = false,
-}: {
-  active: boolean;
-  onClick: () => void;
-  label: string;
-  disabled?: boolean;
-}) => (
-  <button
-    type="button"
-    onClick={onClick}
-    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors disabled:cursor-wait disabled:opacity-50 ${
-      active
-        ? 'border-teal-400/50 bg-teal-500'
-        : 'border-slate-700 bg-slate-800'
-    }`}
-    aria-pressed={active}
-    aria-label={label}
-    disabled={disabled}
-  >
-    <span
-      className={`h-4 w-4 rounded-full bg-slate-950 shadow transition-transform ${
-        active ? 'translate-x-6' : 'translate-x-1'
-      }`}
-    />
-  </button>
-);
 
 export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const {
@@ -271,74 +241,69 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
           <div className="flex-1 overflow-y-auto">
             {!isSavedOpen && (
               <>
-            <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
-              <div className="flex items-center gap-4">
+            <section className="relative border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 pr-16 sm:px-5 sm:pr-20" id="personal-profile-identity">
+              <button
+                id="personal-profile-settings-trigger"
+                type="button"
+                title="Editar perfil"
+                aria-label="Editar perfil"
+                onClick={() => {
+                  onClose();
+                  window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
+                }}
+                className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 transition-colors hover:border-orange-500/60 hover:text-orange-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 sm:right-5 sm:top-5"
+              >
+                <Settings className="h-5 w-5" aria-hidden="true" />
+              </button>
+              <div className="flex items-center gap-3 sm:gap-4">
                 <Avatar
                   src={displayAvatar}
                   name={displayName}
                   className="h-20 w-20 shrink-0 rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10 sm:h-24 sm:w-24"
                 />
                 <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="truncate text-lg font-black text-white">
-                      {displayName}
-                    </h3>
-                    <span
-                      className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
-                        isProfileVisible
-                          ? 'border-teal-500/30 bg-teal-500/10 text-teal-300'
-                          : 'border-slate-700 bg-slate-900 text-slate-500'
-                      }`}
-                    >
-                      {profileVisibilityReady
+                  <h3 className="truncate text-lg font-black text-white">{displayName}</h3>
+                  <button
+                    id="personal-profile-visibility"
+                    type="button"
+                    title={profileVisibilityReady
+                      ? (isProfileVisible ? 'Ocultar perfil da descoberta de usuários' : 'Mostrar perfil na descoberta de usuários')
+                      : 'Carregando visibilidade do perfil'}
+                    aria-label={profileVisibilityReady
+                      ? (isProfileVisible ? 'Perfil visível na Praça. Toque para ocultar.' : 'Perfil reservado. Toque para tornar visível na Praça.')
+                      : 'Carregando visibilidade do perfil'}
+                    aria-pressed={isProfileVisible}
+                    aria-describedby="personal-profile-visibility-help"
+                    disabled={!profileVisibilityReady || visibilityBusy}
+                    onClick={() => void toggleProfileVisibility()}
+                    className={`mt-1 inline-flex min-h-9 max-w-full items-center gap-1.5 rounded-full border px-3 py-1.5 text-[10px] font-black uppercase transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-wait disabled:opacity-60 ${
+                      isProfileVisible
+                        ? 'border-teal-500/40 bg-teal-500/10 text-teal-300 hover:bg-teal-500/20'
+                        : 'border-slate-600 bg-slate-800 text-slate-300 hover:bg-slate-700'
+                    }`}
+                  >
+                    {visibilityBusy && <LoaderCircle className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />}
+                    {visibilityBusy
+                      ? 'Salvando…'
+                      : profileVisibilityReady
                         ? (isProfileVisible ? 'Visível na Praça' : 'Perfil reservado')
-                        : 'Consultando visibilidade'}
-                    </span>
-                  </div>
+                        : 'Consultando…'}
+                  </button>
                   <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
                     @{profileHandle}
                   </p>
                   <p className="mt-3 text-[9px] leading-relaxed text-slate-500">
                     Seu centro pessoal é privado. Publicações acontecem na Praça e nas Comunidades.
                   </p>
+                  <span id="personal-profile-visibility-help" className="sr-only">
+                    Esta opção controla apenas a descoberta do perfil por outras pessoas. Não modifica publicações nem comunidades.
+                  </span>
                 </div>
               </div>
             </section>
 
             <section className="space-y-4 border-b border-slate-900 bg-slate-950 p-4 sm:p-5" id="profile-personal-center">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <h3 className="text-base font-black text-white">Meu perfil</h3>
-                  <p className="mt-1 text-xs text-slate-400">Identidade, informações e segurança.</p>
-                </div>
-                <button type="button" onClick={() => {
-                  onClose();
-                  window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
-                }}
-                  className="flex min-h-11 items-center gap-2 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm font-bold text-slate-100">
-                  <Pencil className="h-4 w-4" aria-hidden="true" /> Editar perfil
-                </button>
-              </div>
-
-              <div className="flex items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900 p-3 sm:p-4" id="personal-profile-visibility">
-                <div className="min-w-0">
-                  <h3 className="text-sm font-bold text-white">Visibilidade do perfil</h3>
-                  <p className="mt-1 text-xs leading-relaxed text-slate-400">
-                    {profileVisibilityReady
-                      ? (isProfileVisible ? 'Seu perfil pode aparecer na descoberta de usuários.' : 'Seu perfil não aparece na descoberta de usuários.')
-                      : 'Consultando a preferência da sua conta…'}
-                    {' '}Isso não altera publicações ou comunidades.
-                  </p>
-                </div>
-                <Toggle
-                  active={isProfileVisible}
-                  onClick={() => void toggleProfileVisibility()}
-                  label="Alternar visibilidade do perfil"
-                  disabled={!profileVisibilityReady || visibilityBusy}
-                />
-              </div>
-
-              <div className="border-t border-slate-800 pt-4">
+              <div>
                 <h3 className="text-base font-black text-white">Carteira Kairube</h3>
                 <p className="mt-1 text-sm text-slate-400">
                   Planejamento, movimentações e evolução pessoal em um só lugar, com saldos separados.
