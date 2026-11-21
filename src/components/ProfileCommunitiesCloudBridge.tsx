@@ -236,7 +236,7 @@ function CommunityCover({
 }
 
 export function ProfileCommunitiesCloudBridge() {
-  const { user, communities, registerCommittedCommunity, publicCommunities, loading, error, activeCommunities } =
+  const { user, communities, memberships, registerCommittedCommunity, publicCommunities, loading, error, activeCommunities } =
     useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [listTab, setListTab] = useState<CommunityListTab>('trending');
