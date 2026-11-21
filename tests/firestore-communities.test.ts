@@ -158,6 +158,50 @@ test('creator creates the community and owner membership atomically', async () =
   await assertSucceeds(getDoc(doc(owner, 'communities', 'public_a')));
 });
 
+test('old public communities are present in authenticated discovery, owned query and direct server lookup', async () => {
+  // Reproduces the production shape without accessing user accounts or data.
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  await environment.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    for (const [id, visibility, sameOwner] of [
+      ['old_public_manual', 'public', true],
+      ['official_public', 'public', true],
+      ['other_public', 'public', false],
+      ['private_hidden', 'private', false],
+    ] as const) {
+      await setDoc(doc(db, 'communities', id), {
+        ...communityData(id, visibility),
+        ownerId: sameOwner ? OWNER : MEMBER,
+        createdAtIso: id === 'old_public_manual'
+          ? '2026-08-10T15:46:47.156Z' : '2026-11-21T00:00:00.000Z',
+      });
+    }
+  });
+  // Security rules must allow both collection-wide public discovery and
+  // direct document access for a signed-in account.
+  const publicQuery = query(
+    collection(outsider, 'communities'),
+    where('visibility', 'in', ['public', 'moderated']),
+  );
+  const listing = await assertSucceeds(getDocs(publicQuery));
+  const ids = listing.docs.map(item => item.id).sort();
+  if (ids.join(',') !== ['official_public', 'old_public_manual', 'other_public'].sort().join(',')) {
+    throw Error('Public query excluded an otherwise publicly visible community: ' + ids.join(','));
+  }
+  const old = await assertSucceeds(getDoc(doc(outsider, 'communities', 'old_public_manual')));
+  if (!old.exists() || old.data().ownerId !== OWNER) {
+    throw Error('Old public community direct lookup failed');
+  }
+  const own = await assertSucceeds(getDocs(query(
+    collection(owner, 'communities'), where('ownerId', '==', OWNER),
+  )));
+  if (!own.docs.some(item => item.id === 'old_public_manual')) {
+    throw Error('Owner query omitted the old public community');
+  }
+  await assertFails(getDoc(doc(outsider, 'communities', 'private_hidden')));
+});
+
 test('another authenticated profile reads but cannot administer a public community', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const outsider = environment.authenticatedContext(OUTSIDER).firestore();
