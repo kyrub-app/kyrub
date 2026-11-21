@@ -1,7 +1,7 @@
 /** Public storefront links only, never arbitrary URLs, credentials or private routes. */
 export function publicBusinessCardUrl(input: string): string | null {
   const raw = input.trim();
-  const match = /^(?:https:\/\/kyrub\.com\/)?@?([a-z0-9]+(?:-[a-z0-9]+)*)$/i.exec(raw);
+  const match = /^(?:https:\/\/kyrub\.com\/@|@?)([a-z0-9]+(?:-[a-z0-9]+)*)$/i.exec(raw);
   if (!match || match[1].length > 120) return null;
   return `https://kyrub.com/@${match[1].toLowerCase()}`;
 }
