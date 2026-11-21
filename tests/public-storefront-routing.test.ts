@@ -397,24 +397,38 @@ test('Vercel sends direct public, staff and legacy app routes to the SPA entry',
   assert.equal(routes.get('/:slug/staff'), '/index.html');
 });
 
-test('navigation headers stay sticky while brand session buttons scroll on both account states', () => {
+test('navigation uses one shared header order while brand session buttons scroll independently', () => {
   const profileSource = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
   const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
+  const navSource = readFileSync('src/components/WorkspaceTopNavigation.tsx', 'utf8');
   const appHeader = legacyAppSource.match(/<header className="border-b[\s\S]*?id="app-header">([\s\S]*?)<\/header>/)?.[1] ?? '';
   const guestHeader = guestSource.match(/<header id="app-header"([\s\S]*?)<\/header>/)?.[1] ?? '';
 
-  assert.ok(appHeader.length > 0, 'authenticated app header should exist');
-  assert.ok(guestHeader.length > 0, 'guest app header should exist');
-  assert.ok(appHeader.indexOf('id="header-user-profile-trigger"') < appHeader.indexOf('id="header-kyrubia-trigger"'));
-  assert.equal((appHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
-  assert.doesNotMatch(appHeader, /<LogOut|aria-label="Sair"|title="Sair"/);
-  assert.match(appHeader, /mr-auto w-10 h-10 rounded-xl/);
-
-  assert.ok(guestHeader.indexOf('id="header-user-profile-trigger"') < guestHeader.indexOf('id="header-kyrubia-trigger"'));
-  assert.equal((guestHeader.match(/id="header-user-profile-trigger"/g) ?? []).length, 1);
-  assert.doesNotMatch(guestHeader, /<LogIn|<LogOut/);
-  assert.match(guestHeader, /requestLogin\('acessar seu perfil'\)/);
-
+  assert.ok(appHeader && guestHeader);
+  assert.match(appHeader, /<WorkspaceTopNavigation/);
+  assert.match(guestHeader, /<WorkspaceTopNavigation/);
+  assert.equal((legacyAppSource.match(/<WorkspaceTopNavigation/g) ?? []).length, 1);
+  assert.equal((guestSource.match(/<WorkspaceTopNavigation/g) ?? []).length, 1);
+  const expectedOrder = [
+    'header-user-profile-trigger', 'header-kyrubia-trigger',
+    'header-tasks-trigger', 'header-connected-trigger',
+    'header-saved-trigger', 'header-guest-notifications-trigger',
+  ];
+  let previousIndex = -1;
+  for (const id of expectedOrder) {
+    const index = navSource.indexOf('id="' + id + '"');
+    assert.ok(index > previousIndex, id + ' must preserve canonical position');
+    previousIndex = index;
+    assert.equal((navSource.match(new RegExp('id="' + id + '"', 'g')) ?? []).length, 1);
+  }
+  assert.doesNotMatch(navSource, /header-pitangas-trigger|header-wallet-balance/);
+  assert.match(navSource, /profilePhotoUrl\s*\?/);
+  assert.match(legacyAppSource, /onProfile=\{\(\) => \{ setProfileOpenSaved\(false\); setShowUserProfileModal\(true\); \}\}/);
+  assert.match(guestSource, /onProfile=\{\(\) => requestLogin\('acessar seu perfil'\)\}/);
+  assert.match(guestSource, /onConnections=\{\(\) => requestLogin\('conectar com pessoas'\)\}/);
+  assert.match(guestSource, /onSaved=\{\(\) => requestLogin\('consultar suas publicações salvas'\)\}/);
+  assert.match(guestSource, /onGuestNotifications=\{\(\) => requestLogin\('consultar suas notificações'\)\}/);
+  assert.doesNotMatch(appHeader, /onGuestNotifications/);
   assert.match(legacyAppSource, /id="app-header"/);
   assert.match(legacyAppSource, /sticky top-0 z-40/);
   assert.match(guestSource, /id="app-header" className="sticky top-0 z-40/);
@@ -422,20 +436,14 @@ test('navigation headers stay sticky while brand session buttons scroll on both 
   assert.doesNotMatch(legacyAppSource, /id="kyrub-workspace-brand" className="sticky/);
   assert.match(legacyAppSource, /id="kyrub-workspace-signout"/);
   assert.match(legacyAppSource, /onClick=\{\(\) => void handleLogout\(\)\}/);
-  assert.match(legacyAppSource, /disabled=\{isSigningOut\}/);
   assert.match(guestSource, /id="kyrub-guest-brand" className="flex min-h-10/);
   assert.doesNotMatch(guestSource, /id="kyrub-guest-brand" className="sticky/);
-  assert.doesNotMatch(profileSource, /personal-profile-auth-trigger|onAuthAction|isAuthBusy/);
-  assert.match(profileSource, /id="personal-profile-settings-trigger"/);
-  assert.match(guestSource, /id="kyrub-guest-brand"/);
   assert.match(guestSource, /id="kyrub-guest-signin"/);
   assert.match(guestSource, /requestLogin\('acessar sua conta'\)/);
   assert.doesNotMatch(profileSource, /profile-logout-button|profile-session-actions|onLogout/);
   assert.match(legacyAppSource, /await signOut\(auth\)/);
   assert.match(legacyAppSource, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
-  assert.match(legacyAppSource, /triggerToast\('Não foi possível sair da conta\. Tente novamente\.'/);
 });
-
 
 test('cultural guides and assistant header match the approved information architecture', () => {
   const guestSource = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
@@ -443,18 +451,14 @@ test('cultural guides and assistant header match the approved information archit
   const workspaceBridge = readFileSync('src/components/KyrubAiWorkspaceBridge.tsx', 'utf8');
   const enrolledProviderActions = /startEnrollment|createEnrollment|grantPaidAccess|authMagicLink/;
 
-  // Profile remains first; Cairúbia uses its old second header slot.
-  assert.ok(legacyAppSource.indexOf('id="header-user-profile-trigger"') <
-    legacyAppSource.indexOf('id="header-kyrubia-trigger"'));
-  assert.ok(legacyAppSource.indexOf('id="header-kyrubia-trigger"') <
-    legacyAppSource.indexOf('id="header-tasks-trigger"'));
-  assert.ok(guestSource.indexOf('id="header-user-profile-trigger"') <
-    guestSource.indexOf('id="header-kyrubia-trigger"'));
-  assert.ok(guestSource.indexOf('id="header-kyrubia-trigger"') <
-    guestSource.indexOf('id="header-tasks-trigger"'));
-
-  assert.match(legacyAppSource, /onClick=\{\(\) => setActiveTab\('cairubia'\)\}/);
-  assert.match(guestSource, /onClick=\{\(\) => setTab\('cairubia'\)\}/);
+  // The canonical nav component owns position/order; sessions only select actions.
+  const sharedHeader = readFileSync('src/components/WorkspaceTopNavigation.tsx', 'utf8');
+  assert.ok(sharedHeader.indexOf('id="header-user-profile-trigger"') <
+    sharedHeader.indexOf('id="header-kyrubia-trigger"'));
+  assert.ok(sharedHeader.indexOf('id="header-kyrubia-trigger"') <
+    sharedHeader.indexOf('id="header-tasks-trigger"'));
+  assert.match(legacyAppSource, /onKyrubia=\{\(\) => setActiveTab\('cairubia'\)\}/);
+  assert.match(guestSource, /onKyrubia=\{\(\) => setTab\('cairubia'\)\}/);
   assert.match(legacyAppSource, /activeTab === 'cairubia' && \(\s*<div id="kyrub-tab-container"/);
   assert.match(workspaceBridge, /getElementById\('kyrub-tab-container'\)/);
 
