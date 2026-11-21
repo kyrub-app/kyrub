@@ -6,6 +6,7 @@ const profileSource = readFileSync(
   'src/components/modals/UserProfileModal.tsx',
   'utf8'
 );
+const unifiedEditorSource = readFileSync('src/components/ProfileVerificationBridge.tsx', 'utf8');
 const savedLibrarySource = readFileSync(
   'src/utils/savedLibrary.ts',
   'utf8'
@@ -44,13 +45,14 @@ test('Meu perfil is a private financial and identity center instead of a publish
   assert.doesNotMatch(profileSource, /publicationType: 'feed' \| 'status'/);
 });
 
-test('Conta keeps account, data, security and verification settings', () => {
-  assert.match(profileSource, /setIsSettingsOpen\(true\)/);
-  assert.match(profileSource, /ProfileSettingsPanel/);
-  assert.match(profileSource, /label: 'Conta'/);
-  assert.match(profileSource, /label: 'Dados'/);
-  assert.match(profileSource, /label: 'Segurança'/);
-  assert.match(profileSource, /label: 'Verificação'/);
+test('one unified editor keeps account, data, documents and security with Central privacy', () => {
+  assert.doesNotMatch(profileSource, /ProfileSettingsPanel|setIsSettingsOpen/);
+  assert.match(unifiedEditorSource, /<ProfilePublicIdentityEditor user=\{user\}/);
+  assert.match(unifiedEditorSource, /'conta', label: 'Conta'/);
+  assert.match(unifiedEditorSource, /'dados', label: 'Dados'/);
+  assert.match(unifiedEditorSource, /'seguranca', label: 'Segurança'/);
+  assert.match(unifiedEditorSource, /'documentos', label: 'Documentos'/);
+  assert.match(unifiedEditorSource, /'validacao', label: 'Validação'/);
   assert.match(profileSource, /Visibilidade do perfil/);
   assert.match(profileSource, /Perfil visível na Praça|Visível na Praça/);
 });

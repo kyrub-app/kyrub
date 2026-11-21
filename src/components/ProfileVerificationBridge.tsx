@@ -21,6 +21,8 @@ import {
   LockKeyhole,
   Send,
   ShieldCheck,
+  Pencil,
+  ExternalLink,
   Store,
   Upload,
   UserRoundCheck,
@@ -37,10 +39,11 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
-  updateDoc,
 } from 'firebase/firestore';
 import { ref, uploadBytes } from 'firebase/storage';
 import { auth, db, storage } from '../utils/firebase';
+import { ProfilePublicIdentityEditor } from './ProfilePublicIdentityEditor';
+import { getPlanCenterUrl } from '../utils/planCenter';
 import {
   IDENTITY_CONSENT_VERSION,
   IDENTITY_VERIFICATION_COLLECTION,
@@ -57,7 +60,7 @@ import {
   type WorkAction,
 } from '../utils/identityVerification';
 
-type Tab = 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
+type Tab = 'perfil' | 'conta' | 'dados' | 'seguranca' | 'documentos' | 'validacao';
 type ToastType = 'success' | 'error' | 'info' | 'warning';
 
 const PROFILE_OPTIONS: Array<{
@@ -72,6 +75,7 @@ const PROFILE_OPTIONS: Array<{
 ];
 
 const TABS: Array<{ id: Tab; label: string; icon: typeof ShieldCheck }> = [
+  { id: 'perfil', label: 'Perfil', icon: Pencil },
   { id: 'conta', label: 'Conta', icon: UserRoundCheck },
   { id: 'dados', label: 'Dados', icon: IdCard },
   { id: 'seguranca', label: 'Segurança', icon: LockKeyhole },
@@ -128,11 +132,11 @@ const inputClass =
 
 export function ProfileVerificationBridge() {
   const [open, setOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>('conta');
+  const [activeTab, setActiveTab] = useState<Tab>('perfil');
+  const [openedFromCentral, setOpenedFromCentral] = useState(false);
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [record, setRecord] = useState<IdentityVerificationRecord | null>(null);
   const [draft, setDraft] = useState<IdentityVerificationRecord | null>(null);
-  const [profileVisible, setProfileVisible] = useState(true);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState<'document' | 'selfie' | null>(null);
   const [pin, setPin] = useState('');
@@ -172,12 +176,8 @@ export function ProfileVerificationBridge() {
       },
       () => showToast('Não foi possível carregar sua verificação agora.', 'error')
     );
-    const unsubscribeUser = onSnapshot(doc(db, 'users', user.uid), snapshot => {
-      setProfileVisible(snapshot.data()?.isProfileVisible !== false);
-    });
     return () => {
       unsubscribeVerification();
-      unsubscribeUser();
     };
   }, [open, user]);
 
@@ -194,42 +194,23 @@ export function ProfileVerificationBridge() {
   }, [open, user]);
 
   useEffect(() => {
-    const openFromEvent = () => {
+    // Both the Central Pessoal shortcut and legacy edit entrypoints open
+    // exactly this editor; no DOM-injected second profile button.
+    const openFromProfile = () => {
+      setOpenedFromCentral(true);
+      setActiveTab('perfil');
+      setOpen(true);
+    };
+    const openFromVerification = () => {
+      setOpenedFromCentral(false);
       setActiveTab('conta');
       setOpen(true);
     };
-    window.addEventListener(IDENTITY_VERIFICATION_OPEN_EVENT, openFromEvent);
-    return () => window.removeEventListener(
-      IDENTITY_VERIFICATION_OPEN_EVENT,
-      openFromEvent
-    );
-  }, []);
-
-  useEffect(() => {
-    let inserted: HTMLButtonElement | null = null;
-    const install = () => {
-      if (document.getElementById('profile-verification-trigger')) return;
-      const editButton = [...document.querySelectorAll<HTMLButtonElement>('button')]
-        .find(button => button.textContent?.trim().toLocaleLowerCase('pt-BR') === 'editar perfil');
-      if (!editButton?.parentElement) return;
-
-      inserted = document.createElement('button');
-      inserted.id = 'profile-verification-trigger';
-      inserted.type = 'button';
-      inserted.className = editButton.className;
-      inserted.innerHTML = '<span aria-hidden="true">🛡️</span><span>Verificação e segurança</span>';
-      inserted.addEventListener('click', () => {
-        setActiveTab('conta');
-        setOpen(true);
-      });
-      editButton.insertAdjacentElement('afterend', inserted);
-    };
-    install();
-    const observer = new MutationObserver(install);
-    observer.observe(document.body, { childList: true, subtree: true });
+    window.addEventListener('kyrub:open-unified-profile-editor', openFromProfile);
+    window.addEventListener(IDENTITY_VERIFICATION_OPEN_EVENT, openFromVerification);
     return () => {
-      observer.disconnect();
-      inserted?.remove();
+      window.removeEventListener('kyrub:open-unified-profile-editor', openFromProfile);
+      window.removeEventListener(IDENTITY_VERIFICATION_OPEN_EVENT, openFromVerification);
     };
   }, []);
 
@@ -242,6 +223,7 @@ export function ProfileVerificationBridge() {
       event.preventDefault();
       event.stopPropagation();
       if ('stopImmediatePropagation' in event) event.stopImmediatePropagation();
+      setOpenedFromCentral(false);
       setActiveTab('documentos');
       setOpen(true);
       showToast(result.reason, 'warning');
@@ -346,10 +328,6 @@ export function ProfileVerificationBridge() {
         updatedAt: serverTimestamp(),
         ...nowFields,
       });
-      await updateDoc(doc(db, 'users', user.uid), {
-        isProfileVisible: profileVisible,
-        updatedAt: serverTimestamp(),
-      });
       showToast(
         status === 'submitted'
           ? 'Documentação enviada para análise.'
@@ -451,6 +429,14 @@ export function ProfileVerificationBridge() {
     }
   };
 
+  const closeEditor = () => {
+    setOpen(false);
+    if (openedFromCentral && auth.currentUser?.uid === user.uid) {
+      window.dispatchEvent(new Event('kyrub:unified-profile-editor-closed'));
+    }
+    setOpenedFromCentral(false);
+  };
+
   const modal = (
     <div className="fixed inset-0 z-[190] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
       <section className="flex h-[100dvh] w-full max-w-xl flex-col overflow-hidden bg-slate-950 text-slate-100 sm:h-[min(820px,94dvh)] sm:rounded-3xl sm:border sm:border-slate-800">
@@ -461,16 +447,16 @@ export function ProfileVerificationBridge() {
             </span>
             <div className="min-w-0">
               <h2 className="truncate text-sm font-black text-white">
-                Verificação e segurança
+                Editar perfil
               </h2>
               <p className="text-[9px] uppercase tracking-wider text-slate-500">
-                Status: {statusLabel(record?.status ?? 'draft')}
+                {activeTab === 'perfil' ? 'Perfil público e configurações' : 'Verificação · ' + statusLabel(record?.status ?? 'draft')}
               </p>
             </div>
           </div>
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closeEditor}
             className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-900 text-slate-400"
             aria-label="Fechar verificação e segurança"
           >
@@ -503,6 +489,7 @@ export function ProfileVerificationBridge() {
         </nav>
 
         <div className="min-h-0 flex-1 overflow-y-auto p-4 sm:p-5">
+          {activeTab === 'perfil' && <ProfilePublicIdentityEditor user={user} />}
           {activeTab === 'conta' && (
             <div className="space-y-4">
               <section className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
@@ -562,24 +549,13 @@ export function ProfileVerificationBridge() {
                 </div>
               </section>
 
-              <section className="flex items-center justify-between gap-4 rounded-3xl border border-slate-800 bg-slate-900 p-4">
-                <div>
-                  <h3 className="text-[10px] font-black uppercase text-white">
-                    Perfil visível na Praça
-                  </h3>
-                  <p className="mt-1 text-[9px] text-slate-500">
-                    Permite conexões e convites. Documentos nunca ficam públicos.
-                  </p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setProfileVisible(current => !current)}
-                  className={`relative h-7 w-12 rounded-full ${profileVisible ? 'bg-orange-500' : 'bg-slate-800'}`}
-                  aria-pressed={profileVisible}
-                >
-                  <span className={`absolute top-1 h-5 w-5 rounded-full bg-slate-950 transition-transform ${profileVisible ? 'translate-x-6' : 'translate-x-1'}`} />
-                </button>
+              <section className="rounded-2xl border border-slate-800 bg-slate-950 p-3 text-xs text-slate-400">
+                Sua visibilidade na Praça é controlada exclusivamente na Central Pessoal.
               </section>
+              <a href={getPlanCenterUrl()}
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 text-xs font-bold text-violet-200">
+                Central de Planos <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              </a>
             </div>
           )}
 
@@ -813,12 +789,12 @@ export function ProfileVerificationBridge() {
         <footer className="flex shrink-0 gap-2 border-t border-slate-800 bg-slate-950 px-4 pt-3 pb-[max(.75rem,env(safe-area-inset-bottom))]">
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closeEditor}
             className="flex-1 rounded-xl bg-slate-800 px-4 py-3 text-[10px] font-black uppercase text-slate-300"
           >
             Fechar
           </button>
-          {!readOnly && (
+          {activeTab !== 'perfil' && !readOnly && (
             <>
               <button
                 type="button"

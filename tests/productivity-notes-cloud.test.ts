@@ -191,16 +191,17 @@ test('notes use Firestore persistence and a direct invitation inbox', () => {
   assert.equal(firebaseConfig.firestore.indexes, 'firestore.indexes.json');
 });
 
-test('profile panel is organized and does not claim to store sensitive data publicly', () => {
-  const profileSource = readFileSync(
-    'src/components/modals/UserProfileModal.tsx',
-    'utf8'
-  );
+test('unified profile editor stores public fields separately from protected credentials', () => {
+  const center = readFileSync('src/components/modals/UserProfileModal.tsx', 'utf8');
+  const unified = readFileSync('src/components/ProfileVerificationBridge.tsx', 'utf8');
+  const publicEditor = readFileSync('src/components/ProfilePublicIdentityEditor.tsx', 'utf8');
 
-  assert.match(profileSource, /type ProfileSection = 'conta' \| 'dados' \| 'seguranca' \| 'verificacao'/);
-  assert.match(profileSource, /Salvar perfil público/);
-  assert.match(profileSource, /setDoc\(/);
-  assert.match(profileSource, /\{ merge: true \}/);
-  assert.match(profileSource, /não envia nem armazena o PIN no Firestore/);
-  assert.doesNotMatch(profileSource, /Simulate Firebase Write I\/O latency/);
+  assert.match(unified, /type Tab = 'perfil' \| 'conta' \| 'dados' \| 'seguranca' \| 'documentos' \| 'validacao'/);
+  assert.match(unified, /<ProfilePublicIdentityEditor user=\{user\}/);
+  assert.match(publicEditor, /Salvar perfil/);
+  assert.match(publicEditor, /setDoc\(/);
+  assert.match(publicEditor, /\{ merge: true \}/);
+  assert.match(unified, /Hash protegido no servidor/);
+  assert.match(unified, /Nunca é salvo no navegador ou no Firestore público/);
+  assert.doesNotMatch(center, /ProfileSettingsPanel|Simulate Firebase Write I\/O latency/);
 });

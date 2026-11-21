@@ -111,6 +111,7 @@ type MarketplaceStore = {
 
 // The former personal feed is retired; its legacy renderer is retained only for safe rollback.
 const PERSONAL_FEED_RETIRED = true;
+const LEGACY_PROFILE_EDITOR_RETIRED = true;
 const STATUS_TTL_MS = 24 * 60 * 60 * 1000;
 const MAX_ACTIVE_STATUSES = 9;
 const MAX_GROUPS = 30;
@@ -475,7 +476,6 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
-  const [returnToCentralAfterEdit, setReturnToCentralAfterEdit] = useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
@@ -585,22 +585,15 @@ export function ProfileSocialHubNative() {
   }, []);
 
   useEffect(() => {
-    const openOriginalEditor = () => {
-      setReturnToCentralAfterEdit(true);
-      setActiveTab('publications');
-      setOpen(true);
-      setEditOpen(true);
+    // Legacy links use the exact same editor as the Central Pessoal.
+    const openUnifiedEditor = () => {
+      setEditOpen(false);
+      setOpen(false);
+      window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
     };
-    window.addEventListener('kyrub:open-profile-editor', openOriginalEditor);
-    return () => window.removeEventListener('kyrub:open-profile-editor', openOriginalEditor);
+    window.addEventListener('kyrub:open-profile-editor', openUnifiedEditor);
+    return () => window.removeEventListener('kyrub:open-profile-editor', openUnifiedEditor);
   }, []);
-
-  useEffect(() => {
-    if (!returnToCentralAfterEdit || editOpen || !open) return;
-    setReturnToCentralAfterEdit(false);
-    setOpen(false);
-    document.getElementById('header-user-profile-trigger')?.click();
-  }, [returnToCentralAfterEdit, editOpen, open]);
 
   useEffect(() => {
     const openCommunityFromSquare = () => {
@@ -1382,7 +1375,10 @@ export function ProfileSocialHubNative() {
                     />
                     <button
                       type="button"
-                      onClick={() => setEditOpen(true)}
+                      onClick={() => {
+                        setOpen(false);
+                        window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
+                      }}
                       className="absolute bottom-1 right-1 flex h-9 w-9 items-center justify-center rounded-full border-2 border-slate-950 bg-orange-500 text-slate-950"
                       aria-label="Editar minha página"
                     >
@@ -2197,7 +2193,7 @@ export function ProfileSocialHubNative() {
         </div>
       )}
 
-      {editOpen && (
+      {!LEGACY_PROFILE_EDITOR_RETIRED && editOpen && (
         <div className="fixed inset-0 z-[132] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
           <section className="flex max-h-[94dvh] w-full max-w-md flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
             <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">
@@ -2285,10 +2281,9 @@ export function ProfileSocialHubNative() {
                 onClick={() => {
                   // Continue editing in the existing structured account form.
                   // Keep one public entry point and preserve the secure Docs/Bio/Face tabs.
-                  setReturnToCentralAfterEdit(false);
                   setEditOpen(false);
                   setOpen(false);
-                  window.dispatchEvent(new Event('kyrub:open-profile-settings'));
+                  window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
                 }}
                 className="flex w-full items-center gap-3 rounded-2xl border border-teal-500/25 bg-teal-500/5 p-3 text-left hover:border-teal-500/40"
                 aria-label="Abrir dados e configurações do perfil"

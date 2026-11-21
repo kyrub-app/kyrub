@@ -29,7 +29,7 @@ test('work actions remain blocked until the exact profile is approved', () => {
   assert.equal(workEligibility(approved, 'request_delivery').allowed, false);
 });
 
-test('profile verification is separated from public profile editing and gates work flows', () => {
+test('unified public profile and secure verification preserve work authorization', () => {
   const app = readFileSync('src/App.tsx', 'utf8');
   const bridge = readFileSync('src/components/ProfileVerificationBridge.tsx', 'utf8');
   const pinRoute = readFileSync('api/security/pin.ts', 'utf8');
@@ -37,8 +37,11 @@ test('profile verification is separated from public profile editing and gates wo
   const storage = readFileSync('storage.rules', 'utf8');
 
   assert.match(app, /<ProfileVerificationBridge \/>/);
-  assert.match(bridge, /profile-verification-trigger/);
-  assert.match(bridge, /Verificação e segurança/);
+  assert.match(bridge, /<ProfilePublicIdentityEditor user=\{user\}/);
+  assert.match(bridge, /kyrub:open-unified-profile-editor/);
+  assert.match(bridge, /Editar perfil/);
+  assert.doesNotMatch(bridge, /profile-verification-trigger/);
+  assert.doesNotMatch(bridge, /new MutationObserver/);
   assert.match(bridge, /modal-solicitar-freela/);
   assert.match(bridge, /modal-fazer-entregas/);
   assert.match(bridge, /Entrega motorizada exige CNH compatível e EAR/);

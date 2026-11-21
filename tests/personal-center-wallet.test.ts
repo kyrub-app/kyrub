@@ -6,6 +6,7 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const app = read('src/LegacyApp.tsx');
 const profile = read('src/components/modals/UserProfileModal.tsx');
 const socialHub = read('src/components/ProfileSocialHubNative.tsx');
+const unifiedEditor = read('src/components/ProfileVerificationBridge.tsx');
 const wallet = read('src/components/modals/WalletModal.tsx');
 const planner = read('src/components/PersonalFinancePlanner.tsx');
 const pitangas = read('src/components/tabs/PitangaAccount.tsx');
@@ -30,13 +31,12 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(profile, /Central Pessoal/);
     assert.match(profile, /profile-personal-center/);
     assert.match(profile, /Editar perfil/);
-    assert.match(profile, /window\.dispatchEvent\(new Event\('kyrub:open-profile-editor'\)\)/);
-    assert.match(socialHub, /window\.addEventListener\('kyrub:open-profile-editor'/);
+    assert.match(profile, /window\.dispatchEvent\(new Event\('kyrub:open-unified-profile-editor'\)\)/);
+    assert.match(unifiedEditor, /window\.addEventListener\('kyrub:open-unified-profile-editor'/);
     assert.doesNotMatch(profile, />\s*Conta e segurança\s*</);
     assert.match(profile, /id="personal-profile-visibility"/);
-    assert.match(profile, /window\.addEventListener\('kyrub:open-profile-settings'/);
-    assert.match(socialHub, /window\.dispatchEvent\(new Event\('kyrub:open-profile-settings'\)\)/);
-    assert.match(profile, /ProfileSettingsPanel/);
+    assert.doesNotMatch(profile, /ProfileSettingsPanel|kyrub:open-profile-settings/);
+    assert.match(unifiedEditor, /<ProfilePublicIdentityEditor user=\{user\}/);
     assert.match(app, /walletHistory=\{walletHistory\}/);
   });
 
