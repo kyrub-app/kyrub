@@ -80,6 +80,25 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'public-square-discovery') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
+      response.setHeader('Allow', 'GET');
+      response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
+      return;
+    }
+    try {
+      const { listPublicSquareDiscovery } = await import(
+        '../server/marketplace/publicSquareDiscoveryService.js'
+      );
+      response.status(200).json(await listPublicSquareDiscovery());
+    } catch (error) {
+      console.warn('[public-square-discovery]', error instanceof Error ? error.message : 'unavailable');
+      response.status(503).json({ error: 'PUBLIC_SQUARE_DISCOVERY_UNAVAILABLE' });
+    }
+    return;
+  }
+
   if (transport === 'public-delivery-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {

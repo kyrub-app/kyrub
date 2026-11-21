@@ -2,6 +2,12 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { projectPublicDeliveryOpportunity } from '../shared/publicDeliveryDiscovery';
+import {
+  projectPublicSquareStore,
+  projectPublicSquareCommunity,
+  projectPublicSquareSocialPost,
+  projectPublicSquareCommunityPost,
+} from '../server/marketplace/publicSquareDiscoveryService';
 
 const app = readFileSync('src/App.tsx', 'utf8');
 const guest = readFileSync('src/components/KyrubGuestWorkspace.tsx', 'utf8');
@@ -55,4 +61,48 @@ test('public read uses server-side API without weakening private Firestore rules
   assert.match(vercel, /"source": "\/api\/delivery-opportunities\/public"/);
   assert.match(rules, /match \/hub\/renda\/deliveries\/\{deliveryId\}/);
   assert.match(rules, /allow read: if isSignedIn\(\);/);
+});
+
+test('Praça visitor uses the real three-section directory rather than a hardcoded official-store landing', () => {
+  const square = readFileSync('src/components/GuestSquarePanel.tsx', 'utf8');
+  const service = readFileSync('server/marketplace/publicSquareDiscoveryService.ts', 'utf8');
+  assert.match(guest, /<GuestSquarePanel onLoginRequired=\{requestLogin\}/);
+  assert.match(guest, /id="kyrub-workspace-main"/);
+  assert.doesNotMatch(guest, /Explore lojas e ofertas/);
+  assert.match(square, /<SquareStoresSection/);
+  assert.match(square, /id="square-communities"/);
+  assert.match(square, /id="guest-square-wall"/);
+  assert.match(square, /<SquareDirectoryLayout/);
+  assert.match(square, /onToggleFavoriteStore=\{\(\) => requireLogin/);
+  assert.match(square, /onClick=\{\(\) => requireLogin\('comentar uma publicação'\)\}/);
+  assert.match(service, /adminDb\.collection\('social_posts'\)\.where\('visibility', '==', 'public'\)/);
+  assert.match(api, /transport === 'public-square-discovery'/);
+  assert.match(vercel, /"source": "\/api\/square\/public"/);
+  assert.doesNotMatch(square, /collection\(db|setDoc\(|updateDoc\(|signInWithPopup\(/);
+});
+
+test('anonymous Praça projections do not disclose restricted documents or owner details', () => {
+  const privateFields = {
+    ownerId: 'owner-secret', ownerEmail: 'private@example.test', contact: '11911111111',
+    address: 'Rua Privada', buyerId: 'private-buyer', privateNote: 'never-disclose',
+  };
+  const store = projectPublicSquareStore({
+    ...privateFields, listingType: 'store', publicationStatus: 'published',
+    storeId: 'store-123', name: 'Loja', slug: 'loja', description: 'Produtos',
+    logo: 'https://example.test/logo.png', keywords: ['roupas'],
+  });
+  assert.ok(store);
+  const storeContent = JSON.stringify(store);
+  for (const hidden of ['owner-secret', 'private@example.test', '11911111111', 'Rua Privada', 'private-buyer', 'never-disclose']) {
+    assert.equal(storeContent.includes(hidden), false);
+  }
+  assert.equal(projectPublicSquareStore({ publicationStatus: 'draft', name: 'Rascunho', storeId: 's', slug: 'draft' }), null);
+  assert.equal(projectPublicSquareCommunity({ communityId: 'private', name: 'Privada', visibility: 'private' }), null);
+  assert.equal(projectPublicSquareSocialPost('post-x', { authorName: 'Pessoa', visibility: 'private', createdAtIso: new Date().toISOString() }), null);
+  const community = { visibility: 'public', name: 'Comunidade aberta' };
+  const post = { communityId: 'community-1', authorName: 'Autor', content: 'Público' };
+  const pointer = { communityId: 'community-1', postId: 'post-1', createdAtIso: new Date().toISOString() };
+  assert.ok(projectPublicSquareCommunityPost('post-1', pointer, community, post));
+  assert.equal(projectPublicSquareCommunityPost('post-1', pointer, { ...community, visibility: 'private' }, post), null);
+  assert.equal(projectPublicSquareCommunityPost('post-1', pointer, community, { ...post, communityId: 'other' }), null);
 });

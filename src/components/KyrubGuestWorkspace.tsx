@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import {
-  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, LogIn, ShoppingBag,
+  Bell, Briefcase, CheckSquare, Cherry, Compass, GraduationCap, LogIn,
   Sparkles, UserRound, Wallet, X,
 } from 'lucide-react';
 import { GoogleAuthProvider, signInWithPopup } from 'firebase/auth';
 import { RendaTab } from './tabs/RendaTab';
 import { KyrubiaWelcomePanel } from './KyrubiaWelcomePanel';
 import { JemboeHabilidadesTab } from './tabs/JemboeHabilidadesTab';
+import { GuestSquarePanel } from './GuestSquarePanel';
 import { auth } from '../utils/firebase';
 import { loadStorefrontOriginContext } from '../utils/storefrontOriginContext';
 
@@ -122,7 +123,7 @@ export function KyrubGuestWorkspace() {
         </button>
       </header>
 
-      <main className="mx-auto w-full max-w-lg flex-1 space-y-6 px-4 py-6 pb-28" data-kyrub-workspace={tab}>
+      <main id="kyrub-workspace-main" className="mx-auto w-full max-w-lg flex-1 space-y-6 px-4 py-6 pb-28" data-kyrub-workspace={tab}>
         <div id="kyrub-guest-brand" className="flex min-h-10 items-center gap-2 border-b border-slate-800 pb-3" aria-label="Kyrub — ecossistema">
           <img src="/kyrub-logo.svg" alt="" aria-hidden="true" className="h-8 w-8 shrink-0 object-contain" />
           <strong className="kyrub-brand-wordmark text-[1.6rem] leading-none">Kyrub</strong>
@@ -160,21 +161,7 @@ export function KyrubGuestWorkspace() {
             triggerToast={message => setFeedback(message)}
           />
         )}
-        {tab === 'praca' && (
-          <section id="guest-praca" className="space-y-5">
-            <div className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
-              <span className="font-mono text-xs font-bold uppercase tracking-widest text-orange-400">Praça</span>
-              <h1 className="mt-2 text-2xl font-black">Explore lojas e ofertas</h1>
-              <p className="mt-3 text-sm leading-6 text-slate-400">
-                Veja vitrines públicas sem entrar. Publicar, conectar, avaliar ou salvar uma oferta exige identificação.
-              </p>
-            </div>
-            <a href="/@kyrub-oficial" className="flex items-center justify-between rounded-3xl border border-slate-800 bg-slate-900 p-5 text-sm font-bold text-white">
-              <span className="flex items-center gap-3"><ShoppingBag className="h-5 w-5 text-orange-400" /> Kyrub Oficial</span>
-              <span className="text-orange-400">Ver vitrine →</span>
-            </a>
-          </section>
-        )}
+        {tab === 'praca' && <GuestSquarePanel onLoginRequired={requestLogin} />}
         {tab === 'cairubia' && (
           <section id="guest-cairubia" className="rounded-3xl border border-slate-800 bg-slate-900 p-6">
             <KyrubiaWelcomePanel

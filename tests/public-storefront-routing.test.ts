@@ -496,7 +496,11 @@ test('Marketplace remains reachable through Taba and Lojas, without a duplicate 
   assert.match(legacyAppSource, /aria-label="Taba — Praça"/);
   assert.match(legacyAppSource, /setSocialSubTab\('usuarios'\);\s*setPracaFilter\('recentes'\);\s*setActiveTab\('kyrub'\)/);
   assert.match(guestSource, /\['praca', Compass, 'Taba', 'Praça'\]/);
-  assert.match(guestSource, /href="\/@kyrub-oficial"/);
+  const guestSquareSource = readFileSync('src/components/GuestSquarePanel.tsx', 'utf8');
+  assert.match(guestSource, /<GuestSquarePanel onLoginRequired=\{requestLogin\}/);
+  assert.match(guestSquareSource, /<SquareStoresSection/);
+  // Official storefront access is now shared by the guest and signed-in store catalog.
+  assert.match(storesSource, /href=\{OFFICIAL_STORE_PATH\}/);
   assert.match(socialSource, /<SquareStoresSection/);
   assert.match(socialSource, /onViewAll=\{\(\) => setStoreCatalogOpen\(true\)\}/);
   assert.match(storesSource, /id="square-stores-view-all"/);
