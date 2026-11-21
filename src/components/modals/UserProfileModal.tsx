@@ -3,6 +3,8 @@ import {
   ArrowLeftRight,
   ChartPie,
   Settings,
+  LogIn,
+  LogOut,
   LoaderCircle,
   Trophy,
   Bookmark,
@@ -23,6 +25,9 @@ import { createSelection, resolveSavedPublication, setSavedPublicationSelections
 interface UserProfileModalProps {
   isOpen: boolean;
   onClose: () => void;
+  onAuthAction: () => void;
+  isAuthenticated: boolean;
+  isAuthBusy: boolean;
   walletHistory: any[];
   openSavedInitially?: boolean;
   profileName: string;
@@ -122,6 +127,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
   const {
     isOpen,
     onClose,
+    onAuthAction,
+    isAuthenticated,
+    isAuthBusy,
     profileName,
     profileEmail,
     profilePhotoUrl,
@@ -241,24 +249,43 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
               <>
             <section className="relative border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 pr-16 sm:px-5 sm:pr-20" id="personal-profile-identity">
               <button
-                id="personal-profile-settings-trigger"
+                id="personal-profile-auth-trigger"
                 type="button"
-                title="Editar perfil"
-                aria-label="Editar perfil"
-                onClick={() => {
-                  onClose();
-                  window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
-                }}
-                className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 transition-colors hover:border-orange-500/60 hover:text-orange-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 sm:right-5 sm:top-5"
+                title={isAuthenticated ? 'Sair da conta Kyrub' : 'Entrar no Kyrub'}
+                aria-label={isAuthenticated ? 'Sair da conta Kyrub' : 'Entrar no Kyrub'}
+                disabled={isAuthBusy}
+                onClick={onAuthAction}
+                className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-xl border border-slate-700 bg-slate-900 text-slate-200 transition-colors hover:border-orange-500/60 hover:text-orange-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400 disabled:cursor-wait disabled:opacity-50 sm:right-5 sm:top-5"
               >
-                <Settings className="h-5 w-5" aria-hidden="true" />
+                {isAuthBusy
+                  ? <LoaderCircle className="h-5 w-5 animate-spin" aria-hidden="true" />
+                  : isAuthenticated
+                    ? <LogOut className="h-5 w-5" aria-hidden="true" />
+                    : <LogIn className="h-5 w-5" aria-hidden="true" />}
               </button>
               <div className="flex items-center gap-3 sm:gap-4">
-                <Avatar
-                  src={displayAvatar}
-                  name={displayName}
-                  className="h-20 w-20 shrink-0 rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10 sm:h-24 sm:w-24"
-                />
+                <div className="relative h-20 w-20 shrink-0 sm:h-24 sm:w-24">
+                  <Avatar
+                    src={displayAvatar}
+                    name={displayName}
+                    className="h-full w-full rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10"
+                  />
+                  <button
+                    id="personal-profile-settings-trigger"
+                    type="button"
+                    title="Editar perfil"
+                    aria-label="Editar perfil"
+                    onClick={() => {
+                      onClose();
+                      window.dispatchEvent(new Event('kyrub:open-unified-profile-editor'));
+                    }}
+                    className="absolute -bottom-3 -right-3 z-10 flex h-11 w-11 items-center justify-center rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-orange-400"
+                  >
+                    <span className="flex h-8 w-8 items-center justify-center rounded-full border border-orange-500/60 bg-slate-900 text-orange-300 shadow-lg transition-colors hover:bg-slate-800">
+                      <Settings className="h-4 w-4" aria-hidden="true" />
+                    </span>
+                  </button>
+                </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
                     <h3 className="max-w-full truncate text-lg font-black text-white">{displayName}</h3>
