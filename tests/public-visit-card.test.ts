@@ -14,3 +14,8 @@ test('multi destination card is bounded, typed and contains only canonical publi
  assert.equal(resolveKyrubAppRoute('/cartao/'+'a'.repeat(32)).kind,'public-card');
  assert.equal(resolveKyrubAppRoute('/cartao/abc/staff').kind,'invalid-public-social');
 });
+
+test('public card links never serialize private binding data from stored targets',()=>{
+ const stored={kind:'profile' as const,identifier:'maufco',bindingId:'private-uid',ownerId:'private-owner',email:'private@example.test'};
+ assert.deepEqual(cardLink(stored,'Mundo Mau'),{kind:'profile',identifier:'maufco',name:'Mundo Mau',url:'https://kyrub.com/kairubido/maufco'});
+});

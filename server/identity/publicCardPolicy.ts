@@ -16,7 +16,8 @@ export function parseCardTargets(value:unknown):CardTarget[] {
 export function cardLink(target:CardTarget,name:string):CardLink {
   const url=buildPublicDestinationUrl(target.kind,target.identifier);
   if(!url||!name.trim())throw Error('INVALID_CARD');
-  return {...target,name:name.trim().slice(0,160),url};
+  // Never spread a stored target: it also carries a private bindingId.
+  return {kind:target.kind,identifier:target.identifier,name:name.trim().slice(0,160),url};
 }
 export const isCardId=(id:unknown):id is string=>typeof id==='string'&&/^[a-f0-9]{32}$/.test(id);
 export function isBoundTarget(value:unknown):value is CardTarget & {bindingId:string} {

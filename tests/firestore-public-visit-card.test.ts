@@ -52,6 +52,7 @@ test('isolated lifecycle: collisions, ownership, persistent card, live privacy, 
  assert.equal(result?.links.length,3);
  assert.deepEqual(result?.links.map(x=>x.url),urls);
  assert.equal(JSON.stringify(result).includes('owner-a'),false);
+ for (const link of result?.links??[]) assert.deepEqual(Object.keys(link).sort(),['identifier','kind','name','url']);
  assert.equal(await loadOwnedCard('owner-b'),null);
  assert.equal(await disableOwnedCard('owner-b'),null);
  const browser=env.authenticatedContext('owner-a').firestore();
