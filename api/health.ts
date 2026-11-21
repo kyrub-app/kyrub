@@ -122,6 +122,41 @@ export default async function handler(
         adminDb.collection('community_post_reports').where('communityId','==',targetId).count().get(),
         adminDb.collection('community_square_posts').where('communityId','==',targetId).count().get(),
       ]);
+      const postDocuments = await adminDb.collection('community_posts')
+        .where('communityId','==',targetId).limit(3).get();
+      const postStats = {
+        totalSampled: postDocuments.size,
+        authorsMatchOwner: postDocuments.docs.every(item => item.data().authorId === ownerId),
+        mediaItemCount: postDocuments.docs.reduce((sum, item) =>
+          sum + (Array.isArray(item.data().mediaUrls) ? item.data().mediaUrls.length : 0), 0),
+      };
+      // This block reads released rules using service-account OAuth inside a
+      // protected Vercel preview. Never return the credential or raw rules.
+      let rulesStatus: string = 'NOT_CHECKED';
+      let allowsPublicRead: boolean | null = null;
+      try {
+        const { getFirebaseAdminAccessToken } = await import('../server/firebaseAdmin.js');
+        const accessToken = await getFirebaseAdminAccessToken();
+        const releaseResponse = await fetch(
+          'https://firebaserules.googleapis.com/v1/projects/kyrub-b8d0e/releases/cloud.firestore',
+          { headers: { Authorization: 'Bearer ' + accessToken }, signal: AbortSignal.timeout(4500) }
+        );
+        if (releaseResponse.ok) {
+          const release = await releaseResponse.json() as { rulesetName?: string };
+          const name = release.rulesetName ?? '';
+          if (/^projects\/kyrub-b8d0e\/rulesets\/[a-zA-Z0-9_-]+$/.test(name)) {
+            const rulesResponse = await fetch('https://firebaserules.googleapis.com/v1/' + name,
+              { headers: { Authorization: 'Bearer ' + accessToken }, signal: AbortSignal.timeout(4500) });
+            if (rulesResponse.ok) {
+              const rules = await rulesResponse.json() as { source?: { files?: Array<{ content?: string }> } };
+              const all = (rules.source?.files ?? []).map(item => item.content ?? '').join('\n');
+              const communitySection = all.match(/match \/communities\/\\{communityId\\} \\{([\\s\\S]*?)allow create:/)?.[1] ?? '';
+              allowsPublicRead = communitySection.includes("existing().visibility in ['public', 'moderated']");
+              rulesStatus = 'RULESET_READ';
+            } else rulesStatus = 'RULESET_HTTP_' + rulesResponse.status;
+          } else rulesStatus = 'RULESET_NAME_UNAVAILABLE';
+        } else rulesStatus = 'RELEASE_HTTP_' + releaseResponse.status;
+      } catch { rulesStatus = 'RULES_API_UNAVAILABLE'; }
       const memberData = member?.exists ? member.data() ?? {} : {};
       response.setHeader('Cache-Control','no-store');
       response.status(200).json({
@@ -152,6 +187,8 @@ export default async function handler(
           reports: reports.data().count,
           squarePointers: pointers.data().count,
         },
+        postStats,
+        liveRules: { status: rulesStatus, publicReadRulePresent: allowsPublicRead },
         writesPerformed: false,
       });
     } catch (error) {
