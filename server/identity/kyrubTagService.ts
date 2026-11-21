@@ -1,11 +1,12 @@
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
-import {isTagId,isTagModel,tagUrl,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
+import {isTagId,isTagModel,tagUrl,normalizeTagRecipientEmail,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
 import {parseCardTargets,isBoundTarget,cardLink,CARD_LIMIT,type CardLink} from './publicCardPolicy.js';
 import {resolveTarget} from './publicVisitCardService.js';
 const tags=()=>adminDb.collection('kyrub_official_tags');
 const validActor=(actor:string)=>{if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('TAG_FORBIDDEN');};
 export const hashKyrubTagActivation=(id:string,code:string)=>createHash('sha256').update('kyrub-tag-v1:'+id+':'+code).digest('hex');
+export const hashTagRecipient=(id:string,email:string)=>createHash('sha256').update('kyrub-tag-recipient-v1:'+id+':'+email).digest('hex');
 function owned(id:string,data:Record<string,unknown>):OwnedKyrubTag{
  if(!isTagId(id)||!isTagModel(data.model))throw Error('TAG_UNAVAILABLE');
  const targets=Array.isArray(data.targets)?data.targets.filter(isBoundTarget).slice(0,CARD_LIMIT):[];
@@ -29,12 +30,35 @@ export async function claimKyrubTag(actor:string,id:string,code:unknown){
   if(!account.exists||!data||!isTagModel(data.model))throw Error('TAG_FORBIDDEN');
   // A consumed code can never change the original owner. Even disabled tags
   // remain bound. Use GET to recover after a successful claim.
-  if(data.ownerId!==null||typeof data.activationHash!=='string'||!/^[a-f0-9]{64}$/.test(data.activationHash))throw Error('TAG_FORBIDDEN');
+  if(data.ownerId!==null||data.reservedEmailHash!=null||typeof data.activationHash!=='string'||!/^[a-f0-9]{64}$/.test(data.activationHash))throw Error('TAG_FORBIDDEN');
   if(!timingSafeEqual(Buffer.from(data.activationHash,'hex'),Buffer.from(hashKyrubTagActivation(id,code),'hex')))throw Error('TAG_FORBIDDEN');
   const next={model:data.model,ownerId:actor,enabled:false,targets:[],activationHash:null,claimedAt:new Date().toISOString()};
   tx.update(ref,next);
   return owned(id,next);
  });
+}
+// Email comes exclusively from the verified, current Firebase Auth identity.
+export async function claimReservedKyrubTag(actor:string,id:string,verifiedEmail:unknown){
+ validActor(actor);
+ const email=normalizeTagRecipientEmail(verifiedEmail);
+ if(!isTagId(id)||!email)throw Error('TAG_FORBIDDEN');
+ return adminDb.runTransaction(async tx=>{
+  const ref=tags().doc(id);
+  const [snapshot,account]=await Promise.all([tx.get(ref),tx.get(adminDb.doc('users/'+actor))]);
+  const data=snapshot.data();
+  if(!account.exists||!data||!isTagModel(data.model))throw Error('TAG_FORBIDDEN');
+  if(data.ownerId===actor)return owned(id,data);
+  if(data.ownerId!==null||data.pilotBatch!=='experimental-001'||data.pilotSlot!=='001'||data.model!=='adesivo'||data.activationHash!==null||data.reservedEmailHash!==hashTagRecipient(id,email)||(data.reservedForUid!=null&&data.reservedForUid!==actor))throw Error('TAG_FORBIDDEN');
+  const next={model:data.model,ownerId:actor,enabled:false,targets:[],activationHash:null,reservedEmailHash:null,reservedForUid:null,claimedAt:new Date().toISOString()};
+  tx.update(ref,next);return owned(id,next);
+ });
+}
+export async function loadOwnedKyrubTag(actor:string,id:string){
+ validActor(actor);
+ if(!isTagId(id))throw Error('TAG_INVALID');
+ const d=(await tags().doc(id).get()).data();
+ if(!d||d.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+ return owned(id,d);
 }
 export async function listOwnedKyrubTags(actor:string){
  validActor(actor);
@@ -69,11 +93,11 @@ export async function disableKyrubTag(actor:string,id:string){
   return owned(id,{...data,enabled:false});
  });
 }
-export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubTagModel;status:'unclaimed'|'active';links:CardLink[]}|null>{
+export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubTagModel;status:'unclaimed'|'active';activation?:'account'|'code';links:CardLink[]}|null>{
  if(!isTagId(id))return null;
  const ref=tags().doc(id),snapshot=await ref.get(),data=snapshot.data();
  if(!data||!isTagModel(data.model))return null;
- if(data.ownerId===null)return {id,model:data.model,status:'unclaimed',links:[]};
+ if(data.ownerId===null)return {id,model:data.model,status:'unclaimed',activation:typeof data.reservedEmailHash==='string'?'account':'code',links:[]};
  if(data.enabled!==true||typeof data.ownerId!=='string'||!Array.isArray(data.targets)||data.targets.length>CARD_LIMIT)return null;
  const targets=data.targets.filter(isBoundTarget);
  const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);

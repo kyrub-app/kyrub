@@ -26,7 +26,7 @@ provider.setCustomParameters({ prompt: 'select_account' });
 export function KyrubGuestWorkspace() {
   const [tab, setTab] = useState<GuestTab>('renda');
   const [panel, setPanel] = useState<GuestPanel>(null);
-  const [loginReason, setLoginReason] = useState('');
+  const [loginReason, setLoginReason] = useState(() => /^[a-f0-9]{32}$/.test(new URLSearchParams(window.location.search).get('tagActivation')??'') ? 'vincular sua Kyrub Tag' : '');
   const [loginPending, setLoginPending] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [opportunities, setOpportunities] = useState<PublicOpportunity[]>([]);
