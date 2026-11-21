@@ -935,7 +935,7 @@ Os **#63–#67** voltam a reunir tudo para validação final.
 
 🟡 68.1 — Registro permanente por acessório e gestão individual; primeira vinculação autenticada, código de posse separado e consumido, intransferibilidade, conteúdo editável e revogação individual. Em implementação; gate de emulador/interface/físico.
 
-⬜ 68.2 — Produto Kyrub Tag, modelo inicial Pitanga, variantes pulseira/cartão/adesivo; SKU e lote na Loja Oficial, provisionamento fabril, bloqueio de URI e QR, controle de estoque, garantia. Chip comum copiável; criptografia em evolução separada.
+⬜ 68.2 — Produto Kyrub Tag, modelo inicial Pitanga, variantes pulseira/cartão/adesivo; SKU e lote na Loja Oficial, provisionamento fabril, bloqueio de URI e QR, controle de estoque, garantia. Chip comum copiável; criptografia em evolução separada. Evoluções previstas: Kyrub Tag LoRa e Kyrub Tag Smart (smartwatch), com projeto de hardware, firmware, autonomia, rádio e homologação próprios.
 
 ⬜ 68.3 — Revendedores parceiros na Renda, venda atacado/varejo, custo integral e margem, controle de lote, sem liberar preço/pagamento/estoque antes de validação. Referências propostas: R$ 5 custo, R$ 8 atacado, R$ 15 varejo; não preços oficiais.
 
