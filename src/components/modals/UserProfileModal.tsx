@@ -152,7 +152,7 @@ const Toggle = ({
   <button
     type="button"
     onClick={onClick}
-    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors ${
+    className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors disabled:cursor-wait disabled:opacity-50 ${
       active
         ? 'border-teal-400/50 bg-teal-500'
         : 'border-slate-700 bg-slate-800'
@@ -183,7 +183,6 @@ const ProfileSettingsPanel: React.FC<UserProfileModalProps> = props => {
     setAccountTypeEntregador,
     accountTypeLojista,
     setAccountTypeLojista,
-    isProfileVisible,
     biometricsActive,
     setBiometricsActive,
     transactionPin,
@@ -858,7 +857,9 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                           : 'border-slate-700 bg-slate-900 text-slate-500'
                       }`}
                     >
-                      {isProfileVisible ? 'Visível na Praça' : 'Perfil reservado'}
+                      {profileVisibilityReady
+                        ? (isProfileVisible ? 'Visível na Praça' : 'Perfil reservado')
+                        : 'Consultando visibilidade'}
                     </span>
                   </div>
                   <p className="mt-1 truncate text-[10px] font-mono text-slate-500">
