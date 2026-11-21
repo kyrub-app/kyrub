@@ -6,3 +6,5 @@ export const isTagModel=(v:unknown):v is KyrubTagModel=>KYRUB_TAG_MODELS.include
 export const tagPath=(id:string)=>isTagId(id)?'/tag/'+id:null;
 export const tagUrl=(id:string)=>isTagId(id)?'https://kyrub.com/tag/'+id:null;
 export type OwnedKyrubTag={id:string;model:KyrubTagModel;enabled:boolean;urls:string[]};
+
+export const normalizeTagRecipientEmail=(value:unknown):string|null=>typeof value==='string'&&value.trim().length<=254&&/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())?value.trim().toLowerCase():null;

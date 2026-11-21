@@ -117,7 +117,7 @@ test('official physical units are permanently bound, private by default and indi
 
 test('pilot issuance authority, one unit, code recovery and audit are transactionally enforced',async()=>{
  const {readPilot,mutatePilot,handlePilot}=await import('../server/admin/kyrubTagPilotService.js');
- const {claimKyrubTag,resolveKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const {claimKyrubTag,claimReservedKyrubTag,resolveKyrubTag,loadOwnedKyrubTag}=await import('../server/identity/kyrubTagService.js');
  const {adminAuth}=await import('../server/firebaseAdmin.js');
  if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
  const password='pilot-emulator-only-password';
@@ -129,25 +129,57 @@ test('pilot issuance authority, one unit, code recovery and audit are transactio
   assert.equal(res.ok,true);const data=await res.json() as {idToken:string};assert.ok(data.idToken);return 'Bearer '+data.idToken;
  }
  const admin=await login('pilot-admin','super_admin','active'),user=await login('pilot-user','operations','active'),suspended=await login('pilot-suspended','super_admin','suspended');
- assert.equal((await handlePilot('','POST',{action:'issue'})).status,401);
- assert.equal((await handlePilot(user,'POST',{action:'issue'})).status,403);
- assert.equal((await handlePilot(suspended,'POST',{action:'issue'})).status,403);
+ const action={action:'issue',email:'owner-a@example.test'};
+ assert.equal((await handlePilot('','POST',action)).status,401);
+ assert.equal((await handlePilot(user,'POST',action)).status,403);
+ assert.equal((await handlePilot(suspended,'POST',action)).status,403);
  assert.deepEqual(await readPilot('pilot-admin'),{unit:null});
- const responses=await Promise.all([handlePilot(admin,'POST',{action:'issue'}),handlePilot(admin,'POST',{action:'issue'})]);
- assert.deepEqual(responses.map(r=>r.status).sort(),[200,409]);
- const issued=responses.find(r=>r.status===200)?.body as Awaited<ReturnType<typeof mutatePilot>>;
- assert.ok(issued.code);assert.equal(issued.unit.model,'adesivo');const id=issued.unit.id;
- assert.equal((await resolveKyrubTag(id))?.model,'adesivo');
- assert.deepEqual((await readPilot('pilot-admin')).unit,issued.unit);
- assert.equal(JSON.stringify(await resolveKyrubTag(id)).includes(issued.code),false);
- assert.equal(JSON.stringify((await adminDb.doc('kyrub_official_tags/'+id).get()).data()).includes(issued.code),false);
- const second=await mutatePilot('pilot-admin','replace-code');assert.equal(second.unit.id,id);assert.notEqual(second.code,issued.code);
- await assert.rejects(claimKyrubTag('owner-a',id,issued.code),/TAG_FORBIDDEN/);
- await claimKyrubTag('owner-a',id,second.code);
- await assert.rejects(mutatePilot('pilot-admin','replace-code'),/PILOT_ALREADY_CLAIMED/);
- assert.equal((await readPilot('pilot-admin')).unit?.claimed,true);
+ const issued=await Promise.all([handlePilot(admin,'POST',action),handlePilot(admin,'POST',action)]);
+ assert.deepEqual(issued.map(x=>x.status).sort(),[200,409]);
+ const fresh=issued.find(x=>x.status===200)?.body as Awaited<ReturnType<typeof mutatePilot>>;
+ assert.equal(fresh.unit.reserved,true);assert.equal(fresh.unit.model,'adesivo');
+ assert.equal((await resolveKyrubTag(fresh.unit.id))?.activation,'account');
+ assert.equal((await adminDb.doc('kyrub_official_tags/'+fresh.unit.id).get()).get('activationHash'),null);
+ // Reset only this isolated emulator slot to exercise upgrade of an existing physical tag.
+ await adminDb.doc('kyrub_official_tags/'+fresh.unit.id).delete();
+ await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').delete();
+ // Simulate a previously issued code-only pilot, with the real immutable tag ID.
+ const legacy=await (await import('../server/identity/kyrubTagService.js')).provisionKyrubTag('adesivo');
+ await adminDb.doc('kyrub_official_tags/'+legacy.id).update({pilotBatch:'experimental-001',pilotSlot:'001'});
+ await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').set({tagId:legacy.id});
+ assert.equal((await resolveKyrubTag(legacy.id))?.activation,'code');
+ const reserve=await handlePilot(admin,'POST',{action:'reserve',email:'owner-a@example.test'});
+ assert.equal(reserve.status,200);
+ const id=legacy.id;
+ assert.equal((await readPilot('pilot-admin')).unit?.id,id);
+ assert.equal((await readPilot('pilot-admin')).unit?.reserved,true);
+ assert.equal((await resolveKyrubTag(id))?.activation,'account');
+ assert.equal(JSON.stringify(await resolveKyrubTag(id)).includes('owner-a@example.test'),false);
+ assert.equal(JSON.stringify(reserve.body).includes('email'),false);
+ assert.equal((await handlePilot(admin,'POST',action)).status,409);
+ await assert.rejects(claimKyrubTag('owner-b',id,legacy.code),/TAG_FORBIDDEN/);
+ await assert.rejects(claimReservedKyrubTag('owner-b',id,'wrong@example.test'),/TAG_FORBIDDEN/);
+ const recipient=await login('pilot-recipient','operations','active');
+ await adminDb.doc('users/pilot-recipient').set({name:'Recipient'});
+ await mutatePilot('pilot-admin','reserve','pilot-recipient@example.test');
+ await assert.rejects(claimReservedKyrubTag('owner-a',id,'owner-a@example.test'),/TAG_FORBIDDEN/);
+ await assert.rejects(claimReservedKyrubTag('owner-b',id,'pilot-recipient@example.test'),/TAG_FORBIDDEN/);
+ const api=(await import('../api/health.js')).default;
+ async function runClaim(authorization:string){
+  let status=0,body:unknown;
+  const response={setHeader(){},status(n:number){status=n;return response;},json(value:unknown){body=value;}};
+  await api({method:'POST',headers:{authorization},query:{transport:'manage-kyrub-tag',id},body:{action:'claim-reserved'}} as never,response as never);
+  return {status,body};
+ }
+ assert.equal((await runClaim('')).status,401);
+ assert.equal((await runClaim(user)).status,403);
+ const claims=await Promise.all([runClaim(recipient),runClaim(recipient)]);
+ assert.deepEqual(claims.map(x=>x.status),[200,200]);
+ assert.equal((await loadOwnedKyrubTag('pilot-recipient',id)).id,id);
+ await assert.rejects(loadOwnedKyrubTag('owner-b',id),/TAG_FORBIDDEN/);
+ await assert.rejects(mutatePilot('pilot-admin','reserve','owner-b@example.test'),/PILOT_ALREADY_CLAIMED/);
  const events=await adminDb.collection('kyrub_admin/control_plane/audit_logs').where('targetId','==',id).get();
- assert.equal(events.size,2);assert.equal(JSON.stringify(events.docs.map(d=>d.data())).includes(second.code),false);
+ assert.equal(events.size,2);assert.equal(JSON.stringify(events.docs.map(d=>d.data())).includes('@example.test'),false);
  const browser=env.authenticatedContext('pilot-admin').firestore(),anon=env.unauthenticatedContext().firestore();
  const path='kyrub_tag_pilot_lots/experimental-001/units/001';
  await assertFails(setDoc(doc(browser,path),{tagId:'fake'}));await assertFails(getDoc(doc(anon,path)));

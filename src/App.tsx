@@ -55,6 +55,7 @@ import { StoreSharingPortalBridge } from './components/store/StoreSharingPortalB
 import { UnifiedProductCreateModalBridge } from './components/store/UnifiedProductCreateModalBridge';
 import { useFontSizeAccessibility } from './hooks/useFontSizeAccessibility';
 import { KyrubAuthoritativeReceiptBridge } from './observability/KyrubAuthoritativeReceiptBridge';
+import { isTagId } from '../shared/kyrubTagContract';
 import { resolveKyrubAppRoute } from './utils/appRoutes';
 import { isAdminControlPlaneLocation } from './utils/adminControlPlane';
 import { auth, db } from './utils/firebase';
@@ -166,6 +167,19 @@ function KyrubBootstrapScreen() {
   );
 }
 
+// Reuse normal account bootstrap before returning to the original public tag.
+function KyrubTagActivationReturn(){
+ useEffect(()=>{
+  const id=new URLSearchParams(window.location.search).get('tagActivation');
+  const user=auth.currentUser;
+  if(window.location.pathname!=='/'||!isTagId(id)||!user)return;
+  return onSnapshot(doc(db,'users',user.uid),{includeMetadataChanges:true},snapshot=>{
+   if(snapshot.exists()&&!snapshot.metadata.fromCache&&auth.currentUser?.uid===user.uid)window.location.replace('/tag/'+id);
+  },()=>{});
+ },[]);
+ return null;
+}
+
 function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   const [legacyCacheRevision, setLegacyCacheRevision] = useState(0);
   const [authResolved, setAuthResolved] = useState(false);
@@ -200,6 +214,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
       <AppModalLayoutBridge />
       <KyrubAiConversationHeaderGuard />
       <StorePersistenceBridge />
+      <KyrubTagActivationReturn />
       <KyrubAuthoritativeReceiptBridge />
       <ProductCrossDeviceSyncBridge
         onCloudProductsApplied={refreshLegacyCache}

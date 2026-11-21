@@ -100,11 +100,17 @@ export default async function handler(
     try{
       const service=await import('../server/identity/kyrubTagService.js');
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
-      if(method==='GET'){response.status(200).json(await service.listOwnedKyrubTags(actor));return;}
+      if(method==='GET'){response.status(200).json(id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
       if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
       const data=body as Record<string,unknown>;
+      if(data.action==='claim-reserved'&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.claimReservedKyrubTag(actor,id,identity.email));return;
+      }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
       response.status(400).json({error:'TAG_INVALID'});
