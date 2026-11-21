@@ -75,6 +75,6 @@ test('personal panel includes loading, retry, empty state and no action claiming
   assert.match(ui, /Carregando desafios/);
   assert.match(ui, /Tentar novamente/);
   assert.match(ui, /Nenhum desafio disponível no momento/);
-  assert.match(ui, /Progresso aparece após confirmação pelo sistema/);
+  assert.match(ui, /O progresso aparece após confirmação pelo sistema/);
   assert.doesNotMatch(ui, /fetch\(|setDoc\(|updateDoc\(|POST|onClaim|awardReward/);
 });
