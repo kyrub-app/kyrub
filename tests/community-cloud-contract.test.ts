@@ -723,3 +723,31 @@ test('both community catalogs use one scroll mechanism and bounded cursor batche
   assert.doesNotMatch(service, /ownerId:|authorEmail:|userId:|\.update\(|\.delete\(/);
   assert.doesNotMatch(guest, /\bsetDoc\(|\bupdateDoc\(|\bdeleteDoc\(/);
 });
+
+test('Praça store and community catalogs scroll their titles, filters and cards in the same region', () => {
+  const layout = read('src/components/SquareDirectoryLayout.tsx');
+  const stores = read('src/components/tabs/SquareStoresSection.tsx');
+  const guest = read('src/components/GuestSquarePanel.tsx');
+  const owner = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const trigger = read('src/components/InfiniteScrollTrigger.tsx');
+  const scrollStart = layout.indexOf('<main data-square-directory-scroll="true"');
+  const scrollEnd = layout.indexOf('</main>', scrollStart);
+  assert.ok(scrollStart >= 0 && scrollEnd > scrollStart, 'One scroll root must contain the full catalog');
+  const scrollContent = layout.slice(scrollStart, scrollEnd);
+  const titleAt = scrollContent.indexOf('<header');
+  const searchAt = scrollContent.indexOf('htmlFor={searchId}');
+  const filtersAt = scrollContent.indexOf('aria-label={`Filtros de');
+  const cardsAt = scrollContent.indexOf('{children}');
+  assert.ok(titleAt >= 0 && titleAt < searchAt && searchAt < filtersAt && filtersAt < cardsAt,
+    'Title, search, filters and cards must scroll together');
+  assert.match(scrollContent, /aria-label="Voltar à Praça"/);
+  assert.match(scrollContent, /aria-label="Filtrar por categoria"/);
+  assert.doesNotMatch(layout.slice(0, scrollStart), /<header|htmlFor=\{searchId\}/,
+    'No sticky catalog controls outside the scroll root');
+  assert.match(layout, /document\.getElementById\('app-header'\)/);
+  assert.match(layout, /style=\{\{ top: headerBottom \}\}/);
+  assert.match(stores, /<SquareDirectoryLayout/);
+  assert.match(guest, /<SquareDirectoryLayout/);
+  assert.match(owner, /<SquareDirectoryLayout/);
+  assert.match(trigger, /closest\('\[data-square-directory-scroll\]'\)/);
+});
