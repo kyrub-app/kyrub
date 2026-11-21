@@ -669,7 +669,10 @@ test('future communities remain visible after commit and fresh login without a d
   assert.match(directory, /setCommittedCreated\(\[\]\)/);
   assert.match(directory, /setOwnedReconciled\(\[\]\)/);
   assert.match(directory, /committedCreated,\s*ownedReconciled,\s*publicReconciled,\s*discoverable,\s*owned,\s*privateMembershipCommunities/);
-  assert.match(view, /const community = await createCommunity\(createDraft\);\s*registerCommittedCommunity\(community\)/);
+  const submit = view.slice(view.indexOf('const submitCreate = async'), view.indexOf('const openEditor =', view.indexOf('const submitCreate = async')));
+  assert.match(submit, /const community = await createCommunity\(createDraft\)/);
+  assert.match(submit, /registerCommittedCommunity\(community\)/);
+  assert.ok(submit.indexOf('await createCommunity(createDraft)') < submit.indexOf('registerCommittedCommunity(community)'));
   assert.match(view, /if \(createInFlightRef\.current\) return/);
   assert.match(view, /createInFlightRef\.current = false/);
   assert.doesNotMatch(directory, /deleteDoc\(|updateDoc\(|writeBatch\(|clearIndexedDbPersistence\(/);
