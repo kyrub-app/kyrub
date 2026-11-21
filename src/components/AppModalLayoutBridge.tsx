@@ -106,6 +106,17 @@ export function AppModalLayoutBridge() {
     const decoratedNotePanels = new Set<HTMLElement>();
     const decoratedConversations = new Set<HTMLElement>();
     const decoratedErpOverlays = new Set<HTMLElement>();
+    const decoratedFontPortals = new Set<HTMLElement>();
+
+    const markOwnedSelfManagedPortal = (overlay: HTMLElement) => {
+      // Body-level full-screen overlays created by Kyrub are outside #root.
+      // Dialogs managed by this bridge have their own CSS and are excluded.
+      if (overlay.parentElement !== document.body) return;
+      if (overlay.dataset.kyrubFontScope !== 'true') {
+        overlay.dataset.kyrubFontScope = 'true';
+      }
+      decoratedFontPortals.add(overlay);
+    };
 
     const decorateConversation = () => {
       const conversation = document.querySelector<HTMLElement>(
@@ -138,11 +149,16 @@ export function AppModalLayoutBridge() {
             overlay.dataset.kyrubSkipTopOverlay = 'true';
             overlay.dataset.kyrubErpViewport = 'true';
             decoratedErpOverlays.add(overlay);
+            markOwnedSelfManagedPortal(overlay);
             return;
           }
 
           const panel = findModalPanel(overlay);
-          if (!panel || usesSelfManagedOverlayLayout(overlay, panel)) return;
+          if (!panel) return;
+          if (usesSelfManagedOverlayLayout(overlay, panel)) {
+            markOwnedSelfManagedPortal(overlay);
+            return;
+          }
 
           overlay.dataset.kyrubTopOverlay = 'true';
           panel.dataset.kyrubTopPanel = 'true';
@@ -187,6 +203,9 @@ export function AppModalLayoutBridge() {
       decoratedErpOverlays.forEach(overlay => {
         delete overlay.dataset.kyrubSkipTopOverlay;
         delete overlay.dataset.kyrubErpViewport;
+      });
+      decoratedFontPortals.forEach(overlay => {
+        delete overlay.dataset.kyrubFontScope;
       });
       decoratedConversations.forEach(conversation => {
         delete conversation.dataset.kyrubAiConversation;
@@ -294,12 +313,12 @@ export function AppModalLayoutBridge() {
       }
 
       [data-kyrub-top-panel="true"] [class~="text-[7px]"] {
-        font-size: 0.6875rem !important;
-        line-height: 0.9375rem !important;
+        font-size: 0.8125rem !important;
+        line-height: 1.125rem !important;
       }
       [data-kyrub-top-panel="true"] [class~="text-[8px]"] {
-        font-size: 0.75rem !important;
-        line-height: 1rem !important;
+        font-size: 0.8125rem !important;
+        line-height: 1.125rem !important;
       }
       [data-kyrub-top-panel="true"] [class~="text-[9px]"] {
         font-size: 0.8125rem !important;

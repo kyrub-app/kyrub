@@ -306,11 +306,10 @@ describe('Kyrub public and operational routes', () => {
     assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'h-full')"));
     assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'absolute')"));
     assert.ok(modalLayoutSource.includes("hasClassToken(panel, 'h-[100dvh]')"));
-    assert.ok(
-      modalLayoutSource.includes(
-        'if (!panel || usesSelfManagedOverlayLayout(overlay, panel)) return;'
-      )
-    );
+    assert.ok(modalLayoutSource.includes('if (!panel) return;'));
+    assert.ok(modalLayoutSource.includes('if (usesSelfManagedOverlayLayout(overlay, panel)) {'));
+    assert.ok(modalLayoutSource.includes('markOwnedSelfManagedPortal(overlay);'));
+    // The drawer still owns its layout; only the typography baseline is shared.
 
     assert.ok(cartDrawerSource.includes('fixed inset-0 z-50 flex justify-end'));
     assert.ok(cartDrawerSource.includes('flex h-full w-full max-w-md'));

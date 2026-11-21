@@ -1,6 +1,9 @@
 import { useEffect } from 'react';
 
 export const ACCESSIBILITY_FONT_INCREASE_PX = 4;
+// Catu/Renda body text renders at 14px (10px + 4px); minor UI text may
+// be 1px smaller, but operational/financial text must not render below 13px.
+export const MIN_ACCESSIBLE_TEXT_PX = 13;
 
 export const getAccessibleFontSize = (
   computedFontSize: string,
@@ -11,12 +14,15 @@ export const getAccessibleFontSize = (
   if (
     !Number.isFinite(currentSize) ||
     currentSize <= 0 ||
-    !Number.isFinite(increasePx)
+    !Number.isFinite(increasePx) || increasePx < 0
   ) {
     return null;
   }
 
-  const adjustedSize = Number((currentSize + increasePx).toFixed(4));
+  const adjustedSize = Number(Math.max(
+    currentSize + increasePx,
+    increasePx > 0 ? MIN_ACCESSIBLE_TEXT_PX : currentSize
+  ).toFixed(4));
   return `${adjustedSize}px`;
 };
 
@@ -47,7 +53,10 @@ const restoreInlineFontSize = (
 };
 
 const PORTAL_TYPOGRAPHY_SELECTOR = '[data-kyrub-font-scope="true"]';
-const SPECIALIZED_TYPOGRAPHY_SELECTOR = '[data-kyrub-font-managed="true"]';
+// The modal layout bridge already scales these panels with its CSS rules.
+// Skip their descendants so the root/portal observer never applies +4px twice.
+const SPECIALIZED_TYPOGRAPHY_SELECTOR =
+  '[data-kyrub-font-managed="true"], [data-kyrub-top-panel="true"]';
 
 const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
   root,
@@ -60,8 +69,10 @@ const collectElementSubtree = (root: HTMLElement): HTMLElement[] => [
  * Applies the accessibility font increase to the rendered DOM. Existing
  * elements are adjusted once and are never globally restored/reapplied after
  * clicks. Explicitly marked portal panels get the same +4px accessibility
- * baseline as the Renda workspace; unrelated third-party/ERP portals are not
- * touched. Panels with an existing typography manager are deliberately skipped. Newly mounted controls inherit the same rule without zooming again.
+ * baseline as the Renda workspace; unrelated third-party portals are not
+ * touched. Operational ERP and Control Plane content inside #root retain the
+ * same baseline. Specialized modal panels skip duplicate scaling. Newly
+ * mounted controls inherit the rule without zooming again.
  */
 export const useFontSizeAccessibility = (
   rootElementId = 'root',
@@ -176,6 +187,15 @@ export const useFontSizeAccessibility = (
       const addedRoots: HTMLElement[] = [];
 
       for (const mutation of mutations) {
+        if (
+          mutation.type === 'attributes' &&
+          mutation.target instanceof HTMLElement &&
+          mutation.target.matches(PORTAL_TYPOGRAPHY_SELECTOR)
+        ) {
+          // The shared modal bridge marks a body-level ERP portal after mount.
+          // Observing this one scoped attribute avoids font changes on clicks.
+          addedRoots.push(mutation.target);
+        }
         for (const node of mutation.addedNodes) {
           if (node instanceof HTMLElement) addedRoots.push(node);
         }
@@ -196,14 +216,13 @@ export const useFontSizeAccessibility = (
       }
     });
 
-    // Class changes caused by presses, focus and active states are deliberately
-    // ignored. Only newly mounted DOM is adjusted, so interaction cannot keep
-    // increasing or reanimating existing text.
-    // React portals are direct body children, outside #root. The scope marker
-    // ensures the broader observer skips notifications from unrelated widgets.
+    // Ignore ordinary class/state changes. Only added nodes or explicit
+    // Kyrub-owned font-scope registration are observed. No repeated zoom.
     observer.observe(document.body, {
       childList: true,
       subtree: true,
+      attributes: true,
+      attributeFilter: ['data-kyrub-font-scope'],
     });
 
     return () => {
