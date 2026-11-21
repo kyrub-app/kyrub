@@ -473,7 +473,7 @@ test('in-app Encaminhar uses canonical Praça references and accepted Kyrub conv
   assert.match(card, /Encaminhar para um Kairubido conectado/);
   assert.match(card, /status === 'accepted'/);
   assert.match(card, /getDoc\(doc\(db, 'communities', post\.communityId\)\)/);
-  assert.match(card, /setChatDraft\(composeCommunityForwardMessage\(post\)\)/);
+  assert.match(card, /setChatDraft\(composeCommunityForwardMessage\(displayPost\)\)/);
   assert.match(card, /onMessageSent=\{text =>/);
   assert.match(chat, /await sendMessage\(sentText\)/);
   assert.match(chat, /onMessageSent\?\.\(sentText\)/);
