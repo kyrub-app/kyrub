@@ -432,7 +432,7 @@ export function CommunityPostCard({
                       <button key={item.id} type="button"
                         onClick={() => {
                           setForwardRecipient({ id: recipientId, name, connectionId: item.id });
-                          setChatDraft(composeCommunityForwardMessage(post));
+                          setChatDraft(composeCommunityForwardMessage(displayPost));
                           setChatOpen(true);
                           setForwardOpen(false);
                         }}
