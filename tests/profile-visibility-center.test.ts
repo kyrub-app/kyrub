@@ -14,7 +14,9 @@ test('Central Pessoal opens one React-owned editor, not nested settings modals',
   const main = center.slice(center.indexOf('export const UserProfileModal'));
   assert.match(main, /id="personal-profile-settings-trigger"/);
   assert.match(main, /aria-label="Editar perfil"/);
-  assert.match(main, /<Settings className="h-5 w-5"/);
+  assert.match(main, /<Settings className="h-4 w-4"/);
+  assert.match(main, /className="relative h-20 w-20 shrink-0 sm:h-24 sm:w-24"/);
+  assert.match(main, /className="absolute -bottom-3 -right-3 z-10/);
   assert.doesNotMatch(main, />\s*Editar perfil\s*</);
   assert.doesNotMatch(main, /<h3[^>]*>Meu perfil<\/h3>/);
   assert.doesNotMatch(main, />\s*Conta e segurança\s*</);
