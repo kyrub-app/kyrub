@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Heart, MessageCircle, Search, Store as StoreIcon, Users } from 'lucide-react';
+import { ArrowRight, Heart, MessageCircle, Users } from 'lucide-react';
 import type { Store } from '../types';
 import { SquareDirectoryLayout } from './SquareDirectoryLayout';
 import { SquareStoresSection } from './tabs/SquareStoresSection';
