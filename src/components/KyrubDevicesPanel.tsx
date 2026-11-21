@@ -1,9 +1,11 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
-import { Bluetooth, CheckCircle2, CircleHelp, Nfc, RadioTower, ScanLine, Trash2, WifiOff } from 'lucide-react';
+import { Bluetooth, CheckCircle2, CircleHelp, Nfc, RadioTower, ScanLine, Smartphone, Trash2, WifiOff } from 'lucide-react';
 import type { KyrubDeviceKind } from '../../shared/kyrubDeviceLinkContract';
 import {
   KYRUB_LOCAL_DEVICE_LIMIT, loadLocalDeviceDrafts, normalizeDeviceLabel,
   saveLocalDeviceDrafts, type LocalKyrubDeviceDraft,
+  loadLocalSmartphone, prepareLocalSmartphone, saveLocalSmartphone, removeLocalSmartphone,
+  type LocalSmartphonePreparation,
 } from '../utils/kyrubDeviceDrafts';
 
 type NfcReading = { message?: { records?: ReadonlyArray<unknown> } };
@@ -17,9 +19,13 @@ type NfcWindow = Window & { NDEFReader?: new () => BrowserNdefReader };
 const kindLabel = (kind: KyrubDeviceKind) =>
   kind === 'nfc_tag' ? 'Kyrub Tag · NFC' : 'Kyrub Link · LoRa';
 
+const SMARTPHONE_SCAN_ID = 'smartphone-local-reader';
+
 const storageMessage = 'Não foi possível guardar a preparação neste aparelho. Verifique o armazenamento do navegador.';
 
 export function KyrubDevicesPanel({ userId }: { userId: string }) {
+  const [phone, setPhone] = useState<LocalSmartphonePreparation | null>(null);
+  const phoneRef = useRef<LocalSmartphonePreparation | null>(null);
   const [devices, setDevices] = useState<LocalKyrubDeviceDraft[]>([]);
   const devicesRef = useRef<LocalKyrubDeviceDraft[]>([]);
   const [label, setLabel] = useState('');
@@ -40,10 +46,15 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
       const loaded = userId ? loadLocalDeviceDrafts(window.localStorage, userId) : [];
       devicesRef.current = loaded;
       setDevices(loaded);
+      const prepared = userId ? loadLocalSmartphone(window.localStorage, userId) : null;
+      phoneRef.current = prepared;
+      setPhone(prepared);
       setNotice('');
     } catch {
       devicesRef.current = [];
       setDevices([]);
+      phoneRef.current = null;
+      setPhone(null);
       setNotice('O armazenamento offline deste navegador está indisponível.');
     }
     return () => {
@@ -102,9 +113,31 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
     setNotice('Leitura NFC encerrada.');
   };
 
+  const preparePhone = () => {
+    if (!userId) return;
+    try {
+      const record = prepareLocalSmartphone(window.localStorage, userId, crypto.randomUUID(), new Date().toISOString());
+      phoneRef.current = record;
+      setPhone(record);
+      setNotice('Smartphone preparado neste navegador. O NFC ainda precisa ser testado.');
+    } catch { setNotice(storageMessage); }
+  };
+
+  const removePhone = () => {
+    if (!userId) return;
+    if (readingId === SMARTPHONE_SCAN_ID) stopReading();
+    try {
+      removeLocalSmartphone(window.localStorage, userId);
+      phoneRef.current = null;
+      setPhone(null);
+      setNotice('Preparação do smartphone removida deste navegador. O NFC do aparelho não foi alterado.');
+    } catch { setNotice(storageMessage); }
+  };
+
   const readNfc = async (id: string) => {
+    const isPhoneTest = id === SMARTPHONE_SCAN_ID;
     const draft = devicesRef.current.find(item => item.id === id && item.kind === 'nfc_tag');
-    if (!draft || !userId) return;
+    if (!userId || (isPhoneTest ? !phoneRef.current : !draft)) return;
     if (!nfcSupported) {
       setNotice('Leitura Web NFC indisponível: use Chrome no Android, em HTTPS, num aparelho com NFC.');
       return;
@@ -119,6 +152,24 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
       const reader = new Reader();
       reader.onreading = event => {
         if (controller.signal.aborted || scanner.current !== controller) return;
+        // A real read event confirms proximity, even for a blank NDEF tag.
+        // It does not prove ownership of the tag or authenticate the phone.
+        if (isPhoneTest) {
+          const current = phoneRef.current;
+          if (current) {
+            try {
+              const next = { ...current, lastNfcReadAt: new Date().toISOString() };
+              saveLocalSmartphone(window.localStorage, userId, next);
+              phoneRef.current = next;
+              setPhone(next);
+              setNotice('Teste NFC confirmado por aproximação. Nenhum conteúdo da tag foi salvo.');
+            } catch { setNotice(storageMessage); }
+          }
+          controller.abort();
+          scanner.current = null;
+          setReadingId('');
+          return;
+        }
         if (!event.message?.records?.length) {
           controller.abort();
           scanner.current = null;
@@ -141,6 +192,9 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
         setNotice('Falha na leitura NDEF. Reaproxime a tag ou encerre a leitura.');
       };
       await reader.scan({ signal: controller.signal });
+      if (isPhoneTest && !controller.signal.aborted && scanner.current === controller) {
+        setNotice('Leitor NFC iniciado. Aproxime uma tag para confirmar o funcionamento.');
+      }
     } catch {
       if (!controller.signal.aborted) {
         setNotice('Não foi possível iniciar a leitura NFC. Verifique permissões, NFC ativo e compatibilidade.');
@@ -157,10 +211,60 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
       <div className="rounded-xl border border-orange-500/25 bg-orange-500/5 p-3">
         <h5 className="text-sm font-bold text-orange-200">Seu espaço de dispositivos</h5>
         <p className="mt-1 text-sm leading-relaxed text-slate-300">
-          Prepare tags NFC e chaveiros Kyrub Link para identificação e futuras comunicações offline.
+          Comece pelo próprio smartphone e prepare tags NFC e chaveiros Kyrub Link para identificação e futuras comunicações offline.
           A preparação fica neste celular; ainda não representa pareamento ou autorização pela plataforma.
         </p>
       </div>
+
+      <section id="personal-smartphone-device" className="min-w-0 space-y-3 rounded-2xl border border-slate-700 bg-slate-950 p-4">
+        <div className="flex min-w-0 items-start gap-3">
+          <Smartphone className="h-7 w-7 shrink-0 text-orange-300" aria-hidden="true" />
+          <div className="min-w-0 flex-1">
+            <h5 className="text-sm font-bold text-white">Meu smartphone</h5>
+            <p className="mt-1 text-xs text-orange-200">Primeiro dispositivo Kairub · Fase zero</p>
+          </div>
+        </div>
+        <p className="text-sm leading-relaxed text-slate-300">
+          Use o NFC do próprio aparelho para ler tags por aproximação. Ative o NFC nas configurações do Android, se necessário.
+        </p>
+        <div className="space-y-2 border-t border-slate-800 pt-3 text-sm">
+          <p className="text-slate-300">Preparação: <strong className="text-orange-200">{phone ? 'Salva neste navegador' : 'Ainda não preparada'}</strong></p>
+          <p className="text-slate-300">Leitor NFC: <strong className="text-orange-200">
+            {nfcSupported ? 'API disponível; hardware a confirmar' : 'API Web NFC indisponível'}
+          </strong></p>
+          {phone?.lastNfcReadAt && <p className="break-words text-emerald-300">
+            Último teste por aproximação: {new Date(phone.lastNfcReadAt).toLocaleString('pt-BR')}
+          </p>}
+          <p className="text-slate-300">Identidade NFC digital: <strong className="text-amber-200">Requer integração nativa Android (HCE)</strong></p>
+          <p className="text-xs leading-relaxed text-slate-400">
+            A preparação é local e não identifica fisicamente o telefone, não habilita NFC automaticamente e não cria vínculo oficial com a conta.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {!phone ? <button type="button" disabled={!userId} onClick={preparePhone}
+            className="min-h-11 rounded-xl border border-orange-500/50 bg-orange-500/10 px-3 py-2 text-sm font-bold text-orange-200 disabled:opacity-50">
+            Preparar meu smartphone
+          </button> : <>
+            {readingId === SMARTPHONE_SCAN_ID ? <button type="button" onClick={stopReading}
+              className="min-h-11 rounded-xl border border-amber-500/50 px-3 py-2 text-sm font-bold text-amber-200">
+              Cancelar teste NFC
+            </button> : <button type="button" disabled={!nfcSupported || !!readingId}
+              onClick={() => void readNfc(SMARTPHONE_SCAN_ID)}
+              className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-orange-500/50 px-3 py-2 text-sm font-bold text-orange-200 disabled:opacity-50">
+              <ScanLine className="h-4 w-4 shrink-0" aria-hidden="true" /> Testar NFC
+            </button>}
+            <button type="button" onClick={removePhone}
+              className="min-h-11 rounded-xl border border-slate-700 px-3 py-2 text-sm text-slate-300">
+              Remover preparação
+            </button>
+          </>}
+        </div>
+        {!nfcSupported && <p className="text-xs leading-relaxed text-slate-400">
+          Para testar, abra o Kyrub no Chrome para Android, em HTTPS, num aparelho com NFC.
+        </p>}
+        {readingId === SMARTPHONE_SCAN_ID && <p role="status" className="text-sm text-orange-200">Aproxime uma tag NFC do smartphone.</p>}
+        {notice && (readingId === SMARTPHONE_SCAN_ID || phone) && <p className="break-words text-xs text-slate-300">{notice}</p>}
+      </section>
 
       <div className="grid gap-2 sm:grid-cols-2">
         <section className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 p-3">
@@ -170,7 +274,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
             Identificação por aproximação. O Chrome para Android pode ler tags NDEF sem internet.
           </p>
           <p className="mt-2 text-xs font-semibold text-orange-200">
-            {nfcSupported ? 'Leitura disponível neste navegador*' : 'Leitura NFC não disponível neste navegador'}
+            {nfcSupported ? 'API Web NFC disponível; teste o aparelho*' : 'Leitura NFC não disponível neste navegador'}
           </p>
         </section>
         <section className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 p-3">

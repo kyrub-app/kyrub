@@ -66,3 +66,57 @@ export function saveLocalDeviceDrafts(storage: Pick<Storage, 'setItem'>, uid: st
     ...(d.lastNfcReadAt ? { lastNfcReadAt: d.lastNfcReadAt } : {}),
   }))));
 }
+
+
+/** A browser-local smartphone preparation, not a hardware identifier or credential.
+ * One per account/browser profile; it cannot authorize access or NFC emulation.
+ */
+export interface LocalSmartphonePreparation {
+  id: string;
+  createdAt: string;
+  lastNfcReadAt?: string;
+}
+
+const smartphoneKeyFor = (uid: string) => {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(uid)) throw Error('DEVICE_USER_REQUIRED');
+  return `kyrub_smartphone_preparation_v1_${uid}`;
+};
+const validSmartphone = (value: unknown): value is LocalSmartphonePreparation => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const d = value as Record<string, unknown>;
+  return typeof d.id === 'string' && /^[A-Za-z0-9_-]{12,128}$/.test(d.id) &&
+    typeof d.createdAt === 'string' && Number.isFinite(Date.parse(d.createdAt)) &&
+    (d.lastNfcReadAt === undefined ||
+      (typeof d.lastNfcReadAt === 'string' && Number.isFinite(Date.parse(d.lastNfcReadAt))));
+};
+export function parseLocalSmartphone(raw: string | null): LocalSmartphonePreparation | null {
+  if (!raw) return null;
+  try {
+    const value: unknown = JSON.parse(raw);
+    if (!validSmartphone(value)) return null;
+    return { id: value.id, createdAt: value.createdAt,
+      ...(value.lastNfcReadAt ? { lastNfcReadAt: value.lastNfcReadAt } : {}) };
+  } catch { return null; }
+}
+export function loadLocalSmartphone(storage: Pick<Storage, 'getItem'>, uid: string) {
+  return parseLocalSmartphone(storage.getItem(smartphoneKeyFor(uid)));
+}
+export function prepareLocalSmartphone(storage: Pick<Storage, 'getItem' | 'setItem'>,
+  uid: string, id: string, now: string): LocalSmartphonePreparation {
+  const previous = loadLocalSmartphone(storage, uid);
+  if (previous) return previous;
+  const record = { id, createdAt: now };
+  saveLocalSmartphone(storage, uid, record);
+  return record;
+}
+export function saveLocalSmartphone(storage: Pick<Storage, 'setItem'>, uid: string,
+  value: LocalSmartphonePreparation) {
+  if (!validSmartphone(value)) throw Error('DEVICE_DRAFT_INVALID');
+  storage.setItem(smartphoneKeyFor(uid), JSON.stringify({
+    id: value.id, createdAt: value.createdAt,
+    ...(value.lastNfcReadAt ? { lastNfcReadAt: value.lastNfcReadAt } : {}),
+  }));
+}
+export function removeLocalSmartphone(storage: Pick<Storage, 'removeItem'>, uid: string) {
+  storage.removeItem(smartphoneKeyFor(uid));
+}

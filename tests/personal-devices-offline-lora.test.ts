@@ -12,6 +12,8 @@ import {
   parseLocalDeviceDrafts,
   saveLocalDeviceDrafts,
   type LocalKyrubDeviceDraft,
+  loadLocalSmartphone, prepareLocalSmartphone, saveLocalSmartphone,
+  removeLocalSmartphone, parseLocalSmartphone,
 } from '../src/utils/kyrubDeviceDrafts';
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -27,6 +29,7 @@ const fakeStorage = () => {
     values,
     getItem: (key: string) => values.get(key) ?? null,
     setItem: (key: string, value: string) => { values.set(key, value); },
+    removeItem: (key: string) => { values.delete(key); },
   };
 };
 
@@ -100,4 +103,40 @@ test('LoRa transport contract blocks oversized, privileged and unsigned frames',
   assert.throws(() => inspectRadioEnvelopeShape({ ...validRadioEnvelope, payloadBase64url: 'A'.repeat(Math.ceil(KYRUB_LORA_FRAME_MAX_BYTES * 4 / 3) + 1) }), /RADIO_FRAME_TOO_LARGE/);
   assert.throws(() => inspectRadioEnvelopeShape({ ...validRadioEnvelope, userName: 'person' }), /RADIO_FRAME_INVALID/);
   assert.throws(() => inspectRadioEnvelopeShape({ ...validRadioEnvelope, originDeviceId: '../../users' }), /RADIO_FRAME_INVALID/);
+});
+
+
+test('smartphone preparation is local, idempotent, account-scoped, and separate from accessories', () => {
+  const storage = fakeStorage();
+  const now = '2026-11-21T14:00:00.000Z';
+  const phone = prepareLocalSmartphone(storage, 'first_user', 'phone_local_0001', now);
+  assert.deepEqual(prepareLocalSmartphone(storage, 'first_user', 'phone_local_0002', now), phone);
+  assert.equal(loadLocalSmartphone(storage, 'another_user'), null);
+  saveLocalDeviceDrafts(storage, 'first_user', [draft]);
+  saveLocalSmartphone(storage, 'first_user', { ...phone, lastNfcReadAt: now });
+  assert.equal(loadLocalSmartphone(storage, 'first_user')?.lastNfcReadAt, now);
+  assert.deepEqual(loadLocalDeviceDrafts(storage, 'first_user'), [draft]);
+  assert.equal(parseLocalSmartphone('invalid JSON'), null);
+  assert.equal(parseLocalSmartphone(JSON.stringify({ ...phone, lastNfcReadAt: 'not a date' })), null);
+  assert.throws(() => prepareLocalSmartphone(storage, '../../admin', 'phone_local_0003', now), /DEVICE_USER_REQUIRED/);
+  assert.deepEqual(parseLocalSmartphone(JSON.stringify({ ...phone, secret: 'never read' })), phone);
+  removeLocalSmartphone(storage, 'first_user');
+  assert.equal(loadLocalSmartphone(storage, 'first_user'), null);
+  assert.deepEqual(loadLocalDeviceDrafts(storage, 'first_user'), [draft]);
+});
+
+test('smartphone NFC phase zero is a user-initiated reader test, never HCE emulation or hardware registration', () => {
+  const ui = read('src/components/KyrubDevicesPanel.tsx');
+  const profile = read('src/components/modals/UserProfileModal.tsx');
+  assert.match(ui, /id="personal-smartphone-device"/);
+  assert.match(ui, /Primeiro dispositivo Kairub · Fase zero/);
+  assert.match(ui, /onClick=\{preparePhone\}/);
+  assert.match(ui, /onClick=\{\(\) => void readNfc\(SMARTPHONE_SCAN_ID\)\}/);
+  assert.match(ui, /API disponível; hardware a confirmar/);
+  assert.match(ui, /Requer integração nativa Android \(HCE\)/);
+  assert.match(ui, /reader\.onreading = event => \{/);
+  assert.match(ui, /if \(isPhoneTest\) \{[\s\S]*?saveLocalSmartphone\(window\.localStorage, userId, next\)/);
+  assert.match(ui, /Leitor NFC iniciado\. Aproxime uma tag para confirmar/);
+  assert.match(profile, /<KyrubDevicesPanel userId=\{currentUserId\} key=\{currentUserId\}/);
+  assert.ok(ui.indexOf('id="personal-smartphone-device"') < ui.indexOf('Kyrub Tag · NFC</h5>'));
 });

@@ -3,11 +3,14 @@
 ## Objetivo
 A Central Pessoal mantém **Movimentações / Controle financeiro** na primeira linha e agora **Conquistas / Dispositivos** na segunda. **Desafios da plataforma** continua em largura inteira. O ícone de Conquistas representa um cocar; o painel de XP/Pitangas permanece o mesmo.
 
-**Dispositivos** abre a preparação local de dois produtos:
+**Dispositivos** começa pelo **Meu smartphone (fase zero)**, uma preparação local opcional, única por conta e perfil do navegador, e abre a preparação local de dois acessórios:
 - **Kyrub Tag**, tag passiva NFC NDEF para identificação por proximidade;
 - **Kyrub Link**, chaveiro eletrônico ativo previsto para BLE + rádio LoRa.
 
 O sistema foi desenhado offline-first: o aparelho guarda um rascunho **não autoritativo** por UID em armazenamento local; ao mudar de usuário, os rascunhos de outra conta não aparecem. Nenhum token de tag, segredo, serial, latitude, identificação pessoal ou mensagem de rádio é salvo neste rascunho. São no máximo 12 nomes/tipos por usuário/aparelho. Não existe sincronização deste rascunho entre celulares.
+
+## Fase zero — smartphone
+O próprio celular inicia a família Kairub: tag crua, chaveiro plastificado, medalhão de couro, medalhão eletrônico, case robusta e dispositivo de pulso são evoluções posteriores. A preparação do smartphone não consome a cota dos acessórios. É idempotente; o identificador aleatório pertence ao registro local do navegador, não ao hardware. O teste NFC usa uma leitura NDEF real por gesto explícito e guarda somente a data do último evento confirmado. A presença de NDEFReader não confirma hardware ou permissão. Não habilita o rádio pelo aplicativo, não grava a tag, não autentica a conta e não transforma o telefone em tag. Para identidade NFC digital é necessário Android nativo com HCE (ISO-DEP/APDU) e leitor compatível, autorização e protocolo de segurança; não faz parte da Web NFC. Referências: https://developer.chrome.com/docs/capabilities/nfc e https://developer.android.com/develop/connectivity/nfc/hce.
 
 ## O que funciona nesta fase
 1. Navegação Central Pessoal > Dispositivos.
