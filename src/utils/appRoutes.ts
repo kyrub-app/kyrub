@@ -7,7 +7,7 @@ export type KyrubAppRoute =
       canonicalPath: string;
     }
   | {
-      kind: 'public-profile' | 'public-community';
+      kind: 'public-profile' | 'public-community' | 'public-card';
       identifier: string;
       canonicalPath: string;
     }
@@ -60,10 +60,11 @@ export const resolveKyrubAppRoute = (pathname: string): KyrubAppRoute => {
 
   // Category namespaces take precedence over old /:slug/staff aliases.
   if (cleanPath === '/kairubido' || cleanPath.startsWith('/kairubido/') ||
-      cleanPath === '/comunidade' || cleanPath.startsWith('/comunidade/')) {
+      cleanPath === '/comunidade' || cleanPath.startsWith('/comunidade/') ||
+      cleanPath === '/cartao' || cleanPath.startsWith('/cartao/')) {
     const destination = parsePublicDestinationPath(cleanPath);
-    if (destination?.kind === 'profile' || destination?.kind === 'community') {
-      return {kind: destination.kind === 'profile' ? 'public-profile' : 'public-community',
+    if (destination?.kind === 'profile' || destination?.kind === 'community' || destination?.kind === 'card') {
+      return {kind: destination.kind === 'profile' ? 'public-profile' : destination.kind === 'community' ? 'public-community' : 'public-card',
         identifier:destination.identifier,canonicalPath:cleanPath};
     }
     return {kind:'invalid-public-social',canonicalPath:cleanPath};

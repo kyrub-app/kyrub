@@ -231,6 +231,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/cartao/:path*",
+      "destination": "/index.html"
+    },
+    {
       "source": "/:slug/staff",
       "destination": "/index.html"
     }
