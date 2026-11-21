@@ -115,7 +115,7 @@ test('signed-in community directory reconciles the same public IDs without weake
   assert.match(directory, /publicReconciled/);
   assert.match(directory, /subscribeDiscoverableCommunities/);
   assert.match(directory, /privateMembershipCommunities/);
-  assert.match(cloud, /getLiteDoc\\(liteDoc\\(liteDb, 'communities', communityId\\)\\)/);
-  assert.match(cloud, /const liteDb = getLiteFirestore\\(auth\\.app\\)/);
+  assert.match(cloud, /getLiteDoc\(liteDoc\(liteDb, 'communities', communityId\)\)/);
+  assert.match(cloud, /const liteDb = getLiteFirestore\(auth\.app\)/);
   assert.match(cloud, /data\.visibility !== 'public' && data\.visibility !== 'moderated'/);
 });
