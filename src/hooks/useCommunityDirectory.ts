@@ -1,7 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
 import {
   getCommunity,
+  getOwnedCommunitiesFromServer,
   getPublicCommunityFromServer,
   subscribeDiscoverableCommunities,
   subscribeOwnedCommunities,
@@ -64,6 +65,10 @@ export function useCommunityDirectory() {
   const [publicCommunities, setPublicCommunities] = useState<PublicDirectoryCommunity[]>([]);
   const knownPublicIdsRef = useRef<Set<string>>(new Set());
   const [owned, setOwned] = useState<CloudCommunity[]>([]);
+  // A successful batch.commit() is authoritative even if the listener misses
+  // its first snapshot; keep its result visible until the next login.
+  const [committedCreated, setCommittedCreated] = useState<CloudCommunity[]>([]);
+  const [ownedReconciled, setOwnedReconciled] = useState<CloudCommunity[]>([]);
   const [privateMembershipCommunities, setPrivateMembershipCommunities] =
     useState<CloudCommunity[]>([]);
   const [memberships, setMemberships] = useState<
@@ -79,6 +84,8 @@ export function useCommunityDirectory() {
       setPublicReconciled([]);
       setPublicCommunities([]);
       setOwned([]);
+      setCommittedCreated([]);
+      setOwnedReconciled([]);
       setPrivateMembershipCommunities([]);
       setMemberships([]);
       setError('');
@@ -152,6 +159,51 @@ export function useCommunityDirectory() {
       [...discoverable, ...owned].map(community => community.id)
     );
   }, [discoverable, owned]);
+
+  // Registration uses only a successfully committed community, never a
+  // speculative optimistic write. No second document or mutation is created.
+  const registerCommittedCommunity = useCallback((community: CloudCommunity) => {
+    if (!auth.currentUser || auth.currentUser.uid !== community.ownerId) return;
+    setCommittedCreated(previous =>
+      [...previous.filter(item => item.id !== community.id), community]
+    );
+  }, []);
+
+  // The SDK's persistent multi-tab listener once omitted a valid old public
+  // community. Recover *owned* IDs directly via Lite on login, focus and a
+  // bounded refresh, including private communities absent from the Praça API.
+  // This never clears IndexedDB or changes offline behavior.
+  useEffect(() => {
+    if (!user) {
+      setOwnedReconciled([]);
+      return;
+    }
+    let active = true;
+    let running = false;
+    const refreshOwned = async () => {
+      if (running || !active) return;
+      running = true;
+      try {
+        const values = await getOwnedCommunitiesFromServer(user);
+        if (active && auth.currentUser?.uid === user.uid) setOwnedReconciled(values);
+      } catch {
+        // Preserve existing entries when temporarily offline.
+      } finally {
+        running = false;
+      }
+    };
+    void refreshOwned();
+    const onFocus = () => { void refreshOwned(); };
+    window.addEventListener('focus', onFocus);
+    const interval = window.setInterval(onFocus, 5 * 60 * 1000);
+    return () => {
+      active = false;
+      window.removeEventListener('focus', onFocus);
+      window.clearInterval(interval);
+    };
+  }, [user]);
+
+
 
   // Guests and signed-in users discover the same public community IDs.
   // Recover missing public records with the authenticated Firestore Lite reader
@@ -256,10 +308,12 @@ export function useCommunityDirectory() {
       memberships.map(membership => [membership.communityId, membership])
     );
     return mergeCommunities(
-      publicReconciled,
+      committedCreated,
       discoverable,
       owned,
-      privateMembershipCommunities
+      privateMembershipCommunities,
+      publicReconciled,
+      ownedReconciled
     ).map(community => {
       const membership = membershipByCommunity.get(community.id) ?? null;
       return {
@@ -270,11 +324,12 @@ export function useCommunityDirectory() {
         isPendingMember: membership?.status === 'pending',
       };
     });
-  }, [discoverable, publicReconciled, memberships, owned, privateMembershipCommunities, user]);
+  }, [committedCreated, discoverable, publicReconciled, memberships, owned, ownedReconciled, privateMembershipCommunities, user]);
 
   return {
     user,
     communities: directory,
+    registerCommittedCommunity,
     publicCommunities,
     memberships,
     loading,
