@@ -57,4 +57,25 @@ describe('Praça catalog parity', () => {
     assert.match(communities, /selectCommunityDirectory\(communities, catalogTab/);
     assert.match(communities, /renderCard\(community, 'catalog'\)/);
   });
+
+  test('catalog store cards split Avaliações and Entrar using the existing review modal', () => {
+    const catalog = stores.slice(
+      stores.indexOf('if (catalogOpen)'),
+      stores.indexOf('return (\n    <section id="square-stores"'),
+    );
+    assert.match(catalog, /grid grid-cols-2 gap-2 border-t border-slate-800/);
+    assert.match(catalog, /onClick=\{\(\) => onOpenReviews\(storeForReviews\(store\)\)\}/);
+    assert.match(catalog, /<MessageCircle/);
+    assert.match(catalog, /Abrir avaliações da loja/);
+    assert.match(catalog, /<ShoppingBag[^>]*\/\> Entrar/);
+    assert.match(catalog, />\s*Entrar\s*<\/button>/);
+    assert.doesNotMatch(catalog, /<ShoppingBag[^>]*\/\> Abrir/);
+    assert.match(stores, /store\.source \?\? \{/);
+    assert.match(stores, /id: store\.id,\s*name: store\.name/);
+    assert.equal((square.match(/onOpenReviews=\{openStoreReviews\}/g) ?? []).length, 2);
+    assert.match(square,
+      /setStoreCatalogOpen\(false\);\s*props\.setSelectedStoreForMoments\(store\);\s*props\.setShowMomentsModal\(true\);/);
+    assert.match(app, /<MomentsModal/);
+    assert.match(app, /await publishStoreReview\(selectedStoreForMoments, data\)/);
+  });
 });
