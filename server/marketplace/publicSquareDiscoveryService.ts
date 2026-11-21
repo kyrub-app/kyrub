@@ -204,7 +204,7 @@ export const listPublicSquareDiscovery = async () => {
     communities: communityCards,
     posts: publicPosts.map(post => {
       const current = names.get(authorUidByCardId.get(post.id) || '');
-      return current ? { ...post, authorName: current.name, authorAvatar: current.avatar } : post;
+      return current ? { ...post, authorName: current.name, authorAvatar: current.avatar ?? post.authorAvatar } : post;
     }),
   };
 };
