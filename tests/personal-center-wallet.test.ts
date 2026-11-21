@@ -41,19 +41,20 @@ describe('Carteira e Central Pessoal', () => {
     assert.match(app, /walletHistory=\{walletHistory\}/);
   });
 
-  test('session door moves from workspace brand to private Central, keeping real Firebase login/logout', () => {
-    assert.match(profile, /id="personal-profile-auth-trigger"/);
-    assert.match(profile, /isAuthenticated \? 'Sair da conta Kyrub' : 'Entrar no Kyrub'/);
-    assert.match(profile, /onClick=\{onAuthAction\}/);
-    assert.match(profile, /disabled=\{isAuthBusy\}/);
-    assert.match(profile, /<LogOut className="h-5 w-5"/);
-    assert.match(profile, /<LogIn className="h-5 w-5"/);
-    assert.match(app, /onAuthAction=\{\(\) => \{/);
-    assert.match(app, /void handleLogout\(\)/);
-    assert.match(app, /setShowLoginModal\(true\)/);
+  test('guest login and authenticated logout share the scrolling brand position', () => {
+    const guest = read('src/components/KyrubGuestWorkspace.tsx');
+    assert.match(app, /id="kyrub-workspace-signout"/);
+    assert.match(app, /onClick=\{\(\) => void handleLogout\(\)\}/);
+    assert.match(app, /disabled=\{isSigningOut\}/);
     assert.match(app, /await signOut\(auth\)/);
     assert.match(app, /retainedWorkspaceTabByUser\.delete\(signingOutUid\)/);
-    assert.doesNotMatch(app, /id="kyrub-workspace-signout"/);
+    assert.match(guest, /id="kyrub-guest-signin"/);
+    assert.match(guest, /requestLogin\('acessar sua conta'\)/);
+    assert.match(guest, /signInWithPopup\(auth, provider\)/);
+    assert.match(app, /id="kyrub-workspace-brand" className="flex min-h-10/);
+    assert.match(guest, /id="kyrub-guest-brand" className="flex min-h-10/);
+    assert.doesNotMatch(profile, /personal-profile-auth-trigger|onAuthAction|isAuthBusy/);
+    assert.match(profile, /id="personal-profile-settings-trigger"/);
   });
 
   test('Salvos opens existing private multi-source library from header', () => {
