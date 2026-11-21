@@ -158,6 +158,49 @@ test('creator creates the community and owner membership atomically', async () =
   await assertSucceeds(getDoc(doc(owner, 'communities', 'public_a')));
 });
 
+test('new public and private communities persist for their creator across a fresh session', async () => {
+  const firstSession = environment.authenticatedContext(OWNER).firestore();
+  await assertSucceeds(createCommunity(firstSession, 'future_public', 'public'));
+  await assertSucceeds(createCommunity(firstSession, 'future_private', 'private'));
+
+  // Simulate a new authenticated reader after creation, rather than relying
+  // on the same write client's local listener/cache.
+  const newSession = environment.authenticatedContext(OWNER).firestore();
+  const own = await assertSucceeds(getDocs(query(
+    collection(newSession, 'communities'), where('ownerId', '==', OWNER),
+  )));
+  const ids = own.docs.map(item => item.id).sort();
+  if (ids.join(',') !== ['future_private', 'future_public'].join(',')) {
+    throw Error('Owned communities were not visible after a fresh login: ' + ids.join(','));
+  }
+  for (const id of ids) {
+    const community = await assertSucceeds(getDoc(doc(newSession, 'communities', id)));
+    const membership = await assertSucceeds(getDoc(doc(
+      newSession, 'community_members', memberId(id, OWNER),
+    )));
+    if (!community.exists() || community.data().ownerId !== OWNER ||
+        !membership.exists() || membership.data().role !== 'owner' ||
+        membership.data().status !== 'active') {
+      throw Error('New community or its atomic owner membership is missing: ' + id);
+    }
+  }
+
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const publicList = await assertSucceeds(getDocs(query(
+    collection(outsider, 'communities'),
+    where('visibility', 'in', ['public', 'moderated']),
+  )));
+  if (!publicList.docs.some(item => item.id === 'future_public') ||
+      publicList.docs.some(item => item.id === 'future_private')) {
+    throw Error('Public discovery leaked private data or hid a newly created public community');
+  }
+  await assertSucceeds(getDoc(doc(outsider, 'communities', 'future_public')));
+  await assertFails(getDoc(doc(outsider, 'communities', 'future_private')));
+  await assertFails(updateDoc(doc(outsider, 'communities', 'future_public'), {
+    name: 'Nome alterado por outro usuário',
+  }));
+});
+
 test('another authenticated profile reads but cannot administer a public community', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const outsider = environment.authenticatedContext(OUTSIDER).firestore();
