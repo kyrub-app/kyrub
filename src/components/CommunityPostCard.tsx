@@ -13,6 +13,7 @@ import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscri
 import { ChatModal } from './modals/ChatModal';
 import { MediaCarousel } from './MediaCarousel';
 import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
+import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { KyrubAdsCommunityPromotionPreview } from './ads/KyrubAdsCommunityPromotionPreview';
 import {
@@ -84,13 +85,13 @@ export function CommunityPostCard({
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
   const liveAuthors = useLiveAuthorIdentities([post.authorId, ...postComments.map(comment => comment.authorId)]);
-  const authorName = liveAuthors[post.authorId]?.name || post.authorName;
-  const authorAvatar = liveAuthors[post.authorId]?.avatar ?? post.authorAvatar;
+  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
   const displayPost = { ...post, authorName, authorAvatar };
   const displayComments = postComments.map(comment => ({
     ...comment,
-    authorName: liveAuthors[comment.authorId]?.name || comment.authorName,
-    authorAvatar: liveAuthors[comment.authorId]?.avatar ?? comment.authorAvatar,
+    authorName: displayAuthorName(comment.authorId, comment.authorName, liveAuthors),
+    authorAvatar: displayAuthorAvatar(comment.authorId, comment.authorAvatar, liveAuthors),
   }));
   const threadedComments = orderCommentThreads(displayComments);
   const replyCounts = new Map<string, number>();
@@ -360,7 +361,7 @@ export function CommunityPostCard({
           {canParticipate ? (
             <div className="flex flex-col gap-2">
               {replyTarget && <div className="flex items-center justify-between gap-2 text-xs text-sky-300">
-                <span>Respondendo a {liveAuthors[replyTarget.authorId]?.name || replyTarget.authorName}</span>
+                <span>Respondendo a {displayAuthorName(replyTarget.authorId, replyTarget.authorName, liveAuthors)}</span>
                 <button type="button" onClick={() => setReplyTarget(null)} className="font-semibold">Cancelar resposta</button>
               </div>}
               <textarea ref={commentInputRef} rows={2} maxLength={1000} value={commentDraft}
