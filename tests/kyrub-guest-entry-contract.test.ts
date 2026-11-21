@@ -106,3 +106,15 @@ test('anonymous Praça projections do not disclose restricted documents or owner
   assert.equal(projectPublicSquareCommunityPost('post-1', pointer, { ...community, visibility: 'private' }, post), null);
   assert.equal(projectPublicSquareCommunityPost('post-1', pointer, community, { ...post, communityId: 'other' }), null);
 });
+
+test('signed-in community directory reconciles the same public IDs without weakening private reads', () => {
+  const directory = readFileSync('src/hooks/useCommunityDirectory.ts', 'utf8');
+  const cloud = readFileSync('src/utils/communityCloud.ts', 'utf8');
+  assert.match(directory, /fetch\('\\/api\\/square\\/public'/);
+  assert.match(directory, /getPublicCommunityFromServer/);
+  assert.match(directory, /publicReconciled/);
+  assert.match(directory, /subscribeDiscoverableCommunities/);
+  assert.match(directory, /privateMembershipCommunities/);
+  assert.match(cloud, /getDocFromServer\(doc\(db, 'communities', communityId\)\)/);
+  assert.match(cloud, /data\.visibility !== 'public' && data\.visibility !== 'moderated'/);
+});
