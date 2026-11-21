@@ -16,6 +16,8 @@ import {
   removeLocalSmartphone, parseLocalSmartphone,
 } from '../src/utils/kyrubDeviceDrafts';
 
+import { publicBusinessCardUrl, publicStoreCardMessage, confirmedPublicCard } from '../src/utils/publicBusinessCard';
+
 const read = (path: string) => readFileSync(path, 'utf8');
 const draft: LocalKyrubDeviceDraft = {
   id: 'test_device_00001',
@@ -142,4 +144,23 @@ test('smartphone NFC phase zero is a user-initiated reader test, never HCE emula
   assert.match(ui, /Leitor NFC iniciado\. Aproxime uma tag para confirmar/);
   assert.match(profile, /<KyrubDevicesPanel userId=\{currentUserId\} key=\{currentUserId\}/);
   assert.ok(ui.indexOf('id="personal-smartphone-device"') < ui.indexOf('Kyrub Tag · NFC</h5>'));
+});
+
+test('commercial NFC card uses canonical Kyrub public storefront URL only', () => {
+  const url = 'https://kyrub.com/@kyrub-oficial';
+  assert.equal(publicBusinessCardUrl('@kyrub-oficial'), url);
+  assert.equal(publicBusinessCardUrl(url), url);
+  for (const invalid of ['https://evil.example/@shop','https://kyrub.com.evil.example/@shop','https://kyrub.com/staff','https://kyrub.com/@shop?token=secret','https://kyrub.com/@shop#secret','https://kyrub.com/@shop/extra','javascript:alert(1)','@../staff']) assert.equal(publicBusinessCardUrl(invalid), null);
+  assert.deepEqual(publicStoreCardMessage(url), { records: [{ recordType: 'url', data: url }] });
+  assert.throws(() => publicStoreCardMessage('https://evil.example'));
+  assert.deepEqual(confirmedPublicCard(url,{store:{slug:'kyrub-oficial',name:'Kyrub Oficial'},offers:[]}), {url,name:'Kyrub Oficial'});
+  assert.equal(confirmedPublicCard(url,{store:{slug:'other',name:'Other'},offers:[]}), null);
+  assert.equal(confirmedPublicCard(url,{store:{slug:'kyrub-oficial',name:'Kyrub Oficial'}}), null);
+  const ui = read('src/components/KyrubBusinessCard.tsx');
+  assert.match(ui, /marketplace-discovery\/public/);
+  assert.match(ui, /overwrite: false, signal: controller.signal/);
+  assert.match(ui, /await new Reader\(\)\.write/);
+  assert.match(ui, /onClick=\{\(\) => void write\(\)\}/);
+  assert.match(ui, /não transmite por aproximação entre celulares/);
+  assert.doesNotMatch(ui, /makeReadOnly|serialNumber|localStorage|setDoc|updateDoc/);
 });

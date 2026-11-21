@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent } from 'react';
 import { Bluetooth, CheckCircle2, CircleHelp, Nfc, RadioTower, ScanLine, Smartphone, Trash2, WifiOff } from 'lucide-react';
+import { KyrubBusinessCard } from './KyrubBusinessCard';
 import type { KyrubDeviceKind } from '../../shared/kyrubDeviceLinkContract';
 import {
   KYRUB_LOCAL_DEVICE_LIMIT, loadLocalDeviceDrafts, normalizeDeviceLabel,
@@ -32,6 +33,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
   const [kind, setKind] = useState<KyrubDeviceKind>('nfc_tag');
   const [notice, setNotice] = useState('');
   const [readingId, setReadingId] = useState('');
+  const [cardWriting, setCardWriting] = useState(false);
   const scanner = useRef<AbortController | null>(null);
 
   const nfcSupported = typeof window !== 'undefined' && window.isSecureContext &&
@@ -137,7 +139,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
   const readNfc = async (id: string) => {
     const isPhoneTest = id === SMARTPHONE_SCAN_ID;
     const draft = devicesRef.current.find(item => item.id === id && item.kind === 'nfc_tag');
-    if (!userId || (isPhoneTest ? !phoneRef.current : !draft)) return;
+    if (cardWriting || !userId || (isPhoneTest ? !phoneRef.current : !draft)) return;
     if (!nfcSupported) {
       setNotice('Leitura Web NFC indisponível: use Chrome no Android, em HTTPS, num aparelho com NFC.');
       return;
@@ -242,7 +244,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
             {readingId === SMARTPHONE_SCAN_ID ? <button type="button" onClick={stopReading}
               className="min-h-11 rounded-xl border border-amber-500/50 px-3 py-2 text-sm font-bold text-amber-200">
               Cancelar teste NFC
-            </button> : <button type="button" disabled={!nfcSupported || !!readingId}
+            </button> : <button type="button" disabled={!nfcSupported || !!readingId || cardWriting}
               onClick={() => void readNfc(SMARTPHONE_SCAN_ID)}
               className="inline-flex min-h-11 items-center gap-2 rounded-xl border border-orange-500/50 px-3 py-2 text-sm font-bold text-orange-200 disabled:opacity-50">
               <ScanLine className="h-4 w-4 shrink-0" aria-hidden="true" /> Testar NFC
@@ -259,6 +261,8 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
         {readingId === SMARTPHONE_SCAN_ID && <p role="status" className="text-sm text-orange-200">Aproxime uma tag NFC do smartphone.</p>}
         {notice && (readingId === SMARTPHONE_SCAN_ID || phone) && <p className="break-words text-xs text-slate-300">{notice}</p>}
       </section>
+
+      <KyrubBusinessCard key={userId} userId={userId} nfcSupported={nfcSupported} busy={!!readingId} onWriting={setCardWriting} />
 
       <div className="grid gap-2 sm:grid-cols-2">
         <section className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 p-3">
@@ -339,7 +343,7 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
                   className="min-h-10 rounded-lg border border-amber-500/50 px-3 text-sm font-bold text-amber-200">
                   Cancelar leitura NFC
                 </button> :
-                <button type="button" onClick={() => void readNfc(device.id)} disabled={!nfcSupported || !!readingId}
+                <button type="button" onClick={() => void readNfc(device.id)} disabled={!nfcSupported || !!readingId || cardWriting}
                   className="inline-flex min-h-10 items-center gap-2 rounded-lg border border-orange-500/40 px-3 text-sm font-bold text-orange-200 disabled:opacity-50">
                   <ScanLine className="h-4 w-4" aria-hidden="true" /> Ler NFC
                 </button>}
