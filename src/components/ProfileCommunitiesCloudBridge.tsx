@@ -972,7 +972,7 @@ export function ProfileCommunitiesCloudBridge() {
           <CommunityCover community={community} className="h-24" />
           <div className="relative p-3">
             {(community.isOwner || community.isActiveMember) && (
-              <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-[10px] font-black uppercase text-emerald-300">
+              <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-xs font-black uppercase text-emerald-300">
                 Você participa
               </span>
             )}
