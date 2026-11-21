@@ -24,6 +24,7 @@ import { submitSocialPostReport, type SocialReportReason } from '../utils/social
 import { CommunitySquareFeedCard } from './CommunitySquareFeedCard';
 import { useCommunityDirectory } from '../hooks/useCommunityDirectory';
 import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
+import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import {
@@ -199,7 +200,10 @@ export function PublicSocialFeedPanel({
   );
   const currentNamePosts = useMemo(() => posts.map(post => {
     const identity = liveSocialAuthors[post.authorId];
-    return identity ? { ...post, user: identity.name, avatar: identity.avatar } : post;
+    return identity ? { ...post,
+      user: displayAuthorName(post.authorId, post.user, liveSocialAuthors),
+      avatar: displayAuthorAvatar(post.authorId, post.avatar, liveSocialAuthors),
+    } : post;
   }), [posts, liveSocialAuthors]);
   const [openPostMenuId, setOpenPostMenuId] = useState<string | null>(null);
   const [reportPostId, setReportPostId] = useState<string | null>(null);
