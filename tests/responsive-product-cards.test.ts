@@ -51,10 +51,14 @@ test('shared customer and staff PDV starts with two product columns on mobile', 
   );
 });
 
-test('shared PDV keeps compact cards and actions usable in two mobile columns', () => {
+test('shared PDV keeps action labels readable in every two-column product card', () => {
   assert.match(sharedPdv, /rounded-2xl[\s\S]*sm:rounded-3xl/);
-  assert.match(sharedPdv, /min-h-9 w-full[\s\S]*sm:min-h-11 sm:w-auto/);
-  assert.match(sharedPdv, /text-\[8px\][\s\S]*sm:text-\[10px\]/);
+  assert.match(sharedPdv, /mt-auto flex flex-col gap-2 border-t border-slate-800/);
+  assert.doesNotMatch(sharedPdv, /sm:flex-row sm:items-end sm:justify-between/);
+  assert.match(sharedPdv, /flex min-h-11 min-w-0 w-full items-center justify-center/);
+  assert.match(sharedPdv, /<span className="min-w-0 text-center leading-tight whitespace-normal break-words">\{actionLabel\}<\/span>/);
+  assert.match(sharedPdv, /shrink-0 sm:h-4 sm:w-4/);
+  assert.match(sharedPdv, /text-\[10px\] font-black uppercase tracking-wide/);
 });
 
 test('responsive product styles still load after the Tailwind entry stylesheet', () => {

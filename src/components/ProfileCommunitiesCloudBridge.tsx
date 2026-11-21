@@ -1078,7 +1078,7 @@ export function ProfileCommunitiesCloudBridge() {
                 ? openCommunity(community)
                 : void handleMembership(community)
             }
-            className={`flex min-h-9 w-full items-center justify-center rounded-xl text-xs font-black uppercase disabled:opacity-45 ${
+            className={`flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words disabled:opacity-45 ${
               community.isOwner || community.isActiveMember
                 ? 'bg-slate-800 text-slate-200'
                 : community.isPendingMember
@@ -1120,7 +1120,7 @@ export function ProfileCommunitiesCloudBridge() {
       </button>
       <div className="mt-auto border-t border-slate-800 p-2">
         <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }}
-          className="flex min-h-9 w-full items-center justify-center rounded-xl bg-slate-800 text-xs font-black uppercase text-slate-200">
+          className="flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words text-slate-200">
           Conhecer
         </button>
       </div>

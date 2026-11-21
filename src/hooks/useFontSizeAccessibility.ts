@@ -173,15 +173,46 @@ export const useFontSizeAccessibility = (
       applySnapshots(snapshots);
     };
 
-    // A portal may already be mounted by the time this effect is registered.
-    // Keep its elements independent from #root so no node is enlarged twice.
-    const existingPortals = Array.from(
-      document.querySelectorAll<HTMLElement>(PORTAL_TYPOGRAPHY_SELECTOR)
-    ).filter(portal => !rootElement.contains(portal));
-    applySnapshots(captureSnapshots([
-      ...collectElementSubtree(rootElement),
-      ...existingPortals.flatMap(collectElementSubtree),
-    ]));
+    // Take a fresh source-style snapshot at the *current* CSS viewport.
+    // Never compute from the previously enlarged inline font size.
+    const collectManagedElements = (): HTMLElement[] => {
+      const portals = Array.from(
+        document.querySelectorAll<HTMLElement>(PORTAL_TYPOGRAPHY_SELECTOR)
+      ).filter(portal => !rootElement.contains(portal));
+      return [
+        ...collectElementSubtree(rootElement),
+        ...portals.flatMap(collectElementSubtree),
+      ];
+    };
+
+    applySnapshots(captureSnapshots(collectManagedElements()));
+
+    const refreshResponsiveFontSizes = (): void => {
+      // Restore every original inline style *before* taking new computed
+      // measurements, including inherited styles and responsive Tailwind
+      // classes. This avoids cumulative zoom on desktop/mobile resizing.
+      restoreAllAdjustedElements();
+      applySnapshots(captureSnapshots(collectManagedElements()));
+    };
+
+    const viewportWidthKey = (): string =>
+      `${window.innerWidth}:${window.visualViewport?.width ?? window.innerWidth}`;
+    let lastMeasuredWidth = viewportWidthKey();
+    let resizeTimer: number | null = null;
+
+    const onResponsiveResize = (): void => {
+      if (viewportWidthKey() === lastMeasuredWidth) return;
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer);
+      // Only settle when the width changes, not on keyboard/height changes or
+      // each intermediate resize frame. Ordinary clicks remain untouched.
+      resizeTimer = window.setTimeout(() => {
+        resizeTimer = null;
+        const newWidth = viewportWidthKey();
+        if (newWidth === lastMeasuredWidth) return;
+        lastMeasuredWidth = newWidth;
+        refreshResponsiveFontSizes();
+      }, 80);
+    };
 
     const observer = new MutationObserver(mutations => {
       const addedRoots: HTMLElement[] = [];
@@ -224,9 +255,14 @@ export const useFontSizeAccessibility = (
       attributes: true,
       attributeFilter: ['data-kyrub-font-scope'],
     });
+    window.addEventListener('resize', onResponsiveResize);
+    window.visualViewport?.addEventListener('resize', onResponsiveResize);
 
     return () => {
       observer.disconnect();
+      window.removeEventListener('resize', onResponsiveResize);
+      window.visualViewport?.removeEventListener('resize', onResponsiveResize);
+      if (resizeTimer !== null) window.clearTimeout(resizeTimer);
       restoreAllAdjustedElements();
     };
   }, [increasePx, rootElementId]);

@@ -179,13 +179,13 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
         <p className="mt-1 text-xs text-sky-300">{community.category || 'Comunidade'} · {community.memberCount} participantes</p>
         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
       </div>
-      <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800 p-1.5">
+      <div className={`grid ${catalog ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 border-t border-slate-800 p-1.5`}>
         <button type="button" onClick={() => setSelectedCommunity(community)}
-          className="min-h-11 rounded-xl border border-slate-700 bg-slate-800 text-xs font-bold">
+          className="min-h-11 min-w-0 rounded-xl border border-slate-700 bg-slate-800 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words">
           Conhecer
         </button>
         <button type="button" onClick={() => requireLogin('participar da comunidade ' + community.name)}
-          className="min-h-11 rounded-xl bg-slate-800 text-xs font-bold">
+          className="min-h-11 min-w-0 rounded-xl bg-slate-800 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words">
           Participar
         </button>
       </div>

@@ -1,3 +1,5 @@
+import { JSDOM } from 'jsdom';
+import { act, createElement } from 'react';
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
@@ -6,6 +8,7 @@ import {
   ACCESSIBILITY_FONT_INCREASE_PX,
   MIN_ACCESSIBLE_TEXT_PX,
   getAccessibleFontSize,
+  useFontSizeAccessibility,
 } from '../src/hooks/useFontSizeAccessibility';
 
 test('font accessibility follows Catu baseline and never leaves tiny operational labels', () => {
@@ -52,6 +55,12 @@ test('runtime observer adjusts new screens without reapplying existing text', ()
   assert.match(hookSource, /PORTAL_TYPOGRAPHY_SELECTOR/);
   assert.match(hookSource, /isWithinManagedScope\(addedRoot\)/);
   assert.match(hookSource, /SPECIALIZED_TYPOGRAPHY_SELECTOR/);
+  assert.match(hookSource, /refreshResponsiveFontSizes/);
+  assert.match(hookSource, /restoreAllAdjustedElements\(\);\s*applySnapshots\(captureSnapshots\(collectManagedElements\(\)\)\)/);
+  assert.match(hookSource, /window\.addEventListener\('resize', onResponsiveResize\)/);
+  assert.match(hookSource, /window\.visualViewport\?\.addEventListener\('resize', onResponsiveResize\)/);
+  assert.match(hookSource, /window\.removeEventListener\('resize', onResponsiveResize\)/);
+  assert.match(hookSource, /clearTimeout\(resizeTimer\)/);
   assert.match(hookSource, /attributeFilter:\s*\['data-kyrub-font-scope'\]/);
   assert.doesNotMatch(hookSource, /attributeFilter:\s*\[[^\]]*className/);
   assert.doesNotMatch(hookSource, /requestAnimationFrame/);
@@ -110,4 +119,91 @@ test('audits typography coverage across personal app, all ERP source modules and
 
   console.info('Static typography audit:', JSON.stringify(result));
   // Static source coverage and build tests are not a visual/device E2E proof.
+});
+
+
+test('font-size follows viewport in both directions without accumulating 4px', async () => {
+  const dom = new JSDOM('<!doctype html><html><body><div id="root"></div></body></html>', {
+    url: 'http://localhost/',
+    pretendToBeVisual: true,
+  });
+  const globals = ['window', 'document', 'HTMLElement', 'MutationObserver'] as const;
+  const originals = globals.map(name => Object.getOwnPropertyDescriptor(globalThis, name));
+  const actFlag = Object.getOwnPropertyDescriptor(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
+
+  let root: import('react-dom/client').Root | null = null;
+  try {
+    for (const name of globals) {
+      Object.defineProperty(globalThis, name, { configurable: true, value: dom.window[name] });
+    }
+    Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { configurable: true, value: true });
+    let width = 1024;
+    Object.defineProperty(dom.window, 'innerWidth', { configurable: true, get: () => width });
+    const nativeGetComputedStyle = dom.window.getComputedStyle.bind(dom.window);
+    dom.window.getComputedStyle = ((element: Element) => {
+      const node = element as HTMLElement;
+      // Simulate a Tailwind media query, while respecting a previously
+      // applied inline size (so failure to restore would double-amplify).
+      if (node.id === 'responsive-text' && !node.style.getPropertyValue('font-size')) {
+        return { fontSize: width < 640 ? '10px' : '12px' } as CSSStyleDeclaration;
+      }
+      return nativeGetComputedStyle(element);
+    }) as typeof dom.window.getComputedStyle;
+
+    const { createRoot } = await import('react-dom/client');
+    root = createRoot(document.getElementById('root')!);
+    const Harness = () => {
+      useFontSizeAccessibility();
+      return createElement('p', { id: 'responsive-text', className: 'text-[10px] sm:text-xs' }, 'Descrição responsiva');
+    };
+    await act(async () => { root!.render(createElement(Harness)); });
+    const paragraph = document.getElementById('responsive-text')!;
+    assert.equal(paragraph.style.fontSize, '16px', 'desktop: 12px + 4px');
+
+    const changeWidth = async (nextWidth: number) => {
+      width = nextWidth;
+      dom.window.dispatchEvent(new dom.window.Event('resize'));
+      await new Promise(resolve => setTimeout(resolve, 130));
+    };
+    await changeWidth(340);
+    assert.equal(paragraph.style.fontSize, '14px', 'mobile: 10px + 4px without reload');
+    await changeWidth(1024);
+    assert.equal(paragraph.style.fontSize, '16px', 'wider again: responsive class is remeasured');
+    await changeWidth(340);
+    assert.equal(paragraph.style.fontSize, '14px', 'repeated resizes do not compound the adjustment');
+
+    // Height-only browser resize cannot re-run the font calculation.
+    dom.window.dispatchEvent(new dom.window.Event('resize'));
+    await new Promise(resolve => setTimeout(resolve, 120));
+    assert.equal(paragraph.style.fontSize, '14px');
+  } finally {
+    if (root) await act(async () => { root!.unmount(); });
+    globals.forEach((name, index) => {
+      const saved = originals[index];
+      if (saved) Object.defineProperty(globalThis, name, saved);
+      else Reflect.deleteProperty(globalThis, name);
+    });
+    if (actFlag) Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', actFlag);
+    else Reflect.deleteProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT');
+    dom.window.close();
+  }
+});
+
+
+test('admin login disclosure reaches WCAG AA contrast for normal text', () => {
+  const admin = readFileSync('src/components/admin/AdminControlPlaneApp.tsx', 'utf8');
+  assert.match(admin, /id="admin-access-provisioning-notice" className="mt-4 text-center text-\[10px\] leading-relaxed text-slate-300"/);
+  const luminance = (hex: string) => {
+    const rgb = hex.match(/.{2}/g)!.map(pair => Number.parseInt(pair, 16) / 255);
+    const [r, g, b] = rgb.map(value => value <= 0.04045
+      ? value / 12.92
+      : ((value + 0.055) / 1.055) ** 2.4);
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  // Conservative solid slate-900 background; the actual /80 layer over
+  // slate-950 is darker and gives the light text still more contrast.
+  const foreground = luminance('cbd5e1'); // slate-300
+  const background = luminance('0f172a'); // slate-900
+  const ratio = (foreground + 0.05) / (background + 0.05);
+  assert.ok(ratio >= 4.5, `Expected WCAG AA >=4.5:1, got ${ratio.toFixed(2)}:1`);
 });
