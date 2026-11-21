@@ -51,7 +51,8 @@ test('community mural and forwarded Praça resolve both author and forwarder by 
   assert.match(hook, /data\?\.isProfileVisible === false \? undefined/);
   assert.match(hook, /\/\^\[A-Za-z0-9_-\]\{1,128\}\$\//);
   assert.doesNotMatch(hook, /setDoc\(|updateDoc\(|deleteDoc\(/);
-  assert.match(mural, /useLiveAuthorIdentities\(\[post\.authorId, \.\.\.postComments\.map\(comment => comment\.authorId\)\]\)/);
+  assert.match(mural, /useLiveAuthorIdentities\(\[/);
+  assert.match(mural, /\.\.\.\(commentsOpen \? postComments\.map\(comment => comment\.authorId\) : \[\]\)/);
   assert.match(mural, /displayAuthorName\(post\.authorId, post\.authorName, liveAuthors\)/);
   assert.match(mural, /const displayComments = postComments\.map/);
   assert.match(praca, /useLiveAuthorIdentities\(\[post\.authorId, entry\.forwardedById \|\| ''\]\)/);
