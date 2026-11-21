@@ -58,18 +58,28 @@ describe('Praça catalog parity', () => {
     assert.match(communities, /renderCard\(community, 'catalog'\)/);
   });
 
-  test('catalog store cards split Avaliações and Entrar using the existing review modal', () => {
+  test('Praça rail and full catalog have the same icon-free Avaliações | Entrar actions', () => {
     const catalog = stores.slice(
       stores.indexOf('if (catalogOpen)'),
       stores.indexOf('return (\n    <section id="square-stores"'),
     );
-    assert.match(catalog, /grid grid-cols-2 gap-2 border-t border-slate-800/);
-    assert.match(catalog, /onClick=\{\(\) => onOpenReviews\(storeForReviews\(store\)\)\}/);
-    assert.match(catalog, /<MessageCircle/);
-    assert.match(catalog, /Abrir avaliações da loja/);
-    assert.match(catalog, /<ShoppingBag[^>]*\/\> Entrar/);
-    assert.match(catalog, />\s*Entrar\s*<\/button>/);
-    assert.doesNotMatch(catalog, /<ShoppingBag[^>]*\/\> Abrir/);
+    const rail = stores.slice(stores.indexOf('return (\n    <section id="square-stores"'));
+
+    for (const surface of [catalog, rail]) {
+      assert.match(surface, /grid grid-cols-2 gap-1\.5 border-t border-slate-800/);
+      assert.match(surface, /onClick=\{\(\) => onOpenReviews\(storeForReviews\(store\)\)\}/);
+      assert.match(surface, /Abrir avaliações da loja/);
+      assert.match(surface, /<a href=\{OFFICIAL_STORE_PATH\}[\s\S]*?>\s*Entrar\s*<\/a>/);
+      assert.match(surface, /onClick=\{\(\) => store\.source && onOpenStore\(store\.source\)\}/);
+      assert.match(surface, />\s*Entrar\s*<\/button>/);
+      assert.doesNotMatch(surface, /<MessageCircle|<ShoppingBag|Abrir loja/);
+      assert.match(surface, /text-xs font-bold/);
+    }
+
+    // Rail cards are now wide enough for two legible text labels.
+    assert.match(rail, /w-\[206px\] shrink-0/);
+    assert.match(rail, /text-base font-black text-white/);
+    assert.match(catalog, /text-sm font-black text-white/);
     assert.match(stores, /store\.source \?\? \{/);
     assert.match(stores, /id: store\.id,\s*name: store\.name/);
     assert.equal((square.match(/onOpenReviews=\{openStoreReviews\}/g) ?? []).length, 2);
@@ -77,5 +87,14 @@ describe('Praça catalog parity', () => {
       /setStoreCatalogOpen\(false\);\s*props\.setSelectedStoreForMoments\(store\);\s*props\.setShowMomentsModal\(true\);/);
     assert.match(app, /<MomentsModal/);
     assert.match(app, /await publishStoreReview\(selectedStoreForMoments, data\)/);
+  });
+
+  test('community rail and both directory headers use the larger text scale', () => {
+    assert.match(communities, /w-\[206px\] shrink-0/);
+    assert.match(communities, /className="mt-1 text-base font-black text-white"/);
+    assert.match(communities, /min-h-8 text-sm font-black text-white/);
+    assert.match(layout, /className="text-xl font-black text-white"/);
+    assert.match(layout, /className="text-sm text-slate-400"/);
+    assert.match(layout, /px-3\.5 text-sm font-bold/);
   });
 });

@@ -29,7 +29,6 @@ import {
   ShieldCheck,
   Trash2,
   UserCheck,
-  UserPlus,
   Users,
   X,
 } from 'lucide-react';
@@ -967,27 +966,27 @@ export function ProfileCommunitiesCloudBridge() {
     return (
       <article
         key={community.id}
-        className={`relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[172px] shrink-0'}`}
+        className={`relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
       >
         <button type="button" onClick={() => openCommunity(community)} className="text-left">
           <CommunityCover community={community} className="h-24" />
           <div className="relative p-3">
             {(community.isOwner || community.isActiveMember) && (
-              <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-[7px] font-black uppercase text-emerald-300">
+              <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-xs font-black uppercase text-emerald-300">
                 Você participa
               </span>
             )}
-            <strong className="block line-clamp-2 min-h-8 text-xs font-black text-white">
+            <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">
               {community.name}
             </strong>
-            <span className="mt-1 block text-[11px] text-slate-500">
+            <span className="mt-1 block text-xs text-slate-500">
               {community.memberCount.toLocaleString('pt-BR')} membros
             </span>
-            <span className="mt-1 block truncate text-[11px] text-sky-300/75">
+            <span className="mt-1 block truncate text-xs text-sky-300/75">
               {community.category}
             </span>
             {layout === 'catalog' && community.description && (
-              <p className="mt-1 line-clamp-2 text-[11px] leading-relaxed text-slate-400">
+              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
                 {community.description}
               </p>
             )}
@@ -1019,7 +1018,7 @@ export function ProfileCommunitiesCloudBridge() {
                 ? openCommunity(community)
                 : void handleMembership(community)
             }
-            className={`flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[11px] font-black uppercase disabled:opacity-45 ${
+            className={`flex min-h-9 w-full items-center justify-center rounded-xl text-xs font-black uppercase disabled:opacity-45 ${
               community.isOwner || community.isActiveMember
                 ? 'bg-slate-800 text-slate-200'
                 : community.isPendingMember
@@ -1027,13 +1026,6 @@ export function ProfileCommunitiesCloudBridge() {
                   : 'bg-sky-500 text-slate-950'
             }`}
           >
-            {community.isOwner || community.isActiveMember ? (
-              <MessageCircle className="h-3.5 w-3.5" />
-            ) : community.isPendingMember ? (
-              <Check className="h-3.5 w-3.5" />
-            ) : (
-              <UserPlus className="h-3.5 w-3.5" />
-            )}
             {actionLabel}
           </button>
         </div>
@@ -1119,16 +1111,16 @@ export function ProfileCommunitiesCloudBridge() {
       {host &&
         createPortal(
           <section
-            className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900/70 p-3"
+            className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4"
             id="square-communities"
             aria-label="Comunidades na Praça"
           >
             <header className="flex items-start justify-between gap-3">
               <div>
-                <span className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-300">
+                <span className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">
                   Comunidades
                 </span>
-                <h3 className="mt-0.5 text-xs font-black text-white">
+                <h3 className="mt-1 text-base font-black text-white">
                   Encontre espaços para participar
                 </h3>
               </div>
@@ -1141,7 +1133,7 @@ export function ProfileCommunitiesCloudBridge() {
                   setCatalogOpen(true);
                 }}
                 aria-label="Ver todas as comunidades"
-                className="flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950"
+                className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-xs font-black uppercase text-slate-950"
               >
                 Ver todas <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1158,7 +1150,7 @@ export function ProfileCommunitiesCloudBridge() {
                   key={id}
                   type="button"
                   onClick={() => setListTab(id)}
-                  className={`shrink-0 rounded-xl px-3 py-2 text-[11px] font-black uppercase ${
+                  className={`shrink-0 rounded-xl px-3 py-2 text-xs font-black uppercase ${
                     listTab === id
                       ? 'bg-sky-500/15 text-sky-200'
                       : 'border border-slate-800 bg-slate-950 text-slate-500'
@@ -1179,7 +1171,7 @@ export function ProfileCommunitiesCloudBridge() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="flex w-[132px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/5 p-4 text-center"
+                className="flex w-[154px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/5 p-4 text-center"
               >
                 <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-slate-950">
                   <Plus className="h-5 w-5" />
@@ -1187,7 +1179,7 @@ export function ProfileCommunitiesCloudBridge() {
                 <strong className="mt-3 text-xs font-black uppercase text-sky-200">
                   Criar comunidade
                 </strong>
-                <span className="mt-1 text-[7px] leading-relaxed text-slate-500">
+                <span className="mt-1 text-xs leading-relaxed text-slate-400">
                   Reúna pessoas em torno de um interesse.
                 </span>
               </button>
