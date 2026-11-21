@@ -307,13 +307,15 @@ export function useCommunityDirectory() {
     const membershipByCommunity = new Map(
       memberships.map(membership => [membership.communityId, membership])
     );
+    // Lite repairs missing records, but a live SDK snapshot takes priority
+    // for edits and membership-triggered updates already visible in the UI.
     return mergeCommunities(
       committedCreated,
+      ownedReconciled,
+      publicReconciled,
       discoverable,
       owned,
-      privateMembershipCommunities,
-      publicReconciled,
-      ownedReconciled
+      privateMembershipCommunities
     ).map(community => {
       const membership = membershipByCommunity.get(community.id) ?? null;
       return {
