@@ -31,6 +31,9 @@ test('missing profile, unrelated author and cleared avatar retain safe provenanc
   assert.equal(displayAuthorName('alice', 'Alice Antiga', profiles), 'Alice Nova');
   assert.equal(displayAuthorAvatar('alice', 'https://old.example/alice.png', profiles), '',
     'Removing the profile photo must not revive its historical image');
+  assert.equal(displayAuthorAvatar('alice', 'https://old.example/alice.png',
+    { alice: { name: 'Alice Nova', avatar: undefined } }), 'https://old.example/alice.png',
+    'A reserved profile must not expose a newer private photo');
   assert.equal(displayAuthorName('alice', 'Alice Antiga', {}), 'Alice Antiga',
     'Network and permission errors can fall back to a historical snapshot');
 });
@@ -45,6 +48,7 @@ test('community mural and forwarded Praça resolve both author and forwarder by 
   assert.match(editor, /setDoc\(doc\(db, 'users', user\.uid\), fields, \{ merge: true \}\)/);
   assert.match(editor, /broadcastProfileUpdate\(user, name,/);
   assert.match(hook, /onSnapshot\(\s*doc\(db, 'users', uid\)/);
+  assert.match(hook, /data\?\.isProfileVisible === false \? undefined/);
   assert.match(hook, /\/\^\[A-Za-z0-9_-\]\{1,128\}\$\//);
   assert.doesNotMatch(hook, /setDoc\(|updateDoc\(|deleteDoc\(/);
   assert.match(mural, /useLiveAuthorIdentities\(\[post\.authorId, \.\.\.postComments\.map\(comment => comment\.authorId\)\]\)/);
@@ -63,6 +67,7 @@ test('visitor Praça keeps public projection but replaces old name only for publ
   assert.match(server, /const publicPosts = \[\.\.\.socialCards/);
   assert.match(server, /\.slice\(0, 40\)/);
   assert.match(server, /adminDb\.collection\('users'\)\.doc\(uid\)\.get\(\)/);
-  assert.match(server, /return current \? \{ \.\.\.post, authorName: current\.name, authorAvatar: current\.avatar \} : post/);
+  assert.match(server, /return current \? \{ \.\.\.post, authorName: current\.name, authorAvatar: current\.avatar \?\? post\.authorAvatar \} : post/);
+  assert.match(server, /data\?\.isProfileVisible === false \? undefined/);
   assert.doesNotMatch(server, /posts:\s*publicPosts\.map\(post => \(\{[^}]*authorId/);
 });
