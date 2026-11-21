@@ -1,11 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { db } from '../utils/firebase';
+import type { AuthorDisplayIdentity } from '../utils/authorDisplayIdentity';
 
-export interface LiveAuthorIdentity {
-  name: string;
-  avatar: string;
-}
+export type LiveAuthorIdentity = AuthorDisplayIdentity;
 
 const validAuthorId = (id: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(id);
 
