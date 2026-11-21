@@ -29,7 +29,6 @@ import {
   ShieldCheck,
   Trash2,
   UserCheck,
-  UserPlus,
   Users,
   X,
 } from 'lucide-react';
