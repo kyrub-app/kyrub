@@ -222,6 +222,30 @@ export const proposeOrderCreditInterest = async (input: {
   });
 };
 
+/** Owner reads the current proposal status without resending or modifying it. */
+export const loadOwnerCreditInterestProposal = async (input: {
+  storeId: string;
+  orderId: string;
+  actorId: string;
+}): Promise<CreditInterestProposal | null> => {
+  const storeId = clean(input.storeId);
+  const orderId = clean(input.orderId);
+  const actorId = clean(input.actorId);
+  assertIds(storeId, orderId);
+  if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
+  await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
+  const snapshot = await adminDb.doc(proposalPath(storeId, orderId)).get();
+  if (!snapshot.exists) return null;
+  const proposal = snapshot.data() as CreditInterestProposal;
+  if (proposal.schemaVersion !== 1 || proposal.storeId !== storeId ||
+      proposal.orderId !== orderId || snapshot.id !== orderId ||
+      !validId(proposal.buyerId) || proposal.scope !== ORDER_COMPENSATION_SCOPE ||
+      proposal.creditIssued !== false) {
+    throw new Error('CREDIT_INTEREST_PROPOSAL_CONFLICT');
+  }
+  return proposal;
+};
+
 export const listOwnCreditInterestProposals = async (input: {
   storeId: string;
   buyerId: string;
