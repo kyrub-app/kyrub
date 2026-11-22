@@ -59,3 +59,10 @@ test('extended refund diagnostics remain scrollable in mobile viewport', () => {
   assert.match(bridge, /max-h-\[92dvh\] w-full max-w-md overflow-y-auto overscroll-contain/);
   assert.match(bridge, /Conferir cobrança e histórico \(somente leitura\)/);
 });
+
+test('financial diagnostic flags use readable Portuguese rather than raw internal codes', () => {
+  assert.match(bridge, /REFUND_BLOCKER_LABELS/);
+  assert.match(bridge, /tentativa de reembolso parcial ainda não conciliada/);
+  assert.match(bridge, /REFUND_PAYMENT_STATUS_LABELS/);
+  assert.match(bridge, /diagnostic\.blockers\.map\(code => REFUND_BLOCKER_LABELS\[code\]/);
+});
