@@ -172,6 +172,11 @@ try {
     audienceRoles:[],attachment:null,retainAttachment:true});
   assert.equal(v3.status,200,JSON.stringify(v3.payload));
   assert.equal(v3.payload.procedure.currentVersion,3);
+  const replayOlder=await send(manager,revision2);
+  assert.equal(replayOlder.status,200);
+  assert.equal(replayOlder.payload.procedure.currentVersion,2);
+  assert.equal((await send(manager,{...revision2,body:'attempted mutation'})).status,409);
+  assert.equal((await list(ownerId)).payload.procedures[0].currentVersion,3);
   assert.equal((await list(cashier)).payload.procedures.length,1);
   assert.equal((await list(seller)).payload.procedures[0].readAt,'');
   assert.equal((await file(seller,3,true)).status,200);
@@ -183,6 +188,7 @@ try {
   assert.equal((await call('history',{uid:seller,query:{procedureId:popId}})).status,403);
   assert.equal((await adminDb.collection('stores/'+canonical+'/staffProcedures').get()).size,1);
   assert.equal((await adminDb.collection('stores/'+canonical+'/staffProcedures/'+popId+'/versions').get()).size,3);
+  assert.equal((await adminDb.collection('stores/'+canonical+'/staffProcedures/'+popId+'/publicationRequests').get()).size,3);
   assert.equal((await adminDb.collection('users/'+seller+'/notifications').get()).size,3);
   assert.equal((await adminDb.collection('users/'+cashier+'/notifications').get()).size,1);
   assert.equal((await adminDb.collection('users/'+suspended+'/notifications').get()).size,0);
