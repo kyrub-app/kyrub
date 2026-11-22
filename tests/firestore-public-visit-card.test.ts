@@ -197,6 +197,7 @@ test('visual tag destinations use public names, opt-in and safe external links w
  const list=await loadTagDestinationCatalog('owner-a',a.id);
  assert.ok(list.options.some(o=>o.kind==='profile'));
  assert.ok(list.options.some(o=>o.kind==='community'&&o.name==='Rock'));
+ assert.equal(new Set(list.options.map(o=>o.url)).size,list.options.length);
  assert.equal(JSON.stringify(list).includes('private@example.test'),false);
  assert.equal(JSON.stringify(list).includes('bindingId'),false);
  await assert.rejects(loadTagDestinationCatalog('owner-b',a.id),/TAG_FORBIDDEN/);
@@ -204,7 +205,7 @@ test('visual tag destinations use public names, opt-in and safe external links w
  const ig=buildTagExternalUrl('instagram','@example.name')!;
  assert.equal(wa,'https://wa.me/5511999999999');
  assert.equal(ig,'https://www.instagram.com/example.name/');
- for(const bad of ['javascript:alert(1)','https://wa.me.evil.test/5511999999999','https://wa.me/5511999999999?text=spam','https://www.instagram.com/accounts/login/','https://user@wa.me/5511999999999','https://evil.test/']){
+ for(const bad of ['javascript:alert(1)','https://wa.me.evil.test/5511999999999','https://wa.me/5511999999999?text=spam','https://www.instagram.com/accounts/login/','https://www.instagram.com/accounts/','https://user@wa.me/5511999999999','https://evil.test/']){
   assert.equal(parseTagExternalUrl(bad),null);
   await assert.rejects(configureKyrubTag('owner-a',a.id,[bad]),/INVALID_CARD/);
  }

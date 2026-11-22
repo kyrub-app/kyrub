@@ -16,7 +16,7 @@ export type TagExternalLink={kind:TagExternalKind;name:string;url:string};
 export function parseTagExternalUrl(value:unknown):TagExternalLink|null{
  if(typeof value!=='string'||value.length>180)return null;
  if(/^https:\/\/wa\.me\/[1-9][0-9]{7,14}$/.test(value))return {kind:'whatsapp',name:'WhatsApp',url:value};
- if(/^https:\/\/www\.instagram\.com\/[A-Za-z0-9_](?:[A-Za-z0-9_.]{0,28}[A-Za-z0-9_])?\/$/.test(value)&&!value.includes('..'))return {kind:'instagram',name:'Instagram',url:value};
+ if(/^https:\/\/www\.instagram\.com\/[A-Za-z0-9_](?:[A-Za-z0-9_.]{0,28}[A-Za-z0-9_])?\/$/.test(value)&&!value.includes('..')&&!/\/(accounts|explore|reels|reel|p|stories|direct|about|challenge|oauth)\/$/i.test(value))return {kind:'instagram',name:'Instagram',url:value};
  return null;
 }
 export function buildTagExternalUrl(kind:TagExternalKind,value:string):string|null{
