@@ -158,6 +158,9 @@ export const LocalAttendanceBridge = () => {
         while (target.parentElement && target.parentElement !== headerBlock) {
           target = target.parentElement;
         }
+        // Only hide legacy counters: the portal summary is authoritative
+        // and must not be mistaken for a redundant old "0 ativos" badge.
+        if (target.id === SUMMARY_HOST_ID) continue;
         if (target !== opener && !target.contains(opener)) {
           hide(target);
         } else {
