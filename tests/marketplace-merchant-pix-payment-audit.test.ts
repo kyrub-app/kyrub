@@ -134,3 +134,31 @@ test('cleanup preflight lists scoped aggregate blockers without leaking financia
  assert.match(panel,/A ausência de vínculo explícito não prova independência/);
  assert.doesNotMatch(panel,/sourcePath|providerPaymentId:.*\/v1\/payments/);
 });
+
+test('legacy cleanup evidence states and reference shapes are aggregated without IDs or implicit safety claims',async()=>{
+ const {classifyHistoricalTestEvidence}=await import('../server/admin/merchantTestHistoryEvidencePolicy.js');
+ const rows=[
+  {status:'pending',providerPaymentId:'456789'},
+  {status:'paid',providerPaymentId:'fake-payment'},
+  {status:'expired',providerPaymentId:''},
+  {status:'unknown',providerPaymentId:'secret-data'}
+ ];
+ assert.deepEqual(classifyHistoricalTestEvidence('payments',rows),{
+  states:{open:1,recordedPaid:1,closedOrReversed:1,unknown:1},
+  providerReferenceShape:{numeric:1,nonNumeric:2,missing:1}
+ });
+ assert.deepEqual(classifyHistoricalTestEvidence('economicObligations',[
+  {status:'pending',paymentId:'p'},
+  {status:'eligible',paymentId:'q'},
+  {status:'settled',paymentId:'r'}
+ ]),{states:{open:2,recordedPaid:1,closedOrReversed:0,unknown:0}});
+ assert.deepEqual(classifyHistoricalTestEvidence('paymentWebhookEvents',[
+  {eventType:'payment.paid',providerPaymentId:'123'},
+  {eventType:'payment.expired',providerPaymentId:'456'}
+ ]),{states:{open:0,recordedPaid:1,closedOrReversed:1,unknown:0}});
+ const result=classifyHistoricalTestEvidence('payments',rows);
+ assert.doesNotMatch(JSON.stringify(result),/456789|fake-payment|secret-data/);
+ const service=read('server/admin/mercadoPagoTestHistoryCleanupService.ts');
+ assert.match(service,/classifyHistoricalTestEvidence\(kind,snapshot\.docs/);
+ assert.match(read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx'),/Estados registrados: abertos/);
+});
