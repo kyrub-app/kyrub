@@ -620,6 +620,20 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'staff-pops') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const popTransport = await import('../server/staff/staffProcedureTransport.js');
+      await popTransport.handleStaffProcedureRequest(request as never, response as never);
+    } catch (error) {
+      console.error('[staff-pops-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({ code: 'STAFF_POP_TRANSPORT_UNAVAILABLE', error: 'Manuais POP temporariamente indisponíveis.' });
+      }
+    }
+    return;
+  }
+
   if (transport === 'staff-notices') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {

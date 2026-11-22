@@ -37,7 +37,7 @@ const statusFor = (err: unknown): { status: number; code: string; error: string 
     STAFF_POP_FORBIDDEN: [403, 'Este acesso é exclusivo do gestor autorizado.'],
     STAFF_POP_INVALID: [400, 'Confira o procedimento e seus campos obrigatórios.'],
     STAFF_POP_AUDIENCE_INVALID: [400, 'Selecione um público válido.'],
-    STAFF_POP_ATTACHMENT_INVALID: [400, 'Anexo inválido. Use PDF ou imagem com até 1,5 MB.'],
+    STAFF_POP_ATTACHMENT_INVALID: [400, 'Anexo inválido. Use PDF ou imagem com até 1,25 MB.'],
     STAFF_POP_NOT_FOUND: [404, 'Manual indisponível para sua conta.'],
     STAFF_POP_VERSION_CONFLICT: [409, 'O manual foi atualizado por outra pessoa. Atualize e tente novamente.'],
     STAFF_POP_IDEMPOTENCY_CONFLICT: [409, 'Esta tentativa já foi usada com dados diferentes.'],

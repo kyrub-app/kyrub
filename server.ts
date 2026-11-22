@@ -42,6 +42,7 @@ import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilit
 import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
 import { createTimeClockRouter } from "./server/staff/timeClockRouter";
 import { createStaffNoticeRouter } from "./server/staff/staffNoticeTransport";
+import { createStaffProcedureRouter } from "./server/staff/staffProcedureTransport";
 import { createStoreReservationRouter } from "./server/staff/storeReservationRouter";
 
 dotenv.config();
@@ -233,6 +234,11 @@ app.use(
   "/api/staff/notices",
   integrationRateLimiter,
   createStaffNoticeRouter()
+);
+app.use(
+  "/api/staff/pops",
+  integrationRateLimiter,
+  createStaffProcedureRouter()
 );
 
 app.use(

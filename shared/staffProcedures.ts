@@ -5,7 +5,7 @@ import {
 
 export const STAFF_POP_MAX_TITLE = 120;
 export const STAFF_POP_MAX_BODY = 8000;
-export const STAFF_POP_MAX_ATTACHMENT_BYTES = 1536 * 1024;
+export const STAFF_POP_MAX_ATTACHMENT_BYTES = 1280 * 1024;
 export const STAFF_POP_MAX_RESULTS = 50;
 export const STAFF_POP_MAX_VERSIONS = 100;
 export const STAFF_POP_ACCEPT = 'application/pdf,image/jpeg,image/png,image/webp';
