@@ -20,6 +20,13 @@ const db = { doc: (path: string) => ({ path }), collection, runTransaction: asyn
   const pending: Array<() => void> = [];
   const tx = {
     get: async (ref: {path: string; isQuery?: boolean}) => { assert.equal(pending.length, 0, 'read after transaction write');
+      if (ref.isQuery && ref.path === 'stores/canonical/members') {
+        const member = records.get('stores/canonical/members/seller');
+        return {
+          docs: member ? [{id: 'seller', data: () => structuredClone(member)}] : [],
+          empty: !member,
+        };
+      }
       return ref.isQuery ? {docs: [], empty: true} : snapshot(ref.path); },
     set: (ref: {path: string}, data: any, options?: {merge: boolean}) => pending.push(() => {
       records.set(ref.path, structuredClone(options?.merge ? {...records.get(ref.path), ...data} : data)); writes++;
@@ -197,6 +204,7 @@ for (const [label, mutate] of [
 test('own delivery selection commits acceptance and provider to both order mirrors', async () => {
   records.get(orderPath).status = 'pending';
   records.get(orderPath).fulfillmentType = 'delivery';
+  records.set('stores/canonical/members/seller', {userId: 'seller', role: 'owner', status: 'active'});
   records.get(paymentPath).status = 'pending';
   records.get(intentPath).status = 'pending';
   await transition('seller', 'order', 'accepted', {deliveryProvider: 'merchant'});
@@ -216,6 +224,7 @@ test('own delivery selection commits acceptance and provider to both order mirro
 test('delivery acceptance refuses missing choice and conflicting provider replay without writes', async () => {
   records.get(orderPath).status = 'pending';
   records.get(orderPath).fulfillmentType = 'delivery';
+  records.set('stores/canonical/members/seller', {userId: 'seller', role: 'owner', status: 'active'});
   await assert.rejects(transition('seller', 'order', 'accepted'), /Escolha como a entrega/);
   assert.equal(writes, 0);
   await transition('seller', 'order', 'accepted', {deliveryProvider: 'merchant'});
