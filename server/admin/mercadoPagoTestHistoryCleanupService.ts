@@ -1,6 +1,7 @@
 import {createHash} from 'node:crypto';
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
+import {classifyHistoricalTestEvidence,type HistoricalEvidenceClassification} from './merchantTestHistoryEvidencePolicy.js';
 import {loadMercadoPagoMerchantPixMigrationInventory} from './mercadoPagoMerchantPixMigrationInventoryService.js';
 
 // One-time, narrowly scoped test history housekeeping. This does not cancel
@@ -24,7 +25,7 @@ const collections=(tenant:string)=>({
   payments:`stores/${OFFICIAL}/payments`
 });
 type Row={path:string;id:string;data:Record<string,unknown>;updatedAt:string};
-type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number};
+type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number;classification:HistoricalEvidenceClassification};
 type Summary={storeId:string;counts:typeof EXPECTED;blocked:string[];canExecute:boolean;digest:string;archived:boolean;evidence:EvidenceRow[]};
 
 const reason=(blocked:Set<string>,key:string,condition:boolean)=>{if(condition)blocked.add(key);};
@@ -88,7 +89,8 @@ export async function inspectOfficialTestHistory(actor:string,expectedDigest?:st
       if(!snapshot.size)return;
       evidence.push({
         kind,scope,count:Math.min(snapshot.size,MAX),complete:snapshot.size<=MAX,
-        explicitLinks:snapshot.docs.slice(0,MAX).filter(d=>explicitLink(d.data())).length
+        explicitLinks:snapshot.docs.slice(0,MAX).filter(d=>explicitLink(d.data())).length,
+        classification:classifyHistoricalTestEvidence(kind,snapshot.docs.slice(0,MAX).map(d=>d.data()))
       });
     };
     const financeKinds=['economicLedger','storePointLedger','paymentRefunds','economicObligations','economicSettlements'];

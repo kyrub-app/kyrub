@@ -10,7 +10,11 @@ type ProviderCheck={
  metadataMismatches:number;lookupFailures:number;unlinkedProviderLabels:number;
  requiresManualReview:true;allowsCleanup:false;
 };
-type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number};
+type HistoricalClassification={
+ states:{open:number;recordedPaid:number;closedOrReversed:number;unknown:number};
+ providerReferenceShape?:{numeric:number;nonNumeric:number;missing:number};
+};
+type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number;classification?:HistoricalClassification};
 type Report={
  storeId:string;counts:{orders:number;intents:number;payments:number};
  blocked:string[];canExecute:boolean;digest:string;archived:boolean;
@@ -102,6 +106,18 @@ export function AdminKyrubOfficialTestHistoryCleanup({user,storeId}:{user:User;s
       {evidenceLabels[entry.kind]??'Referências operacionais'} ({entry.scope==='canonical'?'loja oficial':'cadastro legado'}):
       {' '}{entry.complete?entry.count:'pelo menos '+entry.count} registro(s),
       {' '}{entry.explicitLinks} vínculo(s) explícito(s) com os 11 documentos selecionados.
+      {entry.classification&&['economicObligations','paymentIntents','payments','paymentWebhookEvents'].includes(entry.kind)&&
+       <span className="mt-1 block text-slate-400">
+        Estados registrados: abertos {entry.classification.states.open};
+        pagos/liquidados {entry.classification.states.recordedPaid};
+        encerrados/revertidos {entry.classification.states.closedOrReversed};
+        sem classificação conclusiva {entry.classification.states.unknown}.
+        {entry.classification.providerReferenceShape&&<>
+         {' '}Referências no provedor: numéricas {entry.classification.providerReferenceShape.numeric},
+         não numéricas {entry.classification.providerReferenceShape.nonNumeric},
+         ausentes {entry.classification.providerReferenceShape.missing}.
+        </>}
+       </span>}
     </p>)}
     <p className="text-amber-200">A ausência de vínculo explícito não prova independência. Registros com históricos financeiros ou recebimentos reais são preservados. Nenhuma exclusão é autorizada por este detalhamento.</p>
    </div>}
