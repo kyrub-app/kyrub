@@ -57,6 +57,10 @@ export function StoreStaffPopManager({
     setAudience('all');
     setFile(null);
     setRetainAttachment(true);
+    setHistoryId('');
+    setHistory([]);
+    setReceiptsId('');
+    setReceipts([]);
     requestIdRef.current = '';
     procedureIdRef.current = '';
   };
@@ -146,6 +150,12 @@ export function StoreStaffPopManager({
           Publique procedimentos internos, mantenha histórico de versões e solicite confirmação de leitura à equipe.
         </p>
       </header>
+      {!formOpen && (
+        <button type="button" onClick={() => { setHistoryId(''); setReceiptsId(''); void refresh(); }}
+          className="w-full rounded-xl border border-slate-700 px-4 py-2 text-xs font-bold text-orange-300">
+          Atualizar manuais
+        </button>
+      )}
       {!formOpen && (
         <button type="button" onClick={newManual}
           className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-orange-500 px-4 py-3 text-sm font-black text-slate-950">
