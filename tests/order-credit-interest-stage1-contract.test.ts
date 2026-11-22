@@ -33,7 +33,9 @@ test('no credit, settlement or Pix is manufactured when the merchant offers cons
   assert.match(service, /creditIssued: false/);
   assert.match(service, /quoteOrderCompensation\(\{ paidMinor: amountMinor, bonusPercent \}\)/);
   assert.match(service, /previous.bonusPercent !== bonusPercent/);
-  assert.match(service, /assertFullRefundHasNoConfirmedPartialHistory/);
+  assert.match(service, /inspectOrderCreditInterestRefundSafety/);
+  assert.match(service, /fullRefundSnapshot.exists/);
+  assert.match(service, /evidenceSnapshot.get\('state'\) !== 'observed_no_refund_not_settled'/);
   assert.match(service, /all\[0\]\.status !== 'paid'/);
   assert.match(service, /clean\(order\.paymentStatus\) !== 'paid'/);
   assert.match(service, /!validId\(buyerId\)/);
