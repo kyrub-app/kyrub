@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { quoteOrderCompensation, quoteFutureStoreCreditUse } from '../shared/orderCompensationCredit';
 
 const read = (path: string) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const controller = read('src/components/store/KdsScopedRejectionController.tsx');
@@ -9,11 +10,15 @@ const router = read('server/payments/orderCreditInterestRouter.ts');
 const transport = read('server/payments/storePromotionServerlessTransport.ts');
 const buyer = read('src/components/store/BuyerCreditInterestCard.tsx');
 const storefront = read('src/components/PublicStorefrontApp.tsx');
+const creditContract = read('shared/orderCompensationCredit.ts');
 
 test('same KDS rejection modal presents refund first and a separate voluntary credit consultation', () => {
   assert.match(controller, /Como abordar o valor pago\?/);
   assert.match(controller, /financialFollowup.*original_refund/);
-  assert.match(controller, /Consultar interesse em cupom compensatório/);
+  assert.match(controller, /Propor crédito em reais com bônus opcional/);
+  assert.match(controller, /Bônus pelo transtorno/);
+  assert.match(controller, /bonusPercent: creditBonusPercent/);
+  assert.match(controller, /crédito proposto vale para compras futuras nesta loja/i);
   assert.match(controller, /scope === 'whole' && order\.paymentStatus === 'paid'/);
   assert.match(controller, /order\.buyerId &&/);
   assert.match(controller, /await updateOrderStatusWithDecision[\s\S]*?surface=credit-interest&path=offer/);
@@ -24,6 +29,9 @@ test('same KDS rejection modal presents refund first and a separate voluntary cr
 test('no credit, settlement or Pix is manufactured when the merchant offers consultation', () => {
   assert.match(service, /status: 'awaiting_response'/);
   assert.match(service, /creditIssued: false/);
+  assert.match(service, /quoteOrderCompensation\(\{ paidMinor: amountMinor, bonusPercent \}\)/);
+  assert.match(service, /previous.bonusPercent !== bonusPercent/);
+  assert.match(service, /assertFullRefundHasNoConfirmedPartialHistory/);
   assert.match(service, /all\[0\]\.status !== 'paid'/);
   assert.match(service, /clean\(order\.paymentStatus\) !== 'paid'/);
   assert.match(service, /!validId\(buyerId\)/);
@@ -49,7 +57,48 @@ test('both actions are authenticated; buyer cannot choose or read another buyer 
 test('buyer can express interest or prefer refund without final acceptance or redeemable promise', () => {
   assert.match(storefront, /<BuyerCreditInterestCard storeId=\{store\.id\} buyerId=\{user\.uid\}/);
   assert.match(buyer, /Tenho interesse em negociar crédito/);
+  assert.match(buyer, /Crédito total proposto/);
+  assert.match(buyer, /sem vincular o benefício a um produto específico/);
   assert.match(buyer, /Prefiro devolução do pagamento/);
   assert.match(buyer, /ainda não é um cupom/);
   assert.match(buyer, /Nenhum crédito foi emitido/);
+});
+
+test('compensation quote is storewide, cent-based and includes an optional goodwill percentage', () => {
+  assert.deepEqual(quoteOrderCompensation({ paidMinor: 3000, bonusPercent: 20 }), {
+    scope: 'storewide',
+    principalMinor: 3000,
+    bonusPercent: 20,
+    bonusMinor: 600,
+    totalCreditMinor: 3600,
+  });
+  assert.deepEqual(quoteOrderCompensation({ paidMinor: 995, bonusPercent: 15 }), {
+    scope: 'storewide',
+    principalMinor: 995,
+    bonusPercent: 15,
+    bonusMinor: 149,
+    totalCreditMinor: 1144,
+  });
+  assert.equal(quoteOrderCompensation({ paidMinor: 1200, bonusPercent: 0 }).totalCreditMinor, 1200);
+  assert.match(creditContract, /ORDER_COMPENSATION_SCOPE = 'storewide'/);
+  assert.doesNotMatch(creditContract, /productIds|eligibleSkus|officialPlanId/);
+});
+
+test('compensation bonus cannot turn a customer consultation into an unbounded liability', () => {
+  assert.throws(() => quoteOrderCompensation({ paidMinor: 0, bonusPercent: 20 }), /PRINCIPAL_INVALID/);
+  assert.throws(() => quoteOrderCompensation({ paidMinor: 100, bonusPercent: -1 }), /BONUS_INVALID/);
+  assert.throws(() => quoteOrderCompensation({ paidMinor: 100, bonusPercent: 101 }), /BONUS_INVALID/);
+  assert.throws(() => quoteOrderCompensation({ paidMinor: 100, bonusPercent: 2.5 }), /BONUS_INVALID/);
+  assert.throws(() => quoteOrderCompensation({ paidMinor: Number.MAX_SAFE_INTEGER, bonusPercent: 100 }), /AMOUNT_OVERFLOW/);
+  assert.match(service, /Number.isInteger\(bonusPercent\)/);
+});
+
+test('future partial redemption preserves remainder in BRL and never spends more than purchase total', () => {
+  assert.deepEqual(quoteFutureStoreCreditUse({availableMinor: 3600, purchaseTotalMinor: 1900}), {
+    appliedMinor: 1900, balanceMinor: 1700, payableMinor: 0,
+  });
+  assert.deepEqual(quoteFutureStoreCreditUse({availableMinor: 3600, purchaseTotalMinor: 4500}), {
+    appliedMinor: 3600, balanceMinor: 0, payableMinor: 900,
+  });
+  assert.throws(() => quoteFutureStoreCreditUse({availableMinor: -1, purchaseTotalMinor: 100}), /USE_INVALID/);
 });
