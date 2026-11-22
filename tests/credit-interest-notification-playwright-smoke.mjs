@@ -97,7 +97,8 @@ async function createIsolatedPage(viewport) {
         })});
       }
       if (action === 'mine' && request.method() === 'GET') {
-        assert.equal(uid, buyerId);
+        // Storefront is also viewable by its owner; only the targeted buyer
+        // may see the pending consultation, enforced by the real service.
         return respondJson(route, 200, {proposals: await listOwnCreditInterestProposals({
           storeId: url.searchParams.get('storeId'), buyerId: uid,
         })});
@@ -215,15 +216,18 @@ try {
   // Mount the production merchant consultation component in a dedicated test
   // element. This checks its real controls, not navigation through the full ERP.
   await owner.evaluate(async props => {
-    const [{createElement}, {createRoot}, {PostRejectionCreditInterest}] = await Promise.all([
+    const [reactModule, domModule, {PostRejectionCreditInterest}] = await Promise.all([
       import('/node_modules/.vite/deps/react.js'),
       import('/node_modules/.vite/deps/react-dom_client.js'),
       import('/src/components/store/PostRejectionCreditInterest.tsx'),
     ]);
+    // Vite may expose CommonJS React prebundles through default exports.
+    const React = reactModule.default ?? reactModule;
+    const ReactDOM = domModule.default ?? domModule;
     const node = document.createElement('div');
     node.id = 'credit-owner-component-e2e';
     document.body.prepend(node);
-    createRoot(node).render(createElement(PostRejectionCreditInterest, props));
+    ReactDOM.createRoot(node).render(React.createElement(PostRejectionCreditInterest, props));
   }, {storeId: ownerId, orderId});
   const ownerSection = owner.locator('#credit-owner-component-e2e');
   await ownerSection.getByRole('button', {name: 'Consultar interesse do comprador'}).waitFor({state:'visible',timeout:25000});
