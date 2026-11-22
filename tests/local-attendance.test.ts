@@ -367,7 +367,7 @@ describe('canonical local attendance', () => {
     assert.match(menu, /'central_staff',\s*\n\s*'crm',/);
     assert.match(nav, /\| 'central_staff'/);
     assert.match(router, /moduleId === 'central_staff' \? <Suspense/);
-    assert.match(router, /<LazyStaffCentralWorkspace \/>/);
+    assert.match(router, /<LazyStaffCentralWorkspace storeId=\{retailerProps\.activeRetailerId\} \/>/);
     assert.match(cards, /data-kyrub-staff-central="four-cards"/);
     assert.equal((cards.match(/^\s+id: '(avisos|pops|checklists|escalas)',/gm) || []).length, 4);
     for (const title of ['Avisos e comunicados', 'Manuais POP', 'Tarefas e checklists', 'Escalas de trabalho']) {
