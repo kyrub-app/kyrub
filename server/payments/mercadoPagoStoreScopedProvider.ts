@@ -7,6 +7,7 @@ import {
 } from './paymentProviderBindingService.js';
 import { resolveCommercialRecipientAuthority } from './commercialRecipientAuthorityService.js';
 import { verifyMercadoPagoWebhookSignature } from './mercadoPagoPixProvider.js';
+import type { MercadoPagoScopedWebhookResult } from './mercadoPagoWebhookRouting.js';
 import { mercadoPagoMerchantPixRolloutError } from './mercadoPagoMerchantPixRolloutPolicy.js';
 
 interface MercadoPagoPayment {
@@ -154,11 +155,11 @@ export interface VerifiedStoreMercadoPagoEvent extends VerifiedPaymentProviderEv
 export const verifiedStoreScopedMercadoPagoPaymentEvent = async (input: {
   headers: Record<string, string | string[] | undefined>;
   dataId: string;
-}): Promise<VerifiedStoreMercadoPagoEvent | null> => {
+}): Promise<MercadoPagoScopedWebhookResult<VerifiedStoreMercadoPagoEvent>> => {
   const binding = await loadMercadoPagoPaymentProviderBinding(input.dataId);
-  if (!binding) return null;
+  if (!binding) return { kind: 'unbound' };
   await verifyMercadoPagoWebhookSignature(input);
-  return reconcileStoreScopedMercadoPagoPaymentEvent(input.dataId);
+  return { kind: 'bound', event: await reconcileStoreScopedMercadoPagoPaymentEvent(input.dataId) };
 };
 
 /** Trusted server reconciliation shares receiver/metadata checks with webhook delivery. */

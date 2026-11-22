@@ -49,3 +49,6 @@ Antes de implementar/ativar Mercado Pago 1:N, registrar:
 Nenhuma ação é necessária agora para o MVP 1:1.
 
 Quando o Kyrub decidir iniciar a qualificação de 1:N com Mercado Pago, o Owner Gate será entrar em contato com a equipe comercial/carteira assessorada e obter confirmação formal das condições acima. Até lá, o desenvolvimento pode continuar com 1:1 e com adapters provider-agnostic.
+
+## Atualização — 21/11/2026
+Resposta recebida do suporte: elegibilidade comercial do 1:N e contato com executivo, sem aprovação de produto/conta. O proprietário informou envio de novo formulário solicitando encaminhamento e esclarecimentos. Gate permanece required; não alterar flags nem habilitar repasses. O 1:1 continua independente, com homologação própria. Não registrar o protocolo como aprovação comercial.

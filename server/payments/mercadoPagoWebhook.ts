@@ -4,6 +4,7 @@ import {
   isMercadoPagoWebhookRuntimeConfigured,
   verifiedMercadoPagoPaymentEvent,
 } from './mercadoPagoPixProvider.js';
+import { selectMercadoPagoWebhookEvent } from './mercadoPagoWebhookRouting.js';
 import { verifiedStoreScopedMercadoPagoPaymentEvent } from './mercadoPagoStoreScopedProvider.js';
 import { settleMarketplaceOperationalOrderAfterPayment } from './marketplaceOrderPaymentSettlementService.js';
 import { syncPersistedCustomerOrderIntoCrm } from './storeCrmOrderSyncService.js';
@@ -108,10 +109,10 @@ export const processMercadoPagoWebhook = async (input: {
     headers: input.headers,
     dataId,
   });
-  const event = storeScopedEvent ?? await verifiedMercadoPagoPaymentEvent({
+  const event = await selectMercadoPagoWebhookEvent(storeScopedEvent, () => verifiedMercadoPagoPaymentEvent({
     headers: input.headers,
     dataId,
-  });
+  }));
 
   if (!event) {
     return {
