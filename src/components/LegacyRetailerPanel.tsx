@@ -296,17 +296,11 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 id="kyrub-canonical-attendance-anchor"
                 className="rounded-3xl border border-slate-800 bg-slate-900 p-4"
               >
-                <h3 className="text-sm font-black uppercase text-white">
-                  Atendimentos
-                </h3>
-                <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-                  Mesas, comandas e pedidos são carregados pelo fluxo canônico da loja.
-                </p>
                 {/* The canonical LocalAttendanceBridge portals the real opener here.
                     Preserve this mount point when simplifying the legacy PDV. */}
                 <div
                   id="erp-attendance-opener-row"
-                  className="mt-4 w-full min-w-0"
+                  className="w-full min-w-0"
                   aria-label="Abertura de atendimento no PDV"
                 />
               </div>
