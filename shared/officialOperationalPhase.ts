@@ -26,3 +26,12 @@ export function effectiveHistoryStart(periodStart:string,phaseStart:string):stri
  if(!periodStart)return phaseStart;
  return periodStart>=phaseStart?periodStart:phaseStart;
 }
+
+
+// Parse exactly one Firebase Bearer token for the owner-only phase GET.
+// This parser is unit-tested to guard against escaped-backslash regressions.
+export function readOfficialPhaseBearerToken(header:unknown):string{
+ if(typeof header!=='string'||header.length>8200)return '';
+ const match=/^Bearer\s+([^\s]+)$/i.exec(header.trim());
+ return match&&match[1].length<=8192?match[1]:'';
+}

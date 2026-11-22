@@ -84,7 +84,8 @@ export default async function handler(
     response.setHeader('Cache-Control','no-store, max-age=0');
     if((request.method??'GET').toUpperCase()!=='GET'){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
     try{
-      const bearer=/^Bearer\\s+([^\\s]+)$/i.exec(headerValue(request.headers.authorization??request.headers.Authorization))?.[1];
+      const {readOfficialPhaseBearerToken}=await import('../shared/officialOperationalPhase.js');
+      const bearer=readOfficialPhaseBearerToken(headerValue(request.headers.authorization??request.headers.Authorization));
       if(!bearer||bearer.length>8192)throw Error('AUTH_REQUIRED');
       const {verifyFirebaseIdToken}=await import('../server/ai/consultantAuth.js');
       const identity=await verifyFirebaseIdToken(bearer);

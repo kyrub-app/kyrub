@@ -251,3 +251,20 @@ test('official operational cutover is a one-time presentation marker, not deleti
  assert.match(orders,/Ver finalizados da fase de testes/);
  assert.match(panel,/Iniciar nova fase sem excluir registros/);
 });
+
+
+test('owner phase Bearer parsing supports real Firebase header format and preserves current active orders',async()=>{
+ const {readOfficialPhaseBearerToken,showOrderInCurrentPhase}=await import('../shared/officialOperationalPhase.js');
+ assert.equal(readOfficialPhaseBearerToken('Bearer header.payload.signature'),'header.payload.signature');
+ assert.equal(readOfficialPhaseBearerToken('bearer header.payload.signature'),'header.payload.signature');
+ assert.equal(readOfficialPhaseBearerToken('Bearer\\sheader.payload.signature'),'');
+ assert.equal(readOfficialPhaseBearerToken('Bearer'),'');
+ assert.equal(readOfficialPhaseBearerToken('Basic abc'),'');
+ assert.equal(readOfficialPhaseBearerToken('Bearer a b'),'');
+ assert.equal(showOrderInCurrentPhase({status:'completed',createdAt:'2026-09-19T12:00:00Z'},'2026-11-22T12:34:45Z'),false);
+ assert.equal(showOrderInCurrentPhase({status:'pending',createdAt:'2026-09-24T12:00:00Z'},'2026-11-22T12:34:45Z'),true);
+ const health=read('api/health.ts');
+ assert.match(health,/transport === 'official-operational-phase'/);
+ assert.match(health,/readOfficialPhaseBearerToken\(/);
+ assert.doesNotMatch(health,/const bearer=\/\^Bearer\\\\\\\\s\+/);
+});
