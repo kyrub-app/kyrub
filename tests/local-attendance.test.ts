@@ -367,14 +367,16 @@ describe('canonical local attendance', () => {
     assert.match(menu, /'central_staff',\s*\n\s*'crm',/);
     assert.match(nav, /\| 'central_staff'/);
     assert.match(router, /moduleId === 'central_staff' \? <Suspense/);
-    assert.match(router, /<LazyStaffCentralWorkspace \/>/);
+    assert.match(router, /<LazyStaffCentralWorkspace storeId=\{retailerProps\.activeRetailerId\} \/>/);
     assert.match(cards, /data-kyrub-staff-central="four-cards"/);
     assert.equal((cards.match(/^\s+id: '(avisos|pops|checklists|escalas)',/gm) || []).length, 4);
     for (const title of ['Avisos e comunicados', 'Manuais POP', 'Tarefas e checklists', 'Escalas de trabalho']) {
       assert.ok(cards.includes("title: '" + title + "'"), 'Missing card: ' + title);
     }
-    assert.doesNotMatch(cards, /<button|onClick=|<details|<summary/);
+    assert.match(cards, /onClick=\{\(\) => setSelectedArea\('avisos'\)\}/);
+    assert.match(cards, /<StoreStaffNoticeManager storeId=\{storeId\}/);
     assert.match(cards, /Em preparação/);
+    assert.doesNotMatch(cards, /<details|<summary/);
   });
 
   test('direct browser Firestore access to attendance and service locations stays closed', () => {

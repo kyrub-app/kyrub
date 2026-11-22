@@ -620,6 +620,20 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'staff-notices') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const staffNoticeTransport = await import('../server/staff/staffNoticeTransport.js');
+      await staffNoticeTransport.handleStaffNoticeRequest(request as never, response as never);
+    } catch (error) {
+      console.error('[staff-notices-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({ code: 'STAFF_NOTICE_TRANSPORT_UNAVAILABLE', error: 'Os avisos estão temporariamente indisponíveis.' });
+      }
+    }
+    return;
+  }
+
   if (transport === 'user-notifications') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {

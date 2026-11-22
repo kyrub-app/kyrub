@@ -333,5 +333,6 @@ test('Central do Staff management entry is available only to owner and manager a
   assert.match(mobileMenu, /selectManagement\(itemId\)/);
   assert.match(runtimeRouter, /canStoreRoleAccessErpMenuItem\(props\.accessRole, managementModule\)/);
   assert.match(cards, /data-kyrub-staff-central="four-cards"/);
-  assert.doesNotMatch(cards, /<details|<summary|<button/);
+  assert.match(cards, /<StoreStaffNoticeManager storeId=\{storeId\}/);
+  assert.doesNotMatch(cards, /<details|<summary/);
 });
