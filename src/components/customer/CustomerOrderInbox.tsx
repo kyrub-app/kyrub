@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
+import {showOrderInCurrentPhase} from '../../../shared/officialOperationalPhase';
 import type { KyrubCommerceChannel } from '../../../shared/storeConnections';
 import {
   CheckCircle2,
@@ -213,6 +214,8 @@ export const CustomerOrderInbox = ({
   const [filter, setFilter] = useState<InboxFilter>('active');
   const [originFilter, setOriginFilter] = useState('all');
   const [stationFilter, setStationFilter] = useState('all');
+  const [phaseEffectiveAt,setPhaseEffectiveAt]=useState('');
+  const [includePreviousFinished,setIncludePreviousFinished]=useState(false);
   const [connectedOriginChannels, setConnectedOriginChannels] = useState<KyrubCommerceChannel[]>([]);
   const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
     loadCachedProductPreparationStations
@@ -305,6 +308,28 @@ export const CustomerOrderInbox = ({
   };
 }, [storeId]);
 
+  useEffect(()=>{
+    let disposed=false;
+    setPhaseEffectiveAt('');
+    setIncludePreviousFinished(false);
+    const unsubscribe=onAuthStateChanged(auth,user=>{
+      if(!user)return;
+      void (async()=>{
+       try{
+        const token=await user.getIdToken();
+        const params=new URLSearchParams({transport:'official-operational-phase',storeId});
+        const res=await fetch('/api/health?'+params.toString(),{
+         headers:{authorization:'Bearer '+token},cache:'no-store'
+        });
+        if(!res.ok)return;
+        const phase=await res.json() as {active?:boolean;effectiveAt?:string};
+        if(!disposed&&phase.active&&typeof phase.effectiveAt==='string')setPhaseEffectiveAt(phase.effectiveAt);
+       }catch{/* If phase lookup fails, show the full operational history. */}
+      })();
+    });
+    return ()=>{disposed=true;unsubscribe();};
+  },[storeId]);
+
   const originOptions = useMemo(
     () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),
     [attendanceSpaces, connectedOriginChannels, orders]
@@ -352,6 +377,8 @@ export const CustomerOrderInbox = ({
   const filteredOrders = useMemo(
     () =>
       orders.filter(order => {
+        if(phaseEffectiveAt&&!includePreviousFinished&&order.id!==focusOrderId&&
+           !showOrderInCurrentPhase(order,phaseEffectiveAt))return false;
         const origin = getOrderOrigin(order);
         const hasStation =
           stationFilter === 'all' ||
@@ -366,7 +393,7 @@ export const CustomerOrderInbox = ({
           matchesStage(order, filter)
         );
       }),
-    [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes]
+    [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes, phaseEffectiveAt, includePreviousFinished, focusOrderId]
   );
 
   useEffect(() => {
@@ -456,6 +483,14 @@ export const CustomerOrderInbox = ({
           {orders.length} no histórico
         </span>
       </div>
+
+      {phaseEffectiveAt&&<div className="space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px]">
+        <p className="font-semibold text-cyan-200">Nova fase operacional desde {new Date(phaseEffectiveAt).toLocaleDateString('pt-BR')}</p>
+        <p className="text-slate-400">Pedidos finalizados anteriores ficam recolhidos por padrão. Pedidos ainda ativos continuam visíveis, mesmo que tenham começado antes do marco. Nenhum pedido ou comprovante foi excluído.</p>
+        <button type="button" onClick={()=>setIncludePreviousFinished(value=>!value)} className="rounded-lg border border-cyan-500/40 px-3 py-2 font-bold text-cyan-200" aria-pressed={includePreviousFinished}>
+         {includePreviousFinished?'Recolher finalizados anteriores':'Ver finalizados da fase de testes'}
+        </button>
+       </div>}
 
       {replacedFocusOrderId && focusOrderId && (
         <div
