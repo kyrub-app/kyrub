@@ -1,4 +1,5 @@
 import type {
+  StaffPopReadReceipt,
   StaffPopAttachment,
   StaffProcedure,
   StaffProcedureRevision,
@@ -120,4 +121,14 @@ export const downloadStaffProcedureFile = async (
   anchor.click();
   anchor.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
+};
+
+export const getStaffPopReceipts = async (
+  storeId: string, procedureId: string, version: number
+): Promise<StaffPopReadReceipt[]> => {
+  const query = new URLSearchParams({storeId,procedureId,version:String(version)});
+  const result = await requestJson<{receipts:StaffPopReadReceipt[]}>(
+    basePath + '/receipts?' + query
+  );
+  return result.receipts;
 };

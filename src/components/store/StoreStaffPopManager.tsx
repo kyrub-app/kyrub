@@ -3,10 +3,10 @@ import {
 } from 'react';
 import { ArrowLeft, BookOpenCheck, Download, FilePlus2, History, Upload } from 'lucide-react';
 import type { StaffNoticeAudienceRole } from '../../../shared/staffNotices';
-import type { StaffProcedureView, StaffProcedureRevision } from '../../../shared/staffProcedures';
+import type { StaffProcedureView, StaffProcedureRevision, StaffPopReadReceipt } from '../../../shared/staffProcedures';
 import {
   downloadStaffProcedureFile, getStaffProcedureHistory, listStaffProcedures,
-  publishStaffProcedure, uploadStaffProcedureFile,
+  publishStaffProcedure, uploadStaffProcedureFile, getStaffPopReceipts,
 } from '../../utils/staffProcedures';
 import { STAFF_POP_ACCEPT, STAFF_POP_MAX_ATTACHMENT_BYTES } from '../../../shared/staffProcedures';
 
@@ -31,6 +31,8 @@ export function StoreStaffPopManager({
   const [retainAttachment, setRetainAttachment] = useState(true);
   const [historyId, setHistoryId] = useState('');
   const [history, setHistory] = useState<StaffProcedureRevision[]>([]);
+  const [receiptsId, setReceiptsId] = useState('');
+  const [receipts, setReceipts] = useState<StaffPopReadReceipt[]>([]);
   const requestIdRef = useRef('');
   const procedureIdRef = useRef('');
 
@@ -109,6 +111,16 @@ export function StoreStaffPopManager({
       setHistoryId(id);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Falha ao carregar versões.');
+    }
+  };
+  const showReceipts = async (pop: StaffProcedureView) => {
+    if (receiptsId === pop.id) { setReceiptsId(''); return; }
+    setError('');
+    try {
+      setReceipts(await getStaffPopReceipts(storeId, pop.id, pop.currentVersion));
+      setReceiptsId(pop.id);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : 'Falha ao consultar confirmações.');
     }
   };
   const download = async (id: string, revision: StaffProcedureRevision) => {
@@ -215,7 +227,20 @@ export function StoreStaffPopManager({
                 className="inline-flex items-center gap-1 rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold">
                 <History className="h-3.5 w-3.5" /> Histórico
               </button>
+              <button type="button" onClick={() => void showReceipts(pop)}
+                className="rounded-xl border border-slate-600 px-3 py-2 text-xs font-bold">
+                Confirmações de leitura
+              </button>
             </div>
+            {receiptsId === pop.id && (
+              <div className="space-y-2 rounded-xl border border-slate-700 bg-slate-900 p-3 text-xs">
+                <p className="font-bold">{receipts.length} confirmações na versão {pop.currentVersion}</p>
+                {!receipts.length && <p className="text-slate-400">Nenhuma confirmação registrada ainda.</p>}
+                {receipts.map(item => <p key={item.userId} className="text-slate-300">
+                  Colaborador {item.userId.slice(0, 12)} · {new Date(item.readAt).toLocaleString('pt-BR')}
+                </p>)}
+              </div>
+            )}
             {historyId === pop.id && (
               <div className="space-y-3 border-t border-slate-700 pt-3">
                 {history.map(v => <div key={v.version} className="rounded-xl bg-slate-900 p-3 text-xs">

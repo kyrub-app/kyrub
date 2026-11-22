@@ -107,3 +107,5 @@ export const canReadStaffPop = (
   resource.audienceRoles.length === 0 ||
   resource.audienceRoles.includes(role as StaffNoticeAudienceRole)
 );
+
+export type StaffPopReadReceipt = { userId: string; readAt: string };

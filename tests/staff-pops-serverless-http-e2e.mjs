@@ -120,6 +120,11 @@ try {
   assert.equal(receipt.status,200);
   assert.ok(Date.parse(receipt.payload.readAt));
   assert.equal((await read(seller,1)).payload.readAt,receipt.payload.readAt);
+  const v1receipts=await call('receipts',{uid:manager,query:{procedureId:popId,version:'1'}});
+  assert.equal(v1receipts.status,200);
+  assert.equal(v1receipts.payload.receipts.length,1);
+  assert.equal(v1receipts.payload.receipts[0].userId,seller);
+  assert.equal((await call('receipts',{uid:seller,query:{procedureId:popId,version:'1'}})).status,403);
   const v1seller=(await list(seller)).payload.procedures[0];
   assert.equal(v1seller.readAt,receipt.payload.readAt);
 
@@ -158,6 +163,9 @@ try {
   assert.equal(actual.headers.get('cache-control'),'private, no-store, max-age=0');
   assert.match(actual.headers.get('content-disposition') ?? '',/attachment;/);
   assert.equal((await read(seller,2)).status,200);
+  const v2Receipts=await call('receipts',{uid:ownerId,query:{procedureId:popId,version:'2'}});
+  assert.equal(v2Receipts.status,200);
+  assert.equal(v2Receipts.payload.receipts.length,1);
 
   const v3=await send(ownerId,{procedureId:popId,requestId:'pop_request_third_12345',
     expectedVersion:2,title:'Rotina de abertura v3',body:'Texto revisado pela direção.',

@@ -332,3 +332,25 @@ export const listAuthorizedStaffPopHistory = async (input: {
     .limit(STAFF_POP_MAX_VERSIONS).get();
   return versions.docs.map(doc => doc.data() as StaffProcedureRevision);
 };
+
+export const listAuthorizedStaffPopReceipts = async (input: {
+  authorization: string; legacyStoreId: string;
+  procedureId: string; version: number;
+}): Promise<{ userId: string; readAt: string }[]> => {
+  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
+  requireManager(actor);
+  if (!safePopId(input.procedureId) ||
+      !safePopVersion(input.version) || input.version === 0) throw Error('STAFF_POP_INVALID');
+  const ref = procedures(actor).doc(input.procedureId);
+  const parent = await ref.get();
+  if (!parent.exists || parent.get('canonicalStoreId') !== actor.canonicalStoreId ||
+      parent.get('legacyStoreId') !== actor.legacyStoreId) throw Error('STAFF_POP_NOT_FOUND');
+  const revisionRef = ref.collection('versions').doc(String(input.version));
+  if (!(await revisionRef.get()).exists) throw Error('STAFF_POP_NOT_FOUND');
+  const docs = await revisionRef.collection('readReceipts').limit(121).get();
+  if (docs.size > 120) throw Error('STAFF_POP_TEAM_LIMIT');
+  return docs.docs.map(doc => ({
+    userId: doc.id,
+    readAt: clean(doc.get('readAt')),
+  })).filter(item => item.readAt).sort((a,b) => b.readAt.localeCompare(a.readAt));
+};

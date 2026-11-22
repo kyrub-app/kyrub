@@ -3,6 +3,7 @@ import { ConsultantHttpError } from '../ai/types.js';
 import {
   acknowledgeAuthorizedStaffPop,
   listAuthorizedStaffPopHistory,
+  listAuthorizedStaffPopReceipts,
   listAuthorizedStaffProcedures,
   publishAuthorizedStaffProcedure,
   readAuthorizedStaffPopAttachment,
@@ -78,6 +79,15 @@ export async function handleStaffProcedureRequest(request: Request, response: Re
       response.status(200).json({ versions });
       return;
     }
+    if (method === 'GET' && route === 'receipts') {
+      const receipts = await listAuthorizedStaffPopReceipts({
+        authorization, legacyStoreId,
+        procedureId: clean(request.query?.procedureId),
+        version: Number(request.query?.version),
+      });
+      response.status(200).json({receipts});
+      return;
+    }
     if (method === 'GET' && route === 'file') {
       const {bytes, name, mimeType} = await readAuthorizedStaffPopAttachment({
         authorization, legacyStoreId,
@@ -129,7 +139,7 @@ export async function handleStaffProcedureRequest(request: Request, response: Re
 
 export const createStaffProcedureRouter = (): Router => {
   const router = Router();
-  for (const route of ['/', '/upload', '/read', '/history', '/file']) {
+  for (const route of ['/', '/upload', '/read', '/history', '/file', '/receipts']) {
     router.all(route, (request, response) => {
       void handleStaffProcedureRequest(request as Request, response as Response);
     });
