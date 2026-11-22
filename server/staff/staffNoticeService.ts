@@ -27,7 +27,7 @@ type Actor = {
   canonicalStoreId: string;
 };
 
-const resolveActor = async (authorization: string, legacyStoreId: string): Promise<Actor> => {
+export const resolveStaffActor = async (authorization: string, legacyStoreId: string): Promise<Actor> => {
   if (!safeStoreId(legacyStoreId)) throw new Error('STAFF_NOTICE_STORE_INVALID');
   const token = bearer(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
@@ -63,7 +63,7 @@ export const listAuthorizedStaffNotices = async (input: {
   authorization: string;
   legacyStoreId: string;
 }): Promise<StaffNoticeForViewer[]> => {
-  const actor = await resolveActor(input.authorization, input.legacyStoreId);
+  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
   const snapshot = await collectionFor(actor)
     .orderBy('createdAt', 'desc').limit(STAFF_NOTICE_MAX_RESULTS).get();
   const visible = snapshot.docs.map(doc => doc.data() as StaffNotice).filter(item =>
@@ -89,7 +89,7 @@ export const publishAuthorizedStaffNotice = async (input: {
   body: unknown;
   audienceRoles: unknown;
 }): Promise<StaffNotice> => {
-  const actor = await resolveActor(input.authorization, input.legacyStoreId);
+  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
   ensureManager(actor);
   const valid = validateStaffNoticeInput(input);
   const noticeRef = collectionFor(actor).doc(valid.id);
@@ -171,7 +171,7 @@ export const acknowledgeAuthorizedStaffNotice = async (input: {
   legacyStoreId: string;
   noticeId: string;
 }): Promise<string> => {
-  const actor = await resolveActor(input.authorization, input.legacyStoreId);
+  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
   const noticeId = clean(input.noticeId);
   if (!isSafeStaffNoticeId(noticeId)) throw new Error('STAFF_NOTICE_INVALID');
   const noticeRef = collectionFor(actor).doc(noticeId);
