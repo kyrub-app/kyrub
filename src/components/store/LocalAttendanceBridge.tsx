@@ -367,6 +367,11 @@ export const LocalAttendanceBridge = () => {
 
   const opener = openerHost ? createPortal(
     <div className="space-y-2">
+      {activeLocations.length === 0 && (
+        <p role="status" className="rounded-xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-xs text-amber-100">
+          Nenhum local de atendimento ativo. Cadastre um local em Configurações da Loja → Ambientes para iniciar atendimentos.
+        </p>
+      )}
       <div className="grid w-full grid-cols-[minmax(0,1fr)_3.25rem] gap-2 sm:grid-cols-[minmax(0,1fr)_minmax(9rem,0.42fr)_7rem_2.75rem]">
         <input
           value={customerLabel}
