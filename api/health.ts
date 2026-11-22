@@ -620,6 +620,30 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'user-notifications') {
+    response.setHeader('Cache-Control', 'no-store, max-age=0');
+    try {
+      const notificationTransport = await import(
+        '../server/notifications/userNotificationsServerlessTransport.js'
+      );
+      await notificationTransport.handleUserNotificationsServerlessRequest(
+        request, response
+      );
+    } catch (error) {
+      console.error(
+        '[user-notifications-transport]',
+        error instanceof Error ? error.message : String(error)
+      );
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          error: 'Não foi possível consultar as notificações.',
+          code: 'USER_NOTIFICATIONS_TRANSPORT_UNAVAILABLE',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'store-promotions') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     try {
