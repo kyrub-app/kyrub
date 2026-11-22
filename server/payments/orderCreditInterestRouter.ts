@@ -3,6 +3,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
   listOwnCreditInterestProposals,
+  loadOwnerCreditInterestProposal,
   proposeOrderCreditInterest,
   respondToOrderCreditInterest,
 } from './orderCreditInterestService.js';
@@ -30,6 +31,23 @@ const errorResult = (error: unknown): {status: number; message: string; code: st
 
 export const createOrderCreditInterestRouter = (): Router => {
   const router = Router();
+  // Merchant status is read-only and authenticated; never repeats an offer.
+  router.get('/status', async (request, response) => {
+    try {
+      const identity = await identify(request.get('authorization') ?? '');
+      const proposal = await loadOwnerCreditInterestProposal({
+        storeId: clean(request.query.storeId),
+        orderId: clean(request.query.orderId),
+        actorId: identity.uid,
+      });
+      response.setHeader('Cache-Control', 'no-store');
+      response.status(200).json({ proposal });
+    } catch (error) {
+      const mapped = errorResult(error);
+      response.status(mapped.status).json({ error: mapped.message, code: mapped.code });
+    }
+  });
+
   // Buyer sees only proposals scoped by their validated Firebase identity.
   router.get('/mine', async (request, response) => {
     try {
