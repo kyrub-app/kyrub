@@ -107,6 +107,7 @@ export async function handleStaffProcedureRequest(request: Request, response: Re
         expectedVersion: body.expectedVersion,
         title: body.title, body: body.body,
         audienceRoles: body.audienceRoles, attachment: body.attachment,
+        retainAttachment: body.retainAttachment === true,
       });
       response.status(200).json({ procedure });
       return;

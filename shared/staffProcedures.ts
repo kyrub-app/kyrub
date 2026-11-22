@@ -30,6 +30,7 @@ export type StaffProcedure = {
   currentVersion: number;
   audienceRoles: StaffNoticeAudienceRole[];
   lastRequestId: string;
+  lastPayloadHash: string;
   publishedBy: string;
   publishedAt: string;
   status: 'published';

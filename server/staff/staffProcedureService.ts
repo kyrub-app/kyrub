@@ -166,6 +166,7 @@ export const publishAuthorizedStaffProcedure = async (input: {
   authorization: string; legacyStoreId: string;
   procedureId: unknown; requestId: unknown; expectedVersion: unknown;
   title: unknown; body: unknown; audienceRoles: unknown; attachment: unknown;
+  retainAttachment?: boolean;
 }): Promise<StaffProcedure> => {
   const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
   requireManager(actor);
@@ -173,7 +174,10 @@ export const publishAuthorizedStaffProcedure = async (input: {
   const attachment = await verifyAttachment(
     actor, validated.procedureId, validated.requestId, input.attachment
   );
-  if (!validated.body && !attachment) throw Error('STAFF_POP_INVALID');
+  if (attachment && input.retainAttachment) throw Error('STAFF_POP_ATTACHMENT_INVALID');
+  const payloadHash = createHash('sha256').update(JSON.stringify({
+    ...validated, attachment, retainAttachment: input.retainAttachment === true,
+  })).digest('hex');
   const ref = procedures(actor).doc(validated.procedureId);
   const members = await adminDb.collection(
     'stores/' + actor.canonicalStoreId + '/members'
@@ -185,7 +189,10 @@ export const publishAuthorizedStaffProcedure = async (input: {
     await ensureActorStillActive(actor, tx);
     const previous = parentSnap.data() as StaffProcedure | undefined;
     if (previous) {
-      if (previous.lastRequestId === validated.requestId) return previous;
+      if (previous.lastRequestId === validated.requestId) {
+        if (previous.lastPayloadHash !== payloadHash) throw Error('STAFF_POP_IDEMPOTENCY_CONFLICT');
+        return previous;
+      }
       if (previous.canonicalStoreId !== actor.canonicalStoreId ||
           previous.legacyStoreId !== actor.legacyStoreId ||
           previous.currentVersion !== validated.expectedVersion) {
@@ -194,6 +201,13 @@ export const publishAuthorizedStaffProcedure = async (input: {
     } else if (validated.expectedVersion !== 0) {
       throw Error('STAFF_POP_VERSION_CONFLICT');
     }
+    const previousRevision = previous && input.retainAttachment
+      ? await tx.get(ref.collection('versions').doc(String(previous.currentVersion))) : null;
+    const resolvedAttachment: StaffPopAttachment | null = attachment ||
+      (input.retainAttachment
+        ? (previousRevision?.data() as StaffProcedureRevision | undefined)?.attachment ?? null
+        : null);
+    if (!validated.body && !resolvedAttachment) throw Error('STAFF_POP_INVALID');
     const version = (previous?.currentVersion ?? 0) + 1;
     if (version > STAFF_POP_MAX_VERSIONS) throw Error('STAFF_POP_VERSION_LIMIT');
     const currentMembers = await Promise.all(members.docs.map(doc => tx.get(doc.ref)));
@@ -207,13 +221,13 @@ export const publishAuthorizedStaffProcedure = async (input: {
       id: validated.procedureId, version, requestId: validated.requestId,
       title: validated.title, body: validated.body,
       audienceRoles: validated.audienceRoles,
-      attachment, publishedBy: actor.uid, publishedAt: now,
+      attachment: resolvedAttachment, publishedBy: actor.uid, publishedAt: now,
     };
     const summary: StaffProcedure = {
       id: validated.procedureId, legacyStoreId: actor.legacyStoreId,
       canonicalStoreId: actor.canonicalStoreId, title: validated.title,
       currentVersion: version, audienceRoles: validated.audienceRoles,
-      lastRequestId: validated.requestId, publishedBy: actor.uid,
+      lastRequestId: validated.requestId, lastPayloadHash: payloadHash, publishedBy: actor.uid,
       publishedAt: now, status: 'published',
     };
     const versionRef = ref.collection('versions').doc(String(version));
@@ -291,9 +305,34 @@ export const readAuthorizedStaffPopAttachment = async (input: {
         input.version !== parent.currentVersion)) throw Error('STAFF_POP_NOT_FOUND');
   const attachment = revision.attachment;
   if (!attachment) throw Error('STAFF_POP_NOT_FOUND');
-  const expectedPath = 'staff-pops/' + actor.canonicalStoreId + '/' + input.procedureId +
-    '/' + revision.requestId + '/' + attachment.sha256;
-  if (attachment.path !== expectedPath) throw Error('STAFF_POP_NOT_FOUND');
+  const expectedPrefix = 'staff-pops/' + actor.canonicalStoreId + '/' + input.procedureId + '/';
+  if (!attachment.path.startsWith(expectedPrefix) ||
+      !new RegExp('^[A-Za-z0-9_-]{12,96}/' + attachment.sha256 + '
+  const [bytes] = await privateBucket().file(attachment.path).download();
+  if (bytes.length !== attachment.sizeBytes ||
+      createHash('sha256').update(bytes).digest('hex') !== attachment.sha256) {
+    throw Error('STAFF_POP_ATTACHMENT_INVALID');
+  }
+  return { bytes, name: attachment.name, mimeType: attachment.mimeType };
+};
+
+export const listAuthorizedStaffPopHistory = async (input: {
+  authorization: string; legacyStoreId: string; procedureId: string;
+}): Promise<StaffProcedureRevision[]> => {
+  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
+  requireManager(actor);
+  if (!safePopId(input.procedureId)) throw Error('STAFF_POP_INVALID');
+  const ref = procedures(actor).doc(input.procedureId);
+  const parent = await ref.get();
+  if (!parent.exists || parent.get('legacyStoreId') !== actor.legacyStoreId) throw Error('STAFF_POP_NOT_FOUND');
+  const versions = await ref.collection('versions').orderBy('version', 'desc')
+    .limit(STAFF_POP_MAX_VERSIONS).get();
+  return versions.docs.map(doc => doc.data() as StaffProcedureRevision);
+};
+)
+        .test(attachment.path.slice(expectedPrefix.length))) {
+    throw Error('STAFF_POP_NOT_FOUND');
+  }
   const [bytes] = await privateBucket().file(attachment.path).download();
   if (bytes.length !== attachment.sizeBytes ||
       createHash('sha256').update(bytes).digest('hex') !== attachment.sha256) {
