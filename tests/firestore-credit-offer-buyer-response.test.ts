@@ -85,3 +85,96 @@ test('storewide credit consultation writes one offer and buyer notification, wit
   assert.equal((await adminDb.collection('stores/' + storeId + '/orderCreditInterestProposals').get()).size, 1);
   assert.equal((await adminDb.collection('stores/' + storeId + '/orderCreditBalances').get()).size, 0);
 });
+
+test('published first-store listing uses the owner UID while payments use a different canonical ID', async () => {
+  const storeId='credit_first_store_owner';
+  const canonicalStoreId='credit_first_store_canonical';
+  const buyerId='credit_first_store_buyer';
+  const orderId='credit_first_store_order';
+  const paymentId='credit_first_store_payment';
+  const listingPath='marketplace_listings/s_'+storeId.length+'_'+storeId;
+  const paymentPath='stores/'+canonicalStoreId+'/payments/'+paymentId;
+  const orderPath='artifacts/'+storeId+'/public/data/customerOrders/'+orderId;
+  await Promise.all([
+    adminDb.doc(getPrimaryUserStoreDocumentPath(storeId)).set({
+      id:storeId,ownerId:storeId,canonicalStoreId,name:'Primeira loja',slug:'loja-compensacao-primeira',
+    }),
+    adminDb.doc('tenants/'+storeId).set({
+      id:storeId,ownerId:storeId,publicationStatus:'published',
+    }),
+    adminDb.doc('stores/'+canonicalStoreId).set({
+      id:canonicalStoreId,ownerId:storeId,legacyTenantId:storeId,
+      firstStoreCreationVerified:true,publicationStatus:'published',
+      // Intentionally no slug: published first-store public listing owns the slug.
+    }),
+    adminDb.doc(listingPath).set({
+      listingId:'s_'+storeId.length+'_'+storeId,listingType:'store',
+      storeId,ownerId:storeId,publicationStatus:'published',
+      name:'Primeira loja',slug:'loja-compensacao-primeira',
+    }),
+    adminDb.doc(orderPath).set({
+      id:orderId,storeId,buyerId,createdByUserId:buyerId,
+      status:'rejected',paymentStatus:'paid',refundStatus:'required',
+      total:0,buyerName:'Cliente fictício',
+    }),
+    adminDb.doc(paymentPath).set({
+      id:paymentId,storeId:canonicalStoreId,orderId,buyerId,
+      paymentIntentId:'first_store_intent',amount:23.30,currency:'BRL',
+      method:'pix',context:'marketplace',status:'paid',provider:'mercado-pago',
+      providerPaymentId:'mp_first_store_isolated',idempotencyKey:'first_store_key',
+      createdAt:'2026-11-22T17:00:00.000Z',
+      updatedAt:'2026-11-22T17:01:00.000Z',
+      paidAt:'2026-11-22T17:01:00.000Z',refundedAt:'',
+    }),
+  ]);
+  const input={storeId,orderId,actorId:storeId,bonusPercent:100};
+  const proposal=await proposeOrderCreditInterest(input);
+  assert.equal(proposal.canonicalStoreId,storeId,'public storefront ID');
+  assert.equal(proposal.paymentStoreId,canonicalStoreId,'real canonical payment root');
+  assert.equal(proposal.amountMinor,2330);
+  assert.equal(proposal.bonusMinor,2330);
+  assert.equal(proposal.proposedCreditMinor,4660);
+  assert.equal(proposal.creditIssued,false);
+  assert.deepEqual(await proposeOrderCreditInterest(input),proposal);
+  assert.deepEqual(await listOwnCreditInterestProposals({storeId,buyerId}),[proposal]);
+  assert.deepEqual(await listOwnCreditInterestProposals({
+    storeId,buyerId:'credit_first_store_unrelated',
+  }),[]);
+  const notices=await adminDb.collection('users/'+buyerId+'/notifications').get();
+  assert.equal(notices.size,1);
+  assert.equal(notices.docs[0].get('target.storeId'),storeId);
+  assert.equal(notices.docs[0].get('target.storeSlug'),'loja-compensacao-primeira');
+  assert.equal((await adminDb.doc(paymentPath).get()).get('status'),'paid');
+  assert.equal((await adminDb.doc(orderPath).get()).get('refundStatus'),'required');
+  assert.equal((await adminDb.collection('stores/'+storeId+'/orderCreditBalances').get()).size,0);
+  const interested=await respondToOrderCreditInterest({
+    storeId,orderId,buyerId,choice:'interested',
+  });
+  assert.equal(interested.status,'interested');
+  assert.equal(interested.creditIssued,false);
+});
+
+test('unverified first-store listing owner or paused publication blocks consultation', async () => {
+  const storeId='credit_first_bad_owner';
+  const canonicalStoreId='credit_first_bad_canonical';
+  const orderId='credit_first_bad_order';
+  const listingPath='marketplace_listings/s_'+storeId.length+'_'+storeId;
+  await Promise.all([
+    adminDb.doc(getPrimaryUserStoreDocumentPath(storeId)).set({
+      id:storeId,ownerId:storeId,canonicalStoreId,name:'Loja inválida isolada',
+    }),
+    adminDb.doc('stores/'+canonicalStoreId).set({
+      id:canonicalStoreId,ownerId:storeId,legacyTenantId:storeId,
+      firstStoreCreationVerified:true,publicationStatus:'published',
+    }),
+    adminDb.doc(listingPath).set({
+      listingType:'store',storeId,ownerId:'unrelated_user',
+      publicationStatus:'published',slug:'loja-com-identidade-invalida',
+    }),
+  ]);
+  const input={storeId,orderId,actorId:storeId,bonusPercent:100};
+  await assert.rejects(proposeOrderCreditInterest(input),/CREDIT_INTEREST_STORE_UNVERIFIED/);
+  await adminDb.doc(listingPath).update({ownerId:storeId,publicationStatus:'paused'});
+  await assert.rejects(proposeOrderCreditInterest(input),/CREDIT_INTEREST_STORE_UNVERIFIED/);
+  assert.equal((await adminDb.collection('stores/'+storeId+'/orderCreditInterestProposals').get()).size,0);
+});
