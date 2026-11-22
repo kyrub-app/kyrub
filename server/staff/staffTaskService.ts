@@ -51,21 +51,26 @@ export const listAuthorizedStaffTaskAssignees = async (input: {
       label: STORE_ROLE_LABELS[member.role] + ' · ' + doc.id.slice(0, 8),
     }];
   });
-  return [{ userId: actor.legacyStoreId, role: 'owner', label: 'Proprietário' }, ...members];
+  return [{ userId: actor.legacyStoreId, role: 'owner' as const, label: 'Proprietário' }, ...members];
 };
 
 export const listAuthorizedStaffTasks = async (input: {
   authorization: string; legacyStoreId: string;
 }): Promise<StaffChecklistTask[]> => {
   const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
-  const snap = await tasksFor(actor).orderBy('createdAt', 'desc')
+  // For individual staff, query by assignee before the result limit.
+  // Otherwise another employee's tasks could hide their assigned checklist.
+  const manager = actor.role === 'owner' || actor.role === 'manager';
+  const snap = await (manager
+    ? tasksFor(actor).orderBy('createdAt', 'desc')
+    : tasksFor(actor).where('assignedTo', '==', actor.uid))
     .limit(STAFF_TASK_MAX_RESULTS).get();
   return snap.docs.map(doc => doc.data() as StaffChecklistTask).filter(task =>
-    task.id === task.id.trim() &&
+    safeStaffTaskId(task.id) && task.id === doc.id &&
     task.canonicalStoreId === actor.canonicalStoreId &&
     task.legacyStoreId === actor.legacyStoreId &&
     canAccessStaffTask(actor, task)
-  );
+  ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 };
 
 export const createAuthorizedStaffTask = async (input: {
@@ -89,7 +94,10 @@ export const createAuthorizedStaffTask = async (input: {
           original.canonicalStoreId !== actor.canonicalStoreId) {
         throw Error('STAFF_TASK_IDEMPOTENCY_CONFLICT');
       }
-      return original;
+      // Keep internal deduplication metadata out of the API response.
+      const { creationHash: _internal, ...task } = existing.data() as
+        StaffChecklistTask & { creationHash: string };
+      return task;
     }
     let role: StoreRole;
     if (data.assignedTo === actor.legacyStoreId) role = 'owner';
