@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
 import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
@@ -87,6 +88,7 @@ export const proposeOrderCreditInterest = async (input: {
   const actorId = clean(input.actorId);
   assertIds(storeId, orderId);
   if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
+  await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
   const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
   const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
   const orderRef = adminDb.doc(orderPath(storeId, orderId));
