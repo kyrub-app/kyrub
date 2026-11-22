@@ -150,7 +150,7 @@ export const PaidOrderRefundBridge = ({
       setOrders([]);
       return;
     }
-    let unsubscribeOrders = () => undefined;
+    let unsubscribeOrders: () => void = () => undefined;
     const unsubscribeAuth = onAuthStateChanged(auth, user => {
       unsubscribeOrders();
       unsubscribeOrders = () => undefined;
