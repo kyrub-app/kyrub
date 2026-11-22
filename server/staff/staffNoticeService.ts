@@ -42,7 +42,7 @@ const resolveActor = async (authorization: string, legacyStoreId: string): Promi
   if (identity.uid === legacyStoreId) {
     return { uid: identity.uid, role: 'owner', legacyStoreId, canonicalStoreId };
   }
-  const member = await adminDb.doc(\`stores/\${canonicalStoreId}/members/\${identity.uid}\`).get();
+  const member = await adminDb.doc(`stores/${canonicalStoreId}/members/${identity.uid}`).get();
   const parsed = parseStoreMember(member.data());
   if (!parsed || parsed.userId !== identity.uid || parsed.status !== 'active') {
     throw new Error('STAFF_NOTICE_FORBIDDEN');
@@ -51,7 +51,7 @@ const resolveActor = async (authorization: string, legacyStoreId: string): Promi
 };
 
 const collectionFor = (actor: Actor) =>
-  adminDb.collection(\`stores/\${actor.canonicalStoreId}/staffNotices\`);
+  adminDb.collection(`stores/${actor.canonicalStoreId}/staffNotices`);
 
 const ensureManager = (actor: Actor): void => {
   if (actor.role !== 'owner' && actor.role !== 'manager') {
@@ -94,7 +94,7 @@ export const publishAuthorizedStaffNotice = async (input: {
   const noticeRef = collectionFor(actor).doc(valid.id);
   // Discover candidate recipients only from this canonical store; never accept
   // recipients or author IDs from the browser. Bounded to avoid fan-out abuse.
-  const memberSnapshot = await adminDb.collection(\`stores/\${actor.canonicalStoreId}/members\`)
+  const memberSnapshot = await adminDb.collection(`stores/${actor.canonicalStoreId}/members`)
     .where('status', '==', 'active').limit(STAFF_NOTICE_MAX_MEMBERS + 1).get();
   if (memberSnapshot.size > STAFF_NOTICE_MAX_MEMBERS) {
     throw new Error('STAFF_NOTICE_TEAM_LIMIT');
