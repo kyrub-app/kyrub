@@ -1,6 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
 import { quoteOrderCompensation, ORDER_COMPENSATION_SCOPE, ORDER_COMPENSATION_MAX_BONUS_PERCENT } from '../../shared/orderCompensationCredit.js';
-import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
+import { inspectOrderCreditInterestRefundSafety } from './orderCreditInterestRefundGuard.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
@@ -103,18 +103,65 @@ export const proposeOrderCreditInterest = async (input: {
   await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
   const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
   const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
-  // Reject already partially refunded or uncertain histories. The principal
-  // must represent an outstanding, fully paid transaction.
-  await assertFullRefundHasNoConfirmedPartialHistory({ storeId: payment.storeId, orderId });
+  // Offering a non-binding consultation must not reuse the full-refund gate.
+  // Audited failed attempts require a fresh independent provider check; no
+  // partial refund or unresolved history can ever authorize a money movement.
+  const refundGuard = await inspectOrderCreditInterestRefundSafety({
+    legacyStoreId: storeId, orderId, payment,
+  });
   const orderRef = adminDb.doc(orderPath(storeId, orderId));
   const paymentRef = adminDb.doc('stores/' + payment.storeId + '/payments/' + payment.id);
   const proposalRef = adminDb.doc(proposalPath(storeId, orderId));
+  const fullRefundRef = adminDb.doc('stores/' + payment.storeId + '/paymentRefunds/' + payment.id);
+  const attemptRef = refundGuard.mode === 'audited_failed_attempt'
+    ? adminDb.doc('stores/' + storeId + '/paymentPartialRefunds/' + refundGuard.failedAttemptId)
+    : null;
+  const evidenceRef = refundGuard.mode === 'audited_failed_attempt'
+    ? adminDb.doc('stores/' + storeId + '/orderRefundReconciliationEvidence/' + orderId)
+    : null;
   const now = new Date().toISOString();
 
   return adminDb.runTransaction(async transaction => {
-    const [orderSnapshot, paymentSnapshot, proposalSnapshot] = await Promise.all([
-      transaction.get(orderRef), transaction.get(paymentRef), transaction.get(proposalRef),
+    const [orderSnapshot, paymentSnapshot, proposalSnapshot, fullRefundSnapshot,
+      attemptSnapshot, evidenceSnapshot, partialSnapshots] = await Promise.all([
+      transaction.get(orderRef),
+      transaction.get(paymentRef),
+      transaction.get(proposalRef),
+      transaction.get(fullRefundRef),
+      attemptRef ? transaction.get(attemptRef) : Promise.resolve(null),
+      evidenceRef ? transaction.get(evidenceRef) : Promise.resolve(null),
+      Promise.all(refundGuard.roots.map(root =>
+        transaction.get(adminDb.collection('stores/' + root + '/paymentPartialRefunds')
+          .where('orderId', '==', orderId).limit(51)))),
     ]);
+    // The transaction prevents a concurrent local refund attempt or mutation
+    // of the recorded failed attempt from authorizing an outdated proposal.
+    if (fullRefundSnapshot.exists || partialSnapshots.some(snapshot => snapshot.size > 50)) {
+      throw new Error('CREDIT_INTEREST_REFUND_UNRESOLVED');
+    }
+    const partialDocs = partialSnapshots.flatMap((snapshot, index) =>
+      snapshot.docs.map(doc => ({ root: refundGuard.roots[index], doc })));
+    if (refundGuard.mode === 'no_partial_history' && partialDocs.length !== 0) {
+      throw new Error('CREDIT_INTEREST_REFUND_UNRESOLVED');
+    }
+    if (refundGuard.mode === 'audited_failed_attempt') {
+      if (partialDocs.length !== 1 || partialDocs[0].root !== storeId ||
+          partialDocs[0].doc.id !== refundGuard.failedAttemptId ||
+          partialDocs[0].doc.get('status') !== 'failed' ||
+          partialDocs[0].doc.get('providerRefundId') ||
+          !attemptSnapshot?.exists || attemptSnapshot.get('status') !== 'failed' ||
+          attemptSnapshot.get('providerRefundId') ||
+          !evidenceSnapshot?.exists ||
+          evidenceSnapshot.get('state') !== 'observed_no_refund_not_settled' ||
+          evidenceSnapshot.get('failedAttemptId') !== refundGuard.failedAttemptId ||
+          evidenceSnapshot.get('paymentId') !== payment.id ||
+          evidenceSnapshot.get('providerPaymentId') !== payment.providerPaymentId ||
+          evidenceSnapshot.get('providerAmountMinor') !== Math.round(payment.amount * 100) ||
+          evidenceSnapshot.get('paymentRefunded') !== false ||
+          evidenceSnapshot.get('creditIssued') !== false) {
+        throw new Error('CREDIT_INTEREST_REFUND_UNRESOLVED');
+      }
+    }
     const order = orderSnapshot.data() as Record<string, unknown> | undefined;
     if (!orderSnapshot.exists || !order || clean(order.storeId) !== storeId ||
         clean(order.id) !== orderId || !['rejected', 'cancelled'].includes(clean(order.status)) ||
@@ -131,6 +178,9 @@ export const proposeOrderCreditInterest = async (input: {
     if (!paymentSnapshot.exists || clean(paymentSnapshot.get('status')) !== 'paid' ||
         clean(paymentSnapshot.get('orderId')) !== orderId ||
         clean(paymentSnapshot.get('buyerId')) !== buyerId ||
+        clean(paymentSnapshot.get('provider')) !== 'mercado-pago' ||
+        clean(paymentSnapshot.get('providerPaymentId')) !== payment.providerPaymentId ||
+        Math.round(Number(paymentSnapshot.get('amount')) * 100) !== Math.round(payment.amount * 100) ||
         payment.amount <= 0) {
       throw new Error('CREDIT_INTEREST_PAYMENT_CHANGED');
     }
@@ -167,7 +217,7 @@ export const proposeOrderCreditInterest = async (input: {
       createdAt: now,
     });
     transaction.create(proposalRef, proposal);
-    transaction.set(adminDb.doc(userNotificationPath(buyerId, notification.id)), notification);
+    transaction.create(adminDb.doc(userNotificationPath(buyerId, notification.id)), notification);
     return proposal;
   });
 };
