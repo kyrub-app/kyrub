@@ -94,3 +94,30 @@ test('official store cleanup is a one-time guarded archive, never an arbitrary s
  assert.match(api,/validKyrubOfficialTestHistoryRequest\(request\.body\)/);
  assert.match(ui,/AdminKyrubOfficialTestHistoryCleanup/);
 });
+
+test('provider reconciliation preflight uses only seller OAuth GET and never unlocks cleanup',async()=>{
+ const {normalizeHistoricalPaymentId,classifyHistoricalProviderPayment}=await import('../server/admin/mercadoPagoTestHistoryProviderPolicy.js');
+ assert.equal(normalizeHistoricalPaymentId(' 012345 '),'012345');
+ assert.equal(normalizeHistoricalPaymentId(1234),'1234');
+ assert.equal(normalizeHistoricalPaymentId('uuid'),null);
+ assert.equal(normalizeHistoricalPaymentId('../other'),null);
+ const valid={id:'123',collector_id:'3631706959',currency_id:'BRL',payment_method_id:'pix',status:'pending',metadata:{kyrub_store_id:'store-ae53dc42e57eb9d5c3f7151c1431'}};
+ assert.deepEqual(classifyHistoricalProviderPayment(valid,'123','3631706959','store-ae53dc42e57eb9d5c3f7151c1431'),{kind:'pending'});
+ assert.deepEqual(classifyHistoricalProviderPayment({...valid,status:'approved'},'123','3631706959','store-ae53dc42e57eb9d5c3f7151c1431'),{kind:'approved'});
+ for(const changes of [{id:'444'},{collector_id:'999'},{currency_id:'USD'},{payment_method_id:'credit_card'},{metadata:{kyrub_store_id:'another'}}]){
+  assert.deepEqual(classifyHistoricalProviderPayment({...valid,...changes},'123','3631706959','store-ae53dc42e57eb9d5c3f7151c1431'),{kind:'mismatch'});
+ }
+ const service=read('server/admin/mercadoPagoTestHistoryProviderAuditService.ts');
+ assert.match(service,/validateMercadoPagoStoreConnection\(tenant\)/);
+ assert.match(service,/EXPECTED_ACCOUNT='3631706959'/);
+ assert.match(service,/mercadoPagoStoreRequest<Record<string,unknown>>\(tenant/);
+ assert.match(service,/requiresManualReview:true,allowsCleanup:false/);
+ assert.doesNotMatch(service,/cancelMercadoPagoPayment|createStoreScopedMercadoPagoLocalPix|method:'POST'|resolveMercadoPagoAccessToken/);
+ const production=read('api/admin/operations/health.ts');
+ assert.match(production,/transport === 'mercado-pago-test-history-provider-audit'/);
+ assert.match(production,/method!=='GET'/);
+ assert.match(production,/authorizeIntegrationReadiness\(authorization\)/);
+ const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
+ assert.match(panel,/REGISTROS_LEGADOS_FORA_DO_ESCOPO/);
+ assert.match(panel,/Conferir situação das cobranças no Mercado Pago/);
+});

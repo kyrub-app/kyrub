@@ -22,6 +22,7 @@ import {
 } from './customerArrivalPolicyAdminService.js';
 import { loadOperationalResponsibilityReviewQueue } from './operationalResponsibilityRouter.js';
 import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
+import { inspectKyrubOfficialProviderEvidence } from './mercadoPagoTestHistoryProviderAuditService.js';
 import { inspectOfficialTestHistory } from './mercadoPagoTestHistoryCleanupService.js';
 import { validKyrubOfficialTestHistoryRequest } from '../../shared/kyrubOfficialTestHistoryCleanup.js';
 import { loadMerchantPixStorePaymentAudit } from './mercadoPagoMerchantPixPaymentAuditService.js';
@@ -171,6 +172,17 @@ export const createOperationsHealthRouter = (): Router => {
         response.status(mapped.status).json(mapped.body);
       }
       return;
+    }
+    if(transport==='mercado-pago-test-history-provider-audit'){
+      try{
+        const admin=await authorizeIntegrationReadiness(request.get('authorization')??'');
+        response.setHeader('Cache-Control','no-store, max-age=0');
+        response.json(await inspectKyrubOfficialProviderEvidence(admin.uid));
+      }catch(error){
+        const code=error instanceof Error?error.message:'';
+        if(code.startsWith('TEST_HISTORY_'))response.status(409).json({error:'Auditoria de provedor indisponível.',code});
+        else{const mapped=mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);}
+      }return;
     }
     if(transport==='mercado-pago-test-history-cleanup'){
       try{
