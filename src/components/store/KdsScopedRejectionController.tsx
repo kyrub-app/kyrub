@@ -167,6 +167,7 @@ export const KdsScopedRejectionController = ({
   const [alternative, setAlternative] = useState('');
   const [scope, setScope] = useState<Scope>('');
   const [financialFollowup, setFinancialFollowup] = useState<FinancialFollowup>('original_refund');
+  const [creditBonusPercent, setCreditBonusPercent] = useState(0);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [operationId, setOperationId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -179,6 +180,7 @@ export const KdsScopedRejectionController = ({
     setAlternative('');
     setScope('');
     setFinancialFollowup('original_refund');
+    setCreditBonusPercent(0);
     setSelections({});
     setOperationId('');
     setError('');
@@ -318,7 +320,7 @@ export const KdsScopedRejectionController = ({
                   authorization: `Bearer ${await user.getIdToken()}`,
                   'content-type': 'application/json',
                 },
-                body: JSON.stringify({ storeId, orderId: order.id }),
+                body: JSON.stringify({ storeId, orderId: order.id, bonusPercent: creditBonusPercent }),
               }
             );
             if (!response.ok) {
@@ -540,20 +542,47 @@ export const KdsScopedRejectionController = ({
                       className="mt-0.5"
                     />
                     <span className="space-y-1">
-                      <strong className="block text-[11px] text-white">Consultar interesse em cupom compensatório</strong>
+                      <strong className="block text-[11px] text-white">Propor crédito em reais com bônus opcional</strong>
                       <span className="block text-[10px] leading-relaxed text-slate-400">
-                        Envia ao comprador uma consulta sobre possível crédito para compra futura.
-                        Ele pode demonstrar interesse ou preferir o reembolso.
+                        Consulta o comprador sobre um crédito em reais utilizável em futuras compras nesta loja,
+                        sem vincular o benefício a um produto. Ele pode preferir o reembolso.
                       </span>
                     </span>
                   </label>
                 )}
                 {financialFollowup === 'credit_interest' && (
-                  <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-100">
-                    Referência do pedido: {money.format(order.total)}. O valor autoritativo será conferido no pagamento pelo servidor.
-                    Esta consulta não cria cupom, não quita o pagamento e não altera o direito de devolução.
-                    A emissão e a utilização do crédito dependerão de acordo expresso e de um checkout compatível.
-                  </p>
+                  <div className="space-y-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-100">
+                    <label className="block space-y-2">
+                      <strong className="block text-[11px] text-white">Bônus pelo transtorno (opcional)</strong>
+                      <span className="block text-slate-300">Percentual adicional calculado sobre o valor efetivamente pago, e não sobre os futuros produtos.</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={1}
+                          inputMode="numeric"
+                          value={creditBonusPercent}
+                          onChange={event => {
+                            const value = Number(event.target.value);
+                            setCreditBonusPercent(
+                              Number.isFinite(value) ? Math.max(0, Math.min(100, Math.trunc(value))) : 0
+                            );
+                          }}
+                          className="min-h-11 w-24 rounded-xl border border-amber-500/35 bg-slate-950 px-3 text-sm font-black text-white"
+                          aria-label="Bônus percentual pela compensação"
+                        />
+                        <strong className="text-[11px]">% de bônus</strong>
+                      </div>
+                    </label>
+                    <div className="rounded-lg border border-amber-500/15 bg-slate-950/60 px-3 py-2">
+                      <p>Referência da compra: {money.format(order.total)}</p>
+                      <p>Bônus ilustrativo: +{creditBonusPercent}%</p>
+                      <p>Crédito estimado: {money.format(roundMoney(order.total * (1 + creditBonusPercent / 100)))}</p>
+                      <p className="mt-1 text-slate-400">O servidor recalcula o valor final com base no pagamento efetivamente confirmado, não no total exibido.</p>
+                    </div>
+                    <p>O crédito proposto vale para compras futuras nesta loja, não para um SKU predeterminado. Esta consulta não emite cupom, não quita o pagamento e não altera a possibilidade de devolução. Um acordo final e o checkout compatível serão necessários.</p>
+                  </div>
                 )}
               </fieldset>
             )}
@@ -633,7 +662,7 @@ export const KdsScopedRejectionController = ({
                   ? 'Processando…'
                   : scope === 'whole'
                     ? financialFollowup === 'credit_interest'
-                      ? 'Recusar pedido e consultar interesse em crédito'
+                      ? 'Recusar pedido e propor crédito com bônus'
                       : 'Confirmar recusa do pedido inteiro'
                     : 'Cancelar itens selecionados'}
               </button>
