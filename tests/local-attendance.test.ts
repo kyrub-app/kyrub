@@ -253,6 +253,7 @@ describe('canonical local attendance', () => {
   test('attendance summary replaces redundant legacy active counters and reuses the existing board heading', () => {
     const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
     assert.match(bridge, /hideLegacyActiveCounters/);
+    assert.match(bridge, /if \(target\.id === SUMMARY_HOST_ID\) continue;/);
     assert.match(bridge, /Locais em atendimento/);
     assert.match(bridge, /openSessions\.length/);
     assert.match(bridge, /customer-service-location-board/);
