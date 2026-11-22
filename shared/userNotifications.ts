@@ -24,6 +24,8 @@ export interface UserNotificationTarget {
   storeId: string;
   customerId: string;
   orderId: string;
+  /** Verified public storefront slug for navigating from the bell. */
+  storeSlug?: string;
   communityId?: string;
   groupId?: string;
   postId?: string;
@@ -158,6 +160,9 @@ export const buildUserNotification = (input: {
       storeId: clean(input.target?.storeId),
       customerId: clean(input.target?.customerId),
       orderId: clean(input.target?.orderId),
+      ...(targetKind === 'storefront' && /^[a-zA-Z0-9-]{1,128}$/.test(clean(input.target?.storeSlug))
+        ? { storeSlug: clean(input.target?.storeSlug) }
+        : {}),
       ...(targetKind === 'community_group_invite'
         ? { communityId: clean(input.target?.communityId), groupId: clean(input.target?.groupId) }
         : {}),
