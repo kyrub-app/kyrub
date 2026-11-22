@@ -55,6 +55,17 @@ const openNotificationTarget = (
     }));
     return true;
   }
+  if (notification.target.kind === 'storefront') {
+    const slug = notification.target.storeSlug;
+    if (notification.target.customerId !== user.uid ||
+        !slug || !/^[a-zA-Z0-9-]{1,128}$/.test(slug)) return false;
+    const suffix = notification.eventType === 'credit_interest_proposed' &&
+      /^[a-zA-Z0-9_-]{1,128}$/.test(notification.target.orderId)
+      ? '?compensacao=' + encodeURIComponent(notification.target.orderId)
+      : '';
+    window.location.assign('/@' + encodeURIComponent(slug) + suffix);
+    return true;
+  }
   if (notification.target.kind !== 'store_chat') return false;
   const perspective = notification.target.customerId === user.uid
     ? 'customer'
