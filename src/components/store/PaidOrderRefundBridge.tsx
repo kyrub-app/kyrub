@@ -58,6 +58,31 @@ interface RefundResponse {
   code?: string;
 }
 
+interface ProviderRefundReadOnlyDiagnosis {
+  source: 'mercado_pago_read_only';
+  paymentStatus: string;
+  paymentAmountMinor: number;
+  storedPaymentAmountMinor: number;
+  amountMatches: boolean;
+  refundedAmountReportedMinor: number | null;
+  refunds: {
+    refundCount: number;
+    approvedRefundCount: number;
+    approvedAmountMinor: number;
+    uncertainRefundCount: number;
+    statuses: Record<string, number>;
+  };
+  partialAttempt: { count: number; statusCounts: Record<string, number> };
+  blockers: string[];
+  assessment: {
+    state: 'verified_zero_refund_observation' | 'provider_no_refund_listed_but_incomplete' | 'requires_manual_reconciliation';
+    eligibleToRecordEvidence: boolean;
+    remainingFinancialObligationMinor: number | null;
+    message: string;
+  };
+  notice: string;
+}
+
 interface RefundReadOnlyDiagnosis {
   source: 'firestore_read_only';
   order: {
@@ -102,6 +127,28 @@ const money = new Intl.NumberFormat('pt-BR', {
   style: 'currency',
   currency: 'BRL',
 });
+
+const REFUND_BLOCKER_LABELS: Record<string, string> = {
+  pedido_nao_terminal: 'pedido ainda não encerrado',
+  pedido_sem_pagamento_confirmado: 'pagamento não confirmado no pedido',
+  valor_operacional_ausente: 'valor do pedido zerado ou ausente',
+  pagamento_canonico_ambiguo_ou_ausente: 'pagamento original ausente ou com registros divergentes',
+  pagamento_canonico_invalido: 'pagamento original sem valor ou provedor válido',
+  historico_parcial_acima_do_limite: 'histórico parcial acima do limite de conferência',
+  historico_parcial_incerto: 'tentativa de reembolso parcial ainda não conciliada',
+  reembolso_parcial_confirmado_exige_residual: 'já houve reembolso parcial; o restante requer conciliação',
+  historico_parcial_em_escopo_canonico: 'histórico parcial encontrado na loja canônica',
+  pagamento_em_escopo_canonico_verificar_vinculo: 'pagamento registrado na loja canônica; conferir vínculo',
+};
+
+const REFUND_PAYMENT_STATUS_LABELS: Record<string, string> = {
+  paid: 'pago',
+  refund_requested: 'reembolso solicitado',
+  refund_processing: 'reembolso em processamento',
+  refund_failed: 'tentativa de reembolso falhou',
+  refunded: 'reembolso confirmado no registro',
+  pending: 'aguardando pagamento',
+};
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -171,6 +218,12 @@ export const PaidOrderRefundBridge = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [diagnostic, setDiagnostic] = useState<RefundReadOnlyDiagnosis | null>(null);
+  const [providerDiagnostic, setProviderDiagnostic] = useState<ProviderRefundReadOnlyDiagnosis | null>(null);
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerError, setProviderError] = useState('');
+  const [evidenceBusy, setEvidenceBusy] = useState(false);
+  const [evidenceError, setEvidenceError] = useState('');
+  const [evidenceRecorded, setEvidenceRecorded] = useState(false);
   const [diagnosticBusy, setDiagnosticBusy] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState('');
   const [minimizedRefundOrderId, setMinimizedRefundOrderId] = useState<string | null>(null);
@@ -461,6 +514,10 @@ export const PaidOrderRefundBridge = ({
     setError('');
     setDiagnostic(null);
     setDiagnosticError('');
+    setProviderDiagnostic(null);
+    setProviderError('');
+    setEvidenceError('');
+    setEvidenceRecorded(false);
   };
 
   const inspectRefund = async (): Promise<void> => {
@@ -499,6 +556,79 @@ export const PaidOrderRefundBridge = ({
       );
     } finally {
       setDiagnosticBusy(false);
+    }
+  };
+
+  const inspectProviderRefund = async (): Promise<void> => {
+    if (!selectedOrder || providerBusy) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setProviderError('Entre na sua conta para conferir o Mercado Pago.');
+      return;
+    }
+    setProviderBusy(true);
+    setProviderError('');
+    setProviderDiagnostic(null);
+    try {
+      const query = new URLSearchParams({
+        transport: 'store-promotions',
+        surface: 'refunds',
+        path: 'provider-diagnostic',
+        storeId,
+        orderId: selectedOrder.id,
+      });
+      const response = await fetch('/api/health?' + query.toString(), {
+        headers: { authorization: `Bearer ${await user.getIdToken()}` },
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => ({})) as ProviderRefundReadOnlyDiagnosis & {error?: string};
+      if (!response.ok || data.source !== 'mercado_pago_read_only') {
+        throw new Error(data.error || 'Não foi possível confirmar o estado do Mercado Pago.');
+      }
+      setProviderDiagnostic(data);
+    } catch (caught) {
+      setProviderError(caught instanceof Error ? caught.message : 'Consulta ao Mercado Pago indisponível.');
+    } finally {
+      setProviderBusy(false);
+    }
+  };
+
+  const registerRefundEvidence = async (): Promise<void> => {
+    if (!selectedOrder || evidenceBusy ||
+        !providerDiagnostic?.assessment.eligibleToRecordEvidence) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setEvidenceError('Entre na sua conta para registrar a conferência.');
+      return;
+    }
+    setEvidenceBusy(true);
+    setEvidenceError('');
+    try {
+      const response = await fetch(
+        '/api/health?transport=store-promotions&surface=refunds&path=provider-evidence',
+        {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${await user.getIdToken()}`,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({storeId, orderId: selectedOrder.id}),
+          cache: 'no-store',
+        }
+      );
+      const data = await response.json().catch(() => ({})) as {
+        receipt?: {state: string; orderId: string; providerAmountMinor: number};
+        error?: string;
+      };
+      if (!response.ok || data.receipt?.state !== 'observed_no_refund_not_settled' ||
+          data.receipt.orderId !== selectedOrder.id) {
+        throw new Error(data.error || 'A conferência não foi registrada.');
+      }
+      setEvidenceRecorded(true);
+    } catch (caught) {
+      setEvidenceError(caught instanceof Error ? caught.message : 'A conferência não foi registrada.');
+    } finally {
+      setEvidenceBusy(false);
     }
   };
 
@@ -855,7 +985,7 @@ export const PaidOrderRefundBridge = ({
 
       {selectedOrder && (
         <div className="fixed inset-0 z-[175] flex items-end justify-center bg-slate-950/90 backdrop-blur-md sm:items-center sm:p-5">
-          <section className="w-full max-w-md rounded-t-3xl border border-amber-500/30 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
+          <section className="max-h-[92dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl border border-amber-500/30 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <span className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-amber-300">
@@ -915,7 +1045,7 @@ export const PaidOrderRefundBridge = ({
                   {diagnostic.payments.truncated ? ' (consulta limitada)' : ''}</p>
                 {diagnostic.payments.records.map((payment, index) => (
                   <p key={index} className="pl-2 text-slate-300">
-                    {payment.scope === 'canonical' ? 'Loja canônica' : 'ERP'} · {payment.status} ·
+                    {payment.scope === 'canonical' ? 'Loja canônica' : 'ERP'} · {REFUND_PAYMENT_STATUS_LABELS[payment.status] ?? payment.status} ·
                     {' '}{payment.amountMinor === null ? 'valor não confirmado' : money.format(payment.amountMinor / 100)}
                   </p>
                 ))}
@@ -929,21 +1059,87 @@ export const PaidOrderRefundBridge = ({
                 )}
                 {diagnostic.blockers.length > 0 && (
                   <p className="text-amber-200">
-                    Pendências de conciliação: {diagnostic.blockers.join(', ')}.
+                    Pendências de conciliação: {diagnostic.blockers.map(code => REFUND_BLOCKER_LABELS[code] ?? code).join('; ')}.
                   </p>
                 )}
                 <p className="text-slate-400">{diagnostic.notice}</p>
               </div>
             )}
 
-            {selectedOrder.status === 'rejected' && selectedOrder.paymentStatus === 'paid' &&
+            <button
+              type="button"
+              onClick={() => void inspectProviderRefund()}
+              disabled={busy || providerBusy}
+              className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/35 bg-slate-950 px-4 text-[11px] font-bold text-cyan-200 disabled:opacity-40"
+            >
+              {providerBusy && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              Conferir diretamente no Mercado Pago (somente leitura)
+            </button>
+            {providerError && (
+              <p role="alert" className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+                {providerError}
+              </p>
+            )}
+            {providerDiagnostic && (
+              <div className="mt-3 space-y-2 rounded-2xl border border-cyan-500/30 bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-200">
+                <strong className="block text-cyan-200">Consulta direta ao Mercado Pago</strong>
+                <p>Estado do pagamento no provedor: {providerDiagnostic.paymentStatus}</p>
+                <p>Valor do pagamento: {money.format(providerDiagnostic.paymentAmountMinor / 100)}
+                  {providerDiagnostic.amountMatches ? ' (confere com o Firebase)' : ' (diverge do Firebase)'}
+                </p>
+                <p>Valor total estornado informado pelo Mercado Pago: {
+                  providerDiagnostic.refundedAmountReportedMinor === null
+                    ? 'não informado'
+                    : money.format(providerDiagnostic.refundedAmountReportedMinor / 100)
+                }</p>
+                <p>Reembolsos listados no Mercado Pago: {providerDiagnostic.refunds.refundCount}</p>
+                <p>Devoluções aprovadas na consulta: {providerDiagnostic.refunds.approvedRefundCount}
+                  {' '}· total {money.format(providerDiagnostic.refunds.approvedAmountMinor / 100)}
+                </p>
+                <p>Devoluções com resultado incerto: {providerDiagnostic.refunds.uncertainRefundCount}</p>
+                {providerDiagnostic.refunds.refundCount > 0 && (
+                  <p>Estados informados: {Object.entries(providerDiagnostic.refunds.statuses)
+                    .map(([state, count]) => `${state}: ${count}`).join(' · ')}</p>
+                )}
+                <p className="text-amber-200">{providerDiagnostic.assessment.message}</p>
+                <p className="text-amber-200">
+                  O registro parcial anterior continua pendente de conciliação; esta conferência não realiza nem confirma reembolso.
+                </p>
+                {providerDiagnostic.assessment.eligibleToRecordEvidence && !evidenceRecorded && (
+                  <button
+                    type="button"
+                    onClick={() => void registerRefundEvidence()}
+                    disabled={evidenceBusy}
+                    className="min-h-11 w-full rounded-xl border border-cyan-500/40 bg-cyan-500/10 px-3 py-2 text-[11px] font-bold text-cyan-100 disabled:opacity-40"
+                  >
+                    {evidenceBusy ? 'Conferindo novamente...' : 'Registrar evidência da tentativa falha (não é estorno)'}
+                  </button>
+                )}
+                {evidenceRecorded && (
+                  <p role="status" className="text-cyan-200">
+                    Evidência registrada. O histórico da tentativa permanece preservado e o pagamento continua pendente de solução.
+                  </p>
+                )}
+                {evidenceError && (
+                  <p role="alert" className="text-rose-200">{evidenceError}</p>
+                )}
+                <p className="text-slate-400">{providerDiagnostic.notice}</p>
+              </div>
+            )}
+
+            {(selectedOrder.status === 'rejected' || selectedOrder.status === 'cancelled') &&
+              selectedOrder.paymentStatus === 'paid' &&
               selectedOrder.refundStatus !== 'refunded' && (
                 <PostRejectionCreditInterest storeId={storeId} orderId={selectedOrder.id} />
               )}
 
             {selectedDisplayAmount === null && (
               <p role="alert" className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-100">
-                O valor do pedido está zerado ou ausente. Não é seguro pedir o estorno a partir desta tela até conferir o pagamento original e o histórico de reembolsos.
+                O valor operacional do pedido está zerado ou ausente.
+                {providerDiagnostic?.amountMatches
+                  ? ` A cobrança confirmada no Mercado Pago é de ${money.format(providerDiagnostic.paymentAmountMinor / 100)}.`
+                  : ' Confira o pagamento original.'}
+                {' '}Esse valor de referência não altera o pedido nem autoriza reembolso integral.
               </p>
             )}
 
