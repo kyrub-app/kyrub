@@ -1,7 +1,7 @@
 import { adminDb } from '../firebaseAdmin.js';
 import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
 
-import { summarizeMerchantPixLinks } from './merchantPixLinkAuditPolicy.js';
+import { summarizeMerchantPixLinks, summarizeTestHistoryPaymentReferences } from './merchantPixLinkAuditPolicy.js';
 
 const MAX_PER_COLLECTION = 200;
 const validId = (id: string): boolean => Boolean(id) && id.length <= 180 && !id.includes('/');
@@ -61,6 +61,10 @@ export const loadMerchantPixStorePaymentAudit = async (requestedStoreId: string)
       payments: entries[2].docs.slice(0, MAX_PER_COLLECTION).map(doc => ({id:doc.id,data:doc.data()})),
       complete: stats.every(x => x.complete), storeId: requestedStoreId, tenantId,
     }),
+    testHistoryReferences: summarizeTestHistoryPaymentReferences(
+      entries[1].docs.slice(0, MAX_PER_COLLECTION).map(doc => ({id:doc.id,data:doc.data()})),
+      entries[2].docs.slice(0, MAX_PER_COLLECTION).map(doc => ({id:doc.id,data:doc.data()}))
+    ),
     orders: stats[0],
     intents: stats[1],
     payments: stats[2],
