@@ -104,3 +104,11 @@ test('clicking the bell opens the already authorized note or person conversation
   assert.match(bell, /loadUserNotificationInbox/);
   assert.match(notificationRouter, /requireIdentity/);
 });
+
+test('bell never disguises a failed silent poll as an empty inbox or leaks an old account response', () => {
+  assert.match(bell, /currentUserIdRef\.current !== requestedUserId/);
+  assert.match(bell, /auth\.currentUser\?\.uid !== requestedUserId/);
+  assert.match(bell, /A silent poll must not silently claim/);
+  assert.match(bell, /Não foi possível atualizar as notificações/);
+  assert.match(bell, /bg-red-400/);
+});
