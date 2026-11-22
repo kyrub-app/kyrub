@@ -37,3 +37,20 @@ test('refund safety gate remains unchanged for uncertain partial refund historie
   assert.match(guard, /PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED/);
   assert.match(guard, /PAYMENT_REFUND_PARTIAL_HISTORY_REQUIRES_RESIDUAL/);
 });
+
+test('owner-only read-only diagnostic compares operational order and canonical payment scopes without refunding', () => {
+  const diagnostic = readFileSync('server/payments/orderRefundReadOnlyDiagnosis.ts', 'utf8');
+  assert.match(router, /router\.get\('\/diagnostic'/);
+  assert.match(router, /await requireOwner\(request\.get\('authorization'\) \?\? '', storeId\)/);
+  assert.match(router, /diagnoseOrderRefundReadOnly\(\{ storeId, orderId \}\)/);
+  assert.match(diagnostic, /artifacts\/.*\/public\/data\/customerOrders/);
+  assert.match(diagnostic, /paymentPartialRefunds/);
+  assert.match(diagnostic, /stores\/.*\/payments/);
+  assert.match(diagnostic, /\.limit\(51\)/);
+  assert.match(diagnostic, /\.limit\(11\)/);
+  assert.match(diagnostic, /source: 'firestore_read_only'/);
+  assert.doesNotMatch(diagnostic, /providerRequest|requestCanonicalOrderRefund|fetchProviderPayment/);
+  assert.doesNotMatch(diagnostic, /transaction\.update|transaction\.set|batch\.write|\.update\(|\.delete\(/);
+  assert.match(bridge, /Conferir cobrança e histórico \(somente leitura\)/);
+  assert.match(bridge, /selectedDisplayAmount === null/);
+});
