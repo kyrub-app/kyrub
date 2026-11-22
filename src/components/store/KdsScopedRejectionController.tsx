@@ -432,7 +432,9 @@ export const KdsScopedRejectionController = ({
             </span>
             <h3 className="mt-1 text-lg font-black text-white">
               {order
-                ? `${order.buyerName} · ${money.format(order.total)}`
+                ? `${order.buyerName} · ${order.paymentStatus === 'paid' && order.total <= 0
+                  ? 'cobrança original a conferir'
+                  : money.format(order.total)}`
                 : 'Carregando pedido…'}
             </h3>
           </div>

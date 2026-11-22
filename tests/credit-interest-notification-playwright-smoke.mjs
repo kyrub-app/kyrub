@@ -258,6 +258,7 @@ try {
   await rejection.getByRole('spinbutton', {name: 'Bônus percentual pela compensação'}).fill('20');
   assert.match(await rejection.innerText(), /Bônus selecionado: \+20%/);
   assert.match(await rejection.innerText(), /O total operacional do pedido pode estar zerado/);
+  assert.match(await rejection.innerText(), /Comprador fictício · cobrança original a conferir/);
   assert.doesNotMatch(await rejection.innerText(), /Crédito estimado: R\$\s*0,00/);
   await owner.screenshot({path: 'playwright-credit-rejection-modal.png', fullPage: true});
   await rejection.getByRole('button', {name: 'Fechar recusa'}).click();
