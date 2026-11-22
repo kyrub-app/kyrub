@@ -24,7 +24,7 @@ test('same KDS rejection modal presents refund first and a separate voluntary cr
 test('no credit, settlement or Pix is manufactured when the merchant offers consultation', () => {
   assert.match(service, /status: 'awaiting_response'/);
   assert.match(service, /creditIssued: false/);
-  assert.match(service, /payment\.status !== 'paid'/);
+  assert.match(service, /all\[0\]\.status !== 'paid'/);
   assert.match(service, /clean\(order\.paymentStatus\) !== 'paid'/);
   assert.match(service, /!validId\(buyerId\)/);
   assert.match(service, /transaction\.create\(proposalRef, proposal\)/);
