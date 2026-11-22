@@ -76,3 +76,18 @@ test('document language and translation guard protect React-managed DOM', () => 
   );
   assert.equal(fs.existsSync('public/kyrub-logo.svg'), true);
 });
+
+test('community Firestore Lite follows isolated emulator configuration', () => {
+  const firebase = fs.readFileSync('src/utils/firebase.ts', 'utf8');
+  const communities = fs.readFileSync('src/utils/communityCloud.ts', 'utf8');
+  const diagnostic = fs.readFileSync('src/utils/communityReadDiagnostic.ts', 'utf8');
+
+  // The full and Lite Firestore services require separate emulator wiring.
+  assert.match(firebase, /getFirestore as getLiteFirestore/);
+  assert.match(firebase, /export const liteDb = getLiteFirestore\(app\)/);
+  assert.match(firebase, /if \(isolatedE2E\) connectLiteFirestoreEmulator\(liteDb, '127\.0\.0\.1', 8088\)/);
+  assert.match(communities, /import \{ auth, db, liteDb, storage \} from '\.\/firebase'/);
+  assert.doesNotMatch(communities, /getLiteFirestore\(auth\.app\)/);
+  assert.match(diagnostic, /import \{ auth, db, liteDb \} from '\.\/firebase'/);
+  assert.doesNotMatch(diagnostic, /getLiteFirestore\(auth\.app\)/);
+});

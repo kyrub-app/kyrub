@@ -8,6 +8,10 @@ import {
   persistentMultipleTabManager,
 } from 'firebase/firestore';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
+import {
+  connectFirestoreEmulator as connectLiteFirestoreEmulator,
+  getFirestore as getLiteFirestore,
+} from 'firebase/firestore/lite';
 
 const firebaseConfig = {
   apiKey: 'AIzaSyCgWDortDA5DYjx4xIlC9YjKH3ZNIrv99U',
@@ -57,3 +61,8 @@ const initializeOfflineFirstFirestore = () => {
 
 export const db = initializeOfflineFirstFirestore();
 if (isolatedE2E) connectFirestoreEmulator(db, '127.0.0.1', 8088);
+
+// Firestore Lite uses its own service instance and does not inherit the
+// full Firestore SDK emulator endpoint. Configure it before any REST read.
+export const liteDb = getLiteFirestore(app);
+if (isolatedE2E) connectLiteFirestoreEmulator(liteDb, '127.0.0.1', 8088);

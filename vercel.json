@@ -71,6 +71,30 @@
       "destination": "/api/health?transport=kyrubia-user-ai-chat"
     },
     {
+      "source": "/api/notifications",
+      "destination": "/api/health?transport=user-notifications"
+    },
+    {
+      "source": "/api/notifications/:path*",
+      "destination": "/api/health?transport=user-notifications&path=:path*"
+    },
+    {
+      "source": "/api/store-chat",
+      "destination": "/api/health?transport=user-notifications&surface=store-chat"
+    },
+    {
+      "source": "/api/store-chat/:path*",
+      "destination": "/api/health?transport=user-notifications&surface=store-chat&path=:path*"
+    },
+    {
+      "source": "/api/communication-preferences",
+      "destination": "/api/health?transport=user-notifications&surface=preferences"
+    },
+    {
+      "source": "/api/communication-preferences/:path*",
+      "destination": "/api/health?transport=user-notifications&surface=preferences&path=:path*"
+    },
+    {
       "source": "/api/store-connections/:path*",
       "destination": "/api/health?transport=store-connections&path=:path*"
     },

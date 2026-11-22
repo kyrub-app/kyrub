@@ -1,5 +1,5 @@
 import type { User } from 'firebase/auth';
-import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs, documentId as liteDocumentId, orderBy as liteOrderBy, limit as liteLimit, startAfter as liteStartAfter } from 'firebase/firestore/lite';
+import { doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs, documentId as liteDocumentId, orderBy as liteOrderBy, limit as liteLimit, startAfter as liteStartAfter } from 'firebase/firestore/lite';
 import {
   collection,
   deleteDoc,
@@ -24,7 +24,7 @@ import {
   ref,
   uploadBytes,
 } from 'firebase/storage';
-import { auth, db, storage } from './firebase';
+import { auth, db, liteDb, storage } from './firebase';
 
 export type CommunityVisibility = 'public' | 'moderated' | 'private';
 export type CommunityMembershipStatus = 'active' | 'pending';
@@ -391,7 +391,6 @@ export const getCommunity = async (
 export const getPublicCommunityFromServer = async (
   communityId: string
 ): Promise<CloudCommunity | null> => {
-  const liteDb = getLiteFirestore(auth.app);
   const snapshot = await getLiteDoc(liteDoc(liteDb, 'communities', communityId));
   if (!snapshot.exists()) return null;
   const data = snapshot.data() as Record<string, unknown>;
@@ -411,7 +410,6 @@ export const listPublicCommunityPageLite = async (
   if (cursor && !/^[A-Za-z0-9_-]{1,128}$/.test(cursor)) {
     throw Error('INVALID_COMMUNITY_CURSOR');
   }
-  const liteDb = getLiteFirestore(auth.app);
   const constraints = [
     liteWhere('visibility', 'in', ['public', 'moderated']),
     liteOrderBy(liteDocumentId()),
@@ -447,7 +445,6 @@ export const getOwnedCommunitiesFromServer = async (
   if (auth.currentUser?.uid !== user.uid) {
     throw new Error('COMMUNITY_SESSION_CHANGED');
   }
-  const liteDb = getLiteFirestore(auth.app);
   const result = await getLiteDocs(liteQuery(
     liteCollection(liteDb, 'communities'),
     liteWhere('ownerId', '==', user.uid)

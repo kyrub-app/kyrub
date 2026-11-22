@@ -9,10 +9,23 @@ on:
       - 'src/components/StorePromotionsManager.tsx'
       - 'src/utils/storeSubscription.ts'
       - 'src/utils/marketplaceCheckout.ts'
+      - 'src/utils/firebase.ts'
+      - 'src/utils/communityCloud.ts'
+      - 'src/utils/communityReadDiagnostic.ts'
       - 'server/payments/paymentIntentRouter.ts'
       - 'server/payments/marketplaceDiscoveryService.ts'
       - 'server/payments/storePromotionManagementRouter.ts'
       - 'tests/official-plan-praca-playwright-smoke.mjs'
+      - 'tests/credit-interest-notification-playwright-smoke.mjs'
+      - 'tests/credit-interest-serverless-http-e2e.mjs'
+      - 'server/payments/orderCreditInterestRouter.ts'
+      - 'server/notifications/userNotificationRouter.ts'
+      - 'src/components/store/KdsScopedRejectionController.tsx'
+      - 'src/components/store/PostRejectionCreditInterest.tsx'
+      - 'src/components/store/BuyerCreditInterestCard.tsx'
+      - 'src/components/UserNotificationCenterBridge.tsx'
+      - 'server/payments/orderCreditInterestService.ts'
+      - 'server/notifications/userNotificationService.ts'
       - '.github/workflows/official-plan-praca-playwright.yml'
   workflow_dispatch:
 permissions:
@@ -50,7 +63,7 @@ jobs:
       - run: npm run firestore:compose
       - name: Test published Official Store and ERP promotion through real browser and local API
         run: |
-          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '\''npm run dev > /tmp/kyrub-official-praça-browser.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/official-plan-praca-playwright-smoke.mjs'\'''
+          npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '\''npm run dev > /tmp/kyrub-official-praça-browser.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/official-plan-praca-playwright-smoke.mjs; node --import tsx tests/credit-interest-notification-playwright-smoke.mjs; node --import tsx tests/credit-interest-serverless-http-e2e.mjs'\'''
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -59,5 +72,10 @@ jobs:
             playwright-official-praça-mural.png
             playwright-official-praça-desktop.png
             playwright-official-praça-mobile.png
+            playwright-credit-rejection-modal.png
+            playwright-credit-offer-owner.png
+            playwright-credit-buyer-inbox.png
+            playwright-credit-buyer-proposal.png
+            playwright-credit-buyer-refund-preference.png
           if-no-files-found: ignore
           retention-days: 3

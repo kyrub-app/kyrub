@@ -18,6 +18,7 @@ interface KdsScopedRejectionControllerProps {
 }
 
 type Scope = '' | 'whole' | 'items';
+type FinancialFollowup = 'original_refund' | 'credit_interest';
 
 type PartialCancellationResponse = {
   cancelledAmount?: number;
@@ -165,6 +166,8 @@ export const KdsScopedRejectionController = ({
   const [reason, setReason] = useState('');
   const [alternative, setAlternative] = useState('');
   const [scope, setScope] = useState<Scope>('');
+  const [financialFollowup, setFinancialFollowup] = useState<FinancialFollowup>('original_refund');
+  const [creditBonusPercent, setCreditBonusPercent] = useState(0);
   const [selections, setSelections] = useState<Record<string, number>>({});
   const [operationId, setOperationId] = useState('');
   const [busy, setBusy] = useState(false);
@@ -176,6 +179,8 @@ export const KdsScopedRejectionController = ({
     setReason('');
     setAlternative('');
     setScope('');
+    setFinancialFollowup('original_refund');
+    setCreditBonusPercent(0);
     setSelections({});
     setOperationId('');
     setError('');
@@ -303,10 +308,42 @@ export const KdsScopedRejectionController = ({
             alternative: alternative.trim(),
           }
         );
-        notify(
-          'Pedido recusado. Se houver pagamento confirmado, o Kyrub sinalizará o reembolso necessário.',
-          'success'
-        );
+        if (order.paymentStatus === 'paid' && financialFollowup === 'credit_interest') {
+          // Rejection has already succeeded. Never retry that mutation if the
+          // optional, separate consultation fails. No credit is granted here.
+          try {
+            const response = await fetch(
+              '/api/health?transport=store-promotions&surface=credit-interest&path=offer',
+              {
+                method: 'POST',
+                headers: {
+                  authorization: `Bearer ${await user.getIdToken()}`,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify({ storeId, orderId: order.id, bonusPercent: creditBonusPercent }),
+              }
+            );
+            if (!response.ok) {
+              const body = await response.json().catch(() => ({})) as {error?: string};
+              throw new Error(body.error || 'A consulta ao comprador não foi enviada.');
+            }
+            notify(
+              'Pedido recusado e consulta de interesse enviada. Nenhum cupom foi emitido; a devolução do pagamento continua pendente.',
+              'success'
+            );
+          } catch (proposalError) {
+            notify(
+              'Pedido recusado, mas a proposta de crédito não foi enviada. O reembolso continua pendente. ' +
+                (proposalError instanceof Error ? proposalError.message : ''),
+              'warning'
+            );
+          }
+        } else {
+          notify(
+            'Pedido recusado. Se houver pagamento confirmado, o Kyrub sinalizará o reembolso necessário.',
+            'success'
+          );
+        }
         reset();
         return;
       }
@@ -395,7 +432,9 @@ export const KdsScopedRejectionController = ({
             </span>
             <h3 className="mt-1 text-lg font-black text-white">
               {order
-                ? `${order.buyerName} · ${money.format(order.total)}`
+                ? `${order.buyerName} · ${order.paymentStatus === 'paid' && order.total <= 0
+                  ? 'cobrança original a conferir'
+                  : money.format(order.total)}`
                 : 'Carregando pedido…'}
             </h3>
           </div>
@@ -475,6 +514,81 @@ export const KdsScopedRejectionController = ({
               </div>
             )}
 
+            {scope === 'whole' && order.paymentStatus === 'paid' && (
+              <fieldset className="mt-4 space-y-2 rounded-2xl border border-amber-500/25 bg-slate-950/70 p-4">
+                <legend className="px-1 text-[10px] font-black uppercase text-amber-200">
+                  Como abordar o valor pago?
+                </legend>
+                <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700 p-3">
+                  <input
+                    type="radio"
+                    name="kyrub-order-financial-followup"
+                    checked={financialFollowup === 'original_refund'}
+                    onChange={() => setFinancialFollowup('original_refund')}
+                    className="mt-0.5"
+                  />
+                  <span className="space-y-1">
+                    <strong className="block text-[11px] text-white">Seguir com devolução pelo pagamento original</strong>
+                    <span className="block text-[10px] leading-relaxed text-slate-400">
+                      A recusa não estorna automaticamente. O reembolso será solicitado na etapa financeira.
+                    </span>
+                  </span>
+                </label>
+                {order.buyerId && (
+                  <label className="flex cursor-pointer items-start gap-3 rounded-xl border border-slate-700 p-3">
+                    <input
+                      type="radio"
+                      name="kyrub-order-financial-followup"
+                      checked={financialFollowup === 'credit_interest'}
+                      onChange={() => setFinancialFollowup('credit_interest')}
+                      className="mt-0.5"
+                    />
+                    <span className="space-y-1">
+                      <strong className="block text-[11px] text-white">Propor crédito em reais com bônus opcional</strong>
+                      <span className="block text-[10px] leading-relaxed text-slate-400">
+                        Consulta o comprador sobre um crédito em reais utilizável em futuras compras nesta loja,
+                        sem vincular o benefício a um produto. Ele pode preferir o reembolso.
+                      </span>
+                    </span>
+                  </label>
+                )}
+                {financialFollowup === 'credit_interest' && (
+                  <div className="space-y-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-[10px] leading-relaxed text-amber-100">
+                    <label className="block space-y-2">
+                      <strong className="block text-[11px] text-white">Bônus pelo transtorno (opcional)</strong>
+                      <span className="block text-slate-300">Percentual adicional calculado sobre o valor efetivamente pago, e não sobre os futuros produtos.</span>
+                      <div className="flex items-center gap-2">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step={1}
+                          inputMode="numeric"
+                          value={creditBonusPercent}
+                          onChange={event => {
+                            const value = Number(event.target.value);
+                            setCreditBonusPercent(
+                              Number.isFinite(value) ? Math.max(0, Math.min(100, Math.trunc(value))) : 0
+                            );
+                          }}
+                          className="min-h-11 w-24 rounded-xl border border-amber-500/35 bg-slate-950 px-3 text-sm font-black text-white"
+                          aria-label="Bônus percentual pela compensação"
+                        />
+                        <strong className="text-[11px]">% de bônus</strong>
+                      </div>
+                    </label>
+                    <div className="rounded-lg border border-amber-500/15 bg-slate-950/60 px-3 py-2">
+                      <p>Pagamento original: valor a conferir no registro canônico do Mercado Pago.</p>
+                      <p>Bônus selecionado: +{creditBonusPercent}% sobre o pagamento confirmado.</p>
+                      <p>Crédito proposto: valor em reais apresentado somente após a verificação pelo servidor.</p>
+                      <p className="mt-1 text-slate-400">O total operacional do pedido pode estar zerado e não determina o valor da compensação.</p>
+                    </div>
+                    <p>O crédito proposto vale para compras futuras nesta loja, não para um SKU predeterminado. Esta consulta não emite cupom, não quita o pagamento e não altera a possibilidade de devolução. Um acordo final e o checkout compatível serão necessários.</p>
+                  </div>
+                )}
+              </fieldset>
+            )}
+
             {scope === 'items' && (
               <div className="mt-4 space-y-2">
                 {order.items.map(item => {
@@ -549,7 +663,9 @@ export const KdsScopedRejectionController = ({
                 {busy
                   ? 'Processando…'
                   : scope === 'whole'
-                    ? 'Confirmar recusa do pedido inteiro'
+                    ? financialFollowup === 'credit_interest'
+                      ? 'Recusar pedido e propor crédito com bônus'
+                      : 'Confirmar recusa do pedido inteiro'
                     : 'Cancelar itens selecionados'}
               </button>
             )}

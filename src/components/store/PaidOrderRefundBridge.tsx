@@ -13,6 +13,7 @@ import { onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { updateOrderStatusWithDecision } from '../../utils/orderWorkflow';
+import { PostRejectionCreditInterest } from './PostRejectionCreditInterest';
 
 interface PaidOrderRefundBridgeProps {
   storeId: string;
@@ -1125,6 +1126,12 @@ export const PaidOrderRefundBridge = ({
                 <p className="text-slate-400">{providerDiagnostic.notice}</p>
               </div>
             )}
+
+            {(selectedOrder.status === 'rejected' || selectedOrder.status === 'cancelled') &&
+              selectedOrder.paymentStatus === 'paid' &&
+              selectedOrder.refundStatus !== 'refunded' && (
+                <PostRejectionCreditInterest storeId={storeId} orderId={selectedOrder.id} />
+              )}
 
             {selectedDisplayAmount === null && (
               <p role="alert" className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-100">
