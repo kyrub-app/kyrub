@@ -112,3 +112,19 @@ export const issueCommunityForwardReceivedNotification = async (
     body: JSON.stringify({ connectionId, messageId, postId }),
   });
 };
+
+/** The owner only passes the stored invitation ID. The server rereads the
+ * invitation and task, derives the recipient, and creates one alert. */
+export const issueNoteInvitationReceivedNotification = async (
+  invitationId: string,
+): Promise<void> => {
+  if (!/^[a-zA-Z0-9_-]{1,160}$/.test(invitationId)) {
+    throw new Error('Referência do convite inválida.');
+  }
+  await json<{ created: boolean }>(
+    await authorizedFetch('/api/notifications/note-invitations/received', {
+      method: 'POST',
+      body: JSON.stringify({ invitationId }),
+    })
+  );
+};
