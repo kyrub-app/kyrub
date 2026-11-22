@@ -101,7 +101,7 @@ const resolveCreditInterestPublicStore = async (
   }
   // A verified first-store publication must retain the authoritative owner
   // and must not be silently replaced with a paused catalog projection.
-  if (primaryLink && primaryLink !== legacyStoreId && catalog.get('firstStoreCreationVerified') === true &&
+  if (catalogStoreId !== legacyStoreId && catalog.get('firstStoreCreationVerified') === true &&
       (clean(catalog.get('legacyTenantId')) !== legacyStoreId ||
        clean(catalog.get('publicationStatus')) !== 'published')) {
     throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
