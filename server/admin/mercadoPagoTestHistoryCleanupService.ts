@@ -70,32 +70,49 @@ export async function inspectOfficialTestHistory(actor:string,expectedDigest?:st
     }
     // Read the relevant dependency collections with tight bounds. Any evidence
     // means this one-time operation must stop for manual reconciliation.
-    const dependencyNames=[
-      `stores/${OFFICIAL}/economicLedger`,
-      `stores/${OFFICIAL}/storePointLedger`,
-      `stores/${OFFICIAL}/paymentRefunds`,
-      `stores/${OFFICIAL}/economicObligations`,
-      `stores/${OFFICIAL}/economicSettlements`
-    ];
+    const scopes=[OFFICIAL,...(tenantId!==OFFICIAL?[tenantId]:[])];
+    const dependencyNames=scopes.flatMap(scope=>[
+      `stores/${scope}/economicLedger`,
+      `stores/${scope}/storePointLedger`,
+      `stores/${scope}/paymentRefunds`,
+      `stores/${scope}/economicObligations`,
+      `stores/${scope}/economicSettlements`
+    ]);
     const dependencies=await Promise.all([
       ...dependencyNames.map(path=>tx.get(adminDb.collection(path).limit(1))),
-      tx.get(adminDb.collection('paymentWebhookEvents').where('storeId','==',OFFICIAL).limit(1)),
-      tx.get(adminDb.collection('paymentProviderBindings').where('canonicalStoreId','==',OFFICIAL).limit(1))
+      ...scopes.map(scope=>tx.get(adminDb.collection('paymentWebhookEvents').where('storeId','==',scope).limit(1))),
+      tx.get(adminDb.collection('paymentProviderBindings').where('canonicalStoreId','==',OFFICIAL).limit(1)),
+      tx.get(adminDb.collection('paymentProviderBindings').where('legacyStoreId','==',tenantId).limit(1))
     ]);
     reason(blocked,'HISTORICO_FINANCEIRO_ASSOCIADO',dependencies.some(q=>!q.empty));
-    const reservations=await Promise.all(orders.docs.map(d=>
-      tx.get(ref(`inventoryOrderReservations/${hash(tenantId+':'+d.id)}`))
-    ));
+    if(tenantId!==OFFICIAL){
+      const legacy=await Promise.all([
+        tx.get(adminDb.collection(`stores/${tenantId}/paymentIntents`).limit(1)),
+        tx.get(adminDb.collection(`stores/${tenantId}/payments`).limit(1))
+      ]);
+      reason(blocked,'REGISTROS_LEGADOS_FORA_DO_ESCOPO',legacy.some(q=>!q.empty));
+    }
+    const reservations=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
+      tx.get(ref(`inventoryOrderReservations/${hash(scope+':'+d.id)}`))
+    )));
     reason(blocked,'RESERVA_ESTOQUE_ASSOCIADA',reservations.some(d=>d.exists));
-    const orderSnapshots=await Promise.all(orders.docs.map(d=>tx.get(ref(`stores/${OFFICIAL}/orderCommercialSnapshots/${d.id}`))));
+    const orderSnapshots=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
+      tx.get(ref(`stores/${scope}/orderCommercialSnapshots/${d.id}`))
+    )));
     reason(blocked,'SNAPSHOT_COMERCIAL_ASSOCIADO',orderSnapshots.some(d=>d.exists));
-    // Canonical order mirrors are removed with the original orders, but never
-    // without archived copies of each original/mirror.
-    const mirrors=await Promise.all(orders.docs.map(d=>tx.get(ref(`stores/${OFFICIAL}/orders/${d.id}`))));
+    // Archive all canonical and primary-owner mirrors of the known orders.
+    const mirrors=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
+      tx.get(ref(`stores/${scope}/orders/${d.id}`))
+    )));
     for(const mirror of mirrors)if(mirror.exists)rows.push({
       path:mirror.ref.path,id:mirror.id,data:mirror.data() as Record<string,unknown>,
       updatedAt:mirror.updateTime?.toMillis().toString()??''
     });
+    if(tenantId!==OFFICIAL){
+      const legacyOrders=await tx.get(adminDb.collection(`stores/${tenantId}/orders`).limit(MAX+1));
+      const knownOrders=new Set(orders.docs.map(d=>d.id));
+      reason(blocked,'REGISTROS_LEGADOS_FORA_DO_ESCOPO',legacyOrders.docs.some(d=>!knownOrders.has(d.id))||legacyOrders.size>MAX);
+    }
     const digest=hash(rows.map(row=>row.path+'@'+row.updatedAt).sort().join('|')+'|'+tenantId);
     const result:Summary={storeId:OFFICIAL,counts:cs,blocked:[...blocked].sort(),canExecute:blocked.size===0,digest,archived:previous.exists};
     if(!execute)return result;
