@@ -24,6 +24,7 @@ const MANAGEMENT_MODULES: Record<ErpManagementModule, ModuleDefinition> = {
   financeiro: { title: 'Financeiro Interno', description: 'Custos, entradas, obrigações e projeções financeiras da operação.', status: 'native' },
   fiscal: { title: 'Fiscal', description: 'Dados fiscais, prontidão, emissão e histórico de documentos fiscais da loja.', status: 'native' },
   rh: { title: 'Equipe & Permissões', description: 'Equipe, cargos, acessos, remuneração e folha da operação.', status: 'native' },
+  central_staff: { title: 'Central do Staff', description: 'Comunicados, procedimentos, tarefas e escalas para a equipe da loja.', status: 'development' },
   crm: { title: 'CRM', description: 'Relacionamento, segmentação, histórico e inteligência sobre clientes.', status: 'native' },
   marketing: { title: 'Marketing', description: 'Aquisição, conversão, retenção, canais e inteligência de crescimento.', status: 'development' },
   integracoes: { title: 'Integrações', description: 'Conexões externas, OAuth e sincronização dos canais validados pelo backend.', status: 'native' },
@@ -44,6 +45,7 @@ const LazyFinanceRuntime = lazy(async () => { const module = await import('./Sto
 const LazyFiscalWorkspace = lazy(async () => { const module = await import('./store/FiscalWorkspace'); return { default: module.FiscalWorkspace }; });
 const LazyStoreTeamWorkspace = lazy(async () => { const module = await import('./store/StoreTeamWorkspace'); return { default: module.StoreTeamWorkspace }; });
 const LazyStorePayrollWorkspace = lazy(async () => { const module = await import('./store/StorePayrollWorkspace'); return { default: module.default }; });
+const LazyStaffCentralWorkspace = lazy(async () => { const module = await import('./store/StoreStaffCentralWorkspace'); return { default: module.StoreStaffCentralWorkspace }; });
 const LazyPromotionalRuntime = lazy(async () => { const module = await import('./store/PromotionalDirectRuntime'); return { default: module.PromotionalDirectRuntime }; });
 const LazyCrmRelationshipPanel = lazy(async () => { const module = await import('./store/StoreCrmRelationshipPanel'); return { default: module.StoreCrmRelationshipPanel }; });
 
@@ -63,6 +65,7 @@ function DirectManagementModule({ moduleId, retailerProps, onBackToPdv }: { modu
       : moduleId === 'financeiro' ? <Suspense fallback={<Loading>Carregando Financeiro Interno…</Loading>}><LazyFinanceRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'fiscal' ? <Suspense fallback={<Loading>Carregando Fiscal…</Loading>}><LazyFiscalWorkspace storeName={retailerProps.activeStore.name} canonicalStoreId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'rh' ? <Suspense fallback={<Loading>Carregando Equipe & Permissões…</Loading>}><div className="space-y-5"><LazyStoreTeamWorkspace legacyStore={retailerProps.activeStore} legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /><LazyStorePayrollWorkspace legacyStoreId={retailerProps.activeRetailerId} notify={retailerProps.triggerToast} /></div></Suspense>
+      : moduleId === 'central_staff' ? <Suspense fallback={<Loading>Carregando Central do Staff…</Loading>}><LazyStaffCentralWorkspace /></Suspense>
       : moduleId === 'vouchers' ? <Suspense fallback={<Loading>Carregando Promocionais…</Loading>}><LazyPromotionalRuntime storeId={retailerProps.activeRetailerId} /></Suspense>
       : moduleId === 'crm' ? <Suspense fallback={<Loading>Carregando CRM…</Loading>}><LazyCrmRelationshipPanel storeId={retailerProps.activeRetailerId} /></Suspense>
       : <div className="rounded-3xl border border-slate-800 bg-slate-900 p-5 text-white"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-slate-500">{definition.status === 'development' ? 'Em desenvolvimento' : 'Migração nativa'}</span><p className="mt-3 max-w-2xl text-[11px] leading-relaxed text-slate-400">{definition.status === 'development' ? 'Este módulo já tem destino próprio no menu e será implementado sem depender do antigo painel Gerencial.' : 'Este módulo já tem destino próprio no menu. Sua funcionalidade será reativada diretamente aqui, sem restaurar estados locais ou bridges do antigo Gerencial.'}</p></div>}

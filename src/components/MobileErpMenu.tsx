@@ -5,6 +5,7 @@ import {
   Briefcase,
   Calendar,
   ClipboardList,
+  ClipboardCheck,
   CreditCard,
   DollarSign,
   Fingerprint,
@@ -56,6 +57,7 @@ export const canStoreRoleAccessErpMenuItem = (
   if (role === 'owner') return true;
   if (itemId === 'planos' || itemId === 'loja') return false;
   if (itemId === 'rh') return role === 'manager';
+  if (itemId === 'central_staff') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
   if (itemId === 'crm') return role === 'manager';
   if (itemId === 'vendas') return hasStorePermission(role, 'reports.read');
@@ -83,6 +85,7 @@ export const MOBILE_ERP_MENU_ITEMS: readonly MobileErpMenuItem[] = [
   { id: 'financeiro', label: 'Financeiro Interno', icon: DollarSign, section: 'gestao' },
   { id: 'fiscal', label: 'Fiscal', icon: ReceiptText, section: 'gestao' },
   { id: 'rh', label: 'Equipe & Permissões', icon: Briefcase, section: 'gestao' },
+  { id: 'central_staff', label: 'Central do Staff', icon: ClipboardCheck, section: 'gestao' },
   { id: 'crm', label: 'CRM', icon: UserCheck, section: 'gestao' },
   { id: 'marketing', label: 'Marketing', icon: Zap, section: 'gestao' },
   { id: 'integracoes', label: 'Integrações', icon: Settings, section: 'gestao' },
@@ -102,6 +105,7 @@ const MANAGEMENT_MODULES = new Set<ErpManagementModule>([
   'financeiro',
   'fiscal',
   'rh',
+  'central_staff',
   'crm',
   'marketing',
   'integracoes',

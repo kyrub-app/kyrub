@@ -319,3 +319,19 @@ test('direct management router revalidates canonical staff role', () => {
   assert.match(legacyApp, /canStoreRoleAccessErpMenuItem\(erpAccessRole, 'loja'\)/);
   assert.match(legacyApp, /filter\(tab => canStoreRoleAccessErpMenuItem\(erpAccessRole, tab\.id as any\)\)/);
 });
+
+test('Central do Staff management entry is available only to owner and manager and uses no submenu', () => {
+  const navigation = readFileSync(new URL('../src/utils/erpManagementNavigation.ts', import.meta.url), 'utf8');
+  const cards = readFileSync(new URL('../src/components/store/StoreStaffCentralWorkspace.tsx', import.meta.url), 'utf8');
+  assert.match(mobileMenu, /if \(itemId === 'rh'\) return role === 'manager'/);
+  assert.match(mobileMenu, /if \(itemId === 'central_staff'\) return role === 'manager'/);
+  assert.match(mobileMenu, /role === 'manager'/);
+  assert.match(navigation, /'central_staff'/);
+  const optimizedMenu = readFileSync(new URL('../src/components/MobileErpMenuRuntime.tsx', import.meta.url), 'utf8');
+  assert.match(optimizedMenu, /accessRole\?: StoreRole/);
+  assert.match(optimizedMenu, /accessRole !== undefined && canStoreRoleAccessErpMenuItem\(accessRole, item\.id\)/);
+  assert.match(mobileMenu, /selectManagement\(itemId\)/);
+  assert.match(runtimeRouter, /canStoreRoleAccessErpMenuItem\(props\.accessRole, managementModule\)/);
+  assert.match(cards, /data-kyrub-staff-central="four-cards"/);
+  assert.doesNotMatch(cards, /<details|<summary|<button/);
+});
