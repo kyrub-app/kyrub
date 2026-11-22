@@ -4,6 +4,8 @@ export const USER_NOTIFICATION_MAX_BODY_LENGTH = 500;
 
 export type UserNotificationCategory =
   | 'store_chat'
+  | 'social_chat'
+  | 'note_invitation'
   | 'order'
   | 'loyalty'
   | 'marketing'
@@ -13,6 +15,8 @@ export type UserNotificationCategory =
 
 export type UserNotificationTargetKind =
   | 'store_chat'
+  | 'social_chat'
+  | 'note_invitation'
   | 'storefront'
   | 'order'
   | 'community_group_invite'
@@ -27,6 +31,8 @@ export interface UserNotificationTarget {
   communityId?: string;
   groupId?: string;
   postId?: string;
+  connectionId?: string;
+  noteInvitationId?: string;
 }
 
 export interface UserNotification {
@@ -125,6 +131,8 @@ export const buildUserNotification = (input: {
   const targetKind = input.target?.kind ?? 'none';
   if (
     targetKind !== 'store_chat' &&
+    targetKind !== 'social_chat' &&
+    targetKind !== 'note_invitation' &&
     targetKind !== 'storefront' &&
     targetKind !== 'order' &&
     targetKind !== 'community_group_invite' &&
@@ -134,6 +142,12 @@ export const buildUserNotification = (input: {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
 
+  if (targetKind === 'social_chat' && !validPathId(clean(input.target?.connectionId))) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
+  if (targetKind === 'note_invitation' && !validPathId(clean(input.target?.noteInvitationId))) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
   if (targetKind === 'community_group_invite' &&
     (!validPathId(clean(input.target?.communityId)) || !validPathId(clean(input.target?.groupId)))) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
@@ -158,6 +172,8 @@ export const buildUserNotification = (input: {
       storeId: clean(input.target?.storeId),
       customerId: clean(input.target?.customerId),
       orderId: clean(input.target?.orderId),
+      ...(targetKind === 'social_chat' ? { connectionId: clean(input.target?.connectionId) } : {}),
+      ...(targetKind === 'note_invitation' ? { noteInvitationId: clean(input.target?.noteInvitationId) } : {}),
       ...(targetKind === 'community_group_invite'
         ? { communityId: clean(input.target?.communityId), groupId: clean(input.target?.groupId) }
         : {}),
