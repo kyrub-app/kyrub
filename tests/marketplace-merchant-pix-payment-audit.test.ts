@@ -248,7 +248,8 @@ test('official operational cutover is a one-time presentation marker, not deleti
  const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
  assert.match(historyUi,/Histórico completo \(inclui testes\)/);
  assert.match(orders,/showOrderInCurrentPhase\(order,phaseEffectiveAt\)/);
- assert.match(orders,/Ver finalizados da fase de testes/);
+ assert.doesNotMatch(orders,/Nova fase operacional desde|Ver finalizados da fase de testes|na seleção ·|no histórico completo/);
+ assert.doesNotMatch(orders,/includePreviousFinished/);
  assert.match(panel,/Iniciar nova fase sem excluir registros/);
 });
 
@@ -274,7 +275,8 @@ test('ERP displays phase query errors and distinguishes unavailable authenticati
  const inbox=read('src/components/customer/CustomerOrderInbox.tsx');
  assert.match(inbox,/phaseReadError/);
  assert.match(inbox,/showOrderInCurrentPhase\(order,phaseEffectiveAt\)/);
- assert.match(inbox,/no histórico completo/);
+ assert.doesNotMatch(inbox,/Nova fase operacional desde|Ver finalizados da fase de testes|na seleção ·|no histórico completo/);
+ assert.match(inbox,/phaseEffectiveAt&&order\.id!==focusOrderId&&/);
  const mapper=read('server/inventory/orderStatusExecutionServiceBase.ts');
  assert.match(mapper,/code === 'AUTH_UNAVAILABLE'/);
  assert.match(mapper,/status: 503/);
