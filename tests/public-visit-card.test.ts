@@ -19,3 +19,23 @@ test('public card links never serialize private binding data from stored targets
  const stored={kind:'profile' as const,identifier:'maufco',bindingId:'private-uid',ownerId:'private-owner',email:'private@example.test'};
  assert.deepEqual(cardLink(stored,'Mundo Mau'),{kind:'profile',identifier:'maufco',name:'Mundo Mau',url:'https://kyrub.com/kairubido/maufco'});
 });
+
+test('approved tag personalization has four compact individually expandable destination rows',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const panel=readFileSync('src/components/OfficialKyrubTagPanel.tsx','utf8');
+ const row=readFileSync('src/components/KyrubTagDestinationRow.tsx','utf8');
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ assert.match(panel,/label="Meu perfil" icon=\{UserRound\}/);
+ assert.match(panel,/label="Lojas e comunidades" icon=\{Store\}/);
+ assert.match(panel,/\['whatsapp','instagram'\] as const/);
+ assert.match(panel,/label=\{kind==='whatsapp'\?'WhatsApp':'Instagram'\}/);
+ assert.match(row,/useState\(false\)/);
+ assert.match(row,/aria-expanded=\{expanded\}/);
+ assert.match(row,/expanded\?children:null/);
+ assert.match(row,/bg-\[#121A17\]/);
+ assert.match(row,/text-\[#F47825\]/);
+ assert.match(panel,/Prévia dos destinos selecionados/);
+ assert.match(panel,/Salvar minha Kyrub Tag/);
+ assert.doesNotMatch(panel,/<select/);
+ assert.match(page,/if\(authReady&&owner&&user\)return <main/);
+});
