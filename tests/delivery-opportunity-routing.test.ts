@@ -97,3 +97,24 @@ test('courier actions use a server-authoritative atomic claim', () => {
   assert.match(routerSource, /scheduleSnapshot\.exists/);
   assert.match(appSource, /KyrubDeliveryStatusSyncBridge/);
 });
+
+test('courier acceptance is server-authoritative and checks approved documents before changing UI', () => {
+  const modal = readFileSync('src/components/modals/DeliveryManagerModal.tsx','utf8');
+  const eligibility = readFileSync('server/identity/workEligibilityMiddleware.ts','utf8');
+  assert.match(serverSource,/enforceDeliveryWorkEligibility,\s*createDeliveryOpportunityRouter\(\)/);
+  assert.match(eligibility,/requireApprovedWorkProfile\(actor.uid, profile\)/);
+  assert.match(eligibility,/profile === 'courier'/);
+  assert.match(eligibility,/approvedProfiles/);
+  assert.match(modal,/operational.source === 'kyrub-order'/);
+  assert.match(modal,/await updateKyrubDeliveryOpportunityStatus\(jobId, 'accepted', currentUser\)/);
+  const acceptStart=modal.indexOf('const handleAcceptDelivery = async');
+  const acceptEnd=modal.indexOf('const isMine =',acceptStart);
+  const body=modal.slice(acceptStart,acceptEnd);
+  assert.ok(body.indexOf("await updateKyrubDeliveryOpportunityStatus(jobId, 'accepted', currentUser)")<
+            body.indexOf("status: 'accepted', acceptedBy: currentUser.uid"));
+  assert.match(modal,/disabled=\{Boolean\(acceptingKyrubDeliveryId\)\}/);
+  assert.match(modal,/onClick=\{\(\) => void handleAcceptDelivery\(job.id\)\}/);
+  assert.match(modal,/setFazerEntregasModalTab\('trajeto'\)/);
+  assert.match(modal,/isMine\(d\)/);
+  assert.match(modal,/openGoogleMapsDirections\(\{ destination: job.from, travelMode: 'driving' \}\)/);
+});
