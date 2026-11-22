@@ -74,6 +74,19 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
     return () => { disposed = true; };
   }, [buyerId, call, storeId]);
 
+  // The notification link focuses the exact proposal once the buyer's inbox
+  // has been loaded. No offer or financial action is triggered by navigation.
+  useEffect(() => {
+    const target = new URLSearchParams(window.location.search).get('compensacao');
+    if (!target || !/^[a-zA-Z0-9_-]{1,128}$/.test(target) ||
+        !proposals.some(item => item.orderId === target)) return;
+    const frame = window.requestAnimationFrame(() => {
+      document.getElementById('credito-pedido-' + target)
+        ?.scrollIntoView({behavior: 'smooth', block: 'center'});
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [proposals]);
+
   const respond = async (proposal: Proposal, choice: 'interested' | 'prefers_refund') => {
     if (busyOrderId) return;
     setBusyOrderId(proposal.orderId);
@@ -96,7 +109,7 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
   return (
     <section className="mx-auto mt-4 w-full max-w-5xl space-y-3 px-4" aria-label="Consultas de crédito para pedidos cancelados">
       {proposals.map(proposal => (
-        <article key={proposal.orderId} className="rounded-2xl border border-amber-500/35 bg-slate-900 p-4">
+        <article id={'credito-pedido-' + proposal.orderId} key={proposal.orderId} className="rounded-2xl border border-amber-500/35 bg-slate-900 p-4">
           <div className="flex items-center gap-2 text-amber-200">
             <Gift className="h-4 w-4" />
             <strong className="text-xs">Consulta sobre crédito por pedido cancelado</strong>
