@@ -1,5 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
-import { quoteOrderCompensation, ORDER_COMPENSATION_SCOPE } from '../../shared/orderCompensationCredit.js';
+import { quoteOrderCompensation, ORDER_COMPENSATION_SCOPE, ORDER_COMPENSATION_MAX_BONUS_PERCENT } from '../../shared/orderCompensationCredit.js';
 import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
@@ -95,7 +95,7 @@ export const proposeOrderCreditInterest = async (input: {
   const actorId = clean(input.actorId);
   const bonusPercent = input.bonusPercent ?? 0;
   // The paid value is never supplied by the client; only the bonus rate is.
-  if (!Number.isInteger(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
+  if (!Number.isInteger(bonusPercent) || bonusPercent < 0 || bonusPercent > ORDER_COMPENSATION_MAX_BONUS_PERCENT) {
     throw new Error('CREDIT_INTEREST_BONUS_INVALID');
   }
   assertIds(storeId, orderId);
