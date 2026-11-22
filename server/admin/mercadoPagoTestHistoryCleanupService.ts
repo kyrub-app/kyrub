@@ -25,7 +25,7 @@ const collections=(tenant:string)=>({
   payments:`stores/${OFFICIAL}/payments`
 });
 type Row={path:string;id:string;data:Record<string,unknown>;updatedAt:string};
-type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number;classification:HistoricalEvidenceClassification};
+type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number;classification?:HistoricalEvidenceClassification};
 type Summary={storeId:string;counts:typeof EXPECTED;blocked:string[];canExecute:boolean;digest:string;archived:boolean;evidence:EvidenceRow[]};
 
 const reason=(blocked:Set<string>,key:string,condition:boolean)=>{if(condition)blocked.add(key);};
