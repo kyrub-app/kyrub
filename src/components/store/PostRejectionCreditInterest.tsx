@@ -16,6 +16,7 @@ type OfferResponse = { proposal?: Proposal | null; error?: string; code?: string
 // Show an actionable message instead of treating every 409 as identical.
 const creditInterestErrorMessage = (response: OfferResponse): string => {
   const details: Record<string, string> = {
+    CREDIT_INTEREST_STORE_UNVERIFIED: 'O vínculo entre a loja do ERP e a vitrine pública não foi confirmado. Confira a publicação e a identidade da loja.',
     CREDIT_INTEREST_ORDER_NOT_ELIGIBLE: 'O pedido ou o estado do reembolso não permite esta consulta. Confira a cobrança e o histórico.',
     CREDIT_INTEREST_REFUND_EVIDENCE_REQUIRED: 'A tentativa de reembolso que falhou ainda precisa de comprovação auditada. Confira o histórico do reembolso.',
     CREDIT_INTEREST_REFUND_UNRESOLVED: 'Existe um histórico de reembolso pendente ou inconclusivo. Nenhuma proposta será enviada até esclarecer o estado financeiro.',
