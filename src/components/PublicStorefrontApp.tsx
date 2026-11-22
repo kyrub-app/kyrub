@@ -35,6 +35,7 @@ import { B2CCartDrawer } from './modals/B2CCartDrawer';
 import { MomentsModal } from './modals/MomentsModal';
 import { publishStoreReview } from '../utils/storeReviews';
 import { BuyerDeliveryTrackingBridge } from './store/BuyerDeliveryTrackingBridge';
+import { BuyerCreditInterestCard } from './store/BuyerCreditInterestCard';
 import { InitialPrepaidSubscriptionCheckout } from './InitialPrepaidSubscriptionCheckout';
 import { listMarketplacePromotions, type PublicMarketplacePromotion } from '../utils/marketplaceCheckout';
 import { OFFICIAL_PLAN_BUSINESS_PRODUCT_ID, OFFICIAL_STORE_CANONICAL_ID, isOfficialPlanProductId } from '../../shared/officialPlanCanonicalDisplay';
@@ -544,6 +545,7 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       </div>
 
       {user && <BuyerDeliveryTrackingBridge storeId={store.id} buyerId={user.uid} />}
+      {user && <BuyerCreditInterestCard storeId={store.id} buyerId={user.uid} />}
 
       {isOfficialStore && sharedCouponCode && couponLoading && (
         <p role="status" className="mx-auto mt-3 max-w-5xl rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
