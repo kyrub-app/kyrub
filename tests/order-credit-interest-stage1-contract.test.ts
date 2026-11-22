@@ -10,6 +10,7 @@ const router = read('server/payments/orderCreditInterestRouter.ts');
 const transport = read('server/payments/storePromotionServerlessTransport.ts');
 const buyer = read('src/components/store/BuyerCreditInterestCard.tsx');
 const storefront = read('src/components/PublicStorefrontApp.tsx');
+const postReject = read('src/components/store/PostRejectionCreditInterest.tsx');
 const creditContract = read('shared/orderCompensationCredit.ts');
 
 test('same KDS rejection modal presents refund first and a separate voluntary credit consultation', () => {
@@ -101,4 +102,13 @@ test('future partial redemption preserves remainder in BRL and never spends more
     appliedMinor: 3600, balanceMinor: 0, payableMinor: 900,
   });
   assert.throws(() => quoteFutureStoreCreditUse({availableMinor: -1, purchaseTotalMinor: 100}), /USE_INVALID/);
+});
+
+test('already-rejected order can separately consult credit interest without reopening or refunding', () => {
+  assert.match(postReject, /Consultation only, for an order already rejected\/cancelled/);
+  assert.match(postReject, /surface=credit-interest&path=offer/);
+  assert.match(postReject, /bonusPercent/);
+  assert.match(postReject, /Nenhum crédito foi emitido e o reembolso continua pendente/);
+  assert.doesNotMatch(postReject, /updateOrderStatusWithDecision|cancelOrderItemsWithRefund|requestCanonicalOrderRefund/);
+  assert.match(service, /\['rejected', 'cancelled'\]/);
 });
