@@ -49,6 +49,8 @@ test('no credit, settlement or Pix is manufactured when the merchant offers cons
 test('both actions are authenticated; buyer cannot choose or read another buyer proposal', () => {
   assert.match(router, /verifyFirebaseIdToken/);
   assert.match(router, /loadOwnerStoreInstitutionalRepresentation/);
+  assert.match(router, /router.get\('\/status'/);
+  assert.match(service, /loadOwnerCreditInterestProposal/);
   assert.match(router, /buyerId: identity\.uid/);
   assert.match(service, /value\.buyerId === buyerId/);
   assert.match(service, /proposal\.buyerId !== buyerId/);
@@ -64,6 +66,8 @@ test('buyer can express interest or prefer refund without final acceptance or re
   assert.match(buyer, /Crédito total proposto/);
   assert.match(buyer, /sem vincular o benefício a um produto específico/);
   assert.match(buyer, /Prefiro devolução do pagamento/);
+  assert.match(buyer, /Mudei de ideia: prefiro a devolução do pagamento/);
+  assert.match(service, /proposal.status === 'interested' && input.choice === 'prefers_refund'/);
   assert.match(buyer, /ainda não é um cupom/);
   assert.match(buyer, /Nenhum crédito foi emitido/);
 });
@@ -115,6 +119,8 @@ test('already-rejected order can separately consult credit interest without reop
   assert.match(postReject, /surface=credit-interest&path=offer/);
   assert.match(postReject, /bonusPercent/);
   assert.match(postReject, /Nenhum crédito foi emitido e o reembolso continua pendente/);
+  assert.match(postReject, /Atualizar resposta da compradora/);
+  assert.match(postReject, /path: 'status'/);
   assert.doesNotMatch(postReject, /updateOrderStatusWithDecision|cancelOrderItemsWithRefund|requestCanonicalOrderRefund/);
   assert.match(service, /\['rejected', 'cancelled'\]/);
 });
