@@ -268,3 +268,18 @@ test('owner phase Bearer parsing supports real Firebase header format and preser
  assert.match(health,/readOfficialPhaseBearerToken\(/);
  assert.doesNotMatch(health,/const bearer=\/\^Bearer\\\\\\\\s\+/);
 });
+
+
+test('ERP displays phase query errors and distinguishes unavailable authentication from expired sessions',()=>{
+ const inbox=read('src/components/customer/CustomerOrderInbox.tsx');
+ assert.match(inbox,/phaseReadError/);
+ assert.match(inbox,/showOrderInCurrentPhase\(order,phaseEffectiveAt\)/);
+ assert.match(inbox,/no histórico completo/);
+ const mapper=read('server/inventory/orderStatusExecutionServiceBase.ts');
+ assert.match(mapper,/code === 'AUTH_UNAVAILABLE'/);
+ assert.match(mapper,/status: 503/);
+ assert.match(mapper,/code === 'AUTH_REQUIRED'/);
+ assert.doesNotMatch(mapper,/sessão\|token\|auth/);
+ const refusal=read('src/components/store/KdsScopedRejectionController.tsx');
+ assert.match(refusal,/await user\.getIdToken\(true\);[\s\S]*await updateOrderStatusWithDecision\(/);
+});

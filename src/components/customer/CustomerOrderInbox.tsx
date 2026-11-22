@@ -215,6 +215,7 @@ export const CustomerOrderInbox = ({
   const [originFilter, setOriginFilter] = useState('all');
   const [stationFilter, setStationFilter] = useState('all');
   const [phaseEffectiveAt,setPhaseEffectiveAt]=useState('');
+  const [phaseReadError,setPhaseReadError]=useState('');
   const [includePreviousFinished,setIncludePreviousFinished]=useState(false);
   const [connectedOriginChannels, setConnectedOriginChannels] = useState<KyrubCommerceChannel[]>([]);
   const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
@@ -234,6 +235,7 @@ export const CustomerOrderInbox = ({
   useEffect(()=>{
     let disposed=false;
     setPhaseEffectiveAt('');
+    setPhaseReadError('');
     setIncludePreviousFinished(false);
     const unsubscribe=onAuthStateChanged(auth,user=>{
       if(!user)return;
@@ -244,10 +246,15 @@ export const CustomerOrderInbox = ({
         const res=await fetch('/api/health?'+params.toString(),{
          headers:{authorization:'Bearer '+token},cache:'no-store'
         });
-        if(!res.ok)return;
+        if(!res.ok)throw Error('PHASE_READ_FAILED');
         const phase=await res.json() as {active?:boolean;effectiveAt?:string};
-        if(!disposed&&phase.active&&typeof phase.effectiveAt==='string')setPhaseEffectiveAt(phase.effectiveAt);
-       }catch{/* If phase lookup fails, show the full operational history. */}
+        if(!disposed){
+         setPhaseReadError('');
+         setPhaseEffectiveAt(phase.active&&typeof phase.effectiveAt==='string'?phase.effectiveAt:'');
+        }
+       }catch{
+        if(!disposed)setPhaseReadError('Não foi possível conferir o marco da nova fase. Por segurança, o histórico completo permanece visível; atualize a página ou confira sua sessão.');
+       }
       })();
     });
     return ()=>{disposed=true;unsubscribe();};
@@ -480,10 +487,11 @@ export const CustomerOrderInbox = ({
           </p>
         </div>
         <span className="w-fit rounded-full border border-slate-800 bg-slate-950 px-3 py-1 font-mono text-[10px] font-bold text-slate-400">
-          {orders.length} no histórico
+          {phaseEffectiveAt ? `${filteredOrders.length} na seleção · ${orders.length} no histórico completo` : `${orders.length} no histórico`}
         </span>
       </div>
 
+      {phaseReadError&&<p role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">{phaseReadError}</p>}
       {phaseEffectiveAt&&<div className="space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px]">
         <p className="font-semibold text-cyan-200">Nova fase operacional desde {new Date(phaseEffectiveAt).toLocaleDateString('pt-BR')}</p>
         <p className="text-slate-400">Pedidos finalizados anteriores ficam recolhidos por padrão. Pedidos ainda ativos continuam visíveis, mesmo que tenham começado antes do marco. Nenhum pedido ou comprovante foi excluído.</p>

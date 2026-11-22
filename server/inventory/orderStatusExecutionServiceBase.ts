@@ -308,8 +308,17 @@ export const mapOrderStatusExecutionError = (
   const code = error && typeof error === 'object' && 'code' in error
     ? clean((error as { code?: unknown }).code)
     : '';
-  if (code === 'AUTH_REQUIRED' || /sessão|token|auth/i.test(message)) {
-    return { status: 401, body: { error: 'Faça login novamente.' } };
+  if (code === 'AUTH_UNAVAILABLE' || (
+    error && typeof error === 'object' && 'status' in error && error.status === 503
+    && /validar sua sessão|autentica/i.test(message)
+  )) {
+    return { status: 503, body: {
+      error: 'Não foi possível validar sua sessão agora. Nenhuma alteração foi aplicada. Tente novamente em instantes.',
+      code: 'AUTH_UNAVAILABLE',
+    } };
+  }
+  if (code === 'AUTH_REQUIRED' || /id-token|expired|revoked|sessão inválida|sessão expirou/i.test(message)) {
+    return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   }
   if (code === 'PICKUP_CODE_LOCKED') {
     return { status: 423, body: { error: message, code } };
