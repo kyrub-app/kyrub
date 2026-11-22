@@ -87,7 +87,12 @@ export const parseMerchantPixMigrationInventory = (raw: unknown): MigrationInven
   };
 };
 
+type TestHistoryReferenceSummary = {
+  total:number;pending:number;withProviderReference:number;pendingWithProviderReference:number;withProviderLabel:number;
+  pendingContexts:{marketplace:number;pos:number;table:number;legacyOrOther:number};
+};
 type AuditSummary = {
+  testHistoryReferences?: {intents:TestHistoryReferenceSummary;payments:TestHistoryReferenceSummary};
   linkage?: {complete:boolean;orderStates:{paid:number;partial:number;unpaid:number;unknown:number;completed:number};pending:{intents:number;payments:number;withProviderId:number;completeTriples:number;needsReview:number};paidOrderLinks:{withExplicitPaymentId:number;linkedCanonicalPaid:number;linkedOtherStatus:number;referencedNotInScan:number;withoutExplicitPaymentId:number}};
   generatedAt: string;
   complete: boolean;
@@ -215,6 +220,14 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
             <p>Pix marketplace pendentes: {audit.linkage.pending.intents} intenções; {audit.linkage.pending.payments} pagamentos; com ID no provedor {audit.linkage.pending.withProviderId}; trios pedido/intenção/pagamento compatíveis {audit.linkage.pending.completeTriples}; vínculos a revisar {audit.linkage.pending.needsReview}.</p>
             <p>Pedidos marcados pagos: com pagamento canônico em estado pago {audit.linkage.paidOrderLinks.linkedCanonicalPaid}; com outro estado financeiro {audit.linkage.paidOrderLinks.linkedOtherStatus}; referência não localizada nesta leitura {audit.linkage.paidOrderLinks.referencedNotInScan}; sem ID explícito {audit.linkage.paidOrderLinks.withoutExplicitPaymentId}.</p>
             <p className="text-amber-200">Vínculo local não comprova recebimento. Pedidos sem ID podem ser históricos ou manuais. {audit.linkage.complete?'':'Leitura parcial: não conclua que registros ausentes não existem.'}</p>
+          </div>}
+          {audit.testHistoryReferences&&<div className="space-y-2 border-t border-slate-700 pt-2">
+            <strong className="block text-slate-100">Preparação da limpeza · todos os contextos</strong>
+            {(['intents','payments'] as const).map(kind=>{
+              const row=audit.testHistoryReferences![kind];
+              return <p key={kind}>{kind==='intents'?'Intenções':'Pagamentos'}: {row.withProviderReference} com referência no provedor (incluindo históricos); {row.pendingWithProviderReference} pendentes com referência; {row.pending} pendentes no total (marketplace {row.pendingContexts.marketplace}, PDV {row.pendingContexts.pos}, mesa {row.pendingContexts.table}, legado/outros {row.pendingContexts.legacyOrOther}).</p>;
+            })}
+            <p className="text-amber-200">A existência de referência exige conferência no emissor. A ausência de referência não autoriza exclusão nem prova que não houve cobrança. Estoque, caixa, razão e demais vínculos precisam ser preservados ou reconciliados.</p>
           </div>}
           <p className="text-amber-200">{audit.warning}</p>
         </div>}

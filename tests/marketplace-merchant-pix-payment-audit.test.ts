@@ -54,3 +54,17 @@ test('order completion is not a paid event; local links distinguish pending and 
  assert.equal(mismatch.pending.needsReview,1);
  assert.equal(mismatch.complete,false);
 });
+
+test('test history preparation includes provider references across PDV, table, legacy and terminal states',async()=>{
+ const {summarizeTestHistoryPaymentReferences}=await import('../server/admin/merchantPixLinkAuditPolicy.js');
+ const intents=[{id:'i',data:{status:'pending',context:'pos',providerIntentId:'private-id'}},{id:'old',data:{status:'pending',providerIntentId:123}},{id:'done',data:{context:'marketplace',status:'expired',providerIntentId:'another-private-id'}}];
+ const payments=[{id:'p',data:{status:'pending',context:'table',providerPaymentId:'bound'}},{id:'c',data:{status:'refunded',providerPaymentId:'historical'}},{id:'local',data:{status:'pending',providerPaymentId:''}}];
+ const result=summarizeTestHistoryPaymentReferences(intents,payments);
+ assert.equal(result.intents.withProviderReference,3);
+ assert.equal(result.intents.pendingWithProviderReference,2);
+ assert.deepEqual(result.intents.pendingContexts,{marketplace:0,pos:1,table:0,legacyOrOther:1});
+ assert.equal(result.payments.withProviderReference,2);
+ assert.equal(result.payments.pendingWithProviderReference,1);
+ assert.deepEqual(result.payments.pendingContexts,{marketplace:0,pos:0,table:1,legacyOrOther:1});
+ assert.doesNotMatch(JSON.stringify(result),/private-id|historical|bound/);
+});

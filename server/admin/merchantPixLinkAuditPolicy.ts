@@ -42,3 +42,21 @@ export function summarizeMerchantPixLinks(input:{
  }
  return {complete,orderStates,pending,paidOrderLinks};
 }
+
+ // All contexts, including legacy records without a context. Local references
+ // identify records to reconcile; absence is not evidence of no provider charge.
+ export function summarizeTestHistoryPaymentReferences(intents:AuditRow[],payments:AuditRow[]){
+  const summarize=(rows:AuditRow[],key:'providerIntentId'|'providerPaymentId')=>{
+   const pending=rows.filter(r=>str(r.data.status)==='pending');
+   const linked=rows.filter(r=>r.data[key]!=null&&r.data[key]!=='');
+   const withProvider=rows.filter(r=>str(r.data.provider)!==''||r.data.provider!=null&&typeof r.data.provider!=='string');
+   const contexts={marketplace:0,pos:0,table:0,legacyOrOther:0};
+   for(const row of pending){
+    const context=row.data.context;
+    if(context==='marketplace'||context==='pos'||context==='table')contexts[context]++;
+    else contexts.legacyOrOther++;
+   }
+   return {total:rows.length,pending:pending.length,withProviderReference:linked.length,pendingWithProviderReference:pending.filter(r=>r.data[key]!=null&&r.data[key]!=='').length,withProviderLabel:withProvider.length,pendingContexts:contexts};
+  };
+  return {intents:summarize(intents,'providerIntentId'),payments:summarize(payments,'providerPaymentId')};
+ }
