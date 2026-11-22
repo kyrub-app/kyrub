@@ -515,7 +515,7 @@ export const PaidOrderRefundBridge = ({
                 {active.buyerName} · {activeDisplayAmount === null ? 'Valor a conferir' : money.format(activeDisplayAmount)}
               </h3>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-                O pedido foi recusado/cancelado, mas o pagamento continua confirmado. A pendência financeira precisa ser conciliada; não registre um estorno que não aconteceu.
+                O pedido foi recusado/cancelado, mas o pagamento continua confirmado. A pendência financeira precisa ser conciliada pelo pagamento original, não como saída manual de caixa. Não registre um estorno que não aconteceu.
               </p>
               {activeDisplayAmount === null && (
                 <p className="mt-2 text-[10px] leading-relaxed text-amber-200">
