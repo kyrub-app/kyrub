@@ -49,6 +49,8 @@ describe('user communication preferences', () => {
     assert.equal(defaults.browser.enabled, false);
     assert.deepEqual(defaults.browser.categories, {
       store_chat: true,
+      social_chat: true,
+      note_invitation: true,
       order: true,
       loyalty: true,
       marketing: false,
