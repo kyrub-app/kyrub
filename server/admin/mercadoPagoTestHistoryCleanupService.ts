@@ -96,7 +96,7 @@ export async function inspectOfficialTestHistory(actor:string,expectedDigest?:st
       kind,scope:scope===OFFICIAL?'canonical' as const:'legacy' as const,
       path:`stores/${scope}/${kind}`
     })));
-    const dependencySources=[
+    const dependencySources:Array<{kind:string;scope:'canonical'|'legacy';path:string;field?:string;value?:string}>=[
       ...financeSources,
       ...scopes.map(scope=>({
         kind:'paymentWebhookEvents',scope:scope===OFFICIAL?'canonical' as const:'legacy' as const,
