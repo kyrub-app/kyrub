@@ -1,6 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
 import { quoteOrderCompensation, ORDER_COMPENSATION_SCOPE, ORDER_COMPENSATION_MAX_BONUS_PERCENT } from '../../shared/orderCompensationCredit.js';
-import { inspectOrderCreditInterestRefundSafety } from './orderCreditInterestRefundGuard.js';
+import { inspectOrderCreditInterestRefundSafety, type PartialRefundGuard } from './orderCreditInterestRefundGuard.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
@@ -8,6 +8,19 @@ import { buildUserNotification, userNotificationPath } from '../../shared/userNo
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const validId = (value: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(value);
+
+/**
+ * A failed refund flag is only eligible for a NON-BINDING consultation after
+ * the separately audited failed-partial attempt and a fresh provider zero-refund
+ * verification have passed. This never permits a refund, settlement or credit.
+ */
+export const isCreditInterestRefundStatusEligible = (
+  status: unknown, mode: PartialRefundGuard['mode']
+): boolean => {
+  const value = clean(status);
+  return value === '' || value === 'required' ||
+    (value === 'failed' && mode === 'audited_failed_attempt');
+};
 const proposalPath = (storeId: string, orderId: string): string =>
   'stores/' + storeId + '/orderCreditInterestProposals/' + orderId;
 const orderPath = (storeId: string, orderId: string): string =>
@@ -171,7 +184,7 @@ export const proposeOrderCreditInterest = async (input: {
     if (!orderSnapshot.exists || !order || clean(order.storeId) !== storeId ||
         clean(order.id) !== orderId || !['rejected', 'cancelled'].includes(clean(order.status)) ||
         clean(order.paymentStatus) !== 'paid' ||
-        (clean(order.refundStatus) && !['required', ''].includes(clean(order.refundStatus)))) {
+        !isCreditInterestRefundStatusEligible(order.refundStatus, refundGuard.mode)) {
       throw new Error('CREDIT_INTEREST_ORDER_NOT_ELIGIBLE');
     }
     const buyerId = clean(order.buyerId) || clean(order.createdByUserId);

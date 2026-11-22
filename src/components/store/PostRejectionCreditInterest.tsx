@@ -10,7 +10,24 @@ type Proposal = {
   proposedCreditMinor: number;
   creditIssued: false;
 };
-type OfferResponse = { proposal?: Proposal | null; error?: string };
+type OfferResponse = { proposal?: Proposal | null; error?: string; code?: string };
+
+// Server error codes identify which safety check blocked the consultation.
+// Show an actionable message instead of treating every 409 as identical.
+const creditInterestErrorMessage = (response: OfferResponse): string => {
+  const details: Record<string, string> = {
+    CREDIT_INTEREST_ORDER_NOT_ELIGIBLE: 'O pedido ou o estado do reembolso não permite esta consulta. Confira a cobrança e o histórico.',
+    CREDIT_INTEREST_REFUND_EVIDENCE_REQUIRED: 'A tentativa de reembolso que falhou ainda precisa de comprovação auditada. Confira o histórico do reembolso.',
+    CREDIT_INTEREST_REFUND_UNRESOLVED: 'Existe um histórico de reembolso pendente ou inconclusivo. Nenhuma proposta será enviada até esclarecer o estado financeiro.',
+    CREDIT_INTEREST_PROVIDER_NOT_CONCLUSIVE: 'A nova consulta ao Mercado Pago não comprovou ausência de reembolso. Confira diretamente no Mercado Pago (somente leitura).',
+    CREDIT_INTEREST_PAYMENT_UNVERIFIED: 'O pagamento canônico ainda não pôde ser identificado com segurança. Confira a cobrança e o histórico.',
+    CREDIT_INTEREST_PAYMENT_CHANGED: 'O pagamento foi alterado desde a verificação inicial. É necessário conferir o histórico antes de nova consulta.',
+    CREDIT_INTEREST_PROPOSAL_CONFLICT: 'Já existe uma proposta com condições diferentes para este pedido. Atualize a resposta antes de qualquer tentativa.',
+  };
+  const code = response.code?.trim() ?? '';
+  const message = details[code] ?? response.error ?? 'Não foi possível consultar o comprador.';
+  return /^[A-Z][A-Z0-9_]{2,90}$/.test(code) ? message + ' (Código: ' + code + ')' : message;
+};
 
 const money = (minor: number): string =>
   new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(minor / 100);
@@ -96,7 +113,7 @@ export function PostRejectionCreditInterest({
       });
       const payload = await response.json().catch(() => ({})) as OfferResponse;
       if (!response.ok || !payload.proposal) {
-        throw new Error(payload.error || 'Não foi possível consultar o comprador.');
+        throw new Error(creditInterestErrorMessage(payload));
       }
       setResult(payload.proposal);
     } catch (caught) {
@@ -165,7 +182,12 @@ export function PostRejectionCreditInterest({
         className="min-h-10 w-full rounded-xl border border-slate-700 px-3 text-[11px] font-bold text-slate-300 disabled:opacity-50">
         Atualizar resposta da compradora
       </button>
-      {error && <p role="alert" className="text-[11px] text-red-300">{error}</p>}
+      {error && (
+        <div role="alert" className="space-y-1 text-[11px] text-red-300">
+          <p>{error}</p>
+          <p className="text-slate-300">Nenhuma proposta é considerada enviada por este erro. Utilize os diagnósticos somente leitura antes de tentar novamente.</p>
+        </div>
+      )}
       <p className="text-[10px] leading-relaxed text-slate-400">
         Esta etapa apenas consulta interesse. O acordo definitivo, o saldo utilizável
         e a integração ao checkout ainda precisam de homologação.

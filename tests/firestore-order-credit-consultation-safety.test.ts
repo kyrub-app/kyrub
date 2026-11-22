@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { inspectOrderCreditInterestRefundSafety } from '../server/payments/orderCreditInterestRefundGuard.js';
+import { isCreditInterestRefundStatusEligible } from '../server/payments/orderCreditInterestService.js';
 import type { CanonicalPayment } from '../src/utils/canonicalPayment.js';
 
 if (!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST ?? '')) {
@@ -111,4 +112,18 @@ test('a locally confirmed partial refund is never eligible for full principal co
     legacyStoreId: storeId, orderId, payment,
     diagnoseProvider: async () => {throw new Error('Should not call provider');},
   }), /CREDIT_INTEREST_REFUND_UNRESOLVED/);
+});
+
+
+test('failed refund status permits consultation only after audited failed-partial evidence', () => {
+  for (const mode of ['no_partial_history', 'audited_failed_attempt'] as const) {
+    assert.equal(isCreditInterestRefundStatusEligible('required', mode), true);
+    assert.equal(isCreditInterestRefundStatusEligible('', mode), true);
+    for (const status of ['refunded', 'processing', 'refund_processing', 'requested', 'not_required']) {
+      assert.equal(isCreditInterestRefundStatusEligible(status, mode), false, status + ' / ' + mode);
+    }
+  }
+  assert.equal(isCreditInterestRefundStatusEligible('failed', 'no_partial_history'), false);
+  assert.equal(isCreditInterestRefundStatusEligible('failed', 'audited_failed_attempt'), true);
+  assert.equal(isCreditInterestRefundStatusEligible(null, 'no_partial_history'), true);
 });
