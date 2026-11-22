@@ -28,7 +28,7 @@ test('storewide credit consultation writes one offer and buyer notification, wit
       id: storeId, ownerId: storeId, name: 'Loja teste', status: 'open',
     }),
     adminDb.doc('tenants/' + storeId).set({canonicalStoreId}),
-    adminDb.doc(canonicalPath).set({id: canonicalStoreId, ownerId: storeId}),
+    adminDb.doc(canonicalPath).set({id: canonicalStoreId, ownerId: storeId, slug: 'teste-compensacao'}),
     adminDb.doc(orderPath).set({
       id: orderId, storeId, buyerId, createdByUserId: buyerId,
       status: 'rejected', paymentStatus: 'paid', refundStatus: 'required',
