@@ -536,6 +536,68 @@ export const transitionOrderStatusWithInventory = async (
       throw new Error('Explique o motivo da recusa ou cancelamento.');
     }
 
+    // A never-accepted order with no physical inventory history may be refused
+    // even if a legacy store has not finished its canonical owner membership
+    // migration. This path cannot consume/restore stock or fabricate authority.
+    // Any reservation or consumption ledger forces the regular safe workflow.
+    if (order.status === 'pending' && nextStatus === 'rejected') {
+      const reservationReference = adminDb.doc(
+        `inventoryOrderReservations/${ledgerId(normalizedTenantId, normalizedOrderId)}`
+      );
+      const reservationSnapshot = await transaction.get(reservationReference);
+      const inventoryRecord = rawOrder.inventory && typeof rawOrder.inventory === 'object'
+        ? rawOrder.inventory as Record<string, unknown>
+        : {};
+      const lastInventoryAction = clean(inventoryRecord.lastAction);
+      const noInventoryHistory =
+        !ledgerSnapshot.exists &&
+        !reservationSnapshot.exists &&
+        (!lastInventoryAction || lastInventoryAction === 'waiting' ||
+          lastInventoryAction === 'skipped');
+
+      if (noInventoryHistory) {
+        // Do not project a terminal state into an unrelated canonical store.
+        // Prepaid mirrors have already been checked by
+        // resolvePrepaidOrderMirrorStoreId earlier in this transaction.
+        if (mirrorCanonicalStoreId && !prepaid) {
+          const storeSnapshot = await transaction.get(
+            adminDb.doc(`stores/${mirrorCanonicalStoreId}`)
+          );
+          if (
+            !storeSnapshot.exists ||
+            clean(storeSnapshot.get('ownerId')) !== normalizedTenantId ||
+            (clean(storeSnapshot.get('legacyTenantId')) &&
+              clean(storeSnapshot.get('legacyTenantId')) !== normalizedTenantId)
+          ) {
+            throw new Error('ORDER_CANONICAL_IDENTITY_UNVERIFIED');
+          }
+        }
+
+        const updatedAt = new Date().toISOString();
+        const customerNote = mergeCustomerNote(order.customerNote, decisionText(decision));
+        const terminalPatch = {
+          status: 'rejected' as const,
+          customerNote,
+          updatedAt,
+          ...(prepaid ? { operationalRelease: null } : {}),
+        };
+        transaction.set(orderReference, terminalPatch, { merge: true });
+        if (mirrorCanonicalStoreId) {
+          transaction.set(
+            adminDb.doc(`stores/${mirrorCanonicalStoreId}/orders/${normalizedOrderId}`),
+            terminalPatch,
+            { merge: true }
+          );
+        }
+        return {
+          orderId: normalizedOrderId,
+          status: 'rejected',
+          inventoryAction: 'waiting',
+          ...integrationIdentity({ ...order, status: 'rejected', customerNote }),
+        };
+      }
+    }
+
     const canonicalStoreId = inventoryCanonicalStoreId;
     const inventoryAuthority = await resolvePhysicalInventoryAuthority({
       transaction,
