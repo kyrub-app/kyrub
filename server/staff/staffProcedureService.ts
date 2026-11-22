@@ -307,29 +307,7 @@ export const readAuthorizedStaffPopAttachment = async (input: {
   if (!attachment) throw Error('STAFF_POP_NOT_FOUND');
   const expectedPrefix = 'staff-pops/' + actor.canonicalStoreId + '/' + input.procedureId + '/';
   if (!attachment.path.startsWith(expectedPrefix) ||
-      !new RegExp('^[A-Za-z0-9_-]{12,96}/' + attachment.sha256 + '
-  const [bytes] = await privateBucket().file(attachment.path).download();
-  if (bytes.length !== attachment.sizeBytes ||
-      createHash('sha256').update(bytes).digest('hex') !== attachment.sha256) {
-    throw Error('STAFF_POP_ATTACHMENT_INVALID');
-  }
-  return { bytes, name: attachment.name, mimeType: attachment.mimeType };
-};
-
-export const listAuthorizedStaffPopHistory = async (input: {
-  authorization: string; legacyStoreId: string; procedureId: string;
-}): Promise<StaffProcedureRevision[]> => {
-  const actor = await resolveStaffActor(input.authorization, input.legacyStoreId);
-  requireManager(actor);
-  if (!safePopId(input.procedureId)) throw Error('STAFF_POP_INVALID');
-  const ref = procedures(actor).doc(input.procedureId);
-  const parent = await ref.get();
-  if (!parent.exists || parent.get('legacyStoreId') !== actor.legacyStoreId) throw Error('STAFF_POP_NOT_FOUND');
-  const versions = await ref.collection('versions').orderBy('version', 'desc')
-    .limit(STAFF_POP_MAX_VERSIONS).get();
-  return versions.docs.map(doc => doc.data() as StaffProcedureRevision);
-};
-)
+      !new RegExp('^[A-Za-z0-9_-]{12,96}/' + attachment.sha256 + '$')
         .test(attachment.path.slice(expectedPrefix.length))) {
     throw Error('STAFF_POP_NOT_FOUND');
   }
