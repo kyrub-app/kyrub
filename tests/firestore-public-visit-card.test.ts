@@ -186,3 +186,42 @@ test('pilot issuance authority, one unit, code recovery and audit are transactio
  await adminDb.doc('kyrub_admin/control_plane/admins/pilot-admin').update({status:'revoked'});
  assert.equal((await handlePilot(admin,'GET',null)).status,403);
 });
+
+test('visual tag destinations use public names, opt-in and safe external links without changing ownership',async()=>{
+ const {provisionKyrubTag,claimKyrubTag,loadTagDestinationCatalog,configureKyrubTag,resolveKyrubTag,loadOwnedKyrubTag,disableKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const {buildTagExternalUrl,parseTagExternalUrl}=await import('../shared/kyrubTagContract.js');
+ const a=await provisionKyrubTag('adesivo');
+ await claimKyrubTag('owner-a',a.id,a.code);
+ await adminDb.doc('users/owner-a').update({isProfileVisible:true});
+ await adminDb.doc('communities/rock-1').update({visibility:'public'});
+ const list=await loadTagDestinationCatalog('owner-a',a.id);
+ assert.ok(list.options.some(o=>o.kind==='profile'));
+ assert.ok(list.options.some(o=>o.kind==='community'&&o.name==='Rock'));
+ assert.equal(JSON.stringify(list).includes('private@example.test'),false);
+ assert.equal(JSON.stringify(list).includes('bindingId'),false);
+ await assert.rejects(loadTagDestinationCatalog('owner-b',a.id),/TAG_FORBIDDEN/);
+ const wa=buildTagExternalUrl('whatsapp','+55 11 99999-9999')!;
+ const ig=buildTagExternalUrl('instagram','@example.name')!;
+ assert.equal(wa,'https://wa.me/5511999999999');
+ assert.equal(ig,'https://www.instagram.com/example.name/');
+ for(const bad of ['javascript:alert(1)','https://wa.me.evil.test/5511999999999','https://wa.me/5511999999999?text=spam','https://www.instagram.com/accounts/login/','https://user@wa.me/5511999999999','https://evil.test/']){
+  assert.equal(parseTagExternalUrl(bad),null);
+  await assert.rejects(configureKyrubTag('owner-a',a.id,[bad]),/INVALID_CARD/);
+ }
+ const profile=list.options.find(o=>o.kind==='profile')!;
+ await configureKyrubTag('owner-a',a.id,[profile.url,wa,ig]);
+ assert.equal((await resolveKyrubTag(a.id))?.links.length,3);
+ assert.deepEqual((await loadOwnedKyrubTag('owner-a',a.id)).urls,[profile.url,wa,ig]);
+ await adminDb.doc('users/owner-a').update({isProfileVisible:false});
+ assert.deepEqual((await resolveKyrubTag(a.id))?.links.map(l=>l.kind),['whatsapp','instagram']);
+ const refreshed=await loadTagDestinationCatalog('owner-a',a.id);
+ assert.equal(refreshed.profile.eligible,false);
+ assert.ok(refreshed.unavailable.includes(profile.url));
+ await configureKyrubTag('owner-a',a.id,[wa]);
+ assert.equal((await resolveKyrubTag(a.id))?.links.length,1);
+ await disableKyrubTag('owner-a',a.id);
+ assert.equal(await resolveKyrubTag(a.id),null);
+ assert.deepEqual((await loadOwnedKyrubTag('owner-a',a.id)).urls,[wa]);
+ await assert.rejects(configureKyrubTag('owner-b',a.id,[ig]),/TAG_FORBIDDEN/);
+ await adminDb.doc('users/owner-a').update({isProfileVisible:true});
+});
