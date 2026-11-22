@@ -57,3 +57,22 @@ test('cancelled or rejected orders cannot be silently settled on replay', () => 
   assert.ok(closedGate > 0 && closedGate < idempotentReturn);
   assert.match(settlement, /PAYMENT_ORDER_SETTLEMENT_ORDER_CLOSED/);
 });
+
+test('bound merchant notifications never consult the platform credential, even without an actionable event', async () => {
+ const {selectMercadoPagoWebhookEvent}=await import('../server/payments/mercadoPagoWebhookRouting.js');
+ let platformCalls=0;
+ const legacy=async()=>{platformCalls++;return {id:'legacy'};};
+ assert.equal(await selectMercadoPagoWebhookEvent({kind:'bound',event:null},legacy),null);
+ assert.equal(platformCalls,0);
+ const paid={id:'merchant'};
+ assert.equal(await selectMercadoPagoWebhookEvent({kind:'bound',event:paid},legacy),paid);
+ assert.equal(platformCalls,0);
+ assert.deepEqual(await selectMercadoPagoWebhookEvent({kind:'unbound'},legacy),{id:'legacy'});
+ assert.equal(platformCalls,1);
+ const source=readFileSync('server/payments/mercadoPagoWebhook.ts','utf8');
+ const provider=readFileSync('server/payments/mercadoPagoStoreScopedProvider.ts','utf8');
+ assert.match(source,/selectMercadoPagoWebhookEvent\(storeScopedEvent, \(\) => verifiedMercadoPagoPaymentEvent/);
+ assert.doesNotMatch(source,/storeScopedEvent \?\?/);
+ assert.match(provider,/if \(!binding\) return \{ kind: 'unbound' \}/);
+ assert.match(provider,/return \{ kind: 'bound', event: await reconcileStoreScopedMercadoPagoPaymentEvent\(input\.dataId\) \}/);
+});
