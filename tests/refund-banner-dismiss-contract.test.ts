@@ -54,3 +54,8 @@ test('owner-only read-only diagnostic compares operational order and canonical p
   assert.match(bridge, /Conferir cobrança e histórico \(somente leitura\)/);
   assert.match(bridge, /selectedDisplayAmount === null/);
 });
+
+test('extended refund diagnostics remain scrollable in mobile viewport', () => {
+  assert.match(bridge, /max-h-\[92dvh\] w-full max-w-md overflow-y-auto overscroll-contain/);
+  assert.match(bridge, /Conferir cobrança e histórico \(somente leitura\)/);
+});
