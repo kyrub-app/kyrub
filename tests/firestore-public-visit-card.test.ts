@@ -259,7 +259,10 @@ test('official test history cleanup archives atomically and refuses provider, in
  await payment.update({providerPaymentId:''});
  const ledger=adminDb.doc('stores/'+official+'/economicLedger/test-entry');
  await ledger.set({orderId:'o0',kind:'payment_capture'});
- assert.ok((await inspectOfficialTestHistory('cleanup-admin')).blocked.includes('HISTORICO_FINANCEIRO_ASSOCIADO'));
+ const ledgerPreflight=await inspectOfficialTestHistory('cleanup-admin');
+ assert.ok(ledgerPreflight.blocked.includes('HISTORICO_FINANCEIRO_ASSOCIADO'));
+ assert.equal(ledgerPreflight.evidence.find(x=>x.kind==='economicLedger')?.count,1);
+ assert.equal(ledgerPreflight.evidence.find(x=>x.kind==='economicLedger')?.explicitLinks,1);
  await ledger.delete();
  const reservationId=createHash('sha256').update(tenant+':o1').digest('hex');
  const reservation=adminDb.doc('inventoryOrderReservations/'+reservationId);

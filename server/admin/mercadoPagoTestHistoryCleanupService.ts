@@ -24,7 +24,8 @@ const collections=(tenant:string)=>({
   payments:`stores/${OFFICIAL}/payments`
 });
 type Row={path:string;id:string;data:Record<string,unknown>;updatedAt:string};
-type Summary={storeId:string;counts:typeof EXPECTED;blocked:string[];canExecute:boolean;digest:string;archived:boolean};
+type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number};
+type Summary={storeId:string;counts:typeof EXPECTED;blocked:string[];canExecute:boolean;digest:string;archived:boolean;evidence:EvidenceRow[]};
 
 const reason=(blocked:Set<string>,key:string,condition:boolean)=>{if(condition)blocked.add(key);};
 export async function inspectOfficialTestHistory(actor:string,expectedDigest?:string,execute=false):Promise<Summary>{
@@ -71,35 +72,65 @@ export async function inspectOfficialTestHistory(actor:string,expectedDigest?:st
     // Read the relevant dependency collections with tight bounds. Any evidence
     // means this one-time operation must stop for manual reconciliation.
     const scopes=[OFFICIAL,...(tenantId!==OFFICIAL?[tenantId]:[])];
-    const dependencyNames=scopes.flatMap(scope=>[
-      `stores/${scope}/economicLedger`,
-      `stores/${scope}/storePointLedger`,
-      `stores/${scope}/paymentRefunds`,
-      `stores/${scope}/economicObligations`,
-      `stores/${scope}/economicSettlements`
-    ]);
-    const dependencies=await Promise.all([
-      ...dependencyNames.map(path=>tx.get(adminDb.collection(path).limit(1))),
-      ...scopes.map(scope=>tx.get(adminDb.collection('paymentWebhookEvents').where('storeId','==',scope).limit(1))),
-      tx.get(adminDb.collection('paymentProviderBindings').where('canonicalStoreId','==',OFFICIAL).limit(1)),
-      tx.get(adminDb.collection('paymentProviderBindings').where('legacyStoreId','==',tenantId).limit(1))
-    ]);
+    // Only counts, scope and explicit link counts leave the server: never
+    // disclose buyer IDs, provider payment IDs, document paths or ledger data.
+    const evidence:EvidenceRow[]=[];
+    const selected=new Set([...orders.docs,...intents.docs,...payments.docs].map(d=>d.id));
+    const explicitLink=(data:Record<string,unknown>)=>{
+      const fields=['orderId','paymentId','paymentIntentId','relatedOrderId','sourceOrderId','targetOrderId','kyrubPaymentId'];
+      const target=data.target;
+      return fields.some(field=>typeof data[field]==='string'&&selected.has(data[field] as string))||
+        Boolean(target&&typeof target==='object'&&'orderId' in target&&typeof (target as {orderId?:unknown}).orderId==='string'&&selected.has((target as {orderId:string}).orderId));
+    };
+    const addEvidence=(kind:string,scope:'canonical'|'legacy',snapshot:{
+      size:number;docs:ReadonlyArray<{data:()=>Record<string,unknown>}>
+    })=>{
+      if(!snapshot.size)return;
+      evidence.push({
+        kind,scope,count:Math.min(snapshot.size,MAX),complete:snapshot.size<=MAX,
+        explicitLinks:snapshot.docs.slice(0,MAX).filter(d=>explicitLink(d.data())).length
+      });
+    };
+    const financeKinds=['economicLedger','storePointLedger','paymentRefunds','economicObligations','economicSettlements'];
+    const financeSources=scopes.flatMap(scope=>financeKinds.map(kind=>({
+      kind,scope:scope===OFFICIAL?'canonical' as const:'legacy' as const,
+      path:`stores/${scope}/${kind}`
+    })));
+    const dependencySources:Array<{kind:string;scope:'canonical'|'legacy';path:string;field?:string;value?:string}>=[
+      ...financeSources,
+      ...scopes.map(scope=>({
+        kind:'paymentWebhookEvents',scope:scope===OFFICIAL?'canonical' as const:'legacy' as const,
+        path:'paymentWebhookEvents',field:'storeId',value:scope
+      })),
+      {kind:'paymentProviderBindings',scope:'canonical' as const,path:'paymentProviderBindings',field:'canonicalStoreId',value:OFFICIAL},
+      {kind:'paymentProviderBindings',scope:'legacy' as const,path:'paymentProviderBindings',field:'legacyStoreId',value:tenantId}
+    ];
+    const dependencies=await Promise.all(dependencySources.map(source=>
+      tx.get(source.field
+        ?adminDb.collection(source.path).where(source.field,'==',source.value).limit(MAX+1)
+        :adminDb.collection(source.path).limit(MAX+1))
+    ));
+    dependencies.forEach((snapshot,index)=>addEvidence(dependencySources[index].kind,dependencySources[index].scope,snapshot));
     reason(blocked,'HISTORICO_FINANCEIRO_ASSOCIADO',dependencies.some(q=>!q.empty));
     if(tenantId!==OFFICIAL){
-      const legacy=await Promise.all([
-        tx.get(adminDb.collection(`stores/${tenantId}/paymentIntents`).limit(1)),
-        tx.get(adminDb.collection(`stores/${tenantId}/payments`).limit(1))
-      ]);
+      const legacySources=[
+        {kind:'paymentIntents',path:`stores/${tenantId}/paymentIntents`},
+        {kind:'payments',path:`stores/${tenantId}/payments`}
+      ];
+      const legacy=await Promise.all(legacySources.map(s=>tx.get(adminDb.collection(s.path).limit(MAX+1))));
+      legacy.forEach((snapshot,index)=>addEvidence(legacySources[index].kind,'legacy',snapshot));
       reason(blocked,'REGISTROS_LEGADOS_FORA_DO_ESCOPO',legacy.some(q=>!q.empty));
     }
     const reservations=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
       tx.get(ref(`inventoryOrderReservations/${hash(scope+':'+d.id)}`))
     )));
     reason(blocked,'RESERVA_ESTOQUE_ASSOCIADA',reservations.some(d=>d.exists));
+    if(reservations.some(d=>d.exists))evidence.push({kind:'inventoryOrderReservations',scope:'legacy',count:reservations.filter(d=>d.exists).length,complete:true,explicitLinks:reservations.filter(d=>d.exists).length});
     const orderSnapshots=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
       tx.get(ref(`stores/${scope}/orderCommercialSnapshots/${d.id}`))
     )));
     reason(blocked,'SNAPSHOT_COMERCIAL_ASSOCIADO',orderSnapshots.some(d=>d.exists));
+    if(orderSnapshots.some(d=>d.exists))evidence.push({kind:'orderCommercialSnapshots',scope:'canonical',count:orderSnapshots.filter(d=>d.exists).length,complete:true,explicitLinks:orderSnapshots.filter(d=>d.exists).length});
     // Archive all canonical and primary-owner mirrors of the known orders.
     const mirrors=await Promise.all(orders.docs.flatMap(d=>scopes.map(scope=>
       tx.get(ref(`stores/${scope}/orders/${d.id}`))
@@ -111,10 +142,12 @@ export async function inspectOfficialTestHistory(actor:string,expectedDigest?:st
     if(tenantId!==OFFICIAL){
       const legacyOrders=await tx.get(adminDb.collection(`stores/${tenantId}/orders`).limit(MAX+1));
       const knownOrders=new Set(orders.docs.map(d=>d.id));
+      const outside=legacyOrders.docs.filter(d=>!knownOrders.has(d.id));
+      if(outside.length)evidence.push({kind:'otherOrders',scope:'legacy',count:Math.min(outside.length,MAX),complete:legacyOrders.size<=MAX,explicitLinks:0});
       reason(blocked,'REGISTROS_LEGADOS_FORA_DO_ESCOPO',legacyOrders.docs.some(d=>!knownOrders.has(d.id))||legacyOrders.size>MAX);
     }
     const digest=hash(rows.map(row=>row.path+'@'+row.updatedAt).sort().join('|')+'|'+tenantId);
-    const result:Summary={storeId:OFFICIAL,counts:cs,blocked:[...blocked].sort(),canExecute:blocked.size===0,digest,archived:previous.exists};
+    const result:Summary={storeId:OFFICIAL,counts:cs,blocked:[...blocked].sort(),canExecute:blocked.size===0,digest,archived:previous.exists,evidence};
     if(!execute)return result;
     if(typeof expectedDigest!=='string'||expectedDigest!==digest)throw Error('TEST_HISTORY_STALE_PREVIEW');
     if(blocked.size!==0)throw Error('TEST_HISTORY_BLOCKED');

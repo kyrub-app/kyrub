@@ -121,3 +121,16 @@ test('provider reconciliation preflight uses only seller OAuth GET and never unl
  assert.match(panel,/REGISTROS_LEGADOS_FORA_DO_ESCOPO/);
  assert.match(panel,/Conferir situação das cobranças no Mercado Pago/);
 });
+
+test('cleanup preflight lists scoped aggregate blockers without leaking financial document IDs',()=>{
+ const service=read('server/admin/mercadoPagoTestHistoryCleanupService.ts');
+ const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
+ assert.match(service,/const evidence:EvidenceRow\[\]=\[\]/);
+ assert.match(service,/dependencySources\.map\(source=>/);
+ assert.match(service,/addEvidence\(dependencySources\[index\]\.kind/);
+ assert.match(service,/kind:'otherOrders',scope:'legacy'/);
+ assert.match(service,/evidence\};/);
+ assert.match(panel,/Detalhamento dos registros que impedem a limpeza/);
+ assert.match(panel,/A ausência de vínculo explícito não prova independência/);
+ assert.doesNotMatch(panel,/sourcePath|providerPaymentId:.*\/v1\/payments/);
+});
