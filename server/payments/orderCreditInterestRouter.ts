@@ -54,6 +54,7 @@ export const createOrderCreditInterestRouter = (): Router => {
       });
       const proposal = await proposeOrderCreditInterest({
         storeId, orderId: clean(request.body?.orderId), actorId: identity.uid,
+        bonusPercent: request.body?.bonusPercent,
       });
       response.status(200).json({proposal});
     } catch (error) {
