@@ -1,4 +1,5 @@
-import {useState} from 'react';
+import {useEffect,useState} from 'react';
+import {OFFICIAL_PHASE_CONFIRMATION,validOfficialPhaseActivation,type OperationalPhaseView} from '../../../shared/officialOperationalPhase';
 import type {User} from 'firebase/auth';
 import {KYRUB_OFFICIAL_TEST_HISTORY_CONFIRMATION,KYRUB_OFFICIAL_TEST_HISTORY_STORE,validKyrubOfficialTestHistoryRequest} from '../../../shared/kyrubOfficialTestHistoryCleanup';
 
@@ -66,6 +67,42 @@ export function AdminKyrubOfficialTestHistoryCleanup({user,storeId}:{user:User;s
  const [report,setReport]=useState<Report|null>(null),[busy,setBusy]=useState(false);
  const [confirm,setConfirm]=useState(''),[ack,setAck]=useState(false),[notice,setNotice]=useState('');
  const [provider,setProvider]=useState<ProviderCheck|null>(null),[checking,setChecking]=useState(false),[providerError,setProviderError]=useState('');
+ const [phase,setPhase]=useState<OperationalPhaseView|null>(null);
+ const [phaseBusy,setPhaseBusy]=useState(false),[phaseError,setPhaseError]=useState('');
+ const [phaseConfirm,setPhaseConfirm]=useState(''),[phaseAgreed,setPhaseAgreed]=useState(false);
+ useEffect(()=>{
+  let alive=true;
+  async function load(){
+   try{
+    const token=await user.getIdToken();
+    const res=await fetch('/api/admin/operations/health?transport=kyrub-official-operational-phase',{
+     headers:{authorization:'Bearer '+token},cache:'no-store'
+    });
+    const data=await res.json().catch(()=>({})) as Partial<OperationalPhaseView>;
+    if(!res.ok||data.storeId!==KYRUB_OFFICIAL_TEST_HISTORY_STORE||typeof data.active!=='boolean')throw Error('Não foi possível consultar o marco operacional.');
+    if(alive)setPhase(data as OperationalPhaseView);
+   }catch(e){if(alive)setPhaseError(e instanceof Error?e.message:'Marco operacional indisponível.');}
+  }
+  if(storeId===KYRUB_OFFICIAL_TEST_HISTORY_STORE)void load();
+  return ()=>{alive=false;};
+ },[storeId,user]);
+ async function startPhase(){
+  if(phaseBusy||phase?.active||!phaseAgreed||phaseConfirm!==OFFICIAL_PHASE_CONFIRMATION)return;
+  const body={storeId:KYRUB_OFFICIAL_TEST_HISTORY_STORE,action:'start-operational-phase' as const,confirmation:phaseConfirm};
+  if(!validOfficialPhaseActivation(body))return;
+  setPhaseBusy(true);setPhaseError('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/admin/operations/health?transport=kyrub-official-operational-phase',{
+    method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body),cache:'no-store'
+   });
+   const data=await res.json().catch(()=>({})) as Partial<OperationalPhaseView>&{error?:string};
+   if(!res.ok||!data.active||data.storeId!==KYRUB_OFFICIAL_TEST_HISTORY_STORE)throw Error(data.error||'Não foi possível iniciar a nova fase.');
+   setPhase(data as OperationalPhaseView);
+  }catch(e){setPhaseError(e instanceof Error?e.message:'Não foi possível registrar o marco.');}
+  finally{setPhaseBusy(false);setPhaseConfirm('');setPhaseAgreed(false);}
+ }
+
  if(storeId!==KYRUB_OFFICIAL_TEST_HISTORY_STORE)return null;
  async function request(body?:unknown){
   const token=await user.getIdToken(true);
@@ -164,5 +201,25 @@ export function AdminKyrubOfficialTestHistoryCleanup({user,storeId}:{user:User;s
    </>}
   </div>}
   {notice&&<p role="status" className="text-amber-200">{notice}</p>}
+  <div className="mt-4 space-y-3 border-t border-slate-700 pt-4">
+   <strong className="block text-sm text-cyan-200">Nova fase operacional · sem apagar o histórico financeiro</strong>
+   <p>Registre um marco único para separar a fase de testes da operação comercial. Pedidos finalizados anteriores ficarão recolhidos por padrão; o histórico financeiro terá uma visão da fase atual e outra completa. As duas cobranças aprovadas, a obrigação econômica aberta, as notificações, o razão e os comprovantes permanecem integralmente preservados.</p>
+   <p className="text-amber-200">Isso NÃO zera os saldos contábeis, NÃO quita obrigações, NÃO habilita Pix e NÃO exclui documentos. A visão completa continua acessível.</p>
+   {phase?.active?<p className="rounded-xl border border-emerald-500/30 p-3 text-emerald-200" role="status">
+    Nova fase registrada em {new Date(phase.effectiveAt).toLocaleString('pt-BR')}. Marco permanente para apresentação operacional, sem alterações financeiras.
+   </p>:<div className="space-y-3">
+    {phase===null&&!phaseError&&<p>Consultando estado do marco operacional…</p>}
+    {phase!==null&&<>
+     <label className="flex items-start gap-2"><input type="checkbox" checked={phaseAgreed} disabled={phaseBusy} onChange={e=>setPhaseAgreed(e.target.checked)}/>Confirmo o início da nova fase, mantendo cobranças e obrigações antigas nos históricos auditáveis.</label>
+     <label className="block">Digite <strong>{OFFICIAL_PHASE_CONFIRMATION}</strong>
+      <input value={phaseConfirm} disabled={phaseBusy} onChange={e=>setPhaseConfirm(e.target.value)} className="mt-2 w-full rounded-lg border border-slate-700 bg-slate-900 p-3 text-sm" autoComplete="off"/>
+     </label>
+     <button type="button" disabled={!phaseAgreed||phaseConfirm!==OFFICIAL_PHASE_CONFIRMATION||phaseBusy} onClick={()=>void startPhase()} className="w-full rounded-xl border border-cyan-500/50 bg-cyan-500/10 px-3 py-3 font-bold text-cyan-200 disabled:opacity-40">
+      {phaseBusy?'Registrando marco…':'Iniciar nova fase sem excluir registros'}
+     </button>
+    </>}
+   </div>}
+   {phaseError&&<p role="alert" className="text-amber-200">{phaseError}</p>}
+  </div>
  </section>;
 }
