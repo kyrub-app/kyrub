@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { ConsultantHttpError } from '../ai/types.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
   listOwnCreditInterestProposals,
@@ -17,7 +18,10 @@ const identify = async (authorization: string) => {
 };
 const errorResult = (error: unknown): {status: number; message: string; code: string} => {
   const code = error instanceof Error ? error.message : 'CREDIT_INTEREST_UNAVAILABLE';
-  if (code === 'AUTH_REQUIRED') return {status: 401, message: 'Faça login novamente.', code};
+  if (code === 'AUTH_REQUIRED' ||
+      (error instanceof ConsultantHttpError && error.status === 401)) {
+    return {status: 401, message: 'Faça login novamente.', code: 'AUTH_REQUIRED'};
+  }
   if (code === 'STORE_REPRESENTATION_FORBIDDEN' || code === 'CREDIT_INTEREST_INVALID_ACTOR') {
     return {status: 403, message: 'Você não pode propor crédito por esta loja.', code};
   }

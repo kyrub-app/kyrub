@@ -19,6 +19,8 @@ test('same KDS rejection modal presents refund first and a separate voluntary cr
   assert.match(controller, /financialFollowup.*original_refund/);
   assert.match(controller, /Propor crédito em reais com bônus opcional/);
   assert.match(controller, /Bônus pelo transtorno/);
+  assert.match(controller, /O total operacional do pedido pode estar zerado e não determina/);
+  assert.doesNotMatch(controller, /Crédito estimado:.*order\.total/);
   assert.match(controller, /bonusPercent: creditBonusPercent/);
   assert.match(controller, /crédito proposto vale para compras futuras nesta loja/i);
   assert.match(controller, /scope === 'whole' && order\.paymentStatus === 'paid'/);

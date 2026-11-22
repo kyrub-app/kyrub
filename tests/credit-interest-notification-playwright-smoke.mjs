@@ -17,6 +17,8 @@ const orderId = 'credit_browser_order';
 const paymentId = 'credit_browser_payment';
 const slug = 'credito-teste-browser';
 const paymentPath = 'stores/' + ownerId + '/payments/' + paymentId;
+const pendingOrderId = 'credit_browser_pending_order';
+const pendingOrderPath = 'artifacts/' + ownerId + '/public/data/customerOrders/' + pendingOrderId;
 const orderPath = 'artifacts/' + ownerId + '/public/data/customerOrders/' + orderId;
 
 assert.equal(process.env.FIREBASE_PROJECT_ID, projectId);
@@ -192,6 +194,12 @@ try {
       status: 'rejected', paymentStatus: 'paid', refundStatus: 'required',
       total: 0, buyerName: 'Comprador fictício',
     }),
+    db.doc(pendingOrderPath).set({
+      id: pendingOrderId, storeId: ownerId, buyerId, createdByUserId: buyerId,
+      status: 'pending', paymentStatus: 'paid', refundStatus: 'not_required',
+      buyerName: 'Comprador fictício', total: 0, subtotal: 0,
+      items: [{lineId: 'one', name: 'Produto fictício', productId: 'test-product', price: 23.30, quantity: 1}],
+    }),
     db.doc(paymentPath).set({
       id: paymentId, storeId: ownerId, orderId, buyerId,
       paymentIntentId: 'credit_browser_intent', amount: 23.30, currency: 'BRL',
@@ -213,6 +221,48 @@ try {
   const owner = await createIsolatedPage({width: 1200, height: 850});
   await owner.goto(origin + '/@' + slug, {waitUntil: 'domcontentloaded'});
   await signIn(owner, ownerId);
+
+  // Exercise the REAL scoped-rejection controller on a pending paid order
+  // using its native capture listener and a DOM order card. We do not confirm
+  // rejection here: the financial operation remains unmodified in Firestore.
+  await owner.evaluate(async ({storeId, orderId}) => {
+    const [reactModule, domModule, controllerModule] = await Promise.all([
+      import('/node_modules/.vite/deps/react.js'),
+      import('/node_modules/.vite/deps/react-dom_client.js'),
+      import('/src/components/store/KdsScopedRejectionController.tsx'),
+    ]);
+    const React = reactModule.default ?? reactModule;
+    const ReactDOM = domModule.default ?? domModule;
+    const host = document.createElement('div');
+    host.id = 'credit-scoped-rejection-controller-e2e';
+    document.body.prepend(host);
+    ReactDOM.createRoot(host).render(React.createElement(
+      controllerModule.KdsScopedRejectionController,
+      {storeId,notify: () => {throw Error('REJECTION_MUST_NOT_BE_CONFIRMED_IN_MODAL_TEST');}},
+    ));
+    const orderCard = document.createElement('div');
+    orderCard.id = 'kyrub-customer-order-' + encodeURIComponent(orderId);
+    const button = document.createElement('button');
+    button.textContent = 'Recusar';
+    orderCard.appendChild(button);
+    document.body.prepend(orderCard);
+  }, {storeId: ownerId, orderId: pendingOrderId});
+  const modalTrigger = owner.locator('#kyrub-customer-order-' + pendingOrderId).getByRole('button', {name: 'Recusar'});
+  await owner.waitForTimeout(300);
+  await modalTrigger.click();
+  const rejection = owner.locator('#credit-scoped-rejection-controller-e2e');
+  await rejection.getByText('Recusa do pedido').waitFor({timeout: 15000});
+  await rejection.locator('textarea').fill('Item indisponível (teste isolado)');
+  await rejection.getByRole('button', {name: 'Pedido inteiro'}).click();
+  await rejection.getByText('Propor crédito em reais com bônus opcional').click();
+  await rejection.getByRole('spinbutton', {name: 'Bônus percentual pela compensação'}).fill('20');
+  assert.match(await rejection.innerText(), /Bônus selecionado: \+20%/);
+  assert.match(await rejection.innerText(), /O total operacional do pedido pode estar zerado/);
+  assert.doesNotMatch(await rejection.innerText(), /Crédito estimado: R\$\s*0,00/);
+  await owner.screenshot({path: 'playwright-credit-rejection-modal.png', fullPage: true});
+  await rejection.getByRole('button', {name: 'Fechar recusa'}).click();
+  assert.equal((await db.doc(pendingOrderPath).get()).get('status'), 'pending');
+
   // Mount the production merchant consultation component in a dedicated test
   // element. This checks its real controls, not navigation through the full ERP.
   await owner.evaluate(async props => {

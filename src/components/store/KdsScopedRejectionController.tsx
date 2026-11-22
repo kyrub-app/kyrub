@@ -576,10 +576,10 @@ export const KdsScopedRejectionController = ({
                       </div>
                     </label>
                     <div className="rounded-lg border border-amber-500/15 bg-slate-950/60 px-3 py-2">
-                      <p>Referência da compra: {money.format(order.total)}</p>
-                      <p>Bônus ilustrativo: +{creditBonusPercent}%</p>
-                      <p>Crédito estimado: {money.format(roundMoney(order.total * (1 + creditBonusPercent / 100)))}</p>
-                      <p className="mt-1 text-slate-400">O servidor recalcula o valor final com base no pagamento efetivamente confirmado, não no total exibido.</p>
+                      <p>Pagamento original: valor a conferir no registro canônico do Mercado Pago.</p>
+                      <p>Bônus selecionado: +{creditBonusPercent}% sobre o pagamento confirmado.</p>
+                      <p>Crédito proposto: valor em reais apresentado somente após a verificação pelo servidor.</p>
+                      <p className="mt-1 text-slate-400">O total operacional do pedido pode estar zerado e não determina o valor da compensação.</p>
                     </div>
                     <p>O crédito proposto vale para compras futuras nesta loja, não para um SKU predeterminado. Esta consulta não emite cupom, não quita o pagamento e não altera a possibilidade de devolução. Um acordo final e o checkout compatível serão necessários.</p>
                   </div>

@@ -3,6 +3,7 @@ import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueSe
 import { issueCommunityPostForwardNotification } from './communityPostForwardNotificationService.js';
 import { respondToCommunityGroupInvitation } from './communityGroupInvitationResponseService.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { ConsultantHttpError } from '../ai/types.js';
 import {
   listUserNotifications,
   markAllUserNotificationsRead,
@@ -23,7 +24,8 @@ const requireIdentity = async (authorization: string) => {
 
 const mapError = (error: unknown): { status: number; message: string } => {
   const message = error instanceof Error ? error.message : String(error);
-  if (message === 'AUTH_REQUIRED') {
+  if (message === 'AUTH_REQUIRED' ||
+      (error instanceof ConsultantHttpError && error.status === 401)) {
     return { status: 401, message: 'Faça login novamente para ver suas notificações.' };
   }
   if (message === 'USER_NOTIFICATION_NOT_FOUND') {
