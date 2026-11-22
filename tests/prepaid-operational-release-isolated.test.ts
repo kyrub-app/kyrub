@@ -272,7 +272,7 @@ test('legacy pending rejection cannot bypass recorded reservation or consumption
   );
   assert.deepEqual([...records], beforeReservation);
   records.delete(reservationPath);
-  records.set(`inventoryOrderConsumptions/${id}`, {status: 'consumed'});
+  records.set(`inventoryOrderConsumptions/${id}`, {status: 'pending_review'});
   const beforeConsumption = structuredClone([...records]);
   await assert.rejects(
     transition('seller', 'order', 'rejected', {reason: 'Revisão de estoque'}),
