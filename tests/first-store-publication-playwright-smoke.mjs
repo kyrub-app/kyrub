@@ -107,15 +107,11 @@ try {
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
-  // Navigate through the actual retailer interface instead of bypassing it.
-  // Reload so the root auth listener and Renda tab mount with the signed-in
-  // emulator identity, rather than retaining the initial anonymous UI.
+  // Root / now opens the real Renda/Catu workspace directly, including for
+  // authenticated users. The old optional ?entry=renda onboarding screen
+  // has a separate #renda-entry-open-full-app button; that is NOT the root UX.
+  // Reload so the real workspace uses the emulator-authenticated identity.
   await page.reload({ waitUntil: 'domcontentloaded' });
-  const fullAppEntry = page.locator('#renda-entry-open-full-app');
-  await fullAppEntry.waitFor({ state: 'visible', timeout: 15000 });
-  await fullAppEntry.click();
-  await page.waitForURL(url => url.searchParams.get('app') === '1', { timeout: 15000 });
-  assert.equal(new URL(page.url()).searchParams.get('app'), '1', 'Full Kyrub dashboard must be entered through the Renda landing');
   const retailerEntry = page.locator('#btn-criar-loja-ofertas');
   try {
     await retailerEntry.waitFor({ state: 'visible', timeout: 12000 });
