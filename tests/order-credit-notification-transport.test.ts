@@ -36,6 +36,12 @@ test('the compensation event is scoped to the buyer inbox and resolves to the ca
   assert.match(service,/category: 'order'/);
   assert.match(service,/eventType: 'credit_interest_proposed'/);
   assert.match(service,/storeId: canonicalStoreId/);
+  assert.match(service,/storeSlug, customerId: buyerId/);
+  const bell = read('src/components/UserNotificationCenterBridge.tsx');
+  assert.match(bell,/notification.target.kind === 'storefront'/);
+  assert.match(bell,/notification.target.customerId !== user.uid/);
+  assert.match(bell,/compensacao=/);
+  assert.match(read('src/components/store/BuyerCreditInterestCard.tsx'),/scrollIntoView/);
   assert.match(service,/transaction\.create\(adminDb\.doc\(userNotificationPath\(buyerId, notification\.id\)\), notification\)/);
   assert.match(storefront,/<BuyerCreditInterestCard storeId=\{store\.id\} buyerId=\{user\.uid\}/);
 });
