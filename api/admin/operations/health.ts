@@ -171,6 +171,22 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'mercado-pago-test-history-provider-audit') {
+    if(method!=='GET'){response.status(405).json({error:'Método não permitido.',code:'METHOD_NOT_ALLOWED'});return;}
+    try{
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const admin=await readiness.authorizeIntegrationReadiness(authorization);
+      const check=await import('../../../server/admin/mercadoPagoTestHistoryProviderAuditService.js');
+      response.status(200).json(await check.inspectKyrubOfficialProviderEvidence(admin.uid));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      if(code.startsWith('TEST_HISTORY_')){response.status(409).json({error:'Auditoria não autorizada neste escopo.',code});return;}
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const mapped=readiness.mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-test-history-cleanup') {
     if(method!=='GET'&&method!=='POST'){response.status(405).json({error:'Método não permitido.',code:'METHOD_NOT_ALLOWED'});return;}
     try{
