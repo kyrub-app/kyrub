@@ -1,5 +1,6 @@
 import { orderReleaseFixture } from './helpers/orderReleaseFixture';
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import test, { beforeEach } from 'node:test';
 import { build } from 'esbuild';
 import { isPrepaidOrderReleased } from '../shared/orderReleasePolicy';
@@ -235,5 +236,57 @@ test('delivery acceptance refuses missing choice and conflicting provider replay
     /modalidade de entrega já foi definida/
   );
   assert.equal(writes, count);
+  assert.deepEqual([...records], before);
+});
+
+test('paid pending legacy sale can be rejected without owner-member migration when stock was never touched', async () => {
+  records.get(orderPath).status = 'pending';
+  await execute();
+  const paymentBefore = structuredClone(records.get(paymentPath));
+  const receiptBefore = structuredClone(records.get(receiptPath));
+  const result = await transition('seller', 'order', 'rejected', {
+    reason: 'Venda antiga de produto removido da loja oficial',
+  });
+  assert.equal(result.status, 'rejected');
+  assert.equal(result.inventoryAction, 'waiting');
+  const order = records.get(orderPath);
+  assert.equal(order.status, 'rejected');
+  assert.equal(order.paymentStatus, 'paid');
+  assert.equal(order.operationalRelease, null);
+  assert.match(order.customerNote, /produto removido/);
+  assert.equal(records.get('stores/canonical/orders/order').status, 'rejected');
+  assert.deepEqual(records.get(paymentPath), paymentBefore);
+  assert.deepEqual(records.get(receiptPath), receiptBefore);
+  assert.equal(records.get('stores/canonical/members/seller'), undefined);
+});
+
+test('legacy pending rejection cannot bypass recorded reservation or consumption', async () => {
+  records.get(orderPath).status = 'pending';
+  const id = createHash('sha256').update('seller:order').digest('hex');
+  const reservationPath = `inventoryOrderReservations/${id}`;
+  records.set(reservationPath, {status: 'reserved', storeId: 'seller', orderId: 'order'});
+  const beforeReservation = structuredClone([...records]);
+  await assert.rejects(
+    transition('seller', 'order', 'rejected', {reason: 'Revisão de estoque'}),
+    /INVENTORY_AUTHORITY_OWNER_UNRESOLVED/
+  );
+  assert.deepEqual([...records], beforeReservation);
+  records.delete(reservationPath);
+  records.set(`inventoryOrderConsumptions/${id}`, {status: 'pending_review'});
+  const beforeConsumption = structuredClone([...records]);
+  await assert.rejects(
+    transition('seller', 'order', 'rejected', {reason: 'Revisão de estoque'}),
+    /INVENTORY_AUTHORITY_OWNER_UNRESOLVED/
+  );
+  assert.deepEqual([...records], beforeConsumption);
+});
+
+test('legacy paid pending rejection refuses a conflicting canonical identity', async () => {
+  records.get(orderPath).status = 'pending';
+  records.get('stores/canonical').ownerId = 'different-user';
+  const before = structuredClone([...records]);
+  await assert.rejects(
+    transition('seller', 'order', 'rejected', {reason: 'Produto removido'}),
+  );
   assert.deepEqual([...records], before);
 });
