@@ -69,7 +69,7 @@ export const listAuthorizedStaffNotices = async (input: {
   const visible = snapshot.docs.map(doc => doc.data() as StaffNotice).filter(item =>
     item.canonicalStoreId === actor.canonicalStoreId &&
     item.legacyStoreId === actor.legacyStoreId &&
-    canReadStaffNotice(actor.role, item)
+    (actor.role === 'owner' || actor.role === 'manager' || canReadStaffNotice(actor.role, item))
   );
   const receipts = await Promise.all(visible.map(notice =>
     collectionFor(actor).doc(notice.id).collection('readReceipts').doc(actor.uid).get()

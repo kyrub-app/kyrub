@@ -41,6 +41,7 @@ import { createStoreCrmRouter } from "./server/payments/storeCrmRouter";
 import { enforceDeliveryWorkEligibility } from "./server/identity/workEligibilityMiddleware";
 import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInstitutionalIdentityRouter";
 import { createTimeClockRouter } from "./server/staff/timeClockRouter";
+import { createStaffNoticeRouter } from "./server/staff/staffNoticeTransport";
 import { createStoreReservationRouter } from "./server/staff/storeReservationRouter";
 
 dotenv.config();
@@ -227,6 +228,11 @@ app.use(
   "/api/staff/time-clock",
   integrationRateLimiter,
   createTimeClockRouter()
+);
+app.use(
+  "/api/staff/notices",
+  integrationRateLimiter,
+  createStaffNoticeRouter()
 );
 
 app.use(
