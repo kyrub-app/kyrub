@@ -216,7 +216,6 @@ export const CustomerOrderInbox = ({
   const [stationFilter, setStationFilter] = useState('all');
   const [phaseEffectiveAt,setPhaseEffectiveAt]=useState('');
   const [phaseReadError,setPhaseReadError]=useState('');
-  const [includePreviousFinished,setIncludePreviousFinished]=useState(false);
   const [connectedOriginChannels, setConnectedOriginChannels] = useState<KyrubCommerceChannel[]>([]);
   const [stationRoutes, setStationRoutes] = useState<ProductPreparationStations>(
     loadCachedProductPreparationStations
@@ -236,7 +235,6 @@ export const CustomerOrderInbox = ({
     let disposed=false;
     setPhaseEffectiveAt('');
     setPhaseReadError('');
-    setIncludePreviousFinished(false);
     const unsubscribe=onAuthStateChanged(auth,user=>{
       if(!user)return;
       void (async()=>{
@@ -384,7 +382,7 @@ export const CustomerOrderInbox = ({
   const filteredOrders = useMemo(
     () =>
       orders.filter(order => {
-        if(phaseEffectiveAt&&!includePreviousFinished&&order.id!==focusOrderId&&
+        if(phaseEffectiveAt&&order.id!==focusOrderId&&
            !showOrderInCurrentPhase(order,phaseEffectiveAt))return false;
         const origin = getOrderOrigin(order);
         const hasStation =
@@ -400,7 +398,7 @@ export const CustomerOrderInbox = ({
           matchesStage(order, filter)
         );
       }),
-    [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes, phaseEffectiveAt, includePreviousFinished, focusOrderId]
+    [attendanceSpaces, filter, orders, originFilter, stationFilter, stationRoutes, phaseEffectiveAt, focusOrderId]
   );
 
   useEffect(() => {
@@ -486,19 +484,9 @@ export const CustomerOrderInbox = ({
             Preparo e entrega física são etapas separadas. Retiradas prontas ficam no balcão até a validação do código.
           </p>
         </div>
-        <span className="w-fit rounded-full border border-slate-800 bg-slate-950 px-3 py-1 font-mono text-[10px] font-bold text-slate-400">
-          {phaseEffectiveAt ? `${filteredOrders.length} na seleção · ${orders.length} no histórico completo` : `${orders.length} no histórico`}
-        </span>
       </div>
 
       {phaseReadError&&<p role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-200">{phaseReadError}</p>}
-      {phaseEffectiveAt&&<div className="space-y-2 rounded-xl border border-cyan-500/25 bg-cyan-500/5 p-3 text-[11px]">
-        <p className="font-semibold text-cyan-200">Nova fase operacional desde {new Date(phaseEffectiveAt).toLocaleDateString('pt-BR')}</p>
-        <p className="text-slate-400">Pedidos finalizados anteriores ficam recolhidos por padrão. Pedidos ainda ativos continuam visíveis, mesmo que tenham começado antes do marco. Nenhum pedido ou comprovante foi excluído.</p>
-        <button type="button" onClick={()=>setIncludePreviousFinished(value=>!value)} className="rounded-lg border border-cyan-500/40 px-3 py-2 font-bold text-cyan-200" aria-pressed={includePreviousFinished}>
-         {includePreviousFinished?'Recolher finalizados anteriores':'Ver finalizados da fase de testes'}
-        </button>
-       </div>}
 
       {replacedFocusOrderId && focusOrderId && (
         <div
