@@ -91,6 +91,16 @@ const integer = (value: unknown): number =>
 const roundMoney = (value: number): number =>
   Math.round((value + Number.EPSILON) * 100) / 100;
 
+// This is only the operational order snapshot, never payment-provider authority.
+// A zero/absent order total must NOT be presented as a verified R$ 0 refund.
+const operationalRefundDisplayAmount = (
+  order: Pick<RefundCandidate, 'refundAmount' | 'total'>
+): number | null => order.refundAmount > 0
+  ? order.refundAmount
+  : order.total > 0
+    ? order.total
+    : null;
+
 const orderElementIdPrefix = 'kyrub-customer-order-';
 
 const createOperationId = (): string => {
@@ -134,6 +144,7 @@ export const PaidOrderRefundBridge = ({
   const [reason, setReason] = useState('Pedido recusado pelo lojista');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [minimizedRefundOrderId, setMinimizedRefundOrderId] = useState<string | null>(null);
 
   const [rejectionOrder, setRejectionOrder] = useState<RefundCandidate | null>(null);
   const [rejectionReason, setRejectionReason] = useState('');
@@ -146,6 +157,7 @@ export const PaidOrderRefundBridge = ({
   const [partialResult, setPartialResult] = useState<PartialCancellationResponse | null>(null);
 
   useEffect(() => {
+    setMinimizedRefundOrderId(null);
     if (!storeId) {
       setOrders([]);
       return;
@@ -268,6 +280,8 @@ export const PaidOrderRefundBridge = ({
   );
 
   const active = pending[0] ?? null;
+  const activeDisplayAmount = active ? operationalRefundDisplayAmount(active) : null;
+  const selectedDisplayAmount = selectedOrder ? operationalRefundDisplayAmount(selectedOrder) : null;
 
   const selectedCancellationAmount = useMemo(() => {
     if (!rejectionOrder) return 0;
@@ -420,6 +434,10 @@ export const PaidOrderRefundBridge = ({
 
   const confirmRefund = async (): Promise<void> => {
     if (!selectedOrder || !reason.trim()) return;
+    if (operationalRefundDisplayAmount(selectedOrder) === null) {
+      setError('O valor operacional deste pedido está zerado ou indisponível. Confira a cobrança original e concilie o histórico financeiro antes de solicitar um reembolso.');
+      return;
+    }
     const user = auth.currentUser;
     if (!user) {
       setError('Entre na sua conta para solicitar o reembolso.');
@@ -470,7 +488,20 @@ export const PaidOrderRefundBridge = ({
 
   return (
     <>
-      {active && !selectedOrder && !rejectionOrder && (
+      {active && !selectedOrder && !rejectionOrder &&
+        minimizedRefundOrderId === active.id && (
+          <button
+            type="button"
+            onClick={() => setMinimizedRefundOrderId(null)}
+            aria-label="Reabrir pendência financeira do pedido"
+            className="fixed bottom-20 right-3 z-[165] max-w-[calc(100vw-1.5rem)] rounded-2xl border border-amber-500/40 bg-slate-950 px-4 py-3 text-left text-[11px] font-bold text-amber-200 shadow-lg sm:bottom-6"
+          >
+            <AlertTriangle className="mr-2 inline h-4 w-4" />
+            Pendência financeira · ver detalhes
+          </button>
+        )}
+      {active && !selectedOrder && !rejectionOrder &&
+        minimizedRefundOrderId !== active.id && (
         <aside className="fixed inset-x-3 bottom-20 z-[165] mx-auto max-w-lg rounded-3xl border border-amber-500/35 bg-slate-950/95 p-4 shadow-2xl backdrop-blur-md sm:bottom-6">
           <div className="flex items-start gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-amber-500/10 text-amber-300">
@@ -481,11 +512,16 @@ export const PaidOrderRefundBridge = ({
                 Reembolso necessário
               </span>
               <h3 className="mt-1 truncate text-sm font-black text-white">
-                {active.buyerName} · {money.format(active.refundAmount || active.total)}
+                {active.buyerName} · {activeDisplayAmount === null ? 'Valor a conferir' : money.format(activeDisplayAmount)}
               </h3>
               <p className="mt-1 text-[10px] leading-relaxed text-slate-400">
-                O pedido foi recusado/cancelado, mas o pagamento continua confirmado. O valor deve voltar pelo pagamento original, não como saída manual de caixa.
+                O pedido foi recusado/cancelado, mas o pagamento continua confirmado. A pendência financeira precisa ser conciliada; não registre um estorno que não aconteceu.
               </p>
+              {activeDisplayAmount === null && (
+                <p className="mt-2 text-[10px] leading-relaxed text-amber-200">
+                  O pedido operacional não informa um valor válido. Isso não significa que o pagamento original foi de R$ 0,00.
+                </p>
+              )}
               <button
                 type="button"
                 onClick={() => openRefund(active)}
@@ -494,11 +530,22 @@ export const PaidOrderRefundBridge = ({
                 <RotateCcw className="h-4 w-4" />
                 {active.refundStatus === 'processing'
                   ? 'Verificar reembolso'
-                  : active.refundStatus === 'failed'
-                    ? 'Tentar reembolso novamente'
-                    : 'Reembolsar pagamento'}
+                  : activeDisplayAmount === null
+                    ? 'Conferir pendência'
+                    : active.refundStatus === 'failed'
+                      ? 'Tentar reembolso novamente'
+                      : 'Reembolsar pagamento'}
               </button>
             </div>
+            <button
+              type="button"
+              onClick={() => setMinimizedRefundOrderId(active.id)}
+              aria-label="Minimizar aviso de reembolso"
+              title="Minimizar aviso, sem quitar a pendência financeira"
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-slate-700 text-slate-300 hover:border-amber-500/40 hover:text-white"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
         </aside>
       )}
@@ -745,10 +792,11 @@ export const PaidOrderRefundBridge = ({
                   Reembolso integral
                 </span>
                 <h3 className="mt-1 text-lg font-black text-white">
-                  Devolver {money.format(selectedOrder.refundAmount || selectedOrder.total)}?
+                  {selectedDisplayAmount === null ? 'Valor do reembolso a conferir' : `Devolver ${money.format(selectedDisplayAmount)}?`}
                 </h3>
                 <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
                   O Kyrub usará a cobrança original do Mercado Pago. A operação é idempotente e não será registrada como uma despesa manual do caixa.
+                  O valor mostrado pelo pedido é apenas informativo; o servidor usa a cobrança canônica.
                 </p>
               </div>
               <button
@@ -773,6 +821,12 @@ export const PaidOrderRefundBridge = ({
               />
             </label>
 
+            {selectedDisplayAmount === null && (
+              <p role="alert" className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-100">
+                O valor do pedido está zerado ou ausente. Não é seguro pedir o estorno a partir desta tela até conferir o pagamento original e o histórico de reembolsos.
+              </p>
+            )}
+
             {error && (
               <p className="mt-3 rounded-2xl border border-red-500/25 bg-red-500/10 px-3 py-2 text-[10px] leading-relaxed text-red-200">
                 {error}
@@ -781,7 +835,7 @@ export const PaidOrderRefundBridge = ({
 
             <button
               type="button"
-              disabled={busy || !reason.trim()}
+              disabled={busy || !reason.trim() || selectedDisplayAmount === null}
               onClick={() => void confirmRefund()}
               className="mt-5 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"
             >
