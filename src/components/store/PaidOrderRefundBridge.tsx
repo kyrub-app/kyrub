@@ -57,6 +57,25 @@ interface RefundResponse {
   code?: string;
 }
 
+interface ProviderRefundReadOnlyDiagnosis {
+  source: 'mercado_pago_read_only';
+  paymentStatus: string;
+  paymentAmountMinor: number;
+  storedPaymentAmountMinor: number;
+  amountMatches: boolean;
+  refundedAmountReportedMinor: number | null;
+  refunds: {
+    refundCount: number;
+    approvedRefundCount: number;
+    approvedAmountMinor: number;
+    uncertainRefundCount: number;
+    statuses: Record<string, number>;
+  };
+  partialAttempt: { count: number; statusCounts: Record<string, number> };
+  blockers: string[];
+  notice: string;
+}
+
 interface RefundReadOnlyDiagnosis {
   source: 'firestore_read_only';
   order: {
@@ -192,6 +211,9 @@ export const PaidOrderRefundBridge = ({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [diagnostic, setDiagnostic] = useState<RefundReadOnlyDiagnosis | null>(null);
+  const [providerDiagnostic, setProviderDiagnostic] = useState<ProviderRefundReadOnlyDiagnosis | null>(null);
+  const [providerBusy, setProviderBusy] = useState(false);
+  const [providerError, setProviderError] = useState('');
   const [diagnosticBusy, setDiagnosticBusy] = useState(false);
   const [diagnosticError, setDiagnosticError] = useState('');
   const [minimizedRefundOrderId, setMinimizedRefundOrderId] = useState<string | null>(null);
@@ -482,6 +504,8 @@ export const PaidOrderRefundBridge = ({
     setError('');
     setDiagnostic(null);
     setDiagnosticError('');
+    setProviderDiagnostic(null);
+    setProviderError('');
   };
 
   const inspectRefund = async (): Promise<void> => {
@@ -520,6 +544,40 @@ export const PaidOrderRefundBridge = ({
       );
     } finally {
       setDiagnosticBusy(false);
+    }
+  };
+
+  const inspectProviderRefund = async (): Promise<void> => {
+    if (!selectedOrder || providerBusy) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setProviderError('Entre na sua conta para conferir o Mercado Pago.');
+      return;
+    }
+    setProviderBusy(true);
+    setProviderError('');
+    setProviderDiagnostic(null);
+    try {
+      const query = new URLSearchParams({
+        transport: 'store-promotions',
+        surface: 'refunds',
+        path: 'provider-diagnostic',
+        storeId,
+        orderId: selectedOrder.id,
+      });
+      const response = await fetch('/api/health?' + query.toString(), {
+        headers: { authorization: `Bearer ${await user.getIdToken()}` },
+        cache: 'no-store',
+      });
+      const data = await response.json().catch(() => ({})) as ProviderRefundReadOnlyDiagnosis & {error?: string};
+      if (!response.ok || data.source !== 'mercado_pago_read_only') {
+        throw new Error(data.error || 'Não foi possível confirmar o estado do Mercado Pago.');
+      }
+      setProviderDiagnostic(data);
+    } catch (caught) {
+      setProviderError(caught instanceof Error ? caught.message : 'Consulta ao Mercado Pago indisponível.');
+    } finally {
+      setProviderBusy(false);
     }
   };
 
@@ -954,6 +1012,43 @@ export const PaidOrderRefundBridge = ({
                   </p>
                 )}
                 <p className="text-slate-400">{diagnostic.notice}</p>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={() => void inspectProviderRefund()}
+              disabled={busy || providerBusy}
+              className="mt-3 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-cyan-500/35 bg-slate-950 px-4 text-[11px] font-bold text-cyan-200 disabled:opacity-40"
+            >
+              {providerBusy && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              Conferir diretamente no Mercado Pago (somente leitura)
+            </button>
+            {providerError && (
+              <p role="alert" className="mt-3 rounded-xl border border-rose-500/30 bg-rose-500/10 px-3 py-2 text-[11px] text-rose-200">
+                {providerError}
+              </p>
+            )}
+            {providerDiagnostic && (
+              <div className="mt-3 space-y-2 rounded-2xl border border-cyan-500/30 bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-200">
+                <strong className="block text-cyan-200">Consulta direta ao Mercado Pago</strong>
+                <p>Estado do pagamento no provedor: {providerDiagnostic.paymentStatus}</p>
+                <p>Valor do pagamento: {money.format(providerDiagnostic.paymentAmountMinor / 100)}
+                  {providerDiagnostic.amountMatches ? ' (confere com o Firebase)' : ' (diverge do Firebase)'}
+                </p>
+                <p>Reembolsos listados no Mercado Pago: {providerDiagnostic.refunds.refundCount}</p>
+                <p>Devoluções aprovadas na consulta: {providerDiagnostic.refunds.approvedRefundCount}
+                  {' '}· total {money.format(providerDiagnostic.refunds.approvedAmountMinor / 100)}
+                </p>
+                <p>Devoluções com resultado incerto: {providerDiagnostic.refunds.uncertainRefundCount}</p>
+                {providerDiagnostic.refunds.refundCount > 0 && (
+                  <p>Estados informados: {Object.entries(providerDiagnostic.refunds.statuses)
+                    .map(([state, count]) => `${state}: ${count}`).join(' · ')}</p>
+                )}
+                <p className="text-amber-200">
+                  O registro parcial anterior continua pendente de conciliação, mesmo se o provedor não listar devoluções.
+                </p>
+                <p className="text-slate-400">{providerDiagnostic.notice}</p>
               </div>
             )}
 

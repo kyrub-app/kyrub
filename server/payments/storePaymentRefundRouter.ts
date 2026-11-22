@@ -5,6 +5,7 @@ import { cancelOrderItemsWithAuthoritativeRefund } from './authoritativeOrderIte
 import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 import { diagnoseOrderRefundReadOnly } from './orderRefundReadOnlyDiagnosis.js';
+import { diagnoseMercadoPagoRefundReadOnly } from './providerRefundReadOnlyDiagnosisService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -142,6 +143,34 @@ export const createStorePaymentRefundRouter = (): Router => {
       } else {
         const mapped = mapRefundError(error);
         response.status(mapped.status).json({ error: mapped.error, code: mapped.code });
+      }
+    }
+  });
+
+  router.get('/provider-diagnostic', async (request, response) => {
+    try {
+      const storeId = clean(request.query.storeId);
+      const orderId = clean(request.query.orderId);
+      if (!storeId || !orderId) throw new Error('PROVIDER_REFUND_READ_TARGET_INVALID');
+      await requireOwner(request.get('authorization') ?? '', storeId);
+      const result = await diagnoseMercadoPagoRefundReadOnly({ storeId, orderId });
+      response.setHeader('Cache-Control', 'no-store');
+      response.status(200).json(result);
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'PROVIDER_REFUND_READ_TARGET_INVALID') {
+        response.status(400).json({error: 'Selecione um pedido válido.', code});
+      } else if (code === 'PROVIDER_REFUND_READ_ORDER_INVALID' ||
+                 code === 'PROVIDER_REFUND_READ_PAYMENT_INVALID' ||
+                 code === 'PROVIDER_REFUND_READ_PAYMENT_AMBIGUOUS' ||
+                 code === 'PROVIDER_REFUND_READ_PAYMENT_MISMATCH' ||
+                 code === 'PROVIDER_REFUND_READ_BINDING_MISMATCH') {
+        response.status(409).json({error: 'Não foi possível vincular esta cobrança ao pedido com segurança. Nenhum reembolso foi solicitado.', code});
+      } else {
+        response.status(503).json({
+          error: 'Não foi possível conferir o Mercado Pago neste momento. Os dados financeiros permanecem inalterados.',
+          code: 'PROVIDER_REFUND_READ_UNAVAILABLE',
+        });
       }
     }
   });
