@@ -35,7 +35,11 @@ export const parseProviderRefundListing = (
     (data && typeof data === 'object' &&
       Array.isArray((data as { results?: unknown }).results))
       ? (data as { results: unknown[] }).results
-      : null;
+      : (data && typeof data === 'object' && !Array.isArray(data) &&
+        identifier((data as Record<string, unknown>).id) &&
+        identifier((data as Record<string, unknown>).payment_id))
+        ? [data]
+        : null;
   if (!listing || listing.length > 100) {
     throw new Error('PROVIDER_REFUND_READ_INVALID_LIST');
   }
