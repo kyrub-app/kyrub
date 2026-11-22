@@ -1,10 +1,10 @@
 import { getApps } from 'firebase/app';
-import { getFirestore as getLiteFirestore, doc as liteDoc, getDoc as getLiteDoc } from 'firebase/firestore/lite';
+import { doc as liteDoc, getDoc as getLiteDoc } from 'firebase/firestore/lite';
 import {
   collection, doc, getDocFromCache, getDocFromServer, getDocsFromServer,
   query, where,
 } from 'firebase/firestore';
-import { auth, db } from './firebase';
+import { auth, db, liteDb } from './firebase';
 import { getPublicCommunityFromServer } from './communityCloud';
 import { probeCommunityGoogleRest } from './communityRestReadProbe';
 
@@ -124,8 +124,7 @@ export const probePublicCommunityRead = async (communityId: string): Promise<Pub
       // Firestore Lite uses a direct REST read and no persistent local cache.
       // Uses the same FirebaseApp/Auth identity; no credentials are disclosed.
       try {
-        const lite = getLiteFirestore(auth.app);
-        const snapshot = await withDeadline(getLiteDoc(liteDoc(lite, 'communities', communityId)));
+        const snapshot = await withDeadline(getLiteDoc(liteDoc(liteDb, 'communities', communityId)));
         result.firestoreLiteDocument = snapshot.exists()
           ? 'documento encontrado' : 'documento não encontrado';
       } catch (error) {

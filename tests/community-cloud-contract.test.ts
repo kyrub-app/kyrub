@@ -614,8 +614,8 @@ test('Firestore Lite no-cache diagnostic distinguishes local overlays from serve
   const diagnostic = read('src/utils/communityReadDiagnostic.ts');
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   assert.match(diagnostic, /from 'firebase\/firestore\/lite'/);
-  assert.match(diagnostic, /getLiteFirestore\(auth\.app\)/);
-  assert.match(diagnostic, /getLiteDoc\(liteDoc\(lite, 'communities', communityId\)\)/);
+  assert.match(diagnostic, /import \{ auth, db, liteDb \} from '\.\/firebase'/);
+  assert.match(diagnostic, /getLiteDoc\(liteDoc\(liteDb, 'communities', communityId\)\)/);
   assert.match(diagnostic, /snapshot\.metadata\.fromCache/);
   assert.match(diagnostic, /snapshot\.metadata\.hasPendingWrites/);
   assert.match(diagnostic, /publicSnapshot\.metadata\.fromCache/);
@@ -637,7 +637,7 @@ test('public community reconciliation uses the same authenticated Lite read that
   assert.ok(start > 0 && end > start, 'public reconciliation function exists');
   const readThrough = cloud.slice(start, end);
   assert.match(cloud, /from 'firebase\/firestore\/lite'/);
-  assert.match(readThrough, /getLiteFirestore\(auth\.app\)/);
+  assert.match(cloud, /import \{ auth, db, liteDb, storage \} from '\.\/firebase'/);
   assert.match(readThrough, /getLiteDoc\(liteDoc\(liteDb, 'communities', communityId\)\)/);
   assert.doesNotMatch(readThrough, /getDocFromServer|db\.|writeBatch|updateDoc|deleteDoc|setDoc/);
   assert.match(readThrough, /data\.visibility !== 'public' && data\.visibility !== 'moderated'/);
