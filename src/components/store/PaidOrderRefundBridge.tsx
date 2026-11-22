@@ -1101,6 +1101,9 @@ export const PaidOrderRefundBridge = ({
                     .map(([state, count]) => `${state}: ${count}`).join(' · ')}</p>
                 )}
                 <p className="text-amber-200">{providerDiagnostic.assessment.message}</p>
+                <p className="text-amber-200">
+                  O registro parcial anterior continua pendente de conciliação; esta conferência não realiza nem confirma reembolso.
+                </p>
                 {providerDiagnostic.assessment.eligibleToRecordEvidence && !evidenceRecorded && (
                   <button
                     type="button"
