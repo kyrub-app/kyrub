@@ -7,6 +7,7 @@ import { createStoreMercadoPagoPeriodSummaryRouter } from './storeMercadoPagoPer
 import { createStoreMercadoPagoReconciliationRouter } from './storeMercadoPagoReconciliationRouter.js';
 import { createStoreOrderProfitabilityRouter } from './storeOrderProfitabilityRouter.js';
 import { createStorePaymentRefundRouter } from './storePaymentRefundRouter.js';
+import { createOrderCreditInterestRouter } from './orderCreditInterestRouter.js';
 import { createStorePayrollRouter } from './storePayrollRouter.js';
 import { createStorePromotionManagementRouter } from './storePromotionManagementRouter.js';
 import { createStoreSalesAnalyticsRouter } from './storeSalesAnalyticsRouter.js';
@@ -22,6 +23,7 @@ app.use('/api/store-promotions', createStorePromotionManagementRouter());
 app.use('/api/store-finance/profitability', createStoreOrderProfitabilityRouter());
 app.use('/api/store-finance', createStoreFinanceRouter());
 app.use('/api/store-refunds', createStorePaymentRefundRouter());
+app.use('/api/order-credit-interest', createOrderCreditInterestRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoPeriodSummaryRouter());
 app.use('/api/store-finance-history', createStoreMercadoPagoReconciliationRouter());
 app.use('/api/store-finance-history', createStoreFinanceHistoryRouter());
@@ -45,6 +47,7 @@ export const handleStorePromotionServerlessRequest = async (requestInput: unknow
   const path = first(request.query?.path).replace(/^\/+|\/+$/g, ''); const surface = first(request.query?.surface);
   const routeBase = surface === 'finance' ? '/api/store-finance'
     : surface === 'finance-history' ? '/api/store-finance-history'
+    : surface === 'credit-interest' ? '/api/order-credit-interest'
     : surface === 'refunds' ? '/api/store-refunds'
     : surface === 'cash-transaction-detail' ? '/api/store-cash-transaction-detail'
     : surface === 'payroll' ? '/api/store-payroll'
