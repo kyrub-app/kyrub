@@ -381,7 +381,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
       );
       triggerToast(
         status === 'rejected' && order.paymentStatus === 'paid'
-          ? 'Pedido recusado. O pagamento continua registrado; acompanhe a solicitação de reembolso até a confirmação do provedor.'
+          ? 'Pedido recusado. O pagamento permanece registrado. Se a devolução for devida, solicite o reembolso no fluxo financeiro e acompanhe a confirmação do provedor.'
           : 'Status do pedido atualizado.',
         'success'
       );
