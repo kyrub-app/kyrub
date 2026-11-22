@@ -18,10 +18,10 @@ export interface CreditInterestProposal {
   buyerId: string;
   paymentId: string;
   paymentStoreId: string;
+  canonicalStoreId: string;
   amountMinor: number;
   status: CreditInterestStatus;
   creditIssued: false;
-  paymentRefunded: false;
   offeredAt: string;
   offeredBy: string;
   respondedAt: string;
@@ -121,7 +121,8 @@ export const proposeOrderCreditInterest = async (input: {
       const previous = proposalSnapshot.data() as CreditInterestProposal;
       if (previous.schemaVersion !== 1 || previous.storeId !== storeId ||
           previous.orderId !== orderId || previous.buyerId !== buyerId ||
-          previous.paymentId !== payment.id || previous.paymentStoreId !== payment.storeId) {
+          previous.paymentId !== payment.id || previous.paymentStoreId !== payment.storeId ||
+          previous.canonicalStoreId !== canonicalStoreId) {
         throw new Error('CREDIT_INTEREST_PROPOSAL_CONFLICT');
       }
       return previous;
@@ -132,8 +133,8 @@ export const proposeOrderCreditInterest = async (input: {
     }
     const proposal: CreditInterestProposal = {
       schemaVersion: 1, storeId, orderId, buyerId, paymentId: payment.id,
-      paymentStoreId: payment.storeId, amountMinor, status: 'awaiting_response', creditIssued: false,
-      paymentRefunded: false, offeredAt: now, offeredBy: actorId, respondedAt: '',
+      paymentStoreId: payment.storeId, canonicalStoreId, amountMinor, status: 'awaiting_response', creditIssued: false,
+      offeredAt: now, offeredBy: actorId, respondedAt: '',
     };
     const notification = buildUserNotification({
       recipientUserId: buyerId, category: 'order',
@@ -165,14 +166,12 @@ export const listOwnCreditInterestProposals = async (input: {
   if (!canonical.exists || !validId(legacyStoreId)) {
     throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
   }
-  const mappedCanonical = await canonicalStoreForLegacyOwner(legacyStoreId);
-  if (mappedCanonical !== storeId) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
   const snapshot = await adminDb.collection('stores/' + legacyStoreId + '/orderCreditInterestProposals')
     .where('buyerId', '==', buyerId).limit(25).get();
   return snapshot.docs.flatMap(document => {
     const value = document.data() as CreditInterestProposal;
     return value.schemaVersion === 1 && value.buyerId === buyerId &&
-      value.storeId === legacyStoreId && value.orderId === document.id &&
+      value.storeId === legacyStoreId && value.canonicalStoreId === storeId && value.orderId === document.id &&
       value.creditIssued === false ? [value] : [];
   });
 };
