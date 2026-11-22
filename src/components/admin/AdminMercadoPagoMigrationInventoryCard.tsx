@@ -88,6 +88,7 @@ export const parseMerchantPixMigrationInventory = (raw: unknown): MigrationInven
 };
 
 type AuditSummary = {
+  linkage?: {complete:boolean;orderStates:{paid:number;partial:number;unpaid:number;unknown:number;completed:number};pending:{intents:number;payments:number;withProviderId:number;completeTriples:number;needsReview:number};paidOrderLinks:{withExplicitPaymentId:number;linkedCanonicalPaid:number;linkedOtherStatus:number;referencedNotInScan:number;withoutExplicitPaymentId:number}};
   generatedAt: string;
   complete: boolean;
   orders: { scanned: number; complete: boolean; statuses: Record<string, number> };
@@ -205,9 +206,16 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
         {auditStoreId === item.canonicalStoreId && audit && <div className="mt-3 space-y-1 rounded-xl border border-slate-700 p-3 text-xs text-slate-300">
           <strong className="block text-slate-100">Conferência financeira por loja {audit.complete ? '' : '— leitura parcial'}</strong>
           {(['orders', 'intents', 'payments'] as const).map(kind => <p key={kind}>
-            {kind === 'orders' ? 'Pedidos' : kind === 'intents' ? 'Intenções' : 'Pagamentos'}: {audit[kind].scanned} registros analisados;
-            pendentes {audit[kind].statuses.pending ?? 0}; pagos {audit[kind].statuses.paid ?? 0}; demais estados {Object.entries(audit[kind].statuses).filter(([status]) => !['pending', 'paid'].includes(status)).reduce((total, [, value]) => total + value, 0)}
+            {kind === 'orders' ? 'Pedidos (estado operacional agrupado)' : kind === 'intents' ? 'Intenções' : 'Pagamentos'}: {audit[kind].scanned} registros analisados;
+            pendentes {audit[kind].statuses.pending ?? 0}; {kind==='orders'?'grupo concluído (não prova pagamento)':'grupo pago'} {audit[kind].statuses.paid ?? 0}; demais estados {Object.entries(audit[kind].statuses).filter(([status]) => !['pending', 'paid'].includes(status)).reduce((total, [, value]) => total + value, 0)}
           </p>)}
+          {audit.linkage&&<div className="space-y-2 border-t border-slate-700 pt-2">
+            <strong className="block text-slate-100">Vínculos financeiros (somente leitura)</strong>
+            <p>Pedidos: marcados como pagos {audit.linkage.orderStates.paid}; parciais {audit.linkage.orderStates.partial}; não pagos {audit.linkage.orderStates.unpaid}; sem estado financeiro conhecido {audit.linkage.orderStates.unknown}. Concluídos operacionalmente {audit.linkage.orderStates.completed}.</p>
+            <p>Pix marketplace pendentes: {audit.linkage.pending.intents} intenções; {audit.linkage.pending.payments} pagamentos; com ID no provedor {audit.linkage.pending.withProviderId}; trios pedido/intenção/pagamento compatíveis {audit.linkage.pending.completeTriples}; vínculos a revisar {audit.linkage.pending.needsReview}.</p>
+            <p>Pedidos marcados pagos: com pagamento canônico em estado pago {audit.linkage.paidOrderLinks.linkedCanonicalPaid}; com outro estado financeiro {audit.linkage.paidOrderLinks.linkedOtherStatus}; referência não localizada nesta leitura {audit.linkage.paidOrderLinks.referencedNotInScan}; sem ID explícito {audit.linkage.paidOrderLinks.withoutExplicitPaymentId}.</p>
+            <p className="text-amber-200">Vínculo local não comprova recebimento. Pedidos sem ID podem ser históricos ou manuais. {audit.linkage.complete?'':'Leitura parcial: não conclua que registros ausentes não existem.'}</p>
+          </div>}
           <p className="text-amber-200">{audit.warning}</p>
         </div>}
       </div>)}
