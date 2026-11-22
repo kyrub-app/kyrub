@@ -5,7 +5,7 @@ export function normalizeHistoricalPaymentId(value:unknown):string|null{
  return /^[0-9]{1,24}$/.test(id)?id:null;
 }
 export function classifyHistoricalProviderPayment(
- value:unknown,paymentId:string,expectedCollector:string,storeId:string
+ value:unknown,paymentId:string,expectedCollector:string,storeId:string,legacyStoreId?:string
 ):HistoricalProviderAssessment{
  if(!value||typeof value!=='object'||Array.isArray(value))return {kind:'mismatch'};
  const payment=value as Record<string,unknown>;
@@ -13,7 +13,7 @@ export function classifyHistoricalProviderPayment(
  const metadata=payment.metadata;
  if(metadata&&typeof metadata==='object'&&!Array.isArray(metadata)){
   const store=(metadata as Record<string,unknown>).kyrub_store_id;
-  if(store!=null&&str(store)!==storeId)return {kind:'mismatch'};
+  if(store!=null&&str(store)!==storeId&&(!legacyStoreId||str(store)!==legacyStoreId))return {kind:'mismatch'};
  }
  const status=str(payment.status).toLowerCase();
  const detail=str(payment.status_detail).toLowerCase();

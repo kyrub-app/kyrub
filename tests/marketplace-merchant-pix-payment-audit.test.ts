@@ -162,3 +162,41 @@ test('legacy cleanup evidence states and reference shapes are aggregated without
  assert.match(service,/classifyHistoricalTestEvidence\(kind,snapshot\.docs/);
  assert.match(read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx'),/Estados registrados: abertos/);
 });
+
+test('legacy reconciliation correlates only verified provider states and open obligations, without leaking IDs',async()=>{
+ const {legacyProviderReferences,summarizeLegacyPaymentAndObligations}=await import('../server/admin/merchantLegacyProviderReconciliationPolicy.js');
+ const intents=[
+  {id:'i1',data:{providerIntentId:'900'}},
+  {id:'i2',data:{providerIntentId:'temporary-id'}},
+  {id:'i3',data:{providerIntentId:''}}
+ ];
+ const payments=[
+  {id:'p1',data:{status:'paid',providerPaymentId:'900'}},
+  {id:'p2',data:{status:'paid',providerPaymentId:'901'}},
+  {id:'p3',data:{status:'pending',providerPaymentId:''}}
+ ];
+ const refs=legacyProviderReferences(intents,payments);
+ assert.deepEqual(refs,{uniqueIds:['900','901'],intentNumeric:1,paymentNumeric:2,malformed:1,missing:2});
+ const obligations=[{id:'o',data:{status:'pending',paymentId:'p1'}},{id:'o2',data:{status:'settled',paymentId:'p2'}}];
+ const statuses=new Map([['900','approved'],['901','expired']] as const);
+ const result=summarizeLegacyPaymentAndObligations(payments,obligations,statuses);
+ assert.deepEqual(result,{
+  locallyPaid:2,locallyPaidProviderApproved:1,locallyPaidProviderOther:1,locallyPaidUnverified:0,
+  openObligations:1,openObligationsLinkedToLocallyPaid:1,openObligationsWithoutKnownPayment:0
+ });
+ assert.doesNotMatch(JSON.stringify(result),/900|901|p1|p2|temporary-id/);
+ const {classifyHistoricalProviderPayment}=await import('../server/admin/mercadoPagoTestHistoryProviderPolicy.js');
+ const provider={id:'900',collector_id:'3631706959',currency_id:'BRL',payment_method_id:'pix',status:'approved',metadata:{kyrub_store_id:'legacy-tenant'}};
+ assert.deepEqual(classifyHistoricalProviderPayment(provider,'900','3631706959','canonical-id','legacy-tenant'),{kind:'approved'});
+ assert.deepEqual(classifyHistoricalProviderPayment(provider,'900','3631706959','canonical-id'),{kind:'mismatch'});
+ assert.deepEqual(classifyHistoricalProviderPayment({...provider,collector_id:'999'},'900','3631706959','canonical-id','legacy-tenant'),{kind:'mismatch'});
+ const service=read('server/admin/mercadoPagoTestHistoryProviderAuditService.ts');
+ assert.match(service,/validateMercadoPagoStoreConnection\(tenant\)/);
+ assert.match(service,/legacyIntents.size!==6\|\|legacyPayments.size!==6\|\|legacyObligations.size!==1/);
+ assert.match(service,/mercadoPagoStoreRequest<Record<string,unknown>>\(tenant/);
+ assert.match(service,/new Set\(\[\.\.\.unique,\.\.\.legacyReferences.uniqueIds\]\)/);
+ assert.match(service,/requiresManualReview:true,allowsCleanup:false/);
+ assert.doesNotMatch(service,/cancelMercadoPagoPayment|method:'POST'|resolveMercadoPagoAccessToken|\.delete\(/);
+ const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
+ assert.match(panel,/Histórico legado · conciliação com a conta recebedora/);
+});
