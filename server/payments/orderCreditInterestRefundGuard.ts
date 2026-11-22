@@ -24,6 +24,8 @@ export const inspectOrderCreditInterestRefundSafety = async (input: {
   legacyStoreId: string;
   orderId: string;
   payment: CanonicalPayment;
+  /** Test-only verifier seam; HTTP routes always use the live provider reader. */
+  diagnoseProvider?: typeof diagnoseMercadoPagoRefundReadOnly;
 }): Promise<PartialRefundGuard> => {
   const { legacyStoreId, orderId, payment } = input;
   const roots = [...new Set([legacyStoreId, payment.storeId])];
@@ -67,7 +69,7 @@ export const inspectOrderCreditInterestRefundSafety = async (input: {
   }
   // The receipt describes an earlier moment. Only a fresh provider GET can
   // establish that its statement is still consistent for this consultation.
-  const live = await diagnoseMercadoPagoRefundReadOnly({
+  const live = await (input.diagnoseProvider ?? diagnoseMercadoPagoRefundReadOnly)({
     storeId: legacyStoreId, orderId,
   });
   if (live.assessment.state !== 'verified_zero_refund_observation' ||
