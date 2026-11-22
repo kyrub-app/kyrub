@@ -1,4 +1,6 @@
 import { adminDb } from '../firebaseAdmin.js';
+import { quoteOrderCompensation, ORDER_COMPENSATION_SCOPE } from '../../shared/orderCompensationCredit.js';
+import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSafetyService.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
@@ -21,6 +23,10 @@ export interface CreditInterestProposal {
   paymentStoreId: string;
   canonicalStoreId: string;
   amountMinor: number;
+  scope: typeof ORDER_COMPENSATION_SCOPE;
+  bonusPercent: number;
+  bonusMinor: number;
+  proposedCreditMinor: number;
   status: CreditInterestStatus;
   creditIssued: false;
   offeredAt: string;
@@ -82,15 +88,24 @@ export const proposeOrderCreditInterest = async (input: {
   storeId: string;
   orderId: string;
   actorId: string;
+  bonusPercent?: number;
 }): Promise<CreditInterestProposal> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
   const actorId = clean(input.actorId);
+  const bonusPercent = input.bonusPercent ?? 0;
+  // The paid value is never supplied by the client; only the bonus rate is.
+  if (!Number.isInteger(bonusPercent) || bonusPercent < 0 || bonusPercent > 100) {
+    throw new Error('CREDIT_INTEREST_BONUS_INVALID');
+  }
   assertIds(storeId, orderId);
   if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
   await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
   const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
   const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
+  // Reject already partially refunded or uncertain histories. The principal
+  // must represent an outstanding, fully paid transaction.
+  await assertFullRefundHasNoConfirmedPartialHistory({ storeId: payment.storeId, orderId });
   const orderRef = adminDb.doc(orderPath(storeId, orderId));
   const paymentRef = adminDb.doc('stores/' + payment.storeId + '/payments/' + payment.id);
   const proposalRef = adminDb.doc(proposalPath(storeId, orderId));
@@ -124,18 +139,22 @@ export const proposeOrderCreditInterest = async (input: {
       if (previous.schemaVersion !== 1 || previous.storeId !== storeId ||
           previous.orderId !== orderId || previous.buyerId !== buyerId ||
           previous.paymentId !== payment.id || previous.paymentStoreId !== payment.storeId ||
-          previous.canonicalStoreId !== canonicalStoreId) {
+          previous.canonicalStoreId !== canonicalStoreId ||
+          previous.amountMinor !== Math.round(payment.amount * 100) ||
+          previous.scope !== ORDER_COMPENSATION_SCOPE ||
+          previous.bonusPercent !== bonusPercent) {
         throw new Error('CREDIT_INTEREST_PROPOSAL_CONFLICT');
       }
       return previous;
     }
     const amountMinor = Math.round(payment.amount * 100);
-    if (!Number.isSafeInteger(amountMinor) || amountMinor <= 0) {
-      throw new Error('CREDIT_INTEREST_AMOUNT_INVALID');
-    }
+    const quote = quoteOrderCompensation({ paidMinor: amountMinor, bonusPercent });
     const proposal: CreditInterestProposal = {
       schemaVersion: 1, storeId, orderId, buyerId, paymentId: payment.id,
-      paymentStoreId: payment.storeId, canonicalStoreId, amountMinor, status: 'awaiting_response', creditIssued: false,
+      paymentStoreId: payment.storeId, canonicalStoreId, amountMinor,
+      scope: quote.scope, bonusPercent: quote.bonusPercent,
+      bonusMinor: quote.bonusMinor, proposedCreditMinor: quote.totalCreditMinor,
+      status: 'awaiting_response', creditIssued: false,
       offeredAt: now, offeredBy: actorId, respondedAt: '',
     };
     const notification = buildUserNotification({
@@ -143,7 +162,7 @@ export const proposeOrderCreditInterest = async (input: {
       eventType: 'credit_interest_proposed', sourceId: orderId,
       actorPrincipalId: buildStoreInstitutionalPrincipalId(storeId),
       title: 'Proposta sobre pedido cancelado',
-      body: 'A loja quer consultar seu interesse em receber crédito para uma compra futura. Nenhum cupom foi emitido e você mantém a opção de devolução do pagamento.',
+      body: 'A loja propôs consultar seu interesse em um crédito em reais para compras futuras nessa loja, com possível bônus. Consulte os valores na vitrine. Nenhum crédito foi emitido; você ainda pode preferir o reembolso.',
       target: { kind: 'storefront', storeId: canonicalStoreId, customerId: buyerId, orderId },
       createdAt: now,
     });
@@ -174,7 +193,9 @@ export const listOwnCreditInterestProposals = async (input: {
     const value = document.data() as CreditInterestProposal;
     return value.schemaVersion === 1 && value.buyerId === buyerId &&
       value.storeId === legacyStoreId && value.canonicalStoreId === storeId && value.orderId === document.id &&
-      value.creditIssued === false ? [value] : [];
+      value.creditIssued === false && value.scope === ORDER_COMPENSATION_SCOPE &&
+      Number.isSafeInteger(value.proposedCreditMinor) &&
+      value.proposedCreditMinor > 0 ? [value] : [];
   });
 };
 
