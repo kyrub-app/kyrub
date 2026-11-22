@@ -80,6 +80,24 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'official-operational-phase') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    if((request.method??'GET').toUpperCase()!=='GET'){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    try{
+      const bearer=/^Bearer\\s+([^\\s]+)$/i.exec(headerValue(request.headers.authorization??request.headers.Authorization))?.[1];
+      if(!bearer||bearer.length>8192)throw Error('AUTH_REQUIRED');
+      const {verifyFirebaseIdToken}=await import('../server/ai/consultantAuth.js');
+      const identity=await verifyFirebaseIdToken(bearer);
+      const storeId=queryValue(request.query?.storeId);
+      const {getOfficialOperationalPhaseForOwner}=await import('../server/admin/officialOperationalPhaseService.js');
+      response.status(200).json(await getOfficialOperationalPhaseForOwner({legacyStoreId:storeId,actorId:identity.uid}));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      response.status(code==='AUTH_REQUIRED'?401:403).json({error:'Marco operacional indisponível para esta loja.',code:code==='AUTH_REQUIRED'?'AUTH_REQUIRED':'OFFICIAL_PHASE_FORBIDDEN'});
+    }
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
