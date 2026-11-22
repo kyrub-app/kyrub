@@ -10,6 +10,10 @@ type Proposal = {
   orderId: string;
   buyerId: string;
   amountMinor: number;
+  scope: 'storewide';
+  bonusPercent: number;
+  bonusMinor: number;
+  proposedCreditMinor: number;
   status: CreditInterestStatus;
   creditIssued: false;
 };
@@ -58,7 +62,9 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
     void call('mine&storeId=' + encodeURIComponent(storeId))
       .then(payload => {
         if (!disposed) setProposals((payload.proposals ?? []).filter(
-          item => item.canonicalStoreId === storeId && item.buyerId === buyerId && item.creditIssued === false
+          item => item.canonicalStoreId === storeId && item.buyerId === buyerId &&
+            item.scope === 'storewide' && Number.isSafeInteger(item.proposedCreditMinor) &&
+            item.proposedCreditMinor > 0 && item.creditIssued === false
         ));
       })
       .catch(fetchError => {
@@ -96,13 +102,19 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
             <strong className="text-xs">Consulta sobre crédito por pedido cancelado</strong>
           </div>
           <p className="mt-2 text-xs text-slate-200">
-            A loja gostaria de saber se você tem interesse em negociar um cupom para uma compra futura,
-            tomando como referência o pagamento de <strong>{amount(proposal.amountMinor)}</strong>.
+            A loja gostaria de consultar seu interesse em receber um crédito em reais para compras
+            futuras nesta loja, sem vincular o benefício a um produto específico.
           </p>
+          <div className="mt-3 space-y-1 rounded-xl border border-amber-500/20 bg-slate-950/70 p-3 text-xs text-slate-200">
+            <div className="flex justify-between gap-3"><span>Valor pago</span><strong>{amount(proposal.amountMinor)}</strong></div>
+            <div className="flex justify-between gap-3"><span>Bônus de {proposal.bonusPercent}% pelo transtorno</span><strong>+{amount(proposal.bonusMinor)}</strong></div>
+            <div className="flex justify-between gap-3 border-t border-slate-700 pt-2 text-amber-200"><span>Crédito total proposto</span><strong>{amount(proposal.proposedCreditMinor)}</strong></div>
+          </div>
           <p className="mt-2 text-[11px] leading-5 text-slate-400">
             Isto ainda não é um cupom e não constitui aceite definitivo de compensação.
             Nenhum crédito foi emitido e o pagamento não foi estornado nem considerado quitado.
-            As condições e a possibilidade de utilização terão de ser confirmadas com você antes de qualquer acordo.
+            O valor poderá abater uma compra futura na loja, com eventual saldo restante para outra compra.
+            Essas condições dependerão de confirmação antes de qualquer acordo e de integração ao checkout.
           </p>
           {proposal.status === 'awaiting_response' ? (
             <div className="mt-3 flex flex-col gap-2 sm:flex-row">
