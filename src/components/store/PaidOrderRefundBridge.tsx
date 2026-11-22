@@ -102,6 +102,28 @@ const money = new Intl.NumberFormat('pt-BR', {
   currency: 'BRL',
 });
 
+const REFUND_BLOCKER_LABELS: Record<string, string> = {
+  pedido_nao_terminal: 'pedido ainda não encerrado',
+  pedido_sem_pagamento_confirmado: 'pagamento não confirmado no pedido',
+  valor_operacional_ausente: 'valor do pedido zerado ou ausente',
+  pagamento_canonico_ambiguo_ou_ausente: 'pagamento original ausente ou com registros divergentes',
+  pagamento_canonico_invalido: 'pagamento original sem valor ou provedor válido',
+  historico_parcial_acima_do_limite: 'histórico parcial acima do limite de conferência',
+  historico_parcial_incerto: 'tentativa de reembolso parcial ainda não conciliada',
+  reembolso_parcial_confirmado_exige_residual: 'já houve reembolso parcial; o restante requer conciliação',
+  historico_parcial_em_escopo_canonico: 'histórico parcial encontrado na loja canônica',
+  pagamento_em_escopo_canonico_verificar_vinculo: 'pagamento registrado na loja canônica; conferir vínculo',
+};
+
+const REFUND_PAYMENT_STATUS_LABELS: Record<string, string> = {
+  paid: 'pago',
+  refund_requested: 'reembolso solicitado',
+  refund_processing: 'reembolso em processamento',
+  refund_failed: 'tentativa de reembolso falhou',
+  refunded: 'reembolso confirmado no registro',
+  pending: 'aguardando pagamento',
+};
+
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
@@ -914,7 +936,7 @@ export const PaidOrderRefundBridge = ({
                   {diagnostic.payments.truncated ? ' (consulta limitada)' : ''}</p>
                 {diagnostic.payments.records.map((payment, index) => (
                   <p key={index} className="pl-2 text-slate-300">
-                    {payment.scope === 'canonical' ? 'Loja canônica' : 'ERP'} · {payment.status} ·
+                    {payment.scope === 'canonical' ? 'Loja canônica' : 'ERP'} · {REFUND_PAYMENT_STATUS_LABELS[payment.status] ?? payment.status} ·
                     {' '}{payment.amountMinor === null ? 'valor não confirmado' : money.format(payment.amountMinor / 100)}
                   </p>
                 ))}
@@ -928,7 +950,7 @@ export const PaidOrderRefundBridge = ({
                 )}
                 {diagnostic.blockers.length > 0 && (
                   <p className="text-amber-200">
-                    Pendências de conciliação: {diagnostic.blockers.join(', ')}.
+                    Pendências de conciliação: {diagnostic.blockers.map(code => REFUND_BLOCKER_LABELS[code] ?? code).join('; ')}.
                   </p>
                 )}
                 <p className="text-slate-400">{diagnostic.notice}</p>
