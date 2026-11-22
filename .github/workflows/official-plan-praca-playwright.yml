@@ -9,6 +9,8 @@ on:
       - 'src/components/StorePromotionsManager.tsx'
       - 'src/utils/storeSubscription.ts'
       - 'src/utils/marketplaceCheckout.ts'
+      - 'src/utils/firebase.ts'
+      - 'src/utils/communityCloud.ts'
       - 'server/payments/paymentIntentRouter.ts'
       - 'server/payments/marketplaceDiscoveryService.ts'
       - 'server/payments/storePromotionManagementRouter.ts'
