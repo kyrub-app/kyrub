@@ -351,6 +351,28 @@ describe('canonical local attendance', () => {
     assert.doesNotMatch(board, /registerTablePayment|attachMercadoPagoPix|emit.*fiscal/i);
   });
 
+  test('staff central opens in the existing ERP management modal as four cards without a dropdown', () => {
+    const menu = readFileSync('src/components/MobileErpMenu.tsx', 'utf8');
+    const nav = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
+    const router = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
+    const cards = readFileSync('src/components/store/StoreStaffCentralWorkspace.tsx', 'utf8');
+
+    assert.match(menu, /\{ id: 'central_staff', label: 'Central do Staff', icon: ClipboardCheck, section: 'gestao' \}/);
+    assert.ok(menu.indexOf("id: 'rh'") < menu.indexOf("id: 'central_staff'"));
+    assert.ok(menu.indexOf("id: 'central_staff'") < menu.indexOf("id: 'crm'"));
+    assert.match(menu, /'central_staff',\s*\n\s*'crm',/);
+    assert.match(nav, /\| 'central_staff'/);
+    assert.match(router, /moduleId === 'central_staff' \? <Suspense/);
+    assert.match(router, /<LazyStaffCentralWorkspace \/>/);
+    assert.match(cards, /data-kyrub-staff-central="four-cards"/);
+    assert.equal((cards.match(/^\s+id: '(avisos|pops|checklists|escalas)',/gm) || []).length, 4);
+    for (const title of ['Avisos e comunicados', 'Manuais POP', 'Tarefas e checklists', 'Escalas de trabalho']) {
+      assert.ok(cards.includes("title: '" + title + "'"), 'Missing card: ' + title);
+    }
+    assert.doesNotMatch(cards, /<button|onClick=|<details|<summary/);
+    assert.match(cards, /Em preparação/);
+  });
+
   test('direct browser Firestore access to attendance and service locations stays closed', () => {
     const rules = readFileSync('firestore.rules', 'utf8');
     assert.doesNotMatch(rules, /match \/localAttendance\//);

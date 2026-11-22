@@ -9,6 +9,7 @@ export type ErpManagementModule =
   | 'financeiro'
   | 'fiscal'
   | 'rh'
+  | 'central_staff'
   | 'crm'
   | 'marketing'
   | 'integracoes'
