@@ -10,6 +10,7 @@ import {
   type MobileErpMenuItemId,
 } from './MobileErpMenu';
 import { getPlanCenterUrl } from '../utils/planCenter';
+import type { StoreRole } from '../utils/storeSecurity';
 
 interface MobileErpMenuProps {
   activeSubTab: ErpSubTab;
@@ -18,6 +19,7 @@ interface MobileErpMenuProps {
   onClosePanel: () => void;
   onOpenStoreConfig: () => void;
   onSelectTab: (tab: ErpSubTab) => void;
+  accessRole?: StoreRole;
 }
 
 export function MobileErpMenu({
@@ -27,6 +29,7 @@ export function MobileErpMenu({
   onClosePanel,
   onOpenStoreConfig,
   onSelectTab,
+  accessRole,
 }: MobileErpMenuProps) {
   const dialogRef = useRef<HTMLDialogElement | null>(null);
   const selectionFrameRef = useRef<number | null>(null);
@@ -46,6 +49,7 @@ export function MobileErpMenu({
   };
 
   const handleSelect = (itemId: MobileErpMenuItemId): void => {
+    if (!accessRole || !canStoreRoleAccessErpMenuItem(accessRole, itemId)) return;
     const dialog = dialogRef.current;
     if (dialog?.open) dialog.close();
     setIsOpen(false);
@@ -71,7 +75,8 @@ export function MobileErpMenu({
   };
 
   const renderItems = (section: MobileErpMenuItem['section']) =>
-    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section).map(item => {
+    MOBILE_ERP_MENU_ITEMS.filter(item => item.section === section &&
+      accessRole !== undefined && canStoreRoleAccessErpMenuItem(accessRole, item.id)).map(item => {
       const Icon = item.icon;
       const isSelected =
         !isMobileErpManagementModule(item.id) &&

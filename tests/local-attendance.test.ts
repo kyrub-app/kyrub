@@ -356,8 +356,12 @@ describe('canonical local attendance', () => {
     const nav = readFileSync('src/utils/erpManagementNavigation.ts', 'utf8');
     const router = readFileSync('src/components/RetailerPanelRuntimeRouter.tsx', 'utf8');
     const cards = readFileSync('src/components/store/StoreStaffCentralWorkspace.tsx', 'utf8');
+    const optimizedMenu = readFileSync('src/components/MobileErpMenuRuntime.tsx', 'utf8');
 
     assert.match(menu, /\{ id: 'central_staff', label: 'Central do Staff', icon: ClipboardCheck, section: 'gestao' \}/);
+    assert.match(optimizedMenu, /accessRole\?: StoreRole/);
+    assert.match(optimizedMenu, /canStoreRoleAccessErpMenuItem\(accessRole, item\.id\)/);
+    assert.match(optimizedMenu, /canStoreRoleAccessErpMenuItem\(accessRole, itemId\)/);
     assert.ok(menu.indexOf("id: 'rh'") < menu.indexOf("id: 'central_staff'"));
     assert.ok(menu.indexOf("id: 'central_staff'") < menu.indexOf("id: 'crm'"));
     assert.match(menu, /'central_staff',\s*\n\s*'crm',/);
