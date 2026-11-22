@@ -161,7 +161,7 @@ test('unverified first-store listing owner or paused publication blocks consulta
   const listingPath='marketplace_listings/s_'+storeId.length+'_'+storeId;
   await Promise.all([
     adminDb.doc(getPrimaryUserStoreDocumentPath(storeId)).set({
-      id:storeId,ownerId:storeId,canonicalStoreId,
+      id:storeId,ownerId:storeId,canonicalStoreId,name:'Loja inválida isolada',
     }),
     adminDb.doc('stores/'+canonicalStoreId).set({
       id:canonicalStoreId,ownerId:storeId,legacyTenantId:storeId,
