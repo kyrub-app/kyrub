@@ -9,6 +9,19 @@ type ProviderCheck={
  providerStatuses:Record<'pending'|'approved'|'refunded'|'cancelled'|'rejected'|'expired'|'other'|'unverified',number>;
  metadataMismatches:number;lookupFailures:number;unlinkedProviderLabels:number;
  requiresManualReview:true;allowsCleanup:false;
+ legacy:{
+  counts:{intents:number;payments:number;obligations:number};
+  intentNumericReferences:number;paymentNumericReferences:number;nonNumericReferences:number;
+  missingReferences:number;uniquePaymentReferences:number;
+  providerStatuses:Record<'pending'|'approved'|'refunded'|'cancelled'|'rejected'|'expired'|'other'|'unverified',number>;
+  metadataMismatches:number;lookupFailures:number;
+  localFinance:{
+   locallyPaid:number;locallyPaidProviderApproved:number;
+   locallyPaidProviderOther:number;locallyPaidUnverified:number;
+   openObligations:number;openObligationsLinkedToLocallyPaid:number;
+   openObligationsWithoutKnownPayment:number;
+  };
+ };
 };
 type HistoricalClassification={
  states:{open:number;recordedPaid:number;closedOrReversed:number;unknown:number};
@@ -132,6 +145,16 @@ export function AdminKyrubOfficialTestHistoryCleanup({user,storeId}:{user:User;s
       <p>Referências encontradas: {provider.referencedRecords.intents} em intenções e {provider.referencedRecords.payments} em pagamentos; {provider.uniquePaymentReferences} IDs distintos consultáveis; {provider.unsupportedReferences} em formato não reconhecido.</p>
       <p>Situação no provedor: pendentes {provider.providerStatuses.pending}; aprovados {provider.providerStatuses.approved}; estornados/contestados {provider.providerStatuses.refunded}; cancelados {provider.providerStatuses.cancelled}; rejeitados {provider.providerStatuses.rejected}; expirados {provider.providerStatuses.expired}; outros {provider.providerStatuses.other}; não verificados {provider.providerStatuses.unverified}.</p>
       <p>Divergências de identidade/metadados: {provider.metadataMismatches}; falhas de consulta: {provider.lookupFailures}; registros com indicação do provedor, mas sem ID consultável: {provider.unlinkedProviderLabels}.</p>
+      {provider.legacy&&<div className="mt-3 space-y-2 border-t border-slate-700 pt-3">
+       <strong className="block text-sm text-slate-100">Histórico legado · conciliação com a conta recebedora</strong>
+       <p>Registros históricos: {provider.legacy.counts.intents} intenções, {provider.legacy.counts.payments} pagamentos e {provider.legacy.counts.obligations} obrigação(ões) econômica(s).</p>
+       <p>Referências: {provider.legacy.intentNumericReferences} numéricas nas intenções e {provider.legacy.paymentNumericReferences} numéricas nos pagamentos; {provider.legacy.uniquePaymentReferences} ID(s) distintos; {provider.legacy.nonNumericReferences} não numéricas; {provider.legacy.missingReferences} ausentes.</p>
+       <p>Mercado Pago (IDs distintos): aprovados {provider.legacy.providerStatuses.approved}; pendentes {provider.legacy.providerStatuses.pending}; expirados {provider.legacy.providerStatuses.expired}; cancelados {provider.legacy.providerStatuses.cancelled}; rejeitados {provider.legacy.providerStatuses.rejected}; estornados/contestados {provider.legacy.providerStatuses.refunded}; outros {provider.legacy.providerStatuses.other}; não verificados {provider.legacy.providerStatuses.unverified}.</p>
+       <p>Dos {provider.legacy.localFinance.locallyPaid} pagamentos marcados como pagos localmente: {provider.legacy.localFinance.locallyPaidProviderApproved} com pagamento aprovado confirmado nesta consulta, {provider.legacy.localFinance.locallyPaidProviderOther} com estado diferente no provedor, {provider.legacy.localFinance.locallyPaidUnverified} sem confirmação conclusiva.</p>
+       <p>Obrigações econômicas abertas: {provider.legacy.localFinance.openObligations}; ligadas a pagamentos locais marcados como pagos: {provider.legacy.localFinance.openObligationsLinkedToLocallyPaid}; sem pagamento identificado na amostra: {provider.legacy.localFinance.openObligationsWithoutKnownPayment}.</p>
+       {(provider.legacy.metadataMismatches>0||provider.legacy.lookupFailures>0)&&<p className="text-amber-200">Identidade/metadados divergentes: {provider.legacy.metadataMismatches}; consultas inconclusivas: {provider.legacy.lookupFailures}.</p>}
+       <p className="text-amber-200">O status local não prova recebimento. Uma resposta do Mercado Pago só confirma o estado observado para a conta verificada; não substitui a conciliação de caixa, obrigações e comprovantes. Nenhum registro será excluído por esta consulta.</p>
+      </div>}
       <p className="text-amber-200">Consulta sem nova cobrança, cancelamento ou estorno. Mesmo cobranças encerradas exigem preservar comprovantes e conferir os lançamentos internos. Esta análise não libera a exclusão automaticamente.</p>
     </div>}
    </div>}
