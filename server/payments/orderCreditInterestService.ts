@@ -5,6 +5,7 @@ import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitu
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { buildStoreInstitutionalPrincipalId } from '../../shared/storeInstitutionalIdentity.js';
 import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
+import { loadPublicStorefrontBySlug } from './marketplaceDiscoveryService.js';
 
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
 const validId = (value: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -53,17 +54,148 @@ const assertIds = (storeId: string, orderId: string): void => {
   }
 };
 
-const canonicalStoreForLegacyOwner = async (legacyStoreId: string): Promise<string> => {
-  const tenant = await adminDb.doc('tenants/' + legacyStoreId).get();
-  const canonicalId = clean(tenant.get('canonicalStoreId')) || legacyStoreId;
-  if (!validId(canonicalId)) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
-  if (canonicalId !== legacyStoreId) {
-    const canonical = await adminDb.doc('stores/' + canonicalId).get();
-    if (!canonical.exists || clean(canonical.get('ownerId')) !== legacyStoreId) {
+type CreditStorePublicIdentity = {
+  /** Where the store's payment ledger may live. */
+  catalogStoreId: string;
+  /** The ID actually returned to buyers by the public storefront. */
+  publicStoreId: string;
+  storeSlug: string;
+};
+
+const validSlug = (value: string): boolean => /^[a-zA-Z0-9-]{1,128}$/.test(value);
+
+/**
+ * A published first store has THREE distinct identities:
+ * - owner UID, used by legacy ERP orders;
+ * - stores/{canonicalStoreId}, used for catalog / sometimes payments;
+ * - marketplace_listings/{listingId}.storeId, used by the buyer storefront.
+ * Do not assume the catalog document owns the public slug, and NEVER let the
+ * client supply the owner alias. Verify each server-owned link independently.
+ */
+const resolveCreditInterestPublicStore = async (
+  legacyStoreId: string
+): Promise<CreditStorePublicIdentity> => {
+  if (!validId(legacyStoreId)) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  const [tenant, primary] = await Promise.all([
+    adminDb.doc('tenants/' + legacyStoreId).get(),
+    adminDb.doc('users/' + legacyStoreId + '/stores/' + legacyStoreId).get(),
+  ]);
+  if (!primary.exists || clean(primary.get('id')) !== legacyStoreId ||
+      clean(primary.get('ownerId')) !== legacyStoreId ||
+      (tenant.exists && clean(tenant.get('ownerId')) &&
+        clean(tenant.get('ownerId')) !== legacyStoreId)) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+
+  const tenantLink = clean(tenant.get('canonicalStoreId'));
+  const primaryLink = clean(primary.get('canonicalStoreId'));
+  const links = [...new Set([tenantLink, primaryLink].filter(v => v && v !== legacyStoreId))];
+  if (links.length > 1 || links.some(id => !validId(id))) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  const catalogStoreId = links[0] || legacyStoreId;
+  const catalog = await adminDb.doc('stores/' + catalogStoreId).get();
+  if (catalogStoreId !== legacyStoreId &&
+      (!catalog.exists || clean(catalog.get('ownerId')) !== legacyStoreId)) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  // A verified first-store publication must retain the authoritative owner
+  // and must not be silently replaced with a paused catalog projection.
+  if (primaryLink && primaryLink !== legacyStoreId && catalog.get('firstStoreCreationVerified') === true &&
+      (clean(catalog.get('legacyTenantId')) !== legacyStoreId ||
+       clean(catalog.get('publicationStatus')) !== 'published')) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+
+  const candidates = [...new Set([legacyStoreId, catalogStoreId])];
+  const listingsById = await Promise.all(candidates.map(storeId =>
+    adminDb.collection('marketplace_listings').where('storeId', '==', storeId).limit(9).get()
+  ));
+  if (listingsById.some(snapshot => snapshot.size >= 9)) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  const storeListings = listingsById.flatMap(snapshot =>
+    snapshot.docs.filter(document => document.get('listingType') === 'store')
+  );
+  if (storeListings.length > 1) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  if (storeListings.length === 1) {
+    const listing = storeListings[0];
+    const publicStoreId = clean(listing.get('storeId'));
+    const storeSlug = clean(listing.get('slug'));
+    if (!candidates.includes(publicStoreId) ||
+        clean(listing.get('ownerId')) !== legacyStoreId ||
+        clean(listing.get('publicationStatus')) !== 'published' ||
+        !validSlug(storeSlug)) {
       throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
     }
+    // Match the authoritative public reader, including paused / renamed stores
+    // and duplicate slug precedence. Notification must never link elsewhere.
+    const visible = await loadPublicStorefrontBySlug(storeSlug);
+    if (!visible || visible.store.id !== publicStoreId ||
+        visible.store.slug !== storeSlug) {
+      throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+    }
+    return { catalogStoreId, publicStoreId, storeSlug };
   }
-  return canonicalId;
+
+  // Backwards compatibility for stores that predate marketplace listings.
+  // A non-published tenant may not silently override a canonical pause.
+  const tenantSlug = clean(tenant.get('slug'));
+  if (tenant.exists && clean(tenant.get('publicationStatus')) === 'published' &&
+      validSlug(tenantSlug) &&
+      (!clean(tenant.get('id')) || clean(tenant.get('id')) === legacyStoreId)) {
+    const visible = await loadPublicStorefrontBySlug(tenantSlug);
+    if (visible?.store.id === legacyStoreId && visible.store.slug === tenantSlug) {
+      return {catalogStoreId, publicStoreId: legacyStoreId, storeSlug: tenantSlug};
+    }
+  }
+  // Existing paid-store records used stores/{canonicalId}.slug before
+  // marketplace listing publication; retain only owned non-paused records.
+  const storeSlug = clean(catalog.get('slug'));
+  if (catalog.exists && clean(catalog.get('ownerId')) === legacyStoreId &&
+      clean(catalog.get('publicationStatus')) !== 'paused' && validSlug(storeSlug)) {
+    return { catalogStoreId, publicStoreId: catalogStoreId, storeSlug };
+  }
+  throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+};
+
+/**
+ * Resolve the buyer-facing public ID from server-owned listing/store records.
+ * Never infer the owner from a client-provided owner UID.
+ */
+const ownerForCreditInterestPublicStore = async (publicStoreId: string): Promise<string> => {
+  if (!validId(publicStoreId)) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  const [listingRecords, canonical, tenant] = await Promise.all([
+    adminDb.collection('marketplace_listings')
+      .where('storeId', '==', publicStoreId).limit(9).get(),
+    adminDb.doc('stores/' + publicStoreId).get(),
+    adminDb.doc('tenants/' + publicStoreId).get(),
+  ]);
+  const listings = listingRecords.docs.filter(document =>
+    document.get('listingType') === 'store');
+  if (listingRecords.size >= 9 || listings.length > 1) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  let ownerId = '';
+  if (listings.length === 1) {
+    if (clean(listings[0].get('publicationStatus')) !== 'published') {
+      throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+    }
+    ownerId = clean(listings[0].get('ownerId'));
+  } else if (canonical.exists) {
+    ownerId = clean(canonical.get('ownerId'));
+  } else if (tenant.exists && clean(tenant.get('publicationStatus')) === 'published' &&
+      clean(tenant.get('ownerId')) === publicStoreId) {
+    ownerId = publicStoreId;
+  }
+  if (!validId(ownerId)) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  const resolved = await resolveCreditInterestPublicStore(ownerId);
+  if (resolved.publicStoreId !== publicStoreId) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  return ownerId;
 };
 
 const verifiedPaidPayment = async (
@@ -114,13 +246,10 @@ export const proposeOrderCreditInterest = async (input: {
   assertIds(storeId, orderId);
   if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
   await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
-  const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
-  const publicStore = await adminDb.doc('stores/' + canonicalStoreId).get();
-  const storeSlug = clean(publicStore.get('slug'));
-  if (!publicStore.exists || !/^[a-zA-Z0-9-]{1,128}$/.test(storeSlug)) {
-    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
-  }
-  const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
+  const { catalogStoreId, publicStoreId, storeSlug } =
+    await resolveCreditInterestPublicStore(storeId);
+  const canonicalStoreId = publicStoreId; // proposal field means buyer-facing storefront ID
+  const payment = await verifiedPaidPayment(storeId, catalogStoreId, orderId);
   // Offering a non-binding consultation must not reuse the full-refund gate.
   // Audited failed attempts require a fresh independent provider check; no
   // partial refund or unresolved history can ever authorize a money movement.
@@ -271,14 +400,10 @@ export const listOwnCreditInterestProposals = async (input: {
   const storeId = clean(input.storeId);
   const buyerId = clean(input.buyerId);
   if (!validId(storeId) || !validId(buyerId)) throw new Error('CREDIT_INTEREST_INVALID_TARGET');
-  // A public storefront uses its canonical store ID; the operating ERP uses
-  // the owner/tenant ID. Resolve only through the authenticated server-owned
-  // canonical store record, never accept a buyer-supplied owner alias.
-  const canonical = await adminDb.doc('stores/' + storeId).get();
-  const legacyStoreId = clean(canonical.get('ownerId'));
-  if (!canonical.exists || !validId(legacyStoreId)) {
-    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
-  }
+  // The storefront ID may be the owner UID (published first store), while
+  // payments live under an independent canonical catalog ID. Both identities
+  // must resolve through the published server-owned links.
+  const legacyStoreId = await ownerForCreditInterestPublicStore(storeId);
   const snapshot = await adminDb.collection('stores/' + legacyStoreId + '/orderCreditInterestProposals')
     .where('buyerId', '==', buyerId).limit(25).get();
   return snapshot.docs.flatMap(document => {
