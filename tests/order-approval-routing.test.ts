@@ -218,7 +218,7 @@ test('KDS keeps rejection and Kyrub delivery choice open when the server rejects
 test('a paid order is never described as an automatic refund', () => {
   assert.match(inboxSource, /rejectingOrder\.paymentStatus === 'paid'/);
   assert.match(inboxSource, /Recusar o pedido não estorna o pagamento automaticamente/);
-  assert.match(inboxSource, /Recusar e sinalizar reembolso/);
-  assert.match(retailerSource, /O pagamento continua registrado/);
+  assert.match(inboxSource, /Recusar \(reembolso separado\)/);
+  assert.match(retailerSource, /O pagamento permanece registrado/);
   assert.match(inboxSource, /confirmação do provedor/);
 });
