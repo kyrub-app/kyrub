@@ -291,6 +291,9 @@ export const KdsScopedRejectionController = ({
     setError('');
     try {
       if (scope === 'whole') {
+        // Refresh credentials before this explicit action, never retry the
+        // order mutation automatically after an ambiguous response.
+        await user.getIdToken(true);
         await updateOrderStatusWithDecision(
           storeId,
           order.id,
