@@ -55,6 +55,19 @@ const openNotificationTarget = (
     }));
     return true;
   }
+  if (notification.target.kind === 'note_invitation') {
+    if (!notification.target.noteInvitationId) return false;
+    window.dispatchEvent(new Event('kyrub:open-shared-notes'));
+    return true;
+  }
+  if (notification.target.kind === 'social_chat') {
+    if (!notification.target.connectionId || !notification.actorPrincipalId ||
+        notification.actorPrincipalId === user.uid) return false;
+    window.dispatchEvent(new CustomEvent('kyrub:open-social-chat', {
+      detail: { connectionId: notification.target.connectionId, friendId: notification.actorPrincipalId },
+    }));
+    return true;
+  }
   if (notification.target.kind !== 'store_chat') return false;
   const perspective = notification.target.customerId === user.uid
     ? 'customer'
@@ -447,7 +460,7 @@ export function UserNotificationCenterBridge() {
                     >
                       <button type="button" onClick={() => void readOne(notification)} className="flex min-w-0 flex-1 items-start gap-3 text-left">
                       <div className={`mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl ${unread ? 'bg-orange-500/15 text-orange-300' : 'bg-slate-900 text-slate-500'}`}>
-                        {notification.category === 'store_chat'
+                        {(notification.category === 'store_chat' || notification.category === 'social_chat')
                           ? <MessageSquareText className="h-4 w-4" />
                           : <Bell className="h-4 w-4" />}
                       </div>
