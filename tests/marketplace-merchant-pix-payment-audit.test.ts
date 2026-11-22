@@ -200,3 +200,54 @@ test('legacy reconciliation correlates only verified provider states and open ob
  const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
  assert.match(panel,/Histórico legado · conciliação com a conta recebedora/);
 });
+
+test('official operational cutover is a one-time presentation marker, not deletion or payment settlement',async()=>{
+ const {
+  OFFICIAL_PHASE_STORE_ID,OFFICIAL_PHASE_CONFIRMATION,validOfficialPhaseActivation,
+  showOrderInCurrentPhase,effectiveHistoryStart
+ }=await import('../shared/officialOperationalPhase.js');
+ const payload={storeId:OFFICIAL_PHASE_STORE_ID,action:'start-operational-phase',confirmation:OFFICIAL_PHASE_CONFIRMATION};
+ assert.equal(validOfficialPhaseActivation(payload),true);
+ assert.equal(validOfficialPhaseActivation({...payload,storeId:'another-store'}),false);
+ assert.equal(validOfficialPhaseActivation({...payload,confirmation:'SIM'}),false);
+ assert.equal(validOfficialPhaseActivation({...payload,extra:'unsafe'}),false);
+ assert.equal(showOrderInCurrentPhase({status:'completed',createdAt:'2026-11-20T12:00:00Z'},'2026-11-22T12:00:00Z'),false);
+ assert.equal(showOrderInCurrentPhase({status:'rejected',createdAt:'2026-11-20T12:00:00Z'},'2026-11-22T12:00:00Z'),false);
+ assert.equal(showOrderInCurrentPhase({status:'cancelled',createdAt:'2026-11-20T12:00:00Z'},'2026-11-22T12:00:00Z'),false);
+ assert.equal(showOrderInCurrentPhase({status:'pending',createdAt:'2026-11-20T12:00:00Z'},'2026-11-22T12:00:00Z'),true);
+ assert.equal(showOrderInCurrentPhase({status:'preparing',createdAt:'2026-11-20T12:00:00Z'},'2026-11-22T12:00:00Z'),true);
+ assert.equal(showOrderInCurrentPhase({status:'completed',createdAt:'2026-11-23T12:00:00Z'},'2026-11-22T12:00:00Z'),true);
+ assert.equal(showOrderInCurrentPhase({status:'completed',createdAt:'invalid'},'2026-11-22T12:00:00Z'),true);
+ assert.equal(effectiveHistoryStart('2026-11-01T00:00:00Z','2026-11-22T00:00:00Z'),'2026-11-22T00:00:00Z');
+ assert.equal(effectiveHistoryStart('2026-12-01T00:00:00Z','2026-11-22T00:00:00Z'),'2026-12-01T00:00:00Z');
+ const service=read('server/admin/officialOperationalPhaseService.ts');
+ assert.match(service,/tx\.create\(markerRef/);
+ assert.match(service,/role!=='super_admin'/);
+ assert.match(service,/financialEvidence|financeBalancesUnaffected:true/);
+ assert.match(service,/paymentProcessingUnaffected:true/);
+ assert.match(service,/loadOwnerStoreInstitutionalRepresentation/);
+ assert.match(service,/official\.get\('legacyTenantId'\)!==input\.legacyStoreId/);
+ assert.doesNotMatch(service,/tx\.delete\(|tx\.update\(|cancelMercadoPago|mercadoPagoStoreRequest|\.collection\('payments'\)\.delete/);
+ const production=read('api/admin/operations/health.ts');
+ const local=read('server/admin/operationsHealthRouter.ts');
+ const owner=read('api/health.ts');
+ assert.match(production,/transport === 'kyrub-official-operational-phase'/);
+ assert.match(production,/validOfficialPhaseActivation\(request\.body\)/);
+ assert.match(production,/authorizeIntegrationReadiness\(authorization\)/);
+ assert.match(local,/validOfficialPhaseActivation\(request\.body\)/);
+ assert.match(owner,/transport === 'official-operational-phase'/);
+ assert.match(owner,/verifyFirebaseIdToken\(bearer\)/);
+ const history=read('server/payments/storeFinanceHistoryRouter.ts');
+ assert.match(history,/getOfficialOperationalPhaseForLegacyStore\(storeId\)/);
+ assert.match(history,/minOccurredAt:activeView==='current'/);
+ assert.match(history,/mode === 'period'/);
+ assert.match(history,/buildPeriodView\(storeId, period\)/);
+ assert.match(history,/effectiveHistoryStart/);
+ const historyUi=read('src/components/store/StoreFinanceHistoryWorkspace.tsx');
+ const orders=read('src/components/customer/CustomerOrderInbox.tsx');
+ const panel=read('src/components/admin/AdminKyrubOfficialTestHistoryCleanup.tsx');
+ assert.match(historyUi,/Histórico completo \(inclui testes\)/);
+ assert.match(orders,/showOrderInCurrentPhase\(order,phaseEffectiveAt\)/);
+ assert.match(orders,/Ver finalizados da fase de testes/);
+ assert.match(panel,/Iniciar nova fase sem excluir registros/);
+});

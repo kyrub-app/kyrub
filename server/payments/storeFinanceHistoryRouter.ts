@@ -1,6 +1,8 @@
 import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {getOfficialOperationalPhaseForLegacyStore} from '../admin/officialOperationalPhaseService.js';
+import {effectiveHistoryStart} from '../../shared/officialOperationalPhase.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import {
@@ -264,7 +266,7 @@ const recoverAllMissingCanonicalPaidCaptures = async (storeId: string): Promise<
 type HistoryItem = { id: string; kind: StoreEconomicLedgerKind; currency: 'BRL'; amountMinor: number; paymentId: string; orderId: string; buyerId: string; paymentMethod: PaymentMethod; provider: string; providerPaymentId: string; sourceAuthority: StoreEconomicLedgerSourceAuthority; occurredAt: string; providerFeeMinor: number | null };
 const toHistoryItem = (entry: StoreEconomicLedgerEntry): HistoryItem => ({ id: entry.id, kind: entry.kind, currency: 'BRL', amountMinor: entry.amountMinor, paymentId: entry.paymentId, orderId: entry.orderId, buyerId: entry.buyerId, paymentMethod: entry.paymentMethod, provider: entry.provider, providerPaymentId: entry.providerPaymentId, sourceAuthority: entry.sourceAuthority, occurredAt: entry.occurredAt, providerFeeMinor: providerFeeMinor(entry) });
 
-const listHistoryPage = async (input: { storeId: string; period: PeriodRange | null; kind: StoreEconomicLedgerKind | ''; paymentMethod: PaymentMethod | ''; cursor: HistoryCursor | null; limit: number }) => {
+const listHistoryPage = async (input: { storeId: string; period: PeriodRange | null; kind: StoreEconomicLedgerKind | ''; paymentMethod: PaymentMethod | ''; cursor: HistoryCursor | null; limit: number; minOccurredAt: string }) => {
   const matches: Array<{ item: HistoryItem; cursor: HistoryCursor }> = [];
   let scanCursor = input.cursor;
   let lastScannedCursor = input.cursor;
@@ -272,7 +274,9 @@ const listHistoryPage = async (input: { storeId: string; period: PeriodRange | n
   let scannedCount = 0;
   while (matches.length < input.limit + 1 && scannedCount < HISTORY_MAX_SCANNED_PER_REQUEST && !exhausted) {
     let query = adminDb.collection(`stores/${input.storeId}/economicLedger`).orderBy('occurredAt', 'desc').orderBy(FieldPath.documentId(), 'desc');
-    if (input.period) query = query.where('occurredAt', '>=', input.period.startIso).where('occurredAt', '<', input.period.endExclusiveIso);
+    const startIso=effectiveHistoryStart(input.period?.startIso??'',input.minOccurredAt);
+    if(startIso)query=query.where('occurredAt','>=',startIso);
+    if(input.period)query=query.where('occurredAt','<',input.period.endExclusiveIso);
     if (scanCursor) query = query.startAfter(scanCursor.occurredAt, scanCursor.documentId);
     const remainingScan = HISTORY_MAX_SCANNED_PER_REQUEST - scannedCount;
     const snapshot = await query.limit(Math.min(HISTORY_SCAN_BATCH, remainingScan)).get();
@@ -406,8 +410,21 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       const paymentMethod = parsePaymentMethodFilter(request.query.paymentMethod);
       const cursor = decodeCursor(request.query.cursor);
       const limit = historyLimit(request.query.limit);
-      const page = await listHistoryPage({ storeId, period, kind, paymentMethod, cursor, limit });
-      response.status(200).json({ storeId, recoveredCount, filters: { period: period?.period ?? '', kind: kind || 'all', paymentMethod: paymentMethod || 'all' }, ...page });
+      const rawView=clean(request.query.view)||'current';
+      if(rawView!=='current'&&rawView!=='all')throw Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
+      const phase=await getOfficialOperationalPhaseForLegacyStore(storeId);
+      const activeView=phase.active?rawView:'all';
+      const page = await listHistoryPage({
+        storeId,period,kind,paymentMethod,cursor,limit,
+        minOccurredAt:activeView==='current'?phase.effectiveAt:''
+      });
+      response.status(200).json({
+        storeId,recoveredCount,phase,view:activeView,
+        // Financial periods and obligations remain complete: this is
+        // exclusively a non-destructive history-list presentation filter.
+        filters:{period:period?.period??'',kind:kind||'all',paymentMethod:paymentMethod||'all'},
+        ...page
+      });
     } catch (error) {
       const mapped = mapError(error);
       response.status(mapped.status).json({ error: mapped.message, code: mapped.code });

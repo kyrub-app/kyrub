@@ -171,6 +171,25 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'kyrub-official-operational-phase') {
+    if(method!=='GET'&&method!=='POST'){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    try{
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const actor=await readiness.authorizeIntegrationReadiness(authorization);
+      const phase=await import('../../../server/admin/officialOperationalPhaseService.js');
+      if(method==='GET'){response.status(200).json(await phase.getOfficialOperationalPhaseForAdmin(actor.uid));return;}
+      const {validOfficialPhaseActivation}=await import('../../../shared/officialOperationalPhase.js');
+      if(!validOfficialPhaseActivation(request.body)){response.status(400).json({error:'Confirmação inválida.',code:'OFFICIAL_PHASE_CONFIRMATION_REQUIRED'});return;}
+      response.status(200).json(await phase.startOfficialOperationalPhase(actor.uid));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      if(code.startsWith('OFFICIAL_PHASE_')){response.status(code==='OFFICIAL_PHASE_FORBIDDEN'?403:409).json({error:'Não foi possível registrar o novo marco operacional.',code});return;}
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const mapped=readiness.mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-test-history-provider-audit') {
     if(method!=='GET'){response.status(405).json({error:'Método não permitido.',code:'METHOD_NOT_ALLOWED'});return;}
     try{

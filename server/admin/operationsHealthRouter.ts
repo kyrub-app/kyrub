@@ -24,6 +24,8 @@ import { loadOperationalResponsibilityReviewQueue } from './operationalResponsib
 import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
 import { inspectKyrubOfficialProviderEvidence } from './mercadoPagoTestHistoryProviderAuditService.js';
 import { inspectOfficialTestHistory } from './mercadoPagoTestHistoryCleanupService.js';
+import {getOfficialOperationalPhaseForAdmin,startOfficialOperationalPhase} from './officialOperationalPhaseService.js';
+import {validOfficialPhaseActivation} from '../../shared/officialOperationalPhase.js';
 import { validKyrubOfficialTestHistoryRequest } from '../../shared/kyrubOfficialTestHistoryCleanup.js';
 import { loadMerchantPixStorePaymentAudit } from './mercadoPagoMerchantPixPaymentAuditService.js';
 
@@ -173,6 +175,17 @@ export const createOperationsHealthRouter = (): Router => {
       }
       return;
     }
+    if(transport==='kyrub-official-operational-phase'){
+      try{
+        const actor=await authorizeIntegrationReadiness(request.get('authorization')??'');
+        response.setHeader('Cache-Control','no-store, max-age=0');
+        response.json(await getOfficialOperationalPhaseForAdmin(actor.uid));
+      }catch(error){
+        const code=error instanceof Error?error.message:'';
+        if(code.startsWith('OFFICIAL_PHASE_'))response.status(409).json({error:'Marco operacional indisponível.',code});
+        else{const mapped=mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);}
+      }return;
+    }
     if(transport==='mercado-pago-test-history-provider-audit'){
       try{
         const admin=await authorizeIntegrationReadiness(request.get('authorization')??'');
@@ -255,6 +268,14 @@ export const createOperationsHealthRouter = (): Router => {
     const transport = clean(request.query.transport);
     const authorization = request.get('authorization') ?? '';
     try {
+      if(transport==='kyrub-official-operational-phase'){
+        const actor=await authorizeIntegrationReadiness(authorization);
+        if(!validOfficialPhaseActivation(request.body)){
+          response.status(400).json({error:'Confirmação inválida.',code:'OFFICIAL_PHASE_CONFIRMATION_REQUIRED'});return;
+        }
+        response.setHeader('Cache-Control','no-store, max-age=0');
+        response.json(await startOfficialOperationalPhase(actor.uid));return;
+      }
       if(transport==='mercado-pago-test-history-cleanup'){
         const admin=await authorizeIntegrationReadiness(authorization);
         if(!validKyrubOfficialTestHistoryRequest(request.body)){
