@@ -17,6 +17,7 @@ export interface CreditInterestProposal {
   orderId: string;
   buyerId: string;
   paymentId: string;
+  paymentStoreId: string;
   amountMinor: number;
   status: CreditInterestStatus;
   creditIssued: false;
@@ -32,23 +33,43 @@ const assertIds = (storeId: string, orderId: string): void => {
   }
 };
 
-const verifiedPaidPayment = async (storeId: string, orderId: string): Promise<CanonicalPayment> => {
-  const matches = await adminDb.collection('stores/' + storeId + '/payments')
-    .where('orderId', '==', orderId).limit(10).get();
-  const payments = matches.docs.flatMap(document => {
+const canonicalStoreForLegacyOwner = async (legacyStoreId: string): Promise<string> => {
+  const tenant = await adminDb.doc('tenants/' + legacyStoreId).get();
+  const canonicalId = clean(tenant.get('canonicalStoreId')) || legacyStoreId;
+  if (!validId(canonicalId)) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  if (canonicalId !== legacyStoreId) {
+    const canonical = await adminDb.doc('stores/' + canonicalId).get();
+    if (!canonical.exists || clean(canonical.get('ownerId')) !== legacyStoreId) {
+      throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+    }
+  }
+  return canonicalId;
+};
+
+const verifiedPaidPayment = async (
+  legacyStoreId: string, canonicalStoreId: string, orderId: string
+): Promise<CanonicalPayment> => {
+  const roots = [...new Set([canonicalStoreId, legacyStoreId])];
+  const snapshots = await Promise.all(roots.map(storeId =>
+    adminDb.collection('stores/' + storeId + '/payments')
+      .where('orderId', '==', orderId).limit(10).get()
+  ));
+  const all = snapshots.flatMap((snapshot, index) => snapshot.docs.map(document => {
+    const storeId = roots[index];
     try {
-      const payment = normalizeCanonicalPayment({
+      return normalizeCanonicalPayment({
         ...(document.data() as CanonicalPayment), id: document.id, storeId,
       });
-      return payment.status === 'paid' && payment.provider === 'mercado-pago' &&
-        payment.providerPaymentId ? [payment] : [];
-    } catch { return []; }
-  });
-  // No offer when there is ambiguous, refunded, partial or non-authoritative payment.
-  if (matches.size !== 1 || payments.length !== 1) {
+    } catch { return null; }
+  }));
+  // Duplicate mirrors or inconsistent payments require manual reconciliation.
+  if (snapshots.reduce((sum, item) => sum + item.size, 0) !== 1 ||
+      all.length !== 1 || !all[0] ||
+      all[0].status !== 'paid' || all[0].provider !== 'mercado-pago' ||
+      !all[0].providerPaymentId) {
     throw new Error('CREDIT_INTEREST_PAYMENT_UNVERIFIED');
   }
-  return payments[0];
+  return all[0];
 };
 
 /**
@@ -66,9 +87,10 @@ export const proposeOrderCreditInterest = async (input: {
   const actorId = clean(input.actorId);
   assertIds(storeId, orderId);
   if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
-  const payment = await verifiedPaidPayment(storeId, orderId);
+  const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
+  const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
   const orderRef = adminDb.doc(orderPath(storeId, orderId));
-  const paymentRef = adminDb.doc('stores/' + storeId + '/payments/' + payment.id);
+  const paymentRef = adminDb.doc('stores/' + payment.storeId + '/payments/' + payment.id);
   const proposalRef = adminDb.doc(proposalPath(storeId, orderId));
   const now = new Date().toISOString();
 
@@ -99,7 +121,7 @@ export const proposeOrderCreditInterest = async (input: {
       const previous = proposalSnapshot.data() as CreditInterestProposal;
       if (previous.schemaVersion !== 1 || previous.storeId !== storeId ||
           previous.orderId !== orderId || previous.buyerId !== buyerId ||
-          previous.paymentId !== payment.id) {
+          previous.paymentId !== payment.id || previous.paymentStoreId !== payment.storeId) {
         throw new Error('CREDIT_INTEREST_PROPOSAL_CONFLICT');
       }
       return previous;
@@ -110,7 +132,7 @@ export const proposeOrderCreditInterest = async (input: {
     }
     const proposal: CreditInterestProposal = {
       schemaVersion: 1, storeId, orderId, buyerId, paymentId: payment.id,
-      amountMinor, status: 'awaiting_response', creditIssued: false,
+      paymentStoreId: payment.storeId, amountMinor, status: 'awaiting_response', creditIssued: false,
       paymentRefunded: false, offeredAt: now, offeredBy: actorId, respondedAt: '',
     };
     const notification = buildUserNotification({
@@ -119,13 +141,11 @@ export const proposeOrderCreditInterest = async (input: {
       actorPrincipalId: buildStoreInstitutionalPrincipalId(storeId),
       title: 'Proposta sobre pedido cancelado',
       body: 'A loja quer consultar seu interesse em receber crédito para uma compra futura. Nenhum cupom foi emitido e você mantém a opção de devolução do pagamento.',
-      target: { kind: 'storefront', storeId, customerId: buyerId, orderId },
+      target: { kind: 'storefront', storeId: canonicalStoreId, customerId: buyerId, orderId },
       createdAt: now,
     });
     transaction.create(proposalRef, proposal);
-    transaction.set(userNotificationPath(buyerId, notification.id)
-      ? adminDb.doc(userNotificationPath(buyerId, notification.id))
-      : proposalRef, notification);
+    transaction.set(adminDb.doc(userNotificationPath(buyerId, notification.id)), notification);
     return proposal;
   });
 };
@@ -137,12 +157,22 @@ export const listOwnCreditInterestProposals = async (input: {
   const storeId = clean(input.storeId);
   const buyerId = clean(input.buyerId);
   if (!validId(storeId) || !validId(buyerId)) throw new Error('CREDIT_INTEREST_INVALID_TARGET');
-  const snapshot = await adminDb.collection('stores/' + storeId + '/orderCreditInterestProposals')
+  // A public storefront uses its canonical store ID; the operating ERP uses
+  // the owner/tenant ID. Resolve only through the authenticated server-owned
+  // canonical store record, never accept a buyer-supplied owner alias.
+  const canonical = await adminDb.doc('stores/' + storeId).get();
+  const legacyStoreId = clean(canonical.get('ownerId'));
+  if (!canonical.exists || !validId(legacyStoreId)) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
+  const mappedCanonical = await canonicalStoreForLegacyOwner(legacyStoreId);
+  if (mappedCanonical !== storeId) throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  const snapshot = await adminDb.collection('stores/' + legacyStoreId + '/orderCreditInterestProposals')
     .where('buyerId', '==', buyerId).limit(25).get();
   return snapshot.docs.flatMap(document => {
     const value = document.data() as CreditInterestProposal;
     return value.schemaVersion === 1 && value.buyerId === buyerId &&
-      value.storeId === storeId && value.orderId === document.id &&
+      value.storeId === legacyStoreId && value.orderId === document.id &&
       value.creditIssued === false ? [value] : [];
   });
 };
@@ -171,7 +201,8 @@ export const respondToOrderCreditInterest = async (input: {
     }
     if (proposal.status === input.choice) return proposal;
     if (proposal.status !== 'awaiting_response') throw new Error('CREDIT_INTEREST_ALREADY_RESPONDED');
-    const paymentRef = adminDb.doc('stores/' + storeId + '/payments/' + proposal.paymentId);
+    if (!validId(proposal.paymentStoreId)) throw new Error('CREDIT_INTEREST_PAYMENT_UNVERIFIED');
+    const paymentRef = adminDb.doc('stores/' + proposal.paymentStoreId + '/payments/' + proposal.paymentId);
     const paymentSnapshot = await transaction.get(paymentRef);
     if (!paymentSnapshot.exists || clean(paymentSnapshot.get('status')) !== 'paid') {
       throw new Error('CREDIT_INTEREST_PAYMENT_CHANGED');
