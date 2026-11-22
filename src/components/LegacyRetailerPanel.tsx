@@ -11,6 +11,7 @@ import { Tenant, Store, Product, Order } from '../types';
 import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
 import { auth } from '../utils/firebase';
 import { StoreStaffNoticeInbox } from './store/StoreStaffNoticeInbox';
+import { StoreStaffPopInbox } from './store/StoreStaffPopInbox';
 
 // ==========================================
 // RETAILER PANEL MAIN COMPONENT
@@ -75,7 +76,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // 5. COLLABORATOR PORTAL / CANONICAL TIME CLOCK
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
   const [pontoLoading, setPontoLoading] = useState(false);
-  const [staffPanelTab, setStaffPanelTab] = useState<'ponto' | 'avisos'>('ponto');
+  const [staffPanelTab, setStaffPanelTab] = useState<'ponto' | 'avisos' | 'pops'>('ponto');
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
   // Customization States
@@ -396,6 +397,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 <button type="button" onClick={() => setStaffPanelTab('avisos')}
                   aria-current={staffPanelTab === 'avisos' ? 'page' : undefined}
                   className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold ${staffPanelTab === 'avisos' ? 'border-orange-500 bg-orange-500/15 text-orange-300' : 'border-slate-700 text-slate-300'}`}>Avisos</button>
+                <button type="button" onClick={() => setStaffPanelTab('pops')}
+                  aria-current={staffPanelTab === 'pops' ? 'page' : undefined}
+                  className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold ${staffPanelTab === 'pops' ? 'border-orange-500 bg-orange-500/15 text-orange-300' : 'border-slate-700 text-slate-300'}`}>Manuais POP</button>
               </nav>
               {staffPanelTab === 'ponto' ? (
               <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-3xl text-center space-y-4">
@@ -442,7 +446,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                   )}
                 </div>
               </div>
-              ) : <StoreStaffNoticeInbox storeId={activeRetailerId} />}
+              ) : staffPanelTab === 'avisos' ? (
+                <StoreStaffNoticeInbox storeId={activeRetailerId} />
+              ) : <StoreStaffPopInbox storeId={activeRetailerId} />}
             </div>
           )}
 

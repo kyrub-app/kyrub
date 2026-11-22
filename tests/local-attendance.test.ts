@@ -373,7 +373,7 @@ describe('canonical local attendance', () => {
     for (const title of ['Avisos e comunicados', 'Manuais POP', 'Tarefas e checklists', 'Escalas de trabalho']) {
       assert.ok(cards.includes("title: '" + title + "'"), 'Missing card: ' + title);
     }
-    assert.match(cards, /onClick=\{\(\) => setSelectedArea\('avisos'\)\}/);
+    assert.match(cards, /onClick=\{\(\) => setSelectedArea\(id\)\}/);
     assert.match(cards, /<StoreStaffNoticeManager storeId=\{storeId\}/);
     assert.match(cards, /Em preparação/);
     assert.doesNotMatch(cards, /<details|<summary/);
