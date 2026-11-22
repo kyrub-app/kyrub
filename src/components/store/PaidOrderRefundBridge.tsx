@@ -57,6 +57,31 @@ interface RefundResponse {
   code?: string;
 }
 
+interface RefundReadOnlyDiagnosis {
+  source: 'firestore_read_only';
+  order: {
+    status: string;
+    paymentStatus: string;
+    refundStatus: string;
+    operationalTotalMinor: number | null;
+  };
+  payments: {
+    count: number;
+    truncated: boolean;
+    records: Array<{ scope: 'erp' | 'canonical'; status: string; provider: string; amountMinor: number | null }>;
+  };
+  partialRefunds: {
+    count: number;
+    truncated: boolean;
+    confirmedCount: number;
+    confirmedAmountMinor: number;
+    unresolvedCount: number;
+    statusCounts: Record<string, number>;
+  };
+  blockers: string[];
+  notice: string;
+}
+
 interface PartialCancellationResponse {
   orderId?: string;
   operationId?: string;
@@ -144,6 +169,9 @@ export const PaidOrderRefundBridge = ({
   const [reason, setReason] = useState('Pedido recusado pelo lojista');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [diagnostic, setDiagnostic] = useState<RefundReadOnlyDiagnosis | null>(null);
+  const [diagnosticBusy, setDiagnosticBusy] = useState(false);
+  const [diagnosticError, setDiagnosticError] = useState('');
   const [minimizedRefundOrderId, setMinimizedRefundOrderId] = useState<string | null>(null);
 
   const [rejectionOrder, setRejectionOrder] = useState<RefundCandidate | null>(null);
@@ -430,6 +458,47 @@ export const PaidOrderRefundBridge = ({
     setSelectedOrder(order);
     setReason(order.refundReason || 'Pedido recusado pelo lojista');
     setError('');
+    setDiagnostic(null);
+    setDiagnosticError('');
+  };
+
+  const inspectRefund = async (): Promise<void> => {
+    if (!selectedOrder || diagnosticBusy) return;
+    const user = auth.currentUser;
+    if (!user) {
+      setDiagnosticError('Entre na sua conta para conferir o pedido.');
+      return;
+    }
+    setDiagnosticBusy(true);
+    setDiagnosticError('');
+    setDiagnostic(null);
+    try {
+      const token = await user.getIdToken();
+      const query = new URLSearchParams({
+        transport: 'store-promotions',
+        surface: 'refunds',
+        path: 'diagnostic',
+        storeId,
+        orderId: selectedOrder.id,
+      });
+      const response = await fetch('/api/health?' + query.toString(), {
+        headers: { authorization: `Bearer ${token}` },
+        cache: 'no-store',
+      });
+      const result = await response.json().catch(() => ({})) as RefundReadOnlyDiagnosis & { error?: string };
+      if (!response.ok || result.source !== 'firestore_read_only') {
+        throw new Error(result.error || 'Não foi possível consultar os registros financeiros.');
+      }
+      setDiagnostic(result);
+    } catch (diagnosticFailure) {
+      setDiagnosticError(
+        diagnosticFailure instanceof Error
+          ? diagnosticFailure.message
+          : 'Não foi possível consultar os registros financeiros.'
+      );
+    } finally {
+      setDiagnosticBusy(false);
+    }
   };
 
   const confirmRefund = async (): Promise<void> => {
@@ -820,6 +889,51 @@ export const PaidOrderRefundBridge = ({
                 className="mt-2 w-full rounded-2xl border border-slate-700 bg-slate-950 px-3 py-3 text-[11px] normal-case text-white outline-none focus:border-amber-400"
               />
             </label>
+
+            <button
+              type="button"
+              onClick={() => void inspectRefund()}
+              disabled={diagnosticBusy || busy}
+              className="mt-4 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-amber-500/40 bg-slate-950 px-4 text-[11px] font-bold text-amber-200 disabled:opacity-40"
+            >
+              {diagnosticBusy && <LoaderCircle className="h-4 w-4 animate-spin" />}
+              Conferir cobrança e histórico (somente leitura)
+            </button>
+            {diagnosticError && (
+              <p role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 p-3 text-[11px] text-red-200">
+                {diagnosticError}
+              </p>
+            )}
+            {diagnostic && (
+              <div className="mt-3 space-y-2 rounded-2xl border border-amber-500/25 bg-slate-950 p-3 text-[11px] leading-relaxed text-slate-200">
+                <p className="font-bold text-amber-200">Conferência dos registros</p>
+                <p>Valor no pedido: {diagnostic.order.operationalTotalMinor === null
+                  ? 'indisponível'
+                  : money.format(diagnostic.order.operationalTotalMinor / 100)}</p>
+                <p>Pagamento(s) encontrado(s): {diagnostic.payments.count}
+                  {diagnostic.payments.truncated ? ' (consulta limitada)' : ''}</p>
+                {diagnostic.payments.records.map((payment, index) => (
+                  <p key={index} className="pl-2 text-slate-300">
+                    {payment.scope === 'canonical' ? 'Loja canônica' : 'ERP'} · {payment.status} ·
+                    {' '}{payment.amountMinor === null ? 'valor não confirmado' : money.format(payment.amountMinor / 100)}
+                  </p>
+                ))}
+                <p>Histórico parcial: {diagnostic.partialRefunds.count} registro(s);
+                  {' '}{diagnostic.partialRefunds.unresolvedCount} incerto(s);
+                  {' '}{diagnostic.partialRefunds.confirmedCount} confirmado(s)
+                  {diagnostic.partialRefunds.truncated ? ' (acima do limite)' : ''}.</p>
+                {diagnostic.partialRefunds.count > 0 && (
+                  <p className="text-slate-400">Estados encontrados: {Object.entries(diagnostic.partialRefunds.statusCounts)
+                    .map(([status, count]) => `${status}: ${count}`).join(' · ')}</p>
+                )}
+                {diagnostic.blockers.length > 0 && (
+                  <p className="text-amber-200">
+                    Pendências de conciliação: {diagnostic.blockers.join(', ')}.
+                  </p>
+                )}
+                <p className="text-slate-400">{diagnostic.notice}</p>
+              </div>
+            )}
 
             {selectedDisplayAmount === null && (
               <p role="alert" className="mt-3 rounded-2xl border border-amber-500/25 bg-amber-500/10 px-3 py-2 text-[10px] leading-relaxed text-amber-100">
