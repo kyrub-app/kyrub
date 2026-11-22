@@ -131,11 +131,23 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
               </button>
             </div>
           ) : (
-            <p className="mt-3 rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-200" role="status">
-              {proposal.status === 'interested'
-                ? 'Interesse registrado. Ainda não há cupom emitido nem acordo financeiro concluído.'
-                : 'Preferência pelo reembolso registrada. O pagamento segue aguardando a devolução no fluxo financeiro.'}
-            </p>
+            <div className="mt-3 space-y-2">
+              <p className="rounded-xl border border-slate-700 bg-slate-950 p-3 text-[11px] text-slate-200" role="status">
+                {proposal.status === 'interested'
+                  ? 'Interesse registrado. Ainda não há cupom emitido nem acordo financeiro concluído.'
+                  : 'Preferência pelo reembolso registrada. O pagamento segue aguardando a devolução no fluxo financeiro.'}
+              </p>
+              {proposal.status === 'interested' && (
+                <button
+                  type="button"
+                  disabled={Boolean(busyOrderId)}
+                  onClick={() => void respond(proposal, 'prefers_refund')}
+                  className="min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-bold text-slate-200 disabled:opacity-50"
+                >
+                  Mudei de ideia: prefiro a devolução do pagamento
+                </button>
+              )}
+            </div>
           )}
         </article>
       ))}
