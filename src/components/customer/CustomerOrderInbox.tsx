@@ -230,6 +230,10 @@ export const CustomerOrderInbox = ({
   const [pickupBusy, setPickupBusy] = useState(false);
   const [rejectionReason, setRejectionReason] = useState('');
   const [suggestedAlternative, setSuggestedAlternative] = useState('');
+  const [rejectionError, setRejectionError] = useState('');
+  const [routingError, setRoutingError] = useState('');
+  const [rejectionBusy, setRejectionBusy] = useState(false);
+  const [routingBusy, setRoutingBusy] = useState(false);
 
   useEffect(()=>{
     let disposed=false;
@@ -430,22 +434,42 @@ export const CustomerOrderInbox = ({
   ];
 
   const confirmRejection = async (): Promise<void> => {
-    if (!rejectingOrder || !rejectionReason.trim()) return;
-    await onChangeStatus(rejectingOrder, 'rejected', {
-      reason: rejectionReason,
-      alternative: suggestedAlternative,
-    });
-    setRejectingOrder(null);
-    setRejectionReason('');
-    setSuggestedAlternative('');
+    if (!rejectingOrder || !rejectionReason.trim() || rejectionBusy) return;
+    setRejectionBusy(true);
+    setRejectionError('');
+    try {
+      await onChangeStatus(rejectingOrder, 'rejected', {
+        reason: rejectionReason,
+        alternative: suggestedAlternative,
+      });
+      setRejectingOrder(null);
+      setRejectionReason('');
+      setSuggestedAlternative('');
+    } catch (error) {
+      setRejectionError(
+        error instanceof Error ? error.message : 'A recusa não foi confirmada pelo servidor.'
+      );
+    } finally {
+      setRejectionBusy(false);
+    }
   };
 
   const confirmDeliveryProvider = async (
     provider: OrderDeliveryProvider
   ): Promise<void> => {
-    if (!routingOrder) return;
-    await onChangeStatus(routingOrder, 'accepted', { deliveryProvider: provider });
-    setRoutingOrder(null);
+    if (!routingOrder || routingBusy) return;
+    setRoutingBusy(true);
+    setRoutingError('');
+    try {
+      await onChangeStatus(routingOrder, 'accepted', { deliveryProvider: provider });
+      setRoutingOrder(null);
+    } catch (error) {
+      setRoutingError(
+        error instanceof Error ? error.message : 'A escolha de entrega não foi confirmada pelo servidor.'
+      );
+    } finally {
+      setRoutingBusy(false);
+    }
   };
 
   const openPickupHandoff = (order: CustomerOrder): void => {
@@ -633,13 +657,17 @@ export const CustomerOrderInbox = ({
                           setRejectingOrder(order);
                           setRejectionReason('');
                           setSuggestedAlternative('');
+                          setRejectionError('');
                           return;
                         }
                         if (action.status === 'accepted' && order.fulfillmentType === 'delivery') {
                           setRoutingOrder(order);
+                          setRoutingError('');
                           return;
                         }
-                        void onChangeStatus(order, action.status);
+                        // The parent displays the server error; consume the rejected
+                        // promise here instead of leaving an unhandled rejection.
+                        void onChangeStatus(order, action.status).catch(() => undefined);
                       }} className={`flex min-h-10 flex-1 items-center justify-center gap-1.5 rounded-xl px-3 py-2 text-[10px] font-black uppercase tracking-wide disabled:cursor-not-allowed disabled:opacity-50 ${action.emphasis ? 'bg-emerald-600 text-white hover:bg-emerald-500' : 'border border-red-500/25 bg-red-500/10 text-red-300 hover:bg-red-500/20'}`}>
                         {action.status === 'rejected' ? <XCircle className="h-3.5 w-3.5" /> : action.status === 'completed' ? <CheckCircle2 className="h-3.5 w-3.5" /> : action.status === 'out_for_delivery' ? <Truck className="h-3.5 w-3.5" /> : <PackageCheck className="h-3.5 w-3.5" />}
                         {isBusy ? 'Atualizando...' : action.label}
@@ -685,11 +713,12 @@ export const CustomerOrderInbox = ({
           <section className="w-full max-w-lg rounded-t-3xl border border-cyan-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start justify-between gap-3">
               <div><span className="font-mono text-[9px] font-black uppercase tracking-wide text-cyan-300">Logística do pedido</span><h3 className="mt-1 text-lg font-black text-white">Como deseja realizar a entrega?</h3><p className="mt-2 text-[11px] leading-relaxed text-slate-400">A escolha é feita agora. Se você escolher Kyrub, a oportunidade será publicada para os entregadores quando clicar em “Iniciar preparo”.</p></div>
-              <button type="button" onClick={() => setRoutingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"><X className="h-4 w-4" /></button>
+              <button type="button" disabled={routingBusy} onClick={() => setRoutingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"><X className="h-4 w-4" /></button>
             </div>
+            {routingError && <p role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">{routingError}</p>}
             <div className="mt-5 grid gap-3 sm:grid-cols-2">
-              <button type="button" disabled={busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('kyrub')} className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-left transition hover:bg-orange-500/20 disabled:opacity-40"><Truck className="h-5 w-5 text-orange-400" /><strong className="mt-2 block text-sm text-white">Solicitar entregador Kyrub</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">Vai para o mural de entregas ao iniciar o preparo.</span></button>
-              <button type="button" disabled={busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('merchant')} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-slate-500 disabled:opacity-40"><UserRound className="h-5 w-5 text-cyan-300" /><strong className="mt-2 block text-sm text-white">Usar entregador próprio</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">O pedido continua no KDS, sem publicar corrida no Kyrub.</span></button>
+              <button type="button" disabled={routingBusy || busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('kyrub')} className="rounded-2xl border border-orange-500/30 bg-orange-500/10 p-4 text-left transition hover:bg-orange-500/20 disabled:opacity-40"><Truck className="h-5 w-5 text-orange-400" /><strong className="mt-2 block text-sm text-white">Solicitar entregador Kyrub</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">Vai para o mural de entregas ao iniciar o preparo.</span></button>
+              <button type="button" disabled={routingBusy || busyOrderId === routingOrder.id} onClick={() => void confirmDeliveryProvider('merchant')} className="rounded-2xl border border-slate-700 bg-slate-950 p-4 text-left transition hover:border-slate-500 disabled:opacity-40"><UserRound className="h-5 w-5 text-cyan-300" /><strong className="mt-2 block text-sm text-white">Usar entregador próprio</strong><span className="mt-1 block text-[10px] leading-relaxed text-slate-400">O pedido continua no KDS, sem publicar corrida no Kyrub.</span></button>
             </div>
           </section>
         </div>
@@ -698,10 +727,16 @@ export const CustomerOrderInbox = ({
       {rejectingOrder && (
         <div className="fixed inset-0 z-[145] flex items-end justify-center bg-slate-950/85 backdrop-blur-sm sm:items-center sm:p-5">
           <section className="w-full max-w-lg rounded-t-3xl border border-red-500/25 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
-            <div className="flex items-start justify-between gap-3"><div><span className="font-mono text-[9px] font-black uppercase tracking-wide text-red-300">Recusar pedido</span><h3 className="mt-1 text-lg font-black text-white">Explique e sugira uma alternativa</h3></div><button type="button" onClick={() => setRejectingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500"><X className="h-4 w-4" /></button></div>
+            <div className="flex items-start justify-between gap-3"><div><span className="font-mono text-[9px] font-black uppercase tracking-wide text-red-300">Recusar pedido</span><h3 className="mt-1 text-lg font-black text-white">Explique e sugira uma alternativa</h3></div><button type="button" disabled={rejectionBusy} onClick={() => setRejectingOrder(null)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500 disabled:opacity-40"><X className="h-4 w-4" /></button></div>
+            {rejectingOrder.paymentStatus === 'paid' && (
+              <p role="status" className="mt-3 rounded-xl border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-[11px] leading-relaxed text-amber-100">
+                Este pedido já foi pago. Recusar o pedido não estorna o pagamento automaticamente. A devolução deverá ser processada e confirmada no fluxo de reembolso, sem considerar o valor devolvido antes da confirmação do provedor.
+              </p>
+            )}
             <label className="mt-4 block text-[9px] font-black uppercase text-red-200">Motivo obrigatório<textarea value={rejectionReason} onChange={event => setRejectionReason(event.target.value)} rows={3} className="mt-1.5 w-full rounded-xl border border-red-500/20 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-red-400" /></label>
             <label className="mt-3 block text-[9px] font-black uppercase text-slate-500">Alternativa sugerida<input type="text" value={suggestedAlternative} onChange={event => setSuggestedAlternative(event.target.value)} placeholder="Ex.: trocar por um item semelhante disponível" className="mt-1.5 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-[10px] normal-case text-white outline-none focus:border-orange-500" /></label>
-            <button type="button" onClick={() => void confirmRejection()} disabled={!rejectionReason.trim() || busyOrderId === rejectingOrder.id} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"><XCircle className="h-4 w-4" />Confirmar recusa</button>
+            {rejectionError && <p role="alert" className="mt-3 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-[11px] text-red-200">{rejectionError}</p>}
+            <button type="button" onClick={() => void confirmRejection()} disabled={!rejectionReason.trim() || rejectionBusy || busyOrderId === rejectingOrder.id} className="mt-5 flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-red-600 px-4 text-[10px] font-black uppercase text-white disabled:opacity-40"><XCircle className="h-4 w-4" />{rejectingOrder.paymentStatus === 'paid' ? 'Recusar (reembolso separado)' : 'Confirmar recusa'}</button>
           </section>
         </div>
       )}

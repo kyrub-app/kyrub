@@ -9,6 +9,7 @@ import {
   ShieldCheck,
   X,
 } from 'lucide-react';
+import { onAuthStateChanged } from 'firebase/auth';
 import { collection, onSnapshot } from 'firebase/firestore';
 import { auth, db } from '../../utils/firebase';
 import { updateOrderStatusWithDecision } from '../../utils/orderWorkflow';
@@ -145,13 +146,22 @@ export const PaidOrderRefundBridge = ({
   const [partialResult, setPartialResult] = useState<PartialCancellationResponse | null>(null);
 
   useEffect(() => {
-    const user = auth.currentUser;
-    if (!storeId || !user || user.uid !== storeId) {
+    if (!storeId) {
       setOrders([]);
       return;
     }
-    return onSnapshot(
-      collection(db, `artifacts/${storeId}/public/data/customerOrders`),
+    let unsubscribeOrders: () => void = () => undefined;
+    const unsubscribeAuth = onAuthStateChanged(auth, user => {
+      unsubscribeOrders();
+      unsubscribeOrders = () => undefined;
+      if (!user) {
+        setOrders([]);
+        return;
+      }
+      // Firestore rules authorize reads; ownership for mutations is checked
+      // by the refund backend against the canonical store representation.
+      unsubscribeOrders = onSnapshot(
+        collection(db, `artifacts/${storeId}/public/data/customerOrders`),
       snapshot => {
         setOrders(
           snapshot.docs.map(document => {
@@ -193,10 +203,16 @@ export const PaidOrderRefundBridge = ({
           })
         );
       },
-      snapshotError => {
-        console.warn('Pedidos/reembolsos indisponíveis.', snapshotError);
-      }
-    );
+        snapshotError => {
+          console.warn('Pedidos/reembolsos indisponíveis.', snapshotError);
+          setOrders([]);
+        }
+      );
+    });
+    return () => {
+      unsubscribeAuth();
+      unsubscribeOrders();
+    };
   }, [storeId]);
 
   const openScopedRejection = (order: RefundCandidate): void => {
@@ -310,8 +326,8 @@ export const PaidOrderRefundBridge = ({
   const confirmScopedRejection = async (): Promise<void> => {
     if (!rejectionOrder || !rejectionReason.trim() || !rejectionScope) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== storeId) {
-      setRejectionError('Faça login novamente para alterar este pedido.');
+    if (!user) {
+      setRejectionError('Entre na sua conta para alterar este pedido.');
       return;
     }
 
@@ -405,8 +421,8 @@ export const PaidOrderRefundBridge = ({
   const confirmRefund = async (): Promise<void> => {
     if (!selectedOrder || !reason.trim()) return;
     const user = auth.currentUser;
-    if (!user || user.uid !== storeId) {
-      setError('Faça login novamente para reembolsar este pagamento.');
+    if (!user) {
+      setError('Entre na sua conta para solicitar o reembolso.');
       return;
     }
     setBusy(true);

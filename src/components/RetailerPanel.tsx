@@ -365,8 +365,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
   ): Promise<void> => {
     const user = auth.currentUser;
     if (!user) {
-      triggerToast('Faça login novamente para atualizar o pedido.', 'error');
-      return;
+      const message = 'A sessão não está disponível para atualizar este pedido. Nenhuma alteração foi aplicada.';
+      triggerToast(message, 'error');
+      throw new Error(message);
     }
 
     setBusyOrderId(order.id);
@@ -378,7 +379,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         status,
         decision
       );
-      triggerToast('Status do pedido atualizado.', 'success');
+      triggerToast(
+        status === 'rejected' && order.paymentStatus === 'paid'
+          ? 'Pedido recusado. O pagamento permanece registrado. Se a devolução for devida, solicite o reembolso no fluxo financeiro e acompanhe a confirmação do provedor.'
+          : 'Status do pedido atualizado.',
+        'success'
+      );
     } catch (error) {
       console.error('Falha ao atualizar pedido do cliente:', error);
       triggerToast(
@@ -387,6 +393,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
           : 'Não foi possível atualizar o pedido.',
         'error'
       );
+      // The KDS modal must remain open when the server rejects this action.
+      throw error;
     } finally {
       setBusyOrderId('');
     }

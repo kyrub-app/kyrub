@@ -201,3 +201,24 @@ test('KDS origin filter is driven by canonical connected sales channels', () => 
   assert.match(customerOrdersSource, /value === 'shopee'/);
   assert.match(customerOrdersSource, /value === 'ifood'/);
 });
+
+
+test('KDS keeps rejection and Kyrub delivery choice open when the server rejects the operation', () => {
+  assert.match(retailerSource, /\/\/ The KDS modal must remain open when the server rejects this action\./);
+  assert.match(retailerSource, /throw error;/);
+  assert.match(inboxSource, /const \[rejectionError, setRejectionError\] = useState\(''\)/);
+  assert.match(inboxSource, /const \[routingError, setRoutingError\] = useState\(''\)/);
+  assert.match(inboxSource, /setRejectionError\([\s\S]*?setRejectionBusy\(false\)/);
+  assert.match(inboxSource, /setRoutingError\([\s\S]*?setRoutingBusy\(false\)/);
+  assert.match(inboxSource, /role="alert"[\s\S]*?\{routingError\}/);
+  assert.match(inboxSource, /role="alert"[\s\S]*?\{rejectionError\}/);
+  assert.match(inboxSource, /onChangeStatus\(order, action\.status\)\.catch\(\(\) => undefined\)/);
+});
+
+test('a paid order is never described as an automatic refund', () => {
+  assert.match(inboxSource, /rejectingOrder\.paymentStatus === 'paid'/);
+  assert.match(inboxSource, /Recusar o pedido não estorna o pagamento automaticamente/);
+  assert.match(inboxSource, /Recusar \(reembolso separado\)/);
+  assert.match(retailerSource, /O pagamento permanece registrado/);
+  assert.match(inboxSource, /confirmação do provedor/);
+});

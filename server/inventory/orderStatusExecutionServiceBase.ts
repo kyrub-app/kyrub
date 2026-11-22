@@ -140,19 +140,6 @@ const persistOrderPayload = async (
   await batch.commit();
 };
 
-const persistDeliveryProvider = async (
-  tenantId: string,
-  orderId: string,
-  deliveryProvider: DeliveryProvider
-): Promise<void> => {
-  const updatedAt = new Date().toISOString();
-  await persistOrderPayload(tenantId, orderId, {
-    deliveryProvider,
-    deliveryProviderChosenAt: updatedAt,
-    updatedAt,
-  });
-};
-
 const ensurePickupHandoff = async (
   tenantId: string,
   orderId: string
@@ -329,7 +316,10 @@ export const mapOrderStatusExecutionError = (
   if (/não encontrado/i.test(message)) {
     return { status: 404, body: { error: message } };
   }
-  if (/não permitida|inválid|não suportado|explique|identificado|Escolha como a entrega|código de retirada|pedido precisa estar pronto|Comprador|aguardando retirada/i.test(message)) {
+  if (/modalidade de entrega já foi definida/i.test(message)) {
+    return { status: 409, body: { error: message, code: 'DELIVERY_PROVIDER_ALREADY_CHOSEN' } };
+  }
+  if (/não permitida|inválid|não suportado|explique|identificado|Escolha como a entrega|escolha de entregador|código de retirada|pedido precisa estar pronto|Comprador|aguardando retirada/i.test(message)) {
     return { status: 400, body: { error: message } };
   }
   if (/Estoque insuficiente|componente removido/i.test(message)) {
@@ -423,16 +413,9 @@ export const executeAuthorizedOrderStatusTransition = async (
       {
         reason: input.decision.reason,
         alternative: input.decision.alternative,
+        deliveryProvider: input.decision.deliveryProvider,
       }
     );
-
-    if (input.status === 'accepted' && input.decision.deliveryProvider) {
-      await persistDeliveryProvider(
-        identity.uid,
-        result.orderId,
-        input.decision.deliveryProvider
-      );
-    }
 
     if (input.status === 'ready') {
       await ensurePickupHandoff(identity.uid, result.orderId);

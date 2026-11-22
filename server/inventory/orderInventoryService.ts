@@ -65,6 +65,7 @@ const STATUS_RANK: Record<InventoryOrderStatus, number> = {
 export interface OrderStatusDecisionInput {
   reason?: string;
   alternative?: string;
+  deliveryProvider?: 'kyrub' | 'merchant';
 }
 
 export interface OrderInventoryTransitionResult {
@@ -489,6 +490,20 @@ export const transitionOrderStatusWithInventory = async (
       throw Error('ORDER_IDENTITY_MISMATCH');
     }
     const prepaid = releaseMode === 'pay_before_fulfillment';
+    const isDeliveryOrder = clean(rawOrder.fulfillmentType) === 'delivery';
+    const requestedProvider = decision.deliveryProvider;
+    const persistedProvider = clean(rawOrder.deliveryProvider);
+    if (requestedProvider && (nextStatus !== 'accepted' || !isDeliveryOrder)) {
+      throw new Error('A escolha de entregador só é permitida ao aceitar um pedido de entrega.');
+    }
+    if (nextStatus === 'accepted' && isDeliveryOrder) {
+      if (!requestedProvider) {
+        throw new Error('Escolha como a entrega será realizada: Kyrub ou entregador próprio.');
+      }
+      if (persistedProvider && persistedProvider !== requestedProvider) {
+        throw new Error('A modalidade de entrega já foi definida para este pedido.');
+      }
+    }
     // The canonical order mirror is an ERP projection; inventory authority
     // stays on its existing independently verified tenant/member path.
     const inventoryCanonicalStoreId = clean(tenantSnapshot.get('canonicalStoreId'));
@@ -566,6 +581,15 @@ export const transitionOrderStatusWithInventory = async (
       ledgerData: ledgerSnapshot.data(),
     });
     const updatedAt = new Date().toISOString();
+    const providerPatch = nextStatus === 'accepted' && isDeliveryOrder && requestedProvider
+      ? {
+          deliveryProvider: requestedProvider,
+          deliveryProviderChosenAt:
+            persistedProvider === requestedProvider && clean(rawOrder.deliveryProviderChosenAt)
+              ? clean(rawOrder.deliveryProviderChosenAt)
+              : updatedAt,
+        }
+      : {};
     const releasePatch = prepaid ? { operationalRelease:
       ['pending', 'rejected', 'cancelled'].includes(nextStatus) ? null : confirmation } : {};
     transaction.set(
@@ -573,6 +597,7 @@ export const transitionOrderStatusWithInventory = async (
       {
         status: nextStatus,
         ...releasePatch,
+        ...providerPatch,
         customerNote: nextNote,
         updatedAt,
         inventory: {
@@ -593,6 +618,7 @@ export const transitionOrderStatusWithInventory = async (
             legacyUpdatedAt: updatedAt } : {}),
           status: nextStatus,
           ...releasePatch,
+          ...providerPatch,
           customerNote: nextNote,
           updatedAt,
           inventory: {

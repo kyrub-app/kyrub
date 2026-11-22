@@ -20,6 +20,13 @@ const db = { doc: (path: string) => ({ path }), collection, runTransaction: asyn
   const pending: Array<() => void> = [];
   const tx = {
     get: async (ref: {path: string; isQuery?: boolean}) => { assert.equal(pending.length, 0, 'read after transaction write');
+      if (ref.isQuery && ref.path === 'stores/canonical/members') {
+        const member = records.get('stores/canonical/members/seller');
+        return {
+          docs: member ? [{id: 'seller', data: () => structuredClone(member)}] : [],
+          empty: !member,
+        };
+      }
       return ref.isQuery ? {docs: [], empty: true} : snapshot(ref.path); },
     set: (ref: {path: string}, data: any, options?: {merge: boolean}) => pending.push(() => {
       records.set(ref.path, structuredClone(options?.merge ? {...records.get(ref.path), ...data} : data)); writes++;
@@ -192,4 +199,41 @@ for (const [label, mutate] of [
   await assert.rejects(execute);
   assert.equal(writes, 0);
   assert.equal(isPrepaidOrderReleased(records.get(orderPath)), false);
+});
+
+test('own delivery selection commits acceptance and provider to both order mirrors', async () => {
+  records.get(orderPath).status = 'pending';
+  records.get(orderPath).fulfillmentType = 'delivery';
+  records.set('stores/canonical/members/seller', {userId: 'seller', role: 'owner', status: 'active'});
+  records.get(paymentPath).status = 'pending';
+  records.get(intentPath).status = 'pending';
+  await transition('seller', 'order', 'accepted', {deliveryProvider: 'merchant'});
+  const primary = records.get(orderPath);
+  const mirror = records.get('stores/canonical/orders/order');
+  assert.equal(primary.status, 'accepted');
+  assert.equal(primary.deliveryProvider, 'merchant');
+  assert.equal(mirror.status, 'accepted');
+  assert.equal(mirror.deliveryProvider, 'merchant');
+  assert.equal(primary.deliveryProviderChosenAt, mirror.deliveryProviderChosenAt);
+  assert.ok(Number.isFinite(Date.parse(primary.deliveryProviderChosenAt)));
+  const chosenAt = primary.deliveryProviderChosenAt;
+  await transition('seller', 'order', 'accepted', {deliveryProvider: 'merchant'});
+  assert.equal(records.get(orderPath).deliveryProviderChosenAt, chosenAt);
+});
+
+test('delivery acceptance refuses missing choice and conflicting provider replay without writes', async () => {
+  records.get(orderPath).status = 'pending';
+  records.get(orderPath).fulfillmentType = 'delivery';
+  records.set('stores/canonical/members/seller', {userId: 'seller', role: 'owner', status: 'active'});
+  await assert.rejects(transition('seller', 'order', 'accepted'), /Escolha como a entrega/);
+  assert.equal(writes, 0);
+  await transition('seller', 'order', 'accepted', {deliveryProvider: 'merchant'});
+  const before = structuredClone([...records]);
+  const count = writes;
+  await assert.rejects(
+    transition('seller', 'order', 'accepted', {deliveryProvider: 'kyrub'}),
+    /modalidade de entrega já foi definida/
+  );
+  assert.equal(writes, count);
+  assert.deepEqual([...records], before);
 });

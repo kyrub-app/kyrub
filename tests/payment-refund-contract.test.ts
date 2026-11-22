@@ -40,3 +40,12 @@ test('full Mercado Pago refund stays canonical, idempotent and separate from man
   assert.match(refundBridge, /Confirmar reembolso/);
   assert.match(refundBridge, /Verificar reembolso/);
 });
+
+
+test('refund interface does not mistake canonical store IDs for Firebase user UIDs', () => {
+  const backend = read('server/payments/storePaymentRefundRouter.ts');
+  assert.match(refundBridge, /onAuthStateChanged\(auth, user =>/);
+  assert.doesNotMatch(refundBridge, /user\.uid !== storeId/);
+  assert.match(backend, /loadOwnerStoreInstitutionalRepresentation/);
+  assert.match(backend, /authenticatedUserId: identity\.uid/);
+});
