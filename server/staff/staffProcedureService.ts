@@ -179,20 +179,26 @@ export const publishAuthorizedStaffProcedure = async (input: {
     ...validated, attachment, retainAttachment: input.retainAttachment === true,
   })).digest('hex');
   const ref = procedures(actor).doc(validated.procedureId);
+  const requestRef = ref.collection('publicationRequests').doc(validated.requestId);
   const members = await adminDb.collection(
     'stores/' + actor.canonicalStoreId + '/members'
   ).where('status', '==', 'active').limit(121).get();
   if (members.size > 120) throw Error('STAFF_POP_TEAM_LIMIT');
   const now = new Date().toISOString();
   return adminDb.runTransaction(async tx => {
-    const parentSnap = await tx.get(ref);
+    const [parentSnap, requestSnap] = await Promise.all([
+      tx.get(ref), tx.get(requestRef),
+    ]);
     await ensureActorStillActive(actor, tx);
+    if (requestSnap.exists) {
+      if (requestSnap.get('payloadHash') !== payloadHash) throw Error('STAFF_POP_IDEMPOTENCY_CONFLICT');
+      const replay = requestSnap.get('summary') as StaffProcedure | undefined;
+      if (!replay || replay.canonicalStoreId !== actor.canonicalStoreId ||
+          replay.legacyStoreId !== actor.legacyStoreId) throw Error('STAFF_POP_FORBIDDEN');
+      return replay;
+    }
     const previous = parentSnap.data() as StaffProcedure | undefined;
     if (previous) {
-      if (previous.lastRequestId === validated.requestId) {
-        if (previous.lastPayloadHash !== payloadHash) throw Error('STAFF_POP_IDEMPOTENCY_CONFLICT');
-        return previous;
-      }
       if (previous.canonicalStoreId !== actor.canonicalStoreId ||
           previous.legacyStoreId !== actor.legacyStoreId ||
           previous.currentVersion !== validated.expectedVersion) {
@@ -234,6 +240,7 @@ export const publishAuthorizedStaffProcedure = async (input: {
     if (previous) tx.update(ref, summary as unknown as FirebaseFirestore.UpdateData<FirebaseFirestore.DocumentData>);
     else tx.create(ref, summary);
     tx.create(versionRef, revision);
+    tx.create(requestRef, {payloadHash, summary, createdAt: now});
     for (const member of recipients) {
       const notification = buildUserNotification({
         recipientUserId: member.id,
