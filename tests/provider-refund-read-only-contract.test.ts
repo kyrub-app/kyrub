@@ -25,6 +25,13 @@ test('approved provider refund is counted in cents, not inferred from the Fireba
   assert.equal(result.summary.uncertainRefundCount, 1);
   assert.deepEqual(result.summary.statuses, { approved: 1, pending: 1 });
 });
+test('documented singleton response is counted, never treated as an empty refunds list', () => {
+  const result = parseProviderRefundListing({
+    id: 21, payment_id: 'mp1', amount: 4.50, status: 'approved',
+  }, 'mp1', 2330);
+  assert.equal(result.summary.refundCount, 1);
+  assert.equal(result.summary.approvedAmountMinor, 450);
+});
 test('invalid/mismatched provider data fails closed instead of reporting zero refund', () => {
   assert.throws(() => parseProviderRefundListing({}, 'mp1', 2330), /INVALID_LIST/);
   assert.throws(() => parseProviderRefundListing([{id: 'x', payment_id: 'other', amount: 1, status: 'approved'}], 'mp1', 2330), /PAYMENT_MISMATCH/);
