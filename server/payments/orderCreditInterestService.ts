@@ -272,11 +272,27 @@ export const respondToOrderCreditInterest = async (input: {
       throw new Error('CREDIT_INTEREST_NOT_FOUND');
     }
     if (proposal.status === input.choice) return proposal;
-    if (proposal.status !== 'awaiting_response') throw new Error('CREDIT_INTEREST_ALREADY_RESPONDED');
-    if (!validId(proposal.paymentStoreId)) throw new Error('CREDIT_INTEREST_PAYMENT_UNVERIFIED');
+    // A buyer who initially expressed interest may still prefer a cash refund
+    // before a separate, definitive compensation agreement exists.
+    if (proposal.status !== 'awaiting_response' &&
+        !(proposal.status === 'interested' && input.choice === 'prefers_refund')) {
+      throw new Error('CREDIT_INTEREST_ALREADY_RESPONDED');
+    }
+    if (!validId(proposal.paymentStoreId) || !validId(proposal.paymentId)) {
+      throw new Error('CREDIT_INTEREST_PAYMENT_UNVERIFIED');
+    }
     const paymentRef = adminDb.doc('stores/' + proposal.paymentStoreId + '/payments/' + proposal.paymentId);
-    const paymentSnapshot = await transaction.get(paymentRef);
-    if (!paymentSnapshot.exists || clean(paymentSnapshot.get('status')) !== 'paid') {
+    const orderRef = adminDb.doc(orderPath(storeId, orderId));
+    const refundRef = adminDb.doc('stores/' + proposal.paymentStoreId + '/paymentRefunds/' + proposal.paymentId);
+    const [paymentSnapshot, orderSnapshot, refundSnapshot] = await Promise.all([
+      transaction.get(paymentRef), transaction.get(orderRef), transaction.get(refundRef),
+    ]);
+    if (!paymentSnapshot.exists || clean(paymentSnapshot.get('status')) !== 'paid' ||
+        clean(paymentSnapshot.get('buyerId')) !== buyerId ||
+        clean(paymentSnapshot.get('orderId')) !== orderId ||
+        !orderSnapshot.exists || !['rejected','cancelled'].includes(clean(orderSnapshot.get('status'))) ||
+        clean(orderSnapshot.get('paymentStatus')) !== 'paid' ||
+        (input.choice === 'interested' && refundSnapshot.exists)) {
       throw new Error('CREDIT_INTEREST_PAYMENT_CHANGED');
     }
     const result: CreditInterestProposal = {
