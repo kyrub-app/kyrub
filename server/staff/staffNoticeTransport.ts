@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import { ConsultantHttpError } from '../ai/types.js';
 import {
   acknowledgeAuthorizedStaffNotice,
   listAuthorizedStaffNotices,
@@ -19,6 +20,11 @@ type Output = {
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 const errorResult = (error: unknown): { status: number; code: string; error: string } => {
+  if (error instanceof ConsultantHttpError) {
+    return error.status === 401
+      ? { status: 401, code: 'AUTH_REQUIRED', error: 'Faça login novamente para acessar os avisos.' }
+      : { status: 503, code: 'STAFF_NOTICE_AUTH_UNAVAILABLE', error: 'Não foi possível validar sua sessão.' };
+  }
   const code = error instanceof Error ? error.message : '';
   const known: Record<string, [number, string]> = {
     AUTH_REQUIRED: [401, 'Entre novamente na sua conta.'],
