@@ -102,6 +102,11 @@ export const proposeOrderCreditInterest = async (input: {
   if (!validId(actorId)) throw new Error('CREDIT_INTEREST_INVALID_ACTOR');
   await loadOwnerStoreInstitutionalRepresentation({ storeId, authenticatedUserId: actorId });
   const canonicalStoreId = await canonicalStoreForLegacyOwner(storeId);
+  const publicStore = await adminDb.doc('stores/' + canonicalStoreId).get();
+  const storeSlug = clean(publicStore.get('slug'));
+  if (!publicStore.exists || !/^[a-zA-Z0-9-]{1,128}$/.test(storeSlug)) {
+    throw new Error('CREDIT_INTEREST_STORE_UNVERIFIED');
+  }
   const payment = await verifiedPaidPayment(storeId, canonicalStoreId, orderId);
   // Offering a non-binding consultation must not reuse the full-refund gate.
   // Audited failed attempts require a fresh independent provider check; no
@@ -213,7 +218,7 @@ export const proposeOrderCreditInterest = async (input: {
       actorPrincipalId: buildStoreInstitutionalPrincipalId(storeId),
       title: 'Proposta sobre pedido cancelado',
       body: 'A loja propôs consultar seu interesse em um crédito em reais para compras futuras nessa loja, com possível bônus. Consulte os valores na vitrine. Nenhum crédito foi emitido; você ainda pode preferir o reembolso.',
-      target: { kind: 'storefront', storeId: canonicalStoreId, customerId: buyerId, orderId },
+      target: { kind: 'storefront', storeId: canonicalStoreId, storeSlug, customerId: buyerId, orderId },
       createdAt: now,
     });
     transaction.create(proposalRef, proposal);
