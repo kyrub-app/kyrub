@@ -231,6 +231,28 @@ export const CustomerOrderInbox = ({
   const [rejectionReason, setRejectionReason] = useState('');
   const [suggestedAlternative, setSuggestedAlternative] = useState('');
 
+  useEffect(()=>{
+    let disposed=false;
+    setPhaseEffectiveAt('');
+    setIncludePreviousFinished(false);
+    const unsubscribe=onAuthStateChanged(auth,user=>{
+      if(!user)return;
+      void (async()=>{
+       try{
+        const token=await user.getIdToken();
+        const params=new URLSearchParams({transport:'official-operational-phase',storeId});
+        const res=await fetch('/api/health?'+params.toString(),{
+         headers:{authorization:'Bearer '+token},cache:'no-store'
+        });
+        if(!res.ok)return;
+        const phase=await res.json() as {active?:boolean;effectiveAt?:string};
+        if(!disposed&&phase.active&&typeof phase.effectiveAt==='string')setPhaseEffectiveAt(phase.effectiveAt);
+       }catch{/* If phase lookup fails, show the full operational history. */}
+      })();
+    });
+    return ()=>{disposed=true;unsubscribe();};
+  },[storeId]);
+
   useEffect(() => {
     const acceptNavigation = (
       request: CanonicalOrderNavigationRequest | null
@@ -307,28 +329,6 @@ export const CustomerOrderInbox = ({
     window.removeEventListener('focus', handleFocus);
   };
 }, [storeId]);
-
-  useEffect(()=>{
-    let disposed=false;
-    setPhaseEffectiveAt('');
-    setIncludePreviousFinished(false);
-    const unsubscribe=onAuthStateChanged(auth,user=>{
-      if(!user)return;
-      void (async()=>{
-       try{
-        const token=await user.getIdToken();
-        const params=new URLSearchParams({transport:'official-operational-phase',storeId});
-        const res=await fetch('/api/health?'+params.toString(),{
-         headers:{authorization:'Bearer '+token},cache:'no-store'
-        });
-        if(!res.ok)return;
-        const phase=await res.json() as {active?:boolean;effectiveAt?:string};
-        if(!disposed&&phase.active&&typeof phase.effectiveAt==='string')setPhaseEffectiveAt(phase.effectiveAt);
-       }catch{/* If phase lookup fails, show the full operational history. */}
-      })();
-    });
-    return ()=>{disposed=true;unsubscribe();};
-  },[storeId]);
 
   const originOptions = useMemo(
     () => buildOrderOriginOptions(orders, attendanceSpaces, connectedOriginChannels),

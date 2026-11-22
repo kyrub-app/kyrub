@@ -226,7 +226,7 @@ test('official operational cutover is a one-time presentation marker, not deleti
  assert.match(service,/financialEvidence|financeBalancesUnaffected:true/);
  assert.match(service,/paymentProcessingUnaffected:true/);
  assert.match(service,/loadOwnerStoreInstitutionalRepresentation/);
- assert.match(service,/legacyStoreId!==input\.legacyStoreId/);
+ assert.match(service,/official\.get\('legacyTenantId'\)!==input\.legacyStoreId/);
  assert.doesNotMatch(service,/tx\.delete\(|tx\.update\(|cancelMercadoPago|mercadoPagoStoreRequest|\.collection\('payments'\)\.delete/);
  const production=read('api/admin/operations/health.ts');
  const local=read('server/admin/operationsHealthRouter.ts');
