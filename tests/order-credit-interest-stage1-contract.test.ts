@@ -37,6 +37,9 @@ test('no credit, settlement or Pix is manufactured when the merchant offers cons
   assert.match(service, /quoteOrderCompensation\(\{ paidMinor: amountMinor, bonusPercent \}\)/);
   assert.match(service, /previous.bonusPercent !== bonusPercent/);
   assert.match(service, /inspectOrderCreditInterestRefundSafety/);
+  assert.match(service, /isCreditInterestRefundStatusEligible\(order\.refundStatus, refundGuard\.mode\)/);
+  assert.match(service, /value === 'failed' && mode === 'audited_failed_attempt'/);
+  assert.doesNotMatch(service, /transaction\.(set|update|delete)\(refundRef/);
   assert.match(service, /fullRefundSnapshot.exists/);
   assert.match(service, /evidenceSnapshot.get\('state'\) !== 'observed_no_refund_not_settled'/);
   assert.match(service, /all\[0\]\.status !== 'paid'/);
@@ -124,6 +127,9 @@ test('already-rejected order can separately consult credit interest without reop
   assert.match(postReject, /bonusPercent/);
   assert.match(postReject, /Nenhum crédito foi emitido e o reembolso continua pendente/);
   assert.match(postReject, /Atualizar resposta da compradora/);
+  assert.match(postReject, /CREDIT_INTEREST_REFUND_EVIDENCE_REQUIRED/);
+  assert.match(postReject, /CREDIT_INTEREST_PROVIDER_NOT_CONCLUSIVE/);
+  assert.match(postReject, /Código: /);
   assert.match(postReject, /path: 'status'/);
   assert.doesNotMatch(postReject, /updateOrderStatusWithDecision|cancelOrderItemsWithRefund|requestCanonicalOrderRefund/);
   assert.match(service, /\['rejected', 'cancelled'\]/);
