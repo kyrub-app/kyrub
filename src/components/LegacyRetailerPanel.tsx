@@ -302,6 +302,13 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
                   Mesas, comandas e pedidos são carregados pelo fluxo canônico da loja.
                 </p>
+                {/* The canonical LocalAttendanceBridge portals the real opener here.
+                    Preserve this mount point when simplifying the legacy PDV. */}
+                <div
+                  id="erp-attendance-opener-row"
+                  className="mt-4 w-full min-w-0"
+                  aria-label="Abertura de atendimento no PDV"
+                />
               </div>
             </div>
           )}

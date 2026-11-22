@@ -215,9 +215,45 @@ describe('canonical local attendance', () => {
     assert.doesNotMatch(bridge, /canonical-local-attendance-host/);
   });
 
+  test('PDV mounts the canonical start form inside the real retailer panel (regression for missing opener)', () => {
+    const panel = readFileSync('src/components/LegacyRetailerPanel.tsx', 'utf8');
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    const app = readFileSync('src/App.tsx', 'utf8');
+    const retailer = readFileSync('src/components/RetailerPanel.tsx', 'utf8');
+
+    const pdv = panel.split("{activeSubTab === 'clientes' && (")[1]
+      ?.split("{activeSubTab === 'caixa' && (")[0] ?? '';
+    assert.match(pdv, /id="erp-clientes-tab"/);
+    assert.match(pdv, /id="kyrub-canonical-attendance-anchor"/);
+    assert.match(pdv, /id="erp-attendance-opener-row"/);
+    assert.ok(
+      pdv.indexOf('erp-clientes-tab') < pdv.indexOf('kyrub-canonical-attendance-anchor') &&
+      pdv.indexOf('kyrub-canonical-attendance-anchor') < pdv.indexOf('erp-attendance-opener-row'),
+      'The opener must be a child of the canonical PDV header, not a detached fake panel'
+    );
+    assert.match(app, /<LocalAttendanceBridge \/>/);
+    assert.match(bridge, /document\.getElementById\('erp-attendance-opener-row'\)/);
+    assert.match(bridge, /headerBlock\.parentElement !== container/);
+    assert.match(bridge, /opener\.appendChild\(localOpenerHost\)/);
+    assert.match(bridge, /aria-label="Iniciar atendimento"/);
+    assert.match(bridge, /loadLocalAttendanceSessions/);
+    assert.match(retailer, /<CustomerTableBoard/);
+    assert.match(retailer, /id = 'kyrub-customer-table-board-host'/);
+    assert.doesNotMatch(pdv, /handleOpenTicket|localStorage|Faturar & Transmitir Fiscal/);
+  });
+
+  test('no active locations displays an instruction without creating a parallel attendance path', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    assert.match(bridge, /activeLocations\.length === 0/);
+    assert.match(bridge, /Nenhum local de atendimento ativo/);
+    assert.match(bridge, /disabled=\{activeLocations\.length === 0\}/);
+    assert.match(bridge, /openLocalAttendance\(\{/);
+  });
+
   test('attendance summary replaces redundant legacy active counters and reuses the existing board heading', () => {
     const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
     assert.match(bridge, /hideLegacyActiveCounters/);
+    assert.match(bridge, /if \(target\.id === SUMMARY_HOST_ID\) continue;/);
     assert.match(bridge, /Locais em atendimento/);
     assert.match(bridge, /openSessions\.length/);
     assert.match(bridge, /customer-service-location-board/);
