@@ -44,7 +44,7 @@ const resolveActor = async (authorization: string, legacyStoreId: string): Promi
   }
   const member = await adminDb.doc(`stores/${canonicalStoreId}/members/${identity.uid}`).get();
   const parsed = parseStoreMember(member.data());
-  if (!parsed || parsed.userId !== identity.uid || parsed.status !== 'active') {
+  if (!parsed || parsed.userId !== identity.uid || parsed.storeId !== canonicalStoreId || parsed.status !== 'active') {
     throw new Error('STAFF_NOTICE_FORBIDDEN');
   }
   return { uid: identity.uid, role: parsed.role, legacyStoreId, canonicalStoreId };
@@ -69,6 +69,7 @@ export const listAuthorizedStaffNotices = async (input: {
   const visible = snapshot.docs.map(doc => doc.data() as StaffNotice).filter(item =>
     item.canonicalStoreId === actor.canonicalStoreId &&
     item.legacyStoreId === actor.legacyStoreId &&
+    item.status === 'published' &&
     (actor.role === 'owner' || actor.role === 'manager' || canReadStaffNotice(actor.role, item))
   );
   const receipts = await Promise.all(visible.map(notice =>
@@ -113,6 +114,20 @@ export const publishAuthorizedStaffNotice = async (input: {
   };
   return adminDb.runTransaction(async tx => {
     const previous = await tx.get(noticeRef);
+    // A manager may lose access between the initial token check and the
+    // transaction. Validate the current membership inside the same snapshot
+    // used for the publication, before any notice or notification writes.
+    if (actor.role !== 'owner') {
+      const actorMembership = await tx.get(
+        adminDb.doc(`stores/${actor.canonicalStoreId}/members/${actor.uid}`)
+      );
+      const currentActor = parseStoreMember(actorMembership.data());
+      if (!currentActor || currentActor.userId !== actor.uid ||
+          currentActor.storeId !== actor.canonicalStoreId ||
+          currentActor.status !== 'active' || currentActor.role !== 'manager') {
+        throw new Error('STAFF_NOTICE_FORBIDDEN');
+      }
+    }
     if (previous.exists) {
       const existing = previous.data() as StaffNotice;
       if (existing.publishedBy !== actor.uid ||
@@ -129,6 +144,7 @@ export const publishAuthorizedStaffNotice = async (input: {
     const recipients = currentMemberships.filter(doc => {
       const member = parseStoreMember(doc.data());
       return member?.status === 'active' && member.userId === doc.id &&
+        member.storeId === actor.canonicalStoreId &&
         doc.id !== actor.uid && canReadStaffNotice(member.role, notice);
     });
     tx.create(noticeRef, notice);
