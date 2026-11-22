@@ -11,6 +11,7 @@ const transport = read('server/payments/storePromotionServerlessTransport.ts');
 const buyer = read('src/components/store/BuyerCreditInterestCard.tsx');
 const storefront = read('src/components/PublicStorefrontApp.tsx');
 const postReject = read('src/components/store/PostRejectionCreditInterest.tsx');
+const refundBridge = read('src/components/store/PaidOrderRefundBridge.tsx');
 const creditContract = read('shared/orderCompensationCredit.ts');
 
 test('same KDS rejection modal presents refund first and a separate voluntary credit consultation', () => {
@@ -106,6 +107,9 @@ test('future partial redemption preserves remainder in BRL and never spends more
 
 test('already-rejected order can separately consult credit interest without reopening or refunding', () => {
   assert.match(postReject, /Consultation only, for an order already rejected\/cancelled/);
+  assert.match(refundBridge, /<PostRejectionCreditInterest storeId=\{storeId\} orderId=\{selectedOrder\.id\} \/>/);
+  assert.match(refundBridge, /selectedOrder\.refundStatus !== 'refunded'/);
+  assert.match(refundBridge, /Valor do reembolso a conferir/);
   assert.match(postReject, /surface=credit-interest&path=offer/);
   assert.match(postReject, /bonusPercent/);
   assert.match(postReject, /Nenhum crédito foi emitido e o reembolso continua pendente/);
