@@ -24,6 +24,10 @@ const FILTER_HOST_ID = 'canonical-attendance-location-filter-host';
 const normalize = (value: string): string =>
   value.trim().toLocaleLowerCase('pt-BR');
 
+// Keep a managed location named "Todos" available for opening an attendance,
+// without duplicating the global "Todos" chip in the card filter.
+const isAllLocationsLabel = (label: string): boolean => normalize(label) === 'todos';
+
 const parsePeopleInput = (value: string): number | null => {
   const normalized = value.trim();
   if (!/^\d{1,3}$/.test(normalized)) return null;
@@ -335,7 +339,7 @@ export const LocalAttendanceBridge = () => {
       setSessions(current => [session, ...current.filter(item => item.id !== session.id)]);
       setCustomerLabel('');
       setPeopleInput('1');
-      setLocationFilter(location.id);
+      setLocationFilter(isAllLocationsLabel(location.label) ? 'all' : location.id);
       window.dispatchEvent(
         new CustomEvent(KYRUB_LOCAL_ATTENDANCE_SESSIONS_CHANGED, {
           detail: { storeId, attendanceId: session.id },
@@ -357,9 +361,6 @@ export const LocalAttendanceBridge = () => {
           <MapPin className="h-4 w-4 shrink-0 text-orange-400" />
           Locais em atendimento
         </h3>
-        <p className="mt-1 text-[9px] leading-relaxed text-slate-600">
-          Cada atendimento aberto vira um card operacional com pedidos, alertas, valores e acesso ao PDV.
-        </p>
       </div>
       <span className="shrink-0 rounded-full border border-slate-800 bg-slate-950 px-2.5 py-1 font-mono text-[9px] font-bold text-slate-500">
         {openSessions.length} ativo{openSessions.length === 1 ? '' : 's'}
@@ -449,7 +450,7 @@ export const LocalAttendanceBridge = () => {
       >
         Todos
       </button>
-      {activeLocations.map(location => (
+      {activeLocations.filter(location => !isAllLocationsLabel(location.label)).map(location => (
         <button
           key={location.id}
           type="button"

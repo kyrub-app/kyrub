@@ -250,6 +250,29 @@ describe('canonical local attendance', () => {
     assert.match(bridge, /openLocalAttendance\(\{/);
   });
 
+  test('compact PDV removes explanatory copy but preserves canonical opener and session count', () => {
+    const panel = readFileSync('src/components/LegacyRetailerPanel.tsx', 'utf8');
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    const pdv = panel.split("{activeSubTab === 'clientes' && (")[1]
+      ?.split("{activeSubTab === 'caixa' && (")[0] ?? '';
+    assert.match(pdv, /id="erp-attendance-opener-row"/);
+    assert.doesNotMatch(pdv, /Mesas, comandas e pedidos são carregados/);
+    assert.doesNotMatch(pdv, /<h3[^>]*>\s*Atendimentos\s*<\/h3>/);
+    assert.match(bridge, /Locais em atendimento/);
+    assert.match(bridge, /openSessions\.length/);
+    assert.doesNotMatch(bridge, /Cada atendimento aberto vira um card operacional/);
+  });
+
+  test('global Todos chip remains unique even when a managed service location is named Todos', () => {
+    const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
+    assert.match(bridge, /const isAllLocationsLabel = \(label: string\): boolean => normalize\(label\) === 'todos'/);
+    assert.match(bridge, /activeLocations\.filter\(location => !isAllLocationsLabel\(location\.label\)\)\.map/);
+    assert.match(bridge, /setLocationFilter\(isAllLocationsLabel\(location\.label\) \? 'all' : location\.id\)/);
+    assert.match(bridge, /activeLocations\.map\(location => \(/); // opening select remains intact
+    assert.match(bridge, /onClick=\{\(\) => selectFilter\('all'\)\}/);
+    assert.match(bridge, /KYRUB_ATTENDANCE_LOCATION_FILTER_CHANGED/);
+  });
+
   test('attendance summary replaces redundant legacy active counters and reuses the existing board heading', () => {
     const bridge = readFileSync('src/components/store/LocalAttendanceBridge.tsx', 'utf8');
     assert.match(bridge, /hideLegacyActiveCounters/);
