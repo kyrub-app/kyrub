@@ -6,6 +6,7 @@ type CreditInterestStatus = 'awaiting_response' | 'interested' | 'prefers_refund
 type Proposal = {
   schemaVersion: 1;
   storeId: string;
+  canonicalStoreId: string;
   orderId: string;
   buyerId: string;
   amountMinor: number;
@@ -57,7 +58,7 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
     void call('mine&storeId=' + encodeURIComponent(storeId))
       .then(payload => {
         if (!disposed) setProposals((payload.proposals ?? []).filter(
-          item => item.storeId === storeId && item.buyerId === buyerId && item.creditIssued === false
+          item => item.canonicalStoreId === storeId && item.buyerId === buyerId && item.creditIssued === false
         ));
       })
       .catch(fetchError => {
@@ -72,7 +73,7 @@ export function BuyerCreditInterestCard({ storeId, buyerId }: {
     setBusyOrderId(proposal.orderId);
     setError('');
     try {
-      const response = await call('respond', { storeId, orderId: proposal.orderId, choice });
+      const response = await call('respond', { storeId: proposal.storeId, orderId: proposal.orderId, choice });
       if (!response.proposal) throw new Error('A resposta não foi confirmada.');
       setProposals(previous => previous.map(item =>
         item.orderId === proposal.orderId ? response.proposal! : item
