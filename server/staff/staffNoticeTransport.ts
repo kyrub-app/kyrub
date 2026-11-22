@@ -50,7 +50,11 @@ export const handleStaffNoticeRequest = async (
 ): Promise<void> => {
   response.setHeader('Cache-Control', 'no-store, max-age=0');
   const method = clean(request.method).toUpperCase();
-  const path = clean(request.query?.path) || clean(request.path);
+  // Serverless enters through /api/health; Express enters under /api/staff/notices.
+  // The internal health path must never be mistaken for an action suffix.
+  const path = clean(request.query?.transport) === 'staff-notices'
+    ? clean(request.query?.path)
+    : clean(request.path);
   const route = path.replace(/^\/+|\/+$/g, '');
   const authorization = clean(request.headers?.authorization);
   const body = request.body && typeof request.body === 'object' &&
