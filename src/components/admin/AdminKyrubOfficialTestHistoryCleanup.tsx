@@ -10,9 +10,11 @@ type ProviderCheck={
  metadataMismatches:number;lookupFailures:number;unlinkedProviderLabels:number;
  requiresManualReview:true;allowsCleanup:false;
 };
+type EvidenceRow={kind:string;scope:'canonical'|'legacy';count:number;complete:boolean;explicitLinks:number};
 type Report={
  storeId:string;counts:{orders:number;intents:number;payments:number};
  blocked:string[];canExecute:boolean;digest:string;archived:boolean;
+ evidence?:EvidenceRow[];
 };
 const messages:Record<string,string>={
  CONTAGEM_DIVERGENTE:'A contagem mudou; nenhuma exclusão é autorizada.',
@@ -26,6 +28,20 @@ const messages:Record<string,string>={
  SNAPSHOT_COMERCIAL_ASSOCIADO:'Há fotografia comercial de pedido a preservar.',
  REGISTROS_LEGADOS_FORA_DO_ESCOPO:'Há pagamentos, intenções ou pedidos antigos no cadastro legado fora dos 11 registros selecionados. A limpeza parcial deixaria dados para trás.',
  LIMPEZA_ANTERIOR:'Já existe execução anterior.'
+};
+const evidenceLabels:Record<string,string>={
+ economicLedger:'Razão financeiro',
+ storePointLedger:'Livro de pontos',
+ paymentRefunds:'Estornos/reembolsos',
+ economicObligations:'Obrigações econômicas',
+ economicSettlements:'Liquidações',
+ paymentWebhookEvents:'Notificações de pagamento',
+ paymentProviderBindings:'Vínculos com pagamentos externos',
+ paymentIntents:'Intenções antigas',
+ payments:'Pagamentos antigos',
+ inventoryOrderReservations:'Reservas de estoque',
+ orderCommercialSnapshots:'Fotografias comerciais',
+ otherOrders:'Outros pedidos antigos'
 };
 const endpoint='/api/admin/operations/health?transport=mercado-pago-test-history-cleanup';
 const providerEndpoint='/api/admin/operations/health?transport=mercado-pago-test-history-provider-audit';
@@ -80,6 +96,15 @@ export function AdminKyrubOfficialTestHistoryCleanup({user,storeId}:{user:User;s
   {report&&<div className="space-y-2 border-t border-slate-700 pt-3">
    <p>Pedidos {report.counts.orders}, intenções {report.counts.intents}, pagamentos {report.counts.payments}.</p>
    {report.archived?<p>Limpeza já arquivada; não repetir.</p>:report.blocked.length?<><strong className="text-amber-200">Bloqueada sem excluir dados:</strong>{report.blocked.map(key=><p key={key}>• {messages[key]??'Condição de segurança não atendida.'}</p>)}</>:<p className="text-emerald-300">Pré-requisitos técnicos atendidos. A confirmação abaixo arquivará os registros e os removerá das coleções operacionais.</p>}
+   {!!report.evidence?.length&&<div className="space-y-2 border-t border-slate-700 pt-3">
+    <strong className="block text-sm text-slate-100">Detalhamento dos registros que impedem a limpeza</strong>
+    {report.evidence.map((entry,index)=><p key={entry.kind+entry.scope+index}>
+      {evidenceLabels[entry.kind]??'Referências operacionais'} ({entry.scope==='canonical'?'loja oficial':'cadastro legado'}):
+      {' '}{entry.complete?entry.count:'pelo menos '+entry.count} registro(s),
+      {' '}{entry.explicitLinks} vínculo(s) explícito(s) com os 11 documentos selecionados.
+    </p>)}
+    <p className="text-amber-200">A ausência de vínculo explícito não prova independência. Registros com históricos financeiros ou recebimentos reais são preservados. Nenhuma exclusão é autorizada por este detalhamento.</p>
+   </div>}
    {report.blocked.includes('REFERENCIA_EXTERNA')&&<div className="space-y-2 border-t border-slate-700 pt-3">
     <button type="button" disabled={checking||busy} onClick={()=>void checkProvider()} className="rounded-xl border border-sky-500/40 p-3 font-bold text-sky-200 disabled:opacity-40">
       {checking?'Consultando o Mercado Pago…':'Conferir situação das cobranças no Mercado Pago (somente consulta)'}
