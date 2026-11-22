@@ -379,7 +379,12 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = props => {
         status,
         decision
       );
-      triggerToast('Status do pedido atualizado.', 'success');
+      triggerToast(
+        status === 'rejected' && order.paymentStatus === 'paid'
+          ? 'Pedido recusado. O pagamento continua registrado; acompanhe a solicitação de reembolso até a confirmação do provedor.'
+          : 'Status do pedido atualizado.',
+        'success'
+      );
     } catch (error) {
       console.error('Falha ao atualizar pedido do cliente:', error);
       triggerToast(
