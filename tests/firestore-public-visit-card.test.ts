@@ -226,3 +226,60 @@ test('visual tag destinations use public names, opt-in and safe external links w
  await assert.rejects(configureKyrubTag('owner-b',a.id,[ig]),/TAG_FORBIDDEN/);
  await adminDb.doc('users/owner-a').update({isProfileVisible:true});
 });
+
+test('official test history cleanup archives atomically and refuses provider, inventory and finance evidence',async()=>{
+ const {createHash}=await import('node:crypto');
+ const {inspectOfficialTestHistory}=await import('../server/admin/mercadoPagoTestHistoryCleanupService.js');
+ const official='store-ae53dc42e57eb9d5c3f7151c1431',tenant='cleanup-tenant';
+ await adminDb.doc('kyrub_admin/control_plane/admins/cleanup-admin').set({uid:'cleanup-admin',role:'super_admin',status:'active'});
+ await adminDb.doc('kyrub_admin/control_plane/admins/cleanup-reader').set({uid:'cleanup-reader',role:'operations',status:'active'});
+ await adminDb.doc('tenants/'+tenant).set({id:tenant,ownerId:tenant,publicationStatus:'published',name:'Kyrub Oficial'});
+ await adminDb.doc('stores/'+official).set({id:official,ownerId:tenant,legacyTenantId:tenant,name:'Kyrub Oficial'});
+ for(let i=0;i<5;i++)await adminDb.doc('artifacts/'+tenant+'/public/data/customerOrders/o'+i).set({
+  id:'o'+i,storeId:tenant,status:i===4?'pending':'completed',paymentStatus:i===4?'unpaid':'paid',total:10
+ });
+ for(let i=0;i<2;i++)await adminDb.doc('stores/'+official+'/paymentIntents/i'+i).set({
+  id:'i'+i,storeId:official,status:i===0?'pending':'expired',provider:'',providerIntentId:''
+ });
+ for(let i=0;i<4;i++)await adminDb.doc('stores/'+official+'/payments/p'+i).set({
+  id:'p'+i,storeId:official,status:i===0?'pending':'expired',provider:'',providerPaymentId:''
+ });
+ await adminDb.doc('stores/'+official+'/orders/o0').set({id:'o0',storeId:official,status:'completed',paymentStatus:'paid'});
+ await assert.rejects(inspectOfficialTestHistory('cleanup-reader'),/TEST_HISTORY_FORBIDDEN/);
+ const ready=await inspectOfficialTestHistory('cleanup-admin');
+ assert.deepEqual(ready.counts,{orders:5,intents:2,payments:4});
+ assert.deepEqual(ready.blocked,[]);
+ assert.equal(ready.canExecute,true);
+ const payment=adminDb.doc('stores/'+official+'/payments/p0');
+ await payment.update({providerPaymentId:'EXTERNAL-PAYMENT-DO-NOT-DELETE'});
+ const external=await inspectOfficialTestHistory('cleanup-admin');
+ assert.ok(external.blocked.includes('REFERENCIA_EXTERNA'));
+ await assert.rejects(inspectOfficialTestHistory('cleanup-admin',ready.digest,true),/TEST_HISTORY_STALE_PREVIEW/);
+ assert.equal((await payment.get()).exists,true);
+ await payment.update({providerPaymentId:''});
+ const ledger=adminDb.doc('stores/'+official+'/economicLedger/test-entry');
+ await ledger.set({orderId:'o0',kind:'payment_capture'});
+ assert.ok((await inspectOfficialTestHistory('cleanup-admin')).blocked.includes('HISTORICO_FINANCEIRO_ASSOCIADO'));
+ await ledger.delete();
+ const reservationId=createHash('sha256').update(tenant+':o1').digest('hex');
+ const reservation=adminDb.doc('inventoryOrderReservations/'+reservationId);
+ await reservation.set({tenantId:tenant,orderId:'o1',status:'reserved'});
+ assert.ok((await inspectOfficialTestHistory('cleanup-admin')).blocked.includes('RESERVA_ESTOQUE_ASSOCIADA'));
+ await reservation.delete();
+ const safe=await inspectOfficialTestHistory('cleanup-admin');
+ assert.deepEqual(safe.blocked,[]);
+ const success=await inspectOfficialTestHistory('cleanup-admin',safe.digest,true);
+ assert.equal(success.archived,true);
+ assert.deepEqual(success.counts,{orders:5,intents:2,payments:4});
+ assert.equal((await adminDb.collection('artifacts/'+tenant+'/public/data/customerOrders').get()).size,0);
+ assert.equal((await adminDb.collection('stores/'+official+'/paymentIntents').get()).size,0);
+ assert.equal((await adminDb.collection('stores/'+official+'/payments').get()).size,0);
+ assert.equal((await adminDb.doc('stores/'+official+'/orders/o0').get()).exists,false);
+ const archive='kyrub_admin/control_plane/financial_test_cleanup_runs/kyrub-oficial-test-history-2026-11-v1';
+ assert.equal((await adminDb.doc(archive).get()).exists,true);
+ assert.equal((await adminDb.collection(archive+'/records').get()).size,12);
+ assert.equal((await adminDb.doc('stores/'+official).get()).exists,true);
+ assert.equal((await adminDb.doc('tenants/'+tenant).get()).exists,true);
+ await assert.rejects(inspectOfficialTestHistory('cleanup-admin',safe.digest,true),/TEST_HISTORY_STALE_PREVIEW|TEST_HISTORY_BLOCKED/);
+ assert.ok((await inspectOfficialTestHistory('cleanup-admin')).blocked.includes('LIMPEZA_ANTERIOR'));
+});

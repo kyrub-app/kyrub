@@ -68,3 +68,29 @@ test('test history preparation includes provider references across PDV, table, l
  assert.deepEqual(result.payments.pendingContexts,{marketplace:0,pos:0,table:1,legacyOrOther:1});
  assert.doesNotMatch(JSON.stringify(result),/private-id|historical|bound/);
 });
+
+test('official store cleanup is a one-time guarded archive, never an arbitrary store reset',async()=>{
+ const {KYRUB_OFFICIAL_TEST_HISTORY_STORE, KYRUB_OFFICIAL_TEST_HISTORY_CONFIRMATION,validKyrubOfficialTestHistoryRequest}=await import('../shared/kyrubOfficialTestHistoryCleanup.js');
+ const body={action:'archive-and-clear',storeId:KYRUB_OFFICIAL_TEST_HISTORY_STORE,digest:'0'.repeat(64),confirmation:KYRUB_OFFICIAL_TEST_HISTORY_CONFIRMATION};
+ assert.equal(validKyrubOfficialTestHistoryRequest(body),true);
+ assert.equal(validKyrubOfficialTestHistoryRequest({...body,storeId:'different'}),false);
+ assert.equal(validKyrubOfficialTestHistoryRequest({...body,confirmation:'YES'}),false);
+ assert.equal(validKyrubOfficialTestHistoryRequest({...body,secret:'extra'}),false);
+ const service=read('server/admin/mercadoPagoTestHistoryCleanupService.ts');
+ assert.match(service,/runTransaction\(async tx/);
+ assert.match(service,/storeName==='Kyrub Oficial'/);
+ assert.match(service,/inventory\.rolloutMode!=='disabled'/);
+ assert.match(service,/hasExternalLink\(data\)/);
+ assert.match(service,/HISTORICO_FINANCEIRO_ASSOCIADO/);
+ assert.match(service,/RESERVA_ESTOQUE_ASSOCIADA/);
+ assert.match(service,/SNAPSHOT_COMERCIAL_ASSOCIADO/);
+ assert.match(service,/tx\.create\(archive/);
+ assert.match(service,/tx\.delete\(ref\(row\.path\)\)/);
+ assert.doesNotMatch(service,/mercadoPagoStoreRequest|createMercadoPagoPixPayment|cancelMercadoPagoPayment/);
+ const api=read('api/admin/operations/health.ts');
+ const ui=read('src/components/admin/AdminMercadoPagoMigrationInventoryCard.tsx');
+ assert.match(api,/transport === 'mercado-pago-test-history-cleanup'/);
+ assert.match(api,/authorizeIntegrationReadiness\(authorization\)/);
+ assert.match(api,/validKyrubOfficialTestHistoryRequest\(request\.body\)/);
+ assert.match(ui,/AdminKyrubOfficialTestHistoryCleanup/);
+});

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { AdminKyrubOfficialTestHistoryCleanup } from './AdminKyrubOfficialTestHistoryCleanup';
 import { RefreshCw } from 'lucide-react';
 import type { User } from 'firebase/auth';
 
@@ -203,6 +204,7 @@ export default function AdminMercadoPagoMigrationInventoryCard({ user }: { user:
         </div>)}
       </div>
       {snapshot.complete && snapshot.items.filter(item => item.canonicalStoreId && item.readiness !== 'identity_review').map(item => <div key={item.tenantId} className="mt-3">
+        <AdminKyrubOfficialTestHistoryCleanup user={user} storeId={item.canonicalStoreId}/>
         <button type="button" disabled={auditBusy} onClick={() => void runAudit(item.canonicalStoreId)}
           className="rounded-xl border border-sky-500/40 px-3 py-2 text-xs font-bold text-sky-200 disabled:opacity-40">
           {auditBusy && auditStoreId === item.canonicalStoreId ? 'Conferindo registros…' : `Conferir pedidos e Pix de ${item.storeName || 'loja sem nome'} (somente leitura)`}

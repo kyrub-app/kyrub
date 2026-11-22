@@ -22,6 +22,8 @@ import {
 } from './customerArrivalPolicyAdminService.js';
 import { loadOperationalResponsibilityReviewQueue } from './operationalResponsibilityRouter.js';
 import { loadMercadoPagoMerchantPixMigrationInventory } from './mercadoPagoMerchantPixMigrationInventoryService.js';
+import { inspectOfficialTestHistory } from './mercadoPagoTestHistoryCleanupService.js';
+import { validKyrubOfficialTestHistoryRequest } from '../../shared/kyrubOfficialTestHistoryCleanup.js';
 import { loadMerchantPixStorePaymentAudit } from './mercadoPagoMerchantPixPaymentAuditService.js';
 
 const SYSTEM_HEALTH_ROLES = new Set(['super_admin', 'operations']);
@@ -170,6 +172,17 @@ export const createOperationsHealthRouter = (): Router => {
       }
       return;
     }
+    if(transport==='mercado-pago-test-history-cleanup'){
+      try{
+        const admin=await authorizeIntegrationReadiness(request.get('authorization')??'');
+        response.setHeader('Cache-Control','no-store, max-age=0');
+        response.json(await inspectOfficialTestHistory(admin.uid));
+      }catch(error){const code=error instanceof Error?error.message:'';
+        if(code.startsWith('TEST_HISTORY_'))response.status(409).json({error:'Limpeza indisponível por restrição de segurança.',code});
+        else{const mapped=mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);}
+      }
+      return;
+    }
     if (transport === 'mercado-pago-store-payment-audit') {
       try {
         await authorizeIntegrationReadiness(request.get('authorization') ?? '');
@@ -230,6 +243,14 @@ export const createOperationsHealthRouter = (): Router => {
     const transport = clean(request.query.transport);
     const authorization = request.get('authorization') ?? '';
     try {
+      if(transport==='mercado-pago-test-history-cleanup'){
+        const admin=await authorizeIntegrationReadiness(authorization);
+        if(!validKyrubOfficialTestHistoryRequest(request.body)){
+          response.status(400).json({error:'Confirmação inválida.',code:'TEST_HISTORY_CONFIRMATION_REQUIRED'});return;
+        }
+        response.setHeader('Cache-Control','no-store, max-age=0');
+        response.json(await inspectOfficialTestHistory(admin.uid,request.body.digest,true));return;
+      }
       if (transport === 'mercado-pago-credentials') {
         const credential = await saveAuthorizedMercadoPagoCredentials({
           authorization,
@@ -269,6 +290,12 @@ export const createOperationsHealthRouter = (): Router => {
       }
       response.status(400).json({ error: 'Operação de integração inválida.', code: 'INVALID_INTEGRATION_TRANSPORT' });
     } catch (error) {
+      if (transport === 'mercado-pago-test-history-cleanup'){
+        const code=error instanceof Error?error.message:'';
+        if(code.startsWith('TEST_HISTORY_'))response.status(409).json({error:'Limpeza recusada pela política de segurança.',code});
+        else{const mapped=mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);}
+        return;
+      }
       if (transport === 'customer-arrival-policy') {
         const mapped = mapCustomerArrivalPolicyAdminError(error);
         response.status(mapped.status).json(mapped.body);

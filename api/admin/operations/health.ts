@@ -171,6 +171,25 @@ export default async function handler(request: RequestLike, response: ResponseLi
     return;
   }
 
+  if (transport === 'mercado-pago-test-history-cleanup') {
+    if(method!=='GET'&&method!=='POST'){response.status(405).json({error:'Método não permitido.',code:'METHOD_NOT_ALLOWED'});return;}
+    try{
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const admin=await readiness.authorizeIntegrationReadiness(authorization);
+      const service=await import('../../../server/admin/mercadoPagoTestHistoryCleanupService.js');
+      if(method==='GET'){response.status(200).json(await service.inspectOfficialTestHistory(admin.uid));return;}
+      const {validKyrubOfficialTestHistoryRequest}=await import('../../../shared/kyrubOfficialTestHistoryCleanup.js');
+      if(!validKyrubOfficialTestHistoryRequest(request.body)){response.status(400).json({error:'Confirmação inválida.',code:'TEST_HISTORY_CONFIRMATION_REQUIRED'});return;}
+      response.status(200).json(await service.inspectOfficialTestHistory(admin.uid,request.body.digest,true));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      if(code.startsWith('TEST_HISTORY_')){response.status(code==='TEST_HISTORY_FORBIDDEN'?403:409).json({error:'Limpeza recusada pela política de segurança. Atualize a análise.',code});return;}
+      const readiness=await import('../../../server/admin/integrationReadinessService.js');
+      const mapped=readiness.mapIntegrationReadinessError(error);response.status(mapped.status).json(mapped.body);
+    }
+    return;
+  }
+
   if (transport === 'mercado-pago-store-payment-audit') {
     if (method !== 'GET') { response.status(405).json({ error: 'Método não permitido.', code: 'METHOD_NOT_ALLOWED' }); return; }
     try {
