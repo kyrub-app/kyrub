@@ -139,7 +139,10 @@ try {
   const v2=await send(manager,revision2);
   assert.equal(v2.status,200,JSON.stringify(v2.payload));
   assert.equal(v2.payload.procedure.currentVersion,2);
-  assert.equal((await send(manager,{...revision2, requestId:'stale_request_12345'})).status,409);
+  // The original attachment is bound to v2Request; forging a new request
+  // with that attachment must be rejected before the stale-version check.
+  assert.equal((await send(manager,{...revision2, requestId:'stale_request_12345'})).status,400);
+  assert.equal((await send(manager,{...revision2, requestId:'stale_request_12345', attachment:null})).status,409);
   const sellerV2=(await list(seller)).payload.procedures[0];
   assert.equal(sellerV2.readAt,'');
   assert.equal(sellerV2.currentVersion,2);
