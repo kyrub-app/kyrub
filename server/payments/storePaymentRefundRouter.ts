@@ -6,6 +6,7 @@ import { assertFullRefundHasNoConfirmedPartialHistory } from './partialRefundSaf
 import { requestCanonicalOrderRefund } from './paymentRefundService.js';
 import { diagnoseOrderRefundReadOnly } from './orderRefundReadOnlyDiagnosis.js';
 import { diagnoseMercadoPagoRefundReadOnly } from './providerRefundReadOnlyDiagnosisService.js';
+import { recordFailedRefundEvidence } from './failedRefundEvidenceService.js';
 
 const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
@@ -112,7 +113,7 @@ const mapRefundError = (error: unknown): {
   return { status: 503, error: 'Não foi possível processar a operação agora.', code: 'PAYMENT_REFUND_UNAVAILABLE' };
 };
 
-const requireOwner = async (authorization: string, storeId: string): Promise<void> => {
+const requireOwner = async (authorization: string, storeId: string): Promise<string> => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
@@ -120,6 +121,7 @@ const requireOwner = async (authorization: string, storeId: string): Promise<voi
     storeId,
     authenticatedUserId: identity.uid,
   });
+  return identity.uid;
 };
 
 export const createStorePaymentRefundRouter = (): Router => {
@@ -171,6 +173,33 @@ export const createStorePaymentRefundRouter = (): Router => {
           error: 'Não foi possível conferir o Mercado Pago neste momento. Os dados financeiros permanecem inalterados.',
           code: 'PROVIDER_REFUND_READ_UNAVAILABLE',
         });
+      }
+    }
+  });
+
+  // This records point-in-time verification evidence only. It deliberately
+  // does not release the full-refund safety gate or create a monetary credit.
+  router.post('/provider-evidence', async (request, response) => {
+    try {
+      const storeId = clean(request.body?.storeId);
+      const orderId = clean(request.body?.orderId);
+      if (!storeId || !orderId) throw new Error('REFUND_EVIDENCE_TARGET_INVALID');
+      const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
+      const receipt = await recordFailedRefundEvidence({ storeId, orderId, ownerId });
+      response.setHeader('Cache-Control', 'no-store');
+      response.status(200).json({receipt});
+    } catch (error) {
+      const code = error instanceof Error ? error.message : '';
+      if (code === 'REFUND_EVIDENCE_TARGET_INVALID') {
+        response.status(400).json({error: 'Selecione um pedido válido.', code});
+      } else if (code.startsWith('REFUND_EVIDENCE_')) {
+        response.status(409).json({
+          error: 'A conferência não foi registrada: os dados não são conclusivos ou mudaram no provedor. O pedido permanece pendente.',
+          code,
+        });
+      } else {
+        const mapped = mapRefundError(error);
+        response.status(mapped.status).json({error: mapped.error, code: mapped.code});
       }
     }
   });

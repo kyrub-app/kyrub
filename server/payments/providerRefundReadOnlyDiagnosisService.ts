@@ -4,6 +4,7 @@ import { resolveMercadoPagoAccessToken } from '../integrations/providerCredentia
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
 import { amountToMinor, parseProviderRefundListing, type ProviderRefundSummary } from '../../shared/mercadoPagoRefundReadOnly.js';
+import { assessFailedPartialRefundObservation, type FailedPartialRefundAssessment } from '../../shared/orderRefundReconciliationEvidence.js';
 
 const validId = (input: unknown): input is string =>
   typeof input === 'string' && /^[a-zA-Z0-9_-]{1,128}$/.test(input);
@@ -20,6 +21,7 @@ export interface ProviderRefundReadOnlyDiagnosis {
   refunds: ProviderRefundSummary;
   partialAttempt: { count: number; statusCounts: Record<string, number> };
   blockers: string[];
+  assessment: FailedPartialRefundAssessment;
   notice: string;
 }
 
@@ -141,6 +143,16 @@ export const diagnoseMercadoPagoRefundReadOnly = async (input: {
   if (paymentStatus === 'refunded' && parsed.summary.approvedAmountMinor !== providerAmount) {
     blockers.push('provider_refunded_status_mismatch');
   }
+  const assessment = assessFailedPartialRefundObservation({
+    paymentStatus,
+    paymentAmountMinor: providerAmount,
+    storedPaymentAmountMinor: storedMinor,
+    amountMatches: providerAmount === storedMinor,
+    refundedAmountReportedMinor,
+    refunds: parsed.summary,
+    partialAttempt: {count: partialSnapshots.size, statusCounts},
+    blockers,
+  });
   return {
     source:'mercado_pago_read_only',
     paymentStatus,
@@ -151,6 +163,7 @@ export const diagnoseMercadoPagoRefundReadOnly = async (input: {
     refunds:parsed.summary,
     partialAttempt:{count:partialSnapshots.size,statusCounts},
     blockers,
+    assessment,
     notice:'Consulta GET ao Mercado Pago e leitura do Firestore. Nenhum reembolso foi solicitado e nenhum registro foi conciliado ou alterado. A pendência permanece aberta.',
   };
 };
