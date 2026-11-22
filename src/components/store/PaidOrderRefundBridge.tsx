@@ -854,7 +854,7 @@ export const PaidOrderRefundBridge = ({
 
       {selectedOrder && (
         <div className="fixed inset-0 z-[175] flex items-end justify-center bg-slate-950/90 backdrop-blur-md sm:items-center sm:p-5">
-          <section className="w-full max-w-md rounded-t-3xl border border-amber-500/30 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
+          <section className="max-h-[92dvh] w-full max-w-md overflow-y-auto overscroll-contain rounded-t-3xl border border-amber-500/30 bg-slate-900 p-5 shadow-2xl sm:rounded-3xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <span className="font-mono text-[9px] font-black uppercase tracking-[0.14em] text-amber-300">
