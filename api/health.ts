@@ -100,7 +100,7 @@ export default async function handler(
     try{
       const service=await import('../server/identity/kyrubTagService.js');
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
-      if(method==='GET'){response.status(200).json(id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
+      if(method==='GET'){response.status(200).json(queryValue(request.query?.view)==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
       if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
@@ -118,7 +118,7 @@ export default async function handler(
       const code=error instanceof Error?error.message:'';
       if(code==='TAG_INVALID'||code==='INVALID_CARD')response.status(400).json({error:'TAG_INVALID'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
-      else if(code==='CARD_TARGET_UNAVAILABLE')response.status(409).json({error:code});
+      else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});
     }
     return;
