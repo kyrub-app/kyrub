@@ -116,7 +116,8 @@ test('already-rejected order can separately consult credit interest without reop
   assert.match(refundBridge, /<PostRejectionCreditInterest storeId=\{storeId\} orderId=\{selectedOrder\.id\} \/>/);
   assert.match(refundBridge, /selectedOrder\.refundStatus !== 'refunded'/);
   assert.match(refundBridge, /Valor do reembolso a conferir/);
-  assert.match(postReject, /surface=credit-interest&path=offer/);
+  assert.match(postReject, /const endpoint = '\/api\/health\?transport=store-promotions&surface=credit-interest'/);
+  assert.match(postReject, /endpoint \+ '&path=offer'/);
   assert.match(postReject, /bonusPercent/);
   assert.match(postReject, /Nenhum crédito foi emitido e o reembolso continua pendente/);
   assert.match(postReject, /Atualizar resposta da compradora/);
