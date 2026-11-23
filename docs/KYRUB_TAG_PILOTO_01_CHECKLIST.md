@@ -22,7 +22,7 @@ Há uma proteção explícita de servidor em `server/identity/kyrubTagPilotIsola
 
 ## Preparação técnica — sem tocar produção
 
-1. Criar um **novo projeto Firebase exclusivo para homologação**, diferente de `kyrub-b8d0e`, registrar um aplicativo Web, configurar Firestore, Storage e Authentication.
+1. Criar um **novo projeto Firebase exclusivo para homologação**, diferente de `kyrub-b8d0e`, registrar um aplicativo Web e configurar Firestore e Authentication. **Cloud Storage não é obrigatório para o primeiro teste sem fotos.** Desde 2026, Cloud Storage exige plano Blaze (pagamento por uso) mesmo com cota gratuita. Não mudar de plano nem vincular faturamento sem aprovação expressa do proprietário.
 2. Em Authentication > Sign-in method, habilitar o provedor **Email/Password e Email link (passwordless)** para o projeto de homologação. Em Authorized domains, liberar somente o domínio HTTPS da prévia usada no teste. Não alterar os provedores nem domínios do Firebase principal.
 3. Criar um usuário administrativo de teste e seu papel Super Admin no **banco isolado**; aplicar as regras Firestore/Storage revisadas da branch **apenas nesse projeto**. Conferir que nenhuma credencial do projeto principal seja reutilizada.
 4. No Vercel, configurar variáveis **Preview restritas à branch** `feat/kyrub-tag-promotional-activation-v1`:
@@ -39,8 +39,8 @@ Há uma proteção explícita de servidor em `server/identity/kyrubTagPilotIsola
 2. O endereço oficial `https://kyrub.com/tag/{id}` é apenas um **endereço reservado para um lançamento futuro**; **não gravá-lo para o piloto isolado**. Selecionar a **URL temporária de homologação** mostrada pelo painel em uma prévia `*.vercel.app` e conferir que o domínio consta na lista de domínios autorizados do Firebase de testes.
 3. Em Android Chrome, tocar **Gravar adesivo de teste** e aproximar **um adesivo vazio**. A escrita usa NDEF e `overwrite:false`; se o navegador disser incompatível, não alterar o domínio ou gravar um link de produção como alternativa.
 4. Afastar o adesivo e lê-lo de novo com outro celular ou com Chrome fora da tela administrativa. O navegador deverá abrir a **URL temporária da prévia**, não a do site produtivo.
-5. Na primeira leitura, preencher nome, profissão e apresentação opcionais, confirmar e-mail de teste pelo link, ativar a unidade e guardar o código de recuperação **fora do adesivo e do chat**.
-6. Testar o cartão público em outro navegador/telefone: capa e foto opcionais, SOS 190/192/193 e até dois contatos de confiança **de teste e autorizados**. Não executar chamadas reais para serviços de emergência. O endereço de e-mail e os contatos ocultos não devem aparecer.
+5. Na primeira leitura, preencher nome, profissão e apresentação opcionais, confirmar e-mail de teste pelo link, ativar a unidade e guardar o código de recuperação **fora do adesivo e do chat**. A primeira rodada pode ocorrer sem fotos; a mídia será testada em emulador ou num Firebase isolado com Storage deliberadamente autorizado.
+6. Testar o cartão público em outro navegador/telefone: SOS 190/192/193 e até dois contatos de confiança **de teste e autorizados**. Fotos somente se Storage tiver sido habilitado no ambiente isolado com aprovação de custos. Não executar chamadas reais para serviços de emergência. O endereço de e-mail e os contatos ocultos não devem aparecer.
 7. No painel de titular: editar, publicar, bloquear por perda, verificar que imagem e cartão deixaram de responder, desbloquear, publicar novamente e substituir o código de recuperação.
 8. Usar um segundo e-mail de teste verificado e o código de recuperação para ensaiar a recuperação, com código antigo invalidado e a tag inicialmente bloqueada.
 9. Verificar no Firestore isolado que **nenhuma conta Kyrub completa nem loja** foi criada automaticamente, e que nenhuma unidade 001, loja ou assinatura de produção foi alterada.
