@@ -27,6 +27,7 @@ export interface BuildMarketplaceStoreCreateInput {
     | 'name'
     | 'slug'
     | 'description'
+    | 'policies'
     | 'address'
     | 'logo'
     | 'banner'
@@ -61,6 +62,7 @@ export type MarketplaceStoreUpdateData = Partial<
     | 'name'
     | 'slug'
     | 'description'
+    | 'policies'
     | 'address'
     | 'logo'
     | 'banner'
@@ -161,6 +163,7 @@ export const buildMarketplaceStoreCreateData = (
     name: input.store.name,
     slug: input.store.slug,
     description: input.store.description,
+    policies: (input.store.policies ?? '').slice(0, 2000),
     address: input.store.address,
     logo: input.store.logo,
     banner: input.store.banner,
@@ -200,6 +203,7 @@ export const buildMarketplaceStoreUpdateData = (
     name: input.store.name,
     slug: input.store.slug,
     description: input.store.description,
+    policies: (input.store.policies ?? '').slice(0, 2000),
     address: input.store.address,
     logo: input.store.logo,
     banner: input.store.banner,

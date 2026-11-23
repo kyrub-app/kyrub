@@ -133,6 +133,7 @@ service cloud.firestore {
             'offerImages',
             'bannerImages',
             'galleryImages',
+            'policies',
             'address',
             'contact',
             'status',
@@ -172,6 +173,7 @@ service cloud.firestore {
             && data.name is string
             && data.slug is string
             && data.description is string
+            && (!data.keys().hasAny(['policies']) || (data.policies is string && data.policies.size() <= 2000))
             && data.logo is string
             && data.banner is string
             && data.primaryColor is string
@@ -230,6 +232,7 @@ service cloud.firestore {
               'offerImages',
               'bannerImages',
               'galleryImages',
+              'policies',
               'address',
               'contact',
               'status',

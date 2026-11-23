@@ -52,6 +52,7 @@ type PublicStorefrontResponse = {
     name: string;
     slug: string;
     description: string;
+    policies?: string;
     logo: string;
     banner: string;
     bannerImages: string[];

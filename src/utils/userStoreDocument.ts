@@ -13,6 +13,7 @@ export interface BuildUserStoreCreateInput {
   name: string;
   slug: string;
   description: string;
+  policies?: string;
   logo: string;
   banner: string;
   bannerImages?: string[];
@@ -33,6 +34,7 @@ export interface BuildUserStoreUpdateInput {
   name?: string;
   slug?: string;
   description?: string;
+  policies?: string;
   logo?: string;
   banner?: string;
   bannerImages?: string[];
@@ -55,6 +57,7 @@ export type UserStoreUpdateData = Partial<
     | 'name'
     | 'slug'
     | 'description'
+    | 'policies'
     | 'logo'
     | 'banner'
     | 'bannerImages'
@@ -103,6 +106,7 @@ export const buildUserStoreCreateData = (
   const uid = getPrimaryUserStoreId(input.uid);
   const timestamp = serverTimestamp();
   validateLocationInput(input);
+  if ((input.policies ?? '').length > 2000) throw new Error('Store policies exceed 2000 characters.');
 
   const data: WithFieldValue<UserStoreDocument> = {
     id: uid,
@@ -111,6 +115,7 @@ export const buildUserStoreCreateData = (
     name: input.name,
     slug: input.slug,
     description: input.description,
+    policies: input.policies ?? '',
     logo: input.logo,
     banner: input.banner,
     bannerImages: [...(input.bannerImages ?? (input.banner ? [input.banner] : []))],
@@ -143,6 +148,7 @@ export const buildUserStoreCreateData = (
 export const buildUserStoreUpdateData = (
   input: BuildUserStoreUpdateInput
 ): UserStoreUpdateData => {
+  if ((input.policies ?? '').length > 2000) throw new Error('Store policies exceed 2000 characters.');
   const data: UserStoreUpdateData = { updatedAt: serverTimestamp() };
   let hasEditableField = false;
 
@@ -151,6 +157,7 @@ export const buildUserStoreUpdateData = (
     'name',
     'slug',
     'description',
+    'policies',
     'logo',
     'banner',
     'primaryColor',
