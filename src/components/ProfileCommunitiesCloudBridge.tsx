@@ -1042,13 +1042,13 @@ export function ProfileCommunitiesCloudBridge() {
       >
         <CommunityCardBackdrop coverImage={community.coverImage} />
         {isParticipant && (
-          <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[calc(100%-4rem)] truncate rounded-full border border-emerald-500/40 bg-slate-950/90 px-2 py-1 text-[10px] font-black uppercase text-emerald-300">
+          <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[calc(100%-4rem)] truncate rounded-full border border-emerald-500/40 bg-slate-950/90 px-2 py-1 text-[11px] font-black uppercase text-emerald-300">
             Você participa
           </span>
         )}
         <button type="button" onClick={() => openCommunity(community)}
           className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16 text-left">
-          <strong className="block line-clamp-2 text-sm font-black text-white drop-shadow-sm">
+          <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white drop-shadow-sm">
             {community.name}
           </strong>
           <span className="mt-1 block text-xs text-slate-200">
@@ -1113,7 +1113,7 @@ export function ProfileCommunitiesCloudBridge() {
       <CommunityCardBackdrop coverImage={community.coverImage} />
       <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }}
         className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16 text-left">
-        <strong className="block line-clamp-2 text-sm font-black text-white drop-shadow-sm">{community.name}</strong>
+        <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white drop-shadow-sm">{community.name}</strong>
         <span className="mt-1 block text-xs text-slate-200">{community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}</span>
         <span className="mt-1 block truncate text-xs text-sky-200">{community.category}</span>
         {community.description && (

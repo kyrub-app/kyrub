@@ -915,6 +915,6 @@ test('340px community catalog keeps Conhecer and Participar labels complete', ()
   assert.match(guest, /leading-tight whitespace-normal break-words/);
   assert.match(guest, /Conhecer[\s\S]*?Participar/);
   // Membership/fallback actions are also allowed to wrap, not clip.
-  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
-  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-center/);
+  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
+  assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 bg-slate-900\/90 px-2 text-center/);
 });
