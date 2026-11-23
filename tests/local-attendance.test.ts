@@ -375,7 +375,8 @@ describe('canonical local attendance', () => {
     }
     assert.match(cards, /onClick=\{\(\) => setSelectedArea\(id\)\}/);
     assert.match(cards, /<StoreStaffNoticeManager storeId=\{storeId\}/);
-    assert.match(cards, /Em preparação/);
+    assert.ok(cards.includes('<StoreStaffShiftManager storeId={storeId}'));
+    assert.doesNotMatch(cards, /Em preparação/);
     assert.doesNotMatch(cards, /<details|<summary/);
   });
 
