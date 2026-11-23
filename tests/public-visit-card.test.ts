@@ -98,7 +98,9 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(page,/number:'190'/);
  assert.match(page,/number:'192'/);
  assert.match(page,/number:'193'/);
- assert.doesNotMatch(page,/instagram\.com|wa\.me/);
+ assert.doesNotMatch(page,/instagram\.com/);
+ assert.match(page,/sosContacts/);
+ assert.match(page,/wa\.me/); // Optional WhatsApp belongs only to the SOS contact panel.
  assert.match(auth,/sendSignInLinkToEmail/);
  assert.match(auth,/signInWithEmailLink/);
  assert.doesNotMatch(auth,/actionCodeSettings.*email|[?&]email=/);
@@ -152,4 +154,47 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  assert.match(gate,/Quero criar minha conta Kairubido/);
  assert.match(gate,/promote-tag-identity/);
  assert.match(mail,/prepare-promotional-identity/);
+});
+
+
+test('SOS contacts are opt-in, private by default, and profile images require tag-local paths',async()=>{
+ const {normalizePromotionalPresentation,publicPromotionalPresentation,isPromotionalMediaPath}=await import('../shared/kyrubTagPromotional');
+ const id='a'.repeat(32),cover='kyrub-tag-media/'+id+'/cover/'+'b'.repeat(32);
+ assert.equal(isPromotionalMediaPath(cover,id,'cover'),true);
+ assert.equal(isPromotionalMediaPath(cover,id,'avatar'),false);
+ assert.equal(isPromotionalMediaPath(cover,'c'.repeat(32),'cover'),false);
+ const base={name:'Eu',occupation:'Entregador',about:'Contato em emergência'};
+ const hidden={name:'Irmã',relationship:'Família',phone:'11 99999-0000',whatsapp:true,shareInSos:false,consentConfirmed:false};
+ const permitted={name:'Amigo',relationship:'Confiança',phone:'+55 (11) 98888-0000',whatsapp:true,shareInSos:true,consentConfirmed:true};
+ const normalized=normalizePromotionalPresentation({...base,emergencyContacts:[hidden,permitted],coverPath:cover});
+ assert.equal(normalized.emergencyContacts?.length,2);
+ assert.equal(normalized.emergencyContacts?.[0].phone,'+5511999990000');
+ assert.equal(normalized.emergencyContacts?.[1].phone,'+5511988880000');
+ const publicView=publicPromotionalPresentation(normalized);
+ assert.equal(publicView.hasCover,true);
+ assert.equal(publicView.hasAvatar,false);
+ assert.deepEqual(publicView.sosContacts,[{name:'Amigo',relationship:'Confiança',phone:'+5511988880000',whatsapp:true}]);
+ assert.equal(JSON.stringify(publicView).includes('Irmã'),false);
+ assert.equal(JSON.stringify(publicView).includes('consentConfirmed'),false);
+ assert.equal(JSON.stringify(publicView).includes(cover),false);
+ for(const bad of [
+  {...base,emergencyContacts:[{...hidden,shareInSos:true}]},
+  {...base,emergencyContacts:[{...permitted,phone:'190'}]},
+  {...base,emergencyContacts:[hidden,hidden,permitted]},
+  {...base,emergencyContacts:[permitted,permitted]},
+  {...base,coverPath:'https://othersite.com/cover.webp'},
+  {...base,avatarPath:cover},
+  {...base,emergencyContacts:[{...permitted,instagram:'somebody'}]}
+ ])assert.throws(()=>normalizePromotionalPresentation(bad),/TAG_PRESENTATION_INVALID/);
+ const photo=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ const route=readFileSync('api/health.ts','utf8');
+ const rules=readFileSync('storage.rules','utf8');
+ assert.match(photo,/getPublicPromotionalTagImage/);
+ assert.match(photo,/getMetadata/);
+ assert.match(photo,/snapshot|snap\.updateTime/);
+ assert.match(route,/public-kyrub-tag-media/);
+ assert.match(route,/Cross-Origin-Resource-Policy/);
+ assert.match(rules,/match \/kyrub-tag-media/);
+ assert.match(rules,/request\.auth\.token\.email_verified/);
+ assert.match(rules,/allow update, delete: if false/);
 });
