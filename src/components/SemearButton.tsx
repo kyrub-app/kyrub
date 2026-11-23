@@ -178,7 +178,7 @@ export function SemearButton({
         ) : (
           <img src="/kyrub-pitanga-seed.svg" alt="" aria-hidden="true" title="Semente da pitangueira" className="h-[18px] w-[18px] shrink-0 object-contain" />
         ))}
-        <span className="whitespace-nowrap">{compact
+        <span className={compact ? 'whitespace-nowrap' : 'truncate'}>{compact
           ? compactLabel
           : !viewerId ? 'Entre para semear' : !visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
       </button>
