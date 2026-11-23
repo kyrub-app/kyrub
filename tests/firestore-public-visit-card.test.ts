@@ -556,6 +556,11 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
    .find(batch=>batch.id===req.requestId);
   assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='readback_confirmed').length,1);
   assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='not_verified').length,2);
+  const readbackAudit=await adminDb.collection('kyrub_admin/control_plane/audit_logs')
+   .where('targetId','==',unitId).get();
+  assert.equal(readbackAudit.size,1);
+  assert.equal(readbackAudit.docs[0].get('action'),'admin.kyrub_tag.promotional_readback_confirmed');
+  assert.equal(readbackAudit.docs[0].get('verificationMethod'),'browser-reported-ndef-readback');
   // Independent pilot inventory still exists and is not reissued or reassigned.
   const pilot=(await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').get()).data();
   if(pilot?.tagId){
