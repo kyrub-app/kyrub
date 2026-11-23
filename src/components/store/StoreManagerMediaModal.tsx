@@ -107,7 +107,7 @@ export function StoreManagerMediaModal({isOpen,legacyStoreId,storeName,onClose}:
       </div>
       <footer className="flex shrink-0 justify-end gap-3 border-t border-slate-700 p-4">
         <button type="button" onClick={onClose} disabled={saving} className="min-h-11 rounded-xl border border-slate-700 px-4 text-xs font-bold">Fechar</button>
-        <button type="button" onClick={()=>void save()} disabled={saving||loading||Boolean(error)}
+        <button type="button" onClick={()=>void save()} disabled={saving||loading}
           className="min-h-11 rounded-xl bg-orange-500 px-5 text-xs font-black uppercase text-slate-950 disabled:opacity-40">
           {saving?'Salvando...':'Salvar'}
         </button>
