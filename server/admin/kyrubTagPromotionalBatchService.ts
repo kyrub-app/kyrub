@@ -100,7 +100,7 @@ export async function confirmPromotionalTagReadback(
     typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
  const expectedHost=process.env.VERCEL_URL?.trim().toLowerCase();
  const isolation=currentTagPilotIsolation();
- if(isolation!=='isolated-project'||!expectedHost||!expectedHost.endsWith('.vercel.app'))
+ if(!['isolated-project','emulator'].includes(isolation)||!expectedHost||!expectedHost.endsWith('.vercel.app'))
   throw Error('TAG_PILOT_PROJECT_UNSAFE');
  let url:URL;
  try{url=new URL(readUrl);}catch{throw Error('TAG_BATCH_INVALID');}
