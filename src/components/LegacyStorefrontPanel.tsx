@@ -23,6 +23,8 @@ interface StorefrontPanelProps {
   setActiveConsumerStore: (store: Store) => void;
   activeKdsOrderCount?: number;
   salesByProductId?: Record<string, number>;
+  /** Public storefront displays its unified banner above the catalog. */
+  hideHero?: boolean;
 }
 
 type StorefrontProduct = Product & {
@@ -60,6 +62,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
   setActiveConsumerStore,
   activeKdsOrderCount = 0,
   salesByProductId = {},
+  hideHero = false,
 }) => {
   const [isStoreInfoOpen, setIsStoreInfoOpen] = useState(false);
   const [activeHeroIndex, setActiveHeroIndex] = useState(0);
@@ -223,7 +226,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
 
   return (
     <div className="space-y-6 animate-fade-in" id="storefront-panel-container">
-      <section
+      {!hideHero && <section
         className="relative overflow-hidden rounded-3xl border border-slate-800 bg-slate-950 shadow-2xl"
         id="storefront-banner"
         aria-roledescription="carrossel"
@@ -324,7 +327,7 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = ({
             )}
           </div>
         </div>
-      </section>
+      </section>}
 
       <SharedPdvCatalog
         idPrefix="storefront"
