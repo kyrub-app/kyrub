@@ -234,3 +234,34 @@ test('promotional pilot cannot write to production Firebase even with both campa
   assert.match(contents,/assertTagPilotWriteIsolated/);
  }
 });
+
+
+test('NFC wizard accepts only a single exact NDEF URL readback and never treats a write alone as validated',async()=>{
+ const {readOneNdefUrl}=await import('../src/utils/kyrubTagNfcReadback');
+ const {readFileSync}=await import('node:fs');
+ const url='https://preview.example.vercel.app/tag/'+'a'.repeat(32);
+ const bytes=new TextEncoder().encode(url);
+ const payload={message:{records:[{recordType:'url',data:new DataView(bytes.buffer)}]}};
+ assert.equal(readOneNdefUrl(payload),url);
+ assert.equal(readOneNdefUrl({message:{records:[...payload.message.records,{recordType:'text',data:new DataView(bytes.buffer)}]}}),null);
+ assert.equal(readOneNdefUrl({message:{records:[{recordType:'text',data:new DataView(bytes.buffer)}]}}),null);
+ assert.equal(readOneNdefUrl({message:{records:[]}}),null);
+ assert.equal(readOneNdefUrl(null),null);
+ assert.equal(readOneNdefUrl({message:{records:[{recordType:'url',data:'raw string'}]}}),null);
+ const wizard=readFileSync('src/components/admin/AdminKyrubTagNfcWizard.tsx','utf8');
+ const panel=readFileSync('src/components/admin/AdminKyrubTagPromotionalBatches.tsx','utf8');
+ const service=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ assert.match(panel,/AdminKyrubTagNfcWizard/);
+ assert.match(wizard,/action:'confirm-readback'/);
+ assert.match(wizard,/readOneNdefUrl\(event\)/);
+ assert.match(wizard,/received!==expected/);
+ assert.match(wizard,/write\(\{records:\[\{recordType:'url'/);
+ assert.match(wizard,/overwrite:false/);
+ assert.match(wizard,/reader\.scan\(/);
+ assert.match(wizard,/Próximo adesivo/);
+ assert.match(wizard,/Retomar pendentes/);
+ assert.match(wizard,/batch\.units\[0\]\.physicalStatus!=='readback_confirmed'/);
+ assert.match(service,/browser_readback_confirmed/);
+ assert.match(service,/VERCEL_URL/);
+ assert.match(service,/assertTagPilotWriteIsolated/);
+});
