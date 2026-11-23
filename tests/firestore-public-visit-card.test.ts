@@ -372,6 +372,12 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   await assert.rejects(loadTagDestinationCatalog(owner.uid,promo.id),/TAG_FORBIDDEN/);
   assert.equal((await http(promo.id,'GET',null,undefined,true)).status,404);
   const presentation={name:'Entregador A',occupation:'Entregas',about:'Meu cartão público sem contato privado'};
+  // Updating a Firebase Auth email verification status must immediately revoke
+  // the ability to edit or block this tag even with an older signed ID token.
+  await adminAuth.updateUser(owner.uid,{emailVerified:false});
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'block-promotional'})).status,403);
+  await adminAuth.updateUser(owner.uid,{emailVerified:true});
   const configured=await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation});
   assert.equal(configured.status,200);
   const publicCard=await http(promo.id,'GET',null,undefined,true);
@@ -408,6 +414,8 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.equal(recoveredStored.firstOwnerId,owner.uid);
   assert.equal(recoveredStored.enabled,false);
   assert.equal(recoveredStored.blocked,true);
+  assert.equal((await adminDb.doc('kyrub_tag_minimal_identities/'+third.uid).get()).get('mode'),'tag_only');
+  assert.equal((await adminDb.doc('users/'+third.uid).get()).exists,false);
   assert.equal((await http(promo.id,'GET',owner.token)).status,403);
   assert.equal((await http(promo.id,'POST',owner.token,{action:'unblock-promotional'})).status,403);
   assert.equal((await http(promo.id,'POST',owner.token,{action:'rotate-promotional-recovery'})).status,403);
