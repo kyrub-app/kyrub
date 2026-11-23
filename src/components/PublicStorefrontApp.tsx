@@ -471,22 +471,31 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       <div className="mx-auto w-full max-w-5xl px-3 sm:px-5">
         <PublicStorefrontHero
           store={store}
-          movementLabel={movementMetadata.label}
-          movementColorClassName={movementMetadata.colorClassName}
+          selectedSection={selectedQuickSection}
           actionsDisabled={authLoading || loginPending}
-          onOpenInfo={openStoreInfo}
-          onClose={closeStorefront}
-          onReviews={() => { if (user) setStoreReviewsOpen(true); else void handleGoogleLogin(); }}
+          onSelectSection={section => {
+            setShareFeedback('');
+            setSelectedQuickSection(current => current === section ? null : section);
+          }}
           onChat={() => {
             if (!user) { void handleGoogleLogin(); return; }
             openStoreCustomerChat({ perspective: 'customer', storeId: store.id, storeName: store.name });
           }}
+          onShare={() => void shareStorefront()}
         />
-        {store.description && (
-          <p id="public-storefront-description" className="mx-1 mt-2 line-clamp-2 text-[11px] leading-relaxed text-slate-400 sm:text-xs">
-            {store.description}
-          </p>
-        )}
+        <span className="sr-only">{movementMetadata.label}</span>
+        <PublicStorefrontQuickPanel
+          store={store}
+          selected={selectedQuickSection}
+          onClose={() => setSelectedQuickSection(null)}
+          onChat={() => {
+            if (!user) { void handleGoogleLogin(); return; }
+            openStoreCustomerChat({ perspective: 'customer', storeId: store.id, storeName: store.name });
+          }}
+          onReviews={() => { if (user) setStoreReviewsOpen(true); else void handleGoogleLogin(); }}
+          actionsDisabled={authLoading || loginPending}
+        />
+        {shareFeedback && <p role="status" className="mx-1 mt-2 rounded-xl border border-orange-500/30 bg-orange-500/10 p-3 text-xs text-orange-100">{shareFeedback}</p>}
       </div>
       <StoreCustomerChatBridge />
 
