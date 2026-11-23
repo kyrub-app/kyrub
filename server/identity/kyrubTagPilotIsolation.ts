@@ -30,10 +30,24 @@ export function currentTagPilotIsolation():TagPilotIsolation{
   allowedPilotProject:process.env.KYRUB_TAG_PROMO_PILOT_PROJECT_ID
  });
 }
+export function pilotPreviewConfigMatchesServer(projectId:string,config:{
+  serverProjectId:string;webPilotEnabled?:string;vercelEnvironment?:string;deploymentHost?:string
+}):boolean{
+ return projectId!==KYRUB_PRODUCTION_PROJECT_ID &&
+  projectId===config.serverProjectId &&
+  config.webPilotEnabled==='true' &&
+  config.vercelEnvironment==='preview' &&
+  /^([a-z0-9-]+\.)*vercel\.app$/.test(config.deploymentHost??'');
+}
 export function tagPilotClientMatchesServer():boolean{
  const isolation=currentTagPilotIsolation();
- return isolation==='emulator'||isolation==='isolated-project'&&
-  process.env.VITE_FIREBASE_PROJECT_ID===getFirebaseAdminProjectId();
+ return isolation==='emulator'||(isolation==='isolated-project'&&
+  pilotPreviewConfigMatchesServer(getFirebaseAdminProjectId(),{
+   serverProjectId:process.env.VITE_FIREBASE_PROJECT_ID??'',
+   webPilotEnabled:process.env.VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE,
+   vercelEnvironment:process.env.VERCEL_ENV,
+   deploymentHost:process.env.VERCEL_URL
+  }));
 }
 export function assertTagPilotWriteIsolated():void{
  if(currentTagPilotIsolation()==='unsafe'||!tagPilotClientMatchesServer())
