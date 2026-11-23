@@ -348,10 +348,10 @@ export const StorefrontPanel: React.FC<StorefrontPanelProps> = props => {
             storeId={storeId}
             storeName={props.activeConsumerStore?.name ?? ''}
           />
-          <StoreCustomerChatLauncher
+          {!hasPublishedCatalog && <StoreCustomerChatLauncher
             storeId={storeId}
             storeName={props.activeConsumerStore?.name ?? ''}
-          />
+          />}
         </div>
       )}
       <LegacyStorefrontPanel
