@@ -104,6 +104,22 @@ export async function recoverPromotionalKyrubTag(actor:string,id:string,verified
  });
 }
 
+/**
+ * Reissue a recovery credential while the owner still controls the verified
+ * authentication identity. Old recovery codes immediately stop working.
+ */
+export async function rotatePromotionalRecoveryCode(actor:string,id:string){
+ validActor(actor);
+ if(!isTagId(id))throw Error('TAG_INVALID');
+ const recoveryCode=randomBytes(24).toString('hex');
+ return adminDb.runTransaction(async tx=>{
+  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
+  if(data?.distribution!=='promotional'||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  tx.update(ref,{recoveryHash:promotionalRecoveryHash(id,recoveryCode),recoveryRotatedAt:new Date().toISOString()});
+  return {tag:owned(id,data),recoveryCode};
+ });
+}
+
 export async function configurePromotionalKyrubTag(actor:string,id:string,input:unknown){
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
