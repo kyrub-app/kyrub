@@ -10,6 +10,7 @@ type Readiness={
  isolation:'emulator'|'isolated-project'|'unsafe';
  productionDataProtected:boolean;
  clientProjectMatchesServer:boolean;
+ previewHost:string|null;
  issuanceEnabled:boolean;
  activationEnabled:boolean;
  minimalIdentityGateConfigured:boolean;
@@ -88,9 +89,10 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
  const unit=batches.flatMap(batch=>batch.units).find(item=>item.id===selected);
  // A test with an isolated Firebase project must not write kyrub.com,
  // because production cannot resolve the isolated tag ID yet.
- const pilotOrigin=window.location.hostname.endsWith('.vercel.app')?window.location.origin:'';
- const pilotUrl=unit&&readiness?.isolation==='isolated-project'&&pilotOrigin
-  ?pilotOrigin+'/tag/'+unit.id:'';
+ const pilotHost=readiness?.previewHost;
+ const pilotUrl=unit&&readiness?.isolation==='isolated-project'&&
+  typeof pilotHost==='string'&&/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(pilotHost)
+  ?'https://'+pilotHost+'/tag/'+unit.id:'';
  async function write(){
   if(!unit||!readiness?.canIssue||!pilotUrl||busy||writer.current){
    setNotice('Gravação indisponível. Use uma prévia Vercel vinculada a um projeto Firebase de homologação isolado.');
