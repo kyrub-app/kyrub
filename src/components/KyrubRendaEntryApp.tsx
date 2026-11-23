@@ -43,10 +43,10 @@ const incomePaths = [
   },
   {
     icon: ShoppingBag,
-    eyebrow: 'Kyrub Ofertas',
-    title: 'Ative sua própria loja',
+    eyebrow: 'Kyrub Lojas',
+    title: 'Crie sua loja grátis',
     description:
-      'Transforme produtos, serviços ou uma atividade profissional em uma vitrine dentro do Kyrub.',
+      'Divulgue produtos e serviços e organize catálogo, pedidos e a rotina do negócio com ferramentas de gestão do Kyrub.',
   },
 ];
 

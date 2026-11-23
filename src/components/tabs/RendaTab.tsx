@@ -3,10 +3,8 @@ import { createPortal } from 'react-dom';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, getDoc } from 'firebase/firestore';
 import {
-  BadgeCheck,
   Briefcase,
   CircleDollarSign,
-  FileCheck2,
   MapPin,
   ShoppingBag,
   X,
@@ -200,7 +198,7 @@ export function RendaTab({
       triggerToast(
         hasConfiguredStore
           ? 'Abrindo a gestão da sua loja.'
-          : 'Vamos configurar sua loja no Kyrub Ofertas.',
+          : 'Vamos configurar sua loja no Kyrub Lojas.',
         'success'
       );
     } catch (error) {
@@ -336,7 +334,7 @@ export function RendaTab({
         </div>
       </div>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4">
         <section
           className="flex flex-col justify-between space-y-4 rounded-3xl border border-slate-800 bg-slate-900 p-5"
           id="user-store-card"
@@ -345,13 +343,13 @@ export function RendaTab({
             <div className="flex items-center gap-1.5">
               <ShoppingBag className="h-4 w-4 text-orange-500" />
               <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Ofertas
+                Kyrub Lojas
               </h3>
             </div>
             <p className="text-[10px] leading-relaxed text-slate-400">
               {hasConfiguredStore
-                ? 'Gerencie seus produtos, configurações e a loja exibida na guia Ofertas do Kyrub.'
-                : 'Cadastre seus produtos, configure e publique sua loja na guia Ofertas do Kyrub.'}
+                ? 'Gerencie produtos, ofertas e pedidos em um só lugar, com ferramentas do Kyrub para o dia a dia da sua loja.'
+                : 'Crie sua loja grátis no Kyrub, divulgue produtos e serviços e organize seu negócio com ferramentas de gestão integradas para catálogo e pedidos.'}
             </p>
           </div>
 
@@ -374,35 +372,6 @@ export function RendaTab({
           {hasConfiguredStore && <LocalServiceDashboardCards />}
         </section>
 
-        <section className="flex flex-col justify-between space-y-4 rounded-3xl border border-teal-500/20 bg-slate-900 p-5">
-          <div className="space-y-3">
-            <div className="flex items-center gap-1.5">
-              <BadgeCheck className="h-4 w-4 text-teal-400" />
-              <h3 className="text-xs font-black uppercase tracking-wider text-white">
-                Kyrub Formaliza
-              </h3>
-            </div>
-            <p className="text-[10px] leading-relaxed text-slate-400">
-              Acesse nossas ferramentas auxiliadoras para
-              formalizar seu negócio.
-            </p>
-          </div>
-
-          <button
-            type="button"
-            onClick={() =>
-              triggerToast(
-                'As ferramentas do Kyrub Formaliza serão disponibilizadas nesta área.',
-                'info'
-              )
-            }
-            className="flex w-full items-center justify-center gap-2 rounded-xl border border-teal-500/30 bg-teal-500/10 py-2.5 text-[10px] font-black uppercase tracking-wider text-teal-300 transition-colors hover:bg-teal-500/20"
-            id="btn-kyrub-formaliza"
-          >
-            <FileCheck2 className="h-3.5 w-3.5" />
-            <span>Acessar ferramentas</span>
-          </button>
-        </section>
       </div>
 
       {isDeliveryEarningsOpen && createPortal(

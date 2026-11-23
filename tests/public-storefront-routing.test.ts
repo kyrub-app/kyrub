@@ -189,7 +189,7 @@ test('Renda workspace is the default discovery door and old introduction remains
   assert.match(rendaEntrySource, /Comece por aqui/);
   assert.match(rendaEntrySource, /Kyrub Entregas/);
   assert.match(rendaEntrySource, /Kyrub Freelas/);
-  assert.match(rendaEntrySource, /Kyrub Ofertas/);
+  assert.match(rendaEntrySource, /Kyrub Lojas/);
   assert.match(rendaEntrySource, /window\.location\.assign\('\/\?app=1'\)/);
 });
 
