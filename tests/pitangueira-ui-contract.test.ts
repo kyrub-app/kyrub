@@ -22,7 +22,7 @@ test('community Semear is a single reused card in Mural and Praça', () => {
   const card = read('src/components/CommunityPostCard.tsx');
   const square = read('src/components/CommunitySquareFeedCard.tsx');
   const mural = read('src/components/ProfileCommunitiesCloudBridge.tsx');
-  assert.match(card, /SEMEADURA_UI_ENABLED \? \(\s*<SemearButton kind="community" postId=\{post\.id\} viewerId=\{viewerId\}/);
+  assert.match(card, /SEMEADURA_UI_ENABLED \? \(\s*<SemearButton kind="community" postId=\{post\.id\} viewerId=\{viewerId\} compact);
   assert.match(square, /<CommunityPostCard/);
   assert.match(mural, /<CommunityPostCard/);
   assert.match(card, /onToggleLike\(isLiked\)/);

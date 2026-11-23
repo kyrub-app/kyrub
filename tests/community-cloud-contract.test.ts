@@ -239,6 +239,30 @@ test('reply parent reaches Firestore from both Community Mural and Praça distri
   assert.match(card, /orderCommentThreads\(displayComments\)/);
 });
 
+test('community post actions are text-only and recent comments reuse canonical live data', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const square = read('src/components/CommunitySquareFeedCard.tsx');
+  const semear = read('src/components/SemearButton.tsx');
+  const interactions = read('src/utils/communityPostInteractions.ts');
+  assert.match(card, /<SemearButton kind="community" postId=\{post\.id\} viewerId=\{viewerId\} compact/);
+  assert.match(semear, /!compact && \(state\?\.closed/);
+  assert.match(semear, /compact\s*\? compactLabel/);
+  assert.match(card, /\{isLiked \? 'Curtido' : 'Curtir'\}/);
+  assert.match(card, /\{saved \? 'Salvo' : 'Salvar'\}/);
+  assert.doesNotMatch(card, /Comentar · \{postComments\.length\}/);
+  assert.match(card, /<button type="button" aria-expanded=\{commentsOpen\}/);
+  assert.match(card, /selectRecentComments\(postComments, 3\)/);
+  assert.match(card, /Comentários recentes da publicação/);
+  assert.match(card, /previewComments\.map\(comment =>/);
+  assert.match(card, /postComments\.length > 3/);
+  assert.match(card, /Ver mais comentários/);
+  assert.match(card, /onClick=\{\(\) => setCommentsOpen\(true\)\}/);
+  assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
+  assert.match(square, /<CommunityPostCard/);
+  assert.match(interactions, /where\('communityId', '==', communityId\)/);
+  assert.doesNotMatch(card, /subscribeCommunityPostInteractions\(/);
+});
+
 test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const card = read('src/components/CommunityPostCard.tsx');

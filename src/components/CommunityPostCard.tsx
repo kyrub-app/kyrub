@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
 import type { CommunityPostComment, CommunityPostLike } from '../utils/communityPostInteractions';
-import { orderCommentThreads } from '../utils/commentThreads';
+import { orderCommentThreads, selectRecentComments } from '../utils/commentThreads';
 import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/communityPostConnections';
 import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
@@ -84,9 +84,16 @@ export function CommunityPostCard({
   const isMine = viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
+  const latestComments = selectRecentComments(postComments, 3);
+  const commentIds = new Map(postComments.map(comment => [comment.id, comment]));
+  const previewAuthorIds = latestComments.flatMap(comment => [
+    comment.authorId,
+    ...(comment.parentCommentId && commentIds.has(comment.parentCommentId)
+      ? [commentIds.get(comment.parentCommentId)!.authorId] : []),
+  ]);
   const liveAuthors = useLiveAuthorIdentities([
     post.authorId,
-    ...(commentsOpen ? postComments.map(comment => comment.authorId) : []),
+    ...(commentsOpen ? postComments.map(comment => comment.authorId) : previewAuthorIds),
   ]);
   const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
   const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
@@ -97,6 +104,8 @@ export function CommunityPostCard({
     authorAvatar: displayAuthorAvatar(comment.authorId, comment.authorAvatar, liveAuthors),
   }));
   const threadedComments = orderCommentThreads(displayComments);
+  const previewComments = selectRecentComments(displayComments, 3);
+  const previewCommentById = new Map(displayComments.map(comment => [comment.id, comment]));
   const replyCounts = new Map<string, number>();
   for (const item of threadedComments) {
     if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
@@ -300,26 +309,50 @@ export function CommunityPostCard({
       )}
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-800 pt-3">
         {SEMEADURA_UI_ENABLED ? (
-          <SemearButton kind="community" postId={post.id} viewerId={viewerId} />
+          <SemearButton kind="community" postId={post.id} viewerId={viewerId} compact />
         ) : (
         <button type="button" aria-label={isLiked ? 'Remover curtida' : 'Curtir publicação'}
           disabled={!canParticipate || Boolean(pending)}
           onClick={() => void run('like', () => onToggleLike(isLiked))}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${isLiked ? 'border-rose-500/40 bg-rose-500/10 text-rose-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
-          <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} /> {isLiked ? 'Curtido' : 'Curtir'} · {likes.filter(item => item.postId === post.id).length}
+          {isLiked ? 'Curtido' : 'Curtir'}
         </button>
         )}
         <button type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen(open => !open)}
           className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300">
-          <MessageCircle className="h-4 w-4" /> Comentar · {postComments.length}
+          Comentar
         </button>
         <button type="button" aria-label={saved ? 'Remover dos Salvos' : 'Salvar publicação'}
           disabled={Boolean(pending)}
           onClick={() => void run('save', onToggleSave)}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${saved ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
-          <Bookmark className={`h-4 w-4 ${saved ? 'fill-current' : ''}`} /> {saved ? 'Salvo' : 'Salvar'}
+          {saved ? 'Salvo' : 'Salvar'}
         </button>
       </div>
+      {!commentsOpen && previewComments.length > 0 && (
+        <section className="mt-3 space-y-2 border-t border-slate-800 pt-3" aria-label="Comentários recentes da publicação">
+          {previewComments.map(comment => {
+            const parent = comment.parentCommentId ? previewCommentById.get(comment.parentCommentId) : undefined;
+            return (
+              <div key={comment.id} className="min-w-0 rounded-xl bg-slate-950/60 px-3 py-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <strong className="text-xs font-semibold text-slate-200">{comment.authorName}</strong>
+                  <span className="text-[11px] text-slate-500">{displayDate(comment.createdAt)}</span>
+                </div>
+                {parent && <p className="mt-0.5 text-[11px] text-sky-300">Em resposta a {parent.authorName}</p>}
+                <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-300">{comment.text}</p>
+              </div>
+            );
+          })}
+          {postComments.length > 3 && (
+            <button type="button" onClick={() => setCommentsOpen(true)}
+              aria-label="Ver mais comentários da publicação"
+              className="min-h-10 w-full rounded-lg border border-slate-800 px-3 py-2 text-center text-xs font-semibold text-sky-300 hover:bg-slate-800/60">
+              Ver mais comentários
+            </button>
+          )}
+        </section>
+      )}
       {commentsOpen && (
         <section className="mt-3 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-3" aria-label="Comentários da publicação">
           {threadedComments.filter(item => item.depth === 0 || !collapsedRoots.has(item.rootId)).map(({ comment, parent, depth }) => (
