@@ -104,7 +104,7 @@ export function StoreOpeningHoursEditor({
               </label>
 
               {schedule.enabled ? (
-                <div className="grid min-w-0 grid-cols-1 items-center gap-2 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+                <div className="grid min-w-0 grid-cols-1 items-center gap-2">
                   <input
                     type="time"
                     value={schedule.opensAt}

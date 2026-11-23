@@ -9,6 +9,8 @@ import {
   storeGalleryImages,
 } from '../src/utils/storeMediaCollections';
 import { buildMarketplaceStoreCreateData, buildMarketplaceStoreUpdateData } from '../src/utils/marketplaceDocuments';
+import { buildUserStoreCreateData, buildUserStoreUpdateData } from '../src/utils/userStoreDocument';
+import { normalizeCachedStore } from '../src/utils/storePersistence';
 
 const source=(path:string)=>readFileSync(path,'utf8');
 const photo=(n:number)=>'https://example.com/image-'+n+'.jpg';
@@ -132,4 +134,45 @@ test('manager media updates use transactional server authorization, not owner pr
   assert.ok(modal.includes('StoreMediaCollectionEditor'));
   assert.ok(ownerModal.includes("getDoc(doc(db, 'users', user.uid, 'stores', user.uid))"));
   assert.ok(ownerModal.includes('hasPendingUserStoreSync'));
+});
+
+test('merchant policies are optional, bounded and propagated through all storefront paths',()=>{
+  const policies='Atendemos de segunda a sexta. Solicite trocas pelo chat da loja.';
+  const userCreate=buildUserStoreCreateData({
+    uid:'owner_policy',ownerEmail:'owner@example.com',
+    name:'Loja',slug:'loja',description:'',policies,
+    logo:'',banner:'',primaryColor:'#f97316',keywords:[],offerImages:[],
+    address:'',contact:'',status:'open',
+  });
+  assert.equal(userCreate.policies,policies);
+  assert.equal(buildUserStoreUpdateData({policies:''}).policies,'');
+  assert.throws(()=>buildUserStoreUpdateData({policies:'x'.repeat(2001)}),/2000/);
+  assert.equal(normalizeCachedStore({policies},'owner_policy','owner@example.com').policies,policies);
+  assert.equal(normalizeCachedStore({},'owner_policy','owner@example.com').policies,'');
+
+  const payload={store:{
+    id:'owner_policy',ownerId:'owner_policy',name:'Loja',slug:'loja',
+    description:'',policies,address:'',logo:'',banner:'',primaryColor:'#f97316',
+    keywords:[],status:'open' as const,
+  },publicationStatus:'published' as const};
+  assert.equal(buildMarketplaceStoreCreateData(payload).policies,policies);
+  assert.equal(buildMarketplaceStoreUpdateData(payload).policies,policies);
+
+  const sync=source('server/gamification/firstStorePublicationAuthority.ts');
+  assert.equal((sync.match(/policies: typeof p\.policies/g)??[]).length,2);
+  const persistence=source('src/utils/storePersistence.ts');
+  assert.ok((persistence.match(/policies: store\.policies \?\? ''/g)??[]).length>=4);
+  const projection=source('server/payments/marketplaceDiscoveryService.ts');
+  assert.ok(projection.includes('policies: clean(storeData.policies)'));
+  assert.ok(projection.includes('policies: clean(legacyData.policies)'));
+  const quickPanel=source('src/components/PublicStorefrontQuickPanel.tsx');
+  assert.ok(quickPanel.includes('store.policies?.trim()'));
+  assert.ok(quickPanel.includes('whitespace-pre-wrap break-words'));
+  assert.ok(!quickPanel.includes('Esta loja ainda não publicou políticas institucionais específicas'));
+
+  for(const rule of ['firestore.rules','firestore.marketplace.fragment.rules']){
+    const content=source(rule);
+    assert.ok(content.includes("data.keys().hasAny(['policies'])"));
+    assert.ok(content.includes('data.policies.size() <= 2000'));
+  }
 });
