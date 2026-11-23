@@ -23,7 +23,7 @@ Há uma proteção explícita de servidor em `server/identity/kyrubTagPilotIsola
 ## Preparação técnica — sem tocar produção
 
 1. Criar um **novo projeto Firebase exclusivo para homologação**, diferente de `kyrub-b8d0e`, registrar um aplicativo Web e configurar Firestore e Authentication. **Cloud Storage não é obrigatório para o primeiro teste sem fotos.** Desde 2026, Cloud Storage exige plano Blaze (pagamento por uso) mesmo com cota gratuita. Não mudar de plano nem vincular faturamento sem aprovação expressa do proprietário.
-2. Em Authentication > Sign-in method, habilitar o provedor **Email/Password e Email link (passwordless)** para o projeto de homologação. Em Authorized domains, liberar somente o domínio HTTPS da prévia usada no teste. Não alterar os provedores nem domínios do Firebase principal.
+2. Em Authentication > Sign-in method, habilitar **Email/Password, Email link (passwordless) e Google** no projeto de homologação. O Google é necessário para o login existente do Super Admin; o Email link será usado pelo futuro titular do adesivo. Em Authorized domains, liberar somente o domínio HTTPS da prévia usada no teste. Não alterar provedores nem domínios do Firebase principal.
 3. Criar um usuário administrativo de teste e seu papel Super Admin no **banco isolado**; aplicar as regras Firestore/Storage revisadas da branch **apenas nesse projeto**. Conferir que nenhuma credencial do projeto principal seja reutilizada.
 4. No Vercel, configurar variáveis **Preview restritas à branch** `feat/kyrub-tag-promotional-activation-v1`:
    - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`: dados da aplicação Web **isolada**.
@@ -31,7 +31,7 @@ Há uma proteção explícita de servidor em `server/identity/kyrubTagPilotIsola
    - `KYRUB_TAG_PROMO_PILOT_PROJECT_ID`: ID do **projeto isolado**.
    - `VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE=true`, `KYRUB_TAG_PROMO_ISSUANCE_ENABLED=true`, `KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=true` **somente nessa branch e depois do preflight de isolamento**.
 5. Recriar a prévia da branch para aplicar variáveis de build e servidor. O formulário Web de email-link deve usar o mesmo domínio autorizado do teste.
-6. Abrir no Control Plane de homologação: **Kyrub Tag — adesivos promocionais**. Conferir os indicadores `isolated-project`, Firebase Web e Admin coincidentes, e liberação de emissão. Se disser “Bloqueado”, interromper — nunca tentar desligar a proteção pelo console.
+6. Abrir o **endereço da prévia Vercel** no Chrome com o parâmetro `?kyrub_admin_preview=1` para mostrar o Control Plane da prévia (o domínio oficial `admin.kyrub.com` continua em produção). Entrar com a conta Google Super Admin **de homologação**, provisionada no Firestore isolado. Em **Kyrub Tag — adesivos promocionais**, conferir os indicadores `isolated-project`, Firebase Web e Admin coincidentes, e liberação de emissão. Se disser “Bloqueado”, interromper — nunca tentar desligar a proteção pelo console.
 
 ## Operação do primeiro adesivo
 
