@@ -15,6 +15,8 @@ export interface BuildUserStoreCreateInput {
   description: string;
   logo: string;
   banner: string;
+  bannerImages?: string[];
+  galleryImages?: string[];
   primaryColor: string;
   keywords: string[];
   offerImages: string[];
@@ -33,6 +35,8 @@ export interface BuildUserStoreUpdateInput {
   description?: string;
   logo?: string;
   banner?: string;
+  bannerImages?: string[];
+  galleryImages?: string[];
   primaryColor?: string;
   keywords?: string[];
   offerImages?: string[];
@@ -53,6 +57,8 @@ export type UserStoreUpdateData = Partial<
     | 'description'
     | 'logo'
     | 'banner'
+    | 'bannerImages'
+    | 'galleryImages'
     | 'primaryColor'
     | 'keywords'
     | 'offerImages'
@@ -107,6 +113,8 @@ export const buildUserStoreCreateData = (
     description: input.description,
     logo: input.logo,
     banner: input.banner,
+    bannerImages: [...(input.bannerImages ?? (input.banner ? [input.banner] : []))],
+    galleryImages: [...(input.galleryImages ?? [])],
     primaryColor: input.primaryColor,
     plan: 'free',
     keywords: [...input.keywords],
@@ -159,6 +167,12 @@ export const buildUserStoreUpdateData = (
   if (hasOwn(input, 'keywords')) {
     data.keywords = [...requireDefined(input.keywords)];
     hasEditableField = true;
+  }
+  for (const key of ['bannerImages', 'galleryImages'] as const) {
+    if (hasOwn(input, key)) {
+      data[key] = [...requireDefined(input[key])];
+      hasEditableField = true;
+    }
   }
   if (hasOwn(input, 'offerImages')) {
     data.offerImages = [...requireDefined(input.offerImages)];
