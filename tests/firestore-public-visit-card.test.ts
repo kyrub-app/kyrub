@@ -384,11 +384,32 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.equal(publicCard.status,200);
   const projected=publicCard.body as {status:string;presentation:unknown;links:unknown[]};
   assert.equal(projected.status,'active');
-  assert.deepEqual(projected.presentation,presentation);
+  assert.deepEqual(projected.presentation,{...presentation,hasCover:false,hasAvatar:false,sosContacts:[]});
   assert.deepEqual(projected.links,[]);
   assert.equal(JSON.stringify(projected).includes(owner.uid),false);
   assert.equal(JSON.stringify(projected).includes(owner.email),false);
   assert.equal(JSON.stringify(projected).includes('recoveryHash'),false);
+  const privateAndPublic={
+   ...presentation,emergencyContacts:[
+    {name:'Família A',relationship:'Irmã',phone:'11987654321',whatsapp:true,shareInSos:false,consentConfirmed:false},
+    {name:'Contato B',relationship:'Amigo',phone:'11991234567',whatsapp:true,shareInSos:true,consentConfirmed:true}
+   ]
+  };
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:privateAndPublic})).status,200);
+  const sosCard=await http(promo.id,'GET',null,undefined,true);
+  assert.equal(sosCard.status,200);
+  const safeSos=(sosCard.body as {presentation:{sosContacts:{name:string;phone:string}[]}}).presentation.sosContacts;
+  assert.deepEqual(safeSos,[{name:'Contato B',relationship:'Amigo',phone:'+5511991234567',whatsapp:true}]);
+  assert.equal(JSON.stringify(sosCard.body).includes('Família A'),false);
+  assert.equal(JSON.stringify(sosCard.body).includes('11987654321'),false);
+  const unconsented={...privateAndPublic,emergencyContacts:[
+   {...privateAndPublic.emergencyContacts[0],shareInSos:true}
+  ]};
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:unconsented})).status,400);
+  // Images cannot be attached by arbitrary path or external URL.
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:{
+   ...presentation,coverPath:'https://example.com/foreign-photo.jpg'
+  }})).status,400);
   const rot=await http(promo.id,'POST',owner.token,{action:'rotate-promotional-recovery'});
   assert.equal(rot.status,200);
   const newCode=(rot.body as {recoveryCode:string}).recoveryCode;
