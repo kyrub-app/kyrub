@@ -30,6 +30,8 @@ export interface BuildMarketplaceStoreCreateInput {
     | 'address'
     | 'logo'
     | 'banner'
+    | 'bannerImages'
+    | 'galleryImages'
     | 'primaryColor'
     | 'keywords'
     | 'status'
@@ -62,6 +64,8 @@ export type MarketplaceStoreUpdateData = Partial<
     | 'address'
     | 'logo'
     | 'banner'
+    | 'bannerImages'
+    | 'galleryImages'
     | 'primaryColor'
     | 'keywords'
     | 'status'
@@ -160,6 +164,8 @@ export const buildMarketplaceStoreCreateData = (
     address: input.store.address,
     logo: input.store.logo,
     banner: input.store.banner,
+    bannerImages: [...(input.store.bannerImages ?? (input.store.banner ? [input.store.banner] : []))],
+    galleryImages: [...(input.store.galleryImages ?? [])],
     primaryColor: input.store.primaryColor,
     keywords: [...input.store.keywords],
     status: input.store.status,
@@ -197,6 +203,8 @@ export const buildMarketplaceStoreUpdateData = (
     address: input.store.address,
     logo: input.store.logo,
     banner: input.store.banner,
+    bannerImages: [...(input.store.bannerImages ?? (input.store.banner ? [input.store.banner] : []))],
+    galleryImages: [...(input.store.galleryImages ?? [])],
     primaryColor: input.store.primaryColor,
     keywords: [...input.store.keywords],
     status: input.store.status,
