@@ -66,7 +66,21 @@ export async function loadOwnedKyrubTag(actor:string,id:string){
 export async function listOwnedKyrubTags(actor:string){
  validActor(actor);
  const records=await tags().where('ownerId','==',actor).limit(101).get();
- return {tags:records.docs.slice(0,100).map(d=>owned(d.id,d.data())),hasMore:records.size>100};
+ const visible=records.docs.slice(0,100).map(d=>owned(d.id,d.data()));
+ if(visible.length)return {tags:visible,hasMore:records.size>100};
+ // Pilot compatibility: the admin lot stores an authoritative pointer to unit 001.
+ // A zero-row owner query must not hide a pilot that a direct, server-side read
+ // proves belongs to this same authenticated actor. Never disclose other owners.
+ const slot=await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').get();
+ const id=slot.get('tagId');
+ if(isTagId(id)){
+  const record=await tags().doc(id).get(),data=record.data();
+  if(data?.ownerId===actor&&data.pilotBatch==='experimental-001'&&data.pilotSlot==='001'&&data.model==='adesivo'){
+   console.warn('[kyrub-tag] owned-list query missed verified pilot; direct owner read recovered it');
+   return {tags:[owned(id,data)],hasMore:false,pilotRecovered:true};
+  }
+ }
+ return {tags:visible,hasMore:false};
 }
 export async function loadTagDestinationCatalog(actor:string,id:string):Promise<TagDestinationCatalog>{
  const current=await loadOwnedKyrubTag(actor,id);
