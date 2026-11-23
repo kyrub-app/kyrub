@@ -37,7 +37,7 @@ export function pilotPreviewConfigMatchesServer(projectId:string,config:{
   projectId===config.serverProjectId &&
   config.webPilotEnabled==='true' &&
   config.vercelEnvironment==='preview' &&
-  /^([a-z0-9-]+\.)*vercel\.app$/.test(config.deploymentHost??'');
+  /^([a-z0-9-]+\.)+vercel\.app$/.test(config.deploymentHost??'');
 }
 export function tagPilotClientMatchesServer():boolean{
  const isolation=currentTagPilotIsolation();
