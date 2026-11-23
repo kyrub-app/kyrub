@@ -90,6 +90,7 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(api,/identity\.emailVerified!==true/);
  assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email\)/);
  assert.match(api,/recoverPromotionalKyrubTag\(actor,id,identity\.email,data\.recoveryCode\)/);
+ assert.match(api,/rotatePromotionalRecoveryCode\(actor,id\)/);
  assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
  assert.match(page,/claim-promotional/);
  assert.match(page,/recover-promotional/);
@@ -101,4 +102,20 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(auth,/sendSignInLinkToEmail/);
  assert.match(auth,/signInWithEmailLink/);
  assert.doesNotMatch(auth,/actionCodeSettings.*email|[?&]email=/);
+});
+
+test('Personal Center uses promotional editor and never legacy WhatsApp/Instagram destination catalog',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const panel=readFileSync('src/components/OfficialKyrubTagPanel.tsx','utf8');
+ const promo=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ assert.match(panel,/import \{PromotionalKyrubTagEditor\}/);
+ assert.match(panel,/selectedIsPromotional/);
+ assert.match(panel,/selected&&!selectedIsPromotional/);
+ assert.match(panel,/tag\?\.distribution==='promotional'&&<PromotionalKyrubTagEditor/);
+ assert.match(panel,/tag\.distribution!=='promotional'&&<div/);
+ assert.match(promo,/rotate-promotional-recovery/);
+ assert.match(promo,/Gerar novo código de recuperação/);
+ assert.match(service,/export async function rotatePromotionalRecoveryCode/);
+ assert.match(service,/if\(current\.distribution==='promotional'\)throw Error\('TAG_FORBIDDEN'\)/);
 });
