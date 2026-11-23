@@ -60,6 +60,12 @@ const app = getApps().length === 0
   ? initializeApp(selectedConfig)
   : getApp();
 
+// A pre-initialized Firebase app must never bypass the pilot's isolated
+// configuration: refuse the session rather than authenticate on production.
+if (pilotClientRequested && app.options.projectId !== selectedConfig.projectId) {
+  throw Error('TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH');
+}
+
 export const auth = getAuth(app);
 if (isolatedE2E) connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });
 export const storage = getStorage(app);
