@@ -197,7 +197,7 @@ export default async function handler(
     }catch(error){
       const code=error instanceof Error?error.message:'';
       if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
-      else if(code==='TAG_PROMO_DISABLED')response.status(409).json({error:'TAG_PROMO_DISABLED'});
+      else if(code==='TAG_PROMO_DISABLED'||code==='TAG_PILOT_PROJECT_UNSAFE')response.status(409).json({error:code});
       else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
