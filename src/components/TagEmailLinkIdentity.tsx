@@ -21,10 +21,19 @@ export function TagEmailLinkIdentity({tagId}:{tagId:string}){
   if(busy||!isSignInWithEmailLink(auth,window.location.href))return;
   setBusy(true);setNotice('');
   try{
-   await signInWithEmailLink(auth,address.trim(),window.location.href);
+   const credential=await signInWithEmailLink(auth,address.trim(),window.location.href);
    sessionStorage.removeItem(key);
    window.history.replaceState({},'',window.location.pathname);
-   setPending(false);setNotice('E-mail confirmado. Agora você pode concluir a ativação ou gerenciar sua Kyrub Tag.');
+   // Mark only new, verified promotional sign-ins as tag-only. The backend
+   // refuses protected/pilot units and never provisions a Kyrub user or store.
+   const token=await credential.user.getIdToken(true);
+   const prepared=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tagId),{
+    method:'POST',cache:'no-store',
+    headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'prepare-promotional-identity'})
+   }).then(res=>res.ok).catch(()=>false);
+   setPending(false);
+   setNotice(prepared?'E-mail confirmado. Agora você pode ativar ou gerenciar sua Kyrub Tag.':'E-mail confirmado, mas a ativação desta unidade ainda não foi autorizada. Se a tag já pertencer a você, confira o gerenciamento; para recuperar com outro e-mail, use o código de recuperação.');
   }catch{setNotice('Não foi possível confirmar. Confira se é o mesmo e-mail que recebeu o link e solicite outro acesso se necessário.');}
   finally{setBusy(false);}
  }
