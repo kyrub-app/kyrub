@@ -3,6 +3,8 @@ import type React from 'react';
 import { createPortal } from 'react-dom';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
 import { Image as ImageIcon, Trash2 } from 'lucide-react';
+import { StoreMediaCollectionEditor } from '../store/StoreMediaCollectionEditor';
+import { MAX_STORE_BANNER_IMAGES, MAX_STORE_GALLERY_IMAGES, normalizeStoreMediaImages, storeBannerImages, storeGalleryImages } from '../../utils/storeMediaCollections';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
 import { GoogleDriveImagePickerButton } from '../GoogleDriveImagePickerButton';
 import { GooglePhotosImagePickerButton } from '../GooglePhotosImagePickerButton';
@@ -67,7 +69,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [toast, setToast] = useState<ToastState>(null);
   const [pendingSync, setPendingSync] = useState(false);
   const [configStoreLogo, setConfigStoreLogo] = useState('');
-  const [configStoreBanner, setConfigStoreBanner] = useState('');
+  const [configBannerImages, setConfigBannerImages] = useState<string[]>([]);
+  const [configGalleryImages, setConfigGalleryImages] = useState<string[]>([]);
   const [locationDraft, setLocationDraft] = useState<StoreLocationDraft>(emptyLocationDraft);
   const [operationalSettings, setOperationalSettings] =
     useState<StoreOperationalSettings>(createEmptyStoreOperationalSettings);
@@ -136,7 +139,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     );
     setPendingSync(hasPendingUserStoreSync(localStorage, user.uid));
     setConfigStoreLogo(cachedStore?.logo ?? '');
-    setConfigStoreBanner(cachedStore?.banner ?? '');
+    setConfigBannerImages(storeBannerImages(cachedStore ?? {}));
+    setConfigGalleryImages(storeGalleryImages(cachedStore ?? {}));
     setLocationDraft({
       latitude: typeof cachedStore?.lat === 'number' ? String(cachedStore.lat) : '',
       longitude: typeof cachedStore?.lng === 'number' ? String(cachedStore.lng) : '',
@@ -226,7 +230,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     return {
       ...store,
       logo: configStoreLogo.trim(),
-      banner: configStoreBanner.trim(),
+      banner: configBannerImages[0] ?? '',
+      bannerImages: normalizeStoreMediaImages(configBannerImages, MAX_STORE_BANNER_IMAGES),
+      galleryImages: normalizeStoreMediaImages(configGalleryImages, MAX_STORE_GALLERY_IMAGES),
     };
   }, [
     props.configStoreName,
@@ -235,7 +241,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     props.configStoreContact,
     props.configStoreKeywords,
     configStoreLogo,
-    configStoreBanner,
+    configBannerImages,
+    configGalleryImages,
   ]);
 
   const resolveConfiguredStore = (): Store | null => {
@@ -480,63 +487,56 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   };
 
   const profileMediaControls = (
-    <section
-      className="space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4"
-      id="store-drive-media-controls"
-    >
+    <section className="space-y-4 rounded-2xl border border-slate-800 bg-slate-950/55 p-4"
+      id="store-drive-media-controls">
       <div>
         <span className="flex items-center gap-2 text-[10px] font-black uppercase tracking-wide text-slate-300">
           <ImageIcon className="h-4 w-4 text-teal-400" />
           Imagens públicas da loja
         </span>
-        <p className="mt-1 text-[10px] leading-relaxed text-slate-500">
-          Escolha no Google Fotos ou no Drive. Fotos da galeria são copiadas para seu Drive e compartilhadas como somente leitura; o Firestore guarda apenas a referência.
+        <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+          Imagens escolhidas do dispositivo, Google Fotos ou Drive serão usadas na vitrine após salvar e sincronizar.
         </p>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
-        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-          <span className="text-[9px] font-black uppercase text-slate-400">Logo</span>
-          <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
-            {configStoreLogo ? (
-              <img src={configStoreLogo} alt="Prévia do logo da loja" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
-            ) : (
-              <ImageIcon className="h-7 w-7 text-slate-700" />
-            )}
-          </div>
-          <div className="flex flex-wrap items-start gap-2">
-            <GooglePhotosImagePickerButton label="Logo no Google Fotos" onSelect={selection => setConfigStoreLogo(selection.url)} />
-            <GoogleDriveImagePickerButton label="Escolher logo no Drive" onSelect={selection => setConfigStoreLogo(selection.url)} />
-            {configStoreLogo && (
-              <button type="button" onClick={() => setConfigStoreLogo('')} className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300">
-                <Trash2 className="h-3.5 w-3.5" />
-                Remover
-              </button>
-            )}
-          </div>
+      <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+        <span className="text-[10px] font-black uppercase text-slate-200">Logo da loja</span>
+        <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
+          {configStoreLogo
+            ? <img src={configStoreLogo} alt="Prévia do logo da loja" className="h-full w-full object-contain" referrerPolicy="no-referrer" />
+            : <ImageIcon className="h-7 w-7 text-slate-700" />}
         </div>
-
-        <div className="space-y-2 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-          <span className="text-[9px] font-black uppercase text-slate-400">Banner</span>
-          <div className="flex h-24 items-center justify-center overflow-hidden rounded-xl border border-slate-800 bg-slate-950">
-            {configStoreBanner ? (
-              <img src={configStoreBanner} alt="Prévia do banner da loja" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-            ) : (
-              <ImageIcon className="h-7 w-7 text-slate-700" />
-            )}
-          </div>
-          <div className="flex flex-wrap items-start gap-2">
-            <GooglePhotosImagePickerButton label="Banner no Google Fotos" onSelect={selection => setConfigStoreBanner(selection.url)} />
-            <GoogleDriveImagePickerButton label="Escolher banner no Drive" onSelect={selection => setConfigStoreBanner(selection.url)} />
-            {configStoreBanner && (
-              <button type="button" onClick={() => setConfigStoreBanner('')} className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[9px] font-black uppercase text-red-300">
-                <Trash2 className="h-3.5 w-3.5" />
-                Remover
-              </button>
-            )}
-          </div>
+        <div className="flex flex-wrap items-start gap-2">
+          <GooglePhotosImagePickerButton label="Logo no Google Fotos" onSelect={selection => setConfigStoreLogo(selection.url)} disabled={isSaving || isPublishing} />
+          <GoogleDriveImagePickerButton label="Escolher logo no Drive" onSelect={selection => setConfigStoreLogo(selection.url)} disabled={isSaving || isPublishing} />
+          {configStoreLogo && <button type="button" onClick={() => setConfigStoreLogo('')} disabled={isSaving || isPublishing}
+            className="flex min-h-10 items-center gap-1.5 rounded-xl border border-red-500/20 bg-red-500/10 px-3 text-[10px] font-bold text-red-300 disabled:opacity-40">
+            <Trash2 className="h-4 w-4" /> Remover logo
+          </button>}
         </div>
       </div>
+
+      <StoreMediaCollectionEditor
+        id="store-banner-images-editor"
+        title="Banner rotativo"
+        description="Selecione até cinco imagens, na ordem em que devem aparecer na capa da vitrine. A primeira será a imagem principal. A troca acontece automaticamente."
+        images={configBannerImages}
+        maximum={MAX_STORE_BANNER_IMAGES}
+        disabled={isSaving || isPublishing}
+        onChange={setConfigBannerImages}
+        onLimit={() => notify('O banner permite no máximo cinco imagens.', 'warning')}
+      />
+
+      <StoreMediaCollectionEditor
+        id="store-gallery-images-editor"
+        title="Galeria de imagens"
+        description="Fotos do espaço e do estabelecimento exibidas no ícone Galeria da vitrine. Não são misturadas com os banners nem com as fotos de produtos."
+        images={configGalleryImages}
+        maximum={MAX_STORE_GALLERY_IMAGES}
+        disabled={isSaving || isPublishing}
+        onChange={setConfigGalleryImages}
+        onLimit={() => notify('A galeria permite até 24 imagens.', 'warning')}
+      />
     </section>
   );
 
