@@ -161,6 +161,43 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
       props.setConfigStoreContact(cachedStore.contact ?? '');
       props.setConfigStoreKeywords((cachedStore.keywords ?? []).join(', '));
     }, 0);
+
+    // A manager may update public media from another device. Read the
+    // authoritative private profile before the owner edits it again, without
+    // ever overwriting pending local changes or fresh picker selections.
+    if (hasPendingUserStoreSync(localStorage, user.uid)) return;
+    let cancelled = false;
+    const originalBanner = storeBannerImages(cachedStore);
+    const originalGallery = storeGalleryImages(cachedStore);
+    void getDoc(doc(db, 'users', user.uid, 'stores', user.uid))
+      .then(snapshot => {
+        if (cancelled || !snapshot.exists()) return;
+        const cloud = snapshot.data();
+        const previous = loadCachedUserStore(localStorage, user.uid, user.email ?? '');
+        if (!previous || hasPendingUserStoreSync(localStorage, user.uid) ||
+          previous.logo !== cachedStore.logo ||
+          JSON.stringify(storeBannerImages(previous)) !== JSON.stringify(originalBanner) ||
+          JSON.stringify(storeGalleryImages(previous)) !== JSON.stringify(originalGallery)) return;
+        const nextLogo = typeof cloud.logo === 'string' ? cloud.logo : previous.logo;
+        const nextBannerImages = storeBannerImages(cloud);
+        const nextGalleryImages = storeGalleryImages(cloud);
+        saveCachedUserStore(localStorage, user.uid, {
+          ...previous,
+          logo: nextLogo,
+          banner: typeof cloud.banner === 'string' ? cloud.banner : previous.banner,
+          bannerImages: nextBannerImages,
+          galleryImages: nextGalleryImages,
+        }, false);
+        setConfigStoreLogo(current => current === cachedStore.logo ? nextLogo : current);
+        setConfigBannerImages(current =>
+          JSON.stringify(current) === JSON.stringify(originalBanner) ? nextBannerImages : current
+        );
+        setConfigGalleryImages(current =>
+          JSON.stringify(current) === JSON.stringify(originalGallery) ? nextGalleryImages : current
+        );
+      })
+      .catch(() => { /* Offline editors retain their local media draft. */ });
+    return () => { cancelled = true; };
   }, [props.isOpen]);
 
   useEffect(() => {
