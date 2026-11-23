@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { readFileSync } from 'node:fs';
 import { createElement, act } from 'react';
-import { createRoot } from 'react-dom/client';
+
 import { JSDOM } from 'jsdom';
 import type { Store } from '../src/types';
 import { PublicStorefrontHero } from '../src/components/PublicStorefrontHero';
@@ -36,6 +36,7 @@ test('the public storefront hero merges banner, brand and touch-friendly icon ac
   Object.defineProperty(globalThis, 'document', {configurable:true,writable:true,value:dom.window.document});
   Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {configurable:true,writable:true,value:true});
   const events: string[] = [];
+  const { createRoot } = await import('react-dom/client');
   const root = createRoot(dom.window.document.getElementById('app')!);
   try {
     await act(async () => root.render(createElement(PublicStorefrontHero, {
