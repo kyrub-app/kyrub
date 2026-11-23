@@ -70,6 +70,9 @@ export interface CloudCommunityPost {
   authorAvatar: string;
   content: string;
   mediaUrls: string[];
+  /** Missing in older posts means comments are allowed. */
+  allowComments?: boolean;
+  pinnedCommentId?: string;
   createdAt: string;
   updatedAt: string;
 }
@@ -234,6 +237,8 @@ const mapPost = (
     authorAvatar: readString(data.authorAvatar),
     content: readString(data.content),
     mediaUrls: readStringList(data.mediaUrls),
+    allowComments: data.allowComments !== false,
+    pinnedCommentId: readString(data.pinnedCommentId),
     createdAt,
     updatedAt:
       readString(data.updatedAtIso) || timestampToIso(data.updatedAt, createdAt),
@@ -884,6 +889,7 @@ export const createCommunityPost = async (input: {
   content: string;
   mediaUrls?: string[];
   shareToSquare?: boolean;
+  allowComments?: boolean;
 }): Promise<string> => {
   const { user, name, avatar } = currentIdentity();
   const content = input.content.trim().slice(0, 3000);
@@ -908,6 +914,8 @@ export const createCommunityPost = async (input: {
     authorAvatar: avatar,
     content,
     mediaUrls,
+    allowComments: input.allowComments !== false,
+    pinnedCommentId: '',
     createdAtIso: nowIso,
     createdAt: serverTimestamp(),
     updatedAtIso: nowIso,

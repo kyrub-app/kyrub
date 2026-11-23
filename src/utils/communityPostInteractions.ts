@@ -1,5 +1,5 @@
 import {
-  collection, deleteDoc, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, where,
+  collection, deleteDoc, doc, getDoc, onSnapshot, query, serverTimestamp, setDoc, updateDoc, where,
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -92,6 +92,13 @@ export const addCommunityPostComment = async (
   const user = auth.currentUser!;
   const text = value.trim();
   if (!text || text.length > 1000) throw new Error('Escreva um comentário de até 1.000 caracteres.');
+  const currentPost = await getDoc(doc(db, 'community_posts', post.id));
+  if (!currentPost.exists() || currentPost.data().communityId !== post.communityId) {
+    throw new Error('Esta publicação não está mais disponível.');
+  }
+  if (currentPost.data().allowComments === false) {
+    throw new Error('O autor desativou os comentários desta publicação.');
+  }
   if (parentCommentId) {
     const parent = await getDoc(doc(db, 'community_post_comments', parentCommentId));
     if (!parent.exists() || parent.data().postId !== post.id || parent.data().communityId !== post.communityId) {
@@ -110,6 +117,26 @@ export const addCommunityPostComment = async (
     text,
     createdAtIso: new Date().toISOString(),
     createdAt: serverTimestamp(),
+  });
+};
+
+/** Only the author can pin/unpin; Firestore validates the referenced comment. */
+export const setCommunityPostPinnedComment = async (
+  post: CloudCommunityPost, commentId: string,
+): Promise<void> => {
+  const uid = currentUid();
+  if (uid !== post.authorId) throw new Error('Somente o autor pode fixar comentários.');
+  if (commentId) {
+    const comment = await getDoc(doc(db, 'community_post_comments', commentId));
+    if (!comment.exists() || comment.data().postId !== post.id ||
+        comment.data().communityId !== post.communityId) {
+      throw new Error('O comentário não pertence a esta publicação.');
+    }
+  }
+  await updateDoc(doc(db, 'community_posts', post.id), {
+    pinnedCommentId: commentId,
+    updatedAtIso: new Date().toISOString(),
+    updatedAt: serverTimestamp(),
   });
 };
 

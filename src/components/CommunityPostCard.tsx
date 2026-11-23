@@ -7,7 +7,7 @@ import {
 } from 'lucide-react';
 import type { CloudCommunityPost } from '../utils/communityCloud';
 import type { CommunityPostComment, CommunityPostLike } from '../utils/communityPostInteractions';
-import { orderCommentThreads } from '../utils/commentThreads';
+import { orderCommentThreads, selectRecentComments } from '../utils/commentThreads';
 import type { CommunityPostConnection, CommunityPublicProfile } from '../utils/communityPostConnections';
 import { readCommunityPostPublicProfile, requestCommunityPostConnection, subscribeCommunityPostConnections } from '../utils/communityPostConnections';
 import { ChatModal } from './modals/ChatModal';
@@ -38,6 +38,7 @@ interface CommunityPostCardProps {
   onToggleLike: (liked: boolean) => Promise<void>;
   onComment: (value: string, parentCommentId?: string) => Promise<void>;
   onDeleteComment: (commentId: string) => Promise<void>;
+  onPinComment: (commentId: string) => Promise<void>;
   onReport: (reason: SocialReportReason) => Promise<SocialReportOutcome>;
   onRemove: () => Promise<void>;
   squarePublished?: boolean;
@@ -53,7 +54,7 @@ const displayDate = (value: string): string => {
 
 export function CommunityPostCard({
   post, viewerId, canParticipate, communityOwnerId, likes, comments, connection,
-  saved, onToggleSave, onToggleLike, onComment, onDeleteComment, onReport, onRemove,
+  saved, onToggleSave, onToggleLike, onComment, onDeleteComment, onPinComment, onReport, onRemove,
   squarePublished, onToggleSquare,
 }: CommunityPostCardProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -84,9 +85,22 @@ export function CommunityPostCard({
   const isMine = viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
+  const pinnedComment = post.pinnedCommentId
+    ? postComments.find(item => item.id === post.pinnedCommentId)
+    : undefined;
+  const latestComments = selectRecentComments(
+    postComments.filter(item => item.id !== pinnedComment?.id), 3,
+  );
+  const commentIds = new Map(postComments.map(comment => [comment.id, comment]));
+  const previewAuthorIds = latestComments.flatMap(comment => [
+    comment.authorId,
+    ...(comment.parentCommentId && commentIds.has(comment.parentCommentId)
+      ? [commentIds.get(comment.parentCommentId)!.authorId] : []),
+  ]);
   const liveAuthors = useLiveAuthorIdentities([
     post.authorId,
-    ...(commentsOpen ? postComments.map(comment => comment.authorId) : []),
+    ...(pinnedComment ? [pinnedComment.authorId] : []),
+    ...(commentsOpen ? postComments.map(comment => comment.authorId) : previewAuthorIds),
   ]);
   const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
   const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
@@ -97,6 +111,13 @@ export function CommunityPostCard({
     authorAvatar: displayAuthorAvatar(comment.authorId, comment.authorAvatar, liveAuthors),
   }));
   const threadedComments = orderCommentThreads(displayComments);
+  const pinnedDisplayComment = pinnedComment
+    ? displayComments.find(item => item.id === pinnedComment.id)
+    : undefined;
+  const previewComments = selectRecentComments(
+    displayComments.filter(item => item.id !== pinnedDisplayComment?.id), 3,
+  );
+  const previewCommentById = new Map(displayComments.map(comment => [comment.id, comment]));
   const replyCounts = new Map<string, number>();
   for (const item of threadedComments) {
     if (item.depth > 0) replyCounts.set(item.rootId, (replyCounts.get(item.rootId) ?? 0) + 1);
@@ -300,34 +321,107 @@ export function CommunityPostCard({
       )}
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-800 pt-3">
         {SEMEADURA_UI_ENABLED ? (
-          <SemearButton kind="community" postId={post.id} viewerId={viewerId} />
+          <SemearButton kind="community" postId={post.id} viewerId={viewerId} compact />
         ) : (
         <button type="button" aria-label={isLiked ? 'Remover curtida' : 'Curtir publicação'}
           disabled={!canParticipate || Boolean(pending)}
           onClick={() => void run('like', () => onToggleLike(isLiked))}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${isLiked ? 'border-rose-500/40 bg-rose-500/10 text-rose-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
-          <Heart className={`h-4 w-4 ${isLiked ? 'fill-current' : ''}`} /> {isLiked ? 'Curtido' : 'Curtir'} · {likes.filter(item => item.postId === post.id).length}
+          {isLiked ? 'Curtido' : 'Curtir'}
         </button>
         )}
         <button type="button" aria-expanded={commentsOpen} onClick={() => setCommentsOpen(open => !open)}
           className="flex min-h-11 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-slate-300">
-          <MessageCircle className="h-4 w-4" /> Comentar · {postComments.length}
+          {post.allowComments === false ? 'Comentários' : 'Comentar'}
         </button>
         <button type="button" aria-label={saved ? 'Remover dos Salvos' : 'Salvar publicação'}
           disabled={Boolean(pending)}
           onClick={() => void run('save', onToggleSave)}
           className={`flex min-h-11 items-center justify-center gap-1 rounded-xl border px-2 text-xs font-bold disabled:opacity-40 ${saved ? 'border-amber-500/40 bg-amber-500/10 text-amber-300' : 'border-slate-700 bg-slate-950 text-slate-300'}`}>
-          <Bookmark className={`h-4 w-4 ${saved ? 'fill-current' : ''}`} /> {saved ? 'Salvo' : 'Salvar'}
+          {saved ? 'Salvo' : 'Salvar'}
         </button>
       </div>
+      {!commentsOpen && (previewComments.length > 0 || pinnedDisplayComment) && (
+        <section className="mt-3 space-y-2 border-t border-slate-800 pt-3" aria-label="Comentários recentes da publicação">
+          {pinnedDisplayComment && (
+            <div className="min-w-0 rounded-xl border border-amber-500/30 bg-amber-500/5 px-3 py-2">
+              <span className="text-[11px] font-bold text-amber-300">Fixado pelo autor</span>
+              <div className="mt-1 flex flex-wrap items-baseline gap-2">
+                <strong className="text-xs text-slate-200">{pinnedDisplayComment.authorName}</strong>
+                <span className="text-[11px] text-slate-500">{displayDate(pinnedDisplayComment.createdAt)}</span>
+              </div>
+              <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{pinnedDisplayComment.text}</p>
+            </div>
+          )}
+          {previewComments.map(comment => {
+            const parent = comment.parentCommentId ? previewCommentById.get(comment.parentCommentId) : undefined;
+            return (
+              <div key={comment.id} className="min-w-0 rounded-xl bg-slate-950/60 px-3 py-2">
+                <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+                  <strong className="text-xs font-semibold text-slate-200">{comment.authorName}</strong>
+                  <span className="text-[11px] text-slate-500">{displayDate(comment.createdAt)}</span>
+                </div>
+                {parent && <p className="mt-0.5 text-[11px] text-sky-300">Em resposta a {parent.authorName}</p>}
+                <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-relaxed text-slate-300">{comment.text}</p>
+              </div>
+            );
+          })}
+          {postComments.length > previewComments.length + (pinnedDisplayComment ? 1 : 0) && (
+            <button type="button" onClick={() => setCommentsOpen(true)}
+              aria-label="Ver mais comentários da publicação"
+              className="min-h-10 w-full rounded-lg border border-slate-800 px-3 py-2 text-center text-xs font-semibold text-sky-300 hover:bg-slate-800/60">
+              Ver mais comentários
+            </button>
+          )}
+        </section>
+      )}
       {commentsOpen && (
         <section className="mt-3 space-y-3 rounded-xl border border-slate-800 bg-slate-950 p-3" aria-label="Comentários da publicação">
-          {threadedComments.filter(item => item.depth === 0 || !collapsedRoots.has(item.rootId)).map(({ comment, parent, depth }) => (
+          {pinnedDisplayComment && (
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px] font-bold text-amber-300">Fixado pelo autor</span>
+                {isMine && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => void run('pin-comment', () => onPinComment(''))}
+                    className="min-h-9 text-xs font-semibold text-amber-300 disabled:opacity-40">Desafixar</button>
+                )}
+              </div>
+              <strong className="mt-1 block text-xs text-slate-200">{pinnedDisplayComment.authorName}</strong>
+              <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{pinnedDisplayComment.text}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="text-[11px] text-slate-500">{displayDate(pinnedDisplayComment.createdAt)}</span>
+                {post.allowComments !== false && canParticipate && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => { setReplyTarget(pinnedDisplayComment); commentInputRef.current?.focus(); }}
+                    className="text-xs font-semibold text-sky-300 disabled:opacity-40">Responder</button>
+                )}
+                {(pinnedDisplayComment.authorId === viewerId || communityOwnerId === viewerId) && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => void run('delete-comment', async () => {
+                      await onDeleteComment(pinnedDisplayComment.id);
+                      if (replyTarget?.id === pinnedDisplayComment.id) setReplyTarget(null);
+                    })}
+                    className="text-xs font-semibold text-red-300 disabled:opacity-40">Excluir comentário</button>
+                )}
+              </div>
+            </div>
+          )}
+          {threadedComments.filter(item =>
+            item.comment.id !== pinnedDisplayComment?.id &&
+            (item.depth === 0 || !collapsedRoots.has(item.rootId))
+          ).map(({ comment, parent, depth }) => (
             <div key={comment.id} className={depth > 0
               ? 'ml-4 rounded-xl border-l-2 border-sky-700/40 bg-slate-900 p-3'
               : 'rounded-xl bg-slate-900 p-3'}>
               <div className="flex items-start justify-between gap-2">
                 <strong className="text-xs text-slate-200">{comment.authorName}</strong>
+                <div className="flex shrink-0 items-center gap-2">
+                {isMine && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => void run('pin-comment', () => onPinComment(comment.id))}
+                    className="min-h-9 text-xs font-semibold text-amber-300 disabled:opacity-40">Fixar</button>
+                )}
                 {(comment.authorId === viewerId || communityOwnerId === viewerId) && (
                   <button type="button" aria-label="Excluir comentário" disabled={Boolean(pending)}
                     onClick={() => void run('delete-comment', async () => {
@@ -336,6 +430,7 @@ export function CommunityPostCard({
                     })}
                     className="rounded-md p-1 text-red-300 disabled:opacity-40"><Trash2 className="h-4 w-4"/></button>
                 )}
+                </div>
               </div>
               {depth > 0 && parent && <span className="mt-1 block text-[11px] text-sky-300">Em resposta a {parent.authorName}</span>}
               <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{comment.text}</p>
@@ -360,8 +455,11 @@ export function CommunityPostCard({
               </div>
             </div>
           ))}
-          {postComments.length === 0 && <p className="text-xs text-slate-400">Seja o primeiro a comentar.</p>}
-          {canParticipate ? (
+          {postComments.length === 0 && post.allowComments !== false && <p className="text-xs text-slate-400">Seja o primeiro a comentar.</p>}
+          {post.allowComments === false && (
+            <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">O autor desativou os comentários desta publicação.</p>
+          )}
+          {post.allowComments !== false && canParticipate ? (
             <div className="flex flex-col gap-2">
               {replyTarget && <div className="flex items-center justify-between gap-2 text-xs text-sky-300">
                 <span>Respondendo a {displayAuthorName(replyTarget.authorId, replyTarget.authorName, liveAuthors)}</span>

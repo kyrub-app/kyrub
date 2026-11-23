@@ -59,12 +59,13 @@ const normalizeSemeadura = (raw: Record<string, unknown>): SemeaduraStatus => {
 };
 
 export function SemearButton({
-  kind, postId, viewerId, className,
+  kind, postId, viewerId, className, compact = false,
 }: {
   kind: SemeaduraPostKind;
   postId: string;
   viewerId: string;
   className?: string;
+  compact?: boolean;
 }) {
   const [state, setState] = useState<SemeaduraStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -162,6 +163,7 @@ export function SemearButton({
         : state && !state.canSemear
           ? 'Participe para semear'
           : 'Semear';
+  const compactLabel = state?.closed ? 'Concluído' : state?.seeded ? 'Semeado' : 'Semear';
   return (
     <div ref={holderRef} className="min-w-0">
       <button type="button"
@@ -171,12 +173,14 @@ export function SemearButton({
         disabled={!state || !state.canSemear || busy || !viewerId}
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
-        {state?.closed ? (
+        {!compact && (state?.closed ? (
           <span aria-hidden="true" title="Bosque concluído">🌲</span>
         ) : (
           <img src="/kyrub-pitanga-seed.svg" alt="" aria-hidden="true" title="Semente da pitangueira" className="h-[18px] w-[18px] shrink-0 object-contain" />
-        )}
-        <span className="truncate">{!viewerId ? 'Entre para semear' : !visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
+        ))}
+        <span className={compact ? 'whitespace-nowrap' : 'truncate'}>{compact
+          ? compactLabel
+          : !viewerId ? 'Entre para semear' : !visible || !state ? 'Sementes…' : label + ' · ' + state.count.toLocaleString('pt-BR')}</span>
       </button>
       {error && <p role="status" className="mt-1 text-[10px] text-amber-300">{error}</p>}
     </div>

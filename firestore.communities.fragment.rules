@@ -478,6 +478,8 @@
         'authorAvatar',
         'content',
         'mediaUrls',
+        'allowComments',
+        'pinnedCommentId',
         'createdAtIso',
         'createdAt',
         'updatedAtIso',
@@ -499,6 +501,11 @@
       && data.content.size() <= 3000
       && data.mediaUrls is list
       && data.mediaUrls.size() <= 9
+      && (!('allowComments' in data) || data.allowComments is bool)
+      && (!('pinnedCommentId' in data) || (
+        data.pinnedCommentId is string
+        && data.pinnedCommentId.size() <= 160
+      ))
       && (data.content.size() > 0 || data.mediaUrls.size() > 0)
       && data.createdAtIso is string
       && data.createdAtIso.size() <= 64
@@ -516,6 +523,7 @@
         && isActiveCommunityMember(incoming().communityId)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
+        && (!('pinnedCommentId' in incoming()) || incoming().pinnedCommentId == '')
         && hasValidCommunityPostShape(incoming(), postId);
 
       allow update: if isSignedIn()
@@ -531,9 +539,23 @@
         && incoming().diff(existing()).affectedKeys().hasOnly([
           'content',
           'mediaUrls',
+          'pinnedCommentId',
           'updatedAtIso',
           'updatedAt'
         ])
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['pinnedCommentId'])
+          || (
+            ('pinnedCommentId' in incoming())
+            && (
+              incoming().pinnedCommentId == ''
+              || (
+                exists(/databases/$(database)/documents/community_post_comments/$(incoming().pinnedCommentId))
+                && get(/databases/$(database)/documents/community_post_comments/$(incoming().pinnedCommentId)).data.postId == postId
+                && get(/databases/$(database)/documents/community_post_comments/$(incoming().pinnedCommentId)).data.communityId == existing().communityId
+              )
+            )
+          )
+        )
         && hasValidCommunityPostShape(incoming(), postId);
 
       allow delete: if isSignedIn()
@@ -783,6 +805,7 @@
         && incoming().createdAtIso.size() <= 64
         && incoming().createdAt == request.time
         && communityPostBelongsTo(incoming().postId, incoming().communityId)
+        && get(/databases/$(database)/documents/community_posts/$(incoming().postId)).data.get('allowComments', true) == true
         && isActiveCommunityMember(incoming().communityId)
         && (!('parentCommentId' in incoming()) || (
           incoming().parentCommentId is string

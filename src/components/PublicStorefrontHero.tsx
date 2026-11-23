@@ -25,7 +25,7 @@ const sections: {
   {id:'info',label:'Informações',Icon:Info},
   {id:'reservas',label:'Reservas',Icon:CalendarDays},
   {id:'galeria',label:'Galeria',Icon:Images},
-  {id:'avaliacoes',label:'Avaliações',Icon:Star},
+  {id:'avaliacoes',label:'Momentos',Icon:Star},
   {id:'chat',label:'Conversar',Icon:MessageSquareText},
   {id:'share',label:'Compartilhar',Icon:Share2},
 ];

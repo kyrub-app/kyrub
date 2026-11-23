@@ -64,7 +64,7 @@ describe('Praça catalog parity', () => {
     assert.match(communities, /renderCard\(community, 'catalog'\)/);
   });
 
-  test('Praça rail and full catalog have the same icon-free Avaliações | Entrar actions', () => {
+  test('Praça rail and full catalog have the same icon-free Momentos | Entrar actions', () => {
     const catalog = stores.slice(
       stores.indexOf('if (catalogOpen)'),
       stores.indexOf('return (\n    <section id="square-stores"'),
@@ -74,7 +74,9 @@ describe('Praça catalog parity', () => {
     for (const surface of [catalog, rail]) {
       assert.match(surface, /grid grid-cols-2 gap-1\.5 border-t border-slate-800/);
       assert.match(surface, /onClick=\{\(\) => onOpenReviews\(storeForReviews\(store\)\)\}/);
-      assert.match(surface, /Abrir avaliações da loja/);
+      assert.match(surface, /Abrir momentos da loja/);
+      assert.match(surface, /title=\{`Momentos de \$\{store\.name\}`\}/);
+      assert.match(surface, />\s*Momentos\s*<\/button>/);
       assert.match(surface, /<a href=\{OFFICIAL_STORE_PATH\}[\s\S]*?>\s*Entrar\s*<\/a>/);
       assert.match(surface, /onClick=\{\(\) => store\.source && onOpenStore\(store\.source\)\}/);
       assert.match(surface, />\s*Entrar\s*<\/button>/);

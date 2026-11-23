@@ -48,6 +48,8 @@ test('public storefront uses visual logo, swipeable footer and inline section co
     assert.match(hero.textContent??'',/kyrub.com\/@kyrub-oficial/);
     assert.ok(hero.querySelector('img[alt="Logo de Kyrub Oficial"]')===null);
     assert.equal(hero.querySelectorAll('nav[aria-label="Atalhos da loja"] button').length,6);
+    assert.equal(dom.window.document.getElementById('public-storefront-reviews-trigger')?.getAttribute('aria-label'),'Momentos');
+    assert.equal(dom.window.document.getElementById('public-storefront-reviews-trigger')?.textContent?.trim(),'Momentos');
     for(const [id,result]of [
       ['public-storefront-action-info','info'],
       ['public-storefront-action-reservas','reservas'],

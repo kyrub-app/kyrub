@@ -62,3 +62,14 @@ export const orderCommentThreads = <T extends CommentThreadNode>(
   }
   return result;
 };
+
+/** Show only the latest comments in a collapsed community card, including replies.
+ * The full conversation keeps the canonical parent-first thread order.
+ * Reuses the existing community subscription: no extra Firestore reads. */
+export const selectRecentComments = <T extends CommentThreadNode>(
+  comments: readonly T[],
+  limit = 3,
+): T[] =>
+  [...comments].sort((a, b) =>
+    b.createdAt.localeCompare(a.createdAt) || b.id.localeCompare(a.id)
+  ).slice(0, Math.max(0, Math.trunc(limit)));

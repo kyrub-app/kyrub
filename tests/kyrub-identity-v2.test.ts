@@ -11,9 +11,11 @@ test('the Kyrub geometric pitanga seal is a small original vector with stem and 
   assert.match(logo, /<title id="title">Kyrub — selo da pitanga<\/title>/);
   assert.match(logo, /#F27429/);
   assert.match(logo, /#8FA893/);
-  assert.match(logo, /caule e duas folhas verde-sálvia/);
+  assert.match(logo, /uma folha apontando para a esquerda/);
   assert.match(logo, /<path fill="#F27429"/);
-  assert.match(logo, /<circle/);
+  assert.match(logo, /fill-rule="evenodd"/);
+  assert.match(logo, /Pitanga minimalista laranja/);
+  assert.doesNotMatch(logo, /caule e duas folhas|stroke="#F5F0E6"/);
   assert.doesNotMatch(logo, /<image|data:image\/jpeg;base64,|<script/);
   assert.ok(Buffer.byteLength(logo, 'utf8') < 9000, 'logo should render sharply at small sizes');
 });

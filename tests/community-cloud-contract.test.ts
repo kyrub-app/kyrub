@@ -28,6 +28,22 @@ test('Communities present one Mural with lasting post comments and no separate D
   assert.match(ui, /approveCommunityMember/);
 });
 
+test('Pitangueira is personal only; community header and directories say participantes without changing counts', () => {
+  const community = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const preview = read('src/components/ProfileCommunitiesPreviewBridge.tsx');
+  const personal = read('src/components/tabs/PitangaAccount.tsx');
+  assert.doesNotMatch(community, /SemeaduraJourneyPanel|Jornada da Pitangueira/);
+  assert.match(personal, /<SemeaduraJourneyPanel/);
+  assert.match(community, /selectedCommunity\.memberCount === 1 \? 'participante' : 'participantes'/);
+  assert.match(community, /aria-label="Ver participantes da comunidade"/);
+  assert.match(community, /onClick=\{\(\) => setMembersModalOpen\(true\)\}/);
+  assert.match(community, /aria-label="Participantes da comunidade"/);
+  assert.match(community, /<h3 className="text-base font-black text-white">Participantes<\/h3>/);
+  assert.match(community, /community\.memberCount\.toLocaleString\('pt-BR'\)\} \{community\.memberCount === 1 \? 'participante' : 'participantes'/);
+  assert.match(preview, /selectedCommunity\.memberCount === 1 \? 'participante' : 'participantes'/);
+  assert.match(preview, /community\.memberCount\.toLocaleString\('pt-BR'\)\} \{community\.memberCount === 1 \? 'participante' : 'participantes'/);
+});
+
 test('community data layer uses canonical posts and retains no debate writers or import jobs', () => {
   const cloud = read('src/utils/communityCloud.ts');
   for (const name of ['communities', 'community_members', 'community_posts']) {
@@ -180,7 +196,7 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare \}\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments \}\)/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -207,6 +223,36 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.doesNotMatch(ui, /<main className="flex-1 overflow-y-auto p-4">/); // One community scroll region, no separate debate view.
 });
 
+test('community author controls comments and one pinned comment in both mural and Praça', () => {
+  const composer = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const api = read('src/utils/communityCloud.ts');
+  const actions = read('src/utils/communityPostInteractions.ts');
+  const card = read('src/components/CommunityPostCard.tsx');
+  const square = read('src/components/CommunitySquareFeedCard.tsx');
+  const projection = read('src/utils/communitySquareFeed.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  assert.match(composer, /const \[wallAllowComments, setWallAllowComments\] = useState\(true\)/);
+  assert.match(composer, /aria-label="Permitir comentários nesta publicação"/);
+  assert.match(composer, /allowComments: wallAllowComments/);
+  assert.match(api, /allowComments: input\.allowComments !== false/);
+  assert.match(api, /pinnedCommentId: ''/);
+  assert.match(api, /allowComments: data\.allowComments !== false/);
+  assert.match(projection, /allowComments: source\.allowComments !== false/);
+  assert.match(projection, /pinnedCommentId: read\(source\.pinnedCommentId\)/);
+  assert.match(actions, /setCommunityPostPinnedComment/);
+  assert.match(actions, /currentPost\.data\(\)\.allowComments === false/);
+  assert.match(card, /post\.allowComments === false \? 'Comentários' : 'Comentar'/);
+  assert.match(card, /post\.allowComments !== false && canParticipate/);
+  assert.match(card, /Fixado pelo autor/);
+  assert.match(card, /onPinComment\(comment\.id\)/);
+  assert.match(card, /onPinComment\(''\)/);
+  assert.match(composer, /onPinComment=\{commentId => setCommunityPostPinnedComment\(post, commentId\)\}/);
+  assert.match(square, /onPinComment=\{commentId => setCommunityPostPinnedComment\(post, commentId\)\}/);
+  assert.match(rules, /data\.get\('allowComments', true\) == true/);
+  assert.match(rules, /incoming\(\)\.pinnedCommentId == ''/);
+  assert.match(rules, /community_post_comments\/\$\(incoming\(\)\.pinnedCommentId\)/);
+});
+
 test('reply parent reaches Firestore from both Community Mural and Praça distributed cards', () => {
   const mural = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const square = read('src/components/CommunitySquareFeedCard.tsx');
@@ -221,6 +267,30 @@ test('reply parent reaches Firestore from both Community Mural and Praça distri
   assert.match(interactions, /parentCommentId \? \{ parentCommentId \} : \{\}/);
   assert.match(interactions, /parentCommentId: typeof data\.parentCommentId === 'string'/);
   assert.match(card, /orderCommentThreads\(displayComments\)/);
+});
+
+test('community post actions are text-only and recent comments reuse canonical live data', () => {
+  const card = read('src/components/CommunityPostCard.tsx');
+  const square = read('src/components/CommunitySquareFeedCard.tsx');
+  const semear = read('src/components/SemearButton.tsx');
+  const interactions = read('src/utils/communityPostInteractions.ts');
+  assert.match(card, /<SemearButton kind="community" postId=\{post\.id\} viewerId=\{viewerId\} compact/);
+  assert.match(semear, /!compact && \(state\?\.closed/);
+  assert.match(semear, /compact\s*\? compactLabel/);
+  assert.match(card, /\{isLiked \? 'Curtido' : 'Curtir'\}/);
+  assert.match(card, /\{saved \? 'Salvo' : 'Salvar'\}/);
+  assert.doesNotMatch(card, /Comentar · \{postComments\.length\}/);
+  assert.match(card, /<button type="button" aria-expanded=\{commentsOpen\}/);
+  assert.match(card, /selectRecentComments\(\s*postComments\.filter/);
+  assert.match(card, /Comentários recentes da publicação/);
+  assert.match(card, /previewComments\.map\(comment =>/);
+  assert.match(card, /postComments\.length > previewComments\.length \+ \(pinnedDisplayComment \? 1 : 0\)/);
+  assert.match(card, /Ver mais comentários/);
+  assert.match(card, /onClick=\{\(\) => setCommentsOpen\(true\)\}/);
+  assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
+  assert.match(square, /<CommunityPostCard/);
+  assert.match(interactions, /where\('communityId', '==', communityId\)/);
+  assert.doesNotMatch(card, /subscribeCommunityPostInteractions\(/);
 });
 
 test('community cards reuse canonical saved actions and have persisted likes, comments and report menu', () => {
