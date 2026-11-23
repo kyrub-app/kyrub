@@ -1,5 +1,6 @@
 import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
+import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION,isOpenPromotionalTag,normalizePromotionalPresentation,publicPromotionalPresentation,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
 import {validatePromotionalMediaReferences} from './kyrubTagMediaService.js';
 import {isTagId,isTagModel,tagUrl,normalizeTagRecipientEmail,parseTagExternalUrl,type TagExternalLink,type TagDestinationCatalog,type TagDestinationOption,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
@@ -52,6 +53,7 @@ export async function claimKyrubTag(actor:string,id:string,code:unknown){
  * Existing reserved pilot 001 and protected inventory never satisfy this policy.
  */
 export async function provisionPromotionalKyrubTag(){
+ assertTagPilotWriteIsolated();
  if(!promotionalEnabled())throw Error('TAG_PROMO_DISABLED');
  const id=randomBytes(16).toString('hex');
  await tags().doc(id).create({
@@ -63,6 +65,7 @@ export async function provisionPromotionalKyrubTag(){
 }
 
 export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEmail:unknown){
+ assertTagPilotWriteIsolated();
  validActor(actor);
  const email=normalizeTagRecipientEmail(verifiedEmail);
  if(!promotionalEnabled())throw Error('TAG_PROMO_DISABLED');
@@ -95,6 +98,7 @@ export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEm
  * Keep immutable firstOwnerId for audit, rotate the code in the same transaction.
  */
 export async function recoverPromotionalKyrubTag(actor:string,id:string,verifiedEmail:unknown,code:unknown){
+ assertTagPilotWriteIsolated();
  validActor(actor);
  const email=normalizeTagRecipientEmail(verifiedEmail);
  if(!promotionalEnabled())throw Error('TAG_PROMO_DISABLED');
@@ -127,6 +131,7 @@ export async function recoverPromotionalKyrubTag(actor:string,id:string,verified
  * authentication identity. Old recovery codes immediately stop working.
  */
 export async function rotatePromotionalRecoveryCode(actor:string,id:string){
+ assertTagPilotWriteIsolated();
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const recoveryCode=randomBytes(24).toString('hex');
@@ -139,6 +144,7 @@ export async function rotatePromotionalRecoveryCode(actor:string,id:string){
 }
 
 export async function configurePromotionalKyrubTag(actor:string,id:string,input:unknown){
+ assertTagPilotWriteIsolated();
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const presentation=normalizePromotionalPresentation(input);
@@ -152,6 +158,7 @@ export async function configurePromotionalKyrubTag(actor:string,id:string,input:
 }
 
 export async function setPromotionalBlock(actor:string,id:string,blocked:boolean){
+ assertTagPilotWriteIsolated();
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  return adminDb.runTransaction(async tx=>{
