@@ -518,7 +518,7 @@ export function ProfileCommunitiesPreviewBridge() {
             {community.name}
           </strong>
           <span className="mt-1 block text-[8px] text-slate-500">
-            {community.memberCount.toLocaleString('pt-BR')} participantes
+            {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
           </span>
           <span className="mt-1 block truncate text-[8px] text-sky-300/75">
             {community.activityLabel}
@@ -720,7 +720,7 @@ export function ProfileCommunitiesPreviewBridge() {
                             {community.name}
                           </span>
                           <span className="shrink-0 text-[8px] text-slate-500">
-                            {community.memberCount} participantes
+                            {community.memberCount} {community.memberCount === 1 ? 'participante' : 'participantes'}
                           </span>
                         </button>
                       ))}

@@ -1040,7 +1040,7 @@ export function ProfileCommunitiesCloudBridge() {
               {community.name}
             </strong>
             <span className="mt-1 block text-xs text-slate-500">
-              {community.memberCount.toLocaleString('pt-BR')} participantes
+              {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
             </span>
             <span className="mt-1 block truncate text-xs text-sky-300/75">
               {community.category}
@@ -1111,7 +1111,7 @@ export function ProfileCommunitiesCloudBridge() {
         </div>
         <div className="p-3">
           <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">{community.name}</strong>
-          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} participantes</span>
+          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}</span>
           <span className="mt-1 block truncate text-xs text-sky-300/75">{community.category}</span>
           {layout === 'catalog' && community.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
@@ -1306,7 +1306,7 @@ export function ProfileCommunitiesCloudBridge() {
             onClick={event => event.stopPropagation()}
             className="w-full max-w-md space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
             <h3 className="text-xl font-black text-white">{selectedPublicPreview.name}</h3>
-            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} participantes</p>
+            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} {selectedPublicPreview.memberCount === 1 ? 'participante' : 'participantes'}</p>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{selectedPublicPreview.description}</p>
             <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200">
               Esta comunidade consta na Praça pública, mas os dados completos não foram disponibilizados pela leitura autenticada.
@@ -1475,7 +1475,7 @@ export function ProfileCommunitiesCloudBridge() {
                             {community.name}
                           </span>
                           <span className="text-[11px] text-slate-500">
-                            {community.memberCount} participantes
+                            {community.memberCount} {community.memberCount === 1 ? 'participante' : 'participantes'}
                           </span>
                         </button>
                       ))}

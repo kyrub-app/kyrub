@@ -39,9 +39,9 @@ test('Pitangueira is personal only; community header and directories say partici
   assert.match(community, /onClick=\{\(\) => setMembersModalOpen\(true\)\}/);
   assert.match(community, /aria-label="Participantes da comunidade"/);
   assert.match(community, /<h3 className="text-base font-black text-white">Participantes<\/h3>/);
-  assert.match(community, /community\.memberCount\.toLocaleString\('pt-BR'\)\} participantes/);
+  assert.match(community, /community\.memberCount\.toLocaleString\('pt-BR'\)\} \{community\.memberCount === 1 \? 'participante' : 'participantes'/);
   assert.match(preview, /selectedCommunity\.memberCount === 1 \? 'participante' : 'participantes'/);
-  assert.match(preview, /community\.memberCount\.toLocaleString\('pt-BR'\)\} participantes/);
+  assert.match(preview, /community\.memberCount\.toLocaleString\('pt-BR'\)\} \{community\.memberCount === 1 \? 'participante' : 'participantes'/);
 });
 
 test('community data layer uses canonical posts and retains no debate writers or import jobs', () => {
