@@ -14,6 +14,12 @@ export const PROMOTIONAL_TAG_KIND='promotional' as const;
 
 type ProspectiveTag={
   distribution?:unknown;
+  model?:unknown;
+  pilotBatch?:unknown;
+  pilotSlot?:unknown;
+  reservedForUid?:unknown;
+  firstOwnerId?:unknown;
+  recoveryHash?:unknown;
   ownerId?:unknown;
   enabled?:unknown;
   activationHash?:unknown;
@@ -23,6 +29,12 @@ type ProspectiveTag={
 
 export function isOpenPromotionalTag(data:ProspectiveTag|undefined):boolean{
   return data?.distribution===PROMOTIONAL_TAG_KIND &&
+    data.model==='adesivo' &&
+    data.pilotBatch==null &&
+    data.pilotSlot==null &&
+    data.reservedForUid==null &&
+    data.firstOwnerId==null &&
+    data.recoveryHash==null &&
     data.ownerId===null &&
     data.enabled===false &&
     data.activationHash===null &&
