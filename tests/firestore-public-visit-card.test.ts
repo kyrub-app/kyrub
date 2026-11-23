@@ -512,3 +512,68 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
   else process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED=prev;
  }
 });
+
+
+test('tag-only authentication prepares no Kyrub account; explicit promotion is required',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
+ const {adminAuth}=await import('../server/firebaseAdmin.js');
+ const {provisionPromotionalKyrubTag,provisionKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const {getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+ const api=(await import('../api/health.js')).default;
+ const original=process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+ const password='isolated-tag-only-identity';
+ async function authToken(uid:string,verified:boolean){
+  const email=uid+'@example.test';
+  await adminAuth.createUser({uid,email,password,emailVerified:verified});
+  const response=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+
+    '/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  assert.equal(response.ok,true);
+  const data=await response.json() as {idToken:string};
+  return data.idToken;
+ }
+ async function route(uidToken:string,tagId:string,method:'GET'|'POST',body?:Record<string,unknown>,view='identity'){
+  let status=0,value:unknown;
+  const response={setHeader(){},status(n:number){status=n;return response;},json(data:unknown){value=data;}};
+  await api({method,headers:{authorization:'Bearer '+uidToken},
+    query:{transport:'manage-kyrub-tag',id:tagId,view},...(body?{body}:{})} as never,response as never);
+  return {status,body:value};
+ }
+ try{
+  process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED='true';
+  const unit=await provisionPromotionalKyrubTag(),protectedUnit=await provisionKyrubTag('adesivo');
+  const ownerToken=await authToken('tag-minimal-owner',true);
+  const unverifiedToken=await authToken('tag-minimal-unverified',false);
+  assert.deepEqual(await getTagIdentityMode('tag-minimal-owner'),{mode:'unclassified'});
+  assert.equal((await route(unverifiedToken,unit.id,'POST',{action:'prepare-promotional-identity'})).status,403);
+  assert.equal((await route(ownerToken,protectedUnit.id,'POST',{action:'prepare-promotional-identity'})).status,403);
+  const prepared=await route(ownerToken,unit.id,'POST',{action:'prepare-promotional-identity'});
+  assert.deepEqual(prepared,{status:200,body:{mode:'tag_only'}});
+  assert.equal((await route(ownerToken,unit.id,'POST',{action:'prepare-promotional-identity'})).status,200);
+  assert.deepEqual((await route(ownerToken,'','GET')).body,{mode:'tag_only'});
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('kyrub_tag_minimal_identities/tag-minimal-owner').get()).get('mode'),'tag_only');
+  const claimed=await route(ownerToken,unit.id,'POST',{action:'claim-promotional'});
+  assert.equal(claimed.status,200);
+  const afterClaim=await adminDb.doc('kyrub_tag_minimal_identities/tag-minimal-owner').get();
+  assert.equal(afterClaim.get('mode'),'tag_only');
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+  // No anonymous or unrelated user can promote a different identity.
+  assert.equal((await route(unverifiedToken,'','POST',{action:'promote-tag-identity'})).status,409);
+  const promoted=await route(ownerToken,'','POST',{action:'promote-tag-identity'});
+  assert.equal(promoted.status,200);
+  assert.deepEqual((promoted.body as {mode:string;replay:boolean}),{mode:'full',replay:false});
+  assert.deepEqual((await route(ownerToken,'','POST',{action:'promote-tag-identity'})).body,{mode:'full',replay:true});
+  assert.deepEqual((await route(ownerToken,'','GET')).body,{mode:'full'});
+  // Only the explicit app bootstrap may create the user/store after consent.
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+ }finally{
+  if(original===undefined)delete process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+  else process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=original;
+ }
+});
