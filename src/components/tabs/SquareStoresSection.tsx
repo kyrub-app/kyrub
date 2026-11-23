@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowRight, Heart, Store as StoreIcon } from 'lucide-react';
+import { ArrowRight, Heart } from 'lucide-react';
+import { StoreCardBannerCarousel } from '../StoreCardBannerCarousel';
 import { SquareDirectoryLayout, type SquareDirectoryTab } from '../SquareDirectoryLayout';
 import type { Store } from '../../types';
 
@@ -10,6 +11,8 @@ type PublicStoreCard = {
   slug: string;
   description: string;
   logo: string;
+  banner: string;
+  bannerImages?: string[];
   official: boolean;
   source?: Store;
 };
@@ -84,6 +87,8 @@ export function SquareStoresSection({
           name: store.name,
           description: typeof store.description === 'string' ? store.description : '',
           logo: typeof store.logo === 'string' ? store.logo : '',
+          banner: typeof store.banner === 'string' ? store.banner : '',
+          bannerImages: Array.isArray(store.bannerImages) ? store.bannerImages.filter((value): value is string => typeof value === 'string') : undefined,
           official: true,
         });
       })
@@ -117,6 +122,8 @@ export function SquareStoresSection({
         name: store.name,
         description: store.description || '',
         logo: store.logo || '',
+        banner: store.banner || '',
+        bannerImages: store.bannerImages,
         official: slug === OFFICIAL_STORE_SLUG,
         source: store,
       });
@@ -202,16 +209,8 @@ export function SquareStoresSection({
             return (
               <article key={store.slug || store.id}
                 className="relative flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-                <div className="relative flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
-                  {store.source?.banner && (
-                    <img src={store.source.banner} alt="" aria-hidden="true"
-                      className="absolute inset-0 h-full w-full object-cover opacity-65" referrerPolicy="no-referrer" />
-                  )}
-                  {store.logo
-                    ? <img src={store.logo} alt={store.name}
-                        className="relative h-14 w-14 rounded-xl object-cover" referrerPolicy="no-referrer" />
-                    : <StoreIcon className="relative h-10 w-10 text-orange-400" aria-hidden="true" />}
-                </div>
+                <StoreCardBannerCarousel name={store.name} logo={store.logo}
+                  banner={store.banner} bannerImages={store.bannerImages} />
                 <button type="button"
                   aria-label={favorite ? `Remover ${store.name} dos favoritos` : `Favoritar loja ${store.name}`}
                   aria-pressed={favorite}
@@ -312,10 +311,9 @@ export function SquareStoresSection({
         {visible.slice(0, 8).map(store => (
           <article key={store.slug || store.id}
             className="flex w-[206px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-            <div className="relative flex h-24 items-center justify-center bg-gradient-to-br from-sky-900/40 via-indigo-900/30 to-orange-900/20">
-              {store.logo
-                ? <img src={store.logo} alt={store.name} className="h-14 w-14 rounded-xl object-cover" referrerPolicy="no-referrer" />
-                : <StoreIcon className="h-10 w-10 text-orange-400" aria-hidden="true" />}
+            <div className="relative h-24">
+              <StoreCardBannerCarousel name={store.name} logo={store.logo}
+                banner={store.banner} bannerImages={store.bannerImages} />
               <button type="button"
                 aria-label={favoriteStoreIds.includes(store.id) ? `Remover ${store.name} dos favoritos` : `Favoritar loja ${store.name}`}
                 aria-pressed={favoriteStoreIds.includes(store.id)}

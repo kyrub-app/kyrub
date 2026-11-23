@@ -17,6 +17,12 @@ const publicImage = (value: unknown): string => {
 const images = (value: unknown): string[] =>
   Array.isArray(value) ? value.map(publicImage).filter(Boolean).slice(0, 4) : [];
 
+/** Only already-published storefront banner photos, in merchant order. */
+const publicStoreBanners = (value: unknown, legacyBanner: string): string[] =>
+  [...new Set(Array.isArray(value)
+    ? value.map(publicImage).filter(Boolean)
+    : legacyBanner ? [legacyBanner] : [])].slice(0, 5);
+
 const readDate = (data: Record<string, unknown>): string => {
   const iso = str(data.createdAtIso, 64);
   if (Number.isFinite(Date.parse(iso))) return iso;
@@ -43,6 +49,7 @@ export function projectPublicSquareStore(data: Record<string, unknown>) {
     description: str(data.description, 500),
     logo: publicImage(data.logo),
     banner: publicImage(data.banner),
+    bannerImages: publicStoreBanners(data.bannerImages, publicImage(data.banner)),
     keywords: Array.isArray(data.keywords)
       ? data.keywords.filter((value): value is string => typeof value === 'string').map(value => value.slice(0, 80)).slice(0, 6)
       : [],

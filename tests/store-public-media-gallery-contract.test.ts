@@ -93,6 +93,27 @@ test('Firestore image allowlists are optional for legacy docs, bounded for new s
   assert.ok(deploy.includes('firebase-production'));
 });
 
+test('Praça store cards reuse published storefront banner images without duplicating uploads',()=>{
+  const card=source('src/components/tabs/SquareStoresSection.tsx');
+  const component=source('src/components/StoreCardBannerCarousel.tsx');
+  const guest=source('src/components/GuestSquarePanel.tsx');
+  const publicProjection=source('server/marketplace/publicSquareDiscoveryService.ts');
+  assert.ok(card.includes('StoreCardBannerCarousel'));
+  assert.equal((card.match(/<StoreCardBannerCarousel name=\{store\.name\}/g)??[]).length,2);
+  assert.ok(card.includes('bannerImages: store.bannerImages'));
+  assert.ok(card.includes('Array.isArray(store.bannerImages)'));
+  assert.ok(guest.includes('bannerImages: store.bannerImages'));
+  assert.ok(publicProjection.includes('publicStoreBanners(data.bannerImages, publicImage(data.banner))'));
+  assert.ok(component.includes('storeBannerImages({ banner, bannerImages })'));
+  assert.ok(component.includes('5200'));
+  assert.ok(component.includes('IntersectionObserver'));
+  assert.ok(component.includes("visibilitychange"));
+  assert.ok(component.includes('prefers-reduced-motion: reduce'));
+  assert.ok(component.includes('loading="lazy"'));
+  assert.ok(!component.includes('galleryImages'));
+  assert.ok(!component.includes('offerImages'));
+});
+
 test('public banner excludes product showcase photos and keeps the catalog unaffected',()=>{
   const hero=source('src/components/PublicStorefrontHero.tsx');
   assert.ok(hero.includes('storeBannerImages(store)'));

@@ -14,6 +14,7 @@ interface PublicSquareStore {
   description: string;
   logo: string;
   banner: string;
+  bannerImages?: string[];
   keywords: string[];
 }
 
@@ -57,6 +58,7 @@ const toStore = (store: PublicSquareStore): Store => ({
   description: store.description,
   logo: store.logo,
   banner: store.banner,
+  bannerImages: store.bannerImages,
   primaryColor: '',
   plan: 'free',
   ownerEmail: '',
