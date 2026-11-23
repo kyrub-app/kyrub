@@ -119,11 +119,29 @@ export default async function handler(
     try{
       const service=await import('../server/identity/kyrubTagService.js');
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
-      if(method==='GET'){response.status(200).json(queryValue(request.query?.view)==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
+      if(method==='GET'){
+        const view=queryValue(request.query?.view);
+        if(view==='identity'){
+          const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+          response.status(200).json(await identity.getTagIdentityMode(actor));return;
+        }
+        response.status(200).json(view==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;
+      }
       if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
       const data=body as Record<string,unknown>;
+      if(data.action==='prepare-promotional-identity'&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identityRecord=await adminAuth.getUser(actor);
+        if(identityRecord.disabled||identityRecord.emailVerified!==true||!identityRecord.email)throw Error('TAG_FORBIDDEN');
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.prepareTagMinimalIdentity(actor,id));return;
+      }
+      if(data.action==='promote-tag-identity'&&Object.keys(data).length===1){
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
+      }
       if(data.action==='claim-reserved'&&Object.keys(data).length===1){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);
@@ -156,6 +174,7 @@ export default async function handler(
       const code=error instanceof Error?error.message:'';
       if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
       else if(code==='TAG_PROMO_DISABLED')response.status(409).json({error:'TAG_PROMO_DISABLED'});
+      else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});
