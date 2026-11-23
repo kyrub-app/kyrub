@@ -57,16 +57,13 @@ export function PublicStorefrontQuickPanel({
         {store.contact && <p><strong className="text-white">Contato: </strong>{store.contact}</p>}
         <p className="font-mono text-[10px] text-orange-300">kyrub.com/@{store.slug}</p>
         {!store.contact && <p className="text-slate-400">Para entrar em contato, utilize o chat da loja.</p>}
-        <div id="public-storefront-policies-inside-info"
+        {store.policies?.trim() && <div id="public-storefront-policies-inside-info"
           className="space-y-2 border-t border-slate-700 pt-4">
           <div className="flex items-center gap-2 font-bold text-orange-300">
             <ShieldCheck className="h-4 w-4"/> Políticas e condições
           </div>
-          <p>
-            Esta loja ainda não publicou políticas institucionais específicas nesta vitrine.
-            Consulte a loja antes de combinar condições de atendimento, entrega, troca ou cancelamento.
-          </p>
-        </div>
+          <p className="whitespace-pre-wrap break-words">{store.policies}</p>
+        </div>}
       </div>}
       {selected==='reservas' && <div className="space-y-3 pt-4 text-xs leading-5">
         <div className="flex items-center gap-2 text-orange-300">
