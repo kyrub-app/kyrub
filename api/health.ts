@@ -99,6 +99,23 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'public-kyrub-tag-media') {
+    response.setHeader('Cache-Control','private, no-store, max-age=0');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    response.setHeader('Cross-Origin-Resource-Policy','same-origin');
+    const method=(request.method??'GET').toUpperCase();
+    if(method!=='GET'){response.setHeader('Allow','GET');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const id=queryValue(request.query?.id),slot=queryValue(request.query?.slot);
+    try{
+      const {getPublicPromotionalTagImage}=await import('../server/identity/kyrubTagMediaService.js');
+      const bytes=await getPublicPromotionalTagImage(id,slot);
+      if(!bytes){response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});return;}
+      response.setHeader('Content-Type','image/webp');
+      (response as ResponseLike&{send(body:Buffer):void}).status(200).send(bytes);
+    }catch{response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});}
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
