@@ -5,6 +5,17 @@ import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 
 type Unit={id:string;url:string;physicalStatus:'not_verified'};
 type Batch={id:string;model:'adesivo';count:number;units:Unit[]};
+type Readiness={
+ isolation:'emulator'|'isolated-project'|'unsafe';
+ productionDataProtected:boolean;
+ issuanceEnabled:boolean;
+ activationEnabled:boolean;
+ minimalIdentityGateConfigured:boolean;
+ emailLinkProvider:string;
+ storageRulesPublished:string;
+ physicalNfcVerified:boolean;
+ canIssue:boolean;
+};
 type Writer={write(message:{records:{recordType:'url';data:string}[]},options:{overwrite:false;signal:AbortSignal}):Promise<void>};
 const endpoint='/api/admin/operations/health?transport=kyrub-tag-promotional-batches';
 const btn='min-h-11 rounded-xl border border-slate-600 px-3 py-2 text-sm font-semibold text-slate-100 disabled:opacity-50';
@@ -28,6 +39,7 @@ function nonce(){
 
 export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
  const [batches,setBatches]=useState<Batch[]>([]);
+ const [readiness,setReadiness]=useState<Readiness|null>(null);
  const [selected,setSelected]=useState('');
  const [count,setCount]=useState(5);
  const [confirm,setConfirm]=useState(false);
@@ -44,18 +56,18 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
    headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
    body:body?JSON.stringify(body):undefined});
   if(!res.ok)throw Error('BATCH_UNAVAILABLE');
-  return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean}>;
+  return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean;readiness?:Readiness}>;
  }
  useEffect(()=>{
   const ctrl=new AbortController();setReady(false);setBatches([]);setNotice('');
   void request('GET',undefined,ctrl.signal).then(result=>{
    if(ctrl.signal.aborted)return;
-   setBatches((result.batches??[]).map(validateBatch));setReady(true);
+   setBatches((result.batches??[]).map(validateBatch));setReadiness(result.readiness??null);setReady(true);
   }).catch(()=>{if(!ctrl.signal.aborted)setNotice('Inventário indisponível. Verifique o acesso Super Admin.');});
   return()=>{ctrl.abort();writer.current?.abort();};
  },[user.uid]);
  async function issue(){
-  if(!ready||busy||writing||!confirm)return;
+  if(!ready||!readiness?.canIssue||busy||writing||!confirm)return;
   setBusy(true);setNotice('');
   const id=requestId.current??nonce();
   requestId.current=id;
@@ -90,8 +102,21 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
  return <section className="space-y-4 text-sm text-slate-200">
   <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">Fluxo de homologação. A emissão e a primeira ativação promocional ficam desativadas por padrão no servidor. Não distribuir unidades sem validar o lote e a leitura física.</p>
   <div className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <h5 className="font-semibold">Prontidão do primeiro piloto</h5>
+   {!readiness?<p role="status" className="text-amber-200">Não foi possível confirmar o isolamento. A emissão permanece indisponível.</p>:
+    <>
+     <p className={readiness.isolation==='unsafe'?'text-amber-200':'text-emerald-300'}>
+      {readiness.isolation==='unsafe'?'Bloqueado: projeto Firebase de produção ou isolamento não comprovado':
+       readiness.isolation==='emulator'?'Ambiente de emuladores local isolado':'Projeto Firebase exclusivo de homologação confirmado'}
+     </p>
+     <p>Emissão: {readiness.issuanceEnabled?'habilitada':'desligada'} · Primeira ativação: {readiness.activationEnabled?'habilitada':'desligada'} · Identidade mínima: {readiness.minimalIdentityGateConfigured?'configurada no servidor':'não confirmada'}</p>
+     <p className="text-amber-200">Login por e-mail, regras Storage publicadas e leitura NFC física ainda dependem de homologação manual.</p>
+    </>}
+  </div>
+  <div className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <h5 className="font-semibold">Emitir lote promocional · Adesivos NFC</h5>
    <p>Sem cadastro de e-mail nem destinatário. As etiquetas comerciais protegidas continuam separadas. Cada unidade recebe um endereço próprio.</p>
+   {!readiness?.canIssue&&<p className="text-sm text-amber-200">A emissão só será liberada após configurar um projeto Firebase de homologação separado e ativar o piloto no servidor. Não há botão de desbloqueio nesta tela.</p>}
    <label className="block">Quantidade por lote (1–10)
     <input type="number" min={1} max={10} value={count} disabled={busy||writing} onChange={e=>{setCount(Number(e.target.value));setConfirm(false);requestId.current=null;}} className="mt-1 min-h-11 w-28 rounded-xl border border-[#34443B] bg-slate-900 p-3"/>
    </label>
@@ -99,7 +124,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
     <input type="checkbox" checked={confirm} disabled={busy||writing||!ready} onChange={e=>setConfirm(e.target.checked)}/>
     Confirmo a emissão de identificadores promocionais sem destinatário, ainda não gravados fisicamente.
    </label>
-   <button type="button" className={btn} disabled={!ready||!confirm||busy||writing||!Number.isInteger(count)||count<1||count>10} onClick={()=>void issue()}>{busy?'Emitindo…':'Emitir lote promocional'}</button>
+   <button type="button" className={btn} disabled={!ready||!readiness?.canIssue||!confirm||busy||writing||!Number.isInteger(count)||count<1||count>10} onClick={()=>void issue()}>{busy?'Emitindo…':'Emitir lote promocional'}</button>
   </div>
   <div className="space-y-3">
    <h5 className="font-semibold">Inventário de lotes emitidos</h5>
