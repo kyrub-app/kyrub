@@ -6,6 +6,7 @@ const source = (path: string) => readFileSync(path, 'utf8');
 const wrapperSource = source('src/components/StorefrontPanel.tsx');
 const storefrontSource = source('src/components/LegacyStorefrontPanel.tsx');
 const publicStorefrontSource = source('src/components/PublicStorefrontApp.tsx');
+const publicHeroSource = source('src/components/PublicStorefrontHero.tsx');
 const storefrontEventsSource = source('src/utils/storefrontEvents.ts');
 const sharedPdvSource = source('src/components/pdv/SharedPdvCatalog.tsx');
 const staffPdvSource = [
@@ -28,7 +29,8 @@ test('storefront movement indicator uses live KDS order load', () => {
 });
 
 test('header store logo opens public store information without private contact data', () => {
-  matches(publicStorefrontSource, [/id="public-storefront-header-info-trigger"/, /OPEN_PUBLIC_STOREFRONT_INFO_EVENT/]);
+  matches(publicHeroSource, [/id="public-storefront-header-info-trigger"/, /id="public-storefront-close"/]);
+  matches(publicStorefrontSource, [/OPEN_PUBLIC_STOREFRONT_INFO_EVENT/, /<PublicStorefrontHero/]);
   matches(storefrontEventsSource, [/kyrub:open-public-storefront-info/]);
   matches(storefrontSource, [/window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/, /id="storefront-store-info-modal"/, /activeConsumerStore\.description/, /activeConsumerStore\.address/]);
   excludes(storefrontSource, [/activeConsumerStore\.contact/, /activeConsumerStore\.ownerEmail/, /id="storefront-store-info-trigger"/]);

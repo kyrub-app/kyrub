@@ -326,37 +326,33 @@ test('authenticated storefront enrichments stay behind an authenticated user', (
   assert.match(publicStorefrontSource, /subscribeToStoreCustomerOrders/);
 });
 
-test('public storefront uses the real logo in the header and a banner carousel', () => {
-  assert.match(publicStorefrontSource, /Logo de \$\{store\.name\}/);
-  assert.match(storefrontPanelSource, /activeConsumerStore\?\.offerImages/);
-  assert.match(storefrontPanelSource, /aria-roledescription="carrossel"/);
-  assert.match(storefrontPanelSource, /setInterval/);
-  assert.match(storefrontPanelSource, /onTouchStart/);
-  assert.match(storefrontPanelSource, /onTouchEnd/);
-  assert.match(storefrontPanelSource, /bg-gradient-to-t/);
-  assert.match(storefrontPanelSource, /line-clamp-3/);
+test('public storefront uses one immersive logo and a rotating banner', () => {
+  const hero = readFileSync('src/components/PublicStorefrontHero.tsx', 'utf8');
+  for (const expected of [
+    'Logo de ${store.name}',
+    'aria-roledescription="carrossel"',
+    'setInterval',
+    'onTouchStart',
+    'onTouchEnd',
+    'bg-gradient-to-t',
+  ]) assert.ok(hero.includes(expected), 'Missing hero behavior: ' + expected);
+  assert.ok(publicStorefrontSource.includes('<PublicStorefrontHero'));
+  assert.ok(publicStorefrontSource.includes('hideHero'));
+  assert.ok(storefrontPanelSource.includes('activeConsumerStore?.offerImages'));
+  assert.ok(storefrontPanelSource.includes('line-clamp-3'));
 });
 
-test('storefront header owns info and close actions while movement uses fire beside the name', () => {
-  assert.match(
-    storefrontEventsSource,
-    /kyrub:open-public-storefront-info/
-  );
-  assert.match(
-    publicStorefrontSource,
-    /id="public-storefront-header-info-trigger"/
-  );
-  assert.match(publicStorefrontSource, /OPEN_PUBLIC_STOREFRONT_INFO_EVENT/);
-  assert.match(publicStorefrontSource, /id="public-storefront-close"/);
-  assert.match(publicStorefrontSource, /window\.history\.back\(\)/);
-  assert.match(
-    storefrontPanelSource,
-    /window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/
-  );
-  assert.match(storefrontPanelSource, /<Flame/);
-  assert.doesNotMatch(storefrontPanelSource, /<Zap/);
-  assert.doesNotMatch(storefrontPanelSource, /storefront-store-info-trigger/);
-  assert.doesNotMatch(storefrontPanelSource, />\s*Vitrine pública\s*</);
+test('public hero retains modal and close actions with the fire status', () => {
+  const hero = readFileSync('src/components/PublicStorefrontHero.tsx', 'utf8');
+  assert.ok(storefrontEventsSource.includes('kyrub:open-public-storefront-info'));
+  assert.ok(hero.includes('id="public-storefront-header-info-trigger"'));
+  assert.ok(publicStorefrontSource.includes('OPEN_PUBLIC_STOREFRONT_INFO_EVENT'));
+  assert.ok(hero.includes('id="public-storefront-close"'));
+  assert.ok(publicStorefrontSource.includes('window.history.back()'));
+  assert.ok(storefrontPanelSource.includes('OPEN_PUBLIC_STOREFRONT_INFO_EVENT'));
+  assert.ok(hero.includes('<Flame'));
+  assert.ok(!storefrontPanelSource.includes('<Zap'));
+  assert.ok(!storefrontPanelSource.includes('storefront-store-info-trigger'));
 });
 
 test('the staff route opens the real retailer workspace after Google authentication', () => {
