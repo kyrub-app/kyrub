@@ -65,12 +65,14 @@ export const listAuthorizedStaffTasks = async (input: {
     ? tasksFor(actor).orderBy('createdAt', 'desc')
     : tasksFor(actor).where('assignedTo', '==', actor.uid))
     .limit(STAFF_TASK_MAX_RESULTS).get();
-  return snap.docs.map(doc => doc.data() as StaffChecklistTask).filter(task =>
-    safeStaffTaskId(task.id) && task.id === doc.id &&
-    task.canonicalStoreId === actor.canonicalStoreId &&
-    task.legacyStoreId === actor.legacyStoreId &&
-    canAccessStaffTask(actor, task)
-  ).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  return snap.docs.map(doc => ({ doc, task: doc.data() as StaffChecklistTask }))
+    .filter(({ doc, task }) =>
+      safeStaffTaskId(task.id) && task.id === doc.id &&
+      task.canonicalStoreId === actor.canonicalStoreId &&
+      task.legacyStoreId === actor.legacyStoreId &&
+      canAccessStaffTask(actor, task)
+    ).map(({task}) => task)
+    .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
 };
 
 export const createAuthorizedStaffTask = async (input: {
