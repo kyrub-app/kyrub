@@ -43,10 +43,15 @@ test('approved tag personalization has four compact individually expandable dest
 
 test('promotional NFC stock is explicitly opt-in and cannot weaken protected or experimental units',async()=>{
  const {isOpenPromotionalTag,normalizePromotionalPresentation,EMPTY_PROMOTIONAL_PRESENTATION}=await import('../shared/kyrubTagPromotional');
- const open={distribution:'promotional',ownerId:null,enabled:false,activationHash:null,reservedEmailHash:null};
+ const open={distribution:'promotional',model:'adesivo',ownerId:null,enabled:false,activationHash:null,reservedEmailHash:null};
  assert.equal(isOpenPromotionalTag(open),true);
  for(const altered of [
   {...open,distribution:'protected'},
+  {...open,model:'pulseira'},
+  {...open,pilotBatch:'experimental-001',pilotSlot:'001'},
+  {...open,reservedForUid:'another-user'},
+  {...open,firstOwnerId:'previous-owner'},
+  {...open,recoveryHash:'already-issued'},
   {...open,ownerId:'another-user'},
   {...open,enabled:true},
   {...open,activationHash:'secret-hash'},
