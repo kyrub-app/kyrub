@@ -149,17 +149,109 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
           </button>
         </div>
 
+        {/* Write a New Moment Form */}
+        <form onSubmit={handleSubmit} className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-4">
+          <h4 className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Publicar meu momento</h4>
+
+          <div className="space-y-3">
+            {/* Text Content */}
+            <div className="space-y-1">
+              <label className="text-[9px] text-slate-500 font-mono uppercase">O que você achou das ofertas ou da visita?</label>
+              <textarea
+                value={newMomentContent}
+                onChange={(e) => setNewMomentContent(e.target.value)}
+                placeholder="Ex: Excelente atendimento! Comprei as ferramentas em oferta e ganhei desconto no PIX."
+                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
+                rows={2.5}
+                required
+              />
+            </div>
+
+            {/* Rating (Stars Selector) */}
+            <div className="flex items-center justify-between border-b border-slate-900 pb-2.5">
+              <span className="text-[9px] text-slate-400 font-mono uppercase">Sua Nota de Avaliação:</span>
+              <div className="flex gap-1.5">
+                {[1, 2, 3, 4, 5].map(star => (
+                  <button
+                    key={star}
+                    type="button"
+                    onClick={() => setNewMomentRating(star)}
+                    className={`text-base cursor-pointer hover:scale-125 transition-transform ${
+                      star <= newMomentRating ? 'text-amber-400' : 'text-slate-700'
+                    }`}
+                  >
+                    ★
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Simulated Photo attachment selector */}
+            <div className="space-y-1.5">
+              <span className="text-[9px] text-slate-400 font-mono uppercase block">Vincular Foto da Vitrine da Loja:</span>
+              <div className="grid grid-cols-4 gap-2">
+                {selectedStoreForMoments.offerImages && selectedStoreForMoments.offerImages.map((img, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setNewMomentPhoto(newMomentPhoto === img ? '' : img)}
+                    className={`relative rounded-lg overflow-hidden h-12 border-2 transition-all cursor-pointer ${
+                      newMomentPhoto === img 
+                        ? 'border-orange-500 scale-95 shadow-md shadow-orange-500/20' 
+                        : 'border-transparent hover:border-slate-800'
+                    }`}
+                  >
+                    <img src={img} alt="vitrine template" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Cross-Post Switch Toggle */}
+            <div className="flex items-center justify-between p-2.5 bg-slate-900/55 rounded-xl border border-slate-900/80 mt-2">
+              <div className="space-y-0.5">
+                <span className="text-[9px] font-mono text-slate-300 uppercase block">Compartilhar na Praça Social</span>
+                <p className="text-[8px] text-slate-500">Publicará este momento automaticamente no feed geral da Praça.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNewMomentPublishToPraca(!newMomentPublishToPraca)}
+                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
+                  newMomentPublishToPraca ? 'bg-orange-500' : 'bg-slate-850'
+                }`}
+              >
+                <span
+                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
+                    newMomentPublishToPraca ? 'translate-x-4' : 'translate-x-0'
+                  }`}
+                />
+              </button>
+            </div>
+          </div>
+
+          {/* Publish Button */}
+          {submitError && <p className="text-xs text-red-300" role="alert">{submitError}</p>}
+          <p className="text-[9px] text-slate-500">Uma avaliação por Kairubido e por loja. Não identificamos compra verificada neste formulário; nenhum XP ou Pitanga é concedido por esta ação.</p>
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer text-center"
+          >
+            {submitting ? 'Enviando avaliação...' : 'Publicar avaliação'}
+          </button>
+        </form>
+
         {/* List Existing Moments */}
         <div className="space-y-3">
-          <span className="text-[10px] font-mono uppercase text-slate-400 block tracking-wider">Avaliações sincronizadas de clientes</span>
+          <span className="text-[10px] font-mono uppercase text-slate-400 block tracking-wider">Momentos compartilhados</span>
           <div className="space-y-3 max-h-56 overflow-y-auto pr-1">
-            {loadingReviews && <p className="p-3 text-xs text-slate-400">Carregando avaliações...</p>}
+            {loadingReviews && <p className="p-3 text-xs text-slate-400">Carregando momentos...</p>}
             {reviewError && <p className="p-3 text-xs text-red-300" role="alert">{reviewError}</p>}
             {reportMessage && <p className="p-3 text-xs text-emerald-300" role="status">{reportMessage}</p>}
             {reportError && <p className="p-3 text-xs text-red-300" role="alert">{reportError}</p>}
             {!loadingReviews && storeMoments.length === 0 ? (
               <div className="text-center py-8 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-900">
-                Ainda não há avaliações sincronizadas para esta loja. Publique a primeira abaixo!
+                Ainda não há momentos compartilhados nesta loja. Publique o primeiro usando o formulário acima!
               </div>
             ) : (
               storeMoments.map(mom => (
@@ -258,97 +350,6 @@ export const MomentsModal: React.FC<MomentsModalProps> = ({
           )}
         </div>
 
-        {/* Write a New Moment Form */}
-        <form onSubmit={handleSubmit} className="bg-slate-950 border border-slate-850 p-4 rounded-2xl space-y-4">
-          <h4 className="text-[10px] font-mono uppercase text-slate-400 tracking-wider">Publicar Meu Momento / Review</h4>
-
-          <div className="space-y-3">
-            {/* Text Content */}
-            <div className="space-y-1">
-              <label className="text-[9px] text-slate-500 font-mono uppercase">O que você achou das ofertas ou da visita?</label>
-              <textarea
-                value={newMomentContent}
-                onChange={(e) => setNewMomentContent(e.target.value)}
-                placeholder="Ex: Excelente atendimento! Comprei as ferramentas em oferta e ganhei desconto no PIX."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-orange-500"
-                rows={2.5}
-                required
-              />
-            </div>
-
-            {/* Rating (Stars Selector) */}
-            <div className="flex items-center justify-between border-b border-slate-900 pb-2.5">
-              <span className="text-[9px] text-slate-400 font-mono uppercase">Sua Nota de Avaliação:</span>
-              <div className="flex gap-1.5">
-                {[1, 2, 3, 4, 5].map(star => (
-                  <button
-                    key={star}
-                    type="button"
-                    onClick={() => setNewMomentRating(star)}
-                    className={`text-base cursor-pointer hover:scale-125 transition-transform ${
-                      star <= newMomentRating ? 'text-amber-400' : 'text-slate-700'
-                    }`}
-                  >
-                    ★
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Simulated Photo attachment selector */}
-            <div className="space-y-1.5">
-              <span className="text-[9px] text-slate-400 font-mono uppercase block">Vincular Foto da Vitrine da Loja:</span>
-              <div className="grid grid-cols-4 gap-2">
-                {selectedStoreForMoments.offerImages && selectedStoreForMoments.offerImages.map((img, i) => (
-                  <button
-                    key={i}
-                    type="button"
-                    onClick={() => setNewMomentPhoto(newMomentPhoto === img ? '' : img)}
-                    className={`relative rounded-lg overflow-hidden h-12 border-2 transition-all cursor-pointer ${
-                      newMomentPhoto === img 
-                        ? 'border-orange-500 scale-95 shadow-md shadow-orange-500/20' 
-                        : 'border-transparent hover:border-slate-800'
-                    }`}
-                  >
-                    <img src={img} alt="vitrine template" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Cross-Post Switch Toggle */}
-            <div className="flex items-center justify-between p-2.5 bg-slate-900/55 rounded-xl border border-slate-900/80 mt-2">
-              <div className="space-y-0.5">
-                <span className="text-[9px] font-mono text-slate-300 uppercase block">Compartilhar na Praça Social</span>
-                <p className="text-[8px] text-slate-500">Publicará este momento automaticamente no feed geral da Praça.</p>
-              </div>
-              <button
-                type="button"
-                onClick={() => setNewMomentPublishToPraca(!newMomentPublishToPraca)}
-                className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${
-                  newMomentPublishToPraca ? 'bg-orange-500' : 'bg-slate-850'
-                }`}
-              >
-                <span
-                  className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-slate-950 shadow ring-0 transition duration-200 ease-in-out ${
-                    newMomentPublishToPraca ? 'translate-x-4' : 'translate-x-0'
-                  }`}
-                />
-              </button>
-            </div>
-          </div>
-
-          {/* Publish Button */}
-          {submitError && <p className="text-xs text-red-300" role="alert">{submitError}</p>}
-          <p className="text-[9px] text-slate-500">Uma avaliação por Kairubido e por loja. Não identificamos compra verificada neste formulário; nenhum XP ou Pitanga é concedido por esta ação.</p>
-          <button
-            type="submit"
-            disabled={submitting}
-            className="w-full py-2.5 bg-orange-600 hover:bg-orange-500 text-white font-black rounded-xl text-xs uppercase tracking-wider transition-colors cursor-pointer text-center"
-          >
-            {submitting ? 'Enviando avaliação...' : 'Publicar avaliação'}
-          </button>
-        </form>
       </div>
     </div>
   );
