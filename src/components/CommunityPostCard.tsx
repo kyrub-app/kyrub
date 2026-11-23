@@ -352,7 +352,7 @@ export function CommunityPostCard({
               </div>
               <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{pinnedDisplayComment.text}</p>
             </div>
-          }
+          )}
           {previewComments.map(comment => {
             const parent = comment.parentCommentId ? previewCommentById.get(comment.parentCommentId) : undefined;
             return (
