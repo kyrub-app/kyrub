@@ -20,6 +20,7 @@ import {
 import { listPublicStorePromotions } from './storePromotionService.js';
 import { parseProductSaleModality } from '../../shared/productSaleModality.js';
 import { parseSubscriptionContractDiscounts } from '../../shared/subscriptionContractOffers.js';
+import { readPublishedStoreReservationsEnabled } from '../staff/storeReservationSettingsService.js';
 import {
   OFFICIAL_STORE_CANONICAL_ID,
   isOfficialPlanProductId,
@@ -72,6 +73,8 @@ export type PublicStorefrontSnapshot = {
     logo: string;
     banner: string;
     primaryColor: string;
+    reservationsEnabled: boolean;
+    contact: string;
     address: string;
     keywords: string[];
     status: 'open' | 'delayed' | 'closed';
@@ -426,6 +429,8 @@ export const loadPublicStorefrontBySlug = async (
         logo: clean(storeData.logo),
         banner: clean(storeData.banner),
         primaryColor: clean(storeData.primaryColor),
+        reservationsEnabled: await readPublishedStoreReservationsEnabled(storeId, verifiedFirstStoreId),
+        contact: clean(storeData.contact),
         address: clean(storeData.address),
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
@@ -482,6 +487,8 @@ export const loadPublicStorefrontBySlug = async (
       logo: clean(legacyData.logo),
       banner: clean(legacyData.banner),
       primaryColor: clean(legacyData.primaryColor),
+      reservationsEnabled: await readPublishedStoreReservationsEnabled(legacyStoreId),
+      contact: clean(legacyData.contact),
       address: clean(legacyData.address),
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
