@@ -93,7 +93,7 @@ test('public hero is rendered once before catalog; other store contexts retain l
   const wrapper=readFileSync('src/components/StorefrontPanel.tsx','utf8');
   assert.match(app, /<PublicStorefrontHero/);
   assert.equal((app.match(/\s+hideHero\s*\n/g)||[]).length,2);
-  assert.ok(app.indexOf('<PublicStorefrontHero') < app.indexOf('<main className='));
+  assert.ok(app.indexOf('<PublicStorefrontHero') < app.indexOf('<main className="mx-auto w-full max-w-5xl p-3'));
   assert.match(legacy, /!hideHero && <section/);
   assert.match(legacy, /<SharedPdvCatalog/);
   assert.match(wrapper, /!hasPublishedCatalog && <StoreCustomerChatLauncher/);
