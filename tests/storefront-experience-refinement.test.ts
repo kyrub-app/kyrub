@@ -28,12 +28,15 @@ test('storefront movement indicator uses live KDS order load', () => {
   excludes(storefrontSource, [/<Zap/]);
 });
 
-test('header store logo opens public store information without private contact data', () => {
-  matches(publicHeroSource, [/id="public-storefront-header-info-trigger"/, /id="public-storefront-close"/]);
-  matches(publicStorefrontSource, [/OPEN_PUBLIC_STOREFRONT_INFO_EVENT/, /<PublicStorefrontHero/]);
+test('public storefront logo is purely visual; store information expands inline', () => {
+  const quickPanel = source('src/components/PublicStorefrontQuickPanel.tsx');
+  matches(publicHeroSource, [/aria-label="Atalhos da loja"/, /public-storefront-action-info/, /public-storefront-action-reservas/]);
+  matches(publicStorefrontSource, [/<PublicStorefrontHero/, /<PublicStorefrontQuickPanel/]);
+  matches(quickPanel, [/Esta loja não trabalha com reservas/, /store.description/, /store.address/]);
+  excludes(publicHeroSource, [/public-storefront-header-info-trigger/, /public-storefront-close/]);
   matches(storefrontEventsSource, [/kyrub:open-public-storefront-info/]);
-  matches(storefrontSource, [/window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/, /id="storefront-store-info-modal"/, /activeConsumerStore\.description/, /activeConsumerStore\.address/]);
-  excludes(storefrontSource, [/activeConsumerStore\.contact/, /activeConsumerStore\.ownerEmail/, /id="storefront-store-info-trigger"/]);
+  matches(storefrontSource, [/window\.addEventListener\(\s*OPEN_PUBLIC_STOREFRONT_INFO_EVENT/, /id="storefront-store-info-modal"/]);
+  excludes(storefrontSource, [/activeConsumerStore\.contact/, /activeConsumerStore\.ownerEmail/]);
 });
 
 test('customer and staff render the same shared PDV catalog', () => {
