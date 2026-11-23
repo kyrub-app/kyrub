@@ -123,8 +123,17 @@ a.bg-orange-600.text-white {
   color: var(--kyrub-cream);
 }
 
-#renda-tab-container > .grid:first-child > :nth-child(2) {
+/* Catu uses the same neutral card surface for Entregas and Freelas.
+   The sage (#8FA893) is reserved for Taba/Praça's navigational accents. */
+
+/* Carry the Freelas card's beautiful raised moss surface to Praça directories.
+   Limit the treatment to the three public discovery panels, not store cards,
+   posts or merchant-selected covers. */
+[data-kyrub-brand-panel="taba"] #square-stores,
+[data-kyrub-brand-panel="taba"] #square-communities,
+[data-kyrub-brand-panel="taba"] #guest-square-wall {
   background-color: var(--kyrub-moss-raised);
+  border-color: var(--kyrub-card-border);
 }
 
 #kyrub-tab-container [aria-label="Recompensas"] {

@@ -111,7 +111,7 @@ export function SquareDirectoryLayout({
               <ArrowLeft className="h-5 w-5" aria-hidden="true" />
             </button>
             <div className="min-w-0 flex-1">
-              <span className="text-xs font-black uppercase tracking-[0.16em] text-sky-300">Catálogo</span>
+              <span className="text-xs font-black uppercase tracking-[0.16em] text-teal-300">Catálogo</span>
               <h2 className="text-xl font-black text-white">{title}</h2>
               <p className="text-sm text-slate-400">{subtitle}</p>
             </div>
@@ -141,7 +141,7 @@ export function SquareDirectoryLayout({
                   onClick={() => onTabChange(id)}
                   className={`min-h-11 shrink-0 rounded-xl px-3.5 text-sm font-bold ${
                     selectedTab === id
-                      ? 'bg-sky-500/15 text-sky-200'
+                      ? 'bg-teal-500/15 text-teal-200'
                       : 'border border-slate-800 bg-slate-900 text-slate-400'
                   }`}
                 >

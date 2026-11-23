@@ -51,7 +51,7 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
         onClick={() => window.dispatchEvent(new CustomEvent(OPEN_COMMUNITY_FROM_SQUARE_EVENT, {
           detail: { communityId: entry.communityId, postId: post.id },
         }))}
-        className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-sky-800/50 bg-sky-950/30 px-3 py-2 text-left text-sm text-sky-200"
+        className="flex min-h-10 w-full items-center gap-2 rounded-xl border border-teal-800/50 bg-teal-950/30 px-3 py-2 text-left text-sm text-teal-200"
         aria-label={`Visitar a comunidade ${entry.communityName}`}
       >
         <UsersRound className="h-4 w-4 shrink-0" />
@@ -59,7 +59,7 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
         <ArrowUpRight className="h-4 w-4 shrink-0" />
       </button>
       {entry.forwardedById && (
-        <p className="px-2 text-xs text-sky-200">
+        <p className="px-2 text-xs text-teal-200">
           Encaminhado à Praça por <strong>{forwardedByName}</strong>
           {' · '}publicação original de {authorName}
         </p>

@@ -229,7 +229,7 @@ export function RendaTab({
                 onClick={() => guestReadOnly
                   ? onGuestLoginRequired?.('consultar seus ganhos')
                   : setIsDeliveryEarningsOpen(true)}
-                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-500/20 bg-cyan-500/[0.08] text-cyan-300 transition hover:border-cyan-400/35 hover:bg-cyan-500/[0.14] active:scale-95"
+                className="-mr-1 -mt-1 flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-orange-500/20 bg-orange-500/[0.08] text-orange-300 transition hover:border-orange-400/35 hover:bg-orange-500/[0.14] active:scale-95"
                 id="btn-delivery-earnings"
                 aria-label="Ver ganhos em entregas"
                 aria-haspopup="dialog"
@@ -286,7 +286,7 @@ export function RendaTab({
         <div className="flex flex-col justify-between space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
           <div className="space-y-3">
             <div className="flex items-center gap-1.5">
-              <Briefcase className="h-4 w-4 text-teal-400" />
+              <Briefcase className="h-4 w-4 text-orange-400" />
               <h3 className="text-xs font-black uppercase tracking-wider text-white">
                 Kyrub Freelas
               </h3>
@@ -303,7 +303,7 @@ export function RendaTab({
               onClick={() => guestReadOnly
                 ? onGuestLoginRequired?.('contratar um freela')
                 : setShowFreelaModal(true)}
-              className="w-full rounded-xl bg-teal-500 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-teal-400"
+              className="w-full rounded-xl bg-orange-600 py-2 text-[10px] font-black uppercase tracking-wider text-slate-950 transition-colors hover:bg-orange-500"
               id="btn-solicitar-freela"
             >
               Solicitar freela
@@ -314,14 +314,14 @@ export function RendaTab({
                 ? onGuestBrowseFreelas?.()
                 : setShowFazerFreelasModal(true)
               }
-              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-teal-400 transition-colors hover:text-teal-300"
+              className="flex w-full items-center justify-center gap-1.5 rounded-xl border border-slate-800 bg-slate-950 py-2 text-[10px] font-black uppercase tracking-wider text-orange-400 transition-colors hover:text-orange-300"
               id="btn-fazer-freela"
             >
               <span>Fazer freela</span>
               {freelanceJobs.filter(
                 job => job.status === 'open'
               ).length > 0 && (
-                <span className="rounded-full bg-teal-500 px-1.5 text-[8px] font-bold font-mono text-slate-950">
+                <span className="rounded-full bg-orange-600 px-1.5 text-[8px] font-bold font-mono text-slate-950">
                   {
                     freelanceJobs.filter(
                       job => job.status === 'open'
@@ -390,7 +390,7 @@ export function RendaTab({
           >
             <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-white/5 bg-slate-950/95 px-5 py-4 backdrop-blur">
               <div className="min-w-0">
-                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-300">
+                <p className="text-[9px] font-black uppercase tracking-[0.18em] text-orange-300">
                   Kyrub Entregas
                 </p>
                 <h2

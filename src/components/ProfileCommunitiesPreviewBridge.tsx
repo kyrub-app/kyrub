@@ -177,7 +177,7 @@ function CommunityCover({
   const fullImage = displayMode === 'full';
   return (
     <div
-      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
+      className={`relative overflow-hidden bg-gradient-to-br from-teal-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
     >
       {community.coverImage ? (
         <img
@@ -522,7 +522,7 @@ export function ProfileCommunitiesPreviewBridge() {
         <span className="mt-1 block text-[10px] text-slate-200">
           {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
         </span>
-        <span className="mt-1 block truncate text-[10px] text-sky-200">{community.activityLabel}</span>
+        <span className="mt-1 block truncate text-[10px] text-teal-200">{community.activityLabel}</span>
         {community.description && (
           <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-slate-100/90">{community.description}</p>
         )}
@@ -538,7 +538,7 @@ export function ProfileCommunitiesPreviewBridge() {
           className={`flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 text-[10px] font-black uppercase backdrop-blur-sm ${
             community.isMember || community.isOwner
               ? 'bg-slate-900/90 text-white'
-              : 'bg-sky-500 text-slate-950'
+              : 'bg-teal-500 text-slate-950'
           }`}
         >
           {community.isMember || community.isOwner ? (
@@ -574,7 +574,7 @@ export function ProfileCommunitiesPreviewBridge() {
           >
             <header className="flex items-start justify-between gap-3">
               <div>
-                <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
+                <span className="text-[8px] font-black uppercase tracking-[0.18em] text-teal-300">
                   Comunidades
                 </span>
                 <h3 className="mt-0.5 text-xs font-black text-white">
@@ -584,7 +584,7 @@ export function ProfileCommunitiesPreviewBridge() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
+                className="flex min-h-9 items-center gap-1.5 rounded-xl bg-teal-500 px-3 text-[8px] font-black uppercase text-slate-950"
               >
                 <Plus className="h-4 w-4" />
                 Criar
@@ -603,7 +603,7 @@ export function ProfileCommunitiesPreviewBridge() {
                   onClick={() => setListTab(id)}
                   className={`shrink-0 rounded-xl px-3 py-2 text-[8px] font-black uppercase ${
                     listTab === id
-                      ? 'bg-sky-500/15 text-sky-200'
+                      ? 'bg-teal-500/15 text-teal-200'
                       : 'border border-slate-800 bg-slate-950 text-slate-500'
                   }`}
                 >
@@ -616,12 +616,12 @@ export function ProfileCommunitiesPreviewBridge() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="flex w-[132px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/5 p-4 text-center"
+                className="flex w-[132px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-teal-500/30 bg-teal-500/5 p-4 text-center"
               >
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-slate-950">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-500 text-slate-950">
                   <Plus className="h-5 w-5" />
                 </span>
-                <strong className="mt-3 text-[9px] font-black uppercase text-sky-200">
+                <strong className="mt-3 text-[9px] font-black uppercase text-teal-200">
                   Criar comunidade
                 </strong>
                 <span className="mt-1 text-[7px] leading-relaxed text-slate-500">
@@ -667,7 +667,7 @@ export function ProfileCommunitiesPreviewBridge() {
             >
               <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
                 <div>
-                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
+                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-teal-300">
                     Nova comunidade
                   </span>
                   <h3 className="mt-1 text-lg font-black text-white">
@@ -697,7 +697,7 @@ export function ProfileCommunitiesPreviewBridge() {
                         name: event.target.value.slice(0, 80),
                       }))
                     }
-                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-teal-500/60"
                     placeholder="Ex.: Empreendedores do meu bairro"
                   />
                 </label>
@@ -743,7 +743,7 @@ export function ProfileCommunitiesPreviewBridge() {
                       }))
                     }
                     rows={3}
-                    className="mt-1 w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    className="mt-1 w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-teal-500/60"
                     placeholder="Explique quem deve participar e qual é o propósito."
                   />
                 </label>
@@ -806,11 +806,11 @@ export function ProfileCommunitiesPreviewBridge() {
                           }
                           className={`flex items-center gap-3 rounded-2xl border p-3 text-left ${
                             selected
-                              ? 'border-sky-500/40 bg-sky-500/10'
+                              ? 'border-teal-500/40 bg-teal-500/10'
                               : 'border-slate-800 bg-slate-950'
                           }`}
                         >
-                          <Icon className="h-4 w-4 shrink-0 text-sky-300" />
+                          <Icon className="h-4 w-4 shrink-0 text-teal-300" />
                           <span className="min-w-0 flex-1">
                             <strong className="block text-[9px] text-white">
                               {details.label}
@@ -819,7 +819,7 @@ export function ProfileCommunitiesPreviewBridge() {
                               {details.description}
                             </span>
                           </span>
-                          {selected && <Check className="h-4 w-4 text-sky-300" />}
+                          {selected && <Check className="h-4 w-4 text-teal-300" />}
                         </button>
                       );
                     })}
@@ -854,7 +854,7 @@ export function ProfileCommunitiesPreviewBridge() {
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
                 <button
                   type="submit"
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-[9px] font-black uppercase text-slate-950"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-500 text-[9px] font-black uppercase text-slate-950"
                 >
                   <Plus className="h-4 w-4" />
                   Criar e abrir comunidade
@@ -899,7 +899,7 @@ export function ProfileCommunitiesPreviewBridge() {
 
                 <div className="flex items-start gap-3 p-4">
                   <div className="min-w-0 flex-1">
-                    <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
+                    <span className="text-[8px] font-black uppercase tracking-[0.18em] text-teal-300">
                       Comunidade
                     </span>
                     <h2 className="mt-0.5 text-lg font-black text-white">
@@ -932,7 +932,7 @@ export function ProfileCommunitiesPreviewBridge() {
                       className={`min-h-10 shrink-0 rounded-xl px-3 text-[8px] font-black uppercase ${
                         selectedCommunity.isMember
                           ? 'border border-slate-700 bg-slate-800 text-slate-200'
-                          : 'bg-sky-500 text-slate-950'
+                          : 'bg-teal-500 text-slate-950'
                       }`}
                     >
                       {selectedCommunity.isMember ? 'Sair' : 'Entrar'}
@@ -951,7 +951,7 @@ export function ProfileCommunitiesPreviewBridge() {
                       onClick={() => setPageTab(tab.id)}
                       className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[8px] font-black uppercase ${
                         pageTab === tab.id
-                          ? 'bg-sky-500 text-slate-950'
+                          ? 'bg-teal-500 text-slate-950'
                           : 'border border-slate-800 bg-slate-900 text-slate-500'
                       }`}
                     >
@@ -964,7 +964,7 @@ export function ProfileCommunitiesPreviewBridge() {
 
               <main className="flex-1 overflow-y-auto p-4">
                 {pageMessage && (
-                  <p className="mb-3 rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-[9px] text-sky-200">
+                  <p className="mb-3 rounded-xl border border-teal-500/20 bg-teal-500/5 px-3 py-2 text-[9px] text-teal-200">
                     {pageMessage}
                   </p>
                 )}
@@ -986,7 +986,7 @@ export function ProfileCommunitiesPreviewBridge() {
                           <button
                             type="button"
                             onClick={submitWallPost}
-                            className="min-h-10 rounded-xl bg-sky-500 px-4 text-[8px] font-black uppercase text-slate-950"
+                            className="min-h-10 rounded-xl bg-teal-500 px-4 text-[8px] font-black uppercase text-slate-950"
                           >
                             Publicar no mural
                           </button>
@@ -1050,7 +1050,7 @@ export function ProfileCommunitiesPreviewBridge() {
                           onClick={() =>
                             setDiscussionComposerOpen(current => !current)
                           }
-                          className="min-h-9 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950"
+                          className="min-h-9 rounded-xl bg-teal-500 px-3 text-[8px] font-black uppercase text-slate-950"
                         >
                           Nova discussão
                         </button>
@@ -1079,7 +1079,7 @@ export function ProfileCommunitiesPreviewBridge() {
                         <button
                           type="button"
                           onClick={submitDiscussion}
-                          className="min-h-10 w-full rounded-xl bg-sky-500 text-[8px] font-black uppercase text-slate-950"
+                          className="min-h-10 w-full rounded-xl bg-teal-500 text-[8px] font-black uppercase text-slate-950"
                         >
                           Criar discussão
                         </button>
@@ -1150,7 +1150,7 @@ export function ProfileCommunitiesPreviewBridge() {
                           <button
                             type="button"
                             onClick={openCommunityEditor}
-                            className="flex min-h-9 items-center gap-1.5 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 text-[8px] font-black uppercase text-sky-200"
+                            className="flex min-h-9 items-center gap-1.5 rounded-xl border border-teal-500/25 bg-teal-500/10 px-3 text-[8px] font-black uppercase text-teal-200"
                           >
                             <Pencil className="h-3.5 w-3.5" />
                             Editar
@@ -1227,7 +1227,7 @@ export function ProfileCommunitiesPreviewBridge() {
             >
               <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
                 <div>
-                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-sky-300">
+                  <span className="text-[8px] font-black uppercase tracking-[0.18em] text-teal-300">
                     Administração
                   </span>
                   <h3 className="mt-1 text-lg font-black text-white">
@@ -1261,13 +1261,13 @@ export function ProfileCommunitiesPreviewBridge() {
                           className="block h-auto max-h-[40dvh] w-auto max-w-full object-contain"
                         />
                       ) : (
-                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
+                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-teal-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
                           <Camera className="h-10 w-10" />
                         </div>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2 p-3">
-                      <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 text-[8px] font-black uppercase text-slate-950">
+                      <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-teal-500 px-3 text-[8px] font-black uppercase text-slate-950">
                         <Camera className="h-4 w-4" />
                         {coverBusy ? 'Preparando...' : 'Escolher imagem'}
                         <input
@@ -1304,7 +1304,7 @@ export function ProfileCommunitiesPreviewBridge() {
                       setEditRules(event.target.value.slice(0, 800))
                     }
                     rows={7}
-                    className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-teal-500/60"
                     placeholder="Defina convivência, temas permitidos, publicidade e moderação."
                   />
                   <span className="mt-1 block text-right font-mono text-[8px] text-slate-600">
@@ -1323,7 +1323,7 @@ export function ProfileCommunitiesPreviewBridge() {
                 <button
                   type="submit"
                   disabled={coverBusy}
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-[9px] font-black uppercase text-slate-950 disabled:opacity-40"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-500 text-[9px] font-black uppercase text-slate-950 disabled:opacity-40"
                 >
                   <Save className="h-4 w-4" />
                   Salvar capa e regras

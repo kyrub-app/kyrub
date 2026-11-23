@@ -203,7 +203,7 @@ function Avatar({ name, url }: { name: string; url: string }) {
       className="h-9 w-9 shrink-0 rounded-xl object-cover"
     />
   ) : (
-    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-[11px] font-black text-sky-200">
+    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-800 text-[11px] font-black text-teal-200">
       {name.charAt(0).toLocaleUpperCase('pt-BR')}
     </span>
   );
@@ -221,7 +221,7 @@ function CommunityCover({
   const fullImage = displayMode === 'full';
   return (
     <div
-      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
+      className={`relative overflow-hidden bg-gradient-to-br from-teal-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
     >
       {community.coverImage ? (
         <img
@@ -1054,7 +1054,7 @@ export function ProfileCommunitiesCloudBridge() {
           <span className="mt-1 block text-xs text-slate-200">
             {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
           </span>
-          <span className="mt-1 block truncate text-xs text-sky-200">{community.category}</span>
+          <span className="mt-1 block truncate text-xs text-teal-200">{community.category}</span>
           {community.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-100/90">{community.description}</p>
           )}
@@ -1090,7 +1090,7 @@ export function ProfileCommunitiesCloudBridge() {
                 ? 'bg-slate-900/90 text-white'
                 : community.isPendingMember
                   ? 'border-amber-500/40 bg-slate-950/90 text-amber-200'
-                  : 'bg-sky-500 text-slate-950'
+                  : 'bg-teal-500 text-slate-950'
             }`}
           >
             {actionLabel}
@@ -1115,7 +1115,7 @@ export function ProfileCommunitiesCloudBridge() {
         className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16 text-left">
         <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white drop-shadow-sm">{community.name}</strong>
         <span className="mt-1 block text-xs text-slate-200">{community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}</span>
-        <span className="mt-1 block truncate text-xs text-sky-200">{community.category}</span>
+        <span className="mt-1 block truncate text-xs text-teal-200">{community.category}</span>
         {community.description && (
           <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-100/90">{community.description}</p>
         )}
@@ -1151,12 +1151,12 @@ export function ProfileCommunitiesCloudBridge() {
             {!groupComposerOpen ? (
               <div className="space-y-3">
                 <p className="text-xs text-slate-400">Organize conversas privadas com participantes desta comunidade.</p>
-                {canParticipate && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-sky-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
+                {canParticipate && <button type="button" onClick={() => { setGroupDraftName(''); setGroupSelectedMemberIds([]); setGroupComposerOpen(true); }} className="flex min-h-10 items-center gap-2 rounded-xl bg-teal-500 px-3 text-xs font-bold text-slate-950"><Plus className="h-4 w-4" /> Criar grupo</button>}
                 {groupSaveError && <p role="alert" className="rounded-xl border border-red-800 bg-red-950/50 p-3 text-xs text-red-200">{groupSaveError}</p>}
-                {groupSaveNotice && <p role="status" className="rounded-xl border border-sky-800 bg-slate-900 p-3 text-xs text-sky-200">{groupSaveNotice}</p>}
+                {groupSaveNotice && <p role="status" className="rounded-xl border border-teal-800 bg-slate-900 p-3 text-xs text-teal-200">{groupSaveNotice}</p>}
                 {groupsLoadError && <p role="alert" className="rounded-xl border border-amber-700 bg-slate-900 p-3 text-xs text-amber-300">{groupsLoadError}</p>}
                 {!groupsLoadError && myCommunityGroups.length === 0 && <p className="rounded-xl border border-slate-800 bg-slate-900 p-3 text-xs text-slate-400">Você ainda não participa de grupos nesta comunidade.</p>}
-                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes</p><button type="button" className="mt-2 rounded-lg border border-sky-700 px-3 py-2 text-xs text-sky-200" onClick={() => toggleGroupConversation(group.id)}> {activeGroupChatId === group.id ? "Fechar conversa" : "Abrir conversa"} </button>{activeGroupChatId === group.id && <div className="mt-3 space-y-2"><div role="log" aria-label={`Mensagens de ${group.name}`} className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-700 p-3">{groupMessages.length === 0 && <p className="text-xs text-slate-400">Nenhuma mensagem ainda.</p>}{groupMessages.map(message => <div key={message.id} className="rounded-lg bg-slate-800 p-2"><p className="text-xs text-sky-300">{message.authorId === auth.currentUser?.uid ? "Você" : members.find(member => member.userId === message.authorId)?.userName || "Integrante"}</p><p className="whitespace-pre-wrap break-words text-xs text-white">{message.text}</p></div>)}</div><textarea aria-label="Mensagem para o grupo" maxLength={3000} value={groupMessageDraft} onChange={event => setGroupMessageDraft(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white" rows={2} /><button type="button" disabled={groupMessageSending || !groupMessageDraft.trim()} onClick={() => void sendGroupChatMessage()} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Enviar mensagem</button>{groupMessageError && <p role="alert" className="text-xs text-red-300">{groupMessageError}</p>}</div>}{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-sky-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
+                {myCommunityGroups.map(group => <div key={group.id} className="rounded-xl border border-slate-800 bg-slate-900 p-3"><p className="text-sm font-bold text-white">{group.name}</p><p className="text-xs text-slate-400">{group.memberIds.length} integrantes</p><button type="button" className="mt-2 rounded-lg border border-teal-700 px-3 py-2 text-xs text-teal-200" onClick={() => toggleGroupConversation(group.id)}> {activeGroupChatId === group.id ? "Fechar conversa" : "Abrir conversa"} </button>{activeGroupChatId === group.id && <div className="mt-3 space-y-2"><div role="log" aria-label={`Mensagens de ${group.name}`} className="max-h-64 space-y-2 overflow-y-auto rounded-xl border border-slate-700 p-3">{groupMessages.length === 0 && <p className="text-xs text-slate-400">Nenhuma mensagem ainda.</p>}{groupMessages.map(message => <div key={message.id} className="rounded-lg bg-slate-800 p-2"><p className="text-xs text-teal-300">{message.authorId === auth.currentUser?.uid ? "Você" : members.find(member => member.userId === message.authorId)?.userName || "Integrante"}</p><p className="whitespace-pre-wrap break-words text-xs text-white">{message.text}</p></div>)}</div><textarea aria-label="Mensagem para o grupo" maxLength={3000} value={groupMessageDraft} onChange={event => setGroupMessageDraft(event.target.value)} className="w-full rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white" rows={2} /><button type="button" disabled={groupMessageSending || !groupMessageDraft.trim()} onClick={() => void sendGroupChatMessage()} className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Enviar mensagem</button>{groupMessageError && <p role="alert" className="text-xs text-red-300">{groupMessageError}</p>}</div>}{group.creatorId === auth.currentUser?.uid && <div className="mt-3 flex flex-wrap items-center gap-2"><select aria-label={`Convidar membro para ${group.name}`} value={groupInviteTargetId === group.id ? groupInviteExistingId : ""} onChange={event => { setGroupInviteTargetId(group.id); setGroupInviteExistingId(event.target.value); }} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-950 p-2 text-xs text-white"><option value="">Selecione um membro</option>{members.filter(member => member.status === 'active' && member.userId !== auth.currentUser?.uid && !group.memberIds.includes(member.userId)).map(member => <option key={member.id} value={member.userId}>{member.userName}</option>)}</select><button type="button" disabled={groupInviteTargetId !== group.id || !groupInviteExistingId || groupSaving || group.memberIds.length >= 50} onClick={() => void inviteToExistingGroup(group.id)} className="rounded-lg bg-teal-600 px-3 py-2 text-xs font-bold text-white disabled:opacity-40">Convidar</button></div>}</div>)}
               </div>
             ) : (
               <div className="space-y-3">
@@ -1213,7 +1213,7 @@ export function ProfileCommunitiesCloudBridge() {
           >
             <header className="flex items-start justify-between gap-3">
               <div>
-                <span className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">
+                <span className="text-xs font-black uppercase tracking-[0.18em] text-teal-300">
                   Comunidades
                 </span>
                 <h3 className="mt-1 text-base font-black text-white">
@@ -1229,7 +1229,7 @@ export function ProfileCommunitiesCloudBridge() {
                   setCatalogOpen(true);
                 }}
                 aria-label="Ver todas as comunidades"
-                className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-sky-500 px-3 text-xs font-black uppercase text-slate-950"
+                className="flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl bg-teal-500 px-3 text-xs font-black uppercase text-slate-950"
               >
                 Ver todas <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </button>
@@ -1248,7 +1248,7 @@ export function ProfileCommunitiesCloudBridge() {
                   onClick={() => setListTab(id)}
                   className={`shrink-0 rounded-xl px-3 py-2 text-xs font-black uppercase ${
                     listTab === id
-                      ? 'bg-sky-500/15 text-sky-200'
+                      ? 'bg-teal-500/15 text-teal-200'
                       : 'border border-slate-800 bg-slate-950 text-slate-500'
                   }`}
                 >
@@ -1267,12 +1267,12 @@ export function ProfileCommunitiesCloudBridge() {
               <button
                 type="button"
                 onClick={() => setCreateOpen(true)}
-                className="flex w-[154px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-sky-500/30 bg-sky-500/5 p-4 text-center"
+                className="flex w-[154px] shrink-0 flex-col items-center justify-center rounded-2xl border border-dashed border-teal-500/30 bg-teal-500/5 p-4 text-center"
               >
-                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-sky-500 text-slate-950">
+                <span className="flex h-12 w-12 items-center justify-center rounded-2xl bg-teal-500 text-slate-950">
                   <Plus className="h-5 w-5" />
                 </span>
-                <strong className="mt-3 text-xs font-black uppercase text-sky-200">
+                <strong className="mt-3 text-xs font-black uppercase text-teal-200">
                   Criar comunidade
                 </strong>
                 <span className="mt-1 text-xs leading-relaxed text-slate-400">
@@ -1308,7 +1308,7 @@ export function ProfileCommunitiesCloudBridge() {
             onClick={event => event.stopPropagation()}
             className="w-full max-w-md space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
             <h3 className="text-xl font-black text-white">{selectedPublicPreview.name}</h3>
-            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} {selectedPublicPreview.memberCount === 1 ? 'participante' : 'participantes'}</p>
+            <p className="text-xs text-teal-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} {selectedPublicPreview.memberCount === 1 ? 'participante' : 'participantes'}</p>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{selectedPublicPreview.description}</p>
             <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200">
               Esta comunidade consta na Praça pública, mas os dados completos não foram disponibilizados pela leitura autenticada.
@@ -1330,7 +1330,7 @@ export function ProfileCommunitiesCloudBridge() {
                     .catch(() => setPublicProbe(null))
                     .finally(() => setPublicProbeBusy(false));
                 }}
-                className="min-h-11 w-full rounded-xl border border-sky-600/50 bg-sky-950 text-sm font-bold text-sky-200 disabled:opacity-50">
+                className="min-h-11 w-full rounded-xl border border-teal-600/50 bg-teal-950 text-sm font-bold text-teal-200 disabled:opacity-50">
                 {publicProbeBusy ? 'Verificando acesso…' : 'Verificar leitura no meu aparelho'}
               </button>
               {publicProbe && (
@@ -1426,7 +1426,7 @@ export function ProfileCommunitiesCloudBridge() {
             >
               <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
                 <div>
-                  <span className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-300">
+                  <span className="text-[11px] font-black uppercase tracking-[0.18em] text-teal-300">
                     Nova comunidade
                   </span>
                   <h3 className="mt-1 text-lg font-black text-white">
@@ -1453,7 +1453,7 @@ export function ProfileCommunitiesCloudBridge() {
                         name: event.target.value.slice(0, 80),
                       }))
                     }
-                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    className="mt-1 min-h-11 w-full rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none focus:border-teal-500/60"
                     placeholder="Ex.: Empreendedores do bairro"
                   />
                 </label>
@@ -1546,18 +1546,18 @@ export function ProfileCommunitiesCloudBridge() {
                             }
                             className={`flex items-center gap-3 rounded-2xl border p-3 text-left ${
                               selected
-                                ? 'border-sky-500/40 bg-sky-500/10'
+                                ? 'border-teal-500/40 bg-teal-500/10'
                                 : 'border-slate-800 bg-slate-950'
                             }`}
                           >
-                            <Icon className="h-4 w-4 shrink-0 text-sky-300" />
+                            <Icon className="h-4 w-4 shrink-0 text-teal-300" />
                             <span className="min-w-0 flex-1">
                               <strong className="block text-xs text-white">{details.label}</strong>
                               <span className="mt-0.5 block text-[11px] text-slate-500">
                                 {details.description}
                               </span>
                             </span>
-                            {selected && <Check className="h-4 w-4 text-sky-300" />}
+                            {selected && <Check className="h-4 w-4 text-teal-300" />}
                           </button>
                         );
                       }
@@ -1589,7 +1589,7 @@ export function ProfileCommunitiesCloudBridge() {
                 <button
                   type="submit"
                   disabled={createBusy}
-                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-xs font-black uppercase text-slate-950 disabled:opacity-45"
+                  className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-500 text-xs font-black uppercase text-slate-950 disabled:opacity-45"
                 >
                   <Plus className="h-4 w-4" />
                   {createBusy ? 'Criando...' : 'Criar e abrir comunidade'}
@@ -1630,15 +1630,15 @@ export function ProfileCommunitiesCloudBridge() {
                     </div>
                     <div className="flex items-start gap-3 p-4">
                       <div className="min-w-0 flex-1">
-                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-300">Comunidade</span>
+                        <span className="text-[11px] font-black uppercase tracking-[0.18em] text-teal-300">Comunidade</span>
                         <h2 className="mt-0.5 text-lg font-black text-white">{selectedCommunity.name}</h2>
                         <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-500">
                           {selectedCommunity.description}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver participantes da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'participante' : 'participantes'}</button>
+                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-teal-300" aria-label="Ver participantes da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'participante' : 'participantes'}</button>
                           <span>•</span>
-                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); setGroupSaveNotice(''); setGroupSaveError(''); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
+                          <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); setGroupSaveNotice(''); setGroupSaveError(''); }} className="underline underline-offset-4 hover:text-teal-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
                           <span>{visibilityDetails(selectedCommunity.visibility).label}</span>
                           {selectedCommunity.location && (
@@ -1662,7 +1662,7 @@ export function ProfileCommunitiesCloudBridge() {
                               ? 'border border-slate-700 bg-slate-800 text-slate-200'
                               : selectedCommunity.isPendingMember
                                 ? 'border border-amber-500/25 bg-amber-500/10 text-amber-200'
-                                : 'bg-sky-500 text-slate-950'
+                                : 'bg-teal-500 text-slate-950'
                           }`}
                         >
                           {selectedCommunity.isActiveMember
@@ -1693,7 +1693,7 @@ export function ProfileCommunitiesCloudBridge() {
                           }}
                           className={`flex min-h-9 shrink-0 items-center gap-1.5 rounded-xl px-3 text-[11px] font-black uppercase ${
                             pageTab === tab.id
-                              ? 'bg-sky-500 text-slate-950'
+                              ? 'bg-teal-500 text-slate-950'
                               : 'border border-slate-800 bg-slate-900 text-slate-500'
                           }`}
                         >
@@ -1706,7 +1706,7 @@ export function ProfileCommunitiesCloudBridge() {
 
                   <main className="p-4 pb-24">
                     {message && (
-                      <p className="mb-3 rounded-xl border border-sky-500/20 bg-sky-500/5 px-3 py-2 text-xs text-sky-200">
+                      <p className="mb-3 rounded-xl border border-teal-500/20 bg-teal-500/5 px-3 py-2 text-xs text-teal-200">
                         {message}
                       </p>
                     )}
@@ -1757,7 +1757,7 @@ export function ProfileCommunitiesCloudBridge() {
                                 type="button"
                                 disabled={actionBusy === 'wall-post' || (!wallDraft.trim() && wallMedia.length === 0)}
                                 onClick={() => void submitWallPost()}
-                                className="min-h-11 rounded-xl bg-sky-500 px-4 text-xs font-black uppercase text-slate-950 disabled:opacity-40"
+                                className="min-h-11 rounded-xl bg-teal-500 px-4 text-xs font-black uppercase text-slate-950 disabled:opacity-40"
                               >
                                 {actionBusy === 'wall-post' ? 'Publicando…' : 'Publicar no mural'}
                               </button>
@@ -1765,14 +1765,14 @@ export function ProfileCommunitiesCloudBridge() {
                             <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-200">
                               <input type="checkbox" checked={wallAllowComments}
                                 onChange={event => setWallAllowComments(event.target.checked)}
-                                disabled={actionBusy === 'wall-post'} className="h-4 w-4 shrink-0 accent-sky-400"
+                                disabled={actionBusy === 'wall-post'} className="h-4 w-4 shrink-0 accent-teal-400"
                                 aria-label="Permitir comentários nesta publicação" />
                               <span>Permitir comentários <span className="block text-xs text-slate-400">Desmarque para impedir novos comentários e respostas nesta publicação.</span></span>
                             </label>
                             {selectedCommunity.visibility === 'public' && (
-                              <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 text-sm text-slate-200">
+                              <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-teal-800/40 bg-teal-950/20 p-3 text-sm text-slate-200">
                                 <input type="checkbox" checked={shareWallToSquare} onChange={event => setShareWallToSquare(event.target.checked)}
-                                  disabled={actionBusy === 'wall-post'} className="h-4 w-4 accent-sky-400" />
+                                  disabled={actionBusy === 'wall-post'} className="h-4 w-4 accent-teal-400" />
                                 <span>Exibir também na Praça por 24 horas <span className="block text-xs text-slate-400">Público, gratuito e orgânico. Você pode retirar depois.</span></span>
                               </label>
                             )}
@@ -1861,7 +1861,7 @@ export function ProfileCommunitiesCloudBridge() {
                           <div className="flex items-center justify-between gap-3">
                             <h3 className="text-xs font-black uppercase text-white">Sobre a comunidade</h3>
                             {selectedCommunity.isOwner && (
-                              <button type="button" onClick={openEditor} className="flex min-h-9 items-center gap-1.5 rounded-xl border border-sky-500/25 bg-sky-500/10 px-3 text-[11px] font-black uppercase text-sky-200">
+                              <button type="button" onClick={openEditor} className="flex min-h-9 items-center gap-1.5 rounded-xl border border-teal-500/25 bg-teal-500/10 px-3 text-[11px] font-black uppercase text-teal-200">
                                 <Pencil className="h-3.5 w-3.5" />
                                 Editar
                               </button>
@@ -1929,7 +1929,7 @@ export function ProfileCommunitiesCloudBridge() {
                       aria-label="Voltar ao topo da comunidade"
                       aria-controls="community-page-scroll"
                       onClick={() => communityScrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })}
-                      className="absolute bottom-6 left-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-sky-400/40 bg-slate-900/95 text-sky-200 shadow-xl backdrop-blur-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-sky-400"
+                      className="absolute bottom-6 left-4 z-20 flex h-11 w-11 items-center justify-center rounded-full border border-teal-400/40 bg-slate-900/95 text-teal-200 shadow-xl backdrop-blur-sm hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-teal-400"
                     >
                       <ArrowUp className="h-5 w-5" />
                     </button>
@@ -1955,7 +1955,7 @@ export function ProfileCommunitiesCloudBridge() {
             >
               <header className="sticky top-0 z-10 flex items-start justify-between gap-3 border-b border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
                 <div>
-                  <span className="text-[11px] font-black uppercase tracking-[0.18em] text-sky-300">Administração</span>
+                  <span className="text-[11px] font-black uppercase tracking-[0.18em] text-teal-300">Administração</span>
                   <h3 className="mt-1 text-lg font-black text-white">Editar comunidade</h3>
                 </div>
                 <button type="button" onClick={() => setEditOpen(false)} className="flex h-9 w-9 items-center justify-center rounded-xl border border-slate-800 bg-slate-950 text-slate-500" aria-label="Fechar edição da comunidade">
@@ -1964,12 +1964,12 @@ export function ProfileCommunitiesCloudBridge() {
               </header>
               <div className="space-y-5 p-4">
                 <section className="space-y-3" aria-label="Informações da comunidade">
-                  <h4 className="text-sm font-black text-sky-300">Identidade da comunidade</h4>
+                  <h4 className="text-sm font-black text-teal-300">Identidade da comunidade</h4>
                   <label className="block">
                     <span className="text-xs font-bold text-slate-300">Nome da comunidade</span>
                     <input type="text" required maxLength={80} value={editName}
                       onChange={event => setEditName(event.target.value.slice(0, 80))}
-                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500"
+                      className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-teal-500"
                       placeholder="Nome da comunidade" />
                     <span className="mt-1 block text-right text-xs text-slate-500">{editName.length}/80</span>
                   </label>
@@ -1977,7 +1977,7 @@ export function ProfileCommunitiesCloudBridge() {
                     <span className="text-xs font-bold text-slate-300">Descrição</span>
                     <textarea rows={3} required maxLength={500} value={editDescription}
                       onChange={event => setEditDescription(event.target.value.slice(0, 500))}
-                      className="mt-1 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500"
+                      className="mt-1 w-full resize-y rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-teal-500"
                       placeholder="Apresente o propósito da comunidade" />
                     <span className="mt-1 block text-right text-xs text-slate-500">{editDescription.length}/500</span>
                   </label>
@@ -1986,13 +1986,13 @@ export function ProfileCommunitiesCloudBridge() {
                       <span className="text-xs font-bold text-slate-300">Categoria</span>
                       <input type="text" required maxLength={80} value={editCategory}
                         onChange={event => setEditCategory(event.target.value.slice(0, 80))}
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500" />
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-teal-500" />
                     </label>
                     <label className="block">
                       <span className="text-xs font-bold text-slate-300">Localização (opcional)</span>
                       <input type="text" maxLength={120} value={editLocation}
                         onChange={event => setEditLocation(event.target.value.slice(0, 120))}
-                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-sky-500" />
+                        className="mt-1 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-3 text-sm text-white outline-none focus:border-teal-500" />
                     </label>
                   </div>
                   <div className="rounded-xl border border-slate-700 bg-slate-950/70 px-3 py-3 text-xs leading-relaxed text-slate-400">
@@ -2008,13 +2008,13 @@ export function ProfileCommunitiesCloudBridge() {
                       {coverPreview && !removeCoverRequested ? (
                         <img src={coverPreview} alt="Prévia da capa" className="block h-auto max-h-[40dvh] w-auto max-w-full object-contain" />
                       ) : (
-                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
+                        <div className="flex h-full items-center justify-center bg-gradient-to-br from-teal-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
                           <Camera className="h-10 w-10" />
                         </div>
                       )}
                     </div>
                     <div className="grid grid-cols-2 gap-2 p-3">
-                      <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-sky-500 px-3 text-[11px] font-black uppercase text-slate-950">
+                      <label className="flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-xl bg-teal-500 px-3 text-[11px] font-black uppercase text-slate-950">
                         <Camera className="h-4 w-4" />
                         Escolher imagem
                         <input type="file" accept="image/*" className="hidden" disabled={editBusy} onChange={event => void chooseCover(event)} />
@@ -2041,7 +2041,7 @@ export function ProfileCommunitiesCloudBridge() {
                     value={editRules}
                     onChange={event => setEditRules(event.target.value.slice(0, 1200))}
                     rows={8}
-                    className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-sky-500/60"
+                    className="mt-2 w-full resize-none rounded-2xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none focus:border-teal-500/60"
                   />
                   <span className="mt-1 block text-right font-mono text-[11px] text-slate-600">{editRules.length}/1200</span>
                 </label>
@@ -2050,7 +2050,7 @@ export function ProfileCommunitiesCloudBridge() {
                 )}
               </div>
               <footer className="sticky bottom-0 border-t border-slate-800 bg-slate-900/95 p-4 backdrop-blur-sm">
-                <button type="submit" disabled={editBusy || !editName.trim() || !editDescription.trim() || !editCategory.trim() || !editRules.trim()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-sky-500 text-xs font-black uppercase text-slate-950 disabled:opacity-40">
+                <button type="submit" disabled={editBusy || !editName.trim() || !editDescription.trim() || !editCategory.trim() || !editRules.trim()} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-teal-500 text-xs font-black uppercase text-slate-950 disabled:opacity-40">
                   <Save className="h-4 w-4" />
                   {editBusy ? 'Salvando...' : 'Salvar alterações'}
                 </button>
