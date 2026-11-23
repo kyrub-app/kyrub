@@ -203,8 +203,10 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   <button type="button" className="text-sm text-slate-300 underline" onClick={()=>setShowRecovery(v=>!v)}>Perdi meu e-mail · Recuperar com código</button>
   {showRecovery&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <p className="text-sm text-slate-300">Use o código secreto de recuperação entregue na primeira ativação. Será necessário verificar o novo e-mail; a tag ficará bloqueada até você revisá-la.</p>
-   {user?.emailVerified?<><input className="min-h-11 w-full rounded-lg border border-[#34443B] bg-[#1D2924] p-3" value={recoveryInput} onChange={e=>setRecoveryInput(e.target.value.trim().toLowerCase())} placeholder="Código de recuperação (48 caracteres)" maxLength={48}/>
-    <button type="button" className="min-h-11 rounded-lg bg-[#F47825] px-4 font-semibold text-[#121A17] disabled:opacity-50" disabled={busy||!/^[a-f0-9]{48}$/.test(recoveryInput)} onClick={()=>void recover()}>Recuperar gerenciamento</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
+   {user?.emailVerified?<><p className="text-sm text-slate-300">Novo e-mail verificado: {user.email}</p>
+    <input type="password" autoComplete="off" spellCheck={false} className="min-h-11 w-full rounded-lg border border-[#34443B] bg-[#1D2924] p-3 font-mono" value={recoveryInput} onChange={e=>setRecoveryInput(e.target.value.trim().toLowerCase())} placeholder="Código de recuperação (48 caracteres)" maxLength={48}/>
+    <button type="button" className="min-h-11 rounded-lg bg-[#F47825] px-4 font-semibold text-[#121A17] disabled:opacity-50" disabled={busy||!/^[a-f0-9]{48}$/.test(recoveryInput)} onClick={()=>void recover()}>Recuperar gerenciamento</button>
+    <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
   <a href="/" className="block rounded-xl border border-[#34443B] p-3 text-center">Acessar Kyrub</a>
