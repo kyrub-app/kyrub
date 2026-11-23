@@ -199,3 +199,38 @@ test('SOS contacts are opt-in, private by default, and profile images require ta
  assert.match(rules,/request\.auth\.token\.email_verified/);
  assert.match(rules,/allow update, delete: if false/);
 });
+
+
+test('promotional pilot cannot write to production Firebase even with both campaign flags enabled',async()=>{
+ const {resolveTagPilotIsolation,KYRUB_PRODUCTION_PROJECT_ID}=await import('../server/identity/kyrubTagPilotIsolation');
+ const local={firestoreHost:'127.0.0.1:8080',authHost:'127.0.0.1:9099'};
+ const isolated='kyrub-tags-homologation';
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,local),'unsafe');
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,{
+  allowedPilotProject:KYRUB_PRODUCTION_PROJECT_ID
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,{
+  allowedPilotProject:isolated
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',local),'emulator');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{firestoreHost:'127.0.0.1:8080'}),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{authHost:'127.0.0.1:9099'}),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{
+  firestoreHost:'www.example.com:8080',authHost:'127.0.0.1:9099'
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{}),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{allowedPilotProject:isolated}),'isolated-project');
+ assert.equal(resolveTagPilotIsolation(isolated,{allowedPilotProject:KYRUB_PRODUCTION_PROJECT_ID}),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{
+  allowedPilotProject:isolated,firestoreHost:'127.0.0.1:8080'
+ }),'unsafe');
+ for(const path of [
+  'server/admin/kyrubTagPromotionalBatchService.ts',
+  'server/identity/kyrubTagService.ts',
+  'server/identity/kyrubTagMinimalIdentityService.ts'
+ ]){
+  const {readFileSync}=await import('node:fs');
+  const contents=readFileSync(path,'utf8');
+  assert.match(contents,/assertTagPilotWriteIsolated/);
+ }
+});
