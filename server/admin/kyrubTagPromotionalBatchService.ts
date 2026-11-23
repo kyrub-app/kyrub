@@ -4,6 +4,7 @@ import {adminDb} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
+import {assertTagPilotWriteIsolated,currentTagPilotIsolation} from '../identity/kyrubTagPilotIsolation.js';
 
 const batchDocs=()=>adminDb.collection('kyrub_tag_promotional_batches');
 const adminRole=(uid:string)=>adminDb.doc('kyrub_admin/control_plane/admins/'+uid);
@@ -24,18 +25,35 @@ const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
 function assertRole(uid:string,role:FirebaseFirestore.DocumentData|undefined){
  if(!role||role.uid!==uid||role.role!=='super_admin'||role.status!=='active')throw Error('FORBIDDEN');
 }
+
+function pilotReadiness(){
+ const isolation=currentTagPilotIsolation();
+ return {
+  isolation,
+  productionDataProtected:isolation==='unsafe',
+  issuanceEnabled:enabled(),
+  activationEnabled:process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED==='true',
+  minimalIdentityGateConfigured:process.env.VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE==='true',
+  emailLinkProvider:'manual-verification-required' as const,
+  storageRulesPublished:'manual-verification-required' as const,
+  physicalNfcVerified:false,
+  canIssue:isolation!=='unsafe'&&enabled()
+ };
+}
+
 /** Super Admin read-only inventory. No recipient identity or secret is stored. */
 export async function listPromotionalBatches(uid:string){
  const role=await adminRole(uid).get();
  assertRole(uid,role.data());
  const records=await batchDocs().orderBy('createdAt','desc').limit(20).get();
- return {batches:records.docs.map(d=>projectBatch(d.id,d.data()))};
+ return {readiness:pilotReadiness(),batches:records.docs.map(d=>projectBatch(d.id,d.data()))};
 }
 /**
  * Only pre-registers NFC URLs. It does NOT attest a physical chip or publish
  * a unit. The requestId is a 128-bit client nonce; replay never issues twice.
  */
 export async function issuePromotionalBatch(uid:string,count:unknown,requestId:unknown){
+ assertTagPilotWriteIsolated();
  if(!enabled())throw Error('TAG_BATCH_DISABLED');
  if(!Number.isInteger(count)||typeof count!=='number'||count<1||count>10||!batchIdValid(requestId))throw Error('TAG_BATCH_INVALID');
  const ids=Array.from({length:count},unitId),auditId=unitId(),ref=batchDocs().doc(requestId);
@@ -81,7 +99,7 @@ export async function handlePromotionalBatch(authorization:string,method:string,
    return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='FORBIDDEN')return {status:403,body:{error:'FORBIDDEN'}};
   if(message==='TAG_BATCH_INVALID')return {status:400,body:{error:message}};
-  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT'].includes(message))return {status:409,body:{error:message}};
+  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE'].includes(message))return {status:409,body:{error:message}};
   return {status:503,body:{error:'TAG_BATCH_UNAVAILABLE'}};
  }
 }
