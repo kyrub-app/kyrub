@@ -1,0 +1,40 @@
+name: Store reservations visibility Firestore E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/staff/storeReservation*.ts'
+      - 'server/payments/marketplaceDiscoveryService.ts'
+      - 'src/components/LegacyRetailerPanel.tsx'
+      - 'src/components/PublicStorefront*.tsx'
+      - 'tests/store-reservations-*'
+      - 'api/health.ts'
+      - 'vercel.json'
+      - '.github/workflows/store-reservations-visibility-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  store-reservation-isolated:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Verify booking switch, old reservations, rights and public projection
+        env:
+          FIREBASE_PROJECT_ID: kyrub-security-test
+          GCLOUD_PROJECT: kyrub-security-test
+          GOOGLE_CLOUD_PROJECT: kyrub-security-test
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --import tsx tests/store-reservations-serverless-http-e2e.mjs"
