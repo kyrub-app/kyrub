@@ -111,7 +111,8 @@ export default async function handler(
       const bytes=await getPublicPromotionalTagImage(id,slot);
       if(!bytes){response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});return;}
       response.setHeader('Content-Type','image/webp');
-      (response as ResponseLike&{send(body:Buffer):void}).status(200).send(bytes);
+      response.status(200);
+      (response as ResponseLike&{send(body:Buffer):void}).send(bytes);
     }catch{response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});}
     return;
   }
