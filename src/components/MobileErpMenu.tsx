@@ -26,7 +26,7 @@ import {
   requestErpManagementNavigation,
   type ErpManagementModule,
 } from '../utils/erpManagementNavigation';
-import { getPlanCenterUrl } from '../utils/planCenter';
+import { getOfficialStorePlansUrl } from '../utils/officialStorePlansNavigation';
 import { hasStorePermission, type StoreRole } from '../utils/storeSecurity';
 
 export type ErpSubTab =
@@ -120,7 +120,7 @@ export const isMobileErpManagementModule = (
 export const commitMobileErpMenuSelection = (
   itemId: MobileErpMenuItemId,
   actions: {
-    onOpenPlanCenter?: () => void;
+    onOpenOfficialStorePlans?: () => void;
     onOpenStoreConfig: () => void;
     onSelectTab: (tab: ErpSubTab) => void;
     onSelectManagementModule?: (module: ErpManagementModule | null) => void;
@@ -131,7 +131,7 @@ export const commitMobileErpMenuSelection = (
 
   if (itemId === 'planos') {
     selectManagement(null);
-    actions.onOpenPlanCenter?.();
+    actions.onOpenOfficialStorePlans?.();
     return;
   }
 
@@ -204,7 +204,7 @@ export function MobileErpMenu({
     if (!itemId) return;
 
     commitMobileErpMenuSelection(itemId, {
-      onOpenPlanCenter: () => window.location.assign(getPlanCenterUrl()),
+      onOpenOfficialStorePlans: () => window.location.assign(getOfficialStorePlansUrl()),
       onOpenStoreConfig,
       onSelectTab,
     });

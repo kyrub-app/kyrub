@@ -135,7 +135,9 @@ describe('Kyrub public and operational routes', () => {
     assert.doesNotMatch(planCenterSource, /KYRUB_COMMERCIAL_PLAN_BILLING_AVAILABLE/);
     assert.doesNotMatch(planCenterSource, /Contratação paga em breve/);
     assert.match(profileBridgeSource, /Plano e faturamento/);
-    assert.match(profileBridgeSource, /Abrir Central de Planos/);
+    assert.match(profileBridgeSource, /Abrir Loja Oficial Kyrub/);
+    assert.ok(profileBridgeSource.includes('href={getOfficialStorePlansUrl()}'));
+    assert.doesNotMatch(profileBridgeSource, /getPlanCenterUrl/);
   });
 
   test('mobile ERP navigation uses the browser top layer instead of a custom portal overlay', () => {
