@@ -3,7 +3,7 @@ import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 
-type Unit={id:string;url:string;physicalStatus:'not_verified'};
+type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'};
 type Batch={id:string;model:'adesivo';count:number;units:Unit[]};
 type Readiness={
  isolation:'emulator'|'isolated-project'|'unsafe';
@@ -28,7 +28,7 @@ function validateBatch(value:unknown):Batch{
     record.count<1||record.count>10||!Array.isArray(record.units)||record.units.length!==record.count||
     new Set(record.units.map(u=>u.id)).size!==record.count)throw Error('BATCH_UNAVAILABLE');
  for(const unit of record.units){
-  if(!isTagId(unit?.id)||unit.url!==tagUrl(unit.id)||unit.physicalStatus!=='not_verified')throw Error('BATCH_UNAVAILABLE');
+  if(!isTagId(unit?.id)||unit.url!==tagUrl(unit.id)||!['not_verified','readback_confirmed'].includes(unit.physicalStatus))throw Error('BATCH_UNAVAILABLE');
  }
  return record;
 }
@@ -143,7 +143,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
      <summary className="cursor-pointer font-semibold">Lote {batch.id.slice(-8)} · {batch.count} adesivo(s)</summary>
      <div className="mt-3 space-y-2">
       {batch.units.map((entry,i)=><button type="button" key={entry.id} disabled={busy||writing} aria-pressed={selected===entry.id} className={btn+' block w-full text-left '+(selected===entry.id?'border-orange-400':'')} onClick={()=>setSelected(entry.id)}>
-       Unidade {i+1} · {entry.id.slice(-8)} · gravação não verificada
+       Unidade {i+1} · {entry.id.slice(-8)} · {entry.physicalStatus==='readback_confirmed'?'leitura NFC conferida':'gravação não verificada'}
       </button>)}
      </div>
     </details>)}
