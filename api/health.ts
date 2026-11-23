@@ -620,6 +620,23 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'staff-shifts') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const scheduleTransport = await import('../server/staff/staffShiftTransport.js');
+      await scheduleTransport.handleStaffShiftRequest(request as never, response as never);
+    } catch (error) {
+      console.error('[staff-shifts-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          code: 'STAFF_SHIFT_TRANSPORT_UNAVAILABLE',
+          error: 'Escalas de trabalho temporariamente indisponíveis.',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'staff-tasks') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     try {
