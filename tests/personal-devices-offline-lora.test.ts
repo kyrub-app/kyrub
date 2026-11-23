@@ -164,3 +164,33 @@ test('commercial NFC card uses canonical Kyrub public storefront URL only', () =
   assert.match(ui, /não transmite por aproximação entre celulares/);
   assert.doesNotMatch(ui, /makeReadOnly|serialNumber|localStorage|setDoc|updateDoc/);
 });
+
+
+test('device hub prioritizes official tags without promoting local drafts to owned tags', () => {
+  const ui = read('src/components/KyrubDevicesPanel.tsx');
+  assert.ok(ui.indexOf('<OfficialKyrubTagPanel') < ui.indexOf('<KyrubBusinessCard'));
+  assert.match(ui, /Meu cartão digital e vitrines/);
+  assert.match(ui, /Meu smartphone ·/);
+  assert.match(ui, /Tecnologias e ferramentas avançadas/);
+  assert.match(ui, /Registros preparados neste navegador não são tags oficiais vinculadas/);
+  assert.match(ui, /<KyrubBusinessCard/);
+  assert.match(ui, /id="personal-smartphone-device"/);
+  assert.match(ui, /Dispositivos preparados neste aparelho/);
+});
+
+test('pilot visibility recovery only returns an owner-matching, verified direct read', () => {
+  const service = read('server/identity/kyrubTagService.ts');
+  const panel = read('src/components/OfficialKyrubTagPanel.tsx');
+  const api = read('api/health.ts');
+  assert.match(service, /where\('ownerId','==',actor\)/);
+  assert.match(service, /if\(visible\.length\)return \{tags:visible/);
+  assert.match(service, /kyrub_tag_pilot_lots\/experimental-001\/units\/001/);
+  assert.match(service, /data\?\.ownerId===actor&&data\.pilotBatch==='experimental-001'/);
+  assert.match(service, /pilotRecovered:true/);
+  assert.match(api, /verifyIdToken\(bearer,true\)/);
+  assert.match(api, /loadOwnedKyrubTag\(actor,id\)/);
+  assert.match(panel, /findOwnedTag/);
+  assert.match(panel, /Verificar minha unidade/);
+  assert.match(panel, /Vinculada · não publicada/);
+  assert.match(panel, /data\.pilotRecovered===true/);
+});
