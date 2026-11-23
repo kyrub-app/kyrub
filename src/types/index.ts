@@ -63,6 +63,10 @@ export interface Store {
   description: string;
   logo: string;
   banner: string;
+  /** Ordered rotating banner images (maximum five). */
+  bannerImages?: string[];
+  /** Public institutional gallery, independent of product images. */
+  galleryImages?: string[];
   primaryColor: string;
   plan: StorePlan;
   ownerEmail: string;
@@ -123,6 +127,8 @@ export interface MarketplaceStoreListingDocument
   address: string;
   logo: string;
   banner: string;
+  bannerImages?: string[];
+  galleryImages?: string[];
   primaryColor: string;
   keywords: string[];
   status: 'open' | 'delayed' | 'closed';

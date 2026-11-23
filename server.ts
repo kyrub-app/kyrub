@@ -46,6 +46,7 @@ import { createStaffProcedureRouter } from "./server/staff/staffProcedureTranspo
 import { createStaffTaskRouter } from "./server/staff/staffTaskTransport";
 import { createStaffShiftRouter } from "./server/staff/staffShiftTransport";
 import { createStoreReservationRouter } from "./server/staff/storeReservationRouter";
+import { createStoreMediaRouter } from "./server/staff/storeMediaTransport";
 
 dotenv.config();
 
@@ -251,6 +252,12 @@ app.use(
   "/api/staff/shifts",
   integrationRateLimiter,
   createStaffShiftRouter()
+);
+
+app.use(
+  "/api/staff/store-media",
+  integrationRateLimiter,
+  createStoreMediaRouter()
 );
 
 app.use(

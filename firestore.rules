@@ -131,6 +131,8 @@ service cloud.firestore {
             'plan',
             'keywords',
             'offerImages',
+            'bannerImages',
+            'galleryImages',
             'address',
             'contact',
             'status',
@@ -176,6 +178,8 @@ service cloud.firestore {
             && data.plan is string
             && data.keywords is list
             && data.offerImages is list
+            && (!data.keys().hasAny(['bannerImages']) || (data.bannerImages is list && data.bannerImages.size() <= 5))
+            && (!data.keys().hasAny(['galleryImages']) || (data.galleryImages is list && data.galleryImages.size() <= 24))
             && data.address is string
             && data.contact is string
             && data.status is string
@@ -224,6 +228,8 @@ service cloud.firestore {
               'primaryColor',
               'keywords',
               'offerImages',
+              'bannerImages',
+              'galleryImages',
               'address',
               'contact',
               'status',

@@ -19,7 +19,9 @@ export function StoreCouponRedemptionBridge() {
 
   useEffect(() => {
     const sync = () => {
-      const actions = document.getElementById('kyrub-store-save-publish-actions');
+      // No implicit button inside Store Settings. Coupon redemption is kept
+      // available only to an explicit, dedicated host in future workflows.
+      const actions = document.getElementById('kyrub-store-coupon-redemption-host');
       setHost(actions);
     };
     sync();

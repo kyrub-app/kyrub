@@ -19,6 +19,7 @@ const storeConfigSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
 );
+const storeMediaEditorSource = readFileSync('src/components/store/StoreMediaCollectionEditor.tsx','utf8');
 const productModalSource = readFileSync(
   'src/components/modals/NewProductModal.tsx',
   'utf8'
@@ -75,7 +76,9 @@ test('picked Photos image is downloaded briefly and copied to public Drive media
 test('store and product media controls expose Photos beside Drive', () => {
   assert.match(storeConfigSource, /GooglePhotosImagePickerButton/);
   assert.match(storeConfigSource, /Logo no Google Fotos/);
-  assert.match(storeConfigSource, /Banner no Google Fotos/);
+  assert.match(storeConfigSource, /title="Banner rotativo"/);
+  assert.match(storeMediaEditorSource, /GooglePhotosImagePickerButton/);
+  assert.match(storeMediaEditorSource, /label="Google Fotos"/);
   assert.match(productModalSource, /GooglePhotosImagePickerButton/);
   assert.match(productModalSource, /Selecionar da galeria/);
   assert.match(productModalSource, /setImageUrl\(selection\.url\)/);

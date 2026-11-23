@@ -71,6 +71,10 @@
       "destination": "/api/health?transport=kyrubia-user-ai-chat"
     },
     {
+      "source": "/api/staff/store-media",
+      "destination": "/api/health?transport=store-media"
+    },
+    {
       "source": "/api/staff/reservations",
       "destination": "/api/health?transport=store-reservations"
     },

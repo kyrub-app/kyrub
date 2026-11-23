@@ -155,6 +155,8 @@ export async function publishFirstStoreAndAwardXp(
         listingId, listingType: 'store', storeId: uid, ownerId: uid,
         name: p.name, slug: p.slug, description: p.description ?? '',
         address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
+        bannerImages: Array.isArray(p.bannerImages) ? p.bannerImages.slice(0, 5) : (p.banner ? [p.banner] : []),
+        galleryImages: Array.isArray(p.galleryImages) ? p.galleryImages.slice(0, 24) : [],
         primaryColor: p.primaryColor ?? '', keywords: p.keywords ?? [],
         status: p.status ?? 'closed', publicationStatus: 'published',
         publishedAt: publicationTimestamp, createdAt: publicationTimestamp,
@@ -260,6 +262,8 @@ export async function syncVerifiedFirstStoreProfile(
     const profile = {
       name: p.name, slug: p.slug, description: p.description ?? '',
       address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
+      bannerImages: Array.isArray(p.bannerImages) ? p.bannerImages.slice(0, 5) : (p.banner ? [p.banner] : []),
+      galleryImages: Array.isArray(p.galleryImages) ? p.galleryImages.slice(0, 24) : [],
       primaryColor: p.primaryColor ?? '', keywords: p.keywords ?? [],
       status: p.status ?? 'closed',
     };

@@ -620,6 +620,19 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'store-media') {
+    response.setHeader('Cache-Control','private, no-store, max-age=0');
+    try {
+      const media=await import('../server/staff/storeMediaTransport.js');
+      await media.handleStoreMediaRequest(request as never,response as never);
+    } catch (error) {
+      console.error('[store-media-transport]',error instanceof Error?error.message:String(error));
+      if(!(response as unknown as {writableEnded?:boolean}).writableEnded)
+        response.status(503).json({error:'Imagens da loja indisponíveis.',code:'STORE_MEDIA_TRANSPORT_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'store-reservations') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     try {

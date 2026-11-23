@@ -1,0 +1,40 @@
+name: Store public media manager Firestore E2E
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'server/staff/storeMedia*.ts'
+      - 'src/components/store/StoreManagerMediaModal.tsx'
+      - 'src/components/store/StoreMediaCollectionEditor.tsx'
+      - 'src/LegacyApp.tsx'
+      - 'tests/store-media-serverless-http-e2e.mjs'
+      - 'api/health.ts'
+      - 'vercel.json'
+      - '.github/workflows/store-media-firestore-e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  store-media-isolated:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm run firestore:compose
+      - name: Prove manager media isolation and private/public synchronization
+        env:
+          FIREBASE_PROJECT_ID: kyrub-security-test
+          GCLOUD_PROJECT: kyrub-security-test
+          GOOGLE_CLOUD_PROJECT: kyrub-security-test
+        run: npx --yes firebase-tools@15.35.0 emulators:exec --config firebase.security.json --project kyrub-security-test --only firestore "node --import tsx tests/store-media-serverless-http-e2e.mjs"

@@ -11,7 +11,9 @@ const store = {
   id:'store_public_hero',name:'Kyrub Oficial',slug:'kyrub-oficial',
   description:'Loja de demonstração',logo:'',
   banner:'https://example.com/hero1.jpg',
-  offerImages:['https://example.com/hero2.jpg'],
+  bannerImages:['https://example.com/hero1.jpg','https://example.com/hero2.jpg'],
+  offerImages:['https://example.com/not-a-banner.jpg'],
+  galleryImages:['https://example.com/gallery1.jpg','https://example.com/gallery2.jpg'],
   primaryColor:'#ef7c22',plan:'free',status:'open',
   ownerEmail:'',address:'',contact:'',
   isNew:false,reservationsEnabled:false,
@@ -49,7 +51,7 @@ test('public storefront uses visual logo, swipeable footer and inline section co
     for(const [id,result]of [
       ['public-storefront-action-info','info'],
       ['public-storefront-action-reservas','reservas'],
-      ['public-storefront-action-politicas','politicas'],
+      ['public-storefront-action-galeria','galeria'],
       ['public-storefront-reviews-trigger','avaliacoes'],
       ['customer-store-chat-launcher','chat'],
       ['public-storefront-action-share','share'],
@@ -114,6 +116,46 @@ test('reservation accordion shows explicit disabled state and does not invent av
     else delete(globalThis as Record<string,unknown>).document;
     if(oldAct)Object.defineProperty(globalThis,'IS_REACT_ACT_ENVIRONMENT',oldAct);
     else delete(globalThis as Record<string,unknown>).IS_REACT_ACT_ENVIRONMENT;
+    dom.window.close();
+  }
+});
+
+test('gallery images remain independent of the banner, and policy content lives under Information',async()=>{
+  const dom=new JSDOM('<!doctype html><html><body><div id="app"></div></body></html>',{
+    pretendToBeVisual:true,url:'https://www.kyrub.com/@kyrub-oficial',
+  });
+  const globals=new Map<string,PropertyDescriptor|undefined>();
+  for(const [name,value]of [['window',dom.window],['document',dom.window.document],
+    ['IS_REACT_ACT_ENVIRONMENT',true]] as const){
+    globals.set(name,Object.getOwnPropertyDescriptor(globalThis,name));
+    Object.defineProperty(globalThis,name,{configurable:true,value});
+  }
+  const {createRoot}=await import('react-dom/client');
+  const root=createRoot(dom.window.document.getElementById('app')!);
+  const render=(section:'info'|'galeria')=>createElement(PublicStorefrontQuickPanel,{
+    store,selected:section,onClose:()=>{},onChat:()=>{},onReviews:()=>{},actionsDisabled:false,
+  });
+  try{
+    await act(async()=>root.render(render('info')));
+    assert.match(dom.window.document.body.textContent??'',/Políticas e condições/);
+    assert.match(dom.window.document.body.textContent??'',/Esta loja ainda não publicou políticas institucionais/);
+    await act(async()=>root.render(render('galeria')));
+    assert.equal(dom.window.document.querySelectorAll('#public-storefront-gallery-grid img').length,2);
+    assert.doesNotMatch(dom.window.document.body.textContent??'',/Políticas e condições/);
+    const image=dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Ampliar foto 1 de 2"]');
+    assert.ok(image);
+    await act(async()=>image!.click());
+    assert.ok(dom.window.document.querySelector('[role="dialog"]'));
+    await act(async()=>(dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Próxima foto"]'))?.click());
+    assert.match(dom.window.document.querySelector('[role="dialog"] img')?.getAttribute('src')??'',/gallery2\.jpg/);
+    await act(async()=>(dom.window.document.querySelector<HTMLButtonElement>('[aria-label="Fechar foto ampliada"]'))?.click());
+    assert.equal(dom.window.document.querySelector('[role="dialog"]'),null);
+  }finally{
+    await act(async()=>root.unmount());
+    for(const [name,descriptor]of globals){
+      if(descriptor)Object.defineProperty(globalThis,name,descriptor);
+      else delete (globalThis as Record<string,unknown>)[name];
+    }
     dom.window.close();
   }
 });

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Info,
-  MessageCircle, MessageSquareText, Share2, ShieldCheck,
+  Images, MessageSquareText, Share2,
   Star, Store as StoreIcon,
 } from 'lucide-react';
 import type { Store } from '../types';
 import type { StorefrontQuickSection } from './PublicStorefrontQuickPanel';
+import { storeBannerImages } from '../utils/storeMediaCollections';
 
 type PublicStorefrontHeroProps = {
   store: Store;
@@ -23,7 +24,7 @@ const sections: {
 }[] = [
   {id:'info',label:'Informações',Icon:Info},
   {id:'reservas',label:'Reservas',Icon:CalendarDays},
-  {id:'politicas',label:'Políticas',Icon:ShieldCheck},
+  {id:'galeria',label:'Galeria',Icon:Images},
   {id:'avaliacoes',label:'Avaliações',Icon:Star},
   {id:'chat',label:'Conversar',Icon:MessageSquareText},
   {id:'share',label:'Compartilhar',Icon:Share2},
@@ -36,14 +37,7 @@ const sections: {
 export function PublicStorefrontHero({
   store, selectedSection, actionsDisabled, onSelectSection, onChat, onShare,
 }: PublicStorefrontHeroProps) {
-  const images = useMemo(
-    () => Array.from(new Set(
-      [store.banner, ...(store.offerImages ?? [])]
-        .map(value => typeof value === 'string' ? value.trim() : '')
-        .filter(Boolean)
-    )),
-    [store.banner, store.offerImages]
-  );
+  const images = useMemo(() => storeBannerImages(store), [store.banner, store.bannerImages]);
   const [imageIndex, setImageIndex] = useState(0);
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
   useEffect(() => { setImageIndex(0); }, [store.id]);

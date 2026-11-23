@@ -54,6 +54,8 @@ type PublicStorefrontResponse = {
     description: string;
     logo: string;
     banner: string;
+    bannerImages: string[];
+    galleryImages: string[];
     primaryColor: string;
     reservationsEnabled: boolean;
     address: string;
