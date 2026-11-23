@@ -39,7 +39,6 @@ import { SquareDirectoryLayout } from './SquareDirectoryLayout';
 import { InfiniteScrollTrigger } from './InfiniteScrollTrigger';
 import { useInfiniteCursor } from '../hooks/useInfiniteCursor';
 import { CommunityPostCard } from './CommunityPostCard';
-import { SemeaduraJourneyPanel } from './SemeaduraJourneyPanel';
 import {
   approveCommunityMember,
   createCommunity,
@@ -1041,7 +1040,7 @@ export function ProfileCommunitiesCloudBridge() {
               {community.name}
             </strong>
             <span className="mt-1 block text-xs text-slate-500">
-              {community.memberCount.toLocaleString('pt-BR')} membros
+              {community.memberCount.toLocaleString('pt-BR')} participantes
             </span>
             <span className="mt-1 block truncate text-xs text-sky-300/75">
               {community.category}
@@ -1112,7 +1111,7 @@ export function ProfileCommunitiesCloudBridge() {
         </div>
         <div className="p-3">
           <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">{community.name}</strong>
-          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} membros</span>
+          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} participantes</span>
           <span className="mt-1 block truncate text-xs text-sky-300/75">{community.category}</span>
           {layout === 'catalog' && community.description && (
             <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
@@ -1180,10 +1179,10 @@ export function ProfileCommunitiesCloudBridge() {
       )}
       {membersModalOpen && selectedCommunity && createPortal(
         <div data-kyrub-font-scope="true" className="fixed inset-0 z-[210] flex items-center justify-center bg-slate-950/90 p-4 backdrop-blur" role="presentation" onClick={() => setMembersModalOpen(false)}>
-          <section role="dialog" aria-modal="true" aria-label="Membros da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
+          <section role="dialog" aria-modal="true" aria-label="Participantes da comunidade" onClick={event => event.stopPropagation()} className="max-h-[85dvh] w-full max-w-md overflow-y-auto rounded-3xl border border-slate-700 bg-slate-950 p-4">
             <div className="mb-4 flex items-center justify-between gap-3">
-              <div><h3 className="text-base font-black text-white">Membros</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
-              <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar membros" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
+              <div><h3 className="text-base font-black text-white">Participantes</h3><p className="text-xs text-slate-400">{selectedCommunity.name}</p></div>
+              <button type="button" onClick={() => setMembersModalOpen(false)} aria-label="Fechar participantes" className="rounded-xl border border-slate-700 p-2 text-slate-200"><X className="h-5 w-5" /></button>
             </div>
             <div className="space-y-2">
               {!selectedCommunity.isOwner && selectedCommunity.memberCount > members.filter(member => member.status === 'active').length && (
@@ -1195,10 +1194,10 @@ export function ProfileCommunitiesCloudBridge() {
               {members.filter(member => member.status === 'active').map(member => (
                 <div key={member.id} className="flex items-center gap-3 rounded-xl border border-slate-800 bg-slate-900 p-3">
                   <Avatar name={member.userName} url={member.userAvatar} />
-                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-xs text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'moderator' ? 'Moderador' : 'Membro'}</p></div>
+                  <div className="min-w-0 flex-1"><p className="truncate text-xs font-bold text-white">{member.userName}</p><p className="text-xs text-slate-400">{member.role === 'owner' ? 'Criador' : member.role === 'moderator' ? 'Moderador' : 'Participante'}</p></div>
                 </div>
               ))}
-              {members.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum membro ativo encontrado.</p>}
+              {members.every(member => member.status !== 'active') && <p className="text-xs text-slate-400">Nenhum participante ativo encontrado.</p>}
             </div>
           </section>
         </div>, document.body
@@ -1307,7 +1306,7 @@ export function ProfileCommunitiesCloudBridge() {
             onClick={event => event.stopPropagation()}
             className="w-full max-w-md space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
             <h3 className="text-xl font-black text-white">{selectedPublicPreview.name}</h3>
-            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} membros</p>
+            <p className="text-xs text-sky-300">{selectedPublicPreview.category} · {selectedPublicPreview.memberCount} participantes</p>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-200">{selectedPublicPreview.description}</p>
             <p className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 text-xs leading-relaxed text-amber-200">
               Esta comunidade consta na Praça pública, mas os dados completos não foram disponibilizados pela leitura autenticada.
@@ -1476,7 +1475,7 @@ export function ProfileCommunitiesCloudBridge() {
                             {community.name}
                           </span>
                           <span className="text-[11px] text-slate-500">
-                            {community.memberCount} membros
+                            {community.memberCount} participantes
                           </span>
                         </button>
                       ))}
@@ -1635,7 +1634,7 @@ export function ProfileCommunitiesCloudBridge() {
                           {selectedCommunity.description}
                         </p>
                         <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-slate-400">
-                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver membros da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'membro' : 'membros'}</button>
+                          <button type="button" onClick={() => setMembersModalOpen(true)} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver participantes da comunidade">{selectedCommunity.memberCount} {selectedCommunity.memberCount === 1 ? 'participante' : 'participantes'}</button>
                           <span>•</span>
                           <button type="button" onClick={() => { setGroupsModalOpen(true); setGroupComposerOpen(false); setGroupSaveNotice(''); setGroupSaveError(''); }} className="underline underline-offset-4 hover:text-sky-300" aria-label="Ver grupos da comunidade">Grupos</button>
                           <span>•</span>
@@ -1712,7 +1711,6 @@ export function ProfileCommunitiesCloudBridge() {
 
                     {pageTab === 'wall' && (
                       <div className="space-y-3">
-                        <SemeaduraJourneyPanel key={selectedCommunity.id} communityId={selectedCommunity.id} viewerId={user?.uid || ''} />
                         {canParticipate && (
                           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-3">
                             <textarea

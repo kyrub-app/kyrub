@@ -40,7 +40,7 @@ test('Praça and personal profile Semear refer to the SAME canonical personal po
   assert.match(profile, /socialFeed\.toggleLike\(item\.post\.id\)/);
 });
 
-test('private economic account stays separate from informational seed journeys', () => {
+test('Pitangueira remains personal and separated from community pages and economic balances', () => {
   const account = read('src/components/tabs/PitangaAccount.tsx');
   const community = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const panel = read('src/components/SemeaduraJourneyPanel.tsx');
@@ -54,7 +54,7 @@ test('private economic account stays separate from informational seed journeys',
   assert.match(panel, /Cocar · XP/);
   assert.match(panel, /aria-label="Cocar, XP da conta de recompensas"/);
   assert.match(panel, /xp\.toLocaleString\('pt-BR'\)/);
-  assert.match(community, /<SemeaduraJourneyPanel key=\{selectedCommunity\.id\} communityId=\{selectedCommunity\.id\}/);
+  assert.doesNotMatch(community, /SemeaduraJourneyPanel|community-journey/);
   assert.match(panel, /Esta jornada é visual\. As recompensas pertencem aos autores, não à comunidade\./);
   assert.match(panel, /Pitangas equivalentes/);
   assert.match(panel, /ainda não creditadas/);

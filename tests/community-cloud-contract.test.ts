@@ -28,6 +28,22 @@ test('Communities present one Mural with lasting post comments and no separate D
   assert.match(ui, /approveCommunityMember/);
 });
 
+test('Pitangueira is personal only; community header and directories say participantes without changing counts', () => {
+  const community = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const preview = read('src/components/ProfileCommunitiesPreviewBridge.tsx');
+  const personal = read('src/components/tabs/PitangaAccount.tsx');
+  assert.doesNotMatch(community, /SemeaduraJourneyPanel|Jornada da Pitangueira/);
+  assert.match(personal, /<SemeaduraJourneyPanel/);
+  assert.match(community, /selectedCommunity\.memberCount === 1 \? 'participante' : 'participantes'/);
+  assert.match(community, /aria-label="Ver participantes da comunidade"/);
+  assert.match(community, /onClick=\{\(\) => setMembersModalOpen\(true\)\}/);
+  assert.match(community, /aria-label="Participantes da comunidade"/);
+  assert.match(community, /<h3 className="text-base font-black text-white">Participantes<\/h3>/);
+  assert.match(community, /community\.memberCount\.toLocaleString\('pt-BR'\)\} participantes/);
+  assert.match(preview, /selectedCommunity\.memberCount === 1 \? 'participante' : 'participantes'/);
+  assert.match(preview, /community\.memberCount\.toLocaleString\('pt-BR'\)\} participantes/);
+});
+
 test('community data layer uses canonical posts and retains no debate writers or import jobs', () => {
   const cloud = read('src/utils/communityCloud.ts');
   for (const name of ['communities', 'community_members', 'community_posts']) {
