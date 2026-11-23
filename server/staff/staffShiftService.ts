@@ -88,7 +88,11 @@ export const listAuthorizedStaffShifts = async (input: {
       shift.canonicalStoreId === actor.canonicalStoreId &&
       shift.legacyStoreId === actor.legacyStoreId &&
       canReadStaffShift(actor, shift))
-    .map(({shift}) => shift)
+    .map(({shift}) => {
+      const { creationHash: _private, ...publicShift } = shift as
+        StaffShift & {creationHash?: string};
+      return publicShift;
+    })
     .sort((a, b) => a.scheduledDate.localeCompare(b.scheduledDate) ||
       a.startTime.localeCompare(b.startTime));
 };
