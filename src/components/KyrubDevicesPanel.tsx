@@ -210,7 +210,24 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
   };
 
   return (
-    <div id="personal-devices-panel" className="space-y-4 text-slate-200">
+    <div id="personal-devices-panel" className="space-y-3 text-slate-200">
+      <header className="space-y-1 pb-1">
+        <h4 className="text-lg font-bold text-white">Meus dispositivos</h4>
+        <p className="text-sm text-slate-300">Personalize seus acessórios oficiais ou compartilhe seu cartão digital.</p>
+      </header>
+      <OfficialKyrubTagPanel key={'official-'+userId} userId={userId} />
+
+      <details className="rounded-xl border border-[#34443B] bg-[#121A17] p-3">
+        <summary className="cursor-pointer text-base font-bold text-white">Meu cartão digital e vitrines</summary>
+        <p className="mt-2 text-sm text-slate-300">Compartilhe perfil, lojas e comunidades sem precisar de uma tag física.</p>
+        <div className="mt-3">
+          <KyrubBusinessCard key={userId} userId={userId} nfcSupported={nfcSupported} busy={!!readingId} onWriting={setCardWriting} />
+        </div>
+      </details>
+
+      <details className="rounded-xl border border-[#34443B] bg-[#121A17] p-3">
+        <summary className="cursor-pointer text-base font-bold text-white">Meu smartphone · {phone?.lastNfcReadAt?'NFC testado':'Configurar NFC'}</summary>
+        <div className="mt-3">
       <section id="personal-smartphone-device" className="min-w-0 space-y-3 rounded-2xl border border-slate-700 bg-slate-950 p-4">
         <div className="flex min-w-0 items-start gap-3">
           <Smartphone className="h-7 w-7 shrink-0 text-orange-300" aria-hidden="true" />
@@ -262,10 +279,13 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
         {readingId === SMARTPHONE_SCAN_ID && <p role="status" className="text-sm text-orange-200">Aproxime uma tag NFC do smartphone.</p>}
         {notice && (readingId === SMARTPHONE_SCAN_ID || phone) && <p className="break-words text-xs text-slate-300">{notice}</p>}
       </section>
+        </div>
+      </details>
 
-      <KyrubBusinessCard key={userId} userId={userId} nfcSupported={nfcSupported} busy={!!readingId} onWriting={setCardWriting} />
-      <OfficialKyrubTagPanel key={'official-'+userId} userId={userId} />
-
+      <details className="rounded-xl border border-[#34443B] bg-[#121A17] p-3">
+        <summary className="cursor-pointer text-base font-bold text-white">Tecnologias e ferramentas avançadas</summary>
+        <p className="mt-2 text-sm text-slate-300">Testes locais, NFC e pesquisas LoRa. Registros preparados neste navegador não são tags oficiais vinculadas.</p>
+        <div className="mt-3 space-y-4">
       <div className="grid gap-2 sm:grid-cols-2">
         <section className="min-w-0 rounded-xl border border-slate-700 bg-slate-950 p-3">
           <Nfc className="h-5 w-5 text-orange-300" aria-hidden="true" />
@@ -374,6 +394,8 @@ export function KyrubDevicesPanel({ userId }: { userId: string }) {
           *Web NFC exige navegador compatível, HTTPS, NFC ativo e sua permissão. O conteúdo e o número serial da tag nunca são salvos aqui.
         </p>
       </div>
+        </div>
+      </details>
     </div>
   );
 }
