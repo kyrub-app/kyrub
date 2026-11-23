@@ -274,7 +274,7 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   );
 }
 
-function KyrubMainEntry() {
+function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
   // Promotional e-mail-only identities are checked before LegacyApp mounts.
   // No existing Kyrub account is affected until both server and client gates
   // are deliberately enabled for the new campaign.
@@ -314,8 +314,8 @@ function KyrubMainEntry() {
       onPromoted={()=>setIdentityMode('full')}
       onRetry={()=>setRetry(v=>v+1)}/>;
   return currentUser
-    ? <AuthenticatedKyrubApp operational={false} />
-    : <KyrubGuestWorkspace />;
+    ? <AuthenticatedKyrubApp operational={operational} />
+    : operational ? <AuthenticatedKyrubApp operational /> : <KyrubGuestWorkspace />;
 }
 
 export default function App() {
@@ -361,7 +361,11 @@ export default function App() {
     if (route.legacyRedirect) {
       window.history.replaceState({}, '', route.canonicalPath);
     }
-    return <AuthenticatedKyrubApp operational />;
+    // Tag-only Firebase sessions must never auto-create a Kyrub store even on /staff.
+    // Preserve the original staff route when the campaign identity gate is off.
+    return import.meta.env.VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE==='true'
+      ? <KyrubMainEntry operational />
+      : <AuthenticatedKyrubApp operational />;
   }
 
   // Root / and legacy ?app=1 both lead to the real workspace. Guests can
