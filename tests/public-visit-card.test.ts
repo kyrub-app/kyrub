@@ -158,6 +158,7 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
 
 
 test('SOS contacts are opt-in, private by default, and profile images require tag-local paths',async()=>{
+ const {readFileSync}=await import('node:fs');
  const {normalizePromotionalPresentation,publicPromotionalPresentation,isPromotionalMediaPath}=await import('../shared/kyrubTagPromotional');
  const id='a'.repeat(32),cover='kyrub-tag-media/'+id+'/cover/'+'b'.repeat(32);
  assert.equal(isPromotionalMediaPath(cover,id,'cover'),true);
