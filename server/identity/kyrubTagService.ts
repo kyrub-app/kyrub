@@ -171,6 +171,7 @@ export async function listOwnedKyrubTags(actor:string){
 }
 export async function loadTagDestinationCatalog(actor:string,id:string):Promise<TagDestinationCatalog>{
  const current=await loadOwnedKyrubTag(actor,id);
+ if(current.distribution==='promotional')throw Error('TAG_FORBIDDEN');
  const profile=await getOwnedSocialAddress(actor,'profile');
  const [stores,tenants,publicTenants,communities]=await Promise.all([
   adminDb.collection('stores').where('ownerId','==',actor).limit(20).get(),
@@ -214,14 +215,14 @@ export async function configureKyrubTag(actor:string,id:string,urls:unknown){
  const ref=tags().doc(id);
  const initialSnapshot=await ref.get();
  const initial=initialSnapshot.data();
- if(initial?.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+ if(initial?.ownerId!==actor||initial.distribution==='promotional')throw Error('TAG_FORBIDDEN');
  const existing=new Map((Array.isArray(initial.targets)?initial.targets.filter(isBoundTarget):[]).map(t=>[cardLink(t,'Destino').url,t.bindingId]));
  const resolved=await Promise.all(requested.map(t=>resolveTarget(actor,t,existing.get(cardLink(t,'Destino').url))));
  if(resolved.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
  const targets=resolved.flatMap(t=>t?[t.binding]:[]);
  return adminDb.runTransaction(async tx=>{
   const snapshot=await tx.get(ref),data=snapshot.data();
-  if(!data||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  if(!data||data.ownerId!==actor||data.distribution==='promotional')throw Error('TAG_FORBIDDEN');
   if(!initialSnapshot.updateTime||!snapshot.updateTime?.isEqual(initialSnapshot.updateTime))throw Error('TAG_CHANGED');
   const externalUrls=external.map(l=>l.url);
   tx.update(ref,{targets,externalUrls,enabled:true});
