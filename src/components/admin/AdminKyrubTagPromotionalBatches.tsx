@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import type {User} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
 import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
+import AdminKyrubTagNfcWizard from './AdminKyrubTagNfcWizard';
 
 type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'};
 type Batch={id:string;model:'adesivo';count:number;units:Unit[]};
@@ -123,7 +124,14 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
      <p className="text-amber-200">Login por e-mail, regras Storage publicadas e leitura NFC física ainda dependem de homologação manual.</p>
     </>}
   </div>
-  <div className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  <AdminKyrubTagNfcWizard user={user} readiness={readiness} batches={batches}
+   onBatch={batch=>{
+    setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)]);
+    setSelected(batch.units[0]?.id??'');
+   }}/>
+  <details className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <summary className="cursor-pointer font-semibold">Modo manual avançado · Emissão e gravação isoladas</summary>
+   <div className="mt-3 space-y-3">
    <h5 className="font-semibold">Emitir lote promocional · Adesivos NFC</h5>
    <p>Sem cadastro de e-mail nem destinatário. As etiquetas comerciais protegidas continuam separadas. Cada unidade recebe um endereço próprio.</p>
    {!readiness?.canIssue&&<p className="text-sm text-amber-200">A emissão só será liberada após configurar um projeto Firebase de homologação separado e ativar o piloto no servidor. Não há botão de desbloqueio nesta tela.</p>}
@@ -135,7 +143,8 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
     Confirmo a emissão de identificadores promocionais sem destinatário, ainda não gravados fisicamente.
    </label>
    <button type="button" className={btn} disabled={!ready||!readiness?.canIssue||!confirm||busy||writing||!Number.isInteger(count)||count<1||count>10} onClick={()=>void issue()}>{busy?'Emitindo…':'Emitir lote promocional'}</button>
-  </div>
+   </div>
+  </details>
   <div className="space-y-3">
    <h5 className="font-semibold">Inventário de lotes emitidos</h5>
    {!ready?<p>Consultando lotes…</p>:batches.length===0?<p>Nenhum lote promocional encontrado.</p>:
