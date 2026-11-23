@@ -114,7 +114,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
      batch.units[0].physicalStatus!=='readback_confirmed')throw Error('TAG_READBACK_NOT_RECORDED');
     onBatch(batch);
     setActive({batchId:batch.id,unit:batch.units[0]});
-    setSessionVerified(n=>n+1);
+    if(!result.replay)setSessionVerified(n=>n+1);
     setPhase('confirmed');
     setNotice('Informações válidas! A URL gravada foi lida e conferida. Afaste o adesivo e toque em Próximo adesivo.');
    }).catch(()=>{
