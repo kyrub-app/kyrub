@@ -132,13 +132,16 @@ export default async function handler(
       }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
-      if(['claim-promotional','recover-promotional'].includes(String(data.action))&&
+      if(['claim-promotional','recover-promotional','rotate-promotional-recovery'].includes(String(data.action))&&
           Object.keys(data).length===(data.action==='recover-promotional'?2:1)){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);
         if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
         if(data.action==='claim-promotional'){
           response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email));return;
+        }
+        if(data.action==='rotate-promotional-recovery'){
+          response.status(200).json(await service.rotatePromotionalRecoveryCode(actor,id));return;
         }
         response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
       }
