@@ -225,7 +225,7 @@ export function SquareStoresSection({
                   {store.official && <span className="mt-1 block text-xs font-bold text-teal-300">Loja Oficial</span>}
                   {participating && <span className="mt-1 block text-xs font-bold text-emerald-300">Você participa</span>}
                   {store.source?.keywords?.length ? (
-                    <span className="mt-1 block truncate text-xs text-sky-300/75">
+                    <span className="mt-1 block truncate text-xs text-teal-300/75">
                       {store.source.keywords.slice(0, 2).join(', ')}
                     </span>
                   ) : null}
@@ -275,11 +275,11 @@ export function SquareStoresSection({
       className="mb-4 space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
       <header className="flex items-start justify-between gap-3">
         <div>
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">Lojas</span>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-teal-300">Lojas</span>
           <h2 className="mt-1 text-base font-black text-white">Descubra lojas e ofertas</h2>
         </div>
         <button type="button" id="square-stores-view-all" onClick={onViewAll}
-          className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-black uppercase text-slate-950">
+          className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-teal-500 px-3 text-xs font-black uppercase text-slate-950">
           Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
         </button>
       </header>
@@ -294,7 +294,7 @@ export function SquareStoresSection({
             onClick={() => setListTab(id)}
             className={`shrink-0 rounded-xl px-3 py-2 text-xs font-black uppercase ${
               listTab === id
-                ? 'bg-sky-500/15 text-sky-200'
+                ? 'bg-teal-500/15 text-teal-200'
                 : 'border border-slate-800 bg-slate-950 text-slate-500'
             }`}>
             {label}

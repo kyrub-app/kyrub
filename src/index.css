@@ -123,9 +123,8 @@ a.bg-orange-600.text-white {
   color: var(--kyrub-cream);
 }
 
-#renda-tab-container > .grid:first-child > :nth-child(2) {
-  background-color: var(--kyrub-moss-raised);
-}
+/* Catu uses the same neutral card surface for Entregas and Freelas.
+   The sage (#8FA893) is reserved for Taba/Praça's navigational accents. */
 
 #kyrub-tab-container [aria-label="Recompensas"] {
   background: linear-gradient(155deg, #26332E, #1C2622 65%);

@@ -217,11 +217,11 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
         className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
         <header className="flex items-start justify-between gap-3">
           <div>
-            <span className="text-xs font-black uppercase tracking-[0.18em] text-sky-300">Comunidades</span>
+            <span className="text-xs font-black uppercase tracking-[0.18em] text-teal-300">Comunidades</span>
             <h2 className="mt-1 text-base font-black text-white">Encontre sua comunidade</h2>
           </div>
           <button type="button" onClick={() => setCommunityCatalogOpen(true)}
-            className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-sky-500 px-3 text-xs font-black uppercase text-slate-950">
+            className="flex min-h-10 shrink-0 items-center gap-1 rounded-xl bg-teal-500 px-3 text-xs font-black uppercase text-slate-950">
             Ver todas <ArrowRight className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
         </header>
@@ -231,7 +231,7 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
           <button type="button" onClick={() => requireLogin('ver suas comunidades favoritas')}
             className="rounded-xl border border-slate-800 bg-slate-950 px-3 py-2 text-xs font-black uppercase text-slate-400">Favoritos</button>
           <button type="button" aria-pressed="true"
-            className="rounded-xl bg-sky-500/15 px-3 py-2 text-xs font-black uppercase text-sky-200">Em alta</button>
+            className="rounded-xl bg-teal-500/15 px-3 py-2 text-xs font-black uppercase text-teal-200">Em alta</button>
         </div>
         <div className="flex gap-2.5 overflow-x-auto pb-1" aria-label="Vitrine de comunidades">
           {data.communities.slice(0, 8).map(community => communityCard(community, false))}
@@ -244,7 +244,7 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
 
       <section id="guest-square-wall" aria-label="Mural da Praça" className="space-y-4 rounded-3xl border border-slate-800 bg-slate-900/70 p-4">
         <div>
-          <span className="text-xs font-black uppercase tracking-[0.18em] text-orange-400">Mural</span>
+          <span className="text-xs font-black uppercase tracking-[0.18em] text-teal-300">Mural</span>
           <h2 className="mt-1 text-xl font-black text-white">Mural da Praça</h2>
           <p className="mt-2 text-sm text-slate-400">Publicações públicas de Kairubidos e comunidades.</p>
         </div>
@@ -336,10 +336,10 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
           <section role="dialog" aria-modal="true" aria-label={`Conhecer ${selectedCommunity.name}`}
             className="w-full max-w-md space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
             <h2 className="text-xl font-black">{selectedCommunity.name}</h2>
-            <p className="text-sm text-sky-300">{selectedCommunity.category} · {selectedCommunity.memberCount} participantes</p>
+            <p className="text-sm text-teal-300">{selectedCommunity.category} · {selectedCommunity.memberCount} participantes</p>
             <p className="whitespace-pre-wrap text-sm leading-6 text-slate-300">{selectedCommunity.description}</p>
             <button type="button" onClick={() => requireLogin('participar da comunidade ' + selectedCommunity.name)}
-              className="min-h-11 w-full rounded-xl bg-orange-500 text-sm font-bold text-slate-950">Participar</button>
+              className="min-h-11 w-full rounded-xl bg-teal-500 text-sm font-bold text-slate-950">Participar</button>
             <button type="button" onClick={() => setSelectedCommunity(null)}
               className="min-h-11 w-full rounded-xl border border-slate-700 text-sm font-bold">Voltar à Praça</button>
           </section>

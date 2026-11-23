@@ -1513,7 +1513,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
               aria-current={activeTab === 'kyrub' ? 'page' : undefined}
               aria-label="Taba — Praça"
               className={`flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase transition-all ${
-                activeTab === 'kyrub' ? 'text-orange-500' : 'text-slate-500 hover:text-slate-300'
+                activeTab === 'kyrub' ? 'text-teal-400' : 'text-slate-500 hover:text-slate-300'
               }`}>
               <Compass className="w-5 h-5" />
               <span>Taba</span>

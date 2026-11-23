@@ -169,7 +169,7 @@ export function KyrubGuestWorkspace() {
             aria-current={tab === nextTab ? 'page' : undefined}
             aria-label={`${label} — ${meaning}`}
             className={'flex flex-col items-center gap-0.5 text-[10px] font-bold uppercase ' +
-              (tab === nextTab ? 'text-orange-500' : 'text-slate-500')}>
+              (tab === nextTab ? (nextTab === 'praca' ? 'text-teal-400' : 'text-orange-500') : 'text-slate-500')}>
             <Icon className="h-5 w-5" />
             <span>{label}</span>
             <span className="text-[8px] font-medium normal-case">{meaning}</span>
