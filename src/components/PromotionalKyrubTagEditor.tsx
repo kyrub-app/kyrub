@@ -27,6 +27,24 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
   finally{setBusy(false);}
  }
+ async function rotateRecovery(){
+  if(busy||!auth.currentUser)return;
+  if(!window.confirm('Gerar um novo código de recuperação? O código antigo será invalidado. Guarde o novo em um local seguro.'))return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await auth.currentUser.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'rotate-promotional-recovery'})
+   });
+   if(!res.ok)throw Error('TAG_FORBIDDEN');
+   const result=await res.json() as {tag:OwnedKyrubTag;recoveryCode:string};
+   if(result.tag.id!==tag.id||result.tag.distribution!=='promotional'||!/^[a-f0-9]{48}$/.test(result.recoveryCode))throw Error('TAG_INVALID');
+   setTag(result.tag);setRecoveryCode(result.recoveryCode);
+   setNotice('O código anterior foi invalidado. Guarde o novo código antes de sair desta tela.');
+  }catch{setNotice('Não foi possível substituir o código. Confira sua sessão e tente novamente.');}
+  finally{setBusy(false);}
+ }
  return <section className="space-y-4 rounded-[24px] bg-[#121A17] p-5 text-[#F5F5F3]">
   <header className="space-y-1">
    <p className="text-sm font-semibold uppercase tracking-wide text-[#F47825]">Kyrub Tag · Adesivo promocional</p>
@@ -62,6 +80,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <p className="mt-1 text-sm text-slate-300">O botão SOS exibirá os números públicos brasileiros 190, 192 e 193. Contatos particulares só serão incluídos após validações de privacidade.</p>
   </section>
   <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-3 font-bold text-[#121A17] disabled:opacity-50" disabled={busy||tag.blocked} onClick={()=>void execute('configure-promotional',{presentation})}>Salvar e publicar minha apresentação</button>
+  <button type="button" className="min-h-11 w-full rounded-xl border border-[#34443B] p-3 text-sm disabled:opacity-50" disabled={busy} onClick={()=>void rotateRecovery()}>Gerar novo código de recuperação</button>
   {tag.blocked?
    <button type="button" className="min-h-11 w-full rounded-xl border border-amber-600/60 p-3 disabled:opacity-50" disabled={busy} onClick={()=>void execute('unblock-promotional')}>Desbloquear minha Tag</button>:
    <button type="button" className="min-h-11 w-full rounded-xl border border-rose-500/60 p-3 text-rose-200 disabled:opacity-50" disabled={busy} onClick={()=>{if(window.confirm('Bloquear esta unidade por perda? O cartão deixará de ser público, e o vínculo permanecerá.'))void execute('block-promotional');}}>Perdi minha Tag · Bloquear</button>}
