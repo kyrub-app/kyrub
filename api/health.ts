@@ -620,6 +620,23 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'store-reservations') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const reservations = await import('../server/staff/storeReservationRouter.js');
+      await reservations.handleStoreReservationRequest(request as never, response as never);
+    } catch (error) {
+      console.error('[store-reservations-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          error: 'Reservas temporariamente indisponíveis.',
+          code: 'RESERVATION_TRANSPORT_UNAVAILABLE',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'staff-shifts') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     try {

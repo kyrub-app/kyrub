@@ -32,6 +32,7 @@ interface RetailerPanelProps {
   setActiveSubTab: (tab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial') => void;
   atendimentoSpaces: string[];
   producaoSpaces: string[];
+  accessRole?: 'owner' | 'manager' | 'seller' | 'cashier' | 'production';
 }
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = ({
@@ -46,7 +47,8 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   triggerToast,
   activeSubTab,
   setActiveSubTab,
-  atendimentoSpaces
+  atendimentoSpaces,
+  accessRole
 }) => {
   const activeRetailerProducts = products.filter(p => p.supplierId === activeRetailerId && !p.wholesalePrice);
   
@@ -74,6 +76,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   const [newResTime, setNewResTime] = useState('');
   const [newResPeople, setNewResPeople] = useState(1);
   const [reservationsLoading, setReservationsLoading] = useState(false);
+  const [reservationsEnabled, setReservationsEnabled] = useState<boolean | null>(null);
+  const [reservationSettingsBusy, setReservationSettingsBusy] = useState(false);
+  const [reservationSettingsError, setReservationSettingsError] = useState('');
 
   // 5. COLLABORATOR PORTAL / CANONICAL TIME CLOCK
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
@@ -148,6 +153,64 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
       .catch(error => triggerToast(error instanceof Error ? error.message : 'Não foi possível carregar as reservas.', 'error'))
       .finally(() => setReservationsLoading(false));
   }, [activeSubTab, activeRetailerId]);
+
+  const canManageReservationOffer = auth.currentUser?.uid === activeRetailerId ||
+    accessRole === 'owner' || accessRole === 'manager';
+
+  useEffect(() => {
+    if (activeSubTab !== 'reservas' || !activeRetailerId) return;
+    let cancelled = false;
+    setReservationsEnabled(null);
+    setReservationSettingsError('');
+    const loadSetting = async () => {
+      const user = auth.currentUser;
+      if (!user) throw Error('Faça login para consultar as configurações de reservas.');
+      const response = await fetch(
+        '/api/staff/reservations/settings?storeId=' + encodeURIComponent(activeRetailerId),
+        {headers:{Authorization:'Bearer ' + await user.getIdToken()},cache:'no-store'}
+      );
+      const data = await response.json().catch(() => ({})) as {enabled?:boolean;error?:string};
+      if (!response.ok || typeof data.enabled !== 'boolean') {
+        throw Error(data.error || 'Configuração de reservas indisponível.');
+      }
+      if (!cancelled) setReservationsEnabled(data.enabled);
+    };
+    void loadSetting().catch(error => {
+      if (!cancelled) setReservationSettingsError(
+        error instanceof Error ? error.message : 'Não foi possível consultar as reservas.'
+      );
+    });
+    return () => {cancelled = true;};
+  }, [activeSubTab, activeRetailerId]);
+
+  const handleTogglePublicReservations = async () => {
+    if (reservationSettingsBusy || reservationsEnabled === null || !canManageReservationOffer) return;
+    const next = !reservationsEnabled;
+    const user = auth.currentUser;
+    if (!user) return;
+    setReservationSettingsBusy(true);
+    setReservationSettingsError('');
+    try {
+      const response = await fetch('/api/staff/reservations/settings', {
+        method:'POST',
+        headers:{
+          Authorization:'Bearer ' + await user.getIdToken(),
+          'Content-Type':'application/json',
+        },
+        body:JSON.stringify({storeId:activeRetailerId,enabled:next}),
+      });
+      const data = await response.json().catch(() => ({})) as {enabled?:boolean;error?:string};
+      if (!response.ok || data.enabled !== next) {
+        throw Error(data.error || 'Não foi possível atualizar a configuração.');
+      }
+      setReservationsEnabled(data.enabled);
+      triggerToast(next?'Reservas habilitadas na vitrine.':'Reservas desativadas na vitrine.','success');
+    } catch (error) {
+      setReservationSettingsError(error instanceof Error ? error.message : 'Não foi possível salvar.');
+    } finally {
+      setReservationSettingsBusy(false);
+    }
+  };
 
   const handleConfirmReservation = async () => {
     if (!newResName.trim() || !newResDate || !newResTime) {
@@ -351,6 +414,37 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 >
                   + Nova Reserva
                 </button>
+              </div>
+
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-slate-700 bg-slate-900/70 p-4" id="erp-public-reservation-settings">
+                <div className="min-w-0 flex-1">
+                  <h4 className="text-xs font-black text-white">Aceitar reservas pela vitrine</h4>
+                  <p className="mt-1 text-[11px] leading-relaxed text-slate-400">
+                    {reservationsEnabled === null
+                      ? 'Consultando configuração da loja...'
+                      : reservationsEnabled
+                        ? 'A vitrine informa que sua loja aceita reservas. Os pedidos dependem de confirmação.'
+                        : 'A vitrine informa: Esta loja não trabalha com reservas.'}
+                  </p>
+                  {reservationSettingsError && <p role="alert" className="mt-2 text-[11px] text-red-300">{reservationSettingsError}</p>}
+                </div>
+                <button
+                  type="button"
+                  id="erp-reservations-enabled-toggle"
+                  role="switch"
+                  aria-label="Aceitar reservas pela vitrine"
+                  aria-checked={reservationsEnabled === true}
+                  disabled={!canManageReservationOffer || reservationSettingsBusy || reservationsEnabled === null}
+                  onClick={() => void handleTogglePublicReservations()}
+                  className={`relative h-11 w-20 shrink-0 rounded-full border px-2 text-[10px] font-bold transition-colors disabled:opacity-40 ${reservationsEnabled ? 'border-emerald-400 bg-emerald-500/30 text-emerald-200' : 'border-slate-600 bg-slate-950 text-slate-300'}`}
+                >
+                  {reservationSettingsBusy ? 'Salvando' : reservationsEnabled ? 'Ligado' : 'Desligado'}
+                </button>
+                {!canManageReservationOffer && (
+                  <p className="w-full text-[10px] text-slate-500">
+                    Somente o proprietário ou gestor pode alterar esta opção.
+                  </p>
+                )}
               </div>
 
               {reservations.length > 0 ? (

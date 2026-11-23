@@ -26,10 +26,10 @@ import {
   saveStorefrontCart,
   saveStorefrontOriginContext,
 } from '../utils/storefrontOriginContext';
-import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPanel';
 import { StorefrontPanel } from './StorefrontPanel';
 import { PublicStorefrontHero } from './PublicStorefrontHero';
+import { PublicStorefrontQuickPanel, type StorefrontQuickSection } from './PublicStorefrontQuickPanel';
 import { StoreCustomerChatBridge } from './store/StoreCustomerChatBridge';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
@@ -55,6 +55,7 @@ type PublicStorefrontResponse = {
     logo: string;
     banner: string;
     primaryColor: string;
+    reservationsEnabled: boolean;
     address: string;
     keywords: string[];
     status: 'open' | 'delayed' | 'closed';
@@ -151,6 +152,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [cart, setCart] = useState<CartItem[]>(() => loadStorefrontCart(slug));
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [storeReviewsOpen, setStoreReviewsOpen] = useState(false);
+  const [selectedQuickSection, setSelectedQuickSection] = useState<StorefrontQuickSection | null>(null);
+  const [shareFeedback, setShareFeedback] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
@@ -175,6 +178,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     const controller = new AbortController();
 
     setStore(null);
+    setSelectedQuickSection(null);
+    setShareFeedback('');
     setOfficialPlanStoreId('');
     setPublicProducts([]);
     setLoadCompleted(false);
@@ -329,19 +334,27 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     );
   };
 
-  const openStoreInfo = (): void => {
-    window.dispatchEvent(new Event(OPEN_PUBLIC_STOREFRONT_INFO_EVENT));
-  };
-
-  const closeStorefront = (): void => {
-    if (window.history.length > 1) {
-      window.history.back();
+  const shareStorefront = async (): Promise<void> => {
+    if (!store) return;
+    const publicUrl = 'https://www.kyrub.com/@' + encodeURIComponent(store.slug);
+    setShareFeedback('');
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({title:store.name,text:'Conheça esta loja no Kyrub',url:publicUrl});
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError')
+          setShareFeedback('Não foi possível compartilhar. Link: ' + publicUrl);
+      }
       return;
     }
-
-    window.location.assign('/');
+    try {
+      if (!navigator.clipboard?.writeText) throw Error('COPY_UNAVAILABLE');
+      await navigator.clipboard.writeText(publicUrl);
+      setShareFeedback('Link da loja copiado!');
+    } catch {
+      setShareFeedback('Copie o link da loja: ' + publicUrl);
+    }
   };
-
   const openKyrub = (): void => {
     if (!store) return;
     saveStorefrontOriginContext({
@@ -457,22 +470,31 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
       <div className="mx-auto w-full max-w-5xl px-3 sm:px-5">
         <PublicStorefrontHero
           store={store}
-          movementLabel={movementMetadata.label}
-          movementColorClassName={movementMetadata.colorClassName}
+          selectedSection={selectedQuickSection}
           actionsDisabled={authLoading || loginPending}
-          onOpenInfo={openStoreInfo}
-          onClose={closeStorefront}
-          onReviews={() => { if (user) setStoreReviewsOpen(true); else void handleGoogleLogin(); }}
+          onSelectSection={section => {
+            setShareFeedback('');
+            setSelectedQuickSection(current => current === section ? null : section);
+          }}
           onChat={() => {
             if (!user) { void handleGoogleLogin(); return; }
             openStoreCustomerChat({ perspective: 'customer', storeId: store.id, storeName: store.name });
           }}
+          onShare={() => void shareStorefront()}
         />
-        {store.description && (
-          <p id="public-storefront-description" className="mx-1 mt-2 line-clamp-2 text-[11px] leading-relaxed text-slate-400 sm:text-xs">
-            {store.description}
-          </p>
-        )}
+        <span className="sr-only">{movementMetadata.label}</span>
+        <PublicStorefrontQuickPanel
+          store={store}
+          selected={selectedQuickSection}
+          onClose={() => setSelectedQuickSection(null)}
+          onChat={() => {
+            if (!user) { void handleGoogleLogin(); return; }
+            openStoreCustomerChat({ perspective: 'customer', storeId: store.id, storeName: store.name });
+          }}
+          onReviews={() => { if (user) setStoreReviewsOpen(true); else void handleGoogleLogin(); }}
+          actionsDisabled={authLoading || loginPending}
+        />
+        {shareFeedback && <p role="status" className="mx-1 mt-2 rounded-xl border border-orange-500/30 bg-orange-500/10 p-3 text-xs text-orange-100">{shareFeedback}</p>}
       </div>
       <StoreCustomerChatBridge />
 

@@ -70,6 +70,8 @@ export interface Store {
   contact?: string;
   keywords?: string[];
   offerImages?: string[];
+  /** Public booking offer, always projected by the server. */
+  reservationsEnabled?: boolean;
   lat?: number;
   lng?: number;
   geofenceRadiusMeters?: number;
