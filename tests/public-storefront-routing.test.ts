@@ -342,17 +342,18 @@ test('public storefront uses one immersive logo and a rotating banner', () => {
   assert.ok(storefrontPanelSource.includes('line-clamp-3'));
 });
 
-test('public hero retains modal and close actions with the fire status', () => {
+test('public hero keeps logo visual and opens information inline, without a second modal', () => {
   const hero = readFileSync('src/components/PublicStorefrontHero.tsx', 'utf8');
-  assert.ok(storefrontEventsSource.includes('kyrub:open-public-storefront-info'));
-  assert.ok(hero.includes('id="public-storefront-header-info-trigger"'));
-  assert.ok(publicStorefrontSource.includes('OPEN_PUBLIC_STOREFRONT_INFO_EVENT'));
-  assert.ok(hero.includes('id="public-storefront-close"'));
-  assert.ok(publicStorefrontSource.includes('window.history.back()'));
+  const panel = readFileSync('src/components/PublicStorefrontQuickPanel.tsx', 'utf8');
+  assert.ok(hero.includes('aria-label="Atalhos da loja"'));
+  assert.ok(hero.includes('public-storefront-action-info'));
+  assert.ok(hero.includes('public-storefront-action-reservas'));
+  assert.ok(hero.includes('public-storefront-action-share'));
+  assert.ok(!hero.includes('public-storefront-header-info-trigger'));
+  assert.ok(!hero.includes('public-storefront-close'));
+  assert.ok(publicStorefrontSource.includes('<PublicStorefrontQuickPanel'));
+  assert.ok(panel.includes('Esta loja não trabalha com reservas.'));
   assert.ok(storefrontPanelSource.includes('OPEN_PUBLIC_STOREFRONT_INFO_EVENT'));
-  assert.ok(hero.includes('<Flame'));
-  assert.ok(!storefrontPanelSource.includes('<Zap'));
-  assert.ok(!storefrontPanelSource.includes('storefront-store-info-trigger'));
 });
 
 test('the staff route opens the real retailer workspace after Google authentication', () => {
