@@ -30,6 +30,12 @@ export function currentTagPilotIsolation():TagPilotIsolation{
   allowedPilotProject:process.env.KYRUB_TAG_PROMO_PILOT_PROJECT_ID
  });
 }
+export function tagPilotClientMatchesServer():boolean{
+ const isolation=currentTagPilotIsolation();
+ return isolation==='emulator'||isolation==='isolated-project'&&
+  process.env.VITE_FIREBASE_PROJECT_ID===getFirebaseAdminProjectId();
+}
 export function assertTagPilotWriteIsolated():void{
- if(currentTagPilotIsolation()==='unsafe')throw Error('TAG_PILOT_PROJECT_UNSAFE');
+ if(currentTagPilotIsolation()==='unsafe'||!tagPilotClientMatchesServer())
+  throw Error('TAG_PILOT_PROJECT_UNSAFE');
 }
