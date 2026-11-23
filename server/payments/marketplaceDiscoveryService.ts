@@ -74,7 +74,6 @@ export type PublicStorefrontSnapshot = {
     banner: string;
     primaryColor: string;
     reservationsEnabled: boolean;
-    contact: string;
     address: string;
     keywords: string[];
     status: 'open' | 'delayed' | 'closed';
@@ -430,7 +429,6 @@ export const loadPublicStorefrontBySlug = async (
         banner: clean(storeData.banner),
         primaryColor: clean(storeData.primaryColor),
         reservationsEnabled: await readPublishedStoreReservationsEnabled(storeId, verifiedFirstStoreId),
-        contact: clean(storeData.contact),
         address: clean(storeData.address),
         keywords: stringList(storeData.keywords),
         status: storefrontStatus(storeData.status),
@@ -488,7 +486,6 @@ export const loadPublicStorefrontBySlug = async (
       banner: clean(legacyData.banner),
       primaryColor: clean(legacyData.primaryColor),
       reservationsEnabled: await readPublishedStoreReservationsEnabled(legacyStoreId),
-      contact: clean(legacyData.contact),
       address: clean(legacyData.address),
       keywords: stringList(legacyData.keywords),
       status: storefrontStatus(legacyData.status),
