@@ -17,6 +17,20 @@ const adminWorkspace = read('src/components/admin/AdminSocialModerationWorkspace
 const adminTransport = read('api/admin/operations/health.ts');
 const reviewRules = read('firestore.social-feed.fragment.rules');
 
+test('Momentos opens with the publishing form before shared moments, preserving canonical review actions', () => {
+  const form = modal.indexOf('{/* Write a New Moment Form */}');
+  const shared = modal.indexOf('{/* List Existing Moments */}');
+  assert.ok(form >= 0 && shared > form, 'publishing form must precede shared moments');
+  assert.match(modal, /Publicar meu momento/);
+  assert.match(modal, /Momentos compartilhados/);
+  assert.doesNotMatch(modal, /Avaliações sincronizadas de clientes|Publique a primeira abaixo!/);
+  assert.match(modal, /onSubmit=\{handleSubmit\}/);
+  assert.match(modal, /subscribeStoreReviews\(storeId/);
+  assert.match(modal, /storeMoments\.map\(mom =>/);
+  assert.match(modal, /submitStoreReviewReport\(storeId, reviewId, reportReason\)/);
+  assert.match(modal, /newMomentPublishToPraca/);
+});
+
 test('Momentos publishes to canonical review record instead of local posts', () => {
   assert.match(legacy, /await publishStoreReview\(selectedStoreForMoments, data\)/);
   assert.doesNotMatch(legacy, /post-moment-/);
