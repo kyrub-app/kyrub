@@ -193,6 +193,13 @@ try{
   assert.equal((await create(manager,{
     ...overnight,scheduledDate:'2027-01-20',requestId:'shift_after_revoked_12345',
   })).status,400);
+  const notificationCount=(await adminDb.collection('users/'+seller+'/notifications').get()).size;
+  const cancelRevoked=await cancel(manager,{
+    shiftId:touching.payload.shift.id,requestId:'shift_cancel_revoked_12345',
+    expectedVersion:1,reason:'Vínculo encerrado',
+  });
+  assert.equal(cancelRevoked.status,200,JSON.stringify(cancelRevoked));
+  assert.equal((await adminDb.collection('users/'+seller+'/notifications').get()).size,notificationCount);
   console.log('STAFF_SHIFTS_HTTP_FIRESTORE_E2E_PASS');
 } finally {
   globalThis.fetch=originalFetch;
