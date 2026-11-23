@@ -5,6 +5,7 @@ import test from 'node:test';
 const read = (path: string) => readFileSync(new URL('../' + path, import.meta.url), 'utf8');
 const modal = read('src/components/modals/MomentsModal.tsx');
 const storefront = read('src/components/PublicStorefrontApp.tsx');
+const publicHero = read('src/components/PublicStorefrontHero.tsx');
 const legacy = read('src/LegacyApp.tsx');
 const publisher = read('src/utils/storeReviews.ts');
 const hook = read('src/hooks/usePublicSocialFeed.ts');
@@ -53,7 +54,8 @@ test('removing a moderated Praça review also hides its canonical review and pre
 });
 
 test('public buyer storefront opens the same review publisher used by the Praça', () => {
-  assert.match(storefront, /public-storefront-reviews-trigger/);
+  assert.match(publicHero, /public-storefront-reviews-trigger/);
+  assert.match(storefront, /onReviews=/);
   assert.match(storefront, /<MomentsModal/);
   assert.match(storefront, /await publishStoreReview\(store, data\)/);
   assert.match(storefront, /handleGoogleLogin\(\)/);
