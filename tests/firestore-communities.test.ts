@@ -455,6 +455,61 @@ test('threaded community replies preserve scope, author permissions and existing
   const surviving = await assertSucceeds(getDoc(doc(member, 'community_post_comments', 'thread_reply')));
   if (!surviving.exists()) throw new Error('Uma resposta foi apagada junto com o comentário original.');
 });
+test('author controls comment permission and pinned comment with validated post scope', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const member = environment.authenticatedContext(MEMBER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const communityId = 'comments_control';
+  await createCommunity(owner, communityId, 'public');
+  await joinPublic(member, communityId, MEMBER);
+
+  const makePost = (id: string, allowComments?: unknown, pinnedCommentId?: string) => ({
+    postId: id, communityId, authorId: MEMBER, authorName: 'Membro',
+    authorAvatar: '', content: 'Publicação de teste', mediaUrls: [],
+    ...(allowComments === undefined ? {} : { allowComments }),
+    ...(pinnedCommentId === undefined ? {} : { pinnedCommentId }),
+    createdAtIso: '2026-11-23T10:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-23T10:00:00.000Z', updatedAt: serverTimestamp(),
+  });
+  const makeComment = (id: string, postId: string, parentCommentId?: string) => ({
+    commentId: id, communityId, postId, authorId: OWNER,
+    authorName: 'Criador', authorAvatar: '', text: 'Resposta útil',
+    createdAtIso: '2026-11-23T10:01:00.000Z', createdAt: serverTimestamp(),
+    ...(parentCommentId ? { parentCommentId } : {}),
+  });
+  const editPin = (firestore: any, postId: string, commentId: string) =>
+    updateDoc(doc(firestore, 'community_posts', postId), {
+      pinnedCommentId: commentId,
+      updatedAtIso: '2026-11-23T10:04:00.000Z',
+      updatedAt: serverTimestamp(),
+    });
+
+  await assertSucceeds(setDoc(doc(member, 'community_posts', 'legacy_post'), makePost('legacy_post')));
+  await assertSucceeds(setDoc(doc(owner, 'community_post_comments', 'legacy_comment'), makeComment('legacy_comment', 'legacy_post')));
+  await assertSucceeds(setDoc(doc(member, 'community_posts', 'closed_post'), makePost('closed_post', false, '')));
+  await assertFails(setDoc(doc(owner, 'community_post_comments', 'closed_comment'), makeComment('closed_comment', 'closed_post')));
+  await assertFails(setDoc(doc(owner, 'community_post_comments', 'closed_reply'), makeComment('closed_reply', 'closed_post', 'legacy_comment')));
+  await assertFails(setDoc(doc(member, 'community_posts', 'invalid_boolean'), makePost('invalid_boolean', 'false')));
+  await assertFails(setDoc(doc(member, 'community_posts', 'pre_pinned'), makePost('pre_pinned', true, 'legacy_comment')));
+  await assertFails(updateDoc(doc(owner, 'community_posts', 'closed_post'), { allowComments: true, updatedAt: serverTimestamp() }));
+  await assertFails(updateDoc(doc(member, 'community_posts', 'closed_post'), { allowComments: true, updatedAt: serverTimestamp() }));
+
+  await assertSucceeds(setDoc(doc(owner, 'community_post_comments', 'legit_pin'), makeComment('legit_pin', 'legacy_post')));
+  await assertFails(editPin(owner, 'legacy_post', 'legit_pin')); // Community owner is not the post author.
+  await assertFails(editPin(outsider, 'legacy_post', 'legit_pin'));
+  await assertFails(editPin(member, 'legacy_post', 'missing_comment'));
+  await assertFails(editPin(member, 'closed_post', 'legit_pin')); // Other post.
+  await assertSucceeds(editPin(member, 'legacy_post', 'legit_pin'));
+  const pinned = await assertSucceeds(getDoc(doc(member, 'community_posts', 'legacy_post')));
+  if (pinned.data()?.pinnedCommentId !== 'legit_pin') throw new Error('Pinned comment was not persisted.');
+
+  await assertSucceeds(editPin(member, 'legacy_post', 'legacy_comment')); // Replaces previous pin.
+  await assertSucceeds(deleteDoc(doc(owner, 'community_post_comments', 'legacy_comment')));
+  await assertSucceeds(editPin(member, 'legacy_post', '')); // Unpin even if the comment has been deleted.
+  const cleared = await assertSucceeds(getDoc(doc(member, 'community_posts', 'legacy_post')));
+  if (cleared.data()?.pinnedCommentId !== '') throw new Error('Pinned comment was not cleared.');
+});
+
 test('pending members cannot comment or like in a moderated community', async () => {
   const owner = environment.authenticatedContext(OWNER).firestore();
   const member = environment.authenticatedContext(MEMBER).firestore();
