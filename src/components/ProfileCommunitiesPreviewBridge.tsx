@@ -166,20 +166,25 @@ function CommunityCover({
   community,
   className,
   showInitial = true,
+  displayMode = 'thumbnail',
 }: {
   community: PreviewCommunity;
   className: string;
   showInitial?: boolean;
+  displayMode?: 'thumbnail' | 'full';
 }) {
+  const fullImage = displayMode === 'full';
   return (
     <div
-      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${className}`}
+      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
     >
       {community.coverImage ? (
         <img
           src={community.coverImage}
           alt={`Capa da comunidade ${community.name}`}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={fullImage
+            ? 'block h-auto max-h-[55dvh] w-auto max-w-full object-contain sm:max-h-[28rem]'
+            : 'absolute inset-0 h-full w-full object-cover'}
         />
       ) : (
         showInitial && (
@@ -188,7 +193,9 @@ function CommunityCover({
           </span>
         )
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/15" />
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-t ${fullImage
+        ? 'from-slate-950/20 via-transparent to-transparent'
+        : 'from-slate-950/70 via-transparent to-slate-950/15'}`} />
     </div>
   );
 }
@@ -871,7 +878,8 @@ export function ProfileCommunitiesPreviewBridge() {
                 <div className="relative">
                   <CommunityCover
                     community={selectedCommunity}
-                    className="h-36 sm:h-44"
+                    className=""
+                    displayMode="full"
                     showInitial={false}
                   />
                   <button
@@ -1250,12 +1258,12 @@ export function ProfileCommunitiesPreviewBridge() {
                     Imagem de capa
                   </span>
                   <div className="mt-2 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
-                    <div className="relative h-44">
+                    <div className="relative flex min-h-44 items-center justify-center">
                       {editCoverImage ? (
                         <img
                           src={editCoverImage}
                           alt="Prévia da capa"
-                          className="h-full w-full object-cover"
+                          className="block h-auto max-h-[40dvh] w-auto max-w-full object-contain"
                         />
                       ) : (
                         <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">

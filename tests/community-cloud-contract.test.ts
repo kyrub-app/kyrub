@@ -206,6 +206,22 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(storage, /canPublishCommunityMedia\(communityId\)/);
 });
 
+test('community cover shows the complete image in a responsive header while preserving cropped thumbnails', () => {
+  const cloud = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const preview = read('src/components/ProfileCommunitiesPreviewBridge.tsx');
+  for (const source of [cloud, preview]) {
+    assert.match(source, /displayMode\?: 'thumbnail' \| 'full'/);
+    assert.match(source, /displayMode === 'full'/);
+    assert.match(source, /max-h-\[55dvh\] w-auto max-w-full object-contain sm:max-h-\[28rem\]/);
+    assert.match(source, /absolute inset-0 h-full w-full object-cover/);
+    assert.match(source, /max-h-\[40dvh\] w-auto max-w-full object-contain/);
+  }
+  assert.match(cloud, /<CommunityCover community=\{selectedCommunity\} className="" displayMode="full" \/>/);
+  assert.match(preview, /displayMode="full"\s+showInitial=\{false\}/);
+  assert.match(cloud, /<CommunityCover community=\{community\} className="h-24" \/>/);
+  assert.match(preview, /<CommunityCover community=\{community\} className="h-24" \/>/);
+});
+
 test('community cover, tabs and mural share one scroll region with back-to-top control', () => {
   const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
   const start = ui.indexOf('id="community-page-scroll"');

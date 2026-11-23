@@ -211,26 +211,33 @@ function Avatar({ name, url }: { name: string; url: string }) {
 function CommunityCover({
   community,
   className,
+  displayMode = 'thumbnail',
 }: {
   community: CloudCommunity;
   className: string;
+  displayMode?: 'thumbnail' | 'full';
 }) {
+  const fullImage = displayMode === 'full';
   return (
     <div
-      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${className}`}
+      className={`relative overflow-hidden bg-gradient-to-br from-sky-500/25 via-violet-500/15 to-orange-500/20 ${fullImage ? 'flex min-h-48 items-center justify-center' : ''} ${className}`}
     >
       {community.coverImage ? (
         <img
           src={community.coverImage}
           alt={`Capa da comunidade ${community.name}`}
-          className="absolute inset-0 h-full w-full object-cover"
+          className={fullImage
+            ? 'block h-auto max-h-[55dvh] w-auto max-w-full object-contain sm:max-h-[28rem]'
+            : 'absolute inset-0 h-full w-full object-cover'}
         />
       ) : (
         <span className="absolute inset-0 flex items-center justify-center text-4xl font-black text-white/80">
           {community.name.charAt(0).toLocaleUpperCase('pt-BR')}
         </span>
       )}
-      <div className="absolute inset-0 bg-gradient-to-t from-slate-950/75 via-transparent to-slate-950/15" />
+      <div className={`pointer-events-none absolute inset-0 bg-gradient-to-t ${fullImage
+        ? 'from-slate-950/20 via-transparent to-transparent'
+        : 'from-slate-950/75 via-transparent to-slate-950/15'}`} />
     </div>
   );
 }
@@ -1614,7 +1621,7 @@ export function ProfileCommunitiesCloudBridge() {
                   >
                   <header className="border-b border-slate-800 bg-slate-900">
                     <div className="relative">
-                      <CommunityCover community={selectedCommunity} className="h-36 sm:h-44" />
+                      <CommunityCover community={selectedCommunity} className="" displayMode="full" />
                       <button
                         type="button"
                         onClick={() => {
@@ -2005,9 +2012,9 @@ export function ProfileCommunitiesCloudBridge() {
                 <section>
                   <span className="text-xs font-bold text-slate-300">Imagem de capa</span>
                   <div className="mt-2 overflow-hidden rounded-3xl border border-slate-800 bg-slate-950">
-                    <div className="relative h-44">
+                    <div className="relative flex min-h-44 items-center justify-center">
                       {coverPreview && !removeCoverRequested ? (
-                        <img src={coverPreview} alt="Prévia da capa" className="h-full w-full object-cover" />
+                        <img src={coverPreview} alt="Prévia da capa" className="block h-auto max-h-[40dvh] w-auto max-w-full object-contain" />
                       ) : (
                         <div className="flex h-full items-center justify-center bg-gradient-to-br from-sky-500/20 via-violet-500/10 to-orange-500/20 text-slate-600">
                           <Camera className="h-10 w-10" />
