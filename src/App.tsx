@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
@@ -301,7 +301,16 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
         if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
         setIdentityMode(payload.mode==='tag_only'?'tag_only':'full');
       }).catch(()=>{
-        if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)setIdentityMode('unavailable');
+        // If the tag identity service is unavailable, preserve existing Kyrub
+        // members with a server-confirmed profile, but never bootstrap an
+        // unclassified e-mail-only identity from a cache or an error.
+        if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
+        void getDocFromServer(doc(db,'users',user.uid)).then(snapshot=>{
+          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)
+           setIdentityMode(snapshot.exists()?'full':'unavailable');
+        }).catch(()=>{
+          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)setIdentityMode('unavailable');
+        });
       });
     });
     return()=>{active=false;controller?.abort();unsub();};
