@@ -346,9 +346,10 @@ test('public hero keeps logo visual and opens information inline, without a seco
   const hero = readFileSync('src/components/PublicStorefrontHero.tsx', 'utf8');
   const panel = readFileSync('src/components/PublicStorefrontQuickPanel.tsx', 'utf8');
   assert.ok(hero.includes('aria-label="Atalhos da loja"'));
-  assert.ok(hero.includes('public-storefront-action-info'));
-  assert.ok(hero.includes('public-storefront-action-reservas'));
-  assert.ok(hero.includes('public-storefront-action-share'));
+  assert.ok(hero.includes('public-storefront-action-${id}'));
+  assert.ok(hero.includes("{id:'info',label:'Informações'"));
+  assert.ok(hero.includes("{id:'reservas',label:'Reservas'"));
+  assert.ok(hero.includes("{id:'share',label:'Compartilhar'"));
   assert.ok(!hero.includes('public-storefront-header-info-trigger'));
   assert.ok(!hero.includes('public-storefront-close'));
   assert.ok(publicStorefrontSource.includes('<PublicStorefrontQuickPanel'));
