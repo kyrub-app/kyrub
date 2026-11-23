@@ -26,7 +26,7 @@ export function StoreStaffTasksManager({
       ]);
       setTasks(rows); setAssignees(members); setError('');
       setAssignedTo(previous => members.some(member => member.userId === previous)
-        ? previous : (members[0]?.userId || ''));
+        ? previous : '');
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : 'Não foi possível consultar tarefas.');
     } finally {
@@ -92,6 +92,7 @@ export function StoreStaffTasksManager({
         <select id="staff-task-assignee" value={assignedTo} required
           onChange={e => {setAssignedTo(e.target.value); changed();}}
           className="w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-white">
+          <option value="" disabled>Selecione um responsável</option>
           {assignees.map(member => (
             <option key={member.userId} value={member.userId}>{member.label}</option>
           ))}
