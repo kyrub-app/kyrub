@@ -6,7 +6,7 @@ import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 
 type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'};
 export type PilotBatch={id:string;model:'adesivo';count:number;units:Unit[]};
-type Readiness={isolation:'emulator'|'isolated-project'|'unsafe';canIssue:boolean};
+type Readiness={isolation:'emulator'|'isolated-project'|'unsafe';canIssue:boolean;previewHost?:string|null};
 type Active={batchId:string;unit:Unit};
 type Phase='idle'|'preparing'|'prepared'|'writing'|'awaiting_readback'|'reading'|'reporting'|'confirmed';
 type NFCReader={
@@ -30,9 +30,10 @@ const checkBatch=(batch:PilotBatch)=>{
  return batch;
 };
 function makePilotUrl(id:string,readiness:Readiness|null){
+ const host=readiness?.previewHost;
  return readiness?.isolation==='isolated-project'&&
-   window.location.protocol==='https:'&&window.location.hostname.endsWith('.vercel.app')
-   ?window.location.origin+'/tag/'+id:'';
+  typeof host==='string'&&/^[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.vercel\\.app$/.test(host)
+  ?'https://'+host+'/tag/'+id:'';
 }
 /** Controlled single-piece workflow. Never claim Web NFC proves physical chip uniqueness. */
 export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:{
@@ -52,7 +53,8 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
  };},[]);
  const working=['preparing','writing','reading','reporting'].includes(phase);
  const canPilot=readiness?.isolation==='isolated-project'&&readiness.canIssue&&
-  window.location.hostname.endsWith('.vercel.app')&&window.location.protocol==='https:';
+  window.location.hostname.endsWith('.vercel.app')&&window.location.protocol==='https:'&&
+  !!readiness?.previewHost;
  async function endpointRequest(body:Record<string,unknown>):Promise<{batch:PilotBatch;replay:boolean}>{
   if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
   const token=await user.getIdToken();
