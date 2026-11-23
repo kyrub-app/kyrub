@@ -433,3 +433,82 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   else process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=originalFlag;
  }
 });
+
+
+test('promotional Super Admin batch issuance: no recipient, authenticated, idempotent and isolated from pilot',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
+ const {adminAuth}=await import('../server/firebaseAdmin.js');
+ const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
+ const {resolveKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const prev=process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+ const password='isolated-promotional-issuer-only';
+ async function login(uid:string,role:string,status:string){
+  const email=uid+'@example.test';
+  await adminAuth.createUser({uid,email,password,emailVerified:true});
+  await adminDb.doc('kyrub_admin/control_plane/admins/'+uid).set({uid,role,status});
+  const response=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+
+   '/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  assert.equal(response.ok,true);
+  const result=await response.json() as {idToken:string};
+  return 'Bearer '+result.idToken;
+ }
+ try{
+  const admin=await login('promo-admin','super_admin','active');
+  const other=await login('promo-member','operations','active');
+  const suspended=await login('promo-suspended','super_admin','suspended');
+  const req={action:'issue',count:3,requestId:'b'.repeat(32)};
+  delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+  assert.equal((await handlePromotionalBatch(admin,'POST',req)).status,409);
+  process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED='true';
+  assert.equal((await handlePromotionalBatch('','POST',req)).status,401);
+  assert.equal((await handlePromotionalBatch(other,'POST',req)).status,403);
+  assert.equal((await handlePromotionalBatch(suspended,'POST',req)).status,403);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...req,count:11})).status,400);
+  const first=await Promise.all([handlePromotionalBatch(admin,'POST',req),handlePromotionalBatch(admin,'POST',req)]);
+  assert.deepEqual(first.map(x=>x.status).sort(),[200,201]);
+  const created=first.find(x=>x.status===201)?.body as {batch:{
+   id:string;count:number;model:string;units:{id:string;url:string;physicalStatus:string}[]
+  };replay:boolean};
+  assert.equal(created.batch.id,req.requestId);
+  assert.equal(created.batch.count,3);
+  assert.equal(created.replay,false);
+  assert.equal(created.batch.units.length,3);
+  assert.equal(new Set(created.batch.units.map(x=>x.id)).size,3);
+  for(const unit of created.batch.units){
+   assert.match(unit.id,/^[a-f0-9]{32}$/);
+   assert.equal(unit.url,'https://kyrub.com/tag/'+unit.id);
+   assert.equal(unit.physicalStatus,'not_verified');
+   const record=(await adminDb.doc('kyrub_official_tags/'+unit.id).get()).data()!;
+   assert.equal(record.model,'adesivo');
+   assert.equal(record.distribution,'promotional');
+   assert.equal(record.ownerId,null);
+   assert.equal(record.activationHash,null);
+   assert.equal(record.reservedEmailHash,null);
+   assert.equal(record.promotionalBatchId,req.requestId);
+   assert.equal((await resolveKyrubTag(unit.id))?.status,'unclaimed');
+   assert.equal(JSON.stringify(record).includes('promo-admin@example.test'),false);
+  }
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...req,count:2})).status,409);
+  const listed=await handlePromotionalBatch(admin,'GET',undefined);
+  assert.equal(listed.status,200);
+  const list=listed.body as {batches:typeof created.batch[]};
+  assert.equal(list.batches.filter(b=>b.id===req.requestId).length,1);
+  assert.equal((await handlePromotionalBatch(other,'GET',undefined)).status,403);
+  const audit=await adminDb.collection('kyrub_admin/control_plane/audit_logs')
+   .where('targetId','==',req.requestId).get();
+  assert.equal(audit.size,1);
+  assert.equal(audit.docs[0].get('action'),'admin.kyrub_tag.promotional_batch_issued');
+  // Independent pilot inventory still exists and is not reissued or reassigned.
+  const pilot=(await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').get()).data();
+  if(pilot?.tagId){
+   assert.ok(!created.batch.units.some(unit=>unit.id===pilot.tagId));
+   assert.equal((await adminDb.doc('kyrub_official_tags/'+pilot.tagId).get()).get('distribution'),undefined);
+  }
+ }finally{
+  if(prev===undefined)delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+  else process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED=prev;
+ }
+});
