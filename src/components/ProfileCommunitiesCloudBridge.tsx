@@ -59,7 +59,7 @@ import {
 } from '../utils/communityCloud';
 import { auth, db } from '../utils/firebase';
 import { probePublicCommunityRead, type PublicCommunityReadProbe } from '../utils/communityReadDiagnostic';
-import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
+import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, setCommunityPostPinnedComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { createPrivateCommunityGroup, sendCommunityGroupMessage, subscribeCommunityGroupMessages, subscribeMyCommunityGroups, type CloudCommunityGroup, type CloudCommunityGroupMessage } from '../utils/communityGroupsCloud';
 import { issueCommunityGroupInvite } from '../utils/userNotifications';
@@ -300,6 +300,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [editError, setEditError] = useState('');
   const [editBusy, setEditBusy] = useState(false);
   const [wallDraft, setWallDraft] = useState('');
+  const [wallAllowComments, setWallAllowComments] = useState(true);
   const [shareWallToSquare, setShareWallToSquare] = useState(true);
   const [squarePublishedIds, setSquarePublishedIds] = useState<Set<string>>(new Set());
   const [requestedSquareCommunityId, setRequestedSquareCommunityId] = useState('');
@@ -830,6 +831,7 @@ export function ProfileCommunitiesCloudBridge() {
     setSelectedCommunityId(community.id);
     clearWallMedia();
     setWallDraft('');
+    setWallAllowComments(true);
     setPageTab('wall');
     setMessage('');
   };
@@ -1003,9 +1005,10 @@ export function ProfileCommunitiesCloudBridge() {
       for (const item of attachments) {
         mediaUrls.push(await uploadCommunityPostMedia(communityId, item.file));
       }
-      await createCommunityPost({ communityId, content, mediaUrls, shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare });
+      await createCommunityPost({ communityId, content, mediaUrls, shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments });
       if (selectedCommunityId === communityId) {
         setWallDraft('');
+        setWallAllowComments(true);
         setShareWallToSquare(true);
         clearWallMedia();
       }
@@ -1760,6 +1763,13 @@ export function ProfileCommunitiesCloudBridge() {
                                 {actionBusy === 'wall-post' ? 'Publicando…' : 'Publicar no mural'}
                               </button>
                             </div>
+                            <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-200">
+                              <input type="checkbox" checked={wallAllowComments}
+                                onChange={event => setWallAllowComments(event.target.checked)}
+                                disabled={actionBusy === 'wall-post'} className="h-4 w-4 shrink-0 accent-sky-400"
+                                aria-label="Permitir comentários nesta publicação" />
+                              <span>Permitir comentários <span className="block text-xs text-slate-400">Desmarque para impedir novos comentários e respostas nesta publicação.</span></span>
+                            </label>
                             {selectedCommunity.visibility === 'public' && (
                               <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-sky-800/40 bg-sky-950/20 p-3 text-sm text-slate-200">
                                 <input type="checkbox" checked={shareWallToSquare} onChange={event => setShareWallToSquare(event.target.checked)}
@@ -1811,6 +1821,7 @@ export function ProfileCommunitiesCloudBridge() {
                             onToggleLike={liked => toggleCommunityPostLike(post, liked)}
                             onComment={(value, parentCommentId) => addCommunityPostComment(post, value, parentCommentId)}
                             onDeleteComment={deleteCommunityPostComment}
+                            onPinComment={commentId => setCommunityPostPinnedComment(post, commentId)}
                             onReport={reason => submitCommunityPostReport(post, reason)}
                             onRemove={() => removeOwnCommunityPost(post)}
                             squarePublished={squarePublishedIds.has(post.id)}

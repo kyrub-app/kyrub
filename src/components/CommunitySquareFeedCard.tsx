@@ -5,7 +5,7 @@ import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
 import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import {
   subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment,
-  deleteCommunityPostComment, submitCommunityPostReport, removeOwnCommunityPost,
+  deleteCommunityPostComment, setCommunityPostPinnedComment, submitCommunityPostReport, removeOwnCommunityPost,
   type CommunityPostLike, type CommunityPostComment,
 } from '../utils/communityPostInteractions';
 import type { CommunityPostConnection } from '../utils/communityPostConnections';
@@ -78,6 +78,7 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
         onToggleLike={isLiked => toggleCommunityPostLike(post, isLiked)}
         onComment={(text, parentCommentId) => addCommunityPostComment(post, text, parentCommentId)}
         onDeleteComment={deleteCommunityPostComment}
+        onPinComment={commentId => setCommunityPostPinnedComment(post, commentId)}
         onReport={reason => submitCommunityPostReport(post, reason)}
         onRemove={() => removeOwnCommunityPost(post)}
         squarePublished
