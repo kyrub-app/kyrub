@@ -523,6 +523,10 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
   assert.equal((await handlePromotionalBatch(admin,'POST',{...req,count:2})).status,409);
   const listed=await handlePromotionalBatch(admin,'GET',undefined);
   assert.equal(listed.status,200);
+  const ready=(listed.body as {readiness:{isolation:string;canIssue:boolean;clientProjectMatchesServer:boolean}}).readiness;
+  assert.equal(ready.isolation,'emulator');
+  assert.equal(ready.clientProjectMatchesServer,true);
+  assert.equal(ready.canIssue,true);
   const list=listed.body as {batches:typeof created.batch[]};
   assert.equal(list.batches.filter(b=>b.id===req.requestId).length,1);
   assert.equal((await handlePromotionalBatch(other,'GET',undefined)).status,403);
