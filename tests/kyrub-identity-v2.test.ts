@@ -6,18 +6,14 @@ const read = (path: string) => readFileSync(path, 'utf8');
 const css = read('src/index.css');
 const logo = read('public/kyrub-logo.svg');
 
-test('the Kyrub geometric pitanga seal keeps its original geometry with a single left-pointing leaf', () => {
+test('the Kyrub geometric pitanga seal is a small original vector with stem and leaves', () => {
   assert.match(logo, /viewBox="0 0 128 128"/);
   assert.match(logo, /<title id="title">Kyrub — selo da pitanga<\/title>/);
   assert.match(logo, /#F27429/);
   assert.match(logo, /#8FA893/);
-  assert.match(logo, /caule verde e uma folha verde-sálvia na ponta/);
+  assert.match(logo, /caule e duas folhas verde-sálvia/);
   assert.match(logo, /<path fill="#F27429"/);
   assert.match(logo, /<circle/);
-  assert.match(logo, /69\.3 49\.2 C62\.8 42\.4 54\.1 42\.1 45\.8 44\.4/);
-  assert.equal((logo.match(/fill="#8FA893"/g) ?? []).length, 1, 'single left-pointing leaf');
-  assert.doesNotMatch(logo, /stroke="#F5F0E6"|duas folhas/);
-  assert.match(logo, /stroke="#8FA893" stroke-width="3"/);
   assert.doesNotMatch(logo, /<image|data:image\/jpeg;base64,|<script/);
   assert.ok(Buffer.byteLength(logo, 'utf8') < 9000, 'logo should render sharply at small sizes');
 });
