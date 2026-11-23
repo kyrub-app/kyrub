@@ -389,6 +389,22 @@ export function CommunityPostCard({
               </div>
               <strong className="mt-1 block text-xs text-slate-200">{pinnedDisplayComment.authorName}</strong>
               <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{pinnedDisplayComment.text}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-3">
+                <span className="text-[11px] text-slate-500">{displayDate(pinnedDisplayComment.createdAt)}</span>
+                {post.allowComments !== false && canParticipate && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => { setReplyTarget(pinnedDisplayComment); commentInputRef.current?.focus(); }}
+                    className="text-xs font-semibold text-sky-300 disabled:opacity-40">Responder</button>
+                )}
+                {(pinnedDisplayComment.authorId === viewerId || communityOwnerId === viewerId) && (
+                  <button type="button" disabled={Boolean(pending)}
+                    onClick={() => void run('delete-comment', async () => {
+                      await onDeleteComment(pinnedDisplayComment.id);
+                      if (replyTarget?.id === pinnedDisplayComment.id) setReplyTarget(null);
+                    })}
+                    className="text-xs font-semibold text-red-300 disabled:opacity-40">Excluir comentário</button>
+                )}
+              </div>
             </div>
           )}
           {threadedComments.filter(item =>
