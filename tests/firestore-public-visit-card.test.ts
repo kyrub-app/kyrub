@@ -470,6 +470,7 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
  const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
  const {resolveKyrubTag}=await import('../server/identity/kyrubTagService.js');
  const prev=process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+ const previousHost=process.env.VERCEL_URL;
  const password='isolated-promotional-issuer-only';
  async function login(uid:string,role:string,status:string){
   const email=uid+'@example.test';
@@ -534,6 +535,27 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
    .where('targetId','==',req.requestId).get();
   assert.equal(audit.size,1);
   assert.equal(audit.docs[0].get('action'),'admin.kyrub_tag.promotional_batch_issued');
+  process.env.VERCEL_URL='kyrub-pilot-safe.vercel.app';
+  const unitId=created.batch.units[0].id;
+  const url='https://kyrub-pilot-safe.vercel.app/tag/'+unitId;
+  const readback={action:'confirm-readback',batchId:req.requestId,tagId:unitId,readUrl:url};
+  assert.equal((await handlePromotionalBatch(other,'POST',readback)).status,403);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,readUrl:'https://kyrub.com/tag/'+unitId})).status,409);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,readUrl:url+'?wrong=1'})).status,409);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,tagId:'f'.repeat(32)})).status,409);
+  const verified=await handlePromotionalBatch(admin,'POST',readback);
+  assert.equal(verified.status,200);
+  const verifiedBody=verified.body as {batch:{units:{id:string;physicalStatus:string}[]};replay:boolean};
+  assert.equal(verifiedBody.replay,false);
+  assert.equal(verifiedBody.batch.units.find(item=>item.id===unitId)?.physicalStatus,'readback_confirmed');
+  const repeated=await handlePromotionalBatch(admin,'POST',readback);
+  assert.equal(repeated.status,200);
+  assert.equal((repeated.body as {replay:boolean}).replay,true);
+  const nextInventory=await handlePromotionalBatch(admin,'GET',undefined);
+  const observedBatch=(nextInventory.body as {batches:typeof created.batch[]}).batches
+   .find(batch=>batch.id===req.requestId);
+  assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='readback_confirmed').length,1);
+  assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='not_verified').length,2);
   // Independent pilot inventory still exists and is not reissued or reassigned.
   const pilot=(await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').get()).data();
   if(pilot?.tagId){
@@ -543,6 +565,8 @@ test('promotional Super Admin batch issuance: no recipient, authenticated, idemp
  }finally{
   if(prev===undefined)delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
   else process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED=prev;
+  if(previousHost===undefined)delete process.env.VERCEL_URL;
+  else process.env.VERCEL_URL=previousHost;
  }
 });
 
