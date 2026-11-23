@@ -134,6 +134,7 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.ownerId == request.auth.uid;
 
       allow create: if isSignedIn()
+        && resource == null
         && request.auth.token.email_verified == true
         && slot in ['cover', 'avatar']
         && assetId.matches('[a-f0-9]{32}')
