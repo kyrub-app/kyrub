@@ -197,6 +197,16 @@ export const cancelAuthorizedStaffShift = async (input: {
     if (original.version !== valid.expectedVersion || original.status !== 'published') {
       throw Error('STAFF_SHIFT_VERSION_CONFLICT');
     }
+    // Removed or suspended collaborators must not receive new schedule details.
+    let recipientActive = original.assignedTo === actor.legacyStoreId;
+    if (!recipientActive) {
+      const recipientSnap = await tx.get(adminDb.doc(
+        'stores/' + actor.canonicalStoreId + '/members/' + original.assignedTo
+      ));
+      const recipient = parseStoreMember(recipientSnap.data());
+      recipientActive = Boolean(recipient && recipient.userId === original.assignedTo &&
+        recipient.storeId === actor.canonicalStoreId && recipient.status === 'active');
+    }
     const slices = staffShiftDaySlices(original);
     const indexed = await Promise.all(slices.map(async slice => ({
       ...slice,
@@ -212,8 +222,10 @@ export const cancelAuthorizedStaffShift = async (input: {
       }
       return {ref:item.ref,slots:before.filter(slot => slot.shiftId !== original.id)};
     });
+    const { creationHash: _private, ...safeOriginal } = original as
+      StaffShift & { creationHash?: string };
     const updated: StaffShift = {
-      ...original, status: 'cancelled', version: original.version + 1,
+      ...safeOriginal, status: 'cancelled', version: original.version + 1,
       updatedAt: now, cancelledAt: now, cancelledBy: actor.uid, cancelReason: valid.reason,
     };
     tx.update(shiftRef, {
@@ -226,7 +238,7 @@ export const cancelAuthorizedStaffShift = async (input: {
       action:'cancelled',actorId:actor.uid,reason:valid.reason,
       version:updated.version,createdAt:now,
     });
-    if (original.assignedTo !== actor.uid) {
+    if (original.assignedTo !== actor.uid && recipientActive) {
       const notice=sendAssignmentNotice(actor, updated, 'staff_shift_cancelled', now);
       tx.set(adminDb.doc(userNotificationPath(original.assignedTo,notice.id)),notice);
     }
