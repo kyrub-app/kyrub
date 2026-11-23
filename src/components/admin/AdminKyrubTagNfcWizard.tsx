@@ -22,8 +22,11 @@ const makeNonce=()=>{
  return Array.from(bytes,x=>x.toString(16).padStart(2,'0')).join('');
 };
 const checkBatch=(batch:PilotBatch)=>{
- if(!/^[a-f0-9]{32}$/.test(batch?.id)||batch.count!==1||batch.units?.length!==1||
-   !isTagId(batch.units[0].id)||batch.units[0].url!==tagUrl(batch.units[0].id))throw Error('TAG_BATCH_INVALID');
+ if(!/^[a-f0-9]{32}$/.test(batch?.id)||!Number.isInteger(batch.count)||
+  batch.count<1||batch.count>10||batch.units?.length!==batch.count||
+  new Set(batch.units.map(u=>u.id)).size!==batch.count||
+  batch.units.some(u=>!isTagId(u.id)||u.url!==tagUrl(u.id)||
+    !['not_verified','readback_confirmed'].includes(u.physicalStatus)))throw Error('TAG_BATCH_INVALID');
  return batch;
 };
 function makePilotUrl(id:string,readiness:Readiness|null){
@@ -70,6 +73,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
   try{
    const result=await endpointRequest({action:'issue',count:1,requestId});
    const batch=checkBatch(result.batch);
+   if(batch.count!==1)throw Error('TAG_BATCH_INVALID');
    if(!mounted.current)return;
    requestNonce.current=null;
    setActive({batchId:batch.id,unit:batch.units[0]});
@@ -110,10 +114,11 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
    }).then(result=>{
     if(!mounted.current)return;
     const batch=checkBatch(result.batch);
-    if(batch.id!==target.batchId||batch.units[0].id!==target.unit.id||
-     batch.units[0].physicalStatus!=='readback_confirmed')throw Error('TAG_READBACK_NOT_RECORDED');
+    const confirmedUnit=batch.units.find(unit=>unit.id===target.unit.id);
+    if(batch.id!==target.batchId||confirmedUnit?.physicalStatus!=='readback_confirmed')
+     throw Error('TAG_READBACK_NOT_RECORDED');
     onBatch(batch);
-    setActive({batchId:batch.id,unit:batch.units[0]});
+    setActive({batchId:batch.id,unit:confirmedUnit});
     if(!result.replay)setSessionVerified(n=>n+1);
     setPhase('confirmed');
     setNotice('Informações válidas! A URL gravada foi lida e conferida. Afaste o adesivo e toque em Próximo adesivo.');
