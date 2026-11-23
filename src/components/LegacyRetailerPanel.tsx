@@ -32,7 +32,7 @@ interface RetailerPanelProps {
   setActiveSubTab: (tab: 'clientes' | 'caixa' | 'pedidos' | 'reservas' | 'ponto' | 'gerencial') => void;
   atendimentoSpaces: string[];
   producaoSpaces: string[];
-  accessRole?: 'owner' | 'manager' | 'seller' | 'cashier' | 'stock' | 'viewer';
+  accessRole?: 'owner' | 'manager' | 'seller' | 'cashier' | 'production';
 }
 
 export const RetailerPanel: React.FC<RetailerPanelProps> = ({
