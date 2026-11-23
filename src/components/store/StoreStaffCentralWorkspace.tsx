@@ -3,6 +3,7 @@ import { BookOpenCheck, CalendarDays, ListChecks, Megaphone } from 'lucide-react
 import { StoreStaffNoticeManager } from './StoreStaffNoticeManager';
 import { StoreStaffPopManager } from './StoreStaffPopManager';
 import { StoreStaffTasksManager } from './StoreStaffTasksManager';
+import { StoreStaffShiftManager } from './StoreStaffShiftManager';
 
 // The management entry is a direct destination inside the existing ERP modal.
 // It is not a dropdown. Future editors attach to these four scoped modules only
@@ -35,7 +36,7 @@ const STAFF_CENTRAL_AREAS = [
 ] as const;
 
 export function StoreStaffCentralWorkspace({ storeId }: { storeId: string }) {
-  const [selectedArea, setSelectedArea] = useState<'avisos' | 'pops' | 'checklists' | null>(null);
+  const [selectedArea, setSelectedArea] = useState<'avisos' | 'pops' | 'checklists' | 'escalas' | null>(null);
   if (selectedArea === 'avisos') {
     return <StoreStaffNoticeManager storeId={storeId} onBack={() => setSelectedArea(null)} />;
   }
@@ -44,6 +45,9 @@ export function StoreStaffCentralWorkspace({ storeId }: { storeId: string }) {
   }
   if (selectedArea === 'checklists') {
     return <StoreStaffTasksManager storeId={storeId} onBack={() => setSelectedArea(null)} />;
+  }
+  if (selectedArea === 'escalas') {
+    return <StoreStaffShiftManager storeId={storeId} onBack={() => setSelectedArea(null)} />;
   }
   return (
     <section
@@ -67,13 +71,13 @@ export function StoreStaffCentralWorkspace({ storeId }: { storeId: string }) {
             </h3>
           </div>
           <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-400">{description}</p>
-          {id === 'avisos' || id === 'pops' || id === 'checklists' ? (
+          {id === 'avisos' || id === 'pops' || id === 'checklists' || id === 'escalas' ? (
             <button
               type="button"
               onClick={() => setSelectedArea(id)}
               className="mt-4 self-start rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-orange-300 hover:bg-orange-500/20"
             >
-              {id === 'avisos' ? 'Gerenciar avisos' : id === 'pops' ? 'Gerenciar manuais' : 'Gerenciar tarefas'}
+              {id === 'avisos' ? 'Gerenciar avisos' : id === 'pops' ? 'Gerenciar manuais' : id === 'checklists' ? 'Gerenciar tarefas' : 'Gerenciar escalas'}
             </button>
           ) : (
             <span className="mt-4 self-start rounded-full border border-slate-700 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
