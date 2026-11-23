@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-labelledby="title desc">
+  <title id="title">Kyrub — pitanga em vista lateral</title>
+  <desc id="desc">Símbolo vetorial de uma pitanga tropical vista de lado, com gomos laranjas, talo verde e pequenas sépalas verdes na base.</desc>
+  <!-- Proposta para validação visual: não substituir kyrub-logo.svg antes da aprovação. -->
+  <defs>
+    <path id="fruit-outline" d="M 93.32 39.80 Q 84.13 33.64 67.31 33.48 Q 50.49 33.31 45.85 37.99 Q 41.20 42.67 34.98 44.64 Q 28.75 46.61 25.31 50.63 Q 21.88 54.65 18.72 61.46 Q 15.56 68.28 16.02 74.84 Q 16.49 81.41 20.48 88.06 Q 24.48 94.70 33.86 100.78 Q 43.25 106.85 47.98 107.26 Q 52.72 107.67 58.11 105.62 Q 63.50 103.57 64.34 104.63 Q 65.17 105.70 63.96 106.11 Q 62.76 106.52 65.64 106.60 Q 68.52 106.69 70.93 105.46 Q 73.35 104.22 71.77 100.94 Q 70.19 97.66 73.53 100.20 Q 76.88 102.75 77.25 98.40 Q 77.62 94.05 79.20 94.95 Q 80.78 95.85 81.25 98.73 Q 81.71 101.60 85.43 100.29 Q 89.14 98.97 90.07 96.84 Q 91.00 94.70 98.06 92.32 Q 105.12 89.94 105.40 84.20 Q 105.68 78.45 108.75 72.38 Q 111.81 66.31 107.17 56.13 Q 102.52 45.95 93.32 39.80 Z"/>
+    <clipPath id="fruitClip"><use href="#fruit-outline"/></clipPath>
+  </defs>
+  <g stroke-linejoin="round" stroke-linecap="round">
+    <path d="M 57 35 C 57 25 55 17 57 10" fill="none" stroke="#121A17" stroke-width="6.5"/>
+    <path d="M 57 35 C 57 25 55 17 57 10" fill="none" stroke="#8FA893" stroke-width="3.3"/>
+    <use href="#fruit-outline" fill="#F27429"/>
+    <g clip-path="url(#fruitClip)">
+      <path d="M 29 42 C 16 52 17 72 23 86 C 27 96 36 102 49 105 C 38 93 31 66 35 44 Z" fill="#E96529"/>
+      <path d="M 70 32 C 86 31 100 43 108 58 C 114 69 112 83 106 91 C 103 97 99 101 93 103 C 104 78 97 48 77 33 Z" fill="#E75C27"/>
+      <path d="M 27 44 C 22 61 32 85 45 96 C 51 102 60 106 67 106" fill="none" stroke="#B84A21" stroke-width="3.2"/>
+      <path d="M 87 36 C 99 49 103 65 100 80 C 98 93 92 100 84 103" fill="none" stroke="#B84A21" stroke-width="3.1"/>
+      <path d="M 41 34 C 31 42 30 57 37 76 C 44 92 58 103 70 106 C 59 94 50 72 48 50 C 48 40 45 35 41 34 Z" fill="#F36726"/>
+      <path d="M 53.5 33 C 58 31 65 32 69 38 C 77 50 85 73 83 87 C 83 97 80 101 75 103 C 67 103 62 94 56 84 C 48 68 43 51 44 43 C 45 38 48 34 53.5 33 Z" fill="#FA792B" stroke="#AE431C" stroke-width="2.6"/>
+      <path d="M 51.5 47 C 50.5 58 55 70 60 79" fill="none" stroke="#FFAA60" stroke-width="2.6"/>
+    </g>
+    <use href="#fruit-outline" fill="none" stroke="#121A17" stroke-width="4.4"/>
+    <path d="M 73 103 C 69 108 68 114 70 119 C 75 117 76 110 75 105 Z" fill="#8FA893" stroke="#121A17" stroke-width="2.5"/>
+    <path d="M 75 103 C 81 105 85 109 87 114 C 83 117 77 114 73 106 Z" fill="#719879" stroke="#121A17" stroke-width="2.5"/>
+    <path d="M 72 104 C 67 107 63 111 63 115 C 68 117 72 112 74 106 Z" fill="#8FA893" stroke="#121A17" stroke-width="2.5"/>
+  </g>
+</svg>
