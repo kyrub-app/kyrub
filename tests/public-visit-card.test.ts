@@ -260,7 +260,9 @@ test('NFC wizard accepts only a single exact NDEF URL readback and never treats 
  assert.match(wizard,/reader\.scan\(/);
  assert.match(wizard,/Próximo adesivo/);
  assert.match(wizard,/Retomar pendentes/);
- assert.match(wizard,/batch\.units\[0\]\.physicalStatus!=='readback_confirmed'/);
+ assert.match(wizard,/batch\.units\.find\(unit=>unit\.id===target\.unit\.id\)/);
+ assert.match(wizard,/confirmedUnit\?\.physicalStatus!=='readback_confirmed'/);
+ assert.match(wizard,/TAG_READBACK_NOT_RECORDED/);
  assert.match(service,/browser_readback_confirmed/);
  assert.match(service,/VERCEL_URL/);
  assert.match(service,/assertTagPilotWriteIsolated/);
