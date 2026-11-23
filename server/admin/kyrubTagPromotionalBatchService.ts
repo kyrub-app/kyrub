@@ -4,7 +4,7 @@ import {adminDb} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
-import {assertTagPilotWriteIsolated,currentTagPilotIsolation} from '../identity/kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer} from '../identity/kyrubTagPilotIsolation.js';
 
 const batchDocs=()=>adminDb.collection('kyrub_tag_promotional_batches');
 const adminRole=(uid:string)=>adminDb.doc('kyrub_admin/control_plane/admins/'+uid);
@@ -31,13 +31,14 @@ function pilotReadiness(){
  return {
   isolation,
   productionDataProtected:isolation==='unsafe',
+  clientProjectMatchesServer:isolation!=='unsafe'&&tagPilotClientMatchesServer(),
   issuanceEnabled:enabled(),
   activationEnabled:process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED==='true',
   minimalIdentityGateConfigured:process.env.VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE==='true',
   emailLinkProvider:'manual-verification-required' as const,
   storageRulesPublished:'manual-verification-required' as const,
   physicalNfcVerified:false,
-  canIssue:isolation!=='unsafe'&&enabled()
+  canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()
  };
 }
 
