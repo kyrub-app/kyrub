@@ -5,9 +5,7 @@ import { StoreStaffPopManager } from './StoreStaffPopManager';
 import { StoreStaffTasksManager } from './StoreStaffTasksManager';
 import { StoreStaffShiftManager } from './StoreStaffShiftManager';
 
-// The management entry is a direct destination inside the existing ERP modal.
-// It is not a dropdown. Future editors attach to these four scoped modules only
-// after server-side staff authorization and persistent records are available.
+// Direct modal destination: all four areas use server-authorized modules, not dropdowns.
 const STAFF_CENTRAL_AREAS = [
   {
     id: 'avisos',
@@ -71,19 +69,13 @@ export function StoreStaffCentralWorkspace({ storeId }: { storeId: string }) {
             </h3>
           </div>
           <p className="mt-3 flex-1 text-xs leading-relaxed text-slate-400">{description}</p>
-          {id === 'avisos' || id === 'pops' || id === 'checklists' || id === 'escalas' ? (
-            <button
-              type="button"
-              onClick={() => setSelectedArea(id)}
-              className="mt-4 self-start rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-orange-300 hover:bg-orange-500/20"
-            >
-              {id === 'avisos' ? 'Gerenciar avisos' : id === 'pops' ? 'Gerenciar manuais' : id === 'checklists' ? 'Gerenciar tarefas' : 'Gerenciar escalas'}
-            </button>
-          ) : (
-            <span className="mt-4 self-start rounded-full border border-slate-700 px-3 py-1 text-[10px] font-bold uppercase tracking-wide text-slate-400">
-              Em preparação
-            </span>
-          )}
+          <button
+            type="button"
+            onClick={() => setSelectedArea(id)}
+            className="mt-4 self-start rounded-full border border-orange-500/40 bg-orange-500/10 px-3 py-2 text-[10px] font-bold uppercase tracking-wide text-orange-300 hover:bg-orange-500/20"
+          >
+            {id === 'avisos' ? 'Gerenciar avisos' : id === 'pops' ? 'Gerenciar manuais' : id === 'checklists' ? 'Gerenciar tarefas' : 'Gerenciar escalas'}
+          </button>
         </article>
       ))}
     </section>
