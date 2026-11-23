@@ -39,3 +39,59 @@ test('approved tag personalization has four compact individually expandable dest
  assert.doesNotMatch(panel,/<select/);
  assert.match(page,/if\(authReady&&owner&&user\)return <main/);
 });
+
+
+test('promotional NFC stock is explicitly opt-in and cannot weaken protected or experimental units',async()=>{
+ const {isOpenPromotionalTag,normalizePromotionalPresentation,EMPTY_PROMOTIONAL_PRESENTATION}=await import('../shared/kyrubTagPromotional');
+ const open={distribution:'promotional',ownerId:null,enabled:false,activationHash:null,reservedEmailHash:null};
+ assert.equal(isOpenPromotionalTag(open),true);
+ for(const altered of [
+  {...open,distribution:'protected'},
+  {...open,ownerId:'another-user'},
+  {...open,enabled:true},
+  {...open,activationHash:'secret-hash'},
+  {...open,reservedEmailHash:'reserved'},
+  {...open,blocked:true},
+  {...open,distribution:undefined}
+ ])assert.equal(isOpenPromotionalTag(altered),false);
+ assert.deepEqual(normalizePromotionalPresentation(EMPTY_PROMOTIONAL_PRESENTATION),EMPTY_PROMOTIONAL_PRESENTATION);
+ assert.deepEqual(normalizePromotionalPresentation({name:'  A  ',occupation:' Entregador ',about:'\u0000Minha apresentação'}),
+  {name:'A',occupation:'Entregador',about:'Minha apresentação'});
+ for(const invalid of [
+  {name:'x'.repeat(81),occupation:'',about:''},
+  {name:'',occupation:'x'.repeat(91),about:''},
+  {name:'',occupation:'',about:'x'.repeat(321)},
+  {name:'',occupation:'',about:'',email:'not-public'},
+  {name:'',occupation:'',about:'',instagram:'not-public'}
+ ])assert.throws(()=>normalizePromotionalPresentation(invalid),/TAG_PRESENTATION_INVALID/);
+});
+
+test('promo tag uses verified e-mail and transactional claim; public card carries SOS not social sign-in',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ const api=readFileSync('api/health.ts','utf8');
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const auth=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
+ assert.match(service,/KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED/);
+ assert.match(service,/if\(!promotionalEnabled\(\)\)throw Error\('TAG_PROMO_DISABLED'\)/);
+ assert.match(service,/isOpenPromotionalTag\(data\)/);
+ assert.match(service,/adminDb\.runTransaction/);
+ assert.match(service,/ownerId:actor,firstOwnerId:actor/);
+ assert.match(service,/recoveryHash:promotionalRecoveryHash/);
+ assert.match(service,/timingSafeEqual/);
+ assert.match(service,/data\.distribution!=='promotional'/);
+ assert.match(api,/identity\.emailVerified!==true/);
+ assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email\)/);
+ assert.match(api,/recoverPromotionalKyrubTag\(actor,id,identity\.email,data\.recoveryCode\)/);
+ assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
+ assert.match(page,/claim-promotional/);
+ assert.match(page,/recover-promotional/);
+ assert.match(page,/SOS · Informações de emergência/);
+ assert.match(page,/number:'190'/);
+ assert.match(page,/number:'192'/);
+ assert.match(page,/number:'193'/);
+ assert.doesNotMatch(page,/instagram\.com|wa\.me/);
+ assert.match(auth,/sendSignInLinkToEmail/);
+ assert.match(auth,/signInWithEmailLink/);
+ assert.doesNotMatch(auth,/actionCodeSettings.*email|[?&]email=/);
+});
