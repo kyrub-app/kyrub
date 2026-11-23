@@ -85,8 +85,10 @@ export const saveStoreMediaForManager=async(input:{
     if(listing.exists&&(listing.get('ownerId')!==actor.legacyStoreId||
       listing.get('storeId')!==actor.legacyStoreId||
       listing.get('listingType')!=='store'))throw Error('STORE_MEDIA_FORBIDDEN');
-    if(tenant.exists&&(tenant.get('ownerId')!==actor.legacyStoreId||
-      tenant.get('id')!==actor.legacyStoreId))throw Error('STORE_MEDIA_FORBIDDEN');
+    if(!tenant.exists||tenant.get('ownerId')!==actor.legacyStoreId||
+      tenant.get('id')!==actor.legacyStoreId||
+      tenant.get('canonicalStoreId')!==actor.canonicalStoreId)
+      throw Error('STORE_MEDIA_FORBIDDEN');
     const currentVersion=typeof settings.get('version')==='number'?settings.get('version'):0;
     if(expectedVersion!==currentVersion)throw Error('STORE_MEDIA_CONFLICT');
     const media={
