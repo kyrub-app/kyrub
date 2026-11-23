@@ -1,0 +1,51 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+const read=(path:string)=>readFileSync(path,'utf8');
+test('ERP has a server-owned reservation visibility switch with explicit owner/manager authority',()=>{
+  const service=read('server/staff/storeReservationSettingsService.ts');
+  const transport=read('server/staff/storeReservationRouter.ts');
+  const erp=read('src/components/LegacyRetailerPanel.tsx');
+  assert.match(service,/readPublicStoreReservationsEnabled/);
+  assert.match(service,/snap\.get\('enabled'\) === true/);
+  assert.match(service,/actor\.role !== 'owner' && actor\.role !== 'manager'/);
+  assert.match(service,/tx\.get\(memberRef\)/);
+  assert.match(service,/member\.status !== 'active'/);
+  assert.match(service,/tx\.set\(settingsRef/);
+  assert.match(service,/readPublishedStoreReservationsEnabled/);
+  assert.match(transport,/route==='settings' && method==='GET'/);
+  assert.match(transport,/route==='settings' && method==='POST'/);
+  assert.match(transport,/hasStorePermission\(actor\.role,'orders\.create'\)/);
+  assert.match(erp,/id="erp-public-reservation-settings"/);
+  assert.match(erp,/role="switch"/);
+  assert.match(erp,/aria-checked=\{reservationsEnabled === true\}/);
+  assert.match(erp,/canManageReservationOffer/);
+  assert.match(erp,/activeRetailerId/);
+});
+test('public storefront only projects a Boolean, not internal reservations or private contacts',()=>{
+  const projection=read('server/payments/marketplaceDiscoveryService.ts');
+  const publicApp=read('src/components/PublicStorefrontApp.tsx');
+  const quick=read('src/components/PublicStorefrontQuickPanel.tsx');
+  assert.match(projection,/reservationsEnabled: await readPublishedStoreReservationsEnabled/);
+  assert.match(projection,/reservationsEnabled: boolean/);
+  assert.doesNotMatch(projection,/contact: clean\(storeData\.contact\)/);
+  assert.doesNotMatch(projection,/contact: clean\(legacyData\.contact\)/);
+  assert.match(quick,/Esta loja não trabalha com reservas/);
+  assert.match(quick,/store\.reservationsEnabled===true/);
+  assert.match(quick,/O pedido não representa uma reserva confirmada/);
+  assert.match(publicApp,/<PublicStorefrontQuickPanel/);
+  assert.match(publicApp,/navigator\.share/);
+  assert.match(publicApp,/navigator\.clipboard/);
+});
+test('Vercel routes existing reservation ERP endpoints through existing function budget',()=>{
+  const server=read('server.ts');
+  const health=read('api/health.ts');
+  const vercel=read('vercel.json');
+  const config=JSON.parse(vercel) as {rewrites:{source:string;destination:string}[]};
+  assert.match(server,/createStoreReservationRouter\(\)/);
+  assert.match(health,/transport === 'store-reservations'/);
+  assert.ok(config.rewrites.some(item=>item.source==='/api/staff/reservations'&&item.destination==='/api/health?transport=store-reservations'));
+  assert.ok(config.rewrites.some(item=>item.source==='/api/staff/reservations/:path*'&&item.destination.includes('path=:path*')));
+  assert.ok(!('api/staff/reservations.ts' in (config as Record<string,unknown>)));
+});
