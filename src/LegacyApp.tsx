@@ -67,6 +67,7 @@ import { UserProfileModal } from './components/modals/UserProfileModal';
 import { WalletModal } from './components/modals/WalletModal';
 import { ChatModal } from './components/modals/ChatModal';
 import { StoreConfigModal } from './components/modals/StoreConfigModal';
+import { StoreManagerMediaModal } from './components/store/StoreManagerMediaModal';
 import { SharedNotesModal } from './components/modals/SharedNotesModal';
 import { UserSearchModal } from './components/modals/UserSearchModal';
 import { MomentsModal } from './components/modals/MomentsModal';
@@ -1906,7 +1907,15 @@ const handleLogin = async (provider: 'google' | 'apple') => {
         }}
       />
 
-      {/* 5. MODAL DE CONFIGURAÇÃO DE PERFIL E AMBIENTES DA LOJA */}
+      {/* 5. Proprietário controla o perfil completo; gestor edita apenas mídia pública. */}
+      {selectedStaffAccess?.role === 'manager' ? (
+        <StoreManagerMediaModal
+          isOpen={isConfigModalOpen}
+          legacyStoreId={activeRetailerId}
+          storeName={selectedStaffAccess.store.name}
+          onClose={() => setIsConfigModalOpen(false)}
+        />
+      ) : (
       <StoreConfigModal
         isOpen={isConfigModalOpen}
         onClose={() => setIsConfigModalOpen(false)}
@@ -1932,6 +1941,7 @@ const handleLogin = async (provider: 'google' | 'apple') => {
         handleRemoveProducaoSpace={handleRemoveProducaoSpace}
         handleSaveStoreProfile={handleSaveStoreProfile}
       />
+      )}
 
       {/* MINIMAL FOOTER FOR PREMIUM INTEGRATION */}
       <footer className="border-t border-slate-900 bg-slate-950 py-6 mb-20 text-center space-y-2">
