@@ -55,7 +55,8 @@ export const canStoreRoleAccessErpMenuItem = (
   itemId: MobileErpMenuItemId
 ): boolean => {
   if (role === 'owner') return true;
-  if (itemId === 'planos' || itemId === 'loja') return false;
+  if (itemId === 'planos') return false;
+  if (itemId === 'loja') return role === 'manager';
   if (itemId === 'rh') return role === 'manager';
   if (itemId === 'central_staff') return role === 'manager';
   if (itemId === 'produtos' || itemId === 'estoque') return hasStorePermission(role, 'products.read');
