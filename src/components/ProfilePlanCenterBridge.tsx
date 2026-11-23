@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { CreditCard, ExternalLink } from 'lucide-react';
-import { getPlanCenterUrl } from '../utils/planCenter';
+import { getOfficialStorePlansUrl } from '../utils/officialStorePlansNavigation';
 
 export function ProfilePlanCenterBridge() {
   const [target, setTarget] = useState<HTMLElement | null>(null);
@@ -62,13 +62,13 @@ export function ProfilePlanCenterBridge() {
             Plano e faturamento
           </h4>
           <p className="mt-1 text-[9px] leading-relaxed text-slate-500">
-            Compare planos, consulte sua capacidade e resgate cupons na Central de Planos.
+            Consulte os benefícios e contrate seu plano diretamente na Loja Oficial Kyrub.
           </p>
           <a
-            href={getPlanCenterUrl()}
+            href={getOfficialStorePlansUrl()}
             className="mt-3 inline-flex min-h-10 items-center gap-2 rounded-xl border border-violet-500/30 bg-violet-500/10 px-3 py-2 text-[10px] font-black uppercase text-violet-200 hover:bg-violet-500/20"
           >
-            Abrir Central de Planos <ExternalLink className="h-3.5 w-3.5" />
+            Abrir Loja Oficial Kyrub <ExternalLink className="h-3.5 w-3.5" />
           </a>
         </div>
       </div>
