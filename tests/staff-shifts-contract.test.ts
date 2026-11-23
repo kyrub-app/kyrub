@@ -27,7 +27,7 @@ test('schedule validation uses bounded store-local civil dates, durations and sa
     {...base,scheduledDate:'2026-02-30'},
     {...base,scheduledDate:'2026/12/03'},
     {...base,startTime:'24:00'},
-    {...base,endTime:'22:30',endsNextDay:false},
+    {...base,endTime:'20:30',endsNextDay:false},
     {...base,startTime:'10:00',endTime:'10:00',endsNextDay:false},
     {...base,startTime:'10:00',endTime:'09:59',endsNextDay:true},
     {...base,sector:''},
