@@ -7,6 +7,7 @@ import {
   type FormEvent,
 } from 'react';
 import { createPortal } from 'react-dom';
+import { CommunityCardBackdrop } from './CommunityCardBackdrop';
 import {
   ArrowLeft,
   Camera,
@@ -507,32 +508,26 @@ export function ProfileCommunitiesPreviewBridge() {
   const renderCommunityCard = (community: PreviewCommunity) => (
     <article
       key={community.id}
-      className="flex w-[168px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900"
+      className="relative isolate flex min-h-[310px] w-[168px] shrink-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900"
     >
-      <button
-        type="button"
-        onClick={() => openCommunity(community)}
-        className="text-left"
-      >
-        <CommunityCover community={community} className="h-24" />
-        <div className="relative p-3">
-          {(community.isMember || community.isOwner) && (
-            <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-[7px] font-black uppercase text-emerald-300">
-              Você participa
-            </span>
-          )}
-          <strong className="block line-clamp-2 min-h-8 text-[10px] font-black text-white">
-            {community.name}
-          </strong>
-          <span className="mt-1 block text-[8px] text-slate-500">
-            {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
-          </span>
-          <span className="mt-1 block truncate text-[8px] text-sky-300/75">
-            {community.activityLabel}
-          </span>
-        </div>
+      <CommunityCardBackdrop coverImage={community.coverImage} />
+      {(community.isMember || community.isOwner) && (
+        <span className="pointer-events-none absolute left-2 top-2 z-20 rounded-full border border-emerald-500/40 bg-slate-950/90 px-2 py-1 text-[9px] font-black uppercase text-emerald-300">
+          Você participa
+        </span>
+      )}
+      <button type="button" onClick={() => openCommunity(community)}
+        className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-12 text-left">
+        <strong className="block line-clamp-2 text-xs font-black text-white">{community.name}</strong>
+        <span className="mt-1 block text-[10px] text-slate-200">
+          {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
+        </span>
+        <span className="mt-1 block truncate text-[10px] text-sky-200">{community.activityLabel}</span>
+        {community.description && (
+          <p className="mt-1 line-clamp-2 text-[10px] leading-relaxed text-slate-100/90">{community.description}</p>
+        )}
       </button>
-      <div className="mt-auto border-t border-slate-800 p-2">
+      <div className="relative z-10 mt-auto p-2 pt-0">
         <button
           type="button"
           onClick={() =>
@@ -540,9 +535,9 @@ export function ProfileCommunitiesPreviewBridge() {
               ? openCommunity(community)
               : handleMembership(community)
           }
-          className={`flex min-h-9 w-full items-center justify-center gap-1.5 rounded-xl text-[8px] font-black uppercase ${
+          className={`flex min-h-10 w-full items-center justify-center gap-1.5 rounded-xl border border-white/15 text-[10px] font-black uppercase backdrop-blur-sm ${
             community.isMember || community.isOwner
-              ? 'bg-slate-800 text-slate-200'
+              ? 'bg-slate-900/90 text-white'
               : 'bg-sky-500 text-slate-950'
           }`}
         >

@@ -218,8 +218,35 @@ test('community cover shows the complete image in a responsive header while pres
   }
   assert.match(cloud, /<CommunityCover community=\{selectedCommunity\} className="" displayMode="full" \/>/);
   assert.match(preview, /displayMode="full"\s+showInitial=\{false\}/);
-  assert.match(cloud, /<CommunityCover community=\{community\} className="h-24" \/>/);
-  assert.match(preview, /<CommunityCover community=\{community\} className="h-24" \/>/);
+  assert.match(cloud, /<CommunityCardBackdrop coverImage=\{community\.coverImage\} \/>/);
+  assert.match(preview, /<CommunityCardBackdrop coverImage=\{community\.coverImage\} \/>/);
+});
+
+test('community cards use cover photo across the full card with readable actions and badge on upper left', () => {
+  const cloud = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const preview = read('src/components/ProfileCommunitiesPreviewBridge.tsx');
+  const guest = read('src/components/GuestSquarePanel.tsx');
+  const background = read('src/components/CommunityCardBackdrop.tsx');
+  for (const source of [cloud, preview, guest]) {
+    assert.match(source, /<CommunityCardBackdrop coverImage=\{community\.coverImage\} \/>/);
+    assert.match(source, /relative isolate flex min-h-\[3(?:10|20)px\]/);
+    assert.match(source, /relative z-10/);
+    assert.match(source, /line-clamp-2/);
+  }
+  assert.match(background, /pointer-events-none absolute inset-0 overflow-hidden/);
+  assert.match(background, /absolute inset-0 h-full w-full object-cover/);
+  assert.match(background, /from-slate-950\/95 via-slate-950\/65 to-slate-950\/25/);
+  assert.match(background, /loading="lazy"/);
+  assert.match(cloud, /absolute left-2 top-2 z-20/);
+  assert.match(preview, /absolute left-2 top-2 z-20/);
+  assert.match(cloud, /absolute right-2 top-2 z-20/);
+  assert.match(cloud, /aria-pressed=\{favoriteCommunityIds\.has\(community\.id\)\}/);
+  assert.match(cloud, /onClick=\{\(\) => void toggleFavoriteCommunity\(community\.id\)\}/);
+  assert.match(cloud, /layout === 'catalog' \? 'min-w-0 w-full' : 'w-\[206px\] shrink-0'/);
+  assert.match(cloud, /data-public-community-fallback=\{community\.id\}/);
+  assert.match(cloud, /onClick=\{\(\) => \{ setPublicProbe\(null\); setSelectedPublicPreview\(community\); \}\}/);
+  assert.match(guest, /setSelectedCommunity\(community\)/);
+  assert.match(guest, /requireLogin\('participar da comunidade ' \+ community\.name\)/);
 });
 
 test('community cover, tabs and mural share one scroll region with back-to-top control', () => {

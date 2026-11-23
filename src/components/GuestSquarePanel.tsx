@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ArrowRight, Heart, MessageCircle, Users } from 'lucide-react';
 import type { Store } from '../types';
 import { SquareDirectoryLayout } from './SquareDirectoryLayout';
+import { CommunityCardBackdrop } from './CommunityCardBackdrop';
 import { InfiniteScrollTrigger } from './InfiniteScrollTrigger';
 import { useInfiniteCursor } from '../hooks/useInfiniteCursor';
 import { SquareStoresSection } from './tabs/SquareStoresSection';
@@ -168,24 +169,20 @@ export function GuestSquarePanel({ onLoginRequired }: { onLoginRequired: (reason
   );
 
   const communityCard = (community: PublicSquareCommunity, catalog: boolean) => (
-    <article key={community.id} className={`flex min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${catalog ? '' : 'w-[206px] shrink-0'}`}>
-      <div className="flex h-24 items-center justify-center bg-gradient-to-br from-sky-900/40 via-emerald-900/20 to-orange-900/20">
-        {community.coverImage
-          ? <img src={community.coverImage} alt="" aria-hidden="true" className="h-full w-full object-cover" referrerPolicy="no-referrer" />
-          : <Users className="h-10 w-10 text-sky-300" aria-hidden="true" />}
+    <article key={community.id} className={`relative isolate flex min-h-[320px] min-w-0 flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 ${catalog ? '' : 'w-[206px] shrink-0'}`}>
+      <CommunityCardBackdrop coverImage={community.coverImage} />
+      <div className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16">
+        <strong className="block line-clamp-2 text-sm font-black text-white drop-shadow-sm">{community.name}</strong>
+        <p className="mt-1 text-xs text-slate-200">{community.category || 'Comunidade'} · {community.memberCount} {community.memberCount === 1 ? 'participante' : 'participantes'}</p>
+        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-100/90">{community.description}</p>
       </div>
-      <div className="flex-1 p-3">
-        <strong className="block line-clamp-2 text-base font-black text-white">{community.name}</strong>
-        <p className="mt-1 text-xs text-sky-300">{community.category || 'Comunidade'} · {community.memberCount} participantes</p>
-        <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
-      </div>
-      <div className={`grid ${catalog ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 border-t border-slate-800 p-1.5`}>
+      <div className={`relative z-10 grid ${catalog ? 'grid-cols-1' : 'grid-cols-2'} gap-1.5 p-1.5 pt-0`}>
         <button type="button" onClick={() => setSelectedCommunity(community)}
-          className="min-h-11 min-w-0 rounded-xl border border-slate-700 bg-slate-800 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words">
+          className="min-h-11 min-w-0 rounded-xl border border-white/15 bg-slate-900/90 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words text-white backdrop-blur-sm">
           Conhecer
         </button>
         <button type="button" onClick={() => requireLogin('participar da comunidade ' + community.name)}
-          className="min-h-11 min-w-0 rounded-xl bg-slate-800 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words">
+          className="min-h-11 min-w-0 rounded-xl border border-white/15 bg-slate-900/90 px-1 text-center text-xs font-bold leading-tight whitespace-normal break-words text-white backdrop-blur-sm">
           Participar
         </button>
       </div>

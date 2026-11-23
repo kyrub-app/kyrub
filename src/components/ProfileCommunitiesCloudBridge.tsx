@@ -39,6 +39,7 @@ import { SquareDirectoryLayout } from './SquareDirectoryLayout';
 import { InfiniteScrollTrigger } from './InfiniteScrollTrigger';
 import { useInfiniteCursor } from '../hooks/useInfiniteCursor';
 import { CommunityPostCard } from './CommunityPostCard';
+import { CommunityCardBackdrop } from './CommunityCardBackdrop';
 import {
   approveCommunityMember,
   createCommunity,
@@ -1024,7 +1025,8 @@ export function ProfileCommunitiesCloudBridge() {
   };
 
   const renderCard = (community: (typeof communities)[number], layout: 'rail' | 'catalog' = 'rail') => {
-    const actionLabel = community.isOwner || community.isActiveMember
+    const isParticipant = community.isOwner || community.isActiveMember;
+    const actionLabel = isParticipant
       ? 'Abrir'
       : community.isPendingMember
         ? 'Solicitado'
@@ -1036,31 +1038,26 @@ export function ProfileCommunitiesCloudBridge() {
     return (
       <article
         key={community.id}
-        className={`relative flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
+        className={`relative isolate flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
       >
-        <button type="button" onClick={() => openCommunity(community)} className="text-left">
-          <CommunityCover community={community} className="h-24" />
-          <div className="relative p-3">
-            {(community.isOwner || community.isActiveMember) && (
-              <span className="absolute -top-7 right-2 rounded-full border border-emerald-500/30 bg-slate-950/90 px-2 py-1 text-xs font-black uppercase text-emerald-300">
-                Você participa
-              </span>
-            )}
-            <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">
-              {community.name}
-            </strong>
-            <span className="mt-1 block text-xs text-slate-500">
-              {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
-            </span>
-            <span className="mt-1 block truncate text-xs text-sky-300/75">
-              {community.category}
-            </span>
-            {layout === 'catalog' && community.description && (
-              <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">
-                {community.description}
-              </p>
-            )}
-          </div>
+        <CommunityCardBackdrop coverImage={community.coverImage} />
+        {isParticipant && (
+          <span className="pointer-events-none absolute left-2 top-2 z-20 max-w-[calc(100%-4rem)] truncate rounded-full border border-emerald-500/40 bg-slate-950/90 px-2 py-1 text-[10px] font-black uppercase text-emerald-300">
+            Você participa
+          </span>
+        )}
+        <button type="button" onClick={() => openCommunity(community)}
+          className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16 text-left">
+          <strong className="block line-clamp-2 text-sm font-black text-white drop-shadow-sm">
+            {community.name}
+          </strong>
+          <span className="mt-1 block text-xs text-slate-200">
+            {community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}
+          </span>
+          <span className="mt-1 block truncate text-xs text-sky-200">{community.category}</span>
+          {community.description && (
+            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-100/90">{community.description}</p>
+          )}
         </button>
         <button type="button"
           aria-pressed={favoriteCommunityIds.has(community.id)}
@@ -1069,12 +1066,12 @@ export function ProfileCommunitiesCloudBridge() {
             : `Favoritar comunidade ${community.name}`}
           disabled={favoriteBusyId === community.id}
           onClick={() => void toggleFavoriteCommunity(community.id)}
-          className={`absolute right-2 top-2 z-10 flex h-10 w-10 items-center justify-center rounded-full border bg-slate-950/85 disabled:opacity-40 ${favoriteCommunityIds.has(community.id)
+          className={`absolute right-2 top-2 z-20 flex h-10 w-10 items-center justify-center rounded-full border bg-slate-950/85 disabled:opacity-40 ${favoriteCommunityIds.has(community.id)
             ? 'border-rose-500/60 text-rose-300'
             : 'border-slate-600 text-white'}`}>
           <Heart className={`h-4 w-4 ${favoriteCommunityIds.has(community.id) ? 'fill-current' : ''}`} />
         </button>
-        <div className="mt-auto border-t border-slate-800 p-2">
+        <div className="relative z-10 mt-auto p-2 pt-0">
           <button
             type="button"
             disabled={
@@ -1084,15 +1081,15 @@ export function ProfileCommunitiesCloudBridge() {
                 !community.isActiveMember
             }
             onClick={() =>
-              community.isOwner || community.isActiveMember
+              isParticipant
                 ? openCommunity(community)
                 : void handleMembership(community)
             }
-            className={`flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words disabled:opacity-45 ${
-              community.isOwner || community.isActiveMember
-                ? 'bg-slate-800 text-slate-200'
+            className={`flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white/15 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words backdrop-blur-sm disabled:opacity-45 ${
+              isParticipant
+                ? 'bg-slate-900/90 text-white'
                 : community.isPendingMember
-                  ? 'border border-amber-500/25 bg-amber-500/10 text-amber-200'
+                  ? 'border-amber-500/40 bg-slate-950/90 text-amber-200'
                   : 'bg-sky-500 text-slate-950'
             }`}
           >
@@ -1111,26 +1108,21 @@ export function ProfileCommunitiesCloudBridge() {
     <article
       key={'public-' + community.id}
       data-public-community-fallback={community.id}
-      className={`flex flex-col overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
+      className={`relative isolate flex min-h-[320px] flex-col overflow-hidden rounded-2xl border border-slate-700 bg-slate-900 ${layout === 'catalog' ? 'min-w-0 w-full' : 'w-[206px] shrink-0'}`}
     >
-      <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }} className="text-left">
-        <div className="flex h-24 items-center justify-center overflow-hidden bg-gradient-to-br from-sky-950 via-emerald-950 to-slate-800">
-          {community.coverImage
-            ? <img src={community.coverImage} alt="" aria-hidden="true" className="h-full w-full object-cover" loading="lazy" referrerPolicy="no-referrer" />
-            : <Users className="h-9 w-9 text-sky-300" aria-hidden="true" />}
-        </div>
-        <div className="p-3">
-          <strong className="block line-clamp-2 min-h-8 text-sm font-black text-white">{community.name}</strong>
-          <span className="mt-1 block text-xs text-slate-400">{community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}</span>
-          <span className="mt-1 block truncate text-xs text-sky-300/75">{community.category}</span>
-          {layout === 'catalog' && community.description && (
-            <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-400">{community.description}</p>
-          )}
-        </div>
+      <CommunityCardBackdrop coverImage={community.coverImage} />
+      <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }}
+        className="relative z-10 flex min-h-0 flex-1 flex-col justify-end px-3 pb-3 pt-16 text-left">
+        <strong className="block line-clamp-2 text-sm font-black text-white drop-shadow-sm">{community.name}</strong>
+        <span className="mt-1 block text-xs text-slate-200">{community.memberCount.toLocaleString('pt-BR')} {community.memberCount === 1 ? 'participante' : 'participantes'}</span>
+        <span className="mt-1 block truncate text-xs text-sky-200">{community.category}</span>
+        {community.description && (
+          <p className="mt-1 line-clamp-2 text-xs leading-relaxed text-slate-100/90">{community.description}</p>
+        )}
       </button>
-      <div className="mt-auto border-t border-slate-800 p-2">
+      <div className="relative z-10 mt-auto p-2 pt-0">
         <button type="button" onClick={() => { setPublicProbe(null); setSelectedPublicPreview(community); }}
-          className="flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl bg-slate-800 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words text-slate-200">
+          className="flex min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white/15 bg-slate-900/90 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words text-white backdrop-blur-sm">
           Conhecer
         </button>
       </div>
