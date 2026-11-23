@@ -37,8 +37,6 @@
           'address',
           'logo',
           'banner',
-          'bannerImages',
-          'galleryImages',
           'primaryColor',
           'keywords',
           'status'
@@ -55,6 +53,8 @@
           'address',
           'logo',
           'banner',
+          'bannerImages',
+          'galleryImages',
           'primaryColor',
           'keywords',
           'status',
