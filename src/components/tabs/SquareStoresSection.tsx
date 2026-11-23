@@ -238,11 +238,11 @@ export function SquareStoresSection({
                 </div>
                 <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800 p-1.5">
                   <button type="button"
-                    aria-label={`Abrir avaliações da loja ${store.name}`}
-                    title={`Avaliações de ${store.name}`}
+                    aria-label={`Abrir momentos da loja ${store.name}`}
+                    title={`Momentos de ${store.name}`}
                     onClick={() => onOpenReviews(storeForReviews(store))}
                     className="flex min-h-11 min-w-0 items-center justify-center rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-xs font-bold tracking-tight text-amber-300">
-                    Avaliações
+                    Momentos
                   </button>
                   {store.official ? (
                     <a href={OFFICIAL_STORE_PATH}
@@ -333,11 +333,11 @@ export function SquareStoresSection({
             </div>
             <div className="grid grid-cols-2 gap-1.5 border-t border-slate-800 p-1.5">
               <button type="button"
-                aria-label={`Abrir avaliações da loja ${store.name}`}
-                title={`Avaliações de ${store.name}`}
+                aria-label={`Abrir momentos da loja ${store.name}`}
+                title={`Momentos de ${store.name}`}
                 onClick={() => onOpenReviews(storeForReviews(store))}
                 className="flex min-h-11 min-w-0 items-center justify-center rounded-xl border border-amber-500/30 bg-slate-800 px-1 text-xs font-bold tracking-tight text-amber-300">
-                Avaliações
+                Momentos
               </button>
               {store.official ? (
                 <a href={OFFICIAL_STORE_PATH}
