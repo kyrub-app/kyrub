@@ -136,7 +136,7 @@ describe('Kyrub public and operational routes', () => {
     assert.doesNotMatch(planCenterSource, /Contratação paga em breve/);
     assert.match(profileBridgeSource, /Plano e faturamento/);
     assert.match(profileBridgeSource, /Abrir Loja Oficial Kyrub/);
-    assert.match(profileBridgeSource, /href=\\{getOfficialStorePlansUrl\\(\\)\\}/);
+    assert.ok(profileBridgeSource.includes('href={getOfficialStorePlansUrl()}'));
     assert.doesNotMatch(profileBridgeSource, /getPlanCenterUrl/);
   });
 
