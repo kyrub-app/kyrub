@@ -523,6 +523,7 @@
         && isActiveCommunityMember(incoming().communityId)
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
+        && (!('pinnedCommentId' in incoming()) || incoming().pinnedCommentId == '')
         && hasValidCommunityPostShape(incoming(), postId);
 
       allow update: if isSignedIn()

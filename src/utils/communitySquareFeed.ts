@@ -143,6 +143,8 @@ export const subscribeCommunitySquareFeed = (
                   authorName: read(source.authorName) || 'Kairubido', authorAvatar: read(source.authorAvatar),
                   content: read(source.content),
                   mediaUrls: Array.isArray(source.mediaUrls) ? source.mediaUrls.filter((x): x is string => typeof x === 'string') : [],
+                  allowComments: source.allowComments !== false,
+                  pinnedCommentId: read(source.pinnedCommentId),
                   createdAt: read(source.createdAtIso), updatedAt: read(source.updatedAtIso),
                 });
               } else posts.delete(pointer.postId);

@@ -196,7 +196,7 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare \}\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments \}\)/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -221,6 +221,36 @@ test('community cover, tabs and mural share one scroll region with back-to-top c
   assert.match(ui, /<ArrowUp className="h-5 w-5" \/>/);
   assert.match(ui, /setPageTab\(tab\.id\);[\s\S]*?setShowBackToTop\(false\);/);
   assert.doesNotMatch(ui, /<main className="flex-1 overflow-y-auto p-4">/); // One community scroll region, no separate debate view.
+});
+
+test('community author controls comments and one pinned comment in both mural and Praça', () => {
+  const composer = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  const api = read('src/utils/communityCloud.ts');
+  const actions = read('src/utils/communityPostInteractions.ts');
+  const card = read('src/components/CommunityPostCard.tsx');
+  const square = read('src/components/CommunitySquareFeedCard.tsx');
+  const projection = read('src/utils/communitySquareFeed.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  assert.match(composer, /const \[wallAllowComments, setWallAllowComments\] = useState\(true\)/);
+  assert.match(composer, /aria-label="Permitir comentários nesta publicação"/);
+  assert.match(composer, /allowComments: wallAllowComments/);
+  assert.match(api, /allowComments: input\.allowComments !== false/);
+  assert.match(api, /pinnedCommentId: ''/);
+  assert.match(api, /allowComments: data\.allowComments !== false/);
+  assert.match(projection, /allowComments: source\.allowComments !== false/);
+  assert.match(projection, /pinnedCommentId: read\(source\.pinnedCommentId\)/);
+  assert.match(actions, /setCommunityPostPinnedComment/);
+  assert.match(actions, /currentPost\.data\(\)\.allowComments === false/);
+  assert.match(card, /post\.allowComments === false \? 'Comentários' : 'Comentar'/);
+  assert.match(card, /post\.allowComments !== false && canParticipate/);
+  assert.match(card, /Fixado pelo autor/);
+  assert.match(card, /onPinComment\(comment\.id\)/);
+  assert.match(card, /onPinComment\(''\)/);
+  assert.match(composer, /onPinComment=\{commentId => setCommunityPostPinnedComment\(post, commentId\)\}/);
+  assert.match(square, /onPinComment=\{commentId => setCommunityPostPinnedComment\(post, commentId\)\}/);
+  assert.match(rules, /data\.get\('allowComments', true\) == true/);
+  assert.match(rules, /incoming\(\)\.pinnedCommentId == ''/);
+  assert.match(rules, /community_post_comments\/\$\(incoming\(\)\.pinnedCommentId\)/);
 });
 
 test('reply parent reaches Firestore from both Community Mural and Praça distributed cards', () => {
