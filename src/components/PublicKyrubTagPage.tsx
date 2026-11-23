@@ -4,7 +4,8 @@ import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
-import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
+import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
+import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
 import {KYRUB_TAG_MODEL_LABELS,isTagModel,parseTagExternalUrl,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {parsePublicDestinationUrl,buildPublicDestinationPath} from '../../shared/publicDestinationRoutes';
 
@@ -12,7 +13,7 @@ type Payload={
  id:string;model:KyrubTagModel;status:'unclaimed'|'active';
  activation?:'account'|'code'|'email'|'setup';
  links:{name:string;url:string}[];
- presentation?:PromotionalTagPresentation;
+ presentation?:PublicPromotionalTagPresentation;
 };
 type OwnershipResponse={tag:OwnedKyrubTag;recoveryCode:string|null};
 
@@ -145,8 +146,15 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
-    <div className="flex h-28 items-center justify-center rounded-xl bg-[#24332C] text-sm text-slate-300">Apresentação digital · Capa opcional</div>
-    <h1 className="text-2xl font-bold">{data.presentation.name||'Minha Kyrub Tag'}</h1>
+    <div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C] text-sm text-slate-300">
+     {data.presentation.hasCover?<img className="h-full w-full object-cover" alt="Foto de capa do cartão digital"
+       src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/>:'Apresentação digital · Capa opcional'}
+    </div>
+    <div className="flex items-center gap-3">
+     {data.presentation.hasAvatar&&<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular"
+       src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>}
+     <h1 className="text-2xl font-bold">{data.presentation.name||'Minha Kyrub Tag'}</h1>
+    </div>
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
     {data.presentation.about&&<p className="whitespace-pre-wrap text-slate-200">{data.presentation.about}</p>}
     <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
@@ -154,6 +162,16 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      <h2 className="font-semibold">Emergência no Brasil</h2>
      <p className="text-xs text-slate-300">Toque em um número para abrir o discador. Esta página não envia alertas nem aciona socorro automaticamente.</p>
      {emergencyServices.map(service=><a key={service.number} className="flex min-h-11 items-center justify-between rounded-lg border border-[#34443B] p-3" href={'tel:'+service.number}><span>{service.name}</span><strong>{service.number}</strong></a>)}
+     {data.presentation.sosContacts.length>0&&<div className="space-y-3 border-t border-rose-400/40 pt-3">
+      <h3 className="font-semibold">Pessoas de confiança</h3>
+      <p className="text-xs text-slate-300">Contatos disponibilizados voluntariamente pelo titular. Não há serviço de atendimento ou monitoramento de emergência.</p>
+      {data.presentation.sosContacts.map(contact=><div key={contact.phone} className="space-y-2 rounded-lg border border-[#34443B] p-3">
+       <p className="font-semibold">{contact.name}{contact.relationship?' · '+contact.relationship:''}</p>
+       <a className="inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline" href={'tel:'+contact.phone}>Ligar para {contact.phone}</a>
+       {contact.whatsapp&&<a className="ml-2 inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline"
+         href={'https://wa.me/'+contact.phone.replace(/\\D/g,'')} target="_blank" rel="noopener noreferrer">WhatsApp do contato</a>}
+      </div>)}
+     </div>}
     </div>}
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
    </section>:
