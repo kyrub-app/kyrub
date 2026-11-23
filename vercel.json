@@ -71,6 +71,14 @@
       "destination": "/api/health?transport=kyrubia-user-ai-chat"
     },
     {
+      "source": "/api/staff/shifts",
+      "destination": "/api/health?transport=staff-shifts"
+    },
+    {
+      "source": "/api/staff/shifts/:path*",
+      "destination": "/api/health?transport=staff-shifts&path=:path*"
+    },
+    {
       "source": "/api/staff/tasks",
       "destination": "/api/health?transport=staff-tasks"
     },
