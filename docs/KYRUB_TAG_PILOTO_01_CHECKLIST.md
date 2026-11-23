@@ -29,7 +29,9 @@ Há uma proteção explícita de servidor em `server/identity/kyrubTagPilotIsola
    - `VITE_FIREBASE_API_KEY`, `VITE_FIREBASE_AUTH_DOMAIN`, `VITE_FIREBASE_PROJECT_ID`, `VITE_FIREBASE_STORAGE_BUCKET`, `VITE_FIREBASE_MESSAGING_SENDER_ID`, `VITE_FIREBASE_APP_ID`: dados da aplicação Web **isolada**.
    - `FIREBASE_SERVICE_ACCOUNT_JSON`: credencial de serviço do **projeto isolado**, inserida diretamente no painel seguro, não no chat/GitHub. Não sobrescrever a variável compartilhada de Production.
    - `KYRUB_TAG_PROMO_PILOT_PROJECT_ID`: ID do **projeto isolado**.
+   - `VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE=true` ativa a configuração Web isolada **somente no domínio HTTPS de prévia `*.vercel.app`**. Sem esta opção, a aplicação Web usa o Firebase produtivo embutido e a emissão deve continuar bloqueada pelo servidor.
    - `VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE=true`, `KYRUB_TAG_PROMO_ISSUANCE_ENABLED=true`, `KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=true` **somente nessa branch e depois do preflight de isolamento**.
+   - O servidor exige `VERCEL_ENV=preview`, domínio `VERCEL_URL` compatível e correspondência exata de `VITE_FIREBASE_PROJECT_ID` com o Admin Firebase de homologação; não alterar manualmente variáveis automáticas da Vercel.
 5. Recriar a prévia da branch para aplicar variáveis de build e servidor. O formulário Web de email-link deve usar o mesmo domínio autorizado do teste.
 6. Abrir o **endereço da prévia Vercel** no Chrome com o parâmetro `?kyrub_admin_preview=1` para mostrar o Control Plane da prévia (o domínio oficial `admin.kyrub.com` continua em produção). Entrar com a conta Google Super Admin **de homologação**, provisionada no Firestore isolado. Em **Kyrub Tag — adesivos promocionais**, conferir os indicadores `isolated-project`, Firebase Web e Admin coincidentes, e liberação de emissão. Se disser “Bloqueado”, interromper — nunca tentar desligar a proteção pelo console.
 
