@@ -160,6 +160,7 @@ test('merchant policies are optional, bounded and propagated through all storefr
 
   const sync=source('server/gamification/firstStorePublicationAuthority.ts');
   assert.equal((sync.match(/policies: typeof p\.policies/g)??[]).length,2);
+  assert.ok(sync.includes("policies: typeof savedPolicies === 'string'"));
   const persistence=source('src/utils/storePersistence.ts');
   assert.ok((persistence.match(/policies: store\.policies \?\? ''/g)??[]).length>=4);
   const projection=source('server/payments/marketplaceDiscoveryService.ts');

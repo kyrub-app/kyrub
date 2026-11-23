@@ -143,8 +143,10 @@ export async function publishFirstStoreAndAwardXp(
       : { replay: false, pitangas: 0 as const, xp: 0 as const };
     tx.update(storeRef, { publicationStatus: 'published', firstPublishedAt: publishedAt });
     if (listing.exists) {
+      const savedPolicies = primary.get('policies');
       tx.update(listingRef, { publicationStatus: 'published', publishedAt: publicationTimestamp,
-        updatedAt: publicationTimestamp });
+        updatedAt: publicationTimestamp,
+        policies: typeof savedPolicies === 'string' ? savedPolicies.slice(0, 2000) : '' });
     } else {
       const p = primary.data()!;
       if (typeof p.name !== 'string' || !p.name.trim() ||
