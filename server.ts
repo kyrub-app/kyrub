@@ -43,6 +43,7 @@ import { createStoreInstitutionalIdentityRouter } from "./server/store/storeInst
 import { createTimeClockRouter } from "./server/staff/timeClockRouter";
 import { createStaffNoticeRouter } from "./server/staff/staffNoticeTransport";
 import { createStaffProcedureRouter } from "./server/staff/staffProcedureTransport";
+import { createStaffTaskRouter } from "./server/staff/staffTaskTransport";
 import { createStoreReservationRouter } from "./server/staff/storeReservationRouter";
 
 dotenv.config();
@@ -239,6 +240,11 @@ app.use(
   "/api/staff/pops",
   integrationRateLimiter,
   createStaffProcedureRouter()
+);
+app.use(
+  "/api/staff/tasks",
+  integrationRateLimiter,
+  createStaffTaskRouter()
 );
 
 app.use(

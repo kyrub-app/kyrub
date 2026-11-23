@@ -620,6 +620,23 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'staff-tasks') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    try {
+      const taskTransport = await import('../server/staff/staffTaskTransport.js');
+      await taskTransport.handleStaffTaskRequest(request as never, response as never);
+    } catch (error) {
+      console.error('[staff-tasks-transport]', error instanceof Error ? error.message : String(error));
+      if (!(response as unknown as { writableEnded?: boolean }).writableEnded) {
+        response.status(503).json({
+          code: 'STAFF_TASK_TRANSPORT_UNAVAILABLE',
+          error: 'Tarefas da equipe temporariamente indisponíveis.',
+        });
+      }
+    }
+    return;
+  }
+
   if (transport === 'staff-pops') {
     response.setHeader('Cache-Control', 'private, no-store, max-age=0');
     try {

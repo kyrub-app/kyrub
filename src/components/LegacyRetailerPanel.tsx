@@ -12,6 +12,7 @@ import type { BuildUserStoreUpdateInput } from '../utils/userStoreDocument';
 import { auth } from '../utils/firebase';
 import { StoreStaffNoticeInbox } from './store/StoreStaffNoticeInbox';
 import { StoreStaffPopInbox } from './store/StoreStaffPopInbox';
+import { StoreStaffTasksInbox } from './store/StoreStaffTasksInbox';
 
 // ==========================================
 // RETAILER PANEL MAIN COMPONENT
@@ -76,7 +77,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // 5. COLLABORATOR PORTAL / CANONICAL TIME CLOCK
   const [pontoLogs, setPontoLogs] = useState<any[]>([]);
   const [pontoLoading, setPontoLoading] = useState(false);
-  const [staffPanelTab, setStaffPanelTab] = useState<'ponto' | 'avisos' | 'pops'>('ponto');
+  const [staffPanelTab, setStaffPanelTab] = useState<'ponto' | 'avisos' | 'pops' | 'tarefas'>('ponto');
 
   // 6. GENERAL FINANCE / HR / CUSTOMIZATION / FISCAL
   // Customization States
@@ -390,7 +391,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
              ------------------------------------------ */}
           {activeSubTab === 'ponto' && (
             <div className="space-y-5 animate-fade-in" id="erp-ponto-tab">
-              <nav aria-label="Central do Colaborador" className="mx-auto flex max-w-md gap-2">
+              <nav aria-label="Central do Colaborador" className="mx-auto flex max-w-md flex-wrap gap-2">
                 <button type="button" onClick={() => setStaffPanelTab('ponto')}
                   aria-current={staffPanelTab === 'ponto' ? 'page' : undefined}
                   className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold ${staffPanelTab === 'ponto' ? 'border-orange-500 bg-orange-500/15 text-orange-300' : 'border-slate-700 text-slate-300'}`}>Ponto</button>
@@ -400,6 +401,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                 <button type="button" onClick={() => setStaffPanelTab('pops')}
                   aria-current={staffPanelTab === 'pops' ? 'page' : undefined}
                   className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold ${staffPanelTab === 'pops' ? 'border-orange-500 bg-orange-500/15 text-orange-300' : 'border-slate-700 text-slate-300'}`}>Manuais POP</button>
+                <button type="button" onClick={() => setStaffPanelTab('tarefas')}
+                  aria-current={staffPanelTab === 'tarefas' ? 'page' : undefined}
+                  className={`flex-1 rounded-xl border px-4 py-3 text-xs font-bold ${staffPanelTab === 'tarefas' ? 'border-orange-500 bg-orange-500/15 text-orange-300' : 'border-slate-700 text-slate-300'}`}>Tarefas</button>
               </nav>
               {staffPanelTab === 'ponto' ? (
               <div className="max-w-md mx-auto bg-slate-900 border border-slate-800 p-6 rounded-3xl text-center space-y-4">
@@ -448,7 +452,9 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
               </div>
               ) : staffPanelTab === 'avisos' ? (
                 <StoreStaffNoticeInbox storeId={activeRetailerId} />
-              ) : <StoreStaffPopInbox storeId={activeRetailerId} />}
+              ) : staffPanelTab === 'pops' ? (
+                <StoreStaffPopInbox storeId={activeRetailerId} />
+              ) : <StoreStaffTasksInbox storeId={activeRetailerId} />}
             </div>
           )}
 
