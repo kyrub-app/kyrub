@@ -30,7 +30,7 @@ test('storefront movement indicator uses live KDS order load', () => {
 
 test('public storefront logo is purely visual; store information expands inline', () => {
   const quickPanel = source('src/components/PublicStorefrontQuickPanel.tsx');
-  matches(publicHeroSource, [/aria-label="Atalhos da loja"/, /public-storefront-action-info/, /public-storefront-action-reservas/]);
+  matches(publicHeroSource, [/aria-label="Atalhos da loja"/, /public-storefront-action-\$\{id\}/, /label:'Reservas'/]);
   matches(publicStorefrontSource, [/<PublicStorefrontHero/, /<PublicStorefrontQuickPanel/]);
   matches(quickPanel, [/Esta loja não trabalha com reservas/, /store.description/, /store.address/]);
   excludes(publicHeroSource, [/public-storefront-header-info-trigger/, /public-storefront-close/]);
