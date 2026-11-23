@@ -405,3 +405,36 @@ describe('user store isolation', () => {
     await assertFails(deleteDoc(storeReference));
   });
 });
+
+describe('optional banner and gallery media', () => {
+  test('owner can create legacy format and later add an ordered public banner and gallery', async () => {
+    await createValidStore('user-a');
+    const database=authenticatedContext('user-a').firestore();
+    const ref=doc(database,primaryStorePath('user-a'));
+    const banner=Array.from({length:5},(_,i)=>'https://example.com/banner-'+i+'.jpg');
+    const gallery=Array.from({length:24},(_,i)=>'https://example.com/gallery-'+i+'.jpg');
+    await assertSucceeds(updateDoc(ref,{
+      banner: banner[0],
+      bannerImages: banner,
+      galleryImages: gallery,
+      updatedAt:serverTimestamp(),
+    }));
+    const snap=await assertSucceeds(getDoc(ref));
+    assert.deepEqual(snap.get('bannerImages'),banner);
+    assert.deepEqual(snap.get('galleryImages'),gallery);
+  });
+  test('store media limits and field types are enforced',async()=>{
+    await createValidStore('user-a');
+    const db=authenticatedContext('user-a').firestore();
+    const ref=doc(db,primaryStorePath('user-a'));
+    await assertFails(updateDoc(ref,{
+      bannerImages:Array.from({length:6},(_,i)=>'https://example.com/b'+i),
+      updatedAt:serverTimestamp(),
+    }));
+    await assertFails(updateDoc(ref,{
+      galleryImages:Array.from({length:25},(_,i)=>'https://example.com/g'+i),
+      updatedAt:serverTimestamp(),
+    }));
+    await assertFails(updateDoc(ref,{ galleryImages:'not-an-array',updatedAt:serverTimestamp()}));
+  });
+});
