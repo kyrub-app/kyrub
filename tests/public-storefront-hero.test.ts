@@ -9,7 +9,7 @@ import { PublicStorefrontQuickPanel } from '../src/components/PublicStorefrontQu
 
 const store = {
   id:'store_public_hero',name:'Kyrub Oficial',slug:'kyrub-oficial',
-  description:'Loja de demonstração',logo:'',
+  description:'Loja de demonstração',policies:'Solicite trocas pelo chat da loja.',logo:'',
   banner:'https://example.com/hero1.jpg',
   bannerImages:['https://example.com/hero1.jpg','https://example.com/hero2.jpg'],
   offerImages:['https://example.com/not-a-banner.jpg'],
@@ -132,13 +132,15 @@ test('gallery images remain independent of the banner, and policy content lives 
   }
   const {createRoot}=await import('react-dom/client');
   const root=createRoot(dom.window.document.getElementById('app')!);
-  const render=(section:'info'|'galeria')=>createElement(PublicStorefrontQuickPanel,{
-    store,selected:section,onClose:()=>{},onChat:()=>{},onReviews:()=>{},actionsDisabled:false,
+  const render=(section:'info'|'galeria',policies=store.policies)=>createElement(PublicStorefrontQuickPanel,{
+    store:{...store,policies},selected:section,onClose:()=>{},onChat:()=>{},onReviews:()=>{},actionsDisabled:false,
   });
   try{
     await act(async()=>root.render(render('info')));
     assert.match(dom.window.document.body.textContent??'',/Políticas e condições/);
-    assert.match(dom.window.document.body.textContent??'',/Esta loja ainda não publicou políticas institucionais/);
+    assert.match(dom.window.document.body.textContent??'',/Solicite trocas pelo chat da loja/);
+    await act(async()=>root.render(render('info','')));
+    assert.equal(dom.window.document.getElementById('public-storefront-policies-inside-info'),null);
     await act(async()=>root.render(render('galeria')));
     assert.equal(dom.window.document.querySelectorAll('#public-storefront-gallery-grid img').length,2);
     assert.doesNotMatch(dom.window.document.body.textContent??'',/Políticas e condições/);

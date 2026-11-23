@@ -36,6 +36,7 @@ export interface StorageLike {
 export interface StoreProfileFields {
   name: string;
   description: string;
+  policies?: string;
   address: string;
   contact: string;
   keywords: string[];
@@ -78,6 +79,7 @@ export const normalizeCachedStore = (
   slug: typeof candidate.slug === 'string' ? candidate.slug : '',
   description:
     typeof candidate.description === 'string' ? candidate.description : '',
+  policies: typeof candidate.policies === 'string' ? candidate.policies : '',
   logo: typeof candidate.logo === 'string' ? candidate.logo : '',
   banner: typeof candidate.banner === 'string' ? candidate.banner : '',
   bannerImages: storeBannerImages(candidate),
@@ -174,6 +176,7 @@ export const buildConfiguredStore = (
     name,
     slug: slugifyStoreName(name),
     description: fields.description.trim(),
+    policies: fields.policies === undefined ? normalizedCurrent.policies : fields.policies.trim(),
     address: fields.address.trim(),
     contact: fields.contact.trim(),
     keywords: fields.keywords
@@ -206,6 +209,7 @@ const getCreateInput = (
     name: store.name,
     slug: store.slug,
     description: store.description,
+    policies: store.policies ?? '',
     logo: store.logo,
     banner: store.banner,
     bannerImages: storeBannerImages(store),
@@ -227,6 +231,7 @@ const getUpdateInput = (
     name: store.name,
     slug: store.slug,
     description: store.description,
+    policies: store.policies ?? '',
     logo: store.logo,
     banner: store.banner,
     bannerImages: storeBannerImages(store),
@@ -265,6 +270,7 @@ const marketplaceInput = (
     name: store.name,
     slug: store.slug,
     description: store.description,
+    policies: store.policies ?? '',
     address: store.address ?? '',
     logo: store.logo,
     banner: store.banner,
@@ -318,6 +324,7 @@ const persistTenantMarketplaceFallback = async (
     plan: store.plan,
     slug: store.slug,
     description: store.description,
+    policies: store.policies ?? '',
     address: store.address ?? '',
     logo: store.logo,
     banner: store.banner,

@@ -143,8 +143,10 @@ export async function publishFirstStoreAndAwardXp(
       : { replay: false, pitangas: 0 as const, xp: 0 as const };
     tx.update(storeRef, { publicationStatus: 'published', firstPublishedAt: publishedAt });
     if (listing.exists) {
+      const savedPolicies = primary.get('policies');
       tx.update(listingRef, { publicationStatus: 'published', publishedAt: publicationTimestamp,
-        updatedAt: publicationTimestamp });
+        updatedAt: publicationTimestamp,
+        policies: typeof savedPolicies === 'string' ? savedPolicies.slice(0, 2000) : '' });
     } else {
       const p = primary.data()!;
       if (typeof p.name !== 'string' || !p.name.trim() ||
@@ -154,6 +156,7 @@ export async function publishFirstStoreAndAwardXp(
       tx.create(listingRef, {
         listingId, listingType: 'store', storeId: uid, ownerId: uid,
         name: p.name, slug: p.slug, description: p.description ?? '',
+        policies: typeof p.policies === 'string' ? p.policies.slice(0, 2000) : '',
         address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
         bannerImages: Array.isArray(p.bannerImages) ? p.bannerImages.slice(0, 5) : (p.banner ? [p.banner] : []),
         galleryImages: Array.isArray(p.galleryImages) ? p.galleryImages.slice(0, 24) : [],
@@ -261,6 +264,7 @@ export async function syncVerifiedFirstStoreProfile(
     }
     const profile = {
       name: p.name, slug: p.slug, description: p.description ?? '',
+      policies: typeof p.policies === 'string' ? p.policies.slice(0, 2000) : '',
       address: p.address ?? '', logo: p.logo ?? '', banner: p.banner ?? '',
       bannerImages: Array.isArray(p.bannerImages) ? p.bannerImages.slice(0, 5) : (p.banner ? [p.banner] : []),
       galleryImages: Array.isArray(p.galleryImages) ? p.galleryImages.slice(0, 24) : [],

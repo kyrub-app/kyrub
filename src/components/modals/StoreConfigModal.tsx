@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
 import { doc, getDoc, onSnapshot } from 'firebase/firestore';
-import { Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Image as ImageIcon, ShieldCheck, Trash2 } from 'lucide-react';
 import { StoreMediaCollectionEditor } from '../store/StoreMediaCollectionEditor';
 import { MAX_STORE_BANNER_IMAGES, MAX_STORE_GALLERY_IMAGES, normalizeStoreMediaImages, storeBannerImages, storeGalleryImages } from '../../utils/storeMediaCollections';
 import { StoreConfigModal as LegacyStoreConfigModal } from './LegacyStoreConfigModal';
@@ -71,6 +71,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
   const [configStoreLogo, setConfigStoreLogo] = useState('');
   const [configBannerImages, setConfigBannerImages] = useState<string[]>([]);
   const [configGalleryImages, setConfigGalleryImages] = useState<string[]>([]);
+  const [configStorePolicies, setConfigStorePolicies] = useState('');
   const [locationDraft, setLocationDraft] = useState<StoreLocationDraft>(emptyLocationDraft);
   const [operationalSettings, setOperationalSettings] =
     useState<StoreOperationalSettings>(createEmptyStoreOperationalSettings);
@@ -141,6 +142,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     setConfigStoreLogo(cachedStore?.logo ?? '');
     setConfigBannerImages(storeBannerImages(cachedStore ?? {}));
     setConfigGalleryImages(storeGalleryImages(cachedStore ?? {}));
+    setConfigStorePolicies(cachedStore?.policies ?? '');
     setLocationDraft({
       latitude: typeof cachedStore?.lat === 'number' ? String(cachedStore.lat) : '',
       longitude: typeof cachedStore?.lng === 'number' ? String(cachedStore.lng) : '',
@@ -169,6 +171,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let cancelled = false;
     const originalBanner = storeBannerImages(cachedStore);
     const originalGallery = storeGalleryImages(cachedStore);
+    const originalPolicies = cachedStore.policies ?? '';
     void getDoc(doc(db, 'users', user.uid, 'stores', user.uid))
       .then(snapshot => {
         if (cancelled || !snapshot.exists()) return;
@@ -177,16 +180,19 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         if (!previous || hasPendingUserStoreSync(localStorage, user.uid) ||
           previous.logo !== cachedStore.logo ||
           JSON.stringify(storeBannerImages(previous)) !== JSON.stringify(originalBanner) ||
-          JSON.stringify(storeGalleryImages(previous)) !== JSON.stringify(originalGallery)) return;
+          JSON.stringify(storeGalleryImages(previous)) !== JSON.stringify(originalGallery) ||
+          (previous.policies ?? '') !== originalPolicies) return;
         const nextLogo = typeof cloud.logo === 'string' ? cloud.logo : previous.logo;
         const nextBannerImages = storeBannerImages(cloud);
         const nextGalleryImages = storeGalleryImages(cloud);
+        const nextPolicies = typeof cloud.policies === 'string' ? cloud.policies : originalPolicies;
         saveCachedUserStore(localStorage, user.uid, {
           ...previous,
           logo: nextLogo,
           banner: typeof cloud.banner === 'string' ? cloud.banner : previous.banner,
           bannerImages: nextBannerImages,
           galleryImages: nextGalleryImages,
+          policies: nextPolicies,
         }, false);
         setConfigStoreLogo(current => current === cachedStore.logo ? nextLogo : current);
         setConfigBannerImages(current =>
@@ -195,6 +201,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         setConfigGalleryImages(current =>
           JSON.stringify(current) === JSON.stringify(originalGallery) ? nextGalleryImages : current
         );
+        setConfigStorePolicies(current => current === originalPolicies ? nextPolicies : current);
       })
       .catch(() => { /* Offline editors retain their local media draft. */ });
     return () => { cancelled = true; };
@@ -261,6 +268,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         address: props.configStoreAddress,
         contact: props.configStoreContact,
         keywords: props.configStoreKeywords.split(','),
+        policies: configStorePolicies,
       }
     );
 
@@ -280,6 +288,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     configStoreLogo,
     configBannerImages,
     configGalleryImages,
+    configStorePolicies,
   ]);
 
   const resolveConfiguredStore = (): Store | null => {
@@ -319,6 +328,9 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
     let storeToSave: Store;
     try {
       validateStoreOpeningHours(operationalSettings.openingHours);
+      if (configStorePolicies.trim().length > 2000) {
+        throw new Error('As políticas da loja devem ter no máximo 2.000 caracteres.');
+      }
       storeToSave = resolveConfiguredStore()!;
     } catch (error) {
       notify(
@@ -420,7 +432,7 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         !result.marketplaceSynced
           ? 'Configurações salvas. A atualização da vitrine pública ficou pendente.'
           : result.cloudSynced
-            ? 'Perfil, localização, horários e integrações atualizados com sucesso!'
+            ? 'Perfil, políticas, horários e integrações atualizados com sucesso!'
             : 'Configurações salvas neste dispositivo. A sincronização ficou pendente.',
         result.marketplaceSynced && result.cloudSynced ? 'success' : 'warning'
       );
@@ -591,6 +603,27 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
         }
         disabled={isSaving || isPublishing}
       />
+      <section id="store-policies-control" className="min-w-0 space-y-3 rounded-2xl border border-slate-800 bg-slate-950/55 p-4">
+        <div>
+          <label htmlFor="store-policies-text" className="flex items-center gap-2 text-[11px] font-black uppercase tracking-wide text-slate-300">
+            <ShieldCheck className="h-4 w-4 text-orange-400" /> Políticas da loja (opcional)
+          </label>
+          <p className="mt-1 text-xs leading-relaxed text-slate-400">
+            Informe condições de atendimento, retirada, entrega, trocas ou cancelamentos. O texto será exibido em Informações na vitrine após salvar.
+          </p>
+        </div>
+        <textarea
+          id="store-policies-text"
+          value={configStorePolicies}
+          onChange={event => setConfigStorePolicies(event.target.value)}
+          disabled={isSaving || isPublishing}
+          maxLength={2000}
+          rows={5}
+          placeholder="Ex.: Os pedidos para retirada ficam disponíveis durante o horário de funcionamento. Solicite trocas ou devoluções pelo chat da loja."
+          className="box-border block w-full min-w-0 resize-y rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm leading-relaxed text-white outline-none placeholder:text-slate-500 focus:border-orange-500 disabled:opacity-45"
+        />
+        <p className="text-right text-[11px] tabular-nums text-slate-400">{configStorePolicies.length}/2.000 caracteres</p>
+      </section>
     </div>
   );
 

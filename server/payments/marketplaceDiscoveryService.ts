@@ -70,6 +70,7 @@ export type PublicStorefrontSnapshot = {
     name: string;
     slug: string;
     description: string;
+    policies?: string;
     logo: string;
     banner: string;
     bannerImages: string[];
@@ -427,6 +428,7 @@ export const loadPublicStorefrontBySlug = async (
         name: clean(storeData.name),
         slug,
         description: clean(storeData.description),
+        policies: clean(storeData.policies).slice(0, 2000),
         logo: clean(storeData.logo),
         banner: clean(storeData.banner),
         bannerImages: stringList(storeData.bannerImages).slice(0, 5).length ? stringList(storeData.bannerImages).slice(0, 5) : (clean(storeData.banner) ? [clean(storeData.banner)] : []),
@@ -486,6 +488,7 @@ export const loadPublicStorefrontBySlug = async (
       name: clean(legacyData.name),
       slug,
       description: clean(legacyData.description),
+      policies: clean(legacyData.policies).slice(0, 2000),
       logo: clean(legacyData.logo),
       banner: clean(legacyData.banner),
       bannerImages: stringList(legacyData.bannerImages).slice(0, 5).length ? stringList(legacyData.bannerImages).slice(0, 5) : (clean(legacyData.banner) ? [clean(legacyData.banner)] : []),

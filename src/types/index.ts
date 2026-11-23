@@ -61,6 +61,8 @@ export interface Store {
   name: string;
   slug: string;
   description: string;
+  /** Optional policies written by the merchant for the public information panel. */
+  policies?: string;
   logo: string;
   banner: string;
   /** Ordered rotating banner images (maximum five). */
@@ -124,6 +126,7 @@ export interface MarketplaceStoreListingDocument
   name: string;
   slug: string;
   description: string;
+  policies?: string;
   address: string;
   logo: string;
   banner: string;

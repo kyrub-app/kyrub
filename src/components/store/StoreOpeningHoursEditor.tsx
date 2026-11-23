@@ -104,23 +104,23 @@ export function StoreOpeningHoursEditor({
               </label>
 
               {schedule.enabled ? (
-                <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2">
+                <div className="grid min-w-0 grid-cols-1 items-center gap-2">
                   <input
                     type="time"
                     value={schedule.opensAt}
                     onChange={event => updateDay(day, { opensAt: event.target.value })}
                     disabled={disabled}
                     aria-label={`Abertura de ${DAY_LABELS[day]}`}
-                    className="min-w-0 rounded-xl border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-white outline-none focus:border-orange-500 disabled:opacity-45"
+                    className="block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-white outline-none focus:border-orange-500 disabled:opacity-45"
                   />
-                  <span className="text-[9px] font-black uppercase text-slate-600">até</span>
+                  <span className="text-center text-[9px] font-black uppercase text-slate-600">até</span>
                   <input
                     type="time"
                     value={schedule.closesAt}
                     onChange={event => updateDay(day, { closesAt: event.target.value })}
                     disabled={disabled}
                     aria-label={`Fechamento de ${DAY_LABELS[day]}`}
-                    className="min-w-0 rounded-xl border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-white outline-none focus:border-orange-500 disabled:opacity-45"
+                    className="block box-border w-full min-w-0 max-w-full rounded-xl border border-slate-800 bg-slate-950 px-2.5 py-2 text-xs text-white outline-none focus:border-orange-500 disabled:opacity-45"
                   />
                 </div>
               ) : (

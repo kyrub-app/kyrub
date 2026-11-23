@@ -438,3 +438,34 @@ describe('optional banner and gallery media', () => {
     await assertFails(updateDoc(ref,{ galleryImages:'not-an-array',updatedAt:serverTimestamp()}));
   });
 });
+
+describe('optional store policies and validation', () => {
+  test('owner may create with policies and update or clear them', async () => {
+    const uid = 'policy-owner';
+    await createValidStore(uid, { policies: 'Retiradas no horário informado.' });
+    const db = authenticatedContext(uid).firestore();
+    const reference = doc(db, primaryStorePath(uid));
+    await assertSucceeds(updateDoc(reference, { policies: 'Trocas pelo atendimento.', updatedAt: serverTimestamp() }));
+    const snapshot = await assertSucceeds(getDoc(reference));
+    assert.equal(snapshot.data()?.policies, 'Trocas pelo atendimento.');
+    await assertSucceeds(updateDoc(reference, { policies: '', updatedAt: serverTimestamp() }));
+  });
+
+  test('policy is optional for legacy stores; other users cannot edit', async () => {
+    const uid = 'policy-owner';
+    await createValidStore(uid);
+    const otherDb = authenticatedContext('other').firestore();
+    await assertFails(updateDoc(doc(otherDb, primaryStorePath(uid)), {
+      policies: 'Não autorizado', updatedAt: serverTimestamp()
+    }));
+  });
+
+  test('rejects non-text and policies longer than two thousand characters', async () => {
+    const db = authenticatedContext('policy-owner').firestore();
+    const reference = doc(db, primaryStorePath('policy-owner'));
+    await assertFails(setDoc(reference, validCreatePayload('policy-owner', { policies: 123 })));
+    await assertFails(setDoc(reference, validCreatePayload('policy-owner', { policies: 'x'.repeat(2001) })));
+    await createValidStore('policy-owner');
+    await assertFails(updateDoc(reference, { policies: 'x'.repeat(2001), updatedAt: serverTimestamp() }));
+  });
+});

@@ -66,6 +66,17 @@ test('profile receives an editable seven-day opening schedule', () => {
   assert.match(hoursSource, /Nenhum horário é preenchido automaticamente/);
 });
 
+test('time inputs stay within narrow store cards and policy editing is available in profile', () => {
+  assert.match(hoursSource, /grid min-w-0 grid-cols-1 items-center/);
+  assert.equal((hoursSource.match(/box-border w-full min-w-0 max-w-full/g) ?? []).length, 2);
+  assert.match(hoursSource, /text-center text-\[9px\]/);
+  assert.match(modalSource, /id="store-policies-control"/);
+  assert.match(modalSource, /id="store-policies-text"/);
+  assert.match(modalSource, /maxLength=\{2000\}/);
+  assert.match(modalSource, /policies: configStorePolicies/);
+  assert.match(modalSource, /setConfigStorePolicies\(current => current === originalPolicies/);
+});
+
 test('integration onboarding includes the requested fiscal and marketplace channels', () => {
   assert.match(integrationsSource, /Open Delivery — Abrasel/);
   assert.match(integrationsSource, /SEFAZ — NF-e \/ NFC-e/);
