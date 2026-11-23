@@ -299,7 +299,15 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
         if(!response.ok)throw Error('TAG_IDENTITY_UNAVAILABLE');
         const payload=await response.json() as {mode?:string};
         if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
-        setIdentityMode(payload.mode==='tag_only'?'tag_only':'full');
+        if(payload.mode==='tag_only')setIdentityMode('tag_only');
+        else if(payload.mode==='full')setIdentityMode('full');
+        else {
+          // A new email-link credential must not fall through to the regular
+          // Kyrub workspace if its tag-only preparation failed.
+          // Existing Google sign-in onboarding remains unchanged.
+          const isGoogleIdentity=user.providerData.some(p=>p.providerId==='google.com');
+          setIdentityMode(isGoogleIdentity?'full':'unavailable');
+        }
       }).catch(()=>{
         // If the tag identity service is unavailable, preserve existing Kyrub
         // members with a server-confirmed profile, but never bootstrap an
@@ -322,9 +330,8 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
       unavailable={identityMode==='unavailable'}
       onPromoted={()=>setIdentityMode('full')}
       onRetry={()=>setRetry(v=>v+1)}/>;
-  return currentUser
-    ? <AuthenticatedKyrubApp operational={operational} />
-    : operational ? <AuthenticatedKyrubApp operational /> : <KyrubGuestWorkspace />;
+  if(operational)return <AuthenticatedKyrubApp operational />;
+  return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
 }
 
 export default function App() {
