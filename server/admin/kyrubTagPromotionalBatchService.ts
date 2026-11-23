@@ -40,6 +40,8 @@ function pilotReadiness(){
   emailLinkProvider:'manual-verification-required' as const,
   storageRulesPublished:'manual-verification-required' as const,
   physicalNfcVerified:false,
+  previewHost:isolation==='isolated-project'&&process.env.VERCEL_URL?.endsWith('.vercel.app')
+   ?process.env.VERCEL_URL:null,
   canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()
  };
 }
