@@ -119,3 +119,37 @@ test('Personal Center uses promotional editor and never legacy WhatsApp/Instagra
  assert.match(service,/export async function rotatePromotionalRecoveryCode/);
  assert.match(service,/if\(current\.distribution==='promotional'\)throw Error\('TAG_FORBIDDEN'\)/);
 });
+
+
+test('promotional inventory is separate from pilot, NFC writes are non-overwriting, identity needs explicit full-account consent',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const admin=readFileSync('src/components/admin/AdminControlPlaneApp.tsx','utf8');
+ const batches=readFileSync('src/components/admin/AdminKyrubTagPromotionalBatches.tsx','utf8');
+ const batchService=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ const app=readFileSync('src/App.tsx','utf8');
+ const gate=readFileSync('src/components/KyrubTagOnlyEntry.tsx','utf8');
+ const identity=readFileSync('server/identity/kyrubTagMinimalIdentityService.ts','utf8');
+ const mail=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
+ assert.match(admin,/AdminKyrubTagPromotionalBatches/);
+ assert.match(admin,/admin-kyrub-tag-promotional/);
+ assert.match(admin,/AdminKyrubTagPilot/);
+ assert.match(batches,/Gravar em tag vazia/);
+ assert.match(batches,/overwrite:false/);
+ assert.match(batches,/physicalStatus:'not_verified'/);
+ assert.doesNotMatch(batches,/e-mail da destinatária/i);
+ assert.match(batchService,/KYRUB_TAG_PROMO_ISSUANCE_ENABLED/);
+ assert.match(batchService,/actorRole:'super_admin'/);
+ assert.match(batchService,/tagIds:ids/);
+ assert.match(batchService,/tx\.create\(auditCollection\(\)\.doc/);
+ assert.match(batchService,/if\(original\.count!==count\)throw Error\('TAG_BATCH_CONFLICT'\)/);
+ assert.match(identity,/kyrub_tag_minimal_identities/);
+ assert.match(identity,/source:'kyrub_tag_promo'/);
+ assert.match(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.match(identity,/promoteTagIdentityToKyrub/);
+ assert.match(app,/VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE/);
+ assert.match(app,/KyrubTagOnlyEntry/);
+ assert.match(app,/identityMode==='tag_only'/);
+ assert.match(gate,/Quero criar minha conta Kairubido/);
+ assert.match(gate,/promote-tag-identity/);
+ assert.match(mail,/prepare-promotional-identity/);
+});
