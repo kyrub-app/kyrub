@@ -19,7 +19,9 @@ const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
   tagIds.some(v=>typeof v!=='string'||!/^[a-f0-9]{32}$/.test(v))||
   new Set(tagIds).size!==tagIds.length)throw Error('TAG_BATCH_CORRUPT');
  return {id,model:'adesivo' as const,count:tagIds.length,units:tagIds.map(tagId=>({
-  id:tagId,url:tagUrl(tagId),physicalStatus:'not_verified' as const
+  id:tagId,url:tagUrl(tagId),
+  physicalStatus:data.readbackReports?.[tagId]?.status==='browser_readback_confirmed'
+    ? 'readback_confirmed' as const:'not_verified' as const
  }))};
 };
 function assertRole(uid:string,role:FirebaseFirestore.DocumentData|undefined){
@@ -84,14 +86,65 @@ export async function issuePromotionalBatch(uid:string,count:unknown,requestId:u
   return {batch:projectBatch(requestId,{mode:'promotional',model:'adesivo',tagIds:ids}),replay:false};
  });
 }
+/**
+ * Records a BROWSER-REPORTED readback, not a cryptographically authenticated
+ * tag UID. The actual NDEF scan happens on the operator's Android device.
+ * The server independently confirms that the reported URL points to the
+ * current branch preview and was issued in this batch.
+ */
+export async function confirmPromotionalTagReadback(
+ uid:string,batchId:unknown,tagId:unknown,readUrl:unknown
+){
+ assertTagPilotWriteIsolated();
+ if(!batchIdValid(batchId)||!batchIdValid(tagId)||
+    typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
+ const expectedHost=process.env.VERCEL_URL?.trim().toLowerCase();
+ const isolation=currentTagPilotIsolation();
+ if(isolation!=='isolated-project'||!expectedHost||!expectedHost.endsWith('.vercel.app'))
+  throw Error('TAG_PILOT_PROJECT_UNSAFE');
+ let url:URL;
+ try{url=new URL(readUrl);}catch{throw Error('TAG_BATCH_INVALID');}
+ if(url.protocol!=='https:'||url.hostname!==expectedHost||url.port||url.username||
+    url.password||url.search||url.hash||url.pathname!=='/tag/'+tagId)
+    throw Error('TAG_READBACK_MISMATCH');
+ const batch=batchDocs().doc(batchId),unit=adminDb.collection('kyrub_official_tags').doc(tagId);
+ return adminDb.runTransaction(async tx=>{
+  const [role,batchSnapshot,unitSnapshot]=await Promise.all([
+   tx.get(adminRole(uid)),tx.get(batch),tx.get(unit)
+  ]);
+  assertRole(uid,role.data());
+  const bd=batchSnapshot.data(),td=unitSnapshot.data();
+  if(!bd||!td||bd.mode!=='promotional'||bd.model!=='adesivo'||
+    !Array.isArray(bd.tagIds)||!bd.tagIds.includes(tagId)||
+    td.distribution!=='promotional'||td.promotionalBatchId!==batchId||
+    td.ownerId!==null||td.enabled!==false||td.blocked===true)
+   throw Error('TAG_BATCH_CONFLICT');
+  if(bd.readbackReports?.[tagId]?.status==='browser_readback_confirmed')
+   return {batch:projectBatch(batchId,bd),replay:true};
+  const verifiedAt=new Date().toISOString();
+  tx.update(batch,{['readbackReports.'+tagId]:{
+   status:'browser_readback_confirmed',verifiedAt,verifiedBy:uid,
+   verificationMethod:'browser-reported-ndef-readback',
+   previewHost:expectedHost
+  }});
+  const next={...bd,readbackReports:{...(bd.readbackReports??{}),
+   [tagId]:{status:'browser_readback_confirmed'}}};
+  return {batch:projectBatch(batchId,next),replay:false};
+ });
+}
+
 export async function handlePromotionalBatch(authorization:string,method:string,body:unknown){
  try{
   if(method!=='GET'&&method!=='POST')return {status:405,body:{error:'METHOD_NOT_ALLOWED'}};
   const uid=await authorizePilot(authorization);
   if(method==='GET')return {status:200,body:await listPromotionalBatches(uid)};
-  if(!body||typeof body!=='object'||Array.isArray(body)||Object.keys(body).length!==3)throw Error('TAG_BATCH_INVALID');
+  if(!body||typeof body!=='object'||Array.isArray(body))throw Error('TAG_BATCH_INVALID');
   const b=body as Record<string,unknown>;
-  if(b.action!=='issue')throw Error('TAG_BATCH_INVALID');
+  if(b.action==='confirm-readback'&&Object.keys(b).length===4){
+   const result=await confirmPromotionalTagReadback(uid,b.batchId,b.tagId,b.readUrl);
+   return {status:200,body:result};
+  }
+  if(b.action!=='issue'||Object.keys(b).length!==3)throw Error('TAG_BATCH_INVALID');
   const result=await issuePromotionalBatch(uid,b.count,b.requestId);
   return {status:result.replay?200:201,body:result};
  }catch(error){
@@ -100,7 +153,7 @@ export async function handlePromotionalBatch(authorization:string,method:string,
    return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='FORBIDDEN')return {status:403,body:{error:'FORBIDDEN'}};
   if(message==='TAG_BATCH_INVALID')return {status:400,body:{error:message}};
-  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE'].includes(message))return {status:409,body:{error:message}};
+  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH'].includes(message))return {status:409,body:{error:message}};
   return {status:503,body:{error:'TAG_BATCH_UNAVAILABLE'}};
  }
 }
