@@ -135,7 +135,7 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  assert.match(admin,/AdminKyrubTagPromotionalBatches/);
  assert.match(admin,/admin-kyrub-tag-promotional/);
  assert.match(admin,/AdminKyrubTagPilot/);
- assert.match(batches,/Gravar em tag vazia/);
+ assert.match(batches,/Gravar adesivo de teste/);
  assert.match(batches,/overwrite:false/);
  assert.match(batches,/physicalStatus:'not_verified'/);
  assert.doesNotMatch(batches,/e-mail da destinatária/i);
