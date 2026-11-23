@@ -11,6 +11,7 @@ const storeConfigSource = readFileSync(
   'src/components/modals/StoreConfigModal.tsx',
   'utf8'
 );
+const storeMediaEditorSource = readFileSync('src/components/store/StoreMediaCollectionEditor.tsx','utf8');
 const legacyStoreConfigSource = readFileSync(
   'src/components/modals/LegacyStoreConfigModal.tsx',
   'utf8'
@@ -50,9 +51,12 @@ test('store profile supports Drive logo and banner selection', () => {
   assert.match(legacyStoreConfigSource, /profileMediaControls/);
   assert.match(storeConfigSource, /id="store-drive-media-controls"/);
   assert.match(storeConfigSource, /Escolher logo/);
-  assert.match(storeConfigSource, /Escolher banner/);
+  assert.match(storeConfigSource, /title="Banner rotativo"/);
+  assert.match(storeMediaEditorSource, /Escolher no Drive/);
   assert.match(storeConfigSource, /logo: configStoreLogo\.trim\(\)/);
-  assert.match(storeConfigSource, /banner: configStoreBanner\.trim\(\)/);
+  assert.match(storeConfigSource, /banner: configBannerImages\[0\] \?\? ''/);
+  assert.match(storeConfigSource, /bannerImages: normalizeStoreMediaImages/);
+  assert.match(storeConfigSource, /galleryImages: normalizeStoreMediaImages/);
   assert.match(storeConfigSource, /setStoreMarketplacePublication/);
 });
 
