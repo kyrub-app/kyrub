@@ -90,3 +90,14 @@ test('Firestore image allowlists are optional for legacy docs, bounded for new s
   assert.ok(deploy.includes("'firestore.marketplace.fragment.rules'"));
   assert.ok(deploy.includes('firebase-production'));
 });
+
+test('public banner excludes product showcase photos and keeps the catalog unaffected',()=>{
+  const hero=source('src/components/PublicStorefrontHero.tsx');
+  assert.ok(hero.includes('storeBannerImages(store)'));
+  assert.ok(!hero.includes('store.offerImages'));
+  const quickPanel=source('src/components/PublicStorefrontQuickPanel.tsx');
+  assert.ok(quickPanel.includes('storeGalleryImages(store)'));
+  const storefront=source('src/components/PublicStorefrontApp.tsx');
+  assert.ok(storefront.includes('bannerImages: string[]'));
+  assert.ok(storefront.includes('galleryImages: string[]'));
+});
