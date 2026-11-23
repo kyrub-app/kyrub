@@ -32,7 +32,7 @@ const checkBatch=(batch:PilotBatch)=>{
 function makePilotUrl(id:string,readiness:Readiness|null){
  const host=readiness?.previewHost;
  return readiness?.isolation==='isolated-project'&&
-  typeof host==='string'&&/^[a-z0-9-]+(?:\\.[a-z0-9-]+)*\\.vercel\\.app$/.test(host)
+  typeof host==='string'&&/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(host)
   ?'https://'+host+'/tag/'+id:'';
 }
 /** Controlled single-piece workflow. Never claim Web NFC proves physical chip uniqueness. */
