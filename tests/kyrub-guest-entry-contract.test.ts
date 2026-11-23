@@ -91,8 +91,11 @@ test('anonymous Praça projections do not disclose restricted documents or owner
     ...privateFields, listingType: 'store', publicationStatus: 'published',
     storeId: 'store-123', name: 'Loja', slug: 'loja', description: 'Produtos',
     logo: 'https://example.test/logo.png', keywords: ['roupas'],
+    bannerImages: ['https://example.test/p1.png','javascript:alert(1)','https://example.test/p2.png',
+      'https://example.test/p1.png','https://example.test/p3.png','https://example.test/p4.png','https://example.test/p5.png','https://example.test/p6.png'],
   });
   assert.ok(store);
+  assert.deepEqual(store.bannerImages, [1,2,3,4,5].map(n => `https://example.test/p${n}.png`));
   const storeContent = JSON.stringify(store);
   for (const hidden of ['owner-secret', 'private@example.test', '11911111111', 'Rua Privada', 'private-buyer', 'never-disclose']) {
     assert.equal(storeContent.includes(hidden), false);
