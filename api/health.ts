@@ -132,10 +132,27 @@ export default async function handler(
       }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
+      if(['claim-promotional','recover-promotional'].includes(String(data.action))&&
+          Object.keys(data).length===(data.action==='recover-promotional'?2:1)){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        if(data.action==='claim-promotional'){
+          response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email));return;
+        }
+        response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
+      }
+      if(data.action==='configure-promotional'&&Object.keys(data).length===2){
+        response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation));return;
+      }
+      if((data.action==='block-promotional'||data.action==='unblock-promotional')&&Object.keys(data).length===1){
+        response.status(200).json(await service.setPromotionalBlock(actor,id,data.action==='block-promotional'));return;
+      }
       response.status(400).json({error:'TAG_INVALID'});
     }catch(error){
       const code=error instanceof Error?error.message:'';
-      if(code==='TAG_INVALID'||code==='INVALID_CARD')response.status(400).json({error:'TAG_INVALID'});
+      if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
+      else if(code==='TAG_PROMO_DISABLED')response.status(409).json({error:'TAG_PROMO_DISABLED'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});
