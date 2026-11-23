@@ -8,6 +8,7 @@ type Batch={id:string;model:'adesivo';count:number;units:Unit[]};
 type Readiness={
  isolation:'emulator'|'isolated-project'|'unsafe';
  productionDataProtected:boolean;
+ clientProjectMatchesServer:boolean;
  issuanceEnabled:boolean;
  activationEnabled:boolean;
  minimalIdentityGateConfigured:boolean;
@@ -117,6 +118,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
       {readiness.isolation==='unsafe'?'Bloqueado: projeto Firebase de produção ou isolamento não comprovado':
        readiness.isolation==='emulator'?'Ambiente de emuladores local isolado':'Projeto Firebase exclusivo de homologação confirmado'}
      </p>
+     <p>Firebase do aplicativo e do servidor: {readiness.clientProjectMatchesServer?'coincidem':'não coincidem ou não foram confirmados'}.</p>
      <p>Emissão: {readiness.issuanceEnabled?'habilitada':'desligada'} · Primeira ativação: {readiness.activationEnabled?'habilitada':'desligada'} · Identidade mínima: {readiness.minimalIdentityGateConfigured?'configurada no servidor':'não confirmada'}</p>
      <p className="text-amber-200">Login por e-mail, regras Storage publicadas e leitura NFC física ainda dependem de homologação manual.</p>
     </>}
