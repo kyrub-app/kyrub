@@ -290,4 +290,5 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.match(client,/window\.location\.hostname\.endsWith\('\.vercel\.app'\)/);
  assert.match(client,/projectId === firebaseConfig\.projectId/);
  assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
+ assert.match(client,/TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH/);
 });
