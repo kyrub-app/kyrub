@@ -76,8 +76,8 @@ test('the third Central card assigns a checklist and employee can check off a st
     },
     bundle:true,platform:'node',format:'esm',packages:'external',write:false,
     plugins:[{name:'staff-auth-stub',setup(b) {
-      b.onResolve({filter:/^\.\/firebase$/},args=>
-        args.importer.includes('/src/utils/staffTasks.ts')
+      b.onResolve({filter:/firebase$/},args=>
+        (args.importer.includes('/src/utils/') || args.importer.includes('/src/components/store/'))
           ? {path:'staff-tasks-auth',namespace:'isolated'} : undefined);
       b.onLoad({filter:/.*/,namespace:'isolated'},()=>({
         contents:`export const auth={currentUser:{uid:'${assigneeId}',getIdToken:async()=> 'staff-fake-token'}};`,
