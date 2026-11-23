@@ -20,6 +20,10 @@ test('Taba uses Freelas sage for the public and authenticated guide, while Catu 
   assert.match(renda, /text-orange-400/);
   assert.doesNotMatch(renda, /(?:bg|text|border)-(?:teal|cyan)-/);
   assert.doesNotMatch(css, /#renda-tab-container > \.grid:first-child > :nth-child\(2\)/);
+  assert.match(css, /\[data-kyrub-brand-panel="taba"\] #square-stores,/);
+  assert.match(css, /\[data-kyrub-brand-panel="taba"\] #square-communities,/);
+  assert.match(css, /\[data-kyrub-brand-panel="taba"\] #guest-square-wall/);
+  assert.match(css, /background-color: var\(--kyrub-moss-raised\)/);
 });
 
 test('Praça discovery and community interfaces keep a consistent sage highlight', () => {
