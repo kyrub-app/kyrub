@@ -101,3 +101,35 @@ test('public banner excludes product showcase photos and keeps the catalog unaff
   assert.ok(storefront.includes('bannerImages: string[]'));
   assert.ok(storefront.includes('galleryImages: string[]'));
 });
+
+test('manager media updates use transactional server authorization, not owner profile access',()=>{
+  const service=source('server/staff/storeMediaService.ts');
+  const transport=source('server/staff/storeMediaTransport.ts');
+  const runtime=source('src/LegacyApp.tsx');
+  const menu=source('src/components/MobileErpMenu.tsx');
+  const modal=source('src/components/store/StoreManagerMediaModal.tsx');
+  const ownerModal=source('src/components/modals/StoreConfigModal.tsx');
+  const health=source('api/health.ts');
+  const vercel=JSON.parse(source('vercel.json')) as {rewrites: {source:string;destination:string}[]};
+  for(const expected of [
+    'resolveStaffActor','adminDb.runTransaction','tx.get(memberRef)',
+    "parsed.role!=='manager'","parsed.status!=='active'",
+    "store.get('ownerId')","listing.get('ownerId')",
+    "tenant.get('ownerId')","STORE_MEDIA_CONFLICT",
+  ])assert.ok(service.includes(expected),'Missing manager protection: '+expected);
+  assert.ok(service.includes("tx.update(primaryRef"));
+  assert.ok(service.includes("tx.update(listingRef"));
+  assert.ok(!service.includes('tx.update(storeRef'));
+  assert.ok(!service.includes('FieldValue.delete()'));
+  assert.ok(transport.includes('getStoreMediaForManager'));
+  assert.ok(transport.includes('saveStoreMediaForManager'));
+  assert.ok(health.includes("transport === 'store-media'"));
+  assert.ok(vercel.rewrites.some(r=>r.source==='/api/staff/store-media'&&r.destination==='/api/health?transport=store-media'));
+  assert.ok(menu.includes("if (itemId === 'loja') return role === 'manager'"));
+  assert.ok(runtime.includes("<StoreManagerMediaModal"));
+  assert.ok(runtime.includes("selectedStaffAccess?.role === 'manager'"));
+  assert.ok(modal.includes('expectedVersion:media.version'));
+  assert.ok(modal.includes('StoreMediaCollectionEditor'));
+  assert.ok(ownerModal.includes("getDoc(doc(db, 'users', user.uid, 'stores', user.uid))"));
+  assert.ok(ownerModal.includes('hasPendingUserStoreSync'));
+});
