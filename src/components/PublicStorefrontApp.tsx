@@ -26,10 +26,10 @@ import {
   saveStorefrontCart,
   saveStorefrontOriginContext,
 } from '../utils/storefrontOriginContext';
-import { OPEN_PUBLIC_STOREFRONT_INFO_EVENT } from '../utils/storefrontEvents';
 import { StorefrontPanel as LegacyStorefrontPanel } from './LegacyStorefrontPanel';
 import { StorefrontPanel } from './StorefrontPanel';
 import { PublicStorefrontHero } from './PublicStorefrontHero';
+import { PublicStorefrontQuickPanel, type StorefrontQuickSection } from './PublicStorefrontQuickPanel';
 import { StoreCustomerChatBridge } from './store/StoreCustomerChatBridge';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
 import { B2CCartDrawer } from './modals/B2CCartDrawer';
@@ -153,6 +153,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
   const [cart, setCart] = useState<CartItem[]>(() => loadStorefrontCart(slug));
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [storeReviewsOpen, setStoreReviewsOpen] = useState(false);
+  const [selectedQuickSection, setSelectedQuickSection] = useState<StorefrontQuickSection | null>(null);
+  const [shareFeedback, setShareFeedback] = useState('');
   const [buyerName, setBuyerName] = useState('');
   const [buyerEmail, setBuyerEmail] = useState('');
   const [buyerAddress, setBuyerAddress] = useState('');
@@ -177,6 +179,8 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     const controller = new AbortController();
 
     setStore(null);
+    setSelectedQuickSection(null);
+    setShareFeedback('');
     setOfficialPlanStoreId('');
     setPublicProducts([]);
     setLoadCompleted(false);
@@ -331,19 +335,27 @@ export function PublicStorefrontApp({ slug }: PublicStorefrontAppProps) {
     );
   };
 
-  const openStoreInfo = (): void => {
-    window.dispatchEvent(new Event(OPEN_PUBLIC_STOREFRONT_INFO_EVENT));
-  };
-
-  const closeStorefront = (): void => {
-    if (window.history.length > 1) {
-      window.history.back();
+  const shareStorefront = async (): Promise<void> => {
+    if (!store) return;
+    const publicUrl = 'https://www.kyrub.com/@' + encodeURIComponent(store.slug);
+    setShareFeedback('');
+    if (typeof navigator.share === 'function') {
+      try {
+        await navigator.share({title:store.name,text:'Conheça esta loja no Kyrub',url:publicUrl});
+      } catch (error) {
+        if (error instanceof Error && error.name !== 'AbortError')
+          setShareFeedback('Não foi possível compartilhar. Link: ' + publicUrl);
+      }
       return;
     }
-
-    window.location.assign('/');
+    try {
+      if (!navigator.clipboard?.writeText) throw Error('COPY_UNAVAILABLE');
+      await navigator.clipboard.writeText(publicUrl);
+      setShareFeedback('Link da loja copiado!');
+    } catch {
+      setShareFeedback('Copie o link da loja: ' + publicUrl);
+    }
   };
-
   const openKyrub = (): void => {
     if (!store) return;
     saveStorefrontOriginContext({
