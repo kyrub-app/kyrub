@@ -9,7 +9,7 @@ import {
   type MobileErpMenuItem,
   type MobileErpMenuItemId,
 } from './MobileErpMenu';
-import { getPlanCenterUrl } from '../utils/planCenter';
+import { getOfficialStorePlansUrl } from '../utils/officialStorePlansNavigation';
 import type { StoreRole } from '../utils/storeSecurity';
 
 interface MobileErpMenuProps {
@@ -61,7 +61,7 @@ export function MobileErpMenu({
     selectionFrameRef.current = window.requestAnimationFrame(() => {
       selectionFrameRef.current = null;
       commitMobileErpMenuSelection(itemId, {
-        onOpenPlanCenter: () => window.location.assign(getPlanCenterUrl()),
+        onOpenOfficialStorePlans: () => window.location.assign(getOfficialStorePlansUrl()),
         onOpenStoreConfig,
         onSelectTab,
       });
