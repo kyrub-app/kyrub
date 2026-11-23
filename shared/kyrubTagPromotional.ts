@@ -30,7 +30,7 @@ export type PublicPromotionalTagPresentation={
   sosContacts:PublicSosContact[];
 };
 export const promotionalMediaPath=(id:string,slot:'cover'|'avatar',asset:string)=>`kyrub-tag-media/${id}/${slot}/${asset}`;
-const mediaPathRegex=/^kyrub-tag-media\\/([a-f0-9]{32})\\/(cover|avatar)\\/([a-f0-9]{32})$/;
+const mediaPathRegex=/^kyrub-tag-media\/([a-f0-9]{32})\/(cover|avatar)\/([a-f0-9]{32})$/;
 export function isPromotionalMediaPath(path:string,id:string,slot:'cover'|'avatar'):boolean{
  const parsed=mediaPathRegex.exec(path);
  return parsed!==null&&parsed[1]===id&&parsed[2]===slot;
@@ -85,8 +85,8 @@ export function normalizePromotionalSosContacts(input:unknown):PromotionalSosCon
   if(Object.keys(entry).some(key=>!['name','relationship','phone','whatsapp','shareInSos','consentConfirmed'].includes(key)))
    throw Error('TAG_PRESENTATION_INVALID');
   const name=clean(entry.name,70),relationship=clean(entry.relationship,50);
-  if(typeof entry.phone!=='string'||!/^[+()\\d\\s-]{10,25}$/.test(entry.phone))throw Error('TAG_PRESENTATION_INVALID');
-  const digits=entry.phone.replace(/\\D/g,'');
+  if(typeof entry.phone!=='string'||!/^[+()\d\s-]{10,25}$/.test(entry.phone))throw Error('TAG_PRESENTATION_INVALID');
+  const digits=entry.phone.replace(/\D/g,'');
   const domestic=digits.startsWith('55')&&[12,13].includes(digits.length)?digits.slice(2):digits;
   if(![10,11].includes(domestic.length)||!domestic.match(/^[1-9][0-9]{9,10}$/))
    throw Error('TAG_PRESENTATION_INVALID');
