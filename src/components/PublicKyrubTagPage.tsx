@@ -169,7 +169,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
        <p className="font-semibold">{contact.name}{contact.relationship?' · '+contact.relationship:''}</p>
        <a className="inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline" href={'tel:'+contact.phone}>Ligar para {contact.phone}</a>
        {contact.whatsapp&&<a className="ml-2 inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline"
-         href={'https://wa.me/'+contact.phone.replace(/\\D/g,'')} target="_blank" rel="noopener noreferrer">WhatsApp do contato</a>}
+         href={'https://wa.me/'+contact.phone.replace(/\D/g,'')} target="_blank" rel="noopener noreferrer">WhatsApp do contato</a>}
       </div>)}
      </div>}
     </div>}
