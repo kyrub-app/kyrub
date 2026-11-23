@@ -1,5 +1,6 @@
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
+import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 
 const markers=()=>adminDb.collection('kyrub_tag_minimal_identities');
@@ -22,6 +23,7 @@ export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMo
  * Keep existing Kyrub accounts untouched; never create users/{uid} or a store.
  */
 export async function prepareTagMinimalIdentity(uid:string,id:string){
+ assertTagPilotWriteIsolated();
  if(!validUid(uid)||!isTagId(id))throw Error('TAG_FORBIDDEN');
  if(process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED!=='true')throw Error('TAG_PROMO_DISABLED');
  return adminDb.runTransaction(async tx=>{
@@ -45,6 +47,7 @@ export async function prepareTagMinimalIdentity(uid:string,id:string){
 
 /** Requires a deliberate user action; the ordinary workspace bootstrap follows only afterward. */
 export async function promoteTagIdentityToKyrub(uid:string){
+ assertTagPilotWriteIsolated();
  if(!validUid(uid))throw Error('TAG_FORBIDDEN');
  return adminDb.runTransaction(async tx=>{
   const ref=markers().doc(uid);
