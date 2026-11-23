@@ -32,7 +32,7 @@ Atualização: 23/11/2026. Implementação candidata isolada, **não liberar emi
 - Firebase Auth precisa ter provedor email/password e login por link habilitados, com domínio `kyrub.com` autorizado. Homologar links em Android e navegador, inclusive mudança de aparelho e de e-mail, sem expor o e-mail na URL.
 - Revisar abuso de envios, limitação de tentativas, logs de alteração e procedimentos de suporte.
 - O inventário e a emissão administrativa inicial estão implementados no Control Plane, com limite de 10 unidades por lote e gravação NDEF `overwrite:false`. **Ainda faltam** verificação física NFC documentada por unidade, prevenção de duplicatas físicas, gestão de entrega, descarte e conciliação de estoque antes de distribuição em escala.
-- Confirmar política de foto/capa, consentimento de contatos de terceiros e links de lojas/comunidades, com avaliação de LGPD.
+- Fotos de capa/perfil e contatos particulares foram modelados com isolamento, opt-in de divulgação e testes de regras; **ainda faltam** verificação visual/funcional em Android, limpeza de mídias e avaliação de LGPD. Links de lojas/comunidades seguem pendentes.
 - Testes automatizados no emulador Firestore/Auth foram adicionados para concorrência de dois reivindicantes, idempotência, e-mail não verificado, URL protegida, emissão Super Admin, isolamento do piloto, bloqueio e recuperação, rotação de códigos, privacidade pública e ausência de `users/{uid}`/loja antes da promoção explícita. **Eles não substituem teste no Android nem o preflight do provedor email-link real.**
 - Validar o retorno do editor por e-mail em celular Android e navegador; testes com atendimento de recuperação. A confirmação de disparo do Firebase Auth em produção é um gate separado.
 - Como o URL público **não prova posse do adesivo**, prevenir falsa alegação de chip seguro ou antifalsificação física.
@@ -49,6 +49,27 @@ Atualização: 23/11/2026. Implementação candidata isolada, **não liberar emi
 - O Super Admin confirma explicitamente a emissão e recebe um lote de 1 a 10 endereços. A mesma solicitação repetida com o mesmo `requestId` não cria novo lote, mesmo com concorrência.
 - O botão **Gravar em tag vazia** executa Web NFC NDEF com `overwrite:false` e somente a URL da unidade. A interface não armazena status físico comprovado no Firestore e orienta nova leitura manual.
 - Unidades protegidas/código de entrega e unidade piloto 001 não são emitidas nem reivindicadas pelas rotas promocionais.
+
+## Cartão visual e SOS particular — etapa de implementação
+
+- O editor do titular contém capa e foto de perfil opcionais. O aplicativo aceita JPEG, PNG ou WebP de até 8 MB de entrada; no próprio dispositivo redimensiona e reencoda para WebP de no máximo 1 MiB, eliminando metadados incorporados na imagem de origem. A imagem não é salva na conta Kyrub nem em uma URL social externa.
+- A tag guarda somente os caminhos privados das duas mídias. A coleção Storage `kyrub-tag-media/{id}/{slot}/{assetId}` exige autenticação do proprietário, e-mail verificado, finalidade e metadados coerentes, e não permite substituir arquivo existente. Uploads somente após a reivindicação do adesivo.
+- **O visitante não recebe caminhos privados nem URLs permanentes de Firebase Storage.** A rota consolidada `GET /api/health?transport=public-kyrub-tag-media&id=...&slot=cover|avatar` consulta a versão atual da tag e só devolve bytes WebP quando estiver publicada e não bloqueada, sem cache. Se ocorrer bloqueio simultâneo, a rota revalida o estado antes de responder.
+- O bloqueio interrompe novas leituras da apresentação e imagens pela aplicação, mas **não apaga cópias previamente salvas, capturas de tela ou URLs compartilhadas externamente**. A política de retenção/limpeza de arquivos substituídos e de imagens órfãs ainda precisa de homologação.
+- O titular pode cadastrar até **dois contatos particulares de emergência**. Por padrão ficam privados, sem projeção pública. Para mostrar um contato no SOS, deve optar pela exposição e declarar que informou e obteve a concordância da pessoa. Essa declaração não representa verificação independente do consentimento de terceiros.
+- Os contatos podem ter nome, relação, telefone brasileiro com DDD e indicação opcional de WhatsApp; a URL de WhatsApp é derivada do número validado apenas no painel SOS. O novo cartão **não divulga Instagram ou redes sociais gerais**.
+- A API pública usa uma projeção mínima que exclui contatos privados, e-mail de administração, identificador interno do proprietário e caminhos privados de fotos. O conteúdo persistido não é liberado diretamente pelo Firestore, sujeito às regras existentes.
+- 190/192/193 são apresentados como discagem no Brasil; **não** há acionamento automático de emergência, envio de localização nem garantia de atendimento.
+
+### Pendências e testes antes de lançamento
+
+1. Integrar e verificar as regras Storage atualizadas em ambiente isolado, depois fazer preflight das regras realmente publicadas, somente com autorização.
+2. Comprovar upload, remoção, substituição, bloqueio e reativação de fotos no Chrome Android e navegador, inclusive quando a conexão falha.
+3. Medir custo, latência e limite da rota de imagem, implementar limpeza autorizada de arquivos substituídos/órfãos e política de retenção após bloqueio definitivo.
+4. Revisar com privacidade/LGPD a divulgação de telefones de terceiros; opção de retirar autorização e corrigir contato deve funcionar imediatamente, inclusive em dispositivos diferentes.
+5. Confirmar limites de tamanho, exibição do cartão em tela pequena, legibilidade do SOS e fluxo de recuperação após perda do e-mail. Não usar imagem em atendimento automático.
+6. Proteger a publicação de imagens contra conteúdo inadequado ou malicioso antes de ampliar a distribuição promocional.
+7. Prosseguir com vínculo opcional entre a identidade mínima e conta Kyrub já existente, preservando a prova de titularidade.
 
 ## Compatibilidade
 - Não excluir, migrar, alterar ou reaproveitar a unidade piloto 001, os campos da loja, IDs de outras tags ou os produtos Pro/Business.
