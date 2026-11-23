@@ -25,6 +25,25 @@ test('root selects the real Kyrub workspace for signed and guest visitors, landi
   assert.doesNotMatch(app, /entry === null \|\| entry === 'renda'/);
 });
 
+test('Kyrub Lojas is the third Catu income path, and the retired Formaliza card is removed', () => {
+  const entry = readFileSync('src/components/KyrubRendaEntryApp.tsx', 'utf8');
+  assert.match(renda, /Kyrub Lojas/);
+  assert.match(entry, /eyebrow: 'Kyrub Lojas'/);
+  assert.match(entry, /title: 'Crie sua loja grátis'/);
+  assert.match(renda, /Crie sua loja grátis no Kyrub/);
+  assert.match(renda, /ferramentas de gestão integradas para catálogo e pedidos/);
+  assert.match(renda, /hasConfiguredStore\s*\? 'Gerencie produtos, ofertas e pedidos/);
+  assert.match(renda, /'Criar minha loja'/);
+  assert.match(renda, /'Acessar loja'/);
+  assert.match(renda, /onGuestLoginRequired\?\.\('criar ou acessar sua loja'\)/);
+  assert.match(renda, /op=store\.free\.ensure/);
+  assert.match(renda, /<LocalServiceDashboardCards \/>/);
+  assert.match(renda, /id="user-store-card"/);
+  assert.doesNotMatch(renda, /Kyrub Formaliza|btn-kyrub-formaliza|Kyrub Ofertas/);
+  assert.doesNotMatch(entry, /Kyrub Ofertas|Ative sua própria loja/);
+  assert.doesNotMatch(renda, /sm:grid-cols-2/);
+});
+
 test('guest can open real Renda cards without creating a store, booking delivery or granting rewards', () => {
   assert.match(guest, /<RendaTab[\s\S]*guestReadOnly/);
   assert.match(guest, /setShowDeliveryModal=\{\(\) => requestLogin/);
