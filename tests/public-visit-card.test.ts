@@ -267,3 +267,27 @@ test('NFC wizard accepts only a single exact NDEF URL readback and never treats 
  assert.match(service,/VERCEL_URL/);
  assert.match(service,/assertTagPilotWriteIsolated/);
 });
+
+
+test('isolated pilot Web Firebase config must be a matching Vercel Preview, never production',async()=>{
+ const {pilotPreviewConfigMatchesServer}=await import('../server/identity/kyrubTagPilotIsolation');
+ const pilot='kyrub-tags-homologacao';
+ const valid={serverProjectId:pilot,webPilotEnabled:'true',vercelEnvironment:'preview',deploymentHost:'kyrub-tags-preview.vercel.app'};
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,valid),true);
+ assert.equal(pilotPreviewConfigMatchesServer('kyrub-b8d0e',{
+  ...valid,serverProjectId:'kyrub-b8d0e'
+ }),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,serverProjectId:'kyrub-b8d0e'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,webPilotEnabled:'false'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,webPilotEnabled:undefined}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,vercelEnvironment:'production'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'kyrub.com'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'preview.vercel.app.evil.example'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'vercel.app'}),false);
+ const {readFileSync}=await import('node:fs');
+ const client=readFileSync('src/utils/firebase.ts','utf8');
+ assert.match(client,/VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE/);
+ assert.match(client,/window\.location\.hostname\.endsWith\('\.vercel\.app'\)/);
+ assert.match(client,/projectId === firebaseConfig\.projectId/);
+ assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
+});
