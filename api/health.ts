@@ -164,9 +164,15 @@ export default async function handler(
         response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
       }
       if(data.action==='configure-promotional'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
         response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation));return;
       }
       if((data.action==='block-promotional'||data.action==='unblock-promotional')&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
         response.status(200).json(await service.setPromotionalBlock(actor,id,data.action==='block-promotional'));return;
       }
       response.status(400).json({error:'TAG_INVALID'});
