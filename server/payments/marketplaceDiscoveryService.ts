@@ -72,6 +72,8 @@ export type PublicStorefrontSnapshot = {
     description: string;
     logo: string;
     banner: string;
+    bannerImages: string[];
+    galleryImages: string[];
     primaryColor: string;
     reservationsEnabled: boolean;
     address: string;
@@ -427,6 +429,8 @@ export const loadPublicStorefrontBySlug = async (
         description: clean(storeData.description),
         logo: clean(storeData.logo),
         banner: clean(storeData.banner),
+        bannerImages: stringList(storeData.bannerImages).slice(0, 5).length ? stringList(storeData.bannerImages).slice(0, 5) : (clean(storeData.banner) ? [clean(storeData.banner)] : []),
+        galleryImages: stringList(storeData.galleryImages).slice(0, 24),
         primaryColor: clean(storeData.primaryColor),
         reservationsEnabled: await readPublishedStoreReservationsEnabled(storeId, verifiedFirstStoreId),
         address: clean(storeData.address),
@@ -484,6 +488,8 @@ export const loadPublicStorefrontBySlug = async (
       description: clean(legacyData.description),
       logo: clean(legacyData.logo),
       banner: clean(legacyData.banner),
+      bannerImages: stringList(legacyData.bannerImages).slice(0, 5).length ? stringList(legacyData.bannerImages).slice(0, 5) : (clean(legacyData.banner) ? [clean(legacyData.banner)] : []),
+      galleryImages: stringList(legacyData.galleryImages).slice(0, 24),
       primaryColor: clean(legacyData.primaryColor),
       reservationsEnabled: await readPublishedStoreReservationsEnabled(legacyStoreId),
       address: clean(legacyData.address),
