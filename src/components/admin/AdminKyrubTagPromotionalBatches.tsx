@@ -41,7 +41,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
  const [batches,setBatches]=useState<Batch[]>([]);
  const [readiness,setReadiness]=useState<Readiness|null>(null);
  const [selected,setSelected]=useState('');
- const [count,setCount]=useState(5);
+ const [count,setCount]=useState(1);
  const [confirm,setConfirm]=useState(false);
  const [busy,setBusy]=useState(false);
  const [ready,setReady]=useState(false);
@@ -84,14 +84,22 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   }finally{setBusy(false);}
  }
  const unit=batches.flatMap(batch=>batch.units).find(item=>item.id===selected);
+ // A test with an isolated Firebase project must not write kyrub.com,
+ // because production cannot resolve the isolated tag ID yet.
+ const pilotOrigin=window.location.hostname.endsWith('.vercel.app')?window.location.origin:'';
+ const pilotUrl=unit&&readiness?.isolation==='isolated-project'&&pilotOrigin
+  ?pilotOrigin+'/tag/'+unit.id:'';
  async function write(){
-  if(!unit||busy||writer.current)return;
+  if(!unit||!readiness?.canIssue||!pilotUrl||busy||writer.current){
+   setNotice('Gravação indisponível. Use uma prévia Vercel vinculada a um projeto Firebase de homologação isolado.');
+   return;
+  }
   const Constructor=(window as Window&{NDEFReader?:new()=>Writer}).NDEFReader;
   if(!Constructor){setNotice('Gravação NFC exige Android com Chrome compatível, NFC ativo e permissão.');return;}
   const controller=new AbortController();writer.current=controller;setWriting(true);
   setNotice('Aproxime apenas um adesivo vazio e desbloqueado. Não será sobrescrito conteúdo anterior.');
   try{
-   await new Constructor().write({records:[{recordType:'url',data:unit.url}]},{overwrite:false,signal:controller.signal});
+   await new Constructor().write({records:[{recordType:'url',data:pilotUrl}]},{overwrite:false,signal:controller.signal});
    if(!controller.signal.aborted)setNotice('O navegador informou gravação concluída. Afaste o adesivo e leia novamente fora do painel para confirmar o endereço. A autenticidade do chip não foi verificada.');
   }catch{
    if(!controller.signal.aborted)setNotice('Gravação não confirmada. Confira o NFC, permissões e se a etiqueta está vazia.');
@@ -140,11 +148,14 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   </div>
   {unit&&<div className="space-y-2 rounded-xl border border-orange-500/40 p-3">
    <h5 className="font-bold">Unidade {unit.id.slice(-8)}</h5>
-   <a href={unit.url} className="block break-all text-orange-300 underline" target="_blank" rel="noopener noreferrer">{unit.url}</a>
-   <button type="button" className={btn} onClick={()=>void navigator.clipboard.writeText(unit.url).then(()=>setNotice('Endereço copiado.')).catch(()=>setNotice('Selecione o endereço e copie manualmente.'))}>Copiar endereço</button>
-   {!writing?<button type="button" className={btn} disabled={busy} onClick={()=>void write()}>Gravar em tag vazia</button>:
+   <p className="break-all text-xs text-slate-400">Endereço oficial reservado (ainda não utilizar): {unit.url}</p>
+   {pilotUrl?<a href={pilotUrl} className="block break-all text-orange-300 underline" target="_blank" rel="noopener noreferrer">Endereço de homologação: {pilotUrl}</a>:
+    <p className="text-sm text-amber-200">A URL de teste só aparece em uma prévia Vercel isolada, nunca no painel produtivo.</p>}
+   {pilotUrl&&<button type="button" className={btn} onClick={()=>void navigator.clipboard.writeText(pilotUrl).then(()=>setNotice('Endereço de homologação copiado.')).catch(()=>setNotice('Selecione o endereço e copie manualmente.'))}>Copiar URL de homologação</button>}
+   {!writing?<button type="button" className={btn} disabled={busy||!pilotUrl||!readiness?.canIssue} onClick={()=>void write()}>Gravar adesivo de teste</button>:
     <button type="button" className={btn} onClick={()=>writer.current?.abort()}>Cancelar gravação NFC</button>}
-   <p className="text-xs text-slate-400">A gravação NDEF grava apenas este link. A confirmação física deve ser feita com uma nova leitura. Não reutilize o mesmo adesivo com outra unidade.</p>
+   <p className="text-xs text-amber-200">Esta é uma URL TEMPORÁRIA de homologação. Não distribua o adesivo, não o bloqueie permanentemente para escrita e não o considere uma Kyrub Tag oficial pronta. Após o lançamento será necessário gravar a URL definitiva.</p>
+   <p className="text-xs text-slate-400">A gravação NDEF usa apenas o endereço temporário de teste. Confirme a leitura física fora do painel, em outro celular quando possível.</p>
   </div>}
   {notice&&<p role="status" className="rounded-xl border border-[#34443B] p-3">{notice}</p>}
  </section>;
