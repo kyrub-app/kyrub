@@ -281,10 +281,10 @@ test('community post actions are text-only and recent comments reuse canonical l
   assert.match(card, /\{saved \? 'Salvo' : 'Salvar'\}/);
   assert.doesNotMatch(card, /Comentar · \{postComments\.length\}/);
   assert.match(card, /<button type="button" aria-expanded=\{commentsOpen\}/);
-  assert.match(card, /selectRecentComments\(postComments, 3\)/);
+  assert.match(card, /selectRecentComments\(\s*postComments\.filter/);
   assert.match(card, /Comentários recentes da publicação/);
   assert.match(card, /previewComments\.map\(comment =>/);
-  assert.match(card, /postComments\.length > 3/);
+  assert.match(card, /postComments\.length > previewComments\.length \+ \(pinnedDisplayComment \? 1 : 0\)/);
   assert.match(card, /Ver mais comentários/);
   assert.match(card, /onClick=\{\(\) => setCommentsOpen\(true\)\}/);
   assert.match(card, /onComment\(commentDraft, replyTarget\?\.id\)/);
