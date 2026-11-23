@@ -15,7 +15,7 @@ test('landing uses the supplied Kyrub brand and makes Renda the guest entry', ()
   assert.match(logoSource, /viewBox="0 0 128 128"/);
   assert.match(logoSource, /#F27429/);
   assert.match(logoSource, /#8FA893/);
-  assert.match(logoSource, /caule e duas folhas verde-sálvia/);
+  assert.match(logoSource, /caule verde e uma folha verde-sálvia na ponta/);
   assert.match(logoSource, /<path/);
   assert.doesNotMatch(logoSource, /data:image\/jpeg;base64,|<image/);
   assert.match(landingSource, /data-kyrub-guest-entry="renda"/);
