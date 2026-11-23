@@ -5,6 +5,8 @@ on:
   push:
     branches: [main]
     paths:
+      - 'firestore.rules'
+      - 'firestore.marketplace.fragment.rules'
       - 'firestore.kyrubia-conversations.fragment.rules'
       - 'firestore.product-inventory.fragment.rules'
       - 'firestore.product-dual-write.fragment.rules'
