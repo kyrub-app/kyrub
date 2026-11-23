@@ -55,6 +55,8 @@ type PublicStorefrontResponse = {
     logo: string;
     banner: string;
     primaryColor: string;
+    reservationsEnabled: boolean;
+    contact: string;
     address: string;
     keywords: string[];
     status: 'open' | 'delayed' | 'closed';
