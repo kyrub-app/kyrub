@@ -68,9 +68,18 @@ export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEm
  if(!isTagId(id)||!email)throw Error('TAG_FORBIDDEN');
  const newRecoveryCode=randomBytes(24).toString('hex');
  return adminDb.runTransaction(async tx=>{
-  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
+  const ref=tags().doc(id),identity=adminDb.doc('kyrub_tag_minimal_identities/'+actor);
+  const [snap,account,marker]=await Promise.all([
+   tx.get(ref),tx.get(adminDb.doc('users/'+actor)),tx.get(identity)
+  ]);
+  const data=snap.data();
   if(data?.ownerId===actor&&data.distribution==='promotional')return {tag:owned(id,data),recoveryCode:null};
   if(!isOpenPromotionalTag(data))throw Error('TAG_FORBIDDEN');
+  // A verified email identity can own a tag without becoming a Kyrub user.
+  if(!account.exists&&!marker.exists){
+   tx.create(identity,{uid:actor,mode:'tag_only',source:'kyrub_tag_promo',
+    createdFromTag:id,createdAt:new Date().toISOString()});
+  }else if(marker.exists&&marker.get('uid')!==actor)throw Error('TAG_FORBIDDEN');
   const next={...data,ownerId:actor,firstOwnerId:actor,ownerEmailHash:hashTagRecipient(id,email),
    recoveryHash:promotionalRecoveryHash(id,newRecoveryCode),claimedAt:new Date().toISOString()};
   tx.update(ref,{ownerId:actor,firstOwnerId:actor,ownerEmailHash:next.ownerEmailHash,
