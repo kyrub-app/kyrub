@@ -37,6 +37,8 @@
           'address',
           'logo',
           'banner',
+          'bannerImages',
+          'galleryImages',
           'primaryColor',
           'keywords',
           'status'
@@ -67,6 +69,8 @@
         && data.address is string
         && data.logo is string
         && data.banner is string
+        && (!data.keys().hasAny(['bannerImages']) || (data.bannerImages is list && data.bannerImages.size() <= 5))
+        && (!data.keys().hasAny(['galleryImages']) || (data.galleryImages is list && data.galleryImages.size() <= 24))
         && data.primaryColor is string
         && data.keywords is list
         && data.status in ['open', 'delayed', 'closed']
