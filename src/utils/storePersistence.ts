@@ -21,6 +21,7 @@ import {
 } from './marketplaceDocuments';
 import { getMarketplaceStoreListingDocumentPath } from './marketplacePaths';
 import { getPrimaryUserStoreDocumentPath } from './storePaths';
+import { storeBannerImages, storeGalleryImages } from './storeMediaCollections';
 import {
   hasStoreCoordinates,
   validateStoreGeofenceRadius,
@@ -79,6 +80,8 @@ export const normalizeCachedStore = (
     typeof candidate.description === 'string' ? candidate.description : '',
   logo: typeof candidate.logo === 'string' ? candidate.logo : '',
   banner: typeof candidate.banner === 'string' ? candidate.banner : '',
+  bannerImages: storeBannerImages(candidate),
+  galleryImages: storeGalleryImages(candidate),
   primaryColor:
     typeof candidate.primaryColor === 'string' ? candidate.primaryColor : '',
   plan: isStorePlan(candidate.plan) ? candidate.plan : 'free',
@@ -205,6 +208,8 @@ const getCreateInput = (
     description: store.description,
     logo: store.logo,
     banner: store.banner,
+    bannerImages: storeBannerImages(store),
+    galleryImages: storeGalleryImages(store),
     primaryColor: store.primaryColor,
     keywords: [...(store.keywords ?? [])],
     offerImages: [...(store.offerImages ?? [])],
@@ -224,6 +229,8 @@ const getUpdateInput = (
     description: store.description,
     logo: store.logo,
     banner: store.banner,
+    bannerImages: storeBannerImages(store),
+    galleryImages: storeGalleryImages(store),
     primaryColor: store.primaryColor,
     keywords: [...(store.keywords ?? [])],
     offerImages: [...(store.offerImages ?? [])],
@@ -261,6 +268,8 @@ const marketplaceInput = (
     address: store.address ?? '',
     logo: store.logo,
     banner: store.banner,
+    bannerImages: storeBannerImages(store),
+    galleryImages: storeGalleryImages(store),
     primaryColor: store.primaryColor,
     keywords: [...(store.keywords ?? [])],
     status: store.status ?? 'closed',
@@ -312,6 +321,8 @@ const persistTenantMarketplaceFallback = async (
     address: store.address ?? '',
     logo: store.logo,
     banner: store.banner,
+    bannerImages: storeBannerImages(store),
+    galleryImages: storeGalleryImages(store),
     primaryColor: store.primaryColor,
     keywords: [...(store.keywords ?? [])],
     status: store.status ?? 'closed',
