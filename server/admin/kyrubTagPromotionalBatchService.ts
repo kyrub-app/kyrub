@@ -129,6 +129,12 @@ export async function confirmPromotionalTagReadback(
    verificationMethod:'browser-reported-ndef-readback',
    previewHost:expectedHost
   }});
+  tx.create(auditCollection().doc('tag_readback_'+tagId),{
+   id:'tag_readback_'+tagId,action:'admin.kyrub_tag.promotional_readback_confirmed',
+   actorId:uid,actorRole:'super_admin',targetType:'kyrub_official_tag',
+   targetId:tagId,batchId,verificationMethod:'browser-reported-ndef-readback',
+   createdAt:FieldValue.serverTimestamp()
+  });
   const next={...bd,readbackReports:{...(bd.readbackReports??{}),
    [tagId]:{status:'browser_readback_confirmed'}}};
   return {batch:projectBatch(batchId,next),replay:false};
