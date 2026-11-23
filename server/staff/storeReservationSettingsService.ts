@@ -17,6 +17,26 @@ export const readPublicStoreReservationsEnabled = async (canonicalStoreId: strin
   return snap.get('enabled') === true;
 };
 
+/**
+ * The public marketplace must resolve settings through the verified store
+ * ownership mapping, not through caller-supplied tenant IDs.
+ */
+export const readPublishedStoreReservationsEnabled = async (
+  legacyStoreId: string,
+  verifiedCanonicalStoreId = ''
+): Promise<boolean> => {
+  if (!safeId(legacyStoreId)) return false;
+  let canonicalStoreId = verifiedCanonicalStoreId;
+  if (!canonicalStoreId) {
+    const tenant = await adminDb.doc('tenants/' + legacyStoreId).get();
+    canonicalStoreId = clean(tenant.get('canonicalStoreId'));
+  }
+  if (!safeId(canonicalStoreId)) return false;
+  const store = await adminDb.doc('stores/' + canonicalStoreId).get();
+  if (!store.exists || clean(store.get('ownerId')) !== legacyStoreId) return false;
+  return readPublicStoreReservationsEnabled(canonicalStoreId);
+};
+
 export const readAuthorizedStoreReservationsEnabled = async (input: {
   authorization: string; legacyStoreId: string;
 }): Promise<boolean> => {
