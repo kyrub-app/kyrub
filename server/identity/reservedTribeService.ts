@@ -321,6 +321,46 @@ export async function lockReservedTribeSession(actor:string,token:unknown){
  });
 }
 
+/** Ordinary block/unblock contract for the presentation integration.
+ * Like PR #1273, block removes matching shared connections, not messages.
+ * A reserved target in the actor's own vault is not accessible through this
+ * ordinary operation. Never read the counterpart's reservation marker.
+ * Unblocking never recreates a relationship. The dedicated reserved action
+ * and blocked-list UI are deliberately outside this contract.
+ */
+export async function setOrdinarySocialContactBlock(actor:string,peer:unknown,blocked:unknown){
+ const root=vault(actor);
+ if(!validId(peer)||peer===actor||typeof blocked!=='boolean')throw Error('TRIBE_CONTACT_INVALID');
+ const own=adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+peer);
+ const ids=[...new Set([actor+'_'+peer,peer+'_'+actor])].filter(validId);
+ return adminDb.runTransaction(async tx=>{
+  const [account,identity,marker,existing,target,...records]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),
+   tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+actor)),
+   tx.get(root.collection('contacts').doc(peer)),
+   tx.get(own),tx.get(adminDb.doc('users/'+peer)),
+   ...ids.map(id=>tx.get(adminDb.doc('connections/'+id)))
+  ]);
+  if(!account.exists||identity.get('mode')==='tag_only'||marker.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(!blocked){
+   if(existing.exists){tx.delete(own);invalidateSocialPair(tx,actor,peer);}
+   return {blocked:false};
+  }
+  if(!target.exists&&!existing.exists)throw Error('TRIBE_ACCESS_DENIED');
+  const matching=records.filter(record=>{
+   const relation=relationship(record,actor);
+   return relation!==null&&peerOf(actor,relation)===peer;
+  });
+  if(!existing.exists){
+   const name=target.get('name');
+   tx.create(own,{targetId:peer,name:typeof name==='string'&&name.trim()?name.trim().slice(0,160):'Kairubido',createdAt:FieldValue.serverTimestamp()});
+  }
+  for(const record of matching)tx.delete(record.ref);
+  if(!existing.exists||matching.length)invalidateSocialPair(tx,actor,peer);
+  return {blocked:true};
+ });
+}
+
 /** Ordinary mutations never grant access to a reserved peer. The other
  * participant's privacy classification is independent of the actor's. */
 export async function mutateOrdinaryConnection(actor:string,peer:unknown,operation:unknown){

@@ -1,7 +1,7 @@
 import {auth} from './firebase';
 import {publishSocialPrivacyInvalidation} from './socialPrivacyInvalidation';
 import {verifySocialPilotStorage} from './socialPilotStorageGuard';
-type PilotAction='status'|'setup'|'unlock'|'lock'|'session-check'|'directory'|'reserved-directory'|'suggestions'|'connection'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete'|'membership'|'recover'|'ordinary-forward'|'ordinary-chat-read'|'ordinary-chat-send'|'ordinary-chat-clear'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
+type PilotAction='status'|'setup'|'unlock'|'lock'|'session-check'|'directory'|'reserved-directory'|'suggestions'|'connection'|'social-block'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete'|'membership'|'recover'|'ordinary-forward'|'ordinary-chat-read'|'ordinary-chat-send'|'ordinary-chat-clear'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
 export type ReservedTribeUnlock={ok:false}|{ok:true;token:string;expiresAt:number};
 /** Homologation-only client, not mounted by any production component.
  * Never persist a code or capability. Reject a changed auth session after
@@ -45,6 +45,6 @@ export async function requestReservedTribePilot<T>(action:PilotAction,fields:Rec
   }
  }
  if(auth.currentUser!==user||signal?.aborted)throw Error('TRIBE_ACCESS_DENIED');
- if(action==='connection'||action==='favorite'||action==='tribe-create'||action==='tribe-member'||action==='tribe-delete'||action==='membership'||action==='recover'||(action==='unlock'&&(result as {ok?:boolean})?.ok===true))publishSocialPrivacyInvalidation();
+ if(action==='connection'||action==='social-block'||action==='favorite'||action==='tribe-create'||action==='tribe-member'||action==='tribe-delete'||action==='membership'||action==='recover'||(action==='unlock'&&(result as {ok?:boolean})?.ok===true))publishSocialPrivacyInvalidation();
  return result;
 }

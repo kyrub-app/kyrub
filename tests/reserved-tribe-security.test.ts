@@ -324,3 +324,10 @@ test('Conectados does not render the search before a matching server directory a
  assert.match(panel,/\{ordinary\?<ReservedTribeSearchInput/);
  assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|current.current/);
 });
+
+
+test('ordinary block contract rejects actor injection and nonboolean desired state',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.equal(parseReservedTribePilotBody({action:'social-block',peerId:'peer',blocked:true}).action,'social-block');
+ for(const fields of [{uid:'another',blocked:true},{blocked:'true'},{blocked:false,session:'a'.repeat(64)}])assert.throws(()=>parseReservedTribePilotBody({action:'social-block',peerId:'peer',...fields}),/TRIBE_INVALID/);
+});

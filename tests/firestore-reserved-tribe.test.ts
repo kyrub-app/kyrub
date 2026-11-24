@@ -12,7 +12,7 @@ import {buildUserNotification,buildUserNotificationId,userNotificationPath} from
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession,ordinaryPresentationPeerAllowed,invalidateSocialPair} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession,ordinaryPresentationPeerAllowed,invalidateSocialPair,setOrdinarySocialContactBlock} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -544,4 +544,42 @@ test('social pair revision invalidates both devices without creating an unconfig
  assert.equal((await getReservedTribeSetupStatus(other)).revision,initialOther+3);
  await mutateOrdinaryConnection(other,peer,'remove');
  assert.equal((await getReservedTribeSetupStatus(peer)).revision,initialPeer+3);
+});
+
+
+test('ordinary social block atomically removes connections, invalidates both revisions and preserves history',async()=>{
+ const owner='real-block-owner',peer='real-block-peer',other='real-block-other';
+ const pair=id(owner,peer);
+ await Promise.all([owner,peer,other].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('connections/'+pair).set(connection(owner,peer));
+ await initializeReservedTribe(owner,'realblock!fixture');
+ const session=await unlockReservedTribe(owner,'realblock!fixture');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(owner,session.token,peer,true);
+ const msg=adminDb.doc('social_chats/'+pair+'/messages/fixture');
+ await msg.set({senderId:owner,receiverId:peer,text:'synthetic',createdAt:Timestamp.now()});
+ const beforeOwner=await getReservedTribeSetupStatus(owner),beforePeer=await getReservedTribeSetupStatus(peer);
+ await assert.rejects(setOrdinarySocialContactBlock(owner,peer,true),/TRIBE_ACCESS_DENIED/);
+ assert.deepEqual(await setOrdinarySocialContactBlock(peer,owner,true),{blocked:true});
+ assert.equal((await adminDb.doc('connections/'+pair).get()).exists,false);
+ assert.ok((await msg.get()).exists);
+ assert.ok((await adminDb.doc('reserved_tribe_vaults/'+owner+'/contacts/'+peer).get()).exists);
+ assert.ok((await adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+owner).get()).exists);
+ assert.equal((await getReservedTribeSetupStatus(owner)).revision,beforeOwner.revision+1);
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,beforePeer.revision+1);
+ assert.equal((await getReservedTribeDirectory(owner,session.token)).connections.length,0);
+ await assert.rejects(mutateOrdinaryConnection(peer,owner,'request'),/TRIBE_ACCESS_DENIED/);
+ await setOrdinarySocialContactBlock(peer,owner,true);
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,beforePeer.revision+1);
+ await setOrdinarySocialContactBlock(other,owner,false);
+ assert.ok((await adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+owner).get()).exists);
+ await setOrdinarySocialContactBlock(peer,owner,false);
+ assert.equal((await adminDb.doc('connections/'+pair).get()).exists,false);
+ assert.ok((await msg.get()).exists);
+ assert.equal((await getReservedTribeSetupStatus(owner)).revision,beforeOwner.revision+2);
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,beforePeer.revision+2);
+ await setOrdinarySocialContactBlock(peer,owner,false);
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,beforePeer.revision+2);
+ await adminDb.doc('kyrub_tag_minimal_identities/'+other).set({mode:'tag_only'});
+ await assert.rejects(setOrdinarySocialContactBlock(other,owner,true),/TRIBE_ACCESS_DENIED/);
 });
