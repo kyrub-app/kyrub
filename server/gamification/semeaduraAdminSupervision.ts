@@ -189,6 +189,20 @@ export async function readIsolatedGamificationGlobalSupervision(
 
 
 const snapshotRoot='systemControl/gamificationIncrementalPilot';
+const pendingRoot=snapshotRoot+'/pending';
+
+/** Called only by the trusted accepted-seed transaction, after all reads.
+ * One durable dirty marker per author, not one document per seed.
+ * A concurrent refresh conflicts on this same document and cannot lose
+ * an accepted update. Disabled in all real Firebase environments. */
+export function markIsolatedGamificationAuthorDirty(
+ db:Firestore,tx:Transaction,authorId:string,occurredAt:string,
+):void {
+ if(!semeaduraEconomicPilotEnabled(db)||process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE!=='true')return;
+ if(!uid(authorId)||!Number.isFinite(Date.parse(occurredAt)))throw Error('INCREMENTAL_DIRTY_INPUT_INVALID');
+ tx.set(db.doc(pendingRoot+'/'+authorId),{schemaVersion:1,accountId:authorId,updatedAt:occurredAt,source:'accepted_seed'});
+}
+
 const metricKeys=['credits','debits','balance','seeds','pitangueiras','bosques','accounts','economyKnown','journeyKnown'] as const;
 type Metrics=Record<typeof metricKeys[number],number>;
 const zeroMetrics=():Metrics=>({credits:0,debits:0,balance:0,seeds:0,pitangueiras:0,bosques:0,accounts:0,economyKnown:0,journeyKnown:0});
@@ -221,7 +235,11 @@ export async function refreshIsolatedGamificationIncrementalAccount(
  return db.runTransaction(async tx=>{
   await requireIsolatedSupervisor(db,tx,reviewerId);
   const ref=db.doc(snapshotRoot), contributionRef=ref.collection('accounts').doc(targetUid);
-  const [summary,prior,source]=await Promise.all([tx.get(ref),tx.get(contributionRef),readAccountProjection(db,tx,targetUid)]);
+  const dirtyRef=db.doc(pendingRoot+'/'+targetUid);
+  const [summary,prior,source,dirty]=await Promise.all([tx.get(ref),tx.get(contributionRef),readAccountProjection(db,tx,targetUid),tx.get(dirtyRef)]);
+  if(dirty.exists&&(dirty.get('schemaVersion')!==1||dirty.get('accountId')!==targetUid||
+     dirty.get('source')!=='accepted_seed'||!Number.isFinite(Date.parse(dirty.get('updatedAt')))))
+    throw Error('INCREMENTAL_DIRTY_STATE_INVALID');
   if(summary.exists&&summary.get('schemaVersion')!==1)throw Error('INCREMENTAL_STATE_INVALID');
   if(prior.exists&&(!summary.exists||prior.get('schemaVersion')!==1||prior.get('accountId')!==targetUid))
     throw Error('INCREMENTAL_STATE_INVALID');
@@ -242,6 +260,7 @@ export async function refreshIsolatedGamificationIncrementalAccount(
   if(source.hasCanonicalState)tx.set(contributionRef,{schemaVersion:1,accountId:targetUid,metrics:next,updatedAt});
   else tx.delete(contributionRef);
   tx.set(ref,{schemaVersion:1,metrics:merged,updatedAt});
+  if(dirty.exists)tx.delete(dirtyRef);
   return snapshotView(merged,updatedAt);
  });
 }
@@ -261,4 +280,28 @@ export async function readIsolatedGamificationIncrementalSnapshot(
     throw Error('INCREMENTAL_STATE_INVALID');
   return snapshotView(validatedMetrics(summary.get('metrics')),updatedAt);
  },{readOnly:true});
+}
+
+
+/** Bounded authenticated drain entry point for an isolated future worker.
+ * No scheduler or HTTP endpoint. Each refresh rereads canonical data and
+ * consumes the dirty marker atomically. Repeated drains do not add credits. */
+export async function drainIsolatedGamificationDirtyAccounts(
+ db:Firestore,auth:Auth,authorization:string,limit=10,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE!=='true')throw Error('INCREMENTAL_QUEUE_DISABLED');
+ if(!Number.isSafeInteger(limit)||limit<1||limit>20)throw Error('INCREMENTAL_QUEUE_LIMIT_INVALID');
+ const pending=await db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  return tx.get(db.collection(pendingRoot).limit(limit+1));
+ },{readOnly:true});
+ let refreshed=0;
+ for(const item of pending.docs.slice(0,limit)){
+  if(!uid(item.id))throw Error('INCREMENTAL_DIRTY_STATE_INVALID');
+  await refreshIsolatedGamificationIncrementalAccount(db,auth,authorization,item.id);
+  refreshed++;
+ }
+ return {scope:'isolated-seed-dirty-queue' as const,refreshed,moreObserved:pending.size>limit,
+  globalCoverageVerified:false,automaticWorkerInstalled:false};
 }
