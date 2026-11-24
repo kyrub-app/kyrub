@@ -30,7 +30,7 @@ export function PresentationRelationship({source,id,onChat}:{source:Source;id:st
    const uid=auth.currentUser?.uid;
    if(source==='contact'&&uid&&locallyBlocked(uid,id)){setResult({state:'unavailable'});return;}
    void requestPresentationRelationship(source,id,undefined,next.signal).then(value=>{
-    if(!next.signal.aborted&&auth.currentUser?.uid===uid)setResult(value);
+    if(!next.signal.aborted&&auth.currentUser?.uid===uid){setResult(value);if(value.state!=='accepted'){setPeer(null);setMessage('');}}
    }).catch(()=>{if(!next.signal.aborted)setResult(null);});
   };
   setResult(null);setPeer(null);setNotice('');

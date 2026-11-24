@@ -62,6 +62,7 @@ import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { ContactPresentationModal } from './ContactPresentationModal';
+import {BlockedContactsPanel} from './BlockedContactsPanel';
 import { MultifunctionCardEditor } from './MultifunctionCardEditor';
 import { ProfileTagPresentationSync } from './ProfileTagPresentationSync';
 import { sanitizedWebp } from '../utils/kyrubTagMedia';
@@ -1827,6 +1828,7 @@ export function ProfileSocialHubNative() {
                     </button>
                   </nav>
 
+                  <BlockedContactsPanel uid={user.uid}/>
                   {connectionSection === 'connected' && (
                     <div className="grid grid-cols-2 gap-3">
                       {directory.friends.map(friend => (

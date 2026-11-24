@@ -257,10 +257,13 @@ export default async function handler(
       }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
     }
     try{
-      const {presentationRelationship}=await import('../server/identity/presentationRelationshipService.js');
+      const {presentationRelationship,setSocialContactBlock}=await import('../server/identity/presentationRelationshipService.js');
       const source=queryValue(request.query?.source),id=queryValue(request.query?.id);
       const body=request.body as Record<string,unknown>|undefined;
       if(method==='POST'&&(!body||Object.keys(body).length!==1||typeof body.action!=='string')){response.status(400).json({error:'RELATIONSHIP_INVALID'});return;}
+      if(method==='POST'&&source==='contact'&&actor&&(body?.action==='block'||body?.action==='unblock')){
+        response.status(200).json(await setSocialContactBlock(actor,id,body.action==='block'));return;
+      }
       response.status(200).json(await presentationRelationship(actor,source,id,method==='POST'?body?.action:undefined));
     }catch(error){
       const code=error instanceof Error?error.message:'';

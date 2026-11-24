@@ -23,6 +23,7 @@ import {
 import { auth,db } from '../utils/firebase';
 import {collection,onSnapshot,query,where} from 'firebase/firestore';
 import {requestPresentationRelationship} from './PresentationRelationship';
+import {migrateLegacySocialBlocks} from '../hooks/useSocialBlocks';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
 import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../utils/communitySquareFeed';
 import { loadUserCommunicationPreferences } from '../utils/userCommunicationPreferences';
@@ -149,6 +150,7 @@ export function UserNotificationCenterBridge() {
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(()=>{if(user?.uid)void migrateLegacySocialBlocks(user.uid);},[user?.uid]);
 
   useEffect(() => {
     preferencesRef.current = preferences;

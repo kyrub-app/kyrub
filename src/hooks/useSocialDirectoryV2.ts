@@ -12,6 +12,7 @@ import {
   where
 } from 'firebase/firestore';
 import { Friend } from '../types';
+import {useSocialBlocks,legacySocialBlocks} from './useSocialBlocks';
 
 const STORAGE_KEYS = {
   FAVORITE_STORES: 'kyrub_favorite_stores'
@@ -68,6 +69,8 @@ export function useSocialDirectoryV2({
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const {entries:serverBlocks}=useSocialBlocks(isLoggedIn?auth.currentUser?.uid:undefined);
+  const ownBlocked=(id:string)=>serverBlocks.some(item=>item.id===id)||legacySocialBlocks(auth.currentUser?.uid??'').includes(id);
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -239,7 +242,7 @@ export function useSocialDirectoryV2({
       return;
     }
 
-    if (friendId === currentUser.uid) return;
+    if (friendId === currentUser.uid || ownBlocked(friendId)) return;
 
     const connectionId = getConnectionId(currentUser.uid, friendId);
     const existingConnection = connections.find(
@@ -321,6 +324,7 @@ export function useSocialDirectoryV2({
       .filter(
         user =>
           user.id !== currentUid &&
+          !ownBlocked(user.id) &&
           user.isProfileVisible !== false
       )
       .map(user => {

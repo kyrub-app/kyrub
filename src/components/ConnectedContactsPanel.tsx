@@ -16,6 +16,8 @@ import {
 } from 'lucide-react';
 import type { Friend, SocialPost } from '../types';
 import { auth } from '../utils/firebase';
+import {changeSocialBlock,useSocialBlocks,legacySocialBlocks} from '../hooks/useSocialBlocks';
+import {BlockedContactsPanel} from './BlockedContactsPanel';
 import { ContactPresentationModal } from './ContactPresentationModal';
 import { submitSocialUserReport } from '../utils/socialReports';
 
@@ -203,7 +205,8 @@ export function ConnectedContactsPanel({
 }: ConnectedContactsPanelProps) {
   const viewerId = auth.currentUser?.uid || 'anonymous';
   const hiddenSuggestionsKey = `kyrub_hidden_suggestions_${viewerId}`;
-  const blockedUsersKey = `kyrub_blocked_users_${viewerId}`;
+  const {entries:serverBlocks}=useSocialBlocks(auth.currentUser?.uid);
+  const blockedUserIds=new Set([...serverBlocks.map(item=>item.id),...legacySocialBlocks(viewerId)]);
   const normalizedSearch = normalizeSearch(searchQuery);
 
   const [activeListModal, setActiveListModal] = useState<
@@ -220,14 +223,9 @@ export function ConnectedContactsPanel({
   const [hiddenSuggestionIds, setHiddenSuggestionIds] = useState<Set<string>>(
     () => readIdSet(hiddenSuggestionsKey)
   );
-  const [blockedUserIds, setBlockedUserIds] = useState<Set<string>>(
-    () => readIdSet(blockedUsersKey)
-  );
-
   useEffect(() => {
     setHiddenSuggestionIds(readIdSet(hiddenSuggestionsKey));
-    setBlockedUserIds(readIdSet(blockedUsersKey));
-  }, [blockedUsersKey, hiddenSuggestionsKey]);
+  }, [hiddenSuggestionsKey]);
 
   const extendedPosts = posts as ExtendedSocialPost[];
 
@@ -295,14 +293,11 @@ export function ConnectedContactsPanel({
     triggerToast(`Conexão com ${friend.name} removida.`, 'success');
   };
 
-  const blockFriend = (friend: Friend) => {
-    const next = new Set(blockedUserIds);
-    next.add(friend.id);
-    setBlockedUserIds(next);
-    persistIdSet(blockedUsersKey, next);
-    if (friend.added) handleToggleFriend(friend.id);
+  const blockFriend = async (friend: Friend) => {
+    if(!window.confirm('Bloquear este contato em todos os seus dispositivos?'))return;
     setOpenContactMenuId(null);
-    triggerToast(`${friend.name} foi bloqueado neste perfil.`, 'success');
+    try{await changeSocialBlock(friend.id,true,viewerId);triggerToast(`${friend.name} foi bloqueado.`,'success');}
+    catch{triggerToast('Não foi possível confirmar o bloqueio. Tente novamente.','error');}
   };
 
   const reportFriend = async (friend: Friend) => {
@@ -364,6 +359,7 @@ export function ConnectedContactsPanel({
         </button>
       </div>
 
+      {viewerId!=='anonymous'&&<BlockedContactsPanel uid={viewerId}/>}
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3">
         {connectedFriends.map(friend => {
           const statuses = statusesFor(friend);

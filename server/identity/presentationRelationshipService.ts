@@ -34,6 +34,8 @@ export async function presentationRelationship(actor:string|null,source:unknown,
   const viewer=await tx.get(adminDb.doc('users/'+actor));
   const viewerMarker=await tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+actor));
   if(!member(viewer,viewerMarker))return {state:'join'};
+  const [ownBlock,otherBlock]=await Promise.all([tx.get(blockRef(actor,targetId)),tx.get(blockRef(targetId,actor))]);
+  if(ownBlock.exists||otherBlock.exists)return {state:'unavailable'};
   const connectionId=[actor,targetId].sort().join('_');
   if(connectionId.length>128)throw Error('RELATIONSHIP_INVALID');
   const ref=adminDb.doc('connections/'+connectionId);
@@ -66,5 +68,32 @@ export async function presentationRelationship(actor:string|null,source:unknown,
   }
   if(action!==undefined&&!(action==='connect'&&state==='pending_sent'||action==='accept'&&state==='accepted'||(action==='cancel'||action==='decline')&&state==='none'))throw Error('RELATIONSHIP_CHANGED');
   return state==='accepted'?{state,peer}:{state};
+ });
+}
+
+const blockRef=(actor:string,target:string)=>adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+target);
+
+/** Directional, private block; remove only the matching relationship, not message history. */
+export async function setSocialContactBlock(actor:string,target:string,blocked:boolean){
+ if(!valid(actor)||!valid(target)||actor===target||typeof blocked!=='boolean')throw Error('RELATIONSHIP_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const own=blockRef(actor,target);
+  const [account,marker,existing,targetAccount]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+actor)),tx.get(own),tx.get(adminDb.doc('users/'+target))
+  ]);
+  if(!member(account,marker))throw Error('RELATIONSHIP_INVALID');
+  if(!blocked){if(existing.exists)tx.delete(own);return {blocked:false};}
+  if(!targetAccount.exists&&!existing.exists)throw Error('RELATIONSHIP_INVALID');
+  const ids=[...new Set([actor+'_'+target,target+'_'+actor])].filter(id=>id.length<=128);
+  const refs=ids.map(id=>adminDb.doc('connections/'+id));
+  const rows=await Promise.all(refs.map(ref=>tx.get(ref)));
+  const profile=await tx.get(targetAccount.ref.collection('public_profile').doc('main'));
+  if(!existing.exists)tx.create(own,{targetId:target,name:clean(profile.get('name')||targetAccount.get('name'),160)||'Kairubido',createdAt:FieldValue.serverTimestamp()});
+  rows.forEach((row,i)=>{
+   const v=row.data();
+   if(v&&((v.senderId===actor&&v.receiverId===target)||(v.senderId===target&&v.receiverId===actor))&&
+      Array.isArray(v.participantIds)&&v.participantIds.length===2&&v.participantIds.includes(actor)&&v.participantIds.includes(target))tx.delete(refs[i]);
+  });
+  return {blocked:true};
  });
 }

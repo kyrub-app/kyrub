@@ -70,7 +70,18 @@ test('wrapper replaces only the legacy connected body', () => {
  const contact=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
  const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
  assert.match(contact,/<PresentationCard/);assert.match(tag,/<PresentationCard/);
- assert.match(contact,/Abrir chat/);assert.doesNotMatch(contact,/SOS · Informações de emergência/);
+ const relationship=readFileSync('src/components/PresentationRelationship.tsx','utf8');
+ assert.match(contact,/<PresentationRelationship/);assert.match(relationship,/Abrir chat/);assert.match(relationship,/result.state==='accepted'/);assert.doesNotMatch(contact,/SOS · Informações de emergência/);
  assert.match(tag,/SOS · Informações de emergência/);assert.doesNotMatch(tag,/Abrir chat/);
  assert.doesNotMatch(shared,/SOS|Abrir chat|firebase|fetch\(/);
  });
+
+test('blocking uses server authority and both directions are checked for chat and connections',()=>{
+ const service=readFileSync('server/identity/presentationRelationshipService.ts','utf8');
+ const rules=readFileSync('firestore.rules','utf8');
+ assert.match(service,/tx.get\(blockRef\(actor,targetId\)\)/);assert.match(service,/tx.get\(blockRef\(targetId,actor\)\)/);
+ assert.match(service,/export async function setSocialContactBlock/);assert.match(rules,/match \/social_contact_blocks/);
+ assert.match(rules,/noSocialContactBlock\(incoming\(\).senderId, incoming\(\).receiverId\)/);
+ assert.match(rules,/noSocialContactBlock\(connectionData\(\).senderId, connectionData\(\).receiverId\)/);
+ assert.match(panelSource,/changeSocialBlock\(friend.id,true,viewerId\)/);
+});

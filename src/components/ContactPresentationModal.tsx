@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {createPortal} from 'react-dom';
 import {X} from 'lucide-react';
 import {auth} from '../utils/firebase';
+import {changeSocialBlock} from '../hooks/useSocialBlocks';
 import {PresentationCard} from './PresentationCard';
 import {PresentationRelationship} from './PresentationRelationship';
 import {PresentationFooter} from './PresentationFooter';
@@ -9,6 +10,12 @@ type Presentation={name:string;occupation:string;bio:string;photoUrl:string;cove
 export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:string;onClose:()=>void;onChat?:()=>void}){
  const [state,setState]=useState<{id:string;presentation:Presentation|null;status:'loading'|'ready'|'error'}>({id:'',presentation:null,status:'loading'});
  const [retry,setRetry]=useState(0);
+ const [blocking,setBlocking]=useState(false),[blockError,setBlockError]=useState('');
+ async function block(){
+  if(blocking||!window.confirm('Bloquear este contato? A conexão será removida e novas solicitações e mensagens serão impedidas.'))return;
+  setBlocking(true);setBlockError('');
+  try{await changeSocialBlock(targetId,true);onClose();}catch{setBlockError('Não foi possível confirmar o bloqueio. Tente novamente.');}finally{setBlocking(false);}
+ }
  useEffect(()=>{
   const controller=new AbortController();
   setState({id:targetId,presentation:null,status:'loading'});
@@ -36,6 +43,7 @@ export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:str
     <p className="text-xs text-slate-400">Somente informações e conteúdos públicos são exibidos aqui.</p>
     <PresentationRelationship source="contact" id={targetId} onChat={onChat}/>
    </PresentationCard>}
+   {auth.currentUser&&auth.currentUser.uid!==targetId&&<div className="mt-3"><button type="button" disabled={blocking} className="min-h-11 text-sm text-rose-300 underline" onClick={()=>void block()}>Bloquear contato</button>{blockError&&<p role="alert" className="text-xs text-rose-300">{blockError}</p>}</div>}
    {presentation&&<div className="mt-3"><PresentationFooter mode="full"/></div>}
 
   </section>
