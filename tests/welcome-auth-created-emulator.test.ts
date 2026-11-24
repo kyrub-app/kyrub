@@ -63,6 +63,7 @@ test('isolated global supervision reconciles canonical accounts and suppresses i
  const projections=[admin.localId,person.localId].map(id=>db.doc('users/'+id+'/semeaduraProgress/summary'));
  const synthetic=Array.from({length:99},(_,i)=>db.doc('users/global-synthetic-'+i+'/semeaduraProgress/summary'));
  const orphan=db.doc('users/global-orphan/rewardLedger/entry');
+ const extraLedger=Array.from({length:499},(_,i)=>ledger(person.localId).doc('global-synthetic-'+i));
  try{
   delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
   await assert.rejects(read(),/GAMIFICATION_SUPERVISION_DISABLED/);
@@ -88,6 +89,17 @@ test('isolated global supervision reconciles canonical accounts and suppresses i
   await orphan.set({id:'entry',userId:'global-orphan',economy:'k_coin'});
   assert.equal((await read()).economy,null);
   await orphan.delete();
+  const ledgerBatch=db.batch();
+  extraLedger.forEach(ref=>ledgerBatch.set(ref,{synthetic:true}));
+  await ledgerBatch.commit();
+  const incompleteEconomy=await read();
+  assert.equal(incompleteEconomy.economyCoverage,'partial');
+  assert.equal(incompleteEconomy.observedLedgerEntries,501);
+  assert.equal(incompleteEconomy.economy,null);
+  assert.deepEqual(incompleteEconomy.journey,clean.journey);
+  const removeExtra=db.batch();
+  extraLedger.forEach(ref=>removeExtra.delete(ref));
+  await removeExtra.commit();
   const batch=db.batch();
   synthetic.forEach((ref,i)=>batch.set(ref,{authorId:'global-synthetic-'+i,acceptedSeeds:0,pitangueiras:0}));
   await batch.commit();
@@ -102,6 +114,9 @@ test('isolated global supervision reconciles canonical accounts and suppresses i
   const cleanup=db.batch();
   [...projections,...synthetic,orphan].forEach(ref=>cleanup.delete(ref));
   await cleanup.commit();
+  const cleanupLedger=db.batch();
+  extraLedger.forEach(ref=>cleanupLedger.delete(ref));
+  await cleanupLedger.commit();
   if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
  }
 });
