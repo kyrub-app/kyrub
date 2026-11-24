@@ -3,6 +3,7 @@ import {
   type Unsubscribe,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {isConfirmedSocialSnapshot} from './socialSnapshotAuthority';
 
 export interface CommunityPostConnection {
   id: string;
@@ -30,7 +31,8 @@ export const subscribeCommunityPostConnections = (
   onError: (error: Error) => void,
 ): Unsubscribe => onSnapshot(
   query(collection(db, 'connections'), where('participantIds', 'array-contains', userId)),
-  snapshot => onChange(snapshot.docs.flatMap(item => {
+  {includeMetadataChanges:true},
+  snapshot => onChange(!isConfirmedSocialSnapshot(snapshot.metadata,userId,auth.currentUser?.uid)?[]:snapshot.docs.flatMap(item => {
     const data = item.data();
     return (data.senderId === userId || data.receiverId === userId) &&
       (data.status === 'pending' || data.status === 'accepted')
@@ -43,7 +45,7 @@ export const subscribeCommunityPostConnections = (
           receiverName: typeof data.receiverName === 'string' ? data.receiverName : '',
         }] : [];
   })),
-  onError,
+  error=>{onChange([]);onError(error);},
 );
 
 export const readCommunityPostPublicProfile = async (userId: string): Promise<CommunityPublicProfile> => {

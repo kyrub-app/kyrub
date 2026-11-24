@@ -5,6 +5,7 @@ import {
   getFirestore,
   initializeFirestore,
   persistentLocalCache,
+  memoryLocalCache,
   persistentMultipleTabManager,
 } from 'firebase/firestore';
 import { connectStorageEmulator, getStorage } from 'firebase/storage';
@@ -41,7 +42,12 @@ if (isolatedE2E) connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWar
 export const storage = getStorage(app);
 if (isolatedE2E) connectStorageEmulator(storage, '127.0.0.1', 9199);
 
+const socialMemoryPilot = import.meta.env?.VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E === 'true';
+if(socialMemoryPilot&&!isolatedE2E)throw Error('SOCIAL_MEMORY_CACHE_REQUIRES_LOCAL_EMULATOR');
+
 const initializeOfflineFirstFirestore = () => {
+  // The opt-in pilot must fail closed; do not fall back to a persistent instance.
+  if(socialMemoryPilot)return initializeFirestore(app,{localCache:memoryLocalCache()});
   try {
     return initializeFirestore(app, {
       localCache: persistentLocalCache({

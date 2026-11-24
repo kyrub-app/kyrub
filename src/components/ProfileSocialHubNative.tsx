@@ -508,6 +508,7 @@ export function ProfileSocialHubNative() {
   const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
+  useEffect(()=>{setGroups([]);setChatTarget(null);setRemoveContactTarget(null);setChatMessageText('');setSelectedTaggedUserIds([]);setNewConnectionsOpen(false);},[user?.uid]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const socialFeed = usePublicSocialFeed();
@@ -529,6 +530,7 @@ export function ProfileSocialHubNative() {
     isLoggedIn: Boolean(user),
     triggerToast,
   });
+  useEffect(()=>{if(!directory.directoryReady){setChatTarget(null);setChatMessageText('');setRemoveContactTarget(null);setSelectedTaggedUserIds([]);}},[directory.directoryReady]);
 
   useEffect(() => {
     const handleRemoveIntent = (event: Event) => {
@@ -701,12 +703,14 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
+    directory.setDbUsers([]);
     if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
+    return onSnapshot(collection(db, 'users'), {includeMetadataChanges:true},snapshot => {
+      if(auth.currentUser?.uid!==user.uid||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites){directory.setDbUsers([]);return;}
       directory.setDbUsers(
         snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
       );
-    });
+    },()=>directory.setDbUsers([]));
   }, [directory.setDbUsers, user]);
 
   useEffect(() => {
@@ -731,10 +735,13 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
+    setGroups([]);
     if (!user) return;
     return onSnapshot(
       collection(db, `users/${user.uid}/contact_groups`),
+      {includeMetadataChanges:true},
       snapshot => {
+        if(auth.currentUser?.uid!==user.uid||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites){setGroups([]);return;}
         setGroups(
           snapshot.docs
             .flatMap(item => {

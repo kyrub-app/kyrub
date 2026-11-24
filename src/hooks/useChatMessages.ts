@@ -13,6 +13,7 @@ import {
   serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
+import {isConfirmedSocialSnapshot} from '../utils/socialSnapshotAuthority';
 
 interface SocialChatMessage {
   id: string;
@@ -54,6 +55,7 @@ export function useChatMessages({
   enabled
 }: UseChatMessagesOptions) {
   const [messages, setMessages] = useState<SocialChatMessage[]>([]);
+  const [messageScope,setMessageScope]=useState('');
   const uid = auth.currentUser?.uid;
   const scope = enabled && uid && connectionId && receiverId ? JSON.stringify([uid,connectionId,receiverId]) : '';
   const [history, setHistory] = useState<{scope:string; cutoff:Timestamp|null}>({scope:'',cutoff:null});
@@ -67,7 +69,9 @@ export function useChatMessages({
     setHistoryError('');
     if(!scope || !uid || !isValidId(connectionId)) return;
     return onSnapshot(doc(db,'social_chats',connectionId,'history_state',uid), {includeMetadataChanges:true}, snap => {
-      if(auth.currentUser?.uid!==uid || snap.metadata.fromCache || snap.metadata.hasPendingWrites) return;
+      if(!isConfirmedSocialSnapshot(snap.metadata,uid,auth.currentUser?.uid)){
+        setHistory({scope:'',cutoff:null});return;
+      }
       const cutoff=snap.get('clearedAt');
       setHistory({scope,cutoff:cutoff instanceof Timestamp ? cutoff : null});
       setHistoryError('');
@@ -91,6 +95,7 @@ export function useChatMessages({
 
   useEffect(() => {
     setMessages([]);
+    setMessageScope('');
     setError(null);
 
     const currentUser = auth.currentUser;
@@ -120,7 +125,12 @@ export function useChatMessages({
 
     return onSnapshot(
       messagesQuery,
+      {includeMetadataChanges:true},
       snapshot => {
+        if(!isConfirmedSocialSnapshot(snapshot.metadata,currentUser.uid,auth.currentUser?.uid)){
+          setMessages([]);setMessageScope('');setIsLoading(true);return;
+        }
+        setMessageScope(scope);
         setMessages(
           snapshot.docs.map(snapshotDoc => {
             const data = snapshotDoc.data({ serverTimestamps: 'estimate' });
@@ -139,11 +149,12 @@ export function useChatMessages({
         setError(null);
       },
       listenerError => {
+        setMessages([]);setMessageScope('');
         setIsLoading(false);
         setError(getErrorMessage(listenerError));
       }
     );
-  }, [connectionId, enabled, receiverId, uid]);
+  }, [connectionId, enabled, receiverId, uid, scope]);
 
   const sendMessage = useCallback(async (text: string): Promise<void> => {
     const currentUser = auth.currentUser;
@@ -154,7 +165,7 @@ export function useChatMessages({
       throw authError;
     }
 
-    if (!enabled || !isValidId(connectionId) || !isValidId(receiverId)) {
+    if (!enabled || !historyReady || messageScope!==scope || !isValidId(connectionId) || !isValidId(receiverId)) {
       const conversationError = new Error('Conversa inválida ou indisponível.');
       setError(conversationError.message);
       throw conversationError;
@@ -198,10 +209,10 @@ export function useChatMessages({
     } finally {
       setIsSending(false);
     }
-  }, [connectionId, enabled, receiverId]);
+  }, [connectionId, enabled, receiverId, historyReady, messageScope, scope]);
 
   return {
-    messages: historyReady ? messages.filter(message => {
+    messages: historyReady && messageScope===scope ? messages.filter(message => {
       const cutoff=history.cutoff;
       if(!cutoff) return true;
       const time=message.createdAt;
@@ -210,7 +221,7 @@ export function useChatMessages({
     isLoading: isLoading || (!!scope && !historyReady && !historyError),
     isSending,
     isClearing,
-    historyReady,
+    historyReady:historyReady&&messageScope===scope,
     historyError,
     retryHistory:()=>setRetry(value=>value+1),
     clearConversation,

@@ -106,3 +106,27 @@ test('recovery accepts only verified fresh authentication, not token refresh or 
  assert.match(recovery,/sessionDigest:'',sessionExpiresAt:0/);
  assert.doesNotMatch(readFileSync('api/health.ts','utf8'),/reservedTribeRecoveryService/);
 });
+
+test('cached social data is never considered current authorization',async()=>{
+ const {isConfirmedSocialSnapshot}=await import('../src/utils/socialSnapshotAuthority.js');
+ const online={fromCache:false,hasPendingWrites:false};
+ assert.equal(isConfirmedSocialSnapshot(online,'owner','owner'),true);
+ assert.equal(isConfirmedSocialSnapshot({...online,fromCache:true},'owner','owner'),false);
+ assert.equal(isConfirmedSocialSnapshot({...online,hasPendingWrites:true},'owner','owner'),false);
+ assert.equal(isConfirmedSocialSnapshot(online,'owner','other'),false);
+ assert.equal(isConfirmedSocialSnapshot(online,undefined,undefined),false);
+ const firebase=readFileSync('src/utils/firebase.ts','utf8');
+ const chat=readFileSync('src/hooks/useChatMessages.ts','utf8');
+ const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ const forward=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ const profile=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(firebase,/socialMemoryPilot&&!isolatedE2E/);
+ assert.match(firebase,/localCache:memoryLocalCache\(\)/);
+ assert.match(firebase,/persistentLocalCache\(/);
+ assert.match(chat,/setMessages\(\[\]\);setMessageScope\(''\)/);
+ assert.match(chat,/historyReady && messageScope===scope/);
+ assert.match(directory,/if\(!directoryReady\)return \[\]/);
+ assert.match(directory,/friends:directoryReady\?friends:\[\]/);
+ assert.match(forward,/error=>\{onChange\(\[\]\);onError\(error\);\}/);
+ assert.match(profile,/snapshot.metadata.fromCache\|\|snapshot.metadata.hasPendingWrites\)\{setGroups\(\[\]\)/);
+});

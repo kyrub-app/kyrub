@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { db, auth } from '../utils/firebase';
+import {isConfirmedSocialSnapshot} from '../utils/socialSnapshotAuthority';
 import {onAuthStateChanged} from 'firebase/auth';
 import {
   collection,
@@ -69,6 +70,7 @@ export function useSocialDirectoryV2({
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const [confirmedConnectionOwner,setConfirmedConnectionOwner]=useState('');
   const [favoriteOwner,setFavoriteOwner]=useState(auth.currentUser?.uid??'');
   const [favoriteSnapshot,setFavoriteSnapshot]=useState<{uid:string;ids:Set<string>;ready:boolean}>({uid:'',ids:new Set(),ready:false});
   useEffect(()=>onAuthStateChanged(auth,user=>setFavoriteOwner(user?.uid??'')),[]);
@@ -76,7 +78,7 @@ export function useSocialDirectoryV2({
     setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});
     if(!isLoggedIn||!favoriteOwner)return;
     return onSnapshot(collection(db,'users',favoriteOwner,'contact_favorites'),{includeMetadataChanges:true},snapshot=>{
-      if(auth.currentUser?.uid!==favoriteOwner||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)return;
+      if(!isConfirmedSocialSnapshot(snapshot.metadata,favoriteOwner,auth.currentUser?.uid)){setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});return;}
       setFavoriteSnapshot({uid:favoriteOwner,ids:new Set(snapshot.docs.map(item=>item.id)),ready:true});
     },()=>setFavoriteSnapshot({uid:'',ids:new Set(),ready:false}));
   },[isLoggedIn,favoriteOwner]);
@@ -96,8 +98,9 @@ export function useSocialDirectoryV2({
 
   useEffect(() => {
     const currentUser = auth.currentUser;
+    setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);
 
-    if (!isLoggedIn || !currentUser) {
+    if (!isLoggedIn || !currentUser || currentUser.uid!==favoriteOwner) {
       setConnections([]);
       return;
     }
@@ -109,7 +112,12 @@ export function useSocialDirectoryV2({
 
     return onSnapshot(
       connectionsQuery,
+      {includeMetadataChanges:true},
       snapshot => {
+        if(!isConfirmedSocialSnapshot(snapshot.metadata,currentUser.uid,auth.currentUser?.uid)){
+          setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);return;
+        }
+        setConfirmedConnectionOwner(currentUser.uid);
         setConnections(
           snapshot.docs.map(snapshotDoc => ({
             id: snapshotDoc.id,
@@ -119,14 +127,15 @@ export function useSocialDirectoryV2({
       },
       error => {
         console.error('Falha ao escutar conexões:', error);
-        setConnections([]);
+        setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);
       }
     );
-  }, [isLoggedIn]);
+  }, [isLoggedIn,favoriteOwner]);
+  const directoryReady=!!confirmedConnectionOwner&&confirmedConnectionOwner===favoriteOwner&&auth.currentUser?.uid===confirmedConnectionOwner&&isLoggedIn;
   useEffect(() => {
     const currentUid = auth.currentUser?.uid;
 
-    if (!isLoggedIn || !currentUid) {
+    if (!isLoggedIn || !currentUid || !directoryReady) {
       setFriends([]);
       setConnectionRequests([]);
       return;
@@ -241,7 +250,7 @@ export function useSocialDirectoryV2({
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn, favoriteSnapshot]);
+  }, [connections, dbUsers, isLoggedIn, favoriteSnapshot,directoryReady]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
@@ -329,6 +338,7 @@ export function useSocialDirectoryV2({
   // Get Suggested Friends
   const getSuggestions = () => {
     const currentUid = auth.currentUser?.uid;
+    if(!directoryReady)return [];
 
     return dbUsers
       .filter(
@@ -460,11 +470,12 @@ export function useSocialDirectoryV2({
   };
 
   return {
-    friends,
+    friends:directoryReady?friends:[],
+    directoryReady,
     setFriends,
     dbUsers,
     setDbUsers,
-    connectionRequests,
+    connectionRequests:directoryReady?connectionRequests:[],
     setConnectionRequests,
     favoriteStoreIds,
     setFavoriteStoreIds,
