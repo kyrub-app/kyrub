@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { before, after, test } from 'node:test';
 import { readFile } from 'node:fs/promises';
-import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
+import { initializeTestEnvironment, assertFails, assertSucceeds, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
 import { doc, getDoc, setDoc, serverTimestamp } from 'firebase/firestore';
 import { adminDb } from '../server/firebaseAdmin.js';
 import { reserveSocialAddress, resolveSocialAddress, getOwnedSocialAddress } from '../server/identity/publicSocialAddressService.js';
@@ -830,6 +830,9 @@ test('private persistent contact blocks prevent reconnection and chat from eithe
  assert.equal((await presentationRelationship(first,'contact',second)).state,'unavailable');
  const peer=env.authenticatedContext(second).firestore(),owner=env.authenticatedContext(first).firestore();
  const path='social_contact_blocks/'+first+'/blocked/'+second;
+ const ownBlock=await assertSucceeds(getDoc(doc(owner,path)));
+ assert.equal(ownBlock.exists(),true);
+ assert.equal(ownBlock.data()?.targetId,second);
  await assertFails(getDoc(doc(peer,path)));
  await assertFails(setDoc(doc(owner,path),{targetId:second}));
  await assertFails(setDoc(doc(peer,'connections/'+pair),{senderId:second,receiverId:first,participantIds:[first,second].sort(),status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
@@ -840,6 +843,10 @@ test('private persistent contact blocks prevent reconnection and chat from eithe
  await setSocialContactBlock(second,first,false);
  assert.equal((await presentationRelationship(first,'contact',second)).state,'none');
  assert.equal((await connection.get()).exists,false);
+ await assertSucceeds(setDoc(doc(peer,'connections/'+pair),{senderId:second,receiverId:first,participantIds:[first,second].sort(),status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+ await presentationRelationship(first,'contact',second,'accept');
+ const history=await assertSucceeds(getDoc(doc(peer,'social_chats/'+pair+'/messages/old')));
+ assert.equal(history.data()?.text,'histórico');
 });
 
 test('follow-profile is explicit per unit and privacy pauses identity without disabling SOS',async()=>{

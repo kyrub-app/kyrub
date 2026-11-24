@@ -271,6 +271,7 @@ service cloud.firestore {
       }
     }
 
+    // --- Kyrub Social Connections & Feed ---
     function noSocialContactBlock(first, second) {
       return !exists(/databases/$(database)/documents/social_contact_blocks/$(first)/blocked/$(second))
         && !exists(/databases/$(database)/documents/social_contact_blocks/$(second)/blocked/$(first));
@@ -280,7 +281,6 @@ service cloud.firestore {
       allow write: if false;
     }
 
-    // --- Kyrub Social Connections & Feed ---
 match /connections/{connectionId} {
   function hasValidConnectionId() {
     return connectionId.size() > 0
