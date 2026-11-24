@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
+import { markIsolatedGamificationAuthorDirty } from './semeaduraAdminSupervision.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
 export class SemeaduraDailyLimitError extends Error {
@@ -158,6 +159,7 @@ export const seedVerifiedPost = async (
     if (authorProgress.exists) tx.update(authorProgressRef, authorData);
     else tx.create(authorProgressRef, { ...authorData, createdAt: occurredAt });
     if (plan.count > SEEDS_PER_BOSQUE) throw Error('SEMEADURA_CAP_BROKEN');
+    markIsolatedGamificationAuthorDirty(db,tx,authorId,occurredAt);
     return { status: 'accepted' as const, count: plan.count, closed: plan.nowClosed, authorId };
   });
 };
