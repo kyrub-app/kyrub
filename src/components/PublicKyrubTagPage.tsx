@@ -190,11 +190,12 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <PresentationCard headingLevel="h1" name={data.presentation.name||'Minha Kyrub Tag'} occupation={data.presentation.occupation} bio={data.presentation.about}
-    photoUrl={data.presentation.hasAvatar?publicPromotionalTagImageUrl(identifier,'avatar'):undefined}
-    coverUrl={data.presentation.hasCover?publicPromotionalTagImageUrl(identifier,'cover'):undefined}
-    backgroundUrl={data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined}
+    photoUrl={data.presentation.profileMedia?.photoUrl||(data.presentation.hasAvatar?publicPromotionalTagImageUrl(identifier,'avatar'):undefined)}
+    coverUrl={data.presentation.profileMedia?.coverUrl||(data.presentation.hasCover?publicPromotionalTagImageUrl(identifier,'cover'):undefined)}
+    backgroundUrl={data.presentation.profileMedia?.backgroundUrl||(data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined)}
     links={data.links}>
-    <PresentationRelationship source="tag" id={identifier}/>
+    {data.presentation.profilePaused&&<p className="text-sm text-slate-300">Apresentação temporariamente indisponível. O acesso ao SOS permanece disponível.</p>}
+    {!data.presentation.profilePaused&&<PresentationRelationship source="tag" id={identifier}/>}
     <PresentationShare url={window.location.origin+'/tag/'+encodeURIComponent(identifier)} title={data.presentation.name||'Minha Kyrub Tag'}/>
     <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>

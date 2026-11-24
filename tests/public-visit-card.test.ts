@@ -353,3 +353,15 @@ test('the live unified profile and promotional device share an in-card visual ed
  assert.match(tag,/Contatos de emergência/);assert.match(tag,/rotateRecovery/);
  assert.doesNotMatch(visual,/firebase|recoveryCode|emergencyContacts/);
 });
+
+test('follow profile has explicit consent, fail-closed visibility and separate SOS',()=>{
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ const editor=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const media=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ assert.match(service,/setPromotionalPresentationMode/);
+ assert.match(service,/latestAccount.get\('isProfileVisible'\)!==true/);
+ assert.match(service,/profilePaused:true/);
+ assert.match(service,/sosContacts:custom.sosContacts/);
+ assert.match(editor,/Acompanhar meu perfil/);assert.match(editor,/Apresentação personalizada/);
+ assert.match(media,/data.presentationMode==='follow-profile'/);
+});

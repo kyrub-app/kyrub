@@ -25,7 +25,7 @@ export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disa
    if(!profile.exists()){setNotice('Salve seu perfil antes de sincronizar.');return;}
    const read=(key:string)=>typeof profile.get(key)==='string'?profile.get(key) as string:'';
    setSource({name:read('name'),occupation:read('occupation'),bio:read('bio'),photoUrl:read('photoUrl'),coverUrl:read('coverUrl'),backgroundUrl:read('backgroundUrl')});
-   setTags(result.tags.filter(t=>t.distribution==='promotional'&&t.enabled&&!t.blocked));
+   setTags(result.tags.filter(t=>t.distribution==='promotional'&&t.enabled&&!t.blocked&&t.presentationMode!=='follow-profile'));
   }).catch(()=>{if(!ctrl.signal.aborted)setNotice('Não foi possível consultar a apresentação. Feche e tente novamente.');});
   return()=>ctrl.abort();
  },[open,userId]);
@@ -70,7 +70,7 @@ export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disa
     <p className="text-xs text-slate-400">Fotos externas, como a do Google, não são copiadas. Envie uma imagem própria para usar na Tag. SOS, destinos e titularidade não serão alterados.</p>
     <button type="button" disabled={busy||disabled||!ids.length||!fields.length} className="min-h-12 w-full rounded-xl bg-[#F47825] font-bold text-[#121A17] disabled:opacity-50" onClick={()=>void save()}>{busy?'Atualizando…':'Atualizar Tags selecionadas'}</button>
    </>}
-   {source&&!tags.length&&<p>Nenhuma Tag promocional ativa disponível.</p>}
+   {source&&!tags.length&&<p>Nenhuma Tag promocional ativa em modo personalizado disponível.</p>}
    {!source&&!notice&&<p role="status">Consultando apresentação e dispositivos…</p>}
    <button type="button" disabled={busy} onClick={()=>setOpen(false)} className="min-h-11 underline">Fechar</button>
    {notice&&<p role="status" className="text-sm">{notice}</p>}

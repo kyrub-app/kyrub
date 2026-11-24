@@ -30,6 +30,8 @@ export type PublicPromotionalTagPresentation={
   hasAvatar:boolean;
   hasBackground?:boolean;
   sosContacts:PublicSosContact[];
+  profileMedia?:{photoUrl:string;coverUrl:string;backgroundUrl:string};
+  profilePaused?:boolean;
 };
 export const promotionalMediaPath=(id:string,slot:'cover'|'avatar'|'background',asset:string)=>`kyrub-tag-media/${id}/${slot}/${asset}`;
 const mediaPathRegex=/^kyrub-tag-media\/([a-f0-9]{32})\/(cover|avatar|background)\/([a-f0-9]{32})$/;

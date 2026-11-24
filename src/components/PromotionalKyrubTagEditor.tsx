@@ -77,6 +77,22 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
   finally{setBusy(false);}
  }
+ async function changeMode(mode:'custom'|'follow-profile'){
+  const user=auth.currentUser;if(!user||busy||uploading||tag.blocked||mode===(tag.presentationMode??'custom'))return;
+  if(!window.confirm(mode==='follow-profile'?'Autorizar que esta Tag exiba automaticamente nome, atividade, biografia, foto, capa e fundo do seu perfil público, inclusive futuras alterações? Se o perfil ficar reservado, esses dados serão ocultados. Seus espaços e SOS não serão modificados.':'Voltar à apresentação personalizada anteriormente salva nesta Tag? Ela será exibida novamente se a Tag estiver publicada.'))return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({action:'set-promotional-presentation-mode',mode})
+   });
+   if(!res.ok)throw Error('MODE_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id||updated.presentationMode!==mode)throw Error('MODE_FAILED');
+   setTag(updated);setNotice(mode==='follow-profile'?'Esta Tag acompanha seu perfil público.':'Apresentação personalizada restaurada.');
+  }catch{setNotice('Não foi possível mudar o modo. Para acompanhar o perfil, salve-o, mantenha-o público e publique a Tag.');}
+  finally{setBusy(false);}
+ }
  async function toggleSocial(){
   const user=auth.currentUser;if(!user||busy||uploading)return;
   setBusy(true);setNotice('');
@@ -138,6 +154,12 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <strong>Estado: {tag.blocked?'Bloqueada por segurança':tag.enabled?'Pública':'Ainda não publicada'}</strong>
    <p className="mt-1 text-slate-300">Somente quem tiver acesso à sua identidade autenticada poderá gerenciar esta unidade.</p>
   </div>
+  {(membership==='full'||tag.presentationMode==='follow-profile')&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <h2 className="font-semibold">Apresentação deste dispositivo</h2>
+   <label className="flex items-start gap-2 text-sm"><input type="radio" name={'presentation-mode-'+tag.id} checked={tag.presentationMode==='follow-profile'} disabled={busy||uploading||!!tag.blocked||membership!=='full'||!tag.enabled} onChange={()=>void changeMode('follow-profile')}/><span><strong>Acompanhar meu perfil</strong><br/>Atualizações do perfil público aparecem automaticamente nesta Tag. Se o perfil ficar reservado, os dados ficam ocultos; ao torná-lo público novamente, o acompanhamento retorna.</span></label>
+   <label className="flex items-start gap-2 text-sm"><input type="radio" name={'presentation-mode-'+tag.id} checked={tag.presentationMode!=='follow-profile'} disabled={busy||uploading||!!tag.blocked} onChange={()=>void changeMode('custom')}/><span><strong>Apresentação personalizada</strong><br/>Mantenha uma apresentação independente para este dispositivo.</span></label>
+   <p className="text-xs text-slate-300">SOS, espaços vinculados e permissões sociais continuam individuais. O modo personalizado preserva seus próprios dados.</p>
+  </section>}
   {membership==='full'&&<section className="rounded-xl border border-[#34443B] p-3 space-y-2">
    <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!tag.socialEnabled} disabled={busy||uploading} onChange={()=>void toggleSocial()}/>Permitir conexões por esta Tag</label>
    <p className="text-xs text-slate-300">Opcional. O SOS continua disponível mesmo sem interação social.</p>
@@ -157,12 +179,12 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
     <button type="button" className="rounded-lg border border-amber-400/50 p-2" onClick={()=>void navigator.clipboard.writeText(recoveryCode).then(()=>setNotice('Código copiado. Guarde em local privado.')).catch(()=>setNotice('Selecione o código e copie manualmente.'))}>Copiar código</button>
     <button type="button" className="ml-2 underline" onClick={()=>setRecoveryCode('')}>Já guardei</button>
    </div>}
-  <PresentationVisualEditor name={presentation.name} occupation={presentation.occupation} bio={presentation.about} photoUrl={avatarPreview} coverUrl={coverPreview} backgroundUrl={backgroundPreview}
+  {tag.presentationMode==='follow-profile'?<p className="rounded-xl border border-[#34443B] p-3 text-sm">A apresentação acompanha o perfil público. Edite os dados e imagens no perfil; os dados personalizados anteriores ficam preservados. Você pode continuar editando o SOS abaixo.</p>:<PresentationVisualEditor name={presentation.name} occupation={presentation.occupation} bio={presentation.about} photoUrl={avatarPreview} coverUrl={coverPreview} backgroundUrl={backgroundPreview}
    disabled={busy||uploading||!!tag.blocked} maxBio={320}
    onText={(field,value)=>set(field==='bio'?'about':field,value)} onImage={(slot,file)=>void upload(slot,file)} onRemove={removeImage}
    links={tag.urls.flatMap(url=>{const target=parsePublicDestinationUrl(url);return target?[{name:target.identifier,url}]:[];})}>
    <p className="text-xs text-slate-300">As imagens são opcionais, tratadas localmente e publicadas apenas após salvar. SOS e código de recuperação são configurações separadas.</p>
-  </PresentationVisualEditor>
+  </PresentationVisualEditor>}
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Contatos de emergência (opcionais)</strong>
    <p className="text-sm text-slate-300">O botão SOS sempre oferece 190, 192 e 193 no Brasil. Você pode cadastrar até dois contatos particulares, inclusive com opção de WhatsApp. Eles ficam ocultos até você autorizar a divulgação e declarar que a pessoa concordou.</p>

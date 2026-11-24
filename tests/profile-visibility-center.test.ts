@@ -33,7 +33,7 @@ test('one editor retains public identity, secure documents, work approval and PI
   assert.match(identity, /Salvar perfil/);
   assert.match(identity, /updateProfile\(user/);
   assert.match(identity, /profile-images\/' \+ user\.uid/);
-  assert.match(identity, /public_profile', 'main'/);
+  assert.match(identity, /public_profile',\s*'main'/);
   assert.match(unified, /'perfil', label: 'Perfil'/);
   for (const tab of ["'conta'", "'dados'", "'seguranca'", "'documentos'", "'validacao'"]) {
     assert.ok(unified.includes(tab), 'Missing tab: ' + tab);

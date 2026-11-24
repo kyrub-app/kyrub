@@ -840,3 +840,29 @@ test('private persistent contact blocks prevent reconnection and chat from eithe
  assert.equal((await presentationRelationship(first,'contact',second)).state,'none');
  assert.equal((await connection.get()).exists,false);
 });
+
+test('follow-profile is explicit per unit and privacy pauses identity without disabling SOS',async()=>{
+ const {setPromotionalPresentationMode,resolveKyrubTag,loadOwnedKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const uid='follow-profile-owner',other='follow-profile-other',id='c3'.repeat(16),second='c4'.repeat(16);
+ await adminDb.doc('users/'+uid).set({name:'Original',isProfileVisible:true});
+ const profile=adminDb.doc('users/'+uid+'/public_profile/main');
+ await profile.set({name:'Public name',occupation:'Public work',bio:'Public bio',photoUrl:'https://example.test/photo.webp',coverUrl:'',backgroundUrl:''});
+ const custom={name:'Custom name',occupation:'Custom work',about:'Custom bio',emergencyContacts:[{name:'Contato',relationship:'Amigo',phone:'+5511999999999',whatsapp:false,shareInSos:true,consentConfirmed:true}]};
+ for(const unit of [id,second])await adminDb.doc('kyrub_official_tags/'+unit).set({model:'adesivo',distribution:'promotional',ownerId:uid,enabled:true,blocked:false,targets:[],externalUrls:[],presentation:custom});
+ assert.equal((await resolveKyrubTag(id))?.presentation?.name,'Custom name');
+ await assert.rejects(setPromotionalPresentationMode(other,id,'follow-profile'),/TAG_FORBIDDEN/);
+ await setPromotionalPresentationMode(uid,id,'follow-profile');
+ assert.equal((await resolveKyrubTag(id))?.presentation?.name,'Public name');
+ await profile.update({name:'New public name',photoUrl:''});
+ assert.equal((await resolveKyrubTag(id))?.presentation?.name,'New public name');
+ assert.equal((await resolveKyrubTag(second))?.presentation?.name,'Custom name');
+ await adminDb.doc('users/'+uid).update({isProfileVisible:false});
+ const paused=await resolveKyrubTag(id);
+ assert.equal(paused?.presentation?.profilePaused,true);
+ assert.equal(paused?.presentation?.name,'');
+ assert.equal(paused?.presentation?.profileMedia,undefined);
+ assert.equal(paused?.presentation?.sosContacts.length,1);
+ assert.equal((await loadOwnedKyrubTag(uid,id)).presentation?.name,'Custom name');
+ await setPromotionalPresentationMode(uid,id,'custom');
+ assert.equal((await resolveKyrubTag(id))?.presentation?.name,'Custom name');
+});

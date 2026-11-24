@@ -39,12 +39,12 @@ export async function getPublicPromotionalTagImage(id:string,slot:unknown):Promi
  if(!isTagId(id)||(slot!=='cover'&&slot!=='avatar'&&slot!=='background'))return null;
  const ref=adminDb.collection('kyrub_official_tags').doc(id);
  const snap=await ref.get(),data=snap.data();
- if(!data||data.distribution!=='promotional'||data.enabled!==true||data.blocked===true||
+ if(!data||data.distribution!=='promotional'||data.enabled!==true||data.blocked===true||data.presentationMode==='follow-profile'||
   typeof data.ownerId!=='string'||!snap.updateTime)return null;
  const presentation=data.presentation as PromotionalTagPresentation|undefined;
  const path=presentation?pathOf(presentation,slot):'';
  if(!path||!isPromotionalMediaPath(path,id,slot))return null;
- const file=await verifiedObject(path,id,slot);
+ const file=await verifiedObject(path,id,slot,data.ownerId);
  const [bytes]=await file.download();
  if(bytes.length===0||bytes.length>MAX_MEDIA_BYTES)throw Error('TAG_MEDIA_INVALID');
  // A concurrent block, ownership transfer or media change invalidates the
