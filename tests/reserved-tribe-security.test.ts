@@ -271,3 +271,11 @@ test('pilot storage gate refuses legacy Firestore databases, stale workers and u
  assert.match(client,/if\(action!=='lock'\)await verifySocialPilotStorage\(\)/);
  assert.doesNotMatch(gate,/deleteDatabase\(|clearIndexedDbPersistence\(|\.unregister\(/);
 });
+
+
+test('pilot does not mount legacy contact decorators or local contact management',()=>{
+ const root=readFileSync('src/main.tsx','utf8');
+ const tab=readFileSync('src/components/tabs/KyrubTab.tsx','utf8');
+ assert.match(root,/\{!reservedTribePilotClientEnabled\(\) && <ProfileConnectedCardsPolishBridge \/>\}/);
+ assert.match(tab,/isConnectedContactsActive && \(reservedTribePilotClientEnabled\(\) \? \([\s\S]*?<p role="status"[\s\S]*?\) : \(\s*<ConnectedContactsPanel/);
+});

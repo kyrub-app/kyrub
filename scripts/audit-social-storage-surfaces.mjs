@@ -6,6 +6,7 @@ const patterns=[
  ['social-data',/\b(?:social_chats|connections|contact_favorites|contact_groups|community_direct_forward_receipts|reserved_tribe_vaults|social_contact_blocks)\b/],
  ['local-persistence',/\b(?:localStorage|sessionStorage|indexedDB|persistentLocalCache|persistentMultipleTabManager|enableIndexedDbPersistence|clearIndexedDbPersistence|waitForPendingWrites|memoryLocalCache)\b/],
  ['offline-browser',/\b(?:serviceWorker|registerSW|CacheStorage|caches\.|workbox|navigator\.onLine)\b/],
+ ['legacy-contact-consumer',/\b(?:useSocialDirectory|ProfileSocialHubBridge|ProfileConnectedCardOrganizationBridge|ProfileConnectedCardsPolishBridge|ProfileConnectedGroupsBridge|ConnectedContactsPanel)\b/],
  ['social-consumer',/\b(?:useSocialDirectoryV2|useChatMessages|subscribeCommunityPostConnections|resolvePostAuthorConnection|ChatModal|ConnectedContactsPanel|sendCommunityPostToConnectedUser)\b/]
 ];
 let count=0;

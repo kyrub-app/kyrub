@@ -9,6 +9,7 @@ import {
 } from 'firebase/firestore';
 import { BadgePercent, Sparkles } from 'lucide-react';
 import { ConnectedContactsPanel } from '../ConnectedContactsPanel';
+import { reservedTribePilotClientEnabled } from '../../utils/reservedTribePilotClient';
 import { PublicSocialFeedPanel } from '../PublicSocialFeedPanel';
 import { StoreOfferCardPresentationBridge } from '../StoreOfferCardPresentationBridge';
 import { SquareStoresSection } from './SquareStoresSection';
@@ -510,7 +511,9 @@ export function KyrubTab(props: KyrubTabProps) {
         />
       )}
 
-      {isConnectedContactsActive && (
+      {isConnectedContactsActive && (reservedTribePilotClientEnabled() ? (
+        <p role="status" className="p-4 text-sm text-slate-400">No piloto, abra Conectados pela Central Pessoal para gerenciar suas conexões.</p>
+      ) : (
         <ConnectedContactsPanel
           searchQuery={props.searchQuery}
           friends={props.friends}
@@ -526,7 +529,7 @@ export function KyrubTab(props: KyrubTabProps) {
           handleDeclineRequest={props.handleDeclineRequest}
           triggerToast={props.triggerToast}
         />
-      )}
+      ))}
     </div>
   );
 }
