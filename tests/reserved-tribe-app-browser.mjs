@@ -89,6 +89,12 @@ try{
  browser=await chromium.launch({headless:true});
  const a=await open(owner);
  await visible(a.panel.getByText(peerName,{exact:true}));
+ await a.panel.getByRole('button',{name:'Apresentação',exact:true}).click();
+ const card=a.page.getByRole('dialog',{name:'Cartão de apresentação'});
+ await visible(card.getByRole('heading',{name:peerName,exact:true}));
+ await visible(card.getByRole('button',{name:'Abrir chat',exact:true}));
+ await card.getByRole('button',{name:'Fechar apresentação'}).click();
+ await absent(card);
  await a.panel.getByRole('button',{name:'Tribos',exact:true}).click();
  await a.panel.getByRole('button',{name:'Configurar código reservado'}).click();
  await a.panel.getByLabel('Novo código',{exact:true}).fill(code);
@@ -101,6 +107,9 @@ try{
  await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
  await a.panel.getByRole('button',{name:'Geral',exact:true}).click();
  await absent(a.panel.getByText(peerName,{exact:true}));
+ await absent(a.panel.getByRole('button',{name:'Apresentação',exact:true}));
+ assert.deepEqual(await a.page.evaluate(async target=>{const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');return requestReservedTribePilot('contact-presentation',{peerId:target});},peer),{presentation:null});
+ console.log('PASS native contact presentation opens before reservation, reserved contact card denied afterward');
  await unlock(a.panel);
  await visible(a.panel.getByText(peerName,{exact:true}));
  await a.panel.getByRole('button',{name:'Conversar',exact:true}).click();
@@ -119,6 +128,12 @@ try{
  console.log('PASS native UI setup, masked unlock, reserve, send, own history clear and lock');
  const b=await open(peer);
  await visible(b.panel.getByText(ownerName,{exact:true}));
+ await b.panel.getByRole('button',{name:'Apresentação',exact:true}).click();
+ const otherCard=b.page.getByRole('dialog',{name:'Cartão de apresentação'});
+ await visible(otherCard.getByRole('heading',{name:ownerName,exact:true}));
+ await visible(otherCard.getByRole('button',{name:'Abrir chat',exact:true}));
+ await otherCard.getByRole('button',{name:'Fechar apresentação'}).click();
+ await absent(otherCard);
  await b.panel.getByRole('button',{name:'Conversar',exact:true}).click();
  await visible(b.panel.getByText(message,{exact:true}));
  console.log('PASS counterpart still sees shared conversation');

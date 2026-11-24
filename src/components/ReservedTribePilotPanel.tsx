@@ -4,6 +4,7 @@ import {requestReservedTribePilot as request,type ReservedTribeUnlock} from '../
 import {matchesTribeContactName} from '../utils/tribeContactSearch';
 import {ReservedTribeSearchInput} from './ReservedTribeSearchInput';
 import {TribePilotChat} from './TribePilotChat';
+import {ContactPresentationModal} from './ContactPresentationModal';
 import {ReservedTribeRecoveryPanel} from './ReservedTribeRecoveryPanel';
 import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import type {UserNotification} from '../../shared/userNotifications';
@@ -24,6 +25,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  const [setup,setSetup]=useState(false),[code,setCode]=useState(''),[confirmation,setConfirmation]=useState('');
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [target,setTarget]=useState<Relation|null>(null);
+ const [presentationTarget,setPresentationTarget]=useState<string|null>(null);
  const [notices,setNotices]=useState<UserNotification[]|null>(null);
  const [suggestions,setSuggestions]=useState<Suggestion[]>([]);
  const [groupName,setGroupName]=useState('');
@@ -37,7 +39,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   setSuggestions([]);setGroupName('');setRecovering(false);
   ++epoch.current;++reloadSequence.current;probe.current?.abort();probe.current=null;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
-  setSession(null);setReserved(null);setTarget(null);setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
+  setSession(null);setReserved(null);setTarget(null);setPresentationTarget(null);setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
   if(old&&auth.currentUser?.uid===owner)void request('lock',{session:old.token}).catch(()=>{});
  },[owner]);
  const stillValid=(s:Session,e:number)=>alive.current&&epoch.current===e&&current.current===s&&s.expiresAt>Date.now()&&auth.currentUser?.uid===owner&&!document.hidden;
@@ -85,7 +87,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   return()=>window.clearTimeout(timer);
  },[session,clearPrivate,reload]);
  const unlock=async(secret:string,signal:AbortSignal)=>{
-  if(!ordinary||!configured||busy||target||current.current||document.hidden||navigator.onLine===false)return false;
+  if(!ordinary||!configured||busy||target||presentationTarget||current.current||document.hidden||navigator.onLine===false)return false;
   const e=++epoch.current;probe.current?.abort();probe.current=null;setSuggestions([]);
   let result:ReservedTribeUnlock;
   try{result=await request<ReservedTribeUnlock>('unlock',{code:secret},signal);}catch{return false;}
@@ -139,6 +141,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  };
  const openChat=(r:Relation)=>{setNotices(null);setTarget(r);};
  const closeChat=useCallback(()=>setTarget(null),[]);
+ const closePresentation=useCallback(()=>{setPresentationTarget(null);void reload();},[reload]);
  const chatDenied=useCallback(()=>{setOrdinary(null);clearPrivate();void reload();},[clearPrivate,reload]);
  const ordinaryContacts=(ordinary?.connections??[]).filter(r=>r.status==='accepted');
  const normal=ordinaryContacts.filter(r=>matchesTribeContactName(name(r),term)&&(section!=='favorites'||ordinary?.favoriteIds.includes(peer(r))));
@@ -174,8 +177,8 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
     <h4 className="text-sm font-semibold">Solicitações</h4>
     {ordinary.connections.filter(r=>r.status==='pending'&&matchesTribeContactName(name(r),term)).map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm">{name(r)}<div className="mt-2 flex gap-2">{r.receiverId===owner&&<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'accept'})}>Aceitar</button>}<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'remove'})}>{r.receiverId===owner?'Recusar':'Cancelar'}</button></div></div>)}
     <button className={button} disabled={busy} onClick={()=>void loadSuggestions()}>Buscar sugestões</button>
-    {suggestions.filter(item=>item.connectionStatus==='none'&&matchesTribeContactName(item.name,term)).map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 text-sm">{item.name}<button className={button+' ml-2'} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:item.id,operation:'request'})}>Conectar</button></div>)}
-  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Bloquear este contato? A conexão será desfeita. O histórico será preservado.'))void ordinaryAction('social-block',{peerId:peer(r),blocked:true});}}>Bloquear</button></div></div>)}</div>}</>:
+    {suggestions.filter(item=>item.connectionStatus==='none'&&matchesTribeContactName(item.name,term)).map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 text-sm">{item.name}<button className={button+' ml-2'} disabled={busy} onClick={()=>setPresentationTarget(item.id)}>Apresentação</button><button className={button+' ml-2'} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:item.id,operation:'request'})}>Conectar</button></div>)}
+  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>setPresentationTarget(peer(r))}>Apresentação</button><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Bloquear este contato? A conexão será desfeita. O histórico será preservado.'))void ordinaryAction('social-block',{peerId:peer(r),blocked:true});}}>Bloquear</button></div></div>)}</div>}</>:
   <section className="space-y-3" aria-label="Tribo Reservada">
    <header className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">Tribo Reservada</h3><button className={button} onClick={()=>{clearPrivate();void reload();}}>Trancar</button></header>
    <div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>{setTarget(null);setNotices(null);}}>Contatos</button><button className={button} disabled={busy} onClick={()=>void privateAction<{notifications:UserNotification[]}>('notifications',{},data=>{setTarget(null);setNotices(data.notifications);})}>Avisos</button></div>
@@ -185,5 +188,6 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
     {ordinaryContacts.map(r=><button key={r.id} className={button+' block w-full text-left'} disabled={busy} onClick={()=>move(r,true)}>{name(r)}</button>)}
    </>}
   </section>}
+  {!session&&ordinary&&presentationTarget&&<ContactPresentationModal key={owner+':'+presentationTarget} targetId={presentationTarget} onClose={closePresentation}/>}
  </div>;
 }

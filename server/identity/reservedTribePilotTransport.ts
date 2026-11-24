@@ -2,7 +2,7 @@ import type {KyrubMcpHttpRequest,KyrubMcpHttpResponse} from '../mcp/kyrubiaMcpSe
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,checkReservedTribeSession,setOrdinarySocialContactBlock} from './reservedTribeService.js';
 import {forwardOrdinaryCommunityPost} from './reservedTribeForwardService.js';
-import {presentationRelationship} from './presentationRelationshipService.js';
+import {presentationRelationship,resolveOrdinaryContactPresentation} from './presentationRelationshipService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from './reservedTribeChatService.js';
 import {recoverReservedTribeCode} from './reservedTribeRecoveryService.js';
 import {listReservedUserNotifications,markReservedUserNotificationRead} from '../notifications/userNotificationService.js';
@@ -21,7 +21,7 @@ const validSession=(value:unknown):value is string=>typeof value==='string'&&/^[
 const fields={
  status:[],setup:['code','confirmation'],unlock:['code'],lock:['session'],'session-check':['session'],
  'directory':[],'reserved-directory':['session'],suggestions:['term','limit'],
- 'presentation-relationship':['source','id','operation'],
+ 'presentation-relationship':['source','id','operation'],'contact-presentation':['peerId'],
  connection:['peerId','operation'],'social-block':['peerId','blocked'],favorite:['connectionId','favorited'],
  'tribe-create':['groupId','name'],'tribe-member':['groupId','connectionId','member'],'tribe-delete':['groupId'],
  membership:['session','peerId','reserved'],recover:['code','confirmation'],
@@ -89,6 +89,7 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'reserved-directory':result=await getReservedTribeDirectory(actor,session);break;
     case 'suggestions':result=await searchOrdinaryTribeSuggestions(actor,data.term,data.limit as number);break;
     case 'presentation-relationship':result=await presentationRelationship(actor,data.source,data.id,data.operation===null?undefined:data.operation);break;
+    case 'contact-presentation':result=await resolveOrdinaryContactPresentation(actor,data.peerId as string);break;
     case 'connection':result=await mutateOrdinaryConnection(actor,data.peerId,data.operation);break;
     case 'social-block':result=await setOrdinarySocialContactBlock(actor,data.peerId,data.blocked);break;
     case 'favorite':result=await setOrdinaryTribeFavorite(actor,data.connectionId,data.favorited);break;

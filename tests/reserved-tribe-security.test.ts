@@ -366,3 +366,15 @@ test('protected presentation widget has no legacy fallback and invalidates on li
  assert.match(pilot,/addEventListener\('offline',suspend\)/);
  assert.match(pilot,/setPeer\(null\);setMessage\(''\)/);
 });
+
+
+test('ordinary contact card uses the gated pilot transport and never the reserved capability',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.equal(parseReservedTribePilotBody({action:'contact-presentation',peerId:'peer'}).action,'contact-presentation');
+ for(const extra of [{actor:'other'},{session:'a'.repeat(64)},{peerId:'../bad'}])assert.throws(()=>parseReservedTribePilotBody({action:'contact-presentation',peerId:'peer',...extra}),/TRIBE_INVALID/);
+ const modal=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+ const pilot=modal.slice(modal.indexOf('function PilotContactPresentationModal'),modal.indexOf('function LegacyContactPresentationModal'));
+ assert.match(pilot,/requestReservedTribePilot<\{presentation:Presentation\|null\}>\('contact-presentation'/);
+ assert.match(pilot,/subscribeSocialPrivacyInvalidation\(terminate\)/);
+ assert.doesNotMatch(pilot,/localStorage|onSnapshot|\/api\/health/);
+});

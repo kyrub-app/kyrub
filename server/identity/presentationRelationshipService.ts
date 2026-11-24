@@ -85,3 +85,14 @@ export async function setSocialContactBlock(actor:string,target:string,blocked:b
  try{return await setOrdinarySocialContactBlock(actor,target,blocked);}
  catch(error){if(error instanceof Error&&['TRIBE_CONTACT_INVALID','TRIBE_ACCESS_DENIED'].includes(error.message))throw Error('RELATIONSHIP_INVALID');throw error;}
 }
+
+/** Authenticated ordinary contact card. Public contents only; recheck the
+ * relationship boundary after the independent public projection read. */
+export async function resolveOrdinaryContactPresentation(actor:string,target:string){
+ const allowed=async()=>{const result=await presentationRelationship(actor,'contact',target);return ['none','pending_sent','pending_received','accepted'].includes(result.state);};
+ if(!await allowed())return {presentation:null};
+ const {resolveContactPresentation}=await import('./publicVisitCardService.js');
+ const presentation=await resolveContactPresentation(target);
+ if(!presentation||!await allowed())return {presentation:null};
+ return {presentation};
+}
