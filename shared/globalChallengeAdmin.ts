@@ -12,3 +12,10 @@ export type OfficialCommunityBinding =
   | { state: 'unlinked'; candidates: OfficialCommunityCandidate[]; truncated: boolean }
   | { state: 'linked'; community: OfficialCommunityCandidate }
   | { state: 'unavailable' };
+
+// The synthetic author is not a personal UID or a rewards account.
+export const OFFICIAL_CHALLENGE_AUTHOR_ID='kyrub:institutional' as const;
+export interface OfficialChallengeDisclosure {challengeId:string;communityId:string;postId:string;sharedToSquare:boolean;replay:boolean}
+export function institutionalChallengeId(data:Record<string,unknown>):string|undefined {
+ return data.authorId===OFFICIAL_CHALLENGE_AUTHOR_ID&&typeof data.institutionalChallengeId==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(data.institutionalChallengeId)?data.institutionalChallengeId:undefined;
+}

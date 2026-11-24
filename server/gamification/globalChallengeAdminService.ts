@@ -1,5 +1,5 @@
 import { adminAuth } from '../firebaseAdmin.js';
-import {readOfficialCommunityBinding,linkOfficialCommunity} from './officialCommunityBinding.js';
+import {readOfficialCommunityBinding,linkOfficialCommunity,discloseOfficialChallenge} from './officialCommunityBinding.js';
 import { consumeGlobalChallengeActorLimit } from './globalChallengeAdminRateLimit.js';
 import { authorizeIntegrationReadiness } from '../admin/integrationReadinessService.js';
 import { createGlobalChallengeDraft, publishGlobalChallenge, getGlobalChallenge, listGlobalChallenges } from './globalChallengeAdminRepository.js';
@@ -79,12 +79,23 @@ export async function executeOfficialCommunityLink(authorization:string,input:un
  return {binding:await linkOfficialCommunity(actor.uid,input.communityId,new Date().toISOString())};
 }
 
+export async function executeOfficialChallengeDisclosure(authorization:string,input:unknown){
+ const actor=await authorizeGlobalChallengeAdmin(authorization);
+ if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==2||
+  !('challengeId' in input)||typeof input.challengeId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(input.challengeId)||
+  !('shareToSquare' in input)||typeof input.shareToSquare!=='boolean')throw new GlobalChallengeInputError('CHALLENGE_INPUT_INVALID');
+ await consumeGlobalChallengeActorLimit(actor.uid);
+ return {disclosure:await discloseOfficialChallenge(actor.uid,input.challengeId,input.shareToSquare)};
+}
+
 export const mapGlobalChallengeAdminError = (error: unknown) => {
   const message = error instanceof Error ? error.message : '';
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
   if (message === 'AUTH_REQUIRED' || code === 'AUTH_REQUIRED') return { status: 401, body: { code: 'AUTH_REQUIRED' } };
   if (message === 'FORBIDDEN' || message === 'EMAIL_NOT_VERIFIED') return { status: 403, body: { code: 'FORBIDDEN' } };
   if(message==='OFFICIAL_COMMUNITY_OWNER_REQUIRED')return {status:403,body:{code:message}};
+  if(['OFFICIAL_COMMUNITY_UNAVAILABLE','OFFICIAL_CHALLENGE_NOT_AVAILABLE','OFFICIAL_DISCLOSURE_CONFLICT'].includes(message))return {status:409,body:{code:message}};
+  if(message==='OFFICIAL_CHALLENGE_DISCLOSURE_DISABLED')return {status:503,body:{code:message}};
   if(message==='OFFICIAL_COMMUNITY_ALREADY_LINKED')return {status:409,body:{code:message}};
   if (message === 'GLOBAL_CHALLENGE_NOT_FOUND') return { status: 404, body: { code: message } };
   if (['GLOBAL_CHALLENGE_ALREADY_EXISTS', 'GLOBAL_CHALLENGE_NOT_DRAFT', 'GLOBAL_CHALLENGE_ID_MISMATCH'].includes(message)) return { status: 409, body: { code: message } };

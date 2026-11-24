@@ -82,7 +82,8 @@ export function CommunityPostCard({
   const [pending, setPending] = useState('');
   const [notice, setNotice] = useState('');
 
-  const isMine = viewerId === post.authorId;
+  const institutional = Boolean(post.institutionalChallengeId);
+  const isMine = !institutional && viewerId === post.authorId;
   const isLiked = likes.some(item => item.postId === post.id && item.userId === viewerId);
   const postComments = comments.filter(item => item.postId === post.id);
   const pinnedComment = post.pinnedCommentId
@@ -98,12 +99,12 @@ export function CommunityPostCard({
       ? [commentIds.get(comment.parentCommentId)!.authorId] : []),
   ]);
   const liveAuthors = useLiveAuthorIdentities([
-    post.authorId,
+    ...(institutional ? [] : [post.authorId]),
     ...(pinnedComment ? [pinnedComment.authorId] : []),
     ...(commentsOpen ? postComments.map(comment => comment.authorId) : previewAuthorIds),
   ]);
-  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
-  const authorAvatar = displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
+  const authorName = institutional ? 'Kyrub Oficial' : displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const authorAvatar = institutional ? '' : displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors);
   const displayPost = { ...post, authorName, authorAvatar };
   const displayComments = postComments.map(comment => ({
     ...comment,
@@ -209,6 +210,7 @@ export function CommunityPostCard({
           : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white"><UserRound className="h-5 w-5" /></span>}
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm text-white">{authorName}</strong>
+          {institutional&&<span className="block text-xs font-bold text-teal-300">Comunicado institucional · Desafio da plataforma</span>}
           <span className="text-xs text-slate-400">{displayDate(post.createdAt)}</span>
         </div>
         <div className="relative">
@@ -219,7 +221,7 @@ export function CommunityPostCard({
           </button>
           {menuOpen && (
             <div className="absolute right-0 top-11 z-30 min-w-48 space-y-1 rounded-xl border border-slate-700 bg-slate-950 p-2 shadow-2xl" role="menu">
-              {!isMine && !connection && (
+              {!institutional && !isMine && !connection && (
                 <button type="button" role="menuitem"
                   onClick={() => { setMenuOpen(false); void run('connect', async () => {
                     await requestCommunityPostConnection(post.authorId);
@@ -229,15 +231,15 @@ export function CommunityPostCard({
                   <UserRoundPlus className="h-4 w-4" /> Conectar
                 </button>
               )}
-              {!isMine && connectionPending && <p className="px-2 py-2 text-xs text-slate-400">Conexão pendente</p>}
-              {!isMine && connected && (
+              {!institutional && !isMine && connectionPending && <p className="px-2 py-2 text-xs text-slate-400">Conexão pendente</p>}
+              {!institutional && !isMine && connected && (
                 <button type="button" role="menuitem"
                   onClick={() => { setMenuOpen(false); setForwardRecipient(null); setChatDraft(''); setChatOpen(true); }}
                   className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                   <MessageCircleMore className="h-4 w-4" /> Conversar
                 </button>
               )}
-              <button type="button" role="menuitem"
+              {!institutional && <button type="button" role="menuitem"
                 onClick={() => { setMenuOpen(false); void run('profile', async () => {
                   const person = await readCommunityPostPublicProfile(post.authorId);
                   if (!person.visible && !isMine) throw new Error('Este perfil não está público.');
@@ -245,7 +247,7 @@ export function CommunityPostCard({
                 }); }}
                 className="flex min-h-10 w-full items-center gap-2 rounded-lg px-2 text-left text-xs text-white hover:bg-slate-800">
                 <UserRound className="h-4 w-4" /> {isMine ? 'Meu perfil' : 'Ver perfil'}
-              </button>
+              </button>}
               {isMine && (
                 <button type="button" role="menuitem"
                   onClick={() => { setMenuOpen(false); setMetricsOpen(true); }}
@@ -320,7 +322,7 @@ export function CommunityPostCard({
         </section>
       )}
       <div className="mt-3 grid grid-cols-3 gap-2 border-t border-slate-800 pt-3">
-        {SEMEADURA_UI_ENABLED ? (
+        {institutional ? <span className="flex items-center justify-center text-center text-xs text-slate-400">Publicação institucional</span> : SEMEADURA_UI_ENABLED ? (
           <SemearButton kind="community" postId={post.id} viewerId={viewerId} compact />
         ) : (
         <button type="button" aria-label={isLiked ? 'Remover curtida' : 'Curtir publicação'}

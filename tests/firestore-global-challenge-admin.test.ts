@@ -539,6 +539,44 @@ test('institutional community binding is owner-authorized, unique, audited and s
  assert.equal((await adminDb.collection('community_posts').where('communityId','==','official-owned').get()).size,0);
 });
 
+
+test('institutional disclosure commits one original and optional Taba pointer only in isolated emulator',async()=>{
+ const ref=adminDb.doc('kyrub_admin/control_plane/institutional_channels/official_community');
+ await adminDb.doc('community_members/official-owned__admin').update({status:'active'});
+ assert.equal((await ref.get()).get('communityId'),'official-owned');
+ const id='institutional-disclosure-fixture';
+ await adminDb.doc('global_challenges/'+id).set({...draft(id),status:'published'});
+ const operation='disclose-official-challenge';
+ const input={challengeId:id,shareToSquare:true};
+ const prior=process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;
+ delete process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;
+ assert.equal((await request(input,operation)).status,503);
+ process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED='true';
+ try{
+  assert.equal((await request(input,operation,token('operations'))).status,403);
+  assert.equal((await request({...input,communityId:'official-other'},operation)).status,400);
+  const results=await Promise.all(Array.from({length:3},()=>request(input,operation)));
+  assert.ok(results.every(r=>r.status===200));
+  assert.equal(results.filter(r=>r.body.disclosure.replay===false).length,1);
+  const postId=results[0].body.disclosure.postId;
+  const post=await adminDb.doc('community_posts/'+postId).get();
+  assert.equal(post.get('authorId'),'kyrub:institutional');
+  assert.equal(post.get('institutionalChallengeId'),id);
+  assert.equal(post.get('communityId'),'official-owned');
+  const pointer=await adminDb.doc('community_square_posts/'+postId).get();
+  assert.equal(pointer.get('postId'),postId);
+  assert.equal(pointer.get('createdAt').toMillis(),post.get('createdAt').toMillis());
+  assert.equal((await adminDb.collection('community_posts').where('institutionalChallengeId','==',id).get()).size,1);
+  assert.equal((await request({...input,shareToSquare:false},operation)).status,409);
+  assert.equal((await adminDb.doc('global_challenges/'+id).get()).get('status'),'published');
+  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+  await assert.rejects(seedVerifiedPost(adminDb,{authenticatedUserId:'admin',kind:'community',postId}),/SEMEADURA_POST_NOT_ELIGIBLE/);
+  assert.equal((await adminDb.doc('users/kyrub:institutional/semeaduraProgress/summary').get()).exists,false);
+  const browser=environment.authenticatedContext('admin').firestore();
+  await assertFails(setDoc(doc(browser,'community_posts/'+postId),{institutionalChallengeId:'forged'},{merge:true}));
+ }finally{if(prior===undefined)delete process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;else process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED=prior;}
+});
+
 test('malformed and oversized HTTP requests cannot bypass pre-parser ingress admission', async () => {
   let blocked = false;
   for (let i = 0; i <= GLOBAL_CHALLENGE_INGRESS_LIMIT; i++) {

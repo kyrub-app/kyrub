@@ -1,3 +1,4 @@
+import { OfficialChallengeDisclosurePanel } from './OfficialChallengeDisclosurePanel';
 import { OfficialCommunityBindingPanel } from './OfficialCommunityBindingPanel';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
@@ -136,6 +137,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
       {detailLoading && <p role="status" className="text-sm text-slate-400">Carregando detalhes…</p>}
       {detail && <><h3 ref={detailHeadingRef} tabIndex={-1} className="scroll-mt-24 break-words text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{detail.title}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{detail.description}</p>
         <dl className="my-4 grid gap-3 text-xs text-slate-300 sm:grid-cols-2">{[['Identificador', detail.id], ['Estado', statusLabels[detail.status]], ['Validação', modeLabels[detail.validationMode]], ['XP previsto', detail.rewardXp], ['K-Coins previstos', detail.rewardKCoins], ['Conclusões por usuário', detail.maxCompletionsPerUser], ['Conclusões totais', detail.maxCompletions ?? 'Sem limite'], ['Início', formatDate(detail.startsAt)], ['Fim', formatDate(detail.endsAt)]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="break-all">{value}</dd></div>)}</dl>
+        {['published','active'].includes(detail.status)&&<OfficialChallengeDisclosurePanel key={detail.id} challenge={detail} api={api} />}
         {detail.status === 'draft' && <button type="button" disabled={busy} className={`${buttonClass} border-emerald-500/40 text-emerald-200`} onClick={publish}>Publicar desafio</button>}
       </>}
     </section>}

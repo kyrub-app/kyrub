@@ -28,8 +28,8 @@ export function CommunitySquareFeedCard({ entry, viewerId, canParticipate, saved
   const [comments, setComments] = useState<CommunityPostComment[]>([]);
   const [error, setError] = useState('');
   const { post } = entry;
-  const liveAuthors = useLiveAuthorIdentities([post.authorId, entry.forwardedById || '']);
-  const authorName = displayAuthorName(post.authorId, post.authorName, liveAuthors);
+  const liveAuthors = useLiveAuthorIdentities([...(post.institutionalChallengeId ? [] : [post.authorId]), entry.forwardedById || '']);
+  const authorName = post.institutionalChallengeId ? 'Kyrub Oficial' : displayAuthorName(post.authorId, post.authorName, liveAuthors);
   const displayPost = { ...post, authorName, authorAvatar: displayAuthorAvatar(post.authorId, post.authorAvatar, liveAuthors) };
   const forwardedByName = entry.forwardedById
     ? displayAuthorName(entry.forwardedById, entry.forwardedByName || 'Kairubido', liveAuthors)
