@@ -124,12 +124,28 @@ async function projectTribeDirectory(actor:string,scope:'ordinary'|'reserved',to
   ]);
   if(markers.size>MAX_RESERVED_CONTACTS||connections.size>MAX_DIRECTORY_CONNECTIONS||favorites.size>MAX_DIRECTORY_CONNECTIONS||groups.size>30)throw Error('TRIBE_DIRECTORY_LIMIT');
   const hidden=new Set(markers.docs.map(item=>item.id));
-  const filtered=connections.docs.flatMap(item=>{
+  const eligible=connections.docs.flatMap(item=>{
    const relation=relationship(item,actor);
    if(!relation)return [];
    const isReserved=hidden.has(peerOf(actor,relation));
    return scope==='reserved'?(isReserved&&relation.status==='accepted'?[relation]:[]):(!isReserved?[relation]:[]);
   });
+  // A stale relationship may survive a legacy or concurrent block operation.
+  // Never expose its identity, favorite, group membership or forwarding target.
+  // Read both directions in the SAME projection transaction. Deduplicate
+  // peers and batch reads, keeping the existing bounded directory scan.
+  const peers=[...new Set(eligible.map(item=>peerOf(actor,item)))];
+  const blocked=new Set<string>();
+  for(let offset=0;offset<peers.length;offset+=100){
+   const batch=peers.slice(offset,offset+100);
+   const refs=batch.flatMap(peer=>[
+    adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+peer),
+    adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor)
+   ]);
+   const rows=await tx.getAll(...refs);
+   batch.forEach((peer,index)=>{if(rows[index*2].exists||rows[index*2+1].exists)blocked.add(peer);});
+  }
+  const filtered=eligible.filter(item=>!blocked.has(peerOf(actor,item)));
   const acceptedPeers=new Set(filtered.filter(item=>item.status==='accepted').map(item=>peerOf(actor,item)));
   const favoriteIds=favorites.docs.filter(item=>acceptedPeers.has(item.id)&&item.get('favorited')===true).map(item=>item.id);
   const tribes=scope==='ordinary'?groups.docs.flatMap(item=>{

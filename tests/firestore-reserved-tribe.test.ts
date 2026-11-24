@@ -453,3 +453,47 @@ test('ordinary presentation boundary denies reserved relationship and either blo
  await setReservedTribeContact(titular,unlocked.token,contact,false);
  assert.equal(await allowed(titular,contact),true);
 });
+
+
+test('directory projections exclude stale blocked relations, favorites, groups and forwarding targets',async()=>{
+ const titular='blocked-directory-owner',contact='blocked-directory-peer',regular='blocked-directory-ordinary';
+ const pair=id(titular,contact),regularPair=id(titular,regular);
+ await Promise.all([titular,contact,regular].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await Promise.all([
+  adminDb.doc('connections/'+pair).set(connection(titular,contact)),
+  adminDb.doc('connections/'+regularPair).set(connection(titular,regular)),
+  adminDb.doc('users/'+titular+'/contact_favorites/'+contact).set({favorited:true,connectionId:pair}),
+  adminDb.doc('users/'+titular+'/contact_groups/fixture').set({ownerId:titular,groupId:'fixture',name:'Fixture',memberIds:[contact,regular]})
+ ]);
+ const initial=await getOrdinaryTribeDirectory(titular);
+ assert.equal(initial.connections.length,2);
+ assert.ok(initial.favoriteIds.includes(contact));
+ assert.ok(initial.forwardTargets.some(row=>row.peerId===contact));
+ const own=adminDb.doc('social_contact_blocks/'+titular+'/blocked/'+contact);
+ const reverse=adminDb.doc('social_contact_blocks/'+contact+'/blocked/'+titular);
+ const checkOrdinary=async()=>{
+  const result=await getOrdinaryTribeDirectory(titular);
+  assert.deepEqual(result.connections.map(row=>row.id),[regularPair]);
+  assert.deepEqual(result.favoriteIds,[]);
+  assert.deepEqual(result.tribes[0].memberIds,[regular]);
+  assert.deepEqual(result.forwardTargets.map(row=>row.peerId),[regular]);
+  assert.deepEqual((await getOrdinaryTribeDirectory(contact)).connections,[]);
+ };
+ await own.set({targetId:contact});await checkOrdinary();await own.delete();
+ await reverse.set({targetId:titular});await checkOrdinary();await reverse.delete();
+ await initializeReservedTribe(titular,'blocked!fixture');
+ const session=await unlockReservedTribe(titular,'blocked!fixture');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(titular,session.token,contact,true);
+ assert.equal((await getReservedTribeDirectory(titular,session.token)).connections.length,1);
+ await reverse.set({targetId:titular});
+ const privateDir=await getReservedTribeDirectory(titular,session.token);
+ assert.deepEqual(privateDir.connections,[]);assert.deepEqual(privateDir.favoriteIds,[]);
+ await assert.rejects(adminDb.runTransaction(tx=>authorizeTribeRelationship(tx,titular,pair,session.token)),/TRIBE_ACCESS_DENIED/);
+ await reverse.delete();
+ assert.equal((await getReservedTribeDirectory(titular,session.token)).connections.length,1);
+ // Filtering is non-destructive, including private classifications.
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
+ assert.equal((await adminDb.doc('users/'+titular+'/contact_favorites/'+contact).get()).get('favorited'),true);
+ assert.deepEqual((await adminDb.doc('users/'+titular+'/contact_groups/fixture').get()).get('memberIds'),[contact,regular]);
+});
