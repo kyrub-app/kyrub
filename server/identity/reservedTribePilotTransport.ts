@@ -2,6 +2,7 @@ import type {KyrubMcpHttpRequest,KyrubMcpHttpResponse} from '../mcp/kyrubiaMcpSe
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,checkReservedTribeSession,setOrdinarySocialContactBlock} from './reservedTribeService.js';
 import {forwardOrdinaryCommunityPost} from './reservedTribeForwardService.js';
+import {presentationRelationship} from './presentationRelationshipService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from './reservedTribeChatService.js';
 import {recoverReservedTribeCode} from './reservedTribeRecoveryService.js';
 import {listReservedUserNotifications,markReservedUserNotificationRead} from '../notifications/userNotificationService.js';
@@ -20,6 +21,7 @@ const validSession=(value:unknown):value is string=>typeof value==='string'&&/^[
 const fields={
  status:[],setup:['code','confirmation'],unlock:['code'],lock:['session'],'session-check':['session'],
  'directory':[],'reserved-directory':['session'],suggestions:['term','limit'],
+ 'presentation-relationship':['source','id','operation'],
  connection:['peerId','operation'],'social-block':['peerId','blocked'],favorite:['connectionId','favorited'],
  'tribe-create':['groupId','name'],'tribe-member':['groupId','connectionId','member'],'tribe-delete':['groupId'],
  membership:['session','peerId','reserved'],recover:['code','confirmation'],
@@ -42,6 +44,7 @@ export function parseReservedTribePilotBody(input:unknown):{action:Action;data:R
  for(const key of ['peerId','connectionId','messageId','notificationId','groupId','postId','communityId'])if(keys.includes(key)&&!validId(data[key]))throw Error('TRIBE_INVALID');
  if(keys.includes('code')&&(typeof data.code!=='string'||data.code.length>64))throw Error('TRIBE_INVALID');
  if(keys.includes('confirmation')&&(typeof data.confirmation!=='string'||data.confirmation.length>64))throw Error('TRIBE_INVALID');
+ if(action==='presentation-relationship'&&(typeof data.source!=='string'||!['profile','tag','contact'].includes(data.source)||typeof data.id!=='string'||!data.id.length||data.id.length>128||!(data.operation===null||typeof data.operation==='string'&&['connect','cancel','accept','decline'].includes(data.operation))))throw Error('TRIBE_INVALID');
  if(action==='connection'&&!['request','accept','remove'].includes(String(data.operation)))throw Error('TRIBE_INVALID');
  if(action==='tribe-create'&&(typeof data.name!=='string'||!data.name.trim()||data.name.trim().length>60))throw Error('TRIBE_INVALID');
  if(action==='tribe-member'&&typeof data.member!=='boolean')throw Error('TRIBE_INVALID');
@@ -85,6 +88,7 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'directory':result=await getOrdinaryTribeDirectory(actor);break;
     case 'reserved-directory':result=await getReservedTribeDirectory(actor,session);break;
     case 'suggestions':result=await searchOrdinaryTribeSuggestions(actor,data.term,data.limit as number);break;
+    case 'presentation-relationship':result=await presentationRelationship(actor,data.source,data.id,data.operation===null?undefined:data.operation);break;
     case 'connection':result=await mutateOrdinaryConnection(actor,data.peerId,data.operation);break;
     case 'social-block':result=await setOrdinarySocialContactBlock(actor,data.peerId,data.blocked);break;
     case 'favorite':result=await setOrdinaryTribeFavorite(actor,data.connectionId,data.favorited);break;
@@ -106,9 +110,9 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
    response.status(200).json(result);
   }catch(error){
    const code=error instanceof Error?error.message:'';
-   if(['TRIBE_INVALID','TRIBE_CODE_INVALID','TRIBE_SEARCH_INVALID','TRIBE_CONTACT_INVALID','TRIBE_MESSAGE_INVALID'].includes(code))response.status(400).json({error:'TRIBE_INVALID'});
+   if(['TRIBE_INVALID','TRIBE_CODE_INVALID','TRIBE_SEARCH_INVALID','TRIBE_CONTACT_INVALID','TRIBE_MESSAGE_INVALID','RELATIONSHIP_INVALID'].includes(code))response.status(400).json({error:'TRIBE_INVALID'});
    else if(['TRIBE_ACCESS_DENIED','TRIBE_RECOVERY_DENIED','TRIBE_SETUP_UNAVAILABLE','TRIBE_CONNECTION_REQUIRED','USER_NOTIFICATION_NOT_FOUND'].includes(code))response.status(403).json({error:'TRIBE_ACCESS_DENIED'});
-   else if(['TRIBE_LIMIT_REACHED','TRIBE_DIRECTORY_LIMIT','TRIBE_MESSAGE_CONFLICT','TRIBE_GROUP_CONFLICT','TRIBE_FORWARD_DUPLICATE'].includes(code))response.status(409).json({error:code});
+   else if(['TRIBE_LIMIT_REACHED','TRIBE_DIRECTORY_LIMIT','TRIBE_MESSAGE_CONFLICT','TRIBE_GROUP_CONFLICT','TRIBE_FORWARD_DUPLICATE','RELATIONSHIP_CHANGED'].includes(code))response.status(409).json({error:code});
    else response.status(503).json({error:'TRIBE_UNAVAILABLE'});
    // Never log request bodies, codes, capabilities, IDs or raw SDK exceptions.
   }

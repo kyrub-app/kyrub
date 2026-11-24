@@ -344,3 +344,11 @@ test('integration block adapter never reads or migrates legacy keys in the prote
  assert.match(directory,/useSocialBlocks\(!pilot&&isLoggedIn\?favoriteOwner:undefined\)/);
  assert.match(directory,/blocksReady && !ownBlocked\(user.id\)/);
 });
+
+
+test('presentation pilot action is strictly scoped to source, address and operation',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ const read={action:'presentation-relationship',source:'profile',id:'a.b',operation:null};
+ assert.equal(parseReservedTribePilotBody(read).action,'presentation-relationship');
+ for(const patch of [{actor:'other'},{session:'a'.repeat(64)},{source:'unknown'},{id:''},{operation:'block'},{operation:['connect']},{operation:undefined}])assert.throws(()=>parseReservedTribePilotBody({...read,...patch}),/TRIBE_INVALID/);
+});
