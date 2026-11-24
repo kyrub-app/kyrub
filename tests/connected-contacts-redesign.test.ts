@@ -79,7 +79,15 @@ test('wrapper replaces only the legacy connected body', () => {
 test('blocking uses server authority and both directions are checked for chat and connections',()=>{
  const service=readFileSync('server/identity/presentationRelationshipService.ts','utf8');
  const rules=readFileSync('firestore.rules','utf8');
- assert.match(service,/tx.get\(blockRef\(actor,targetId\)\)/);assert.match(service,/tx.get\(blockRef\(targetId,actor\)\)/);
+ const shared=readFileSync('server/identity/reservedTribeService.ts','utf8');
+ const boundary=shared.slice(shared.indexOf('export async function ordinaryPresentationPeerAllowed'),shared.indexOf('export async function authorizeOrdinaryForward'));
+ assert.match(service,/if\(!await ordinaryPresentationPeerAllowed\(tx,actor,targetId\)\)return \{state:'unavailable'\}/);
+ assert.ok(service.indexOf('ordinaryPresentationPeerAllowed(tx,actor,targetId)')<service.indexOf("tx.create(ref,"));
+ assert.match(boundary,/tx.get\(adminDb.doc\('social_contact_blocks\/'\+actor\+'\/blocked\/'\+peer\)\)/);
+ assert.match(boundary,/tx.get\(adminDb.doc\('social_contact_blocks\/'\+peer\+'\/blocked\/'\+actor\)\)/);
+ assert.match(boundary,/return !marker.exists&&!ownBlock.exists&&!otherBlock.exists/);
+ assert.match(service,/await setOrdinarySocialContactBlock\(actor,target,blocked\)/);
+ assert.match(service,/invalidateSocialPair\(tx,actor,targetId\)/);
  assert.match(service,/export async function setSocialContactBlock/);assert.match(rules,/match \/social_contact_blocks/);
  assert.match(rules,/noSocialContactBlock\(incoming\(\).senderId, incoming\(\).receiverId\)/);
  assert.match(rules,/noSocialContactBlock\(connectionData\(\).senderId, connectionData\(\).receiverId\)/);

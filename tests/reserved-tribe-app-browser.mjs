@@ -146,12 +146,39 @@ try{
  const inbox=a.page.getByRole('dialog',{name:'Central de notificações'});
  await visible(inbox.getByText(systemNotice,{exact:true}));
  await absent(inbox.getByText(privateNotice,{exact:true}));
- assert.equal(await bell.getAttribute('aria-label'),'Notificações, 1 não lidas');
+ assert.equal(await bell.getAttribute('aria-label'),'Notificações, 1 não lidas, 0 solicitações pendentes');
  await inbox.getByRole('button',{name:'Marcar todas como lidas'}).click();
  await visible(inbox.getByText('Tudo lido',{exact:true}));
  assert.ok((await db.doc(noticePath+'system-fixture').get()).get('readAt'));
  assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
+ // The integrated bell also displays incoming ordinary connections from the
+ // authorized projection, even for an owner with a protected directory.
+ const incoming='ui-tribe-bell-sender',incomingName='Pessoa Solicitação Teste';
+ await admin.createUser({uid:incoming,email:incoming+'@example.invalid',password,emailVerified:true,displayName:incomingName});
+ await db.doc('users/'+incoming).set({uid:incoming,name:incomingName,email:incoming+'@example.invalid',photoUrl:'',isProfileVisible:true,createdAt:new Date(),updatedAt:new Date()});
+ const incomingPair=[owner,incoming].sort().join('_'),incomingRef=db.doc('connections/'+incomingPair);
+ await db.runTransaction(async tx=>{
+  tx.create(incomingRef,{senderId:incoming,receiverId:owner,participantIds:[owner,incoming].sort(),status:'pending',senderName:incomingName,receiverName:ownerName});
+  for(const uid of [owner,incoming])tx.set(db.doc('social_directory_revisions/'+uid),{revision:FieldValue.increment(1)},{merge:true});
+ });
+ const requests=inbox.getByRole('region',{name:'Solicitações de conexão'});
+ await visible(requests.getByText(incomingName+' deseja conectar-se com você.',{exact:true}));
+ await absent(requests.getByText(peerName+' deseja conectar-se com você.',{exact:true}));
+ assert.equal(await bell.getAttribute('aria-label'),'Notificações, 0 não lidas, 1 solicitações pendentes');
+ await requests.getByRole('button',{name:'Aceitar',exact:true}).click();
+ await absent(requests);
+ assert.equal((await incomingRef.get()).get('status'),'accepted');
+ assert.equal(await bell.getAttribute('aria-label'),'Notificações, 0 não lidas, 0 solicitações pendentes');
+ assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
  await inbox.getByRole('button',{name:'Fechar notificações'}).click();
+ // Remove the synthetic extra connection through the same authenticated API,
+ // leaving the original reserved fixture and history untouched.
+ assert.deepEqual(await a.page.evaluate(async target=>{
+  const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');
+  return requestReservedTribePilot('connection',{peerId:target,operation:'remove'});
+ },incoming),{status:'none'});
+ assert.equal((await incomingRef.get()).exists,false);
+ console.log('PASS integrated general bell accepts ordinary request through authorized pilot without exposing private notices');
  // Hold status responses while reopening the actual panel. No secret may
  // enter an ordinary search before the server confirms configuration.
  const hold=a.holdStatus();
