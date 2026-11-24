@@ -1,5 +1,8 @@
 // Vite test fixture only. Never initialize with live Firebase configuration.
 import {auth,db} from '../../src/utils/firebase';
+import {createElement} from 'react';
+import {createRoot} from 'react-dom/client';
+import {PresentationRelationship} from '../../src/components/PresentationRelationship';
 import {initializeApp,deleteApp} from 'firebase/app';
 import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,GoogleAuthProvider,signInWithCredential,reauthenticateWithCredential,signOut,setPersistence,inMemoryPersistence,browserLocalPersistence} from 'firebase/auth';
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,connectFirestoreEmulator,disableNetwork,enableNetwork,doc,getDocFromServer,onSnapshot,updateDoc,serverTimestamp,waitForPendingWrites,terminate} from 'firebase/firestore';
@@ -11,8 +14,13 @@ const signIn=async (instance,credentials)=>{
  await setPersistence(instance,inMemoryPersistence);
  return (await signInWithEmailAndPassword(instance,credentials.email,credentials.password)).user.uid;
 };
-let legacy;
+let legacy,relationshipRoot,relationshipHost;
 window.fixture={
+ mountRelationship(source,id){
+  if(!relationshipHost){relationshipHost=document.createElement('div');relationshipHost.id='fixture-presentation-relationship';document.body.appendChild(relationshipHost);relationshipRoot=createRoot(relationshipHost);}
+  relationshipRoot.render(createElement(PresentationRelationship,{source,id}));
+ },
+ unmountRelationship(){relationshipRoot?.unmount();relationshipHost?.remove();relationshipRoot=undefined;relationshipHost=undefined;},
  projects:()=>[auth.app.options.projectId,db.app.options.projectId],
  enabled:reservedTribePilotClientEnabled,
  authEmulator:()=>({host:auth.emulatorConfig?.host,port:auth.emulatorConfig?.port,protocol:auth.emulatorConfig?.protocol}),

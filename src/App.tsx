@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, onSnapshot } from 'firebase/firestore';
+import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
@@ -19,6 +19,7 @@ import { KyrubiaExternalBridgeControls } from './components/KyrubiaExternalBridg
 import { KyrubiaNamingBridge } from './components/KyrubiaNamingBridge';
 import { KyrubRendaEntryApp } from './components/KyrubRendaEntryApp';
 import { KyrubGuestWorkspace } from './components/KyrubGuestWorkspace';
+import { KyrubTagOnlyEntry } from './components/KyrubTagOnlyEntry';
 import { NoteInvitationOutboxBridge } from './components/NoteInvitationOutboxBridge';
 import { PlanCenterApp } from './components/plans/PlanCenterApp';
 import { ProfileIdentityRecoveryBridge } from './components/ProfileIdentityRecoveryBridge';
@@ -273,21 +274,64 @@ function AuthenticatedKyrubApp({ operational }: { operational: boolean }) {
   );
 }
 
-function KyrubMainEntry() {
-  // Restore an existing Firebase session before deciding which entry surface to
-  // show. A guest sees the same Renda navigation, but only read-only content.
+function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
+  // Promotional e-mail-only identities are checked before LegacyApp mounts.
+  // No existing Kyrub account is affected until both server and client gates
+  // are deliberately enabled for the new campaign.
   const [currentUser, setCurrentUser] = useState(auth.currentUser);
   const [resolved, setResolved] = useState(false);
+  const [identityMode, setIdentityMode] = useState<'checking'|'full'|'tag_only'|'unavailable'>('checking');
+  const [retry, setRetry] = useState(0);
+  useEffect(() => {
+    let active=true;
+    let controller:AbortController|null=null;
+    const unsub=onAuthStateChanged(auth,user=>{
+      controller?.abort();
+      const ctrl=new AbortController();controller=ctrl;
+      setCurrentUser(user);setResolved(true);
+      if(!user||import.meta.env.VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE!=='true'){
+        setIdentityMode('full');return;
+      }
+      setIdentityMode('checking');
+      void user.getIdToken().then(token=>fetch('/api/health?transport=manage-kyrub-tag&view=identity',{
+        cache:'no-store',signal:ctrl.signal,headers:{Authorization:'Bearer '+token}
+      })).then(async response=>{
+        if(!response.ok)throw Error('TAG_IDENTITY_UNAVAILABLE');
+        const payload=await response.json() as {mode?:string};
+        if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
+        if(payload.mode==='tag_only')setIdentityMode('tag_only');
+        else if(payload.mode==='full')setIdentityMode('full');
+        else {
+          // A new email-link credential must not fall through to the regular
+          // Kyrub workspace if its tag-only preparation failed.
+          // Existing Google sign-in onboarding remains unchanged.
+          const isGoogleIdentity=user.providerData.some(p=>p.providerId==='google.com');
+          setIdentityMode(isGoogleIdentity?'full':'unavailable');
+        }
+      }).catch(()=>{
+        // If the tag identity service is unavailable, preserve existing Kyrub
+        // members with a server-confirmed profile, but never bootstrap an
+        // unclassified e-mail-only identity from a cache or an error.
+        if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
+        void getDocFromServer(doc(db,'users',user.uid)).then(snapshot=>{
+          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)
+           setIdentityMode(snapshot.exists()?'full':'unavailable');
+        }).catch(()=>{
+          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)setIdentityMode('unavailable');
+        });
+      });
+    });
+    return()=>{active=false;controller?.abort();unsub();};
+  },[retry]);
 
-  useEffect(() => onAuthStateChanged(auth, user => {
-    setCurrentUser(user);
-    setResolved(true);
-  }), []);
-
-  if (!resolved) return <KyrubBootstrapScreen />;
-  return currentUser
-    ? <AuthenticatedKyrubApp operational={false} />
-    : <KyrubGuestWorkspace />;
+  if (!resolved || identityMode==='checking') return <KyrubBootstrapScreen />;
+  if(currentUser&&(identityMode==='tag_only'||identityMode==='unavailable'))
+   return <KyrubTagOnlyEntry user={currentUser}
+      unavailable={identityMode==='unavailable'}
+      onPromoted={()=>setIdentityMode('full')}
+      onRetry={()=>setRetry(v=>v+1)}/>;
+  if(operational)return <AuthenticatedKyrubApp operational />;
+  return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
 }
 
 export default function App() {
@@ -333,7 +377,11 @@ export default function App() {
     if (route.legacyRedirect) {
       window.history.replaceState({}, '', route.canonicalPath);
     }
-    return <AuthenticatedKyrubApp operational />;
+    // Tag-only Firebase sessions must never auto-create a Kyrub store even on /staff.
+    // Preserve the original staff route when the campaign identity gate is off.
+    return import.meta.env.VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE==='true'
+      ? <KyrubMainEntry operational />
+      : <AuthenticatedKyrubApp operational />;
   }
 
   // Root / and legacy ?app=1 both lead to the real workspace. Guests can

@@ -107,6 +107,15 @@ try{
  assert.equal(await a.evaluate(token=>window.fixture.signIn(token),ownerToken),owner);
  assert.equal(await b.evaluate(token=>window.fixture.signIn(token),peerToken),peer);
  assert.equal((await success(a,'status')).configured,false);
+ const tag='b8'.repeat(16);
+ await db.doc('kyrub_official_tags/'+tag).set({distribution:'promotional',ownerId:peer,enabled:true,blocked:false,socialEnabled:true});
+ await db.doc('public_social_addresses/profile:browser-peer').set({kind:'profile',identifier:'browser-peer',targetId:peer});
+ const sources=[{source:'contact',id:peer},{source:'tag',id:tag},{source:'profile',id:'browser-peer'}];
+ for(const source of sources){const value=await success(a,'presentation-relationship',{...source,operation:null});assert.equal(value.state,'accepted');assert.equal(value.peer.connectionId,pair);}
+ assert.equal((await a.request.post(origin+'/api/social/reserved-tribe',{data:{action:'presentation-relationship',source:'tag',id:tag,operation:null}})).status(),401);
+ await a.evaluate(tag=>window.fixture.mountRelationship('tag',tag),tag);
+ const widget=a.locator('#fixture-presentation-relationship');
+ await widget.getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'visible'});
  await success(a,'setup',{code,confirmation:code});
  const first=await success(a,'unlock',{code});
  assert.equal(first.ok,true);
@@ -116,6 +125,24 @@ try{
  assert.ok((await success(a,'reserved-directory',{session:first.token})).connections.some(c=>c.participantIds.includes(peer)));
  await refused(b,'reserved-directory',{session:first.token});
  assert.ok((await success(b,'directory')).connections.some(c=>c.participantIds.includes(owner)));
+ for(const source of sources){
+  assert.deepEqual(await success(a,'presentation-relationship',{...source,operation:null}),{state:'unavailable'});
+  assert.deepEqual(await success(a,'presentation-relationship',{...source,operation:'connect'}),{state:'unavailable'});
+ }
+ await widget.getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'detached'});
+ assert.equal(await widget.getByRole('button',{name:'Conectar',exact:true}).count(),0);
+ await a.evaluate(()=>window.fixture.unmountRelationship());
+ assert.equal((await success(b,'presentation-relationship',{source:'contact',id:owner,operation:null})).state,'accepted');
+ await b.evaluate(owner=>window.fixture.mountRelationship('contact',owner),owner);
+ await b.locator('#fixture-presentation-relationship').getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'visible'});
+ await b.evaluate(()=>window.fixture.unmountRelationship());
+ console.log('PASS presentation widget hides reserved relationship while counterpart retains authorized chat action');
+ await refused(a,'presentation-relationship',{source:'contact',id:peer,operation:null,session:first.token});
+ await a.evaluate(()=>localStorage.setItem('kyrub_friends','synthetic'));
+ await refused(a,'presentation-relationship',{source:'tag',id:tag,operation:null},'TRIBE_STORAGE_UNVERIFIED');
+ await a.evaluate(()=>localStorage.removeItem('kyrub_friends'));
+ assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
+ console.log('PASS authenticated presentation routes enforce directional reservation and storage gate');
  await refused(a,'ordinary-chat-read',{connectionId:pair});
  await success(a,'chat-send',{session:first.token,connectionId:pair,messageId:'browser-fixture-msg',text:'fixture-only message'});
  assert.equal((await success(b,'ordinary-chat-read',{connectionId:pair})).messages.length,1);

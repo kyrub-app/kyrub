@@ -24,10 +24,13 @@ test('connected cards use status backgrounds and mobile-safe top navigation', ()
 });
 
 test('contact identity opens a public profile without private Clips controls', () => {
-  assert.match(panelSource, /id="public-user-profile-modal"/);
+  const presentationSource=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+  assert.match(panelSource, /<ContactPresentationModal/);
+  assert.match(presentationSource, /id="public-user-profile-modal"/);
   assert.match(panelSource, /Abrir perfil público de/);
-  assert.match(panelSource, /Perfil público/);
-  assert.match(panelSource, /Somente informações e conteúdos públicos/);
+  assert.match(presentationSource, /Cartão de apresentação/);
+  assert.match(presentationSource, /Somente informações e conteúdos públicos/);
+  assert.doesNotMatch(presentationSource,/MediaCarousel|feedPosts|statusPosts/);
   assert.doesNotMatch(panelSource, /<Copy/);
   assert.doesNotMatch(panelSource, /Informações e configurações do perfil/);
 });
@@ -60,4 +63,33 @@ test('wrapper replaces only the legacy connected body', () => {
   );
   assert.match(globalCss, /connected-contacts-redesign-active/);
   assert.match(globalCss, /> \.space-y-6/);
+});
+
+ test('shared presentation is visual only and wrappers retain context actions',()=>{
+ const shared=readFileSync('src/components/PresentationCard.tsx','utf8');
+ const contact=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ assert.match(contact,/<PresentationCard/);assert.match(tag,/<PresentationCard/);
+ const relationship=readFileSync('src/components/PresentationRelationship.tsx','utf8');
+ assert.match(contact,/<PresentationRelationship/);assert.match(relationship,/Abrir chat/);assert.match(relationship,/result.state==='accepted'/);assert.doesNotMatch(contact,/SOS · Informações de emergência/);
+ assert.match(tag,/SOS · Informações de emergência/);assert.doesNotMatch(tag,/Abrir chat/);
+ assert.doesNotMatch(shared,/SOS|Abrir chat|firebase|fetch\(/);
+ });
+
+test('blocking uses server authority and both directions are checked for chat and connections',()=>{
+ const service=readFileSync('server/identity/presentationRelationshipService.ts','utf8');
+ const rules=readFileSync('firestore.rules','utf8');
+ const shared=readFileSync('server/identity/reservedTribeService.ts','utf8');
+ const boundary=shared.slice(shared.indexOf('export async function ordinaryPresentationPeerAllowed'),shared.indexOf('export async function authorizeOrdinaryForward'));
+ assert.match(service,/if\(!await ordinaryPresentationPeerAllowed\(tx,actor,targetId\)\)return \{state:'unavailable'\}/);
+ assert.ok(service.indexOf('ordinaryPresentationPeerAllowed(tx,actor,targetId)')<service.indexOf("tx.create(ref,"));
+ assert.match(boundary,/tx.get\(adminDb.doc\('social_contact_blocks\/'\+actor\+'\/blocked\/'\+peer\)\)/);
+ assert.match(boundary,/tx.get\(adminDb.doc\('social_contact_blocks\/'\+peer\+'\/blocked\/'\+actor\)\)/);
+ assert.match(boundary,/return !marker.exists&&!ownBlock.exists&&!otherBlock.exists/);
+ assert.match(service,/await setOrdinarySocialContactBlock\(actor,target,blocked\)/);
+ assert.match(service,/invalidateSocialPair\(tx,actor,targetId\)/);
+ assert.match(service,/export async function setSocialContactBlock/);assert.match(rules,/match \/social_contact_blocks/);
+ assert.match(rules,/noSocialContactBlock\(incoming\(\).senderId, incoming\(\).receiverId\)/);
+ assert.match(rules,/noSocialContactBlock\(connectionData\(\).senderId, connectionData\(\).receiverId\)/);
+ assert.match(panelSource,/changeSocialBlock\(friend.id,true,viewerId\)/);
 });

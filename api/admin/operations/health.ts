@@ -25,6 +25,17 @@ export default async function handler(request: RequestLike, response: ResponseLi
   const transport = headerValue(request.query?.transport);
   const method = (request.method ?? 'GET').toUpperCase();
 
+  if (transport === 'kyrub-tag-promotional-batches') {
+    response.setHeader('Referrer-Policy','no-referrer');
+    response.setHeader('Allow','GET, POST');
+    try {
+      const {handlePromotionalBatch}=await import('../../../server/admin/kyrubTagPromotionalBatchService.js');
+      const result=await handlePromotionalBatch(authorization,method,request.body);
+      response.status(result.status).json(result.body);
+    }catch{ response.status(503).json({error:'TAG_BATCH_UNAVAILABLE'}); }
+    return;
+  }
+
   if (transport === 'kyrub-tag-pilot') {
     response.setHeader('Referrer-Policy','no-referrer');
     response.setHeader('Allow','GET, POST');

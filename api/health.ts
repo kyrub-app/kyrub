@@ -80,6 +80,12 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'social-preview-preflight') {
+    const {handleSocialPreviewPreflight}=await import('../server/identity/socialPreviewPreflight.js');
+    await handleSocialPreviewPreflight(request,response);
+    return;
+  }
+
   if (transport === 'reserved-tribe-pilot') {
     response.setHeader('Cache-Control','no-store, private, max-age=0');
     response.setHeader('Pragma','no-cache');
@@ -112,6 +118,24 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'public-kyrub-tag-media') {
+    response.setHeader('Cache-Control','private, no-store, max-age=0');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    response.setHeader('Cross-Origin-Resource-Policy','same-origin');
+    const method=(request.method??'GET').toUpperCase();
+    if(method!=='GET'){response.setHeader('Allow','GET');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const id=queryValue(request.query?.id),slot=queryValue(request.query?.slot);
+    try{
+      const {getPublicPromotionalTagImage}=await import('../server/identity/kyrubTagMediaService.js');
+      const bytes=await getPublicPromotionalTagImage(id,slot);
+      if(!bytes){response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});return;}
+      response.setHeader('Content-Type','image/webp');
+      response.status(200);
+      (response as ResponseLike&{send(body:Buffer):void}).send(bytes);
+    }catch{response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});}
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
@@ -132,11 +156,74 @@ export default async function handler(
     try{
       const service=await import('../server/identity/kyrubTagService.js');
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
-      if(method==='GET'){response.status(200).json(queryValue(request.query?.view)==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
+      if(method==='GET'){
+        const view=queryValue(request.query?.view);
+        if(view==='identity'){
+          const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+          response.status(200).json(await identity.getTagIdentityMode(actor));return;
+        }
+        response.status(200).json(view==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;
+      }
       if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
       const data=body as Record<string,unknown>;
+      if(data.action==='prepare-promotional-identity'&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identityRecord=await adminAuth.getUser(actor);
+        if(identityRecord.disabled||identityRecord.emailVerified!==true||!identityRecord.email)throw Error('TAG_FORBIDDEN');
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.prepareTagMinimalIdentity(actor,id));return;
+      }
+      if(data.action==='import-tag-profile-images'&&Object.keys(data).length===2&&id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        const media=await import('../server/identity/kyrubTagMediaService.js');
+        response.status(200).json(await media.importTagProfileImages(actor,id,data.slots));return;
+      }
+      if(data.action==='promote-tag-identity-with-presentation'&&Object.keys(data).length===2&&!id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        if(typeof data.sourceTagId!=='string')throw Error('TAG_INVALID');
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.promoteTagIdentityToKyrub(actor,data.sourceTagId));return;
+      }
+      if(data.action==='promote-tag-identity'&&Object.keys(data).length===1){
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
+      }
+      if(data.action==='set-promotional-presentation-mode'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalPresentationMode(actor,id,data.mode));return;
+      }
+      if(data.action==='set-promotional-social'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalSocialEnabled(actor,id,data.enabled));return;
+      }
+      if(data.action==='remove-promotional-space'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.removePromotionalTagSpace(actor,id,data.url));return;
+      }
+      if(data.action==='sync-profile-presentation'&&Object.keys(data).length===2&&!id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.syncProfilePresentationToTags(actor,data.input));return;
+      }
+      if((data.action==='rename-tag'&&Object.keys(data).length===2)||(data.action==='add-card-spaces-to-tags'&&Object.keys(data).length===3&&!id)){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(data.action==='rename-tag'?await service.renameOwnedKyrubTag(actor,id,data.nickname):await service.addOwnedCardSpacesToTags(actor,data.tagIds,data.urls));return;
+      }
       if(data.action==='claim-reserved'&&Object.keys(data).length===1){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);
@@ -145,13 +232,74 @@ export default async function handler(
       }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
+      if(data.action==='claim-and-publish-promotional'&&Object.keys(data).length===2&&data.presentation!==undefined){
+         const {adminAuth}=await import('../server/firebaseAdmin.js');
+         const identity=await adminAuth.getUser(actor);
+         if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+         response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email,data.presentation));return;
+       }
+       if(['claim-promotional','recover-promotional','rotate-promotional-recovery'].includes(String(data.action))&&
+          Object.keys(data).length===(data.action==='recover-promotional'?2:1)){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        if(data.action==='claim-promotional'){
+          response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email));return;
+        }
+        if(data.action==='rotate-promotional-recovery'){
+          response.status(200).json(await service.rotatePromotionalRecoveryCode(actor,id));return;
+        }
+        response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
+      }
+      if(data.action==='configure-promotional'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation));return;
+      }
+      if((data.action==='block-promotional'||data.action==='unblock-promotional')&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalBlock(actor,id,data.action==='block-promotional'));return;
+      }
       response.status(400).json({error:'TAG_INVALID'});
     }catch(error){
       const code=error instanceof Error?error.message:'';
-      if(code==='TAG_INVALID'||code==='INVALID_CARD')response.status(400).json({error:'TAG_INVALID'});
+      if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
+      else if(code==='TAG_PROMO_DISABLED'||code==='TAG_PILOT_PROJECT_UNSAFE')response.status(409).json({error:code});
+      else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});
+    }
+    return;
+  }
+
+  if (transport === 'presentation-relationship') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    const method=(request.method??'GET').toUpperCase();
+    if(!['GET','POST'].includes(method)){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const header=headerValue(request.headers.authorization??request.headers.Authorization);
+    let actor:string|null=null;
+    if(header||method==='POST'){
+      try{
+        const {authenticateConsultantRequest}=await import('../server/ai/consultantAuth.js');
+        actor=(await authenticateConsultantRequest(header)).uid;
+      }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
+    }
+    try{
+      const {presentationRelationship,setSocialContactBlock}=await import('../server/identity/presentationRelationshipService.js');
+      const source=queryValue(request.query?.source),id=queryValue(request.query?.id);
+      const body=request.body as Record<string,unknown>|undefined;
+      if(method==='POST'&&(!body||Object.keys(body).length!==1||typeof body.action!=='string')){response.status(400).json({error:'RELATIONSHIP_INVALID'});return;}
+      if(method==='POST'&&source==='contact'&&actor&&(body?.action==='block'||body?.action==='unblock')){
+        response.status(200).json(await setSocialContactBlock(actor,id,body.action==='block'));return;
+      }
+      response.status(200).json(await presentationRelationship(actor,source,id,method==='POST'?body?.action:undefined));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      response.status(code==='RELATIONSHIP_CHANGED'?409:code==='RELATIONSHIP_INVALID'?400:503).json({error:code==='RELATIONSHIP_CHANGED'||code==='RELATIONSHIP_INVALID'?code:'RELATIONSHIP_UNAVAILABLE'});
     }
     return;
   }
@@ -178,14 +326,22 @@ export default async function handler(
         const result=await service.resolvePublicCard(queryValue(request.query?.id));
         response.status(result?200:404).json(result??{error:'CARD_NOT_FOUND'});return;
       }
-      if(method==='GET'){response.status(200).json({card:await service.loadOwnedCard(actor)});return;}
+      if(method==='GET'){
+        if(queryValue(request.query?.view)==='owned-spaces'){response.status(200).json({spaces:await service.listOwnedPresentationSpaces(actor)});return;}
+        if(queryValue(request.query?.view)==='contact-presentation'){
+          const {resolveOrdinaryContactPresentation}=await import('../server/identity/presentationRelationshipService.js');
+          response.setHeader('Vary','Authorization');
+          response.status(200).json(await resolveOrdinaryContactPresentation(actor,queryValue(request.query?.id)));return;
+        }
+        response.status(200).json({card:await service.loadOwnedCard(actor)});return;
+      }
       if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}
       const body=request.body;
       const urls=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).urls:null;
       response.status(200).json({card:await service.saveOwnedCard(actor,urls)});
     }catch(error){
       const code=error instanceof Error?error.message:'';
-      if(code==='INVALID_CARD')response.status(400).json({error:code});
+      if(code==='INVALID_CARD'||code==='RELATIONSHIP_INVALID')response.status(400).json({error:'INVALID_CARD'});
       else if(code==='CARD_TARGET_UNAVAILABLE')response.status(409).json({error:code});
       else response.status(503).json({error:'CARD_UNAVAILABLE'});
     }
@@ -260,7 +416,12 @@ export default async function handler(
       const { resolveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
       const result = await resolveSocialAddress(kind,identifier);
       if (!result) response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
-      else response.status(200).json(result);
+      else if(kind==='profile'){
+        const {resolvePublicPresentationByIdentifier}=await import('../server/identity/publicVisitCardService.js');
+        const presentation=await resolvePublicPresentationByIdentifier(identifier);
+        if(!presentation){response.status(404).json({error:'PUBLIC_ADDRESS_NOT_FOUND'});return;}
+        response.status(200).json({...result,name:presentation.name,description:presentation.bio,image:presentation.photoUrl,presentation});
+      }else response.status(200).json(result);
     } catch {
       response.status(503).json({ error: 'PUBLIC_ADDRESS_UNAVAILABLE' });
     }

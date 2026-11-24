@@ -285,3 +285,63 @@ test('community wall upload rejects forged owner, metadata, MIME and size', asyn
     new Uint8Array(20 * 1024 * 1024 + 1),
     wallMediaMetadata('public_cover', OWNER_ID, 'video/mp4')));
 });
+
+
+const tagMediaMetadata=(id:string,ownerId:string,purpose:'cover'|'avatar')=>({
+ contentType:'image/webp',
+ customMetadata:{tagId:id,ownerId,purpose}
+});
+
+test('promotional Tag media are private and owner-only, even when the card itself is public',async()=>{
+ const id='e'.repeat(32),owner='tag_photo_owner';
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),'kyrub_official_tags',id),{
+   distribution:'promotional',model:'adesivo',ownerId:owner,enabled:true,blocked:false
+  });
+ });
+ const path='kyrub-tag-media/'+id+'/cover/'+'b'.repeat(32);
+ const ownerStorage=environment.authenticatedContext(owner,{email_verified:true}).storage();
+ const visitor=environment.unauthenticatedContext().storage();
+ const other=environment.authenticatedContext('other',{email_verified:true}).storage();
+ const unverified=environment.authenticatedContext(owner,{email_verified:false}).storage();
+ await assertSucceeds(uploadBytes(ref(ownerStorage,path),new Uint8Array([1,2,3]),tagMediaMetadata(id,owner,'cover')));
+ await assertSucceeds(getBytes(ref(ownerStorage,path)));
+ await assertFails(getBytes(ref(visitor,path)));
+ await assertFails(getBytes(ref(other,path)));
+ await assertFails(getBytes(ref(unverified,path)));
+ await assertFails(uploadBytes(ref(other,'kyrub-tag-media/'+id+'/avatar/'+'d'.repeat(32)),
+  new Uint8Array([1]),tagMediaMetadata(id,'other','avatar')));
+ await assertFails(uploadBytes(ref(ownerStorage,path),new Uint8Array([9]),tagMediaMetadata(id,owner,'cover')));
+ await assertFails(deleteObject(ref(ownerStorage,path)));
+});
+
+test('Tag media cannot be created under protected, blocked or forged inventory',async()=>{
+ const id='f'.repeat(32),owner='tag_media_owner';
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),'kyrub_official_tags',id),{
+   distribution:'promotional',model:'adesivo',ownerId:owner,enabled:false,blocked:true
+  });
+  await setDoc(doc(context.firestore(),'kyrub_official_tags','a'.repeat(32)),{
+   model:'adesivo',ownerId:owner,enabled:true,blocked:false
+  });
+ });
+ const principal=environment.authenticatedContext(owner,{email_verified:true}).storage();
+ const bytes=new Uint8Array([1,2,3]);
+ const path='kyrub-tag-media/'+id+'/avatar/'+'1'.repeat(32);
+ await assertFails(uploadBytes(ref(principal,path),bytes,tagMediaMetadata(id,owner,'avatar')));
+ const protectedPath='kyrub-tag-media/'+'a'.repeat(32)+'/avatar/'+'2'.repeat(32);
+ await assertFails(uploadBytes(ref(principal,protectedPath),bytes,tagMediaMetadata('a'.repeat(32),owner,'avatar')));
+ const missing='kyrub-tag-media/'+'9'.repeat(32)+'/avatar/'+'3'.repeat(32);
+ await assertFails(uploadBytes(ref(principal,missing),bytes,tagMediaMetadata('9'.repeat(32),owner,'avatar')));
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),'kyrub_official_tags',id),{
+   distribution:'promotional',model:'adesivo',ownerId:owner,enabled:true,blocked:false
+  });
+ });
+ await assertFails(uploadBytes(ref(principal,path),bytes,tagMediaMetadata(id,'forged_owner','avatar')));
+ await assertFails(uploadBytes(ref(principal,path),bytes,tagMediaMetadata(id,owner,'cover')));
+ await assertFails(uploadBytes(ref(principal,path),bytes,{contentType:'image/png',
+  customMetadata:{tagId:id,ownerId:owner,purpose:'avatar'}}));
+ await assertFails(uploadBytes(ref(principal,path),new Uint8Array(1024*1024+1),tagMediaMetadata(id,owner,'avatar')));
+ await assertSucceeds(uploadBytes(ref(principal,path),bytes,tagMediaMetadata(id,owner,'avatar')));
+});

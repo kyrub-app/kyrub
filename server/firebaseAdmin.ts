@@ -36,11 +36,23 @@ const parseServiceAccount = (): Record<string, string> | null => {
   }
 };
 
+// The integration branch must never inherit the shared production Admin
+// credential while its Preview environment is being configured.
+export function assertIntegrationPreviewAdminProject(env:Record<string,string|undefined>,projectId:unknown):void{
+  if(env.VERCEL_ENV==='preview'&&env.VERCEL_GIT_COMMIT_REF==='feat/kyrub-social-tag-integration'&&
+    (env.FIREBASE_PROJECT_ID!=='kyrub-tags'||env.VITE_FIREBASE_PROJECT_ID!=='kyrub-tags'||projectId!=='kyrub-tags'))
+    throw Error('SOCIAL_PREVIEW_ADMIN_PROJECT_UNSAFE');
+}
+
 const getAdminApp = () => {
   const existing = getApps()[0];
-  if (existing) return existing;
+  if (existing) {
+    assertIntegrationPreviewAdminProject(process.env,existing.options.projectId);
+    return existing;
+  }
 
   const serviceAccount = parseServiceAccount();
+  assertIntegrationPreviewAdminProject(process.env,serviceAccount?.projectId);
   if (serviceAccount) {
     return initializeApp({
       credential: cert(serviceAccount),

@@ -983,11 +983,17 @@ export default function App() {
               ? storedUser.isProfileVisible
               : true;
 
+          // A consented Tag presentation may exist before full-account bootstrap.
+          const importedProfile = !storedUser ? await getDoc(doc(db,'users',user.uid,'public_profile','main')) : null;
+          const savedName = typeof storedUser?.name === 'string' && storedUser.name.trim() ? storedUser.name :
+            typeof importedProfile?.data()?.name === 'string' ? importedProfile.data()?.name : user.displayName ?? '';
+          const savedPhoto = typeof storedUser?.photoUrl === 'string' ? storedUser.photoUrl :
+            typeof importedProfile?.data()?.photoUrl === 'string' ? importedProfile.data()?.photoUrl : user.photoURL ?? '';
           const userPayload = {
             uid: user.uid,
-            name: user.displayName ?? '',
+            name: savedName,
             email: user.email ?? '',
-            photoUrl: user.photoURL ?? '',
+            photoUrl: savedPhoto,
             isProfileVisible: savedVisibility,
             updatedAt: serverTimestamp(),
             ...(userSnapshot.exists()

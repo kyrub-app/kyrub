@@ -609,3 +609,35 @@ test('ordinary blocked list is directional, minimal and does not reveal reserved
  assert.deepEqual((await getOrdinaryTribeDirectory(actor)).blockedContacts,[]);
  assert.ok((await adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+reserved).get()).exists);
 });
+
+
+test('integrated rules keep protected block lists private and deny blocked SDK chat',async()=>{
+ const owner='integrated-rules-owner',peer='integrated-rules-peer',stranger='integrated-rules-other';
+ const pair=id(owner,peer),block='social_contact_blocks/'+peer+'/blocked/'+owner;
+ await Promise.all([owner,peer,stranger].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('connections/'+pair).set(connection(owner,peer));
+ const path='social_chats/'+pair+'/messages/fixture';
+ await adminDb.doc(path).set({senderId:owner,receiverId:peer,text:'fixture',createdAt:Timestamp.now()});
+ const a=env.authenticatedContext(owner).firestore(),b=env.authenticatedContext(peer).firestore(),c=env.authenticatedContext(stranger).firestore();
+ await assertSucceeds(getDoc(doc(b,path)));
+ await adminDb.doc(block).set({targetId:owner,name:owner});
+ await assertSucceeds(getDoc(doc(b,block)));
+ await assertSucceeds(getDocs(collection(b,'social_contact_blocks',peer,'blocked')));
+ await assertFails(getDoc(doc(a,block)));await assertFails(getDoc(doc(c,block)));
+ await assertFails(deleteDoc(doc(b,block)));
+ await assertFails(getDoc(doc(a,path)));await assertFails(getDoc(doc(b,path)));
+ await assertFails(setDoc(doc(b,'social_chats/'+pair+'/messages/denied'),{senderId:peer,receiverId:owner,text:'fixture',createdAt:serverTimestamp()}));
+ await adminDb.doc(block).delete();
+ await assertSucceeds(getDoc(doc(b,path)));
+ await initializeReservedTribe(owner,'rules!fixture');
+ const session=await unlockReservedTribe(owner,'rules!fixture');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(owner,session.token,peer,true);
+ const ownBlock='social_contact_blocks/'+owner+'/blocked/'+peer;
+ await adminDb.doc(ownBlock).set({targetId:peer,name:peer});
+ await assertFails(getDoc(doc(a,ownBlock)));
+ await assertFails(getDocs(collection(a,'social_contact_blocks',owner,'blocked')));
+ assert.deepEqual((await getOrdinaryTribeDirectory(owner)).blockedContacts,[]);
+ await adminDb.doc(ownBlock).delete();
+ await assertSucceeds(getDoc(doc(b,path)));
+});

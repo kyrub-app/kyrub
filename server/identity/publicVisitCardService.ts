@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { buildPublicDestinationUrl } from '../../shared/publicDestinationRoutes.js';
 import { resolveSocialAddress } from './publicSocialAddressService.js';
 import { loadPublicStorefrontBySlug } from '../payments/marketplaceDiscoveryService.js';
 import { cardLink, isCardId, isBoundTarget, parseCardTargets, CARD_LIMIT, type CardTarget, type CardLink } from './publicCardPolicy.js';
@@ -20,6 +21,38 @@ export async function resolveTarget(actor:string,target:CardTarget,expected?:str
   const result=await resolveSocialAddress(target.kind,target.identifier);
   if(!result)return null;
   return {binding:{...target,bindingId:mapping.targetId},link:cardLink(target,result.name)};
+}
+/** Only owned, publicly reachable spaces are offered by the profile picker.
+ * Existing card links remain supported by the ordinary multifunction editor.
+ */
+export async function listOwnedPresentationSpaces(actor:string):Promise<CardLink[]>{
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('INVALID_CARD');
+ const [communities,tenants,stores]=await Promise.all([
+  adminDb.collection('communities').where('ownerId','==',actor).limit(100).get(),
+  adminDb.collection('tenants').where('ownerId','==',actor).limit(100).get(),
+  adminDb.collection('stores').where('ownerId','==',actor).limit(100).get()
+ ]);
+ const candidates:Bound[]=[];
+ for(const doc of communities.docs){
+  if(!['public','moderated'].includes(doc.get('visibility')))continue;
+  const address=(await adminDb.doc('public_social_address_targets/community:'+doc.id).get()).data();
+  if(address?.kind==='community'&&address.targetId===doc.id&&typeof address.identifier==='string'&&buildPublicDestinationUrl('community',address.identifier))
+   candidates.push({kind:'community',identifier:address.identifier,bindingId:doc.id});
+ }
+ for(const doc of [...tenants.docs,...stores.docs]){
+  const slug=doc.get('slug');
+  if(doc.get('publicationStatus')==='published'&&typeof slug==='string'&&buildPublicDestinationUrl('store',slug))
+   candidates.push({kind:'store',identifier:slug,bindingId:doc.id});
+ }
+ const links=new Map<string,CardLink>();
+ for(let i=0;i<candidates.length;i+=8){
+  const results=await Promise.all(candidates.slice(i,i+8).map(async candidate=>{
+   const resolved=await resolveTarget(actor,candidate,candidate.bindingId);
+   return resolved?.link??null;
+  }));
+  for(const link of results)if(link)links.set(link.url,link);
+ }
+ return [...links.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
 }
 export async function loadOwnedCard(actor:string){
   const owner=(await owners().doc(actor).get()).data();
@@ -77,4 +110,45 @@ export async function resolvePublicCard(id:string):Promise<{id:string;links:Card
   const current=await ref.get();
   if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
   return {id,links:links.flatMap(t=>t?[t.link]:[])};
+}
+
+/** Authenticated surface, explicit public projection, no legacy posts or private fields. */
+export async function resolveContactPresentation(targetId:string){
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(targetId))throw Error('INVALID_CARD');
+ const accountRef=adminDb.doc('users/'+targetId),profileRef=accountRef.collection('public_profile').doc('main');
+ const [account,profile,owner]=await Promise.all([accountRef.get(),profileRef.get(),owners().doc(targetId).get()]);
+ if(!account.exists||account.get('isProfileVisible')!==true)return null;
+ const clean=(v:unknown,max:number)=>typeof v==='string'?v.trim().slice(0,max):'';
+ const name=clean(profile.get('name'),160)||clean(account.get('name'),160)||'Kairubido';
+ const photo=clean(profile.get('photoUrl')||account.get('photoUrl'),2048);
+ const cardId=owner.get('id');
+ let links:CardLink[]=[];
+ if(isCardId(cardId)){
+  const record=await cards().doc(cardId).get();
+  if(record.get('ownerId')===targetId&&record.get('enabled')===true){
+   const publicCard=await resolvePublicCard(cardId);
+   links=(publicCard?.links??[]).filter(link=>link.kind==='community'||link.kind==='store');
+  }
+ }
+ const [latestAccount,latestProfile]=await Promise.all([accountRef.get(),profileRef.get()]);
+ if(latestAccount.get('isProfileVisible')!==true||!account.updateTime||!latestAccount.updateTime?.isEqual(account.updateTime)||
+    profile.exists!==latestProfile.exists||(profile.exists&&!latestProfile.updateTime?.isEqual(profile.updateTime!)))return null;
+ return {name,occupation:clean(profile.get('occupation'),90),bio:clean(profile.get('bio'),280),
+  photoUrl:/^https:\/\//i.test(photo)?photo:'',coverUrl:/^https:\/\//i.test(clean(profile.get('coverUrl'),2048))?clean(profile.get('coverUrl'),2048):'',backgroundUrl:/^https:\/\//i.test(clean(profile.get('backgroundUrl'),2048))?clean(profile.get('backgroundUrl'),2048):'',links};
+}
+
+/** Permanent public profile address resolves the same safe presentation as the social card.
+ * Never accept a raw owner UID from an unauthenticated request.
+ */
+export async function resolvePublicPresentationByIdentifier(identifier:string){
+ if(!buildPublicDestinationUrl('profile',identifier))return null;
+ const mappingRef=adminDb.doc('public_social_addresses/profile:'+identifier);
+ const mapping=await mappingRef.get();
+ const record=mapping.data();
+ if(record?.kind!=='profile'||record.identifier!==identifier||typeof record.targetId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(record.targetId))return null;
+ const presentation=await resolveContactPresentation(record.targetId);
+ if(!presentation)return null;
+ const current=await mappingRef.get();
+ if(!mapping.updateTime||!current.updateTime?.isEqual(mapping.updateTime))return null;
+ return presentation;
 }

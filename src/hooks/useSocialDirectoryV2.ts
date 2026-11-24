@@ -16,6 +16,7 @@ import {
   where
 } from 'firebase/firestore';
 import { Friend } from '../types';
+import {useSocialBlocks,legacySocialBlocks} from './useSocialBlocks';
 
 const STORAGE_KEYS = {
   FAVORITE_STORES: 'kyrub_favorite_stores'
@@ -76,6 +77,10 @@ export function useSocialDirectoryV2({
   const [connections, setConnections] = useState<ConnectionDocument[]>([]);
   const [confirmedConnectionOwner,setConfirmedConnectionOwner]=useState('');
   const [favoriteOwner,setFavoriteOwner]=useState(auth.currentUser?.uid??'');
+  // The protected pilot already receives a filtered server projection.
+  // Legacy-only callers retain #1273's directional block filter.
+  const {entries:serverBlocks,ready:blocksReady}=useSocialBlocks(!pilot&&isLoggedIn?favoriteOwner:undefined);
+  const ownBlocked=(id:string)=>!pilot&&(serverBlocks.some(item=>item.id===id)||legacySocialBlocks(favoriteOwner).includes(id));
   const [favoriteSnapshot,setFavoriteSnapshot]=useState<{uid:string;ids:Set<string>;ready:boolean}>({uid:'',ids:new Set(),ready:false});
   useEffect(()=>onAuthStateChanged(auth,user=>setFavoriteOwner(user?.uid??'')),[]);
   useEffect(()=>{
@@ -272,7 +277,7 @@ export function useSocialDirectoryV2({
       return;
     }
 
-    if (friendId === currentUser.uid) return;
+    if (friendId === currentUser.uid || (!pilot&&(!blocksReady||ownBlocked(friendId)))) return;
 
     const connectionId = getConnectionId(currentUser.uid, friendId);
     const existingConnection = connections.find(
@@ -362,6 +367,7 @@ export function useSocialDirectoryV2({
       .filter(
         user =>
           user.id !== currentUid &&
+          blocksReady && !ownBlocked(user.id) &&
           user.isProfileVisible !== false
       )
       .map(user => {

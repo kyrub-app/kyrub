@@ -322,7 +322,7 @@ test('Conectados does not render the search before a matching server directory a
  const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
  assert.match(panel,/status.revision!==dir.revision/);
  assert.match(panel,/\{ordinary\?<ReservedTribeSearchInput/);
- assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|current.current/);
+ assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|presentationTarget\|\|current\.current/);
 });
 
 
@@ -330,4 +330,141 @@ test('ordinary block contract rejects actor injection and nonboolean desired sta
  const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
  assert.equal(parseReservedTribePilotBody({action:'social-block',peerId:'peer',blocked:true}).action,'social-block');
  for(const fields of [{uid:'another',blocked:true},{blocked:'true'},{blocked:false,session:'a'.repeat(64)}])assert.throws(()=>parseReservedTribePilotBody({action:'social-block',peerId:'peer',...fields}),/TRIBE_INVALID/);
+});
+
+
+test('integration block adapter never reads or migrates legacy keys in the protected pilot',()=>{
+ const hook=readFileSync('src/hooks/useSocialBlocks.ts','utf8');
+ const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ assert.match(hook,/if\(reservedTribePilotClientEnabled\(\)\)return \[\]/);
+ assert.match(hook,/if\(reservedTribePilotClientEnabled\(\)\|\|running.has/);
+ assert.match(hook,/requestReservedTribePilot<\{blocked:boolean\}>\('social-block'/);
+ assert.match(hook,/if\(pilot\)return subscribePilotOrdinaryDirectory/);
+ assert.match(hook,/isConfirmedSocialSnapshot\(result.metadata,uid,auth.currentUser\?\.uid\)/);
+ assert.match(directory,/useSocialBlocks\(!pilot&&isLoggedIn\?favoriteOwner:undefined\)/);
+ assert.match(directory,/blocksReady && !ownBlocked\(user.id\)/);
+});
+
+
+test('presentation pilot action is strictly scoped to source, address and operation',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ const read={action:'presentation-relationship',source:'profile',id:'a.b',operation:null};
+ assert.equal(parseReservedTribePilotBody(read).action,'presentation-relationship');
+ for(const patch of [{actor:'other'},{session:'a'.repeat(64)},{source:'unknown'},{id:''},{operation:'block'},{operation:['connect']},{operation:undefined}])assert.throws(()=>parseReservedTribePilotBody({...read,...patch}),/TRIBE_INVALID/);
+});
+
+
+test('protected presentation widget has no legacy fallback and invalidates on lifecycle changes',()=>{
+ const component=readFileSync('src/components/PresentationRelationship.tsx','utf8');
+ assert.match(component,/return requestReservedTribePilot<Result>\('presentation-relationship'/);
+ assert.match(component,/if\(reservedTribePilotClientEnabled\(\)\)return <PilotPresentationRelationship/);
+ const pilot=component.slice(component.indexOf('function PilotRelationshipSession'),component.indexOf('function LegacyPresentationRelationship'));
+ assert.doesNotMatch(pilot,/localStorage|sessionStorage|onSnapshot|\/api\/health/);
+ assert.match(pilot,/subscribeSocialPrivacyInvalidation\(invalidate\)/);
+ assert.match(pilot,/auth.currentUser===user/);
+ assert.match(pilot,/controller.signal.aborted\|\|generation!==sequence.current/);
+ assert.match(pilot,/addEventListener\('offline',suspend\)/);
+ assert.match(pilot,/setPeer\(null\);setMessage\(''\)/);
+});
+
+
+test('ordinary contact card uses the gated pilot transport and never the reserved capability',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.equal(parseReservedTribePilotBody({action:'contact-presentation',peerId:'peer'}).action,'contact-presentation');
+ for(const extra of [{actor:'other'},{session:'a'.repeat(64)},{peerId:'../bad'}])assert.throws(()=>parseReservedTribePilotBody({action:'contact-presentation',peerId:'peer',...extra}),/TRIBE_INVALID/);
+ const modal=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+ const pilot=modal.slice(modal.indexOf('function PilotContactPresentationModal'),modal.indexOf('function LegacyContactPresentationModal'));
+ assert.match(pilot,/requestReservedTribePilot<\{presentation:Presentation\|null\}>\('contact-presentation'/);
+ assert.match(pilot,/subscribeSocialPrivacyInvalidation\(terminate\)/);
+ assert.doesNotMatch(pilot,/localStorage|onSnapshot|\/api\/health/);
+});
+
+test('public presentation browser adapter is read-only and emulator-exclusive',async()=>{
+ const {publicPresentationEmulatorAllowed,publicPresentationReadTransport}=await import('../server/identity/publicPresentationEmulator.js');
+ const env={KYRUB_PUBLIC_PRESENTATION_E2E:'true',KYRUB_RESERVED_TRIBE_PILOT:'true',NODE_ENV:'test',FIREBASE_PROJECT_ID:'kyrub-security-test',GCLOUD_PROJECT:'kyrub-security-test',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'};
+ assert.equal(publicPresentationEmulatorAllowed(env),true);
+ for(const patch of [{KYRUB_PUBLIC_PRESENTATION_E2E:undefined},{VERCEL:'1'},{VERCEL_ENV:'preview'},{NODE_ENV:'production'},{FIREBASE_PROJECT_ID:'kyrub-tags'},{GCLOUD_PROJECT:'kyrub-b8d0e'},{FIRESTORE_EMULATOR_HOST:undefined},{GOOGLE_APPLICATION_CREDENTIALS:'fixture'},{FIREBASE_SERVICE_ACCOUNT_JSON:'fixture'}])assert.equal(publicPresentationEmulatorAllowed({...env,...patch}),false);
+ assert.equal(publicPresentationReadTransport({transport:'public-kyrub-tag',id:'fixture'}),true);
+ assert.equal(publicPresentationReadTransport({transport:'manage-kyrub-tag',view:'identity'}),true);
+ for(const query of [{transport:'manage-kyrub-tag',id:'fixture'},{transport:'manage-kyrub-tag',view:'identity',id:'fixture'},{transport:'presentation-relationship'},{transport:'reserved-tribe-pilot'}])assert.equal(publicPresentationReadTransport(query),false);
+});
+
+
+test('legacy authenticated card transport reuses the ordinary privacy boundary',()=>{
+ const source=readFileSync('api/health.ts','utf8');
+ const start=source.indexOf("if(queryValue(request.query?.view)==='contact-presentation')");
+ assert.ok(start>=0);
+ const branch=source.slice(start,source.indexOf("response.status(200).json({card:await service.loadOwnedCard(actor)})",start));
+ assert.match(branch,/resolveOrdinaryContactPresentation\(actor,queryValue\(request.query\?\.id\)\)/);
+ assert.doesNotMatch(branch,/service.resolveContactPresentation/);
+ assert.match(branch,/setHeader\('Vary','Authorization'\)/);
+});
+
+test('social Preview preflight is branch-, host-, project- and identity-bound, never activates a pilot',async()=>{
+ const {socialPreviewPreflightAllowed,createSocialPreviewPreflight}=await import('../server/identity/socialPreviewPreflight.js');
+ const env={KYRUB_SOCIAL_PREVIEW_PREFLIGHT:'true',VERCEL:'1',VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'feat/kyrub-social-tag-integration',FIREBASE_PROJECT_ID:'kyrub-tags',VITE_FIREBASE_PROJECT_ID:'kyrub-tags',KYRUB_TAG_PROMO_PILOT_PROJECT_ID:'kyrub-tags',VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE:'true',VITE_FIREBASE_AUTH_DOMAIN:'kyrub-tags.firebaseapp.com',VITE_FIREBASE_STORAGE_BUCKET:'kyrub-tags.firebasestorage.app',VERCEL_URL:'fixture-deployment.vercel.app',KYRUB_SOCIAL_PREVIEW_HOST:'fixture-alias.vercel.app',FIREBASE_SERVICE_ACCOUNT_JSON:'fixture-not-a-credential'};
+ const host=env.KYRUB_SOCIAL_PREVIEW_HOST;
+ assert.equal(socialPreviewPreflightAllowed(env,host),true);
+ for(const override of [
+  {KYRUB_SOCIAL_PREVIEW_PREFLIGHT:undefined},{VERCEL_ENV:'production'},{VERCEL_ENV:'development'},{VERCEL:undefined},
+  {VERCEL_GIT_COMMIT_REF:'main'},{VERCEL_GIT_COMMIT_REF:'feat/kyrub-integrated-presentation-devices'},
+  {FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{VITE_FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{KYRUB_TAG_PROMO_PILOT_PROJECT_ID:'other'},
+  {VITE_FIREBASE_AUTH_DOMAIN:'kyrub-b8d0e.firebaseapp.com'},{VITE_FIREBASE_STORAGE_BUCKET:'kyrub-b8d0e.firebasestorage.app'},
+  {VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE:undefined},{FIREBASE_SERVICE_ACCOUNT_JSON:undefined},{GOOGLE_APPLICATION_CREDENTIALS:'fixture'},
+  {VERCEL_URL:'www.kyrub.com'},{KYRUB_SOCIAL_PREVIEW_HOST:'www.kyrub.com'},{FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'},
+  {FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'},{FIREBASE_STORAGE_EMULATOR_HOST:'127.0.0.1:9199'},
+  {KYRUB_RESERVED_TRIBE_PILOT:'true'},{VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E:'true'},{VITE_KYRUB_FIREBASE_EMULATOR_E2E:'true'}
+ ])assert.equal(socialPreviewPreflightAllowed({...env,...override},host),false);
+ for(const wrongHost of ['www.kyrub.com','admin.kyrub.com','fixture-deployment.vercel.app',undefined,[host]])assert.equal(socialPreviewPreflightAllowed(env,wrongHost),false);
+ let verified=0;
+ const make=(project='kyrub-tags',emailVerified=true)=>createSocialPreviewPreflight({env:()=>env,project:()=>project,verify:async token=>{verified++;if(token!=='fixture-token')throw Error('AUTH_REQUIRED');return {uid:'fictional',email_verified:emailVerified};}});
+ async function invoke(handler:ReturnType<typeof make>,method='GET',authorization:string|undefined='Bearer fixture-token',requestHost=host){
+  let status=0,body:unknown;const headers:Record<string,string>={};
+  const res={setHeader:(name:string,value:string)=>{headers[name]=value;},status:(code:number)=>{status=code;return res;},json:(value:unknown)=>{body=value;}};
+  await handler({method,headers:{host:requestHost,authorization}},res);return {status,body,headers};
+ }
+ assert.equal((await invoke(make(),'POST')).status,405);
+ assert.equal((await invoke(make('kyrub-b8d0e'))).status,404);
+ assert.equal((await invoke(make(),'GET','Bearer fixture-token','www.kyrub.com')).status,404);
+ assert.equal(verified,0);
+ assert.equal((await invoke(make(),'GET','')).status,401);
+ assert.equal((await invoke(make(),'GET','Bearer bad')).status,401);
+ assert.equal((await invoke(make('kyrub-tags',false))).status,401);
+ const ok=await invoke(make());
+ assert.equal(ok.status,200);
+ assert.deepEqual(ok.body,{configuration:'isolated-preview',project:'kyrub-tags',branch:'feat/kyrub-social-tag-integration',identityVerified:true,reservedPilotEnabled:false,firestoreRulesVerified:false,clientCacheVerified:false,releaseApproved:false});
+ assert.equal(ok.headers['Cache-Control'],'no-store, private, max-age=0');
+ assert.equal(JSON.stringify(ok.body).includes('fictional'),false);
+});
+
+
+test('integration Preview never initializes Admin against an inherited production credential',async()=>{
+ const {assertIntegrationPreviewAdminProject}=await import('../server/firebaseAdmin.js');
+ const env={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'feat/kyrub-social-tag-integration',FIREBASE_PROJECT_ID:'kyrub-tags',VITE_FIREBASE_PROJECT_ID:'kyrub-tags'};
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject(env,'kyrub-tags'));
+ for(const project of ['kyrub-b8d0e',undefined,'other'])assert.throws(()=>assertIntegrationPreviewAdminProject(env,project),/SOCIAL_PREVIEW_ADMIN_PROJECT_UNSAFE/);
+ for(const patch of [{FIREBASE_PROJECT_ID:undefined},{VITE_FIREBASE_PROJECT_ID:'kyrub-b8d0e'}])assert.throws(()=>assertIntegrationPreviewAdminProject({...env,...patch},'kyrub-tags'),/SOCIAL_PREVIEW_ADMIN_PROJECT_UNSAFE/);
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_ENV:'production'},'kyrub-b8d0e'));
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_GIT_COMMIT_REF:'feat/kyrub-integrated-presentation-devices'},'kyrub-tags'));
+});
+
+
+test('authenticated preview diagnostic is exact-origin only and returns no token or arbitrary response',async()=>{
+ const {isSocialPreviewDiagnostic,runSocialPreviewDiagnostic,SOCIAL_PREVIEW_HOST,SOCIAL_PREVIEW_BRANCH}=await import('../src/utils/socialPreviewDiagnostic.js');
+ const location={protocol:'https:',hostname:SOCIAL_PREVIEW_HOST,port:'',pathname:'/',search:'?diagnostico=isolamento-social'};
+ assert.equal(isSocialPreviewDiagnostic(location,true,'kyrub-tags'),true);
+ for(const patch of [{hostname:'www.kyrub.com'},{hostname:'other.vercel.app'},{protocol:'http:'},{port:'444'},{pathname:'/staff'},{search:''}])assert.equal(isSocialPreviewDiagnostic({...location,...patch},true,'kyrub-tags'),false);
+ assert.equal(isSocialPreviewDiagnostic(location,false,'kyrub-tags'),false);
+ assert.equal(isSocialPreviewDiagnostic(location,true,'kyrub-b8d0e'),false);
+ const user={getIdToken:async()=>'fictional-token'};let current:typeof user|null=user;let calls=0;
+ const good={configuration:'isolated-preview',project:'kyrub-tags',branch:SOCIAL_PREVIEW_BRANCH,identityVerified:true,reservedPilotEnabled:false,firestoreRulesVerified:false,clientCacheVerified:false,releaseApproved:false};
+ const request:typeof fetch=async(url,init)=>{calls++;assert.equal(url,'/api/health?transport=social-preview-preflight');assert.equal(init?.method,'GET');assert.equal(init?.cache,'no-store');assert.equal(init?.redirect,'error');assert.equal(new Headers(init?.headers).get('authorization'),'Bearer fictional-token');return new Response(JSON.stringify({...good,unexpected:'do not render'}),{status:200});};
+ const deps={allowed:()=>true,current:()=>current,request};const signal=new AbortController().signal;
+ assert.deepEqual(await runSocialPreviewDiagnostic(deps,signal),{status:200,verified:true});
+ assert.deepEqual(await runSocialPreviewDiagnostic({...deps,request:async()=>new Response(JSON.stringify({...good,project:'other'}),{status:200})},signal),{status:200,verified:false});
+ assert.deepEqual(await runSocialPreviewDiagnostic({...deps,request:async()=>new Response('untrusted',{status:401})},signal),{status:401,verified:false});
+ await assert.rejects(runSocialPreviewDiagnostic({...deps,allowed:()=>false},signal));
+ current=null;await assert.rejects(runSocialPreviewDiagnostic(deps,signal));assert.equal(calls,1);
+ current={getIdToken:async()=>{current=null;return 'fixture';}};await assert.rejects(runSocialPreviewDiagnostic(deps,signal));assert.equal(calls,1);
+ const root=readFileSync('src/main.tsx','utf8');assert.match(root,/socialPreviewDiagnosticEnabled\(\) \? <SocialPreviewDiagnostic \/> : <KyrubAiConversationCloudSyncGate>/);
 });

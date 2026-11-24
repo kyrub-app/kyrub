@@ -420,9 +420,31 @@ app.all('/api/pitangas', async (req, res) => {
   await handlePitangaAccountRequest(req, res);
 });
 
-app.get("/api/health", (_req, res) => {
+// Browser homologation uses the actual Vercel read handlers, only against
+// the dedicated local Auth and Firestore emulators. Never expose Tag writes.
+app.get("/api/health", async (req, res) => {
+  if(process.env.KYRUB_PUBLIC_PRESENTATION_E2E==='true'&&req.query.transport){
+    const adapter=await import('./server/identity/publicPresentationEmulator.js');
+    if(adapter.publicPresentationEmulatorRuntimeAllowed()&&adapter.publicPresentationReadTransport(req.query)){
+      const {default:handler}=await import('./api/health.js');
+      await handler({method:req.method,headers:req.headers,query:{
+        transport:String(req.query.transport),
+        ...(typeof req.query.id==='string'?{id:req.query.id}:{}),
+        ...(typeof req.query.view==='string'?{view:req.query.view}:{})
+      }},res);return;
+    }
+    // Other health transports retain the established local response.
+  }
   res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });
+if(process.env.KYRUB_PUBLIC_PRESENTATION_E2E==='true'){
+ app.get('/api/public-social/profile/:identifier',async(req,res)=>{
+  const {publicPresentationEmulatorRuntimeAllowed}=await import('./server/identity/publicPresentationEmulator.js');
+  if(!publicPresentationEmulatorRuntimeAllowed()){res.status(404).json({error:'NOT_FOUND'});return;}
+  const {default:handler}=await import('./api/health.js');
+  await handler({method:req.method,headers:req.headers,query:{transport:'public-social-address',kind:'profile',identifier:req.params.identifier}},res);
+ });
+}
 
 async function bootstrap() {
   if (process.env.NODE_ENV !== "production") {

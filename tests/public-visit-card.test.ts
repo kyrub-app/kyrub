@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
 import {parseCardTargets,cardLink,isCardId,isBoundTarget} from '../server/identity/publicCardPolicy';
 import {resolveKyrubAppRoute} from '../src/utils/appRoutes';
 test('multi destination card is bounded, typed and contains only canonical public URLs',()=>{
@@ -38,4 +39,342 @@ test('approved tag personalization has four compact individually expandable dest
  assert.match(panel,/Salvar minha Kyrub Tag/);
  assert.doesNotMatch(panel,/<select/);
  assert.match(page,/if\(authReady&&owner&&user\)return <main/);
+});
+
+
+test('promotional NFC stock is explicitly opt-in and cannot weaken protected or experimental units',async()=>{
+ const {isOpenPromotionalTag,normalizePromotionalPresentation,EMPTY_PROMOTIONAL_PRESENTATION}=await import('../shared/kyrubTagPromotional');
+ const open={distribution:'promotional',model:'adesivo',ownerId:null,enabled:false,activationHash:null,reservedEmailHash:null};
+ assert.equal(isOpenPromotionalTag(open),true);
+ for(const altered of [
+  {...open,distribution:'protected'},
+  {...open,model:'pulseira'},
+  {...open,pilotBatch:'experimental-001',pilotSlot:'001'},
+  {...open,reservedForUid:'another-user'},
+  {...open,firstOwnerId:'previous-owner'},
+  {...open,recoveryHash:'already-issued'},
+  {...open,ownerId:'another-user'},
+  {...open,enabled:true},
+  {...open,activationHash:'secret-hash'},
+  {...open,reservedEmailHash:'reserved'},
+  {...open,blocked:true},
+  {...open,distribution:undefined}
+ ])assert.equal(isOpenPromotionalTag(altered),false);
+ assert.deepEqual(normalizePromotionalPresentation(EMPTY_PROMOTIONAL_PRESENTATION),EMPTY_PROMOTIONAL_PRESENTATION);
+ assert.deepEqual(normalizePromotionalPresentation({name:'  A  ',occupation:' Entregador ',about:'\u0000Minha apresentação'}),
+  {name:'A',occupation:'Entregador',about:'Minha apresentação'});
+ for(const invalid of [
+  {name:'x'.repeat(81),occupation:'',about:''},
+  {name:'',occupation:'x'.repeat(91),about:''},
+  {name:'',occupation:'',about:'x'.repeat(321)},
+  {name:'',occupation:'',about:'',email:'not-public'},
+  {name:'',occupation:'',about:'',instagram:'not-public'}
+ ])assert.throws(()=>normalizePromotionalPresentation(invalid),/TAG_PRESENTATION_INVALID/);
+});
+
+test('promo tag uses verified e-mail and transactional claim; public card carries SOS not social sign-in',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ const api=readFileSync('api/health.ts','utf8');
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const auth=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
+ assert.match(service,/KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED/);
+ assert.match(service,/if\(!promotionalEnabled\(\)\)throw Error\('TAG_PROMO_DISABLED'\)/);
+ assert.match(service,/isOpenPromotionalTag\(data\)/);
+ assert.match(service,/adminDb\.runTransaction/);
+ assert.match(service,/ownerId:actor,firstOwnerId:actor/);
+ assert.match(service,/recoveryHash:promotionalRecoveryHash/);
+ assert.match(service,/timingSafeEqual/);
+ assert.match(service,/distribution!=='promotional'/);
+ assert.match(service,/initial\.distribution==='promotional'/);
+ assert.match(service,/current\.distribution==='promotional'/);
+ assert.match(api,/identity\.emailVerified!==true/);
+ assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email\)/);
+ assert.match(api,/recoverPromotionalKyrubTag\(actor,id,identity\.email,data\.recoveryCode\)/);
+ assert.match(api,/rotatePromotionalRecoveryCode\(actor,id\)/);
+ assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
+ assert.match(page,/claim-and-publish-promotional/);
+ assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email,data\.presentation\)/);
+ assert.match(page,/onVerified=\{verifiedPublication\}/);
+ assert.match(page,/localStorage\.setItem\(intentKey\(identifier\)/);
+ assert.match(page,/user\.uid!==verifiedReturn\.uid/);
+ assert.match(page,/recover-promotional/);
+ assert.match(page,/SOS · Informações de emergência/);
+ assert.match(page,/number:'190'/);
+ assert.match(page,/number:'192'/);
+ assert.match(page,/number:'193'/);
+ assert.doesNotMatch(page,/instagram\.com/);
+ assert.match(page,/sosContacts/);
+ assert.match(page,/wa\.me/); // Optional WhatsApp belongs only to the SOS contact panel.
+ assert.match(auth,/sendSignInLinkToEmail/);
+ assert.match(auth,/signInWithEmailLink/);
+ assert.doesNotMatch(auth,/actionCodeSettings.*email|[?&]email=/);
+});
+
+test('Personal Center uses promotional editor and never legacy WhatsApp/Instagram destination catalog',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const panel=readFileSync('src/components/OfficialKyrubTagPanel.tsx','utf8');
+ const promo=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ assert.match(panel,/import \{PromotionalKyrubTagEditor\}/);
+ assert.match(panel,/selectedIsPromotional/);
+ assert.match(panel,/selected&&!selectedIsPromotional/);
+ assert.match(panel,/tag\?\.distribution==='promotional'&&<PromotionalKyrubTagEditor/);
+ assert.match(panel,/tag\.distribution!=='promotional'&&<div/);
+ assert.match(promo,/rotate-promotional-recovery/);
+ assert.match(promo,/Gerar novo código de recuperação/);
+ assert.match(service,/export async function rotatePromotionalRecoveryCode/);
+ assert.match(service,/if\(current\.distribution==='promotional'\)throw Error\('TAG_FORBIDDEN'\)/);
+});
+
+
+test('promotional inventory is separate from pilot, NFC writes are non-overwriting, identity needs explicit full-account consent',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const admin=readFileSync('src/components/admin/AdminControlPlaneApp.tsx','utf8');
+ const batches=readFileSync('src/components/admin/AdminKyrubTagPromotionalBatches.tsx','utf8');
+ const batchService=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ const app=readFileSync('src/App.tsx','utf8');
+ const gate=readFileSync('src/components/KyrubTagOnlyEntry.tsx','utf8');
+ const identity=readFileSync('server/identity/kyrubTagMinimalIdentityService.ts','utf8');
+ const mail=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
+ assert.match(admin,/AdminKyrubTagPromotionalBatches/);
+ assert.match(admin,/admin-kyrub-tag-promotional/);
+ assert.match(admin,/AdminKyrubTagPilot/);
+ assert.match(batches,/Gravar adesivo de teste/);
+ assert.match(batches,/overwrite:false/);
+ assert.match(batches,/physicalStatus:'not_verified'/);
+ assert.doesNotMatch(batches,/e-mail da destinatária/i);
+ assert.match(batchService,/KYRUB_TAG_PROMO_ISSUANCE_ENABLED/);
+ assert.match(batchService,/actorRole:'super_admin'/);
+ assert.match(batchService,/tagIds:ids/);
+ assert.match(batchService,/tx\.create\(auditCollection\(\)\.doc/);
+ assert.match(batchService,/if\(original\.count!==count\)throw Error\('TAG_BATCH_CONFLICT'\)/);
+ assert.match(identity,/kyrub_tag_minimal_identities/);
+ assert.match(identity,/source:'kyrub_tag_promo'/);
+ assert.match(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.match(identity,/promoteTagIdentityToKyrub/);
+ assert.match(app,/VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE/);
+ assert.match(app,/KyrubTagOnlyEntry/);
+ assert.match(app,/identityMode==='tag_only'/);
+ assert.match(gate,/Quero criar minha conta Kairubido/);
+ assert.match(gate,/promote-tag-identity/);
+ assert.match(mail,/prepare-promotional-identity/);
+});
+
+
+test('SOS contacts are opt-in, private by default, and profile images require tag-local paths',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const {normalizePromotionalPresentation,publicPromotionalPresentation,isPromotionalMediaPath}=await import('../shared/kyrubTagPromotional');
+ const id='a'.repeat(32),cover='kyrub-tag-media/'+id+'/cover/'+'b'.repeat(32);
+ assert.equal(isPromotionalMediaPath(cover,id,'cover'),true);
+ assert.equal(isPromotionalMediaPath(cover,id,'avatar'),false);
+ assert.equal(isPromotionalMediaPath(cover,'c'.repeat(32),'cover'),false);
+ const base={name:'Eu',occupation:'Entregador',about:'Contato em emergência'};
+ const hidden={name:'Irmã',relationship:'Família',phone:'11 99999-0000',whatsapp:true,shareInSos:false,consentConfirmed:false};
+ const permitted={name:'Amigo',relationship:'Confiança',phone:'+55 (11) 98888-0000',whatsapp:true,shareInSos:true,consentConfirmed:true};
+ const normalized=normalizePromotionalPresentation({...base,emergencyContacts:[hidden,permitted],coverPath:cover});
+ assert.equal(normalized.emergencyContacts?.length,2);
+ assert.equal(normalized.emergencyContacts?.[0].phone,'+5511999990000');
+ assert.equal(normalized.emergencyContacts?.[1].phone,'+5511988880000');
+ const publicView=publicPromotionalPresentation(normalized);
+ assert.equal(publicView.hasCover,true);
+ assert.equal(publicView.hasAvatar,false);
+ assert.deepEqual(publicView.sosContacts,[{name:'Amigo',relationship:'Confiança',phone:'+5511988880000',whatsapp:true}]);
+ assert.equal(JSON.stringify(publicView).includes('Irmã'),false);
+ assert.equal(JSON.stringify(publicView).includes('consentConfirmed'),false);
+ assert.equal(JSON.stringify(publicView).includes(cover),false);
+ for(const bad of [
+  {...base,emergencyContacts:[{...hidden,shareInSos:true}]},
+  {...base,emergencyContacts:[{...permitted,phone:'190'}]},
+  {...base,emergencyContacts:[hidden,hidden,permitted]},
+  {...base,emergencyContacts:[permitted,permitted]},
+  {...base,coverPath:'https://othersite.com/cover.webp'},
+  {...base,avatarPath:cover},
+  {...base,emergencyContacts:[{...permitted,instagram:'somebody'}]}
+ ])assert.throws(()=>normalizePromotionalPresentation(bad),/TAG_PRESENTATION_INVALID/);
+ const photo=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ const route=readFileSync('api/health.ts','utf8');
+ const rules=readFileSync('storage.rules','utf8');
+ assert.match(photo,/getPublicPromotionalTagImage/);
+ assert.match(photo,/getMetadata/);
+ assert.match(photo,/snapshot|snap\.updateTime/);
+ assert.match(route,/public-kyrub-tag-media/);
+ assert.match(route,/Cross-Origin-Resource-Policy/);
+ assert.match(rules,/match \/kyrub-tag-media/);
+ assert.match(rules,/request\.auth\.token\.email_verified/);
+ assert.match(rules,/allow update, delete: if false/);
+});
+
+
+test('promotional pilot cannot write to production Firebase even with both campaign flags enabled',async()=>{
+ const {resolveTagPilotIsolation,KYRUB_PRODUCTION_PROJECT_ID}=await import('../server/identity/kyrubTagPilotIsolation');
+ const local={firestoreHost:'127.0.0.1:8080',authHost:'127.0.0.1:9099'};
+ const isolated='kyrub-tags-homologation';
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,local),'unsafe');
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,{
+  allowedPilotProject:KYRUB_PRODUCTION_PROJECT_ID
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation(KYRUB_PRODUCTION_PROJECT_ID,{
+  allowedPilotProject:isolated
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',local),'emulator');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{firestoreHost:'127.0.0.1:8080'}),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{authHost:'127.0.0.1:9099'}),'unsafe');
+ assert.equal(resolveTagPilotIsolation('demo-tag-pilot',{
+  firestoreHost:'www.example.com:8080',authHost:'127.0.0.1:9099'
+ }),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{}),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{allowedPilotProject:isolated}),'isolated-project');
+ assert.equal(resolveTagPilotIsolation(isolated,{allowedPilotProject:KYRUB_PRODUCTION_PROJECT_ID}),'unsafe');
+ assert.equal(resolveTagPilotIsolation(isolated,{
+  allowedPilotProject:isolated,firestoreHost:'127.0.0.1:8080'
+ }),'unsafe');
+ for(const path of [
+  'server/admin/kyrubTagPromotionalBatchService.ts',
+  'server/identity/kyrubTagService.ts',
+  'server/identity/kyrubTagMinimalIdentityService.ts'
+ ]){
+  const {readFileSync}=await import('node:fs');
+  const contents=readFileSync(path,'utf8');
+  assert.match(contents,/assertTagPilotWriteIsolated/);
+ }
+});
+
+
+test('NFC wizard accepts only a single exact NDEF URL readback and never treats a write alone as validated',async()=>{
+ const {readOneNdefUrl}=await import('../src/utils/kyrubTagNfcReadback');
+ const {readFileSync}=await import('node:fs');
+ const url='https://preview.example.vercel.app/tag/'+'a'.repeat(32);
+ const bytes=new TextEncoder().encode(url);
+ const payload={message:{records:[{recordType:'url',data:new DataView(bytes.buffer)}]}};
+ assert.equal(readOneNdefUrl(payload),url);
+ assert.equal(readOneNdefUrl({message:{records:[...payload.message.records,{recordType:'text',data:new DataView(bytes.buffer)}]}}),null);
+ assert.equal(readOneNdefUrl({message:{records:[{recordType:'text',data:new DataView(bytes.buffer)}]}}),null);
+ assert.equal(readOneNdefUrl({message:{records:[]}}),null);
+ assert.equal(readOneNdefUrl(null),null);
+ assert.equal(readOneNdefUrl({message:{records:[{recordType:'url',data:'raw string'}]}}),null);
+ const wizard=readFileSync('src/components/admin/AdminKyrubTagNfcWizard.tsx','utf8');
+ const panel=readFileSync('src/components/admin/AdminKyrubTagPromotionalBatches.tsx','utf8');
+ const service=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ assert.match(panel,/AdminKyrubTagNfcWizard/);
+ assert.match(wizard,/action:'confirm-readback'/);
+ assert.match(wizard,/readOneNdefUrl\(event\)/);
+ assert.match(wizard,/received!==expected/);
+ assert.match(wizard,/write\(\{records:\[\{recordType:'url'/);
+ assert.match(wizard,/overwrite:false/);
+ assert.match(wizard,/reader\.scan\(/);
+ assert.match(wizard,/Próximo adesivo/);
+ assert.match(wizard,/Retomar pendentes/);
+ assert.match(wizard,/batch\.units\.find\(unit=>unit\.id===target\.unit\.id\)/);
+ assert.match(wizard,/confirmedUnit\?\.physicalStatus!=='readback_confirmed'/);
+ assert.match(wizard,/TAG_READBACK_NOT_RECORDED/);
+ assert.match(service,/browser_readback_confirmed/);
+ assert.match(service,/VERCEL_URL/);
+ assert.match(service,/assertTagPilotWriteIsolated/);
+});
+
+
+test('isolated pilot Web Firebase config must be a matching Vercel Preview, never production',async()=>{
+ const {pilotPreviewConfigMatchesServer}=await import('../server/identity/kyrubTagPilotIsolation');
+ const pilot='kyrub-tags-homologacao';
+ const valid={serverProjectId:pilot,webPilotEnabled:'true',vercelEnvironment:'preview',deploymentHost:'kyrub-tags-preview.vercel.app'};
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,valid),true);
+ assert.equal(pilotPreviewConfigMatchesServer('kyrub-b8d0e',{
+  ...valid,serverProjectId:'kyrub-b8d0e'
+ }),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,serverProjectId:'kyrub-b8d0e'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,webPilotEnabled:'false'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,webPilotEnabled:undefined}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,vercelEnvironment:'production'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'kyrub.com'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'preview.vercel.app.evil.example'}),false);
+ assert.equal(pilotPreviewConfigMatchesServer(pilot,{...valid,deploymentHost:'vercel.app'}),false);
+ const {readFileSync}=await import('node:fs');
+ const client=readFileSync('src/utils/firebase.ts','utf8');
+ assert.match(client,/VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE/);
+ assert.match(client,/window\.location\.hostname\.endsWith\('\.vercel\.app'\)/);
+ assert.match(client,/projectId === firebaseConfig\.projectId/);
+ assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
+ assert.match(client,/TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH/);
+});
+
+ test('public profile and tag use same presentation but emergency action stays on tag',()=>{
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(tag,/<PresentationCard/);assert.match(profile,/<PresentationCard/);
+ assert.match(tag,/fixed inset-x-0 bottom-0/);assert.match(tag,/aria-controls="tag-sos-panel"/);
+ assert.match(tag,/<PresentationShare/);assert.match(profile,/<PresentationShare/);
+ assert.doesNotMatch(profile,/SOS|Abrir chat/);
+ });
+
+ test('presentation footer differentiates visitor and verified owner and keeps SOS available',()=>{
+ const footer=readFileSync('src/components/PresentationFooter.tsx','utf8');
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(footer,/view=identity/);assert.match(footer,/Sua Tag é só o começo!/);assert.match(footer,/Uma aproximação. Infinitas possibilidades./);
+ assert.match(footer,/context==='owner'.*Aproveite os dados/);assert.match(footer,/border-\[#F47825\]/);
+ assert.match(tag,/<PresentationFooter mode=\{membership\}/);assert.match(profile,/<PresentationFooter mode=\{membership\}/);
+ assert.ok(tag.indexOf('SOS · Informações de emergência')<tag.indexOf('<PresentationFooter mode={membership}'));
+ assert.match(tag,/fixed inset-x-0 bottom-0/);
+ });
+
+test('QR sharing only encodes public same-deployment destinations',async()=>{
+ const {presentationShareUrl}=await import('../src/utils/presentationShareUrl');
+ const origin='https://kyrub.com',preview='https://isolated-preview.vercel.app';
+ const urls=[origin+'/kairubido/usuario',origin+'/tag/'+'a'.repeat(32),origin+'/cartao/'+'b'.repeat(32),origin+'/comunidade/rock',origin+'/@kyrub-oficial'];
+ for(const url of urls)assert.equal(presentationShareUrl(url,origin),url);
+ for(const url of [origin+'/tag/'+'a'.repeat(32)+'?oobCode=secret',origin+'/kairubido/usuario#secret',origin+'/staff',origin+'/?entry=welcome','https://evil.test/kairubido/usuario',origin+'/tag/invalid','https://user:secret@kyrub.com/kairubido/usuario'])assert.equal(presentationShareUrl(url,origin),null);
+ assert.equal(presentationShareUrl(preview+'/tag/'+'a'.repeat(32),preview),preview+'/tag/'+'a'.repeat(32));
+ assert.equal(presentationShareUrl(origin+'/kairubido/usuario',preview),null);
+ const source=readFileSync('src/components/PresentationShare.tsx','utf8');
+ const native=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(source,/QRCodeSVG/);assert.match(source,/value=\{safeUrl\}/);assert.match(source,/marginSize=\{4\}/);
+ assert.match(native,/showQrByDefault/);assert.doesNotMatch(native,/O QR público da sua página entra na próxima etapa/);
+ assert.doesNotMatch(source,/qrserver|fetch\(/);
+ const React=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {QRCodeSVG}=await import('qrcode.react');
+ const first=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[0],marginSize:4,level:'M'}));
+ const second=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[1],marginSize:4,level:'M'}));
+ assert.match(first,/<svg/);assert.match(first,/<path/);assert.notEqual(first,second);
+});
+
+test('the live unified profile and promotional device share an in-card visual editor',()=>{
+ const profile=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const tag=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const visual=readFileSync('src/components/PresentationVisualEditor.tsx','utf8');
+ const bridge=readFileSync('src/components/ProfileVerificationBridge.tsx','utf8');
+ const legacy=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(bridge,/<ProfilePublicIdentityEditor user=\{user\}/);
+ assert.match(profile,/<PresentationVisualEditor/);assert.match(tag,/<PresentationVisualEditor/);
+ assert.match(visual,/<PresentationCard/);assert.match(profile,/writeBatch\(db\)/);assert.match(profile,/await batch.commit\(\)/);
+ assert.match(profile,/<MultifunctionCardEditor/);assert.match(profile,/<ProfileTagPresentationSync/);
+ assert.doesNotMatch(legacy,/<ProfileTagPresentationSync|<MultifunctionCardEditor/);
+ assert.match(tag,/Contatos de emergência/);assert.match(tag,/rotateRecovery/);
+ assert.doesNotMatch(visual,/firebase|recoveryCode|emergencyContacts/);
+});
+
+test('follow profile has explicit consent, fail-closed visibility and separate SOS',()=>{
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ const editor=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const media=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ assert.match(service,/setPromotionalPresentationMode/);
+ assert.match(service,/latestAccount.get\('isProfileVisible'\)!==true/);
+ assert.match(service,/profilePaused:true/);
+ assert.match(service,/sosContacts:custom.sosContacts/);
+ assert.match(editor,/Acompanhar meu perfil/);assert.match(editor,/Apresentação personalizada/);
+ assert.match(media,/data.presentationMode==='follow-profile'/);
+});
+
+test('image import is opt-in, independently copied, and does not prevent account promotion',()=>{
+ const entry=readFileSync('src/components/KyrubTagOnlyEntry.tsx','utf8');
+ const service=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ assert.match(entry,/imageSlots,setImageSlots/);assert.match(entry,/Continuar para o Kyrub/);
+ assert.match(service,/export async function importTagProfileImages/);
+ assert.match(service,/verifiedObject\(path,id,slot,actor\)/);
+ assert.match(service,/freshTag.get\('ownerId'\)!==actor/);
+ assert.match(service,/freshProfile.get\(imageField\[slot\]\)/);
+ assert.match(service,/firebaseStorageDownloadTokens:token/);
+ assert.match(editor,/<ProfileTagImageImport/);
 });
