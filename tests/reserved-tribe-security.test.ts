@@ -378,3 +378,13 @@ test('ordinary contact card uses the gated pilot transport and never the reserve
  assert.match(pilot,/subscribeSocialPrivacyInvalidation\(terminate\)/);
  assert.doesNotMatch(pilot,/localStorage|onSnapshot|\/api\/health/);
 });
+
+test('public presentation browser adapter is read-only and emulator-exclusive',async()=>{
+ const {publicPresentationEmulatorAllowed,publicPresentationReadTransport}=await import('../server/identity/publicPresentationEmulator.js');
+ const env={KYRUB_PUBLIC_PRESENTATION_E2E:'true',KYRUB_RESERVED_TRIBE_PILOT:'true',NODE_ENV:'test',FIREBASE_PROJECT_ID:'kyrub-security-test',GCLOUD_PROJECT:'kyrub-security-test',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'};
+ assert.equal(publicPresentationEmulatorAllowed(env),true);
+ for(const patch of [{KYRUB_PUBLIC_PRESENTATION_E2E:undefined},{VERCEL:'1'},{VERCEL_ENV:'preview'},{NODE_ENV:'production'},{FIREBASE_PROJECT_ID:'kyrub-tags'},{GCLOUD_PROJECT:'kyrub-b8d0e'},{FIRESTORE_EMULATOR_HOST:undefined},{GOOGLE_APPLICATION_CREDENTIALS:'fixture'},{FIREBASE_SERVICE_ACCOUNT_JSON:'fixture'}])assert.equal(publicPresentationEmulatorAllowed({...env,...patch}),false);
+ assert.equal(publicPresentationReadTransport({transport:'public-kyrub-tag',id:'fixture'}),true);
+ assert.equal(publicPresentationReadTransport({transport:'manage-kyrub-tag',view:'identity'}),true);
+ for(const query of [{transport:'manage-kyrub-tag',id:'fixture'},{transport:'manage-kyrub-tag',view:'identity',id:'fixture'},{transport:'presentation-relationship'},{transport:'reserved-tribe-pilot'}])assert.equal(publicPresentationReadTransport(query),false);
+});

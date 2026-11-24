@@ -11,6 +11,7 @@ assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
 assert.equal(process.env.KYRUB_RESERVED_TRIBE_PILOT,'true');
 assert.equal(process.env.KYRUB_RESERVED_TRIBE_NOTIFICATION_E2E,'true');
+assert.equal(process.env.KYRUB_PUBLIC_PRESENTATION_E2E,'true');
 assert.ok(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS&&!process.env.VERCEL&&!process.env.VERCEL_ENV);
 const app=initializeApp({projectId:project},'reserved-tribe-ui-browser');
 const db=getFirestore(app),admin=getAuth(app);
@@ -401,6 +402,85 @@ try{
  assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
  assert.deepEqual(blockedFirebase,[]);
  console.log('PASS native ordinary block list, suggestions suppressed while blocked, unblocking does not reconnect');
+
+ // A new fictional Tag holder, independent of the reserved/block fixtures.
+ const tagOwner='ui-tag-journey-holder',tagName='Titular Tag Homologação',unit='ab'.repeat(16),address='tag-journey-holder';
+ const tagPair=[owner,tagOwner].sort().join('_'),tagPath='kyrub_official_tags/'+unit;
+ await admin.createUser({uid:tagOwner,email:tagOwner+'@example.invalid',password,emailVerified:true,displayName:tagName});
+ await db.doc('users/'+tagOwner).set({uid:tagOwner,name:tagName,email:tagOwner+'@example.invalid',isProfileVisible:true,photoUrl:'',createdAt:new Date(),updatedAt:new Date()});
+ await db.doc('users/'+tagOwner+'/public_profile/main').set({userId:tagOwner,name:tagName,bio:'Apresentação pública fictícia',occupation:'Autônomo',photoUrl:''});
+ await db.doc('public_social_addresses/profile:'+address).set({kind:'profile',identifier:address,targetId:tagOwner});
+ await db.doc(tagPath).set({model:'adesivo',distribution:'promotional',ownerId:tagOwner,enabled:true,blocked:false,socialEnabled:true,presentationMode:'follow-profile',targets:[],externalUrls:[],presentation:{name:'Personalização fictícia',occupation:'',about:''}});
+ await a.page.bringToFront();
+ const tagUrl=origin+'/tag/'+unit,profileUrl=origin+'/kairubido/'+address;
+ await a.page.goto(tagUrl,{waitUntil:'domcontentloaded'});
+ await visible(a.page.getByRole('heading',{name:tagName,exact:true}));
+ await visible(a.page.getByRole('button',{name:'Conectar',exact:true}));
+ assert.equal(await a.page.getByLabel('Endereço público para compartilhar').inputValue(),tagUrl);
+ await a.page.context().grantPermissions(['clipboard-read','clipboard-write'],{origin});
+ await a.page.getByRole('button',{name:'Copiar link',exact:true}).click();
+ await visible(a.page.getByText('Link copiado.',{exact:true}));
+ assert.equal(await a.page.evaluate(()=>navigator.clipboard.readText()),tagUrl);
+ await a.page.getByRole('button',{name:'Exibir QR Code',exact:true}).click();
+ const qr=a.page.getByRole('region',{name:'QR Code do endereço público'});
+ await visible(qr.locator('svg'));
+ const downloadEvent=a.page.waitForEvent('download');
+ await qr.getByRole('button',{name:'Salvar QR Code (SVG)',exact:true}).click();
+ const download=await downloadEvent;assert.equal(download.suggestedFilename(),'kyrub-qr.svg');
+ assert.equal(await download.failure(),null);
+ await a.page.getByRole('button',{name:'SOS · Informações de emergência',exact:true}).first().click();
+ for(const number of ['190','192','193'])assert.equal(await a.page.locator('#tag-sos-panel a[href="tel:'+number+'"]').count(),1);
+ await a.page.getByRole('button',{name:'SOS · Informações de emergência',exact:true}).first().click();
+ await a.page.getByRole('button',{name:'Conectar',exact:true}).click();
+ await visible(a.page.getByText('Solicitação enviada',{exact:true}));
+ assert.equal((await db.doc('connections/'+tagPair).get()).get('status'),'pending');
+
+ // Acceptance via the actual bell, then the same relationship on both URLs.
+ const holder=await open(tagOwner);
+ await holder.page.getByRole('button',{name:'Fechar meu perfil',exact:true}).click();
+ await absent(holder.panel);
+ await holder.page.locator('#canonical-notification-trigger').click();
+ const holderInbox=holder.page.getByRole('dialog',{name:'Central de notificações'});
+ const holderRequests=holderInbox.getByRole('region',{name:'Solicitações de conexão'});
+ await visible(holderRequests.getByText(ownerName+' deseja conectar-se com você.',{exact:true}));
+ await holderRequests.getByRole('button',{name:'Aceitar',exact:true}).click();
+ await absent(holderRequests);
+ assert.equal((await db.doc('connections/'+tagPair).get()).get('status'),'accepted');
+
+ await a.page.bringToFront();
+ await visible(a.page.getByRole('button',{name:'Abrir chat',exact:true}));
+ await a.page.goto(profileUrl,{waitUntil:'domcontentloaded'});
+ await visible(a.page.getByRole('heading',{name:tagName,exact:true}));
+ await visible(a.page.getByRole('button',{name:'Abrir chat',exact:true}));
+ assert.equal(await a.page.getByLabel('Endereço público para compartilhar').inputValue(),profileUrl);
+ await a.page.goto(origin+'/',{waitUntil:'domcontentloaded'});
+ await visible(a.page.locator('#header-user-profile-trigger'));
+ await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
+ await visible(a.panel);
+ await visible(a.panel.getByText(tagName,{exact:true}));
+ await unlock(a.panel,newCode);
+ a.page.once('dialog',dialog=>dialog.accept());
+ await a.panel.getByRole('button',{name:tagName,exact:true}).click();
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await absent(a.panel.getByText(tagName,{exact:true}));
+ // Public information remains public, but the actor's private relationship
+ // is not revealed even by navigating directly to the public addresses.
+ for(const url of [tagUrl,profileUrl]){
+  await a.page.goto(url,{waitUntil:'domcontentloaded'});
+  await visible(a.page.getByRole('heading',{name:tagName,exact:true}));
+  const check=await a.page.evaluate(async({unit,address,url})=>{
+   const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');
+   return requestReservedTribePilot('presentation-relationship',{source:url.includes('/tag/')?'tag':'profile',id:url.includes('/tag/')?unit:address,operation:null});
+  },{unit,address,url});
+  assert.deepEqual(check,{state:'unavailable'});
+  assert.equal(await a.page.getByRole('button',{name:'Abrir chat',exact:true}).count(),0);
+  assert.equal(await a.page.getByRole('button',{name:'Conectar',exact:true}).count(),0);
+ }
+ assert.equal((await db.doc('connections/'+tagPair).get()).get('status'),'accepted');
+ assert.ok((await db.doc('reserved_tribe_vaults/'+owner+'/contacts/'+tagOwner).get()).exists);
+ assert.equal((await db.doc(tagPath).get()).get('presentationMode'),'follow-profile');
+ assert.deepEqual(blockedFirebase,[]);
+ console.log('PASS public Tag and profile journey: clipboard, QR SVG, SOS links, real connection request, bell acceptance and directional reserved privacy');
 }finally{
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
 }
