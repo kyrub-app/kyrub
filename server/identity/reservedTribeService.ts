@@ -169,8 +169,20 @@ async function projectTribeDirectory(actor:string,scope:'ordinary'|'reserved',to
    return [{id:item.id,name:data.name,memberIds:[...new Set<string>(data.memberIds.filter((id:unknown):id is string=>validId(id)&&acceptedPeers.has(id)))]}];
   }):[];
   const forwardTargets=scope==='ordinary'?filtered.filter(item=>item.status==='accepted').map(item=>({connectionId:item.id,peerId:peerOf(actor,item)})):[];
+  // Only blocks owned by the actor, never reverse blocks or reserved IDs.
+  // Keep this projection available even after the shared connection is gone.
+  const blockedContacts:Array<{id:string;name:string}>=[];
+  if(scope==='ordinary'){
+   const own=await tx.get(adminDb.collection('social_contact_blocks/'+actor+'/blocked').limit(MAX_DIRECTORY_CONNECTIONS+1));
+   if(own.size>MAX_DIRECTORY_CONNECTIONS)throw Error('TRIBE_DIRECTORY_LIMIT');
+   for(const row of own.docs){
+    if(!validId(row.id)||row.id===actor||hidden.has(row.id)||row.get('targetId')!==row.id)continue;
+    const name=row.get('name');
+    blockedContacts.push({id:row.id,name:typeof name==='string'&&name.trim()?name.trim().slice(0,160):'Kairubido'});
+   }
+  }
   if(scope==='reserved')requireSession(config,token);
-  return {connections:filtered,favoriteIds,tribes,forwardTargets,revision:directoryRevision(config,socialRevision)};
+  return {connections:filtered,favoriteIds,tribes,forwardTargets,blockedContacts,revision:directoryRevision(config,socialRevision)};
  });
 }
 export const getOrdinaryTribeDirectory=(actor:string)=>projectTribeDirectory(actor,'ordinary');

@@ -9,7 +9,7 @@ import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalida
 import type {UserNotification} from '../../shared/userNotifications';
 
 type Relation={id:string;senderId:string;receiverId:string;status:'accepted'|'pending';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string};
-type Directory={revision:number;connections:Relation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
+type Directory={revision:number;connections:Relation[];favoriteIds:string[];blockedContacts:{id:string;name:string}[];tribes:{id:string;name:string;memberIds:string[]}[]};
 type Suggestion={id:string;name:string;connectionStatus:'none'|'pending_sent'};
 type Session={token:string;expiresAt:number};
 const button='min-h-10 rounded-xl border border-slate-700 px-3 py-2 text-sm text-white disabled:opacity-40';
@@ -119,7 +119,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   catch{if(stillValid(s,e)){clearPrivate();void reload();}}
   finally{if(pending.current===controller){pending.current=null;setBusy(false);}}
  }
- async function ordinaryAction(action:'connection'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete',fields:Record<string,unknown>){
+ async function ordinaryAction(action:'connection'|'social-block'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete',fields:Record<string,unknown>){
   if(busy||session||!ordinary||document.hidden)return;
   const e=epoch.current;setBusy(true);setError('');
   try{await request(action,fields);if(alive.current&&epoch.current===e){setSuggestions([]);if(action==='tribe-create')setGroupName('');await reload();}}
@@ -167,11 +167,15 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
       <button className={button} disabled={busy||code.length<8||code!==confirmation}>Salvar código</button>
     </form>}
   </div>:section==='new'?<div className="space-y-2">
+    <section aria-label="Contatos bloqueados" className="space-y-2 rounded-xl border border-slate-700 p-3">
+      <h4 className="text-sm font-semibold">Contatos bloqueados · {ordinary.blockedContacts.length}</h4>
+      {ordinary.blockedContacts.length===0?<p className="text-sm text-slate-400">Nenhum contato bloqueado.</p>:ordinary.blockedContacts.map(item=><div key={item.id} className="flex items-center justify-between gap-2 text-sm"><span>{item.name}</span><button type="button" className={button} disabled={busy} onClick={()=>{if(window.confirm('Desbloquear este contato? A conexão não será restabelecida automaticamente.'))void ordinaryAction('social-block',{peerId:item.id,blocked:false});}}>Desbloquear</button></div>)}
+    </section>
     <h4 className="text-sm font-semibold">Solicitações</h4>
     {ordinary.connections.filter(r=>r.status==='pending'&&matchesTribeContactName(name(r),term)).map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm">{name(r)}<div className="mt-2 flex gap-2">{r.receiverId===owner&&<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'accept'})}>Aceitar</button>}<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'remove'})}>{r.receiverId===owner?'Recusar':'Cancelar'}</button></div></div>)}
     <button className={button} disabled={busy} onClick={()=>void loadSuggestions()}>Buscar sugestões</button>
     {suggestions.filter(item=>item.connectionStatus==='none'&&matchesTribeContactName(item.name,term)).map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 text-sm">{item.name}<button className={button+' ml-2'} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:item.id,operation:'request'})}>Conectar</button></div>)}
-  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button></div></div>)}</div>}</>:
+  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Bloquear este contato? A conexão será desfeita. O histórico será preservado.'))void ordinaryAction('social-block',{peerId:peer(r),blocked:true});}}>Bloquear</button></div></div>)}</div>}</>:
   <section className="space-y-3" aria-label="Tribo Reservada">
    <header className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">Tribo Reservada</h3><button className={button} onClick={()=>{clearPrivate();void reload();}}>Trancar</button></header>
    <div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>{setTarget(null);setNotices(null);}}>Contatos</button><button className={button} disabled={busy} onClick={()=>void privateAction<{notifications:UserNotification[]}>('notifications',{},data=>{setTarget(null);setNotices(data.notifications);})}>Avisos</button></div>

@@ -323,6 +323,42 @@ try{
  assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
  assert.deepEqual(blockedFirebase,[]);
  console.log('PASS real authenticated block/unblock invalidates visible remote panel, preserves history and never recreates connection');
+ // Exercise the actual ordinary panel, not a direct API call.
+ await db.runTransaction(async tx=>{
+  tx.create(db.doc('connections/'+pair),{senderId:owner,receiverId:peer,participantIds:[owner,peer].sort(),status:'accepted',senderName:ownerName,receiverName:peerName});
+  for(const ref of revisionRefs)tx.set(ref,{revision:FieldValue.increment(1)},{merge:true});
+ });
+ await b.page.bringToFront();
+ await b.page.getByRole('button',{name:'Fechar meu perfil',exact:true}).click();
+ await absent(b.panel);
+ await b.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
+ await visible(b.panel);
+ await b.panel.getByRole('button',{name:'Geral',exact:true}).click();
+ await visible(b.panel.getByText(ownerName,{exact:true}));
+ b.page.once('dialog',dialog=>dialog.accept());
+ await b.panel.getByRole('button',{name:'Bloquear',exact:true}).click();
+ await absent(b.panel.getByText(ownerName,{exact:true}));
+ await b.panel.getByRole('button',{name:'Novos',exact:true}).click();
+ const blockedList=b.panel.getByRole('region',{name:'Contatos bloqueados'});
+ await visible(blockedList.getByText('Contatos bloqueados · 1',{exact:true}));
+ await visible(blockedList.getByText(ownerName,{exact:true}));
+ await b.panel.getByLabel('Pesquisar pessoas em Conectados').fill(ownerName);
+ const searchDone=b.page.waitForResponse(response=>new URL(response.url()).pathname==='/api/social/reserved-tribe'&&response.request().postDataJSON()?.action==='suggestions');
+ await b.panel.getByRole('button',{name:'Buscar sugestões',exact:true}).click();
+ assert.equal((await searchDone).status(),200);
+ assert.equal(await b.panel.getByRole('button',{name:'Conectar',exact:true}).count(),0);
+ b.page.once('dialog',dialog=>dialog.accept());
+ await blockedList.getByRole('button',{name:'Desbloquear',exact:true}).click();
+ await visible(blockedList.getByText('Contatos bloqueados · 0',{exact:true}));
+ await absent(blockedList.getByText(ownerName,{exact:true}));
+ await b.panel.getByRole('button',{name:'Buscar sugestões',exact:true}).click();
+ await visible(b.panel.getByRole('button',{name:'Conectar',exact:true}));
+ await b.panel.getByRole('button',{name:'Geral',exact:true}).click();
+ await absent(b.panel.getByText(ownerName,{exact:true}));
+ assert.equal((await db.doc('connections/'+pair).get()).exists,false);
+ assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
+ assert.deepEqual(blockedFirebase,[]);
+ console.log('PASS native ordinary block list, suggestions suppressed while blocked, unblocking does not reconnect');
 }finally{
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
 }

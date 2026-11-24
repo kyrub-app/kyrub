@@ -583,3 +583,29 @@ test('ordinary social block atomically removes connections, invalidates both rev
  await adminDb.doc('kyrub_tag_minimal_identities/'+other).set({mode:'tag_only'});
  await assert.rejects(setOrdinarySocialContactBlock(other,owner,true),/TRIBE_ACCESS_DENIED/);
 });
+
+
+test('ordinary blocked list is directional, minimal and does not reveal reserved markers',async()=>{
+ const actor='list-block-owner',peer='list-block-peer',reserved='list-block-reserved',reverse='list-block-reverse';
+ await Promise.all([actor,peer,reserved,reverse].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('connections/'+id(actor,reserved)).set(connection(actor,reserved));
+ await initializeReservedTribe(actor,'list!fixture');
+ const session=await unlockReservedTribe(actor,'list!fixture');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,session.token,reserved,true);
+ // Legacy own block on a reserved peer must not be disclosed in ordinary list.
+ await Promise.all([
+  adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+reserved).set({targetId:reserved,name:reserved}),
+  adminDb.doc('social_contact_blocks/'+reverse+'/blocked/'+actor).set({targetId:actor,name:actor})
+ ]);
+ await setOrdinarySocialContactBlock(actor,peer,true);
+ const directory=await getOrdinaryTribeDirectory(actor);
+ assert.deepEqual(directory.blockedContacts,[{id:peer,name:peer}]);
+ assert.ok(!JSON.stringify(directory).includes(reserved));
+ assert.ok(!JSON.stringify(directory).includes(reverse));
+ assert.deepEqual((await getOrdinaryTribeDirectory(peer)).blockedContacts,[]);
+ assert.deepEqual((await getReservedTribeDirectory(actor,session.token)).blockedContacts,[]);
+ await setOrdinarySocialContactBlock(actor,peer,false);
+ assert.deepEqual((await getOrdinaryTribeDirectory(actor)).blockedContacts,[]);
+ assert.ok((await adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+reserved).get()).exists);
+});
