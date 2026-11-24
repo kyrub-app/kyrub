@@ -14,8 +14,8 @@ export type TagIdentityMode='full'|'tag_only'|'unclassified';
 export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMode}>{
  if(!validUid(uid))throw Error('TAG_FORBIDDEN');
  const [account,marker]=await Promise.all([users().doc(uid).get(),markers().doc(uid).get()]);
- if(account.exists||marker.get('mode')==='full')return {mode:'full'};
  if(marker.get('mode')==='tag_only'&&marker.get('uid')===uid)return {mode:'tag_only'};
+ if(account.exists||marker.get('mode')==='full')return {mode:'full'};
  return {mode:'unclassified'};
 }
 

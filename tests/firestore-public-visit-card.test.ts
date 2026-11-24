@@ -7,6 +7,7 @@ import { adminDb } from '../server/firebaseAdmin.js';
 import { reserveSocialAddress, resolveSocialAddress, getOwnedSocialAddress } from '../server/identity/publicSocialAddressService.js';
 import { saveOwnedCard, loadOwnedCard, resolvePublicCard, disableOwnedCard } from '../server/identity/publicVisitCardService.js';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
+if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
 const projectId='demo-public-visit-card';
 process.env.FIREBASE_PROJECT_ID=projectId;
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
@@ -883,4 +884,47 @@ test('image import rejects invalid selection, wrong owner and missing source bef
  await profile.update({photoUrl:'https://example.test/existing.webp'});
  assert.deepEqual(await importTagProfileImages(uid,id,['avatar']),{images:{},skipped:['avatar']});
  assert.equal((await profile.get()).get('photoUrl'),'https://example.test/existing.webp');
+});
+
+test('profile identifiers may contain dots; minimal identities cannot bypass account promotion',async()=>{
+ const {presentationRelationship}=await import('../server/identity/presentationRelationshipService.js');
+ const {getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+ const target='dotted-address-owner',minimal='minimal-bootstrap-denied';
+ await adminDb.doc('users/'+target).set({name:'Public profile',isProfileVisible:true});
+ await reserveSocialAddress(target,'profile','owner.dotted');
+ assert.equal((await presentationRelationship(null,'profile','owner.dotted')).state,'guest');
+ await adminDb.doc('kyrub_tag_minimal_identities/'+minimal).set({uid:minimal,mode:'tag_only'});
+ const browser=env.authenticatedContext(minimal).firestore();
+ await assertFails(setDoc(doc(browser,'users/'+minimal),{uid:minimal,name:'Test',email:'test@example.test',photoUrl:'',isProfileVisible:true,createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+ await adminDb.doc('users/'+minimal).set({name:'Unexpected existing account'});
+ assert.deepEqual(await getTagIdentityMode(minimal),{mode:'tag_only'});
+});
+test('selected Tag image bytes arrive in independent profile objects through Storage emulator',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_STORAGE_EMULATOR_HOST??''))throw Error('LOCAL_STORAGE_EMULATOR_REQUIRED');
+ const {adminStorage}=await import('../server/firebaseAdmin.js');
+ const {importTagProfileImages}=await import('../server/identity/kyrubTagMediaService.js');
+ const uid='media-copy-owner',id='d2'.repeat(16),asset='e2'.repeat(16);
+ const bucket=adminStorage.bucket(projectId+'.firebasestorage.app');
+ const src='kyrub-tag-media/'+id+'/avatar/'+asset;
+ // Valid tiny WebP, generated fixture; no external media.
+ const bytes=Buffer.from('UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA','base64');
+ await adminDb.doc('users/'+uid).set({name:'Test',isProfileVisible:true});
+ const profile=adminDb.doc('users/'+uid+'/public_profile/main');
+ await profile.set({userId:uid,name:'Test',bio:'',photoUrl:'',updatedAt:new Date()});
+ const tag=adminDb.doc('kyrub_official_tags/'+id);
+ await tag.set({ownerId:uid,model:'adesivo',distribution:'promotional',enabled:true,blocked:false,presentation:{name:'Tag',occupation:'',about:'',avatarPath:src},targets:[]});
+ await bucket.file(src).save(bytes,{resumable:false,metadata:{contentType:'image/webp',metadata:{ownerId:uid,tagId:id,purpose:'avatar'}}});
+ const copied=await importTagProfileImages(uid,id,['avatar']);
+ const url=copied.images.photoUrl;
+ assert.ok(url&&url.startsWith('https://firebasestorage.googleapis.com/'));
+ const path=decodeURIComponent(new URL(url).pathname.split('/o/')[1]);
+ assert.ok(path.startsWith('profile-images/'+uid+'/avatar-'));
+ assert.notEqual(path,src);
+ assert.deepEqual((await bucket.file(path).download())[0],bytes);
+ assert.equal((await profile.get()).get('photoUrl'),url);
+ assert.equal((await adminDb.doc('users/'+uid).get()).get('photoUrl'),url);
+ assert.equal((await tag.get()).get('presentation').avatarPath,src);
+ assert.deepEqual(await importTagProfileImages(uid,id,['avatar']),{images:{},skipped:['avatar']});
+ await bucket.file(path).delete();
+ await bucket.file(src).delete();
 });

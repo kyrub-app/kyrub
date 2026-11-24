@@ -8,8 +8,8 @@ const valid=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}
 const clean=(v:unknown,max:number)=>typeof v==='string'?v.trim().slice(0,max):'';
 const member=(account:FirebaseFirestore.DocumentSnapshot,marker:FirebaseFirestore.DocumentSnapshot)=>account.exists&&marker.get('mode')!=='tag_only';
 export async function presentationRelationship(actor:string|null,source:unknown,id:unknown,action?:unknown){
- if(!valid(id)||!['profile','tag','contact'].includes(String(source))||
-   source==='profile'&&!isSocialAddress('profile',id)||source==='tag'&&!isTagId(id)||
+ if(!['profile','tag','contact'].includes(String(source))||
+   typeof id!=='string'||(source==='profile'?!isSocialAddress('profile',id):!valid(id))||source==='tag'&&!isTagId(id)||
    source==='contact'&&!actor||actor!==null&&!valid(actor)||
    action!==undefined&&(!actor||!['connect','cancel','accept','decline'].includes(String(action))))throw Error('RELATIONSHIP_INVALID');
  return adminDb.runTransaction(async tx=>{
