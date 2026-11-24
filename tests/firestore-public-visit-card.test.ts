@@ -703,3 +703,18 @@ test('tag-only authentication prepares no Kyrub account; explicit promotion is r
   else process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=original;
  }
 });
+
+ test('presentation picker lists only owned reachable communities and stores',async()=>{
+ const {listOwnedPresentationSpaces}=await import('../server/identity/publicVisitCardService.js');
+ await adminDb.doc('users/picker-owner').set({name:'Picker',isProfileVisible:true});
+ await adminDb.doc('communities/picker-public').set({ownerId:'picker-owner',name:'Minha comunidade',visibility:'public'});
+ await adminDb.doc('communities/picker-private').set({ownerId:'picker-owner',name:'Privada',visibility:'private'});
+ await adminDb.doc('tenants/picker-store').set({ownerId:'picker-owner',id:'picker-store',slug:'picker-store',name:'Minha loja',publicationStatus:'published',publicProducts:[]});
+ await reserveSocialAddress('picker-owner','community','picker-public','picker-public');
+ const result=await listOwnedPresentationSpaces('picker-owner');
+ assert.deepEqual(result.map(link=>link.kind).sort(),['community','store']);
+ assert.ok(result.every(link=>!('bindingId' in link)));
+ assert.deepEqual(await listOwnedPresentationSpaces('unrelated-picker-user'),[]);
+ await adminDb.doc('communities/picker-public').update({visibility:'private'});
+ assert.deepEqual((await listOwnedPresentationSpaces('picker-owner')).map(link=>link.kind),['store']);
+ });

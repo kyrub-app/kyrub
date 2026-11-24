@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import { buildPublicDestinationUrl } from '../../shared/publicDestinationRoutes.js';
 import { resolveSocialAddress } from './publicSocialAddressService.js';
 import { loadPublicStorefrontBySlug } from '../payments/marketplaceDiscoveryService.js';
 import { cardLink, isCardId, isBoundTarget, parseCardTargets, CARD_LIMIT, type CardTarget, type CardLink } from './publicCardPolicy.js';
@@ -20,6 +21,38 @@ export async function resolveTarget(actor:string,target:CardTarget,expected?:str
   const result=await resolveSocialAddress(target.kind,target.identifier);
   if(!result)return null;
   return {binding:{...target,bindingId:mapping.targetId},link:cardLink(target,result.name)};
+}
+/** Only owned, publicly reachable spaces are offered by the profile picker.
+ * Existing card links remain supported by the ordinary multifunction editor.
+ */
+export async function listOwnedPresentationSpaces(actor:string):Promise<CardLink[]>{
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('INVALID_CARD');
+ const [communities,tenants,stores]=await Promise.all([
+  adminDb.collection('communities').where('ownerId','==',actor).limit(100).get(),
+  adminDb.collection('tenants').where('ownerId','==',actor).limit(100).get(),
+  adminDb.collection('stores').where('ownerId','==',actor).limit(100).get()
+ ]);
+ const candidates:Bound[]=[];
+ for(const doc of communities.docs){
+  if(!['public','moderated'].includes(doc.get('visibility')))continue;
+  const address=(await adminDb.doc('public_social_address_targets/community:'+doc.id).get()).data();
+  if(address?.kind==='community'&&address.targetId===doc.id&&typeof address.identifier==='string'&&buildPublicDestinationUrl('community',address.identifier))
+   candidates.push({kind:'community',identifier:address.identifier,bindingId:doc.id});
+ }
+ for(const doc of [...tenants.docs,...stores.docs]){
+  const slug=doc.get('slug');
+  if(doc.get('publicationStatus')==='published'&&typeof slug==='string'&&buildPublicDestinationUrl('store',slug))
+   candidates.push({kind:'store',identifier:slug,bindingId:doc.id});
+ }
+ const links=new Map<string,CardLink>();
+ for(let i=0;i<candidates.length;i+=8){
+  const results=await Promise.all(candidates.slice(i,i+8).map(async candidate=>{
+   const resolved=await resolveTarget(actor,candidate,candidate.bindingId);
+   return resolved?.link??null;
+  }));
+  for(const link of results)if(link)links.set(link.url,link);
+ }
+ return [...links.values()].sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
 }
 export async function loadOwnedCard(actor:string){
   const owner=(await owners().doc(actor).get()).data();

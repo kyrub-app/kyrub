@@ -61,6 +61,7 @@ import { MediaCarousel } from './MediaCarousel';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
+import { MultifunctionCardEditor } from './MultifunctionCardEditor';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
   withinCommunitySquareWindow, type CommunitySquareEntry,
@@ -2286,6 +2287,7 @@ export function ProfileSocialHubNative() {
                   Salvar perfil público
                 </button>
               </form>
+              <MultifunctionCardEditor key={user.uid} userId={user.uid} locked={photoBusy} presentationMode />
 
               <button
                 type="button"

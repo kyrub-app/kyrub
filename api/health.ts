@@ -248,7 +248,10 @@ export default async function handler(
         const result=await service.resolvePublicCard(queryValue(request.query?.id));
         response.status(result?200:404).json(result??{error:'CARD_NOT_FOUND'});return;
       }
-      if(method==='GET'){response.status(200).json({card:await service.loadOwnedCard(actor)});return;}
+      if(method==='GET'){
+        if(queryValue(request.query?.view)==='owned-spaces'){response.status(200).json({spaces:await service.listOwnedPresentationSpaces(actor)});return;}
+        response.status(200).json({card:await service.loadOwnedCard(actor)});return;
+      }
       if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}
       const body=request.body;
       const urls=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).urls:null;

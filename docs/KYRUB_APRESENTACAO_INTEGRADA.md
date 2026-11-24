@@ -14,3 +14,6 @@ Apelido privado por unidade; seleção explícita de uma ou várias unidades ati
 
 ## Segundo incremento
 Na adesão voluntária, escolha opcional da Tag de origem. O servidor importa nome, atividade e até 280 caracteres de biografia para o perfil existente na arquitetura, somente se ainda não houver conta nem apresentação. O marcador de adesão e a criação do perfil são transacionais. Sem importação de SOS, fotos ou segredos. A apresentação original permanece intacta. A atividade passa a ser editável no perfil. A integração com o editor de espaços e o cartão dos contatos ainda requer implementação.
+
+## Terceiro incremento
+O editor de perfil reaproveita o cartão multifuncional, com catálogo de espaços públicos pertencentes à conta, seleção por nome, confirmação explícita de publicação e seletor opcional de Tags. Não se cria outra coleção de links. Destinos anteriormente cadastrados permanecem editáveis, inclusive indicações públicas. Ainda falta a projeção desses espaços no cartão dos contatos e a sincronização de apresentação/mídia. A publicação do cartão é uma ação separada de salvar nome e biografia.
