@@ -269,6 +269,60 @@ try{
  assert.ok((await db.doc('reserved_tribe_vaults/'+owner+'/contacts/'+peer).get()).exists);
  assert.deepEqual(blockedFirebase,[]);
  console.log('PASS authenticated removal in independent context closes visible reserved panel and preserves message history and reservation marker');
+ // Reset ONLY the synthetic relationship fixture, not the message or marker.
+ // This keeps the removal regression above and adds real block HTTP coverage.
+ await a.panel.getByRole('button',{name:'Trancar',exact:true}).click();
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await db.runTransaction(async tx=>{
+  tx.create(db.doc('connections/'+pair),{senderId:owner,receiverId:peer,participantIds:[owner,peer].sort(),status:'accepted',senderName:ownerName,receiverName:peerName});
+  for(const ref of revisionRefs)tx.set(ref,{revision:FieldValue.increment(1)},{merge:true});
+ });
+ // Reopen after the fixture reset so the initial revision is deterministic.
+ await a.page.getByRole('button',{name:'Fechar meu perfil',exact:true}).click();
+ await absent(a.panel);
+ await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
+ await visible(a.panel);
+ await unlock(a.panel,newCode);
+ await visible(a.panel.getByText(peerName,{exact:true}));
+ // An ordinary action cannot expose or mutate the actor's own reserved peer.
+ const forbidden=await a.page.evaluate(async target=>{
+  const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');
+  try{await requestReservedTribePilot('social-block',{peerId:target,blocked:true});return false;}catch{return true;}
+ },peer);
+ assert.equal(forbidden,true);
+ assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
+ assert.equal((await block.get()).exists,false);
+ const before=await Promise.all(revisionRefs.map(ref=>ref.get()));
+ const remoteBlock=async blocked=>b.page.evaluate(async fields=>{
+  const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');
+  return requestReservedTribePilot('social-block',fields);
+ },{peerId:owner,blocked});
+ assert.deepEqual(await remoteBlock(true),{blocked:true});
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
+ assert.equal(await a.page.evaluate(()=>document.hidden),false);
+ assert.equal((await db.doc('connections/'+pair).get()).exists,false);
+ assert.equal((await block.get()).get('targetId'),owner);
+ assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
+ assert.ok((await db.doc('reserved_tribe_vaults/'+owner+'/contacts/'+peer).get()).exists);
+ const afterBlock=await Promise.all(revisionRefs.map(ref=>ref.get()));
+ afterBlock.forEach((row,i)=>assert.equal(row.get('revision'),before[i].get('revision')+1));
+ await unlock(a.panel,newCode);
+ await absent(a.panel.getByText(peerName,{exact:true}));
+ assert.deepEqual(await remoteBlock(false),{blocked:false});
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ await unlock(a.panel,newCode);
+ await absent(a.panel.getByText(peerName,{exact:true}));
+ assert.equal((await block.get()).exists,false);
+ assert.equal((await db.doc('connections/'+pair).get()).exists,false);
+ assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
+ const afterUnblock=await Promise.all(revisionRefs.map(ref=>ref.get()));
+ afterUnblock.forEach((row,i)=>assert.equal(row.get('revision'),afterBlock[i].get('revision')+1));
+ assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
+ assert.deepEqual(blockedFirebase,[]);
+ console.log('PASS real authenticated block/unblock invalidates visible remote panel, preserves history and never recreates connection');
 }finally{
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
 }
