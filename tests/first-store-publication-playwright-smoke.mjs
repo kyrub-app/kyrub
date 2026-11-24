@@ -178,12 +178,41 @@ try {
     }));
     throw new Error('Retailer navigation entry absent: ' + JSON.stringify(diagnostic), { cause: error });
   }
-  await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 30000 });
-  await retailerEntry.click();
-  await page.locator('#erp-main-header').waitFor({ state: 'visible', timeout: 15000 });
-  await page.locator('#orange-house-config-btn').click();
-  await page.getByText('Configurações da Loja', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
-  await page.getByTestId('store-publication-toggle').waitFor({ state: 'visible', timeout: 15000 });
+  // Cloud product synchronization can legitimately remount LegacyApp while
+  // entering the ERP. Wait for bootstrap and reopen only non-mutating UI.
+  // Never force a click, dispatch DOM events or substitute a direct API call
+  // for the publication toggle.
+  const configToggle=page.getByTestId('store-publication-toggle');
+  const bootstrap=page.locator('#kyrub-bootstrap-screen');
+  const erpHeader=page.locator('#erp-main-header');
+  const configButton=page.locator('#orange-house-config-btn');
+  let configError;
+  for(let attempt=1;attempt<=4;attempt++){
+    try{
+      await bootstrap.waitFor({state:'hidden',timeout:20000});
+      await page.waitForTimeout(1200);
+      await bootstrap.waitFor({state:'hidden',timeout:20000});
+      if(await configToggle.isVisible())break;
+      if(!await erpHeader.isVisible()){
+        await page.getByRole('button',{name:'Acessar loja',exact:true}).waitFor({state:'visible',timeout:10000});
+        await retailerEntry.click({timeout:10000});
+        await erpHeader.waitFor({state:'visible',timeout:10000});
+      }
+      await bootstrap.waitFor({state:'hidden',timeout:10000});
+      await configButton.click({timeout:10000});
+      await page.getByText('Configurações da Loja',{exact:true}).waitFor({state:'visible',timeout:10000});
+      await configToggle.waitFor({state:'visible',timeout:10000});
+      break;
+    }catch(error){
+      configError=error;
+      console.log('ERP_CONFIG_NAVIGATION_RETRY',attempt, String(error).split('\n')[0]);
+    }
+  }
+  if(!await configToggle.isVisible()){
+    await page.screenshot({path:'playwright-kyrub-erp-navigation-failure.png',fullPage:true});
+    const diagnostic=await page.evaluate(()=>({url:location.href,bootstrap:!!document.querySelector('#kyrub-bootstrap-screen'),erp:!!document.querySelector('#erp-main-header'),config:!!document.querySelector('#orange-house-config-btn'),body:document.body.innerText.slice(0,2200)}));
+    throw Error('ERP configuration unavailable after bounded UI navigation: '+JSON.stringify({diagnostic,errors,browserWarnings:browserWarnings.slice(-15),failedRequests:failedRequests.slice(-15)}),{cause:configError});
+  }
   assert.equal(await page.getByTestId('store-publication-toggle').getAttribute('aria-label'), 'Publicar loja no marketplace');
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Retailer interface must remain emulator-isolated');
 

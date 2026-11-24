@@ -53,5 +53,6 @@ jobs:
             playwright-kyrub-isolated-smoke.png
             playwright-kyrub-challenge-available.png
             playwright-kyrub-challenge-completed.png
+            playwright-kyrub-erp-navigation-failure.png
           if-no-files-found: ignore
           retention-days: 3
