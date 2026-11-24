@@ -305,3 +305,14 @@ test('privacy signals share one channel per document and release the last subscr
  assert.match(source,/if\(includeLocal\)window.addEventListener\(EVENT,onInvalidate\)/);
  assert.match(source,/if\(--listeners===0\)\{channel.close\(\);sharedChannel=undefined;\}/);
 });
+
+
+test('notification inbox emulator verifier is opt-in and rejects deployed or credentialed environments',async()=>{
+ const {notificationInboxEmulatorAllowed}=await import('../server/notifications/notificationInboxEmulatorIdentity.js');
+ const env={KYRUB_RESERVED_TRIBE_NOTIFICATION_E2E:'true',KYRUB_RESERVED_TRIBE_PILOT:'true',NODE_ENV:'test',FIREBASE_PROJECT_ID:'kyrub-security-test',GCLOUD_PROJECT:'kyrub-security-test',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'};
+ assert.equal(notificationInboxEmulatorAllowed(env),true);
+ for(const override of [{KYRUB_RESERVED_TRIBE_NOTIFICATION_E2E:undefined},{KYRUB_RESERVED_TRIBE_PILOT:'false'},{NODE_ENV:'production'},{NODE_ENV:'development'},{VERCEL:'1'},{VERCEL_ENV:'preview'},{FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{GCLOUD_PROJECT:'kyrub-tags'},{FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9098'},{FIRESTORE_EMULATOR_HOST:undefined},{FIREBASE_SERVICE_ACCOUNT_JSON:'fixture'},{GOOGLE_APPLICATION_CREDENTIALS:'fixture'}])assert.equal(notificationInboxEmulatorAllowed({...env,...override}),false);
+ const router=readFileSync('server/notifications/userNotificationRouter.ts','utf8');
+ assert.equal((router.match(/await requireInboxIdentity\(/g)||[]).length,3);
+ assert.equal((router.match(/await requireIdentity\(request/g)||[]).length,3);
+});

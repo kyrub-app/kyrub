@@ -10,6 +10,7 @@ on:
       - 'tests/fixtures/reserved-tribe-browser.*'
       - 'tests/reserved-tribe-app-browser.mjs'
       - 'server/identity/**'
+      - 'server/notifications/**'
       - 'server/firebaseAdmin.ts'
       - 'server.ts'
       - 'firestore*.rules'
@@ -31,6 +32,7 @@ jobs:
       VITE_KYRUB_FIREBASE_EMULATOR_E2E: 'true'
       VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E: 'true'
       KYRUB_RESERVED_TRIBE_PILOT: 'true'
+      KYRUB_RESERVED_TRIBE_NOTIFICATION_E2E: 'true'
     steps:
       - uses: actions/checkout@v4
         with:

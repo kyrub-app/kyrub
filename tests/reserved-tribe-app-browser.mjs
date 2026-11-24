@@ -10,6 +10,7 @@ assert.equal(process.env.FIREBASE_PROJECT_ID,project);
 assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
 assert.equal(process.env.KYRUB_RESERVED_TRIBE_PILOT,'true');
+assert.equal(process.env.KYRUB_RESERVED_TRIBE_NOTIFICATION_E2E,'true');
 assert.ok(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS&&!process.env.VERCEL&&!process.env.VERCEL_ENV);
 const app=initializeApp({projectId:project},'reserved-tribe-ui-browser');
 const db=getFirestore(app),admin=getAuth(app);
@@ -120,6 +121,25 @@ try{
  assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
  assert.deepEqual(blockedFirebase,[],'No browser request to remote Firebase');
  console.log('PASS actual app offline closes reserved surface without deleting shared relationship');
+ // Use the actual header bell and inbox API with emulator-verified identity.
+ assert.equal((await a.page.request.get(origin+'/api/notifications')).status(),401);
+ await a.page.getByRole('button',{name:'Fechar meu perfil',exact:true}).click();
+ await absent(a.panel);
+ const bell=a.page.locator('#canonical-notification-trigger');
+ await visible(bell);
+ await bell.click();
+ const inbox=a.page.getByRole('dialog',{name:'Central de notificações'});
+ await visible(inbox.getByText(systemNotice,{exact:true}));
+ await absent(inbox.getByText(privateNotice,{exact:true}));
+ assert.equal(await bell.getAttribute('aria-label'),'Notificações, 1 não lidas');
+ await inbox.getByRole('button',{name:'Marcar todas como lidas'}).click();
+ await visible(inbox.getByText('Tudo lido',{exact:true}));
+ assert.ok((await db.doc(noticePath+'system-fixture').get()).get('readAt'));
+ assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
+ await inbox.getByRole('button',{name:'Fechar notificações'}).click();
+ await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
+ await visible(a.panel);
+ console.log('PASS general bell hides private notice and read-all only marks ordinary inbox');
  // Notifications remain unread until a private session explicitly marks them.
  assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
  await unlock(a.panel);
@@ -129,7 +149,7 @@ try{
  await a.panel.getByRole('button',{name:'Marcar como lida',exact:true}).click();
  await absent(a.panel.getByRole('button',{name:'Marcar como lida',exact:true}));
  assert.ok((await db.doc(noticePath+'private-fixture').get()).get('readAt'));
- assert.equal((await db.doc(noticePath+'system-fixture').get()).get('readAt'),'');
+ assert.ok((await db.doc(noticePath+'system-fixture').get()).get('readAt'));
  await a.panel.getByRole('button',{name:'Trancar',exact:true}).click();
  await absent(a.panel.getByText(privateNotice,{exact:true}));
  console.log('PASS private notification displayed and read only in reserved UI');

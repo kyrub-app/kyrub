@@ -32,6 +32,7 @@ import { createStoreCustomerChatRouter } from "./server/chat/storeCustomerChatRo
 import { createStoreCampaignRouter } from "./server/campaigns/storeCampaignRouter";
 import { createUserCommunicationPreferenceRouter } from "./server/notifications/userCommunicationPreferenceRouter";
 import { createUserNotificationRouter } from "./server/notifications/userNotificationRouter";
+import { notificationInboxEmulatorAllowed, verifyNotificationInboxEmulatorIdentity } from "./server/notifications/notificationInboxEmulatorIdentity.js";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { createStorePromotionManagementRouter } from "./server/payments/storePromotionManagementRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
@@ -282,7 +283,8 @@ app.use(
 app.use(
   "/api/notifications",
   integrationRateLimiter,
-  createUserNotificationRouter()
+  createUserNotificationRouter(notificationInboxEmulatorAllowed(process.env)
+    ? {verifyInboxIdentity:verifyNotificationInboxEmulatorIdentity} : {})
 );
 
 app.use(
