@@ -95,6 +95,7 @@ async function readAccountProjection(db:Firestore,tx:Transaction,targetUid:strin
     }
     return {scope:'single-account' as const, environment:'isolated-emulator' as const,
       ledgerCoverage:coverage, observedEntries:ledger.size, economy, journey,
+      hasCanonicalState:balance.exists||ledger.size>0||progress.exists,
       journeySource:'author-projection-not-receipt-reconciliation' as const, findings};
 }
 
@@ -227,7 +228,8 @@ export async function refreshIsolatedGamificationIncrementalAccount(
   const total=summary.exists?validatedMetrics(summary.get('metrics')):zeroMetrics();
   const previous=prior.exists?validatedMetrics(prior.get('metrics')):zeroMetrics();
   if(prior.exists&&previous.accounts!==1)throw Error('INCREMENTAL_STATE_INVALID');
-  const next:Metrics={...zeroMetrics(),accounts:1,
+  if(!source.hasCanonicalState&&!prior.exists)throw Error('INCREMENTAL_ACCOUNT_UNAVAILABLE');
+  const next:Metrics={...zeroMetrics(),accounts:source.hasCanonicalState?1:0,
     ...(source.economy?{...source.economy,economyKnown:1}:{}),
     ...(source.journey?{...source.journey,journeyKnown:1}:{})};
   const merged=zeroMetrics();
@@ -237,7 +239,8 @@ export async function refreshIsolatedGamificationIncrementalAccount(
   }
   validatedMetrics(merged);
   const updatedAt=new Date().toISOString();
-  tx.set(contributionRef,{schemaVersion:1,accountId:targetUid,metrics:next,updatedAt});
+  if(source.hasCanonicalState)tx.set(contributionRef,{schemaVersion:1,accountId:targetUid,metrics:next,updatedAt});
+  else tx.delete(contributionRef);
   tx.set(ref,{schemaVersion:1,metrics:merged,updatedAt});
   return snapshotView(merged,updatedAt);
  });
