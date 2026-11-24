@@ -98,6 +98,8 @@ export async function setReservedTribeContact(actor:string,token:unknown,peer:un
    if(members.size>=MAX_RESERVED_CONTACTS)throw Error('TRIBE_LIMIT_REACHED');
    requireSession(config,token);
    tx.create(marker,{peerId:peer,createdAt:FieldValue.serverTimestamp()});
+   // Once enrolled, require the server directory even after the last removal.
+   tx.update(root,{directoryProtected:true,updatedAt:FieldValue.serverTimestamp()});
   }
   requireSession(config,token);
   return {reserved:true};
@@ -107,17 +109,19 @@ export async function setReservedTribeContact(actor:string,token:unknown,peer:un
  * the ordinary list. The existing direct Firestore query is NOT yet replaced;
  * do not expose membership mutations until that migration is finished.
  */
-async function listTribeConnections(actor:string,scope:'ordinary'|'reserved',token?:unknown){
+async function projectTribeDirectory(actor:string,scope:'ordinary'|'reserved',token?:unknown){
  const root=vault(actor);
  return adminDb.runTransaction(async tx=>{
   const [account,config]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(root)]);
   if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
   if(scope==='reserved')requireSession(config,token);
-  const [markers,connections]=await Promise.all([
+  const [markers,connections,favorites,groups]=await Promise.all([
    tx.get(root.collection('contacts').limit(MAX_RESERVED_CONTACTS+1)),
-   tx.get(adminDb.collection('connections').where('participantIds','array-contains',actor).limit(MAX_DIRECTORY_CONNECTIONS+1))
+   tx.get(adminDb.collection('connections').where('participantIds','array-contains',actor).limit(MAX_DIRECTORY_CONNECTIONS+1)),
+   tx.get(adminDb.collection('users/'+actor+'/contact_favorites').limit(MAX_DIRECTORY_CONNECTIONS+1)),
+   tx.get(adminDb.collection('users/'+actor+'/contact_groups').limit(31))
   ]);
-  if(markers.size>MAX_RESERVED_CONTACTS||connections.size>MAX_DIRECTORY_CONNECTIONS)throw Error('TRIBE_DIRECTORY_LIMIT');
+  if(markers.size>MAX_RESERVED_CONTACTS||connections.size>MAX_DIRECTORY_CONNECTIONS||favorites.size>MAX_DIRECTORY_CONNECTIONS||groups.size>30)throw Error('TRIBE_DIRECTORY_LIMIT');
   const hidden=new Set(markers.docs.map(item=>item.id));
   const filtered=connections.docs.flatMap(item=>{
    const relation=relationship(item,actor);
@@ -125,12 +129,29 @@ async function listTribeConnections(actor:string,scope:'ordinary'|'reserved',tok
    const isReserved=hidden.has(peerOf(actor,relation));
    return scope==='reserved'?(isReserved&&relation.status==='accepted'?[relation]:[]):(!isReserved?[relation]:[]);
   });
+  const acceptedPeers=new Set(filtered.filter(item=>item.status==='accepted').map(item=>peerOf(actor,item)));
+  const favoriteIds=favorites.docs.filter(item=>acceptedPeers.has(item.id)&&item.get('favorited')===true).map(item=>item.id);
+  const tribes=scope==='ordinary'?groups.docs.flatMap(item=>{
+   const data=item.data();
+   if(data.ownerId!==actor||typeof data.name!=='string'||!Array.isArray(data.memberIds))return [];
+   return [{id:item.id,name:data.name,memberIds:[...new Set<string>(data.memberIds.filter((id:unknown):id is string=>validId(id)&&acceptedPeers.has(id)))]}];
+  }):[];
+  const forwardTargets=scope==='ordinary'?filtered.filter(item=>item.status==='accepted').map(item=>({connectionId:item.id,peerId:peerOf(actor,item)})):[];
   if(scope==='reserved')requireSession(config,token);
-  return filtered;
+  return {connections:filtered,favoriteIds,tribes,forwardTargets};
  });
 }
-export const listOrdinaryTribeConnections=(actor:string)=>listTribeConnections(actor,'ordinary');
-export const listReservedTribeConnections=(actor:string,token:unknown)=>listTribeConnections(actor,'reserved',token);
+export const getOrdinaryTribeDirectory=(actor:string)=>projectTribeDirectory(actor,'ordinary');
+export const getReservedTribeDirectory=(actor:string,token:unknown)=>projectTribeDirectory(actor,'reserved',token);
+export const listOrdinaryTribeConnections=async(actor:string)=>(await getOrdinaryTribeDirectory(actor)).connections;
+export const listReservedTribeConnections=async(actor:string,token:unknown)=>(await getReservedTribeDirectory(actor,token)).connections;
+
+/** Ordinary forwarding may never target a reserved peer, even when unlocked.
+ * Call from the same transaction as the forwarding write.
+ */
+export async function authorizeOrdinaryForward(tx:FirebaseFirestore.Transaction,actor:string,connectionId:string){
+ return authorizeTribeRelationship(tx,actor,connectionId);
+}
 
 /** Use for server chat/directory operations after verified auth, in the same
  * transaction as the operation. A public relationship is not permission

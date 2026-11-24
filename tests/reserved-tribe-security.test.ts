@@ -62,3 +62,16 @@ test('reserved chat direct access is denied and server operations enforce relati
  assert.match(service,/ownBlock.exists\|\|otherBlock.exists/);
  assert.doesNotMatch(readFileSync('api/health.ts','utf8'),/reservedTribeChatService/);
 });
+
+test('ordinary directory and forward destinations are server-projected, not UI-hidden',()=>{
+ const rules=readFileSync('firestore.rules','utf8');
+ const groups=readFileSync('firestore.contact-groups.fragment.rules','utf8');
+ const forwarding=readFileSync('firestore.communities.fragment.rules','utf8');
+ const service=readFileSync('server/identity/reservedTribeService.ts','utf8');
+ assert.match(rules,/ordinaryDirectoryClientAllowed\(request.auth.uid\)/);
+ assert.match(groups,/ordinaryDirectoryClientAllowed\(userId\)/);
+ assert.match(forwarding,/isUnreservedPeer\(request.auth.uid, data.receiverId\)/);
+ assert.match(service,/getOrdinaryTribeDirectory/);
+ assert.match(service,/authorizeOrdinaryForward/);
+ assert.match(service,/directoryProtected:true/);
+});

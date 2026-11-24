@@ -8,6 +8,15 @@ service cloud.firestore {
     }
 
     // --- Helpers ---
+    // This account-level switch is server-owned. A Firestore query cannot
+    // safely act as a per-document privacy filter.
+    function ordinaryDirectoryClientAllowed(uid) {
+      let path = /databases/$(database)/documents/reserved_tribe_vaults/$(uid);
+      return !exists(path) || get(path).data.get('directoryProtected', false) != true;
+    }
+    function isUnreservedPeer(uid, peer) {
+      return !exists(/databases/$(database)/documents/reserved_tribe_vaults/$(uid)/contacts/$(peer));
+    }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -308,7 +317,7 @@ match /connections/{connectionId} {
 
   allow read: if isSignedIn()
     && (
-      request.auth.uid in existing().participantIds
+      (request.auth.uid in existing().participantIds && ordinaryDirectoryClientAllowed(request.auth.uid))
       || isAdmin()
     );
 

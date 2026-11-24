@@ -3,11 +3,11 @@ import {before,after,test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {getApps,deleteApp} from 'firebase-admin/app';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
-import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit} from 'firebase/firestore';
+import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit,where} from 'firebase/firestore';
 import {Timestamp} from 'firebase-admin/firestore';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -52,8 +52,9 @@ test('reservation is private, authorized, directional and leaves shared relation
   await assertFails(setDoc(doc(client,path),{peerId:peer}));
   await assertFails(deleteDoc(doc(client,path)));
  }
- // Legacy shared reads still work; migration is explicitly required before UI exposure.
- await assertSucceeds(getDoc(doc(env.authenticatedContext(actor).firestore(),'connections/'+id(actor,peer))));
+ // The enrolled owner must use the server directory; the counterpart is unaffected.
+ await assertFails(getDoc(doc(env.authenticatedContext(actor).firestore(),'connections/'+id(actor,peer))));
+ await assertSucceeds(getDoc(doc(env.authenticatedContext(peer).firestore(),'connections/'+id(actor,peer))));
  await lockReservedTribe(actor);
  await assert.rejects(listReservedTribeConnections(actor,token),/TRIBE_ACCESS_DENIED/);
  const next=await unlockReservedTribe(actor,'synthetic!code');assert.ok(next.ok);
@@ -119,4 +120,35 @@ test('reserved chat denies direct SDK access while the other participant retains
  assert.equal((await readTribeChat(actor,pair)).messages.length,1);
  const ordinaryPair=id(actor,other);
  await assertSucceeds(setDoc(doc(owner,'social_chats/'+ordinaryPair+'/messages/ordinary'),{senderId:actor,receiverId:other,text:'normal',createdAt:serverTimestamp()}));
+});
+
+test('server directory excludes reserved contacts from tribes, favorites and forward targets',async()=>{
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const owner=env.authenticatedContext(actor).firestore();
+ await Promise.all([
+  adminDb.doc('users/'+actor+'/contact_favorites/'+peer).set({favorited:true,connectionId:id(actor,peer)}),
+  adminDb.doc('users/'+actor+'/contact_favorites/'+other).set({favorited:true,connectionId:id(actor,other)}),
+  adminDb.doc('users/'+actor+'/contact_groups/family').set({ownerId:actor,name:'Família',memberIds:[peer,other]}),
+  adminDb.doc('community_direct_forward_receipts/source__'+actor+'__'+peer).set({actorId:actor,receiverId:peer})
+ ]);
+ await setReservedTribeContact(actor,session.token,peer,true);
+ const directory=await getOrdinaryTribeDirectory(actor);
+ assert.deepEqual(directory.favoriteIds,[other]);
+ assert.deepEqual(directory.tribes,[{id:'family',name:'Família',memberIds:[other]}]);
+ assert.deepEqual(directory.forwardTargets,[{connectionId:id(actor,other),peerId:other}]);
+ assert.ok(!JSON.stringify(directory).includes(peer));
+ const reserved=await getReservedTribeDirectory(actor,session.token);
+ assert.deepEqual(reserved.favoriteIds,[peer]);assert.equal(reserved.forwardTargets.length,0);
+ await assertFails(getDocs(query(collection(owner,'connections'),where('participantIds','array-contains',actor))));
+ await assertFails(getDocs(collection(owner,'users',actor,'contact_favorites')));
+ await assertFails(getDoc(doc(owner,'users',actor,'contact_groups','family')));
+ await assertFails(getDoc(doc(owner,'community_direct_forward_receipts','source__'+actor+'__'+peer)));
+ await assert.rejects(adminDb.runTransaction(tx=>authorizeOrdinaryForward(tx,actor,id(actor,peer))),/TRIBE_ACCESS_DENIED/);
+ assert.equal((await adminDb.runTransaction(tx=>authorizeOrdinaryForward(tx,actor,id(actor,other)))).status,'accepted');
+ await setReservedTribeContact(actor,session.token,peer,false);
+ assert.ok((await getOrdinaryTribeDirectory(actor)).favoriteIds.includes(peer));
+ assert.ok((await getOrdinaryTribeDirectory(actor)).tribes[0].memberIds.includes(peer));
+ await assertFails(getDocs(query(collection(owner,'connections'),where('participantIds','array-contains',actor))));
+ await assertSucceeds(getDoc(doc(env.authenticatedContext(peer).firestore(),'connections/'+id(actor,peer))));
 });
