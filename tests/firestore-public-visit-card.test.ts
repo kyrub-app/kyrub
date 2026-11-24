@@ -788,3 +788,28 @@ test('contact presentation uses live public profile and card destinations, not p
  await adminDb.doc('users/'+uid).update({isProfileVisible:false});
  assert.equal(await resolvePublicPresentationByIdentifier('share-presentation'),null);
  });
+
+test('presentation relationship uses one canonical connection and excludes minimal tag identities',async()=>{
+ const {presentationRelationship}=await import('../server/identity/presentationRelationshipService.js');
+ const sender='relationship-sender',receiver='relationship-receiver',minimal='relationship-minimal';
+ for(const uid of [sender,receiver])await adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true});
+ await adminDb.doc('kyrub_tag_minimal_identities/'+minimal).set({uid:minimal,mode:'tag_only'});
+ const id='a1'.repeat(16);
+ await adminDb.doc('kyrub_official_tags/'+id).set({distribution:'promotional',ownerId:minimal,enabled:true,blocked:false,socialEnabled:true});
+ assert.equal((await presentationRelationship(sender,'tag',id)).state,'tag_only');
+ await adminDb.doc('kyrub_official_tags/'+id).update({ownerId:receiver,socialEnabled:false});
+ assert.equal((await presentationRelationship(sender,'tag',id)).state,'unavailable');
+ await adminDb.doc('kyrub_official_tags/'+id).update({socialEnabled:true});
+ assert.equal((await presentationRelationship(null,'tag',id)).state,'guest');
+ assert.equal((await presentationRelationship(minimal,'tag',id)).state,'join');
+ const attempts=await Promise.all([presentationRelationship(sender,'tag',id,'connect'),presentationRelationship(sender,'contact',receiver,'connect')]);
+ assert.ok(attempts.every(x=>x.state==='pending_sent'));
+ const pair=[sender,receiver].sort().join('_');
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'pending');
+ await assert.rejects(presentationRelationship(sender,'tag',id,'accept'),/RELATIONSHIP_CHANGED/);
+ assert.equal((await presentationRelationship(receiver,'contact',sender,'accept')).state,'accepted');
+ assert.equal((await presentationRelationship(sender,'tag',id)).state,'accepted');
+ await adminDb.doc('kyrub_official_tags/'+id).update({blocked:true});
+ assert.equal((await presentationRelationship(sender,'tag',id)).state,'unavailable');
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
+});

@@ -5,6 +5,7 @@ import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {PresentationCard} from './PresentationCard';
 import {PresentationShare} from './PresentationShare';
+import {PresentationRelationship} from './PresentationRelationship';
 import {PresentationFooter,usePresentationMembership} from './PresentationFooter';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
@@ -193,6 +194,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     coverUrl={data.presentation.hasCover?publicPromotionalTagImageUrl(identifier,'cover'):undefined}
     backgroundUrl={data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined}
     links={data.links}>
+    <PresentationRelationship source="tag" id={identifier}/>
     <PresentationShare url={window.location.origin+'/tag/'+encodeURIComponent(identifier)} title={data.presentation.name||'Minha Kyrub Tag'}/>
     <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>

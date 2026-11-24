@@ -316,6 +316,8 @@ match /connections/{connectionId} {
     && hasValidConnectionId()
     && hasValidParticipants(incoming())
     && incoming().senderId == request.auth.uid
+    && (!exists(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().senderId)) || get(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().senderId)).data.mode != 'tag_only')
+    && (!exists(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().receiverId)) || get(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().receiverId)).data.mode != 'tag_only')
     && incoming().status == 'pending'
     && incoming().createdAt == request.time
     && incoming().updatedAt == request.time

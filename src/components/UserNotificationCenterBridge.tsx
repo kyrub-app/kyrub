@@ -20,7 +20,9 @@ import {
   USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin,
   type UserNotificationOrigin,
 } from '../../shared/userNotificationOrigins';
-import { auth } from '../utils/firebase';
+import { auth,db } from '../utils/firebase';
+import {collection,onSnapshot,query,where} from 'firebase/firestore';
+import {requestPresentationRelationship} from './PresentationRelationship';
 import { openStoreCustomerChat } from '../utils/storeCustomerChatEvents';
 import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../utils/communitySquareFeed';
 import { loadUserCommunicationPreferences } from '../utils/userCommunicationPreferences';
@@ -118,6 +120,27 @@ export function UserNotificationCenterBridge() {
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
   const [activeOrigin, setActiveOrigin] = useState<UserNotificationOrigin>('all');
   const [unreadCount, setUnreadCount] = useState(0);
+  const [connectionPending,setConnectionPending]=useState<{id:string;senderId:string;name:string}[]>([]);
+  const [connectionBusy,setConnectionBusy]=useState<string|null>(null);
+  useEffect(()=>{
+   setConnectionPending([]);setConnectionBusy(null);
+   if(!user)return;
+   return onSnapshot(query(collection(db,'connections'),where('participantIds','array-contains',user.uid)),snapshot=>{
+    if(auth.currentUser?.uid!==user.uid)return;
+    setConnectionPending(snapshot.docs.flatMap(doc=>{
+     const row=doc.data();
+     return row.status==='pending'&&row.receiverId===user.uid&&typeof row.senderId==='string'?
+       [{id:doc.id,senderId:row.senderId,name:typeof row.senderName==='string'?row.senderName:'Kairubido'}]:[];
+    }));
+   },()=>setConnectionPending([]));
+  },[user?.uid]);
+  async function answerConnection(item:{id:string;senderId:string},action:'accept'|'decline'){
+   if(connectionBusy)return;
+   setConnectionBusy(item.id);
+   try{await requestPresentationRelationship('contact',item.senderId,action);}
+   catch{setErrorMessage('Não foi possível responder à solicitação. Atualize e tente novamente.');}
+   finally{setConnectionBusy(null);}
+  }
   const [loading, setLoading] = useState(false);
   const [pendingInviteResponse, setPendingInviteResponse] = useState<string | null>(null);
   const [resolvedInvites, setResolvedInvites] = useState<Record<string, 'accepted' | 'declined'>>({});
@@ -329,14 +352,14 @@ export function UserNotificationCenterBridge() {
       type="button"
       onClick={() => setOpen(current => !current)}
       className="relative flex h-10 w-10 items-center justify-center rounded-xl border border-slate-800 bg-slate-900 text-slate-400 transition-colors hover:border-orange-500/40 hover:text-orange-300"
-      aria-label={unreadCount > 0 ? `Notificações, ${unreadCount} não lidas` : 'Notificações'}
+      aria-label={`Notificações, ${unreadCount} não lidas, ${connectionPending.length} solicitações pendentes`}
       aria-expanded={open}
       id="canonical-notification-trigger"
     >
       <Bell className="h-4 w-4" />
-      {unreadCount > 0 && (
+      {unreadCount+connectionPending.length > 0 && (
         <span className="absolute -right-1 -top-1 min-w-4 rounded-full bg-orange-500 px-1 text-center font-mono text-[8px] font-black leading-4 text-slate-950">
-          {unreadCount > 99 ? '99+' : unreadCount}
+          {unreadCount+connectionPending.length > 99 ? '99+' : unreadCount+connectionPending.length}
         </span>
       )}
     </button>,
@@ -433,18 +456,25 @@ export function UserNotificationCenterBridge() {
             )}
 
             <div className="max-h-[calc(78dvh-4rem)] overflow-y-auto p-2">
+              {activeOrigin==='all'&&connectionPending.length>0&&<section aria-label="Solicitações de conexão" className="space-y-2 mb-3">
+                <h3 className="px-2 text-xs font-semibold text-orange-300">Solicitações de conexão · {connectionPending.length}</h3>
+                {connectionPending.map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 space-y-2">
+                  <p className="text-sm text-white">{item.name} deseja conectar-se com você.</p>
+                  <div className="grid grid-cols-2 gap-2"><button type="button" disabled={!!connectionBusy} onClick={()=>void answerConnection(item,'accept')} className="min-h-10 rounded-lg bg-orange-500 text-sm font-bold text-slate-950">Aceitar</button><button type="button" disabled={!!connectionBusy} onClick={()=>void answerConnection(item,'decline')} className="min-h-10 rounded-lg border border-slate-600 text-sm text-white">Recusar</button></div>
+                </div>)}
+              </section>}
               {loading && notifications.length === 0 ? (
                 <div className="flex items-center justify-center gap-2 px-4 py-12 text-xs text-slate-500">
                   <LoaderCircle className="h-4 w-4 animate-spin" />
                   Carregando notificações…
                 </div>
-              ) : visibleNotifications.length === 0 ? (
+              ) : visibleNotifications.length === 0 ? (activeOrigin==='all'&&connectionPending.length>0?null:(
                 <div className="px-4 py-12 text-center text-xs leading-relaxed text-slate-500">
                   {activeOrigin === 'all'
                     ? 'Nenhuma notificação real ainda. Eventos do Kyrub aparecerão aqui quando acontecerem.'
                     : 'Ainda não há notificações desta origem.'}
                 </div>
-              ) : (
+              )) : (
                 visibleNotifications.map(notification => {
                   const unread = unreadIds.has(notification.id);
                   return (

@@ -1,8 +1,9 @@
 import {useEffect,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {MessageCircle,X} from 'lucide-react';
+import {X} from 'lucide-react';
 import {auth} from '../utils/firebase';
 import {PresentationCard} from './PresentationCard';
+import {PresentationRelationship} from './PresentationRelationship';
 import {PresentationFooter} from './PresentationFooter';
 type Presentation={name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;backgroundUrl:string;links:{kind:string;name:string;url:string}[]};
 export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:string;onClose:()=>void;onChat?:()=>void}){
@@ -33,10 +34,10 @@ export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:str
    state.status==='error'?<p role="alert" className="py-5 text-sm">Não foi possível consultar a apresentação. <button type="button" onClick={()=>setRetry(v=>v+1)} className="underline">Tentar novamente</button></p>:
    !presentation?<p className="py-5 text-sm text-slate-300">A apresentação deste Kairubido não está pública.</p>:<PresentationCard {...presentation}>
     <p className="text-xs text-slate-400">Somente informações e conteúdos públicos são exibidos aqui.</p>
-    {onChat&&<button type="button" onClick={onChat} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] font-bold text-[#121A17]"><MessageCircle className="h-5 w-5"/>Abrir chat</button>}
+    <PresentationRelationship source="contact" id={targetId} onChat={onChat}/>
    </PresentationCard>}
    {presentation&&<div className="mt-3"><PresentationFooter mode="full"/></div>}
-   {!presentation&&onChat&&<button type="button" onClick={onChat} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] font-bold text-[#121A17]"><MessageCircle className="h-5 w-5"/>Abrir chat</button>}
+
   </section>
  </div>,document.body);
 }

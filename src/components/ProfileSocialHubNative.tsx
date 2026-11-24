@@ -490,6 +490,7 @@ export function ProfileSocialHubNative() {
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
+  const [suggestionPresentation,setSuggestionPresentation]=useState<string|null>(null);
   const [newConnectionsTab, setNewConnectionsTab] =
     useState<NewConnectionsTab>('requests');
   const [activeTab, setActiveTab] = useState<ProfileTab>('publications');
@@ -2169,11 +2170,12 @@ export function ProfileSocialHubNative() {
                       key={friend.id}
                       className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900"
                     >
+                      <button type="button" aria-label={`Abrir apresentação de ${friend.name}`} onClick={()=>setSuggestionPresentation(friend.id)}>
                       <Avatar
                         src={friend.avatar}
                         name={friend.name}
                         className="aspect-[4/3] w-full object-cover"
-                      />
+                      /></button>
                       <div className="min-h-[72px] p-3">
                         <h4 className="truncate text-xs font-black text-white">
                           {friend.name}
@@ -2184,9 +2186,7 @@ export function ProfileSocialHubNative() {
                       </div>
                       <button
                         type="button"
-                        onClick={() =>
-                          setRemoveContactTarget(friend)
-                        }
+                        onClick={()=>setSuggestionPresentation(friend.id)}
                         className="m-2 mt-auto flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-500 px-2 text-[9px] font-black uppercase text-slate-950"
                       >
                         <UserPlus className="h-4 w-4" />
@@ -2504,6 +2504,7 @@ export function ProfileSocialHubNative() {
         </div>
       )}
 
+      {suggestionPresentation&&<ContactPresentationModal targetId={suggestionPresentation} onClose={()=>setSuggestionPresentation(null)}/>}
       <ChatModal
         isOpen={Boolean(chatTarget)}
         onClose={() => setChatTarget(null)}

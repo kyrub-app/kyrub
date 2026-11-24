@@ -1,6 +1,7 @@
 import {useEffect,useState} from 'react';
 import {PresentationCard} from './PresentationCard';
 import {PresentationShare} from './PresentationShare';
+import {PresentationRelationship} from './PresentationRelationship';
 import {PresentationFooter,usePresentationMembership} from './PresentationFooter';
 type Data={kind:'profile'|'community';identifier:string;name:string;description:string;image:string;presentation?:{name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;backgroundUrl:string;links:{name:string;url:string}[]}};
 export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'community';identifier?:string}) {
@@ -28,6 +29,7 @@ export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'
       <a href="/" className="flex items-center gap-2 text-lg font-black text-orange-400"><img src="/kyrub-logo.svg" alt="" className="h-10 w-10"/>Kyrub</a>
       {state==='ready'&&data?(data.kind==='profile'&&data.presentation?<PresentationCard {...data.presentation} headingLevel="h1">
         <p className="text-center text-sm text-slate-300">@{data.identifier}</p>
+        <PresentationRelationship source="profile" id={data.identifier}/>
         <PresentationShare url={window.location.origin+'/kairubido/'+encodeURIComponent(data.identifier)} title={data.presentation.name}/>
       </PresentationCard>:<article className="space-y-3 rounded-3xl border border-slate-700 bg-slate-900 p-5">
         <p className="text-xs font-bold uppercase text-slate-400">{data.kind==='profile'?'Kairubido':'Comunidade'}</p>

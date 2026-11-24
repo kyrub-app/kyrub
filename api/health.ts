@@ -168,6 +168,12 @@ export default async function handler(
         const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
         response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
       }
+      if(data.action==='set-promotional-social'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalSocialEnabled(actor,id,data.enabled));return;
+      }
       if(data.action==='remove-promotional-space'&&Object.keys(data).length===2){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const record=await adminAuth.getUser(actor);
@@ -234,6 +240,31 @@ export default async function handler(
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});
+    }
+    return;
+  }
+
+  if (transport === 'presentation-relationship') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    const method=(request.method??'GET').toUpperCase();
+    if(!['GET','POST'].includes(method)){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const header=headerValue(request.headers.authorization??request.headers.Authorization);
+    let actor:string|null=null;
+    if(header||method==='POST'){
+      try{
+        const {authenticateConsultantRequest}=await import('../server/ai/consultantAuth.js');
+        actor=(await authenticateConsultantRequest(header)).uid;
+      }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
+    }
+    try{
+      const {presentationRelationship}=await import('../server/identity/presentationRelationshipService.js');
+      const source=queryValue(request.query?.source),id=queryValue(request.query?.id);
+      const body=request.body as Record<string,unknown>|undefined;
+      if(method==='POST'&&(!body||Object.keys(body).length!==1||typeof body.action!=='string')){response.status(400).json({error:'RELATIONSHIP_INVALID'});return;}
+      response.status(200).json(await presentationRelationship(actor,source,id,method==='POST'?body?.action:undefined));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      response.status(code==='RELATIONSHIP_CHANGED'?409:code==='RELATIONSHIP_INVALID'?400:503).json({error:code==='RELATIONSHIP_CHANGED'||code==='RELATIONSHIP_INVALID'?code:'RELATIONSHIP_UNAVAILABLE'});
     }
     return;
   }

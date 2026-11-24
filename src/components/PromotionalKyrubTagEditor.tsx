@@ -4,8 +4,10 @@ import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type Prom
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
+import {usePresentationMembership} from './PresentationFooter';
 
 export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
+ const membership=usePresentationMembership();
  const [tag,setTag]=useState(initial);
  const [presentation,setPresentation]=useState<PromotionalTagPresentation>(initial.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
  const [recoveryCode,setRecoveryCode]=useState(oneTimeRecoveryCode??'');
@@ -73,6 +75,22 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
   finally{setBusy(false);}
  }
+ async function toggleSocial(){
+  const user=auth.currentUser;if(!user||busy||uploading)return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'set-promotional-social',enabled:!tag.socialEnabled})
+   });
+   if(!res.ok)throw Error('TAG_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id)throw Error('TAG_FAILED');
+   setTag(updated);setNotice(updated.socialEnabled?'Conexões pelo NFC autorizadas.':'Conexões pelo NFC desativadas.');
+  }catch{setNotice('Não foi possível alterar. Para permitir conexões, mantenha seu perfil público.');}
+  finally{setBusy(false);}
+ }
  async function removeSpace(url:string){
   const user=auth.currentUser;
   if(!user||busy||uploading||!window.confirm('Retirar este espaço somente desta Kyrub Tag?'))return;
@@ -118,6 +136,10 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <strong>Estado: {tag.blocked?'Bloqueada por segurança':tag.enabled?'Pública':'Ainda não publicada'}</strong>
    <p className="mt-1 text-slate-300">Somente quem tiver acesso à sua identidade autenticada poderá gerenciar esta unidade.</p>
   </div>
+  {membership==='full'&&<section className="rounded-xl border border-[#34443B] p-3 space-y-2">
+   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!tag.socialEnabled} disabled={busy||uploading} onChange={()=>void toggleSocial()}/>Permitir conexões por esta Tag</label>
+   <p className="text-xs text-slate-300">Opcional. O SOS continua disponível mesmo sem interação social.</p>
+  </section>}
   {tag.urls.some(url=>{const target=parsePublicDestinationUrl(url);return target?.kind==='store'||target?.kind==='community';})&&<section className="space-y-2 rounded-xl border border-[#34443B] p-3">
    <h2 className="font-semibold">Espaços vinculados a esta Tag</h2>
    <p className="text-xs text-slate-300">Retire um destino sem alterar o perfil, os outros adesivos ou o SOS.</p>

@@ -19,7 +19,7 @@ function owned(id:string,data:Record<string,unknown>):OwnedKyrubTag{
  if(!isTagId(id)||!isTagModel(data.model))throw Error('TAG_UNAVAILABLE');
  const targets=Array.isArray(data.targets)?data.targets.filter(isBoundTarget).slice(0,CARD_LIMIT):[];
  return {id,model:data.model,enabled:data.enabled===true,...(typeof data.nickname==='string'&&data.nickname?{nickname:data.nickname}:{}),urls:[...targets.map(t=>cardLink(t,'Destino').url),...externalLinks(data.externalUrls).map(t=>t.url)].slice(0,CARD_LIMIT),
- ...(data.distribution==='promotional'?{distribution:'promotional' as const,presentation:normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION),blocked:data.blocked===true}:{})};
+ ...(data.distribution==='promotional'?{distribution:'promotional' as const,socialEnabled:data.socialEnabled===true,presentation:normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION),blocked:data.blocked===true}:{})};
 }
 // Trusted manufacturing service only. No client or HTTP provisioning route.
 // Return the secret once for a separate sealed activation code, never NDEF.
@@ -120,7 +120,7 @@ export async function recoverPromotionalKyrubTag(actor:string,id:string,verified
     !/^[a-f0-9]{64}$/.test(oldHash)||!timingSafeEqual(Buffer.from(oldHash,'hex'),Buffer.from(requestedHash,'hex')))throw Error('TAG_FORBIDDEN');
   const update={ownerId:actor,ownerEmailHash:hashTagRecipient(id,email),recoveryHash:promotionalRecoveryHash(id,nextRecoveryCode),
     recoveryCount:typeof data.recoveryCount==='number'?data.recoveryCount+1:1,lastRecoveredAt:new Date().toISOString(),
-    enabled:false,blocked:true,nickname:'',targets:[]};
+    enabled:false,blocked:true,nickname:'',targets:[],socialEnabled:false};
   if(!account.exists&&!marker.exists){
    tx.create(identity,{uid:actor,mode:'tag_only',source:'kyrub_tag_promo',
     createdFromTag:id,createdAt:new Date().toISOString()});
@@ -351,6 +351,21 @@ export async function addOwnedCardSpacesToTags(actor:string,ids:unknown,urls:unk
   });
   for(const item of updates)tx.update(item.ref,{targets:item.targets,updatedAt:new Date().toISOString()});
   return {tags:updates.map(item=>owned(item.ref.id,{...item.data,targets:item.targets}))};
+ });
+}
+/** Social access through a physical unit is explicit and revocable. */
+export async function setPromotionalSocialEnabled(actor:string,id:string,enabled:unknown){
+ assertTagPilotWriteIsolated();validActor(actor);
+ if(!isTagId(id)||typeof enabled!=='boolean')throw Error('TAG_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
+  if(data?.ownerId!==actor||data.distribution!=='promotional')throw Error('TAG_FORBIDDEN');
+  if(enabled){
+   const [account,marker]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(adminDb.doc('kyrub_tag_minimal_identities/'+actor))]);
+   if(!account.exists||marker.get('mode')==='tag_only'||account.get('isProfileVisible')!==true)throw Error('TAG_FORBIDDEN');
+  }
+  tx.update(ref,{socialEnabled:enabled});
+  return owned(id,{...data,socialEnabled:enabled});
  });
 }
 /** Remove destinations only; never republish a blocked or unpublished unit. */
