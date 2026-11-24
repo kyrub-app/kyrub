@@ -1,3 +1,5 @@
+import { OfficialChallengeDisclosurePanel } from './OfficialChallengeDisclosurePanel';
+import { OfficialCommunityBindingPanel } from './OfficialCommunityBindingPanel';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
@@ -101,6 +103,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
   if (blocked) return <div role="alert" ref={errorRef} tabIndex={-1} className="rounded-xl border border-amber-500/30 p-4 text-sm text-amber-200">{error}</div>;
   const field = (key: keyof typeof form, value: string) => setForm(previous => ({ ...previous, [key]: value }));
   return <section aria-label="Gerenciar desafios globais" className="space-y-5">
+    <OfficialCommunityBindingPanel api={api} />
     <div className="flex flex-wrap items-end justify-between gap-3">
       <label className="text-xs text-slate-300">Estado do desafio<select aria-label="Filtrar por estado" value={filter} disabled={busy} onChange={event => { setFilter(event.target.value as typeof filter); setCursors([undefined]); setSelectedId(''); }} className={inputClass}>
         <option value="">Todos os estados</option>{GLOBAL_CHALLENGE_STATUSES.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}
@@ -134,6 +137,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
       {detailLoading && <p role="status" className="text-sm text-slate-400">Carregando detalhes…</p>}
       {detail && <><h3 ref={detailHeadingRef} tabIndex={-1} className="scroll-mt-24 break-words text-base font-bold text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400">{detail.title}</h3><p className="mt-2 whitespace-pre-wrap break-words text-sm text-slate-300">{detail.description}</p>
         <dl className="my-4 grid gap-3 text-xs text-slate-300 sm:grid-cols-2">{[['Identificador', detail.id], ['Estado', statusLabels[detail.status]], ['Validação', modeLabels[detail.validationMode]], ['XP previsto', detail.rewardXp], ['K-Coins previstos', detail.rewardKCoins], ['Conclusões por usuário', detail.maxCompletionsPerUser], ['Conclusões totais', detail.maxCompletions ?? 'Sem limite'], ['Início', formatDate(detail.startsAt)], ['Fim', formatDate(detail.endsAt)]].map(([label, value]) => <div key={label}><dt className="text-slate-500">{label}</dt><dd className="break-all">{value}</dd></div>)}</dl>
+        {['published','active'].includes(detail.status)&&<OfficialChallengeDisclosurePanel key={detail.id} challenge={detail} api={api} />}
         {detail.status === 'draft' && <button type="button" disabled={busy} className={`${buttonClass} border-emerald-500/40 text-emerald-200`} onClick={publish}>Publicar desafio</button>}
       </>}
     </section>}

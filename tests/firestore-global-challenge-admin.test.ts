@@ -498,6 +498,143 @@ test('Express admission charges one slot per request, including parser errors', 
   } finally { admission.mock.restore(); }
 });
 
+// Institutional API tests must run before the deliberate ingress saturation cases.
+test('institutional community binding is owner-authorized, unique, audited and server-only',async()=>{
+ const path='kyrub_admin/control_plane/institutional_channels/official_community';
+ const ref=adminDb.doc(path);
+ const fixture=async(id:string,ownerId:string,visibility='public',status='active')=>{
+  await adminDb.doc('communities/'+id).set({communityId:id,ownerId,name:'Fixture '+id,visibility});
+  await adminDb.doc('community_members/'+id+'__'+ownerId).set({membershipId:id+'__'+ownerId,communityId:id,userId:ownerId,role:'owner',status});
+ };
+ await fixture('official-owned','admin');
+ await fixture('official-other','other-user');
+ await fixture('official-private','admin','private');
+ await fixture('official-inactive','admin','public','pending');
+ assert.equal((await request(undefined,'official-community',null,'GET')).status,401);
+ assert.equal((await request(undefined,'official-community',token('operations'),'GET')).status,403);
+ const empty=await request(undefined,'official-community',token(),'GET');
+ assert.equal(empty.status,200);assert.equal(empty.body.binding.state,'unlinked');
+ assert.ok(empty.body.binding.candidates.some((v:{communityId:string})=>v.communityId==='official-owned'));
+ assert.ok(!empty.body.binding.candidates.some((v:{communityId:string})=>['official-other','official-private'].includes(v.communityId)));
+ assert.equal((await request({communityId:'official-owned',actorId:'admin'},'link-official-community')).status,400);
+ for(const id of ['official-other','official-private','official-inactive','missing'])assert.equal((await request({communityId:id},'link-official-community')).status,403);
+ assert.equal((await ref.get()).exists,false);
+ assert.equal((await request({communityId:'official-owned'},'link-official-community',token('operations'))).status,403);
+ const results=await Promise.all(Array.from({length:4},()=>request({communityId:'official-owned'},'link-official-community')));
+ assert.ok(results.every(r=>r.status===200&&r.body.binding.state==='linked'));
+ assert.deepEqual(results[0].body.binding,{state:'linked',community:{communityId:'official-owned',name:'Fixture official-owned'}});
+ assert.equal((await ref.collection('audit').get()).size,1);
+ assert.equal((await ref.get()).get('ownerId'),'admin');
+ await fixture('official-second','admin');
+ assert.equal((await request({communityId:'official-second'},'link-official-community')).status,409);
+ assert.equal((await ref.get()).get('communityId'),'official-owned');
+ for(const uid of ['admin','ordinary']){
+  const browser=environment.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(browser,path)));
+  await assertFails(setDoc(doc(browser,path),{communityId:'official-other'}));
+ }
+ await adminDb.doc('community_members/official-owned__admin').update({status:'pending'});
+ assert.deepEqual((await request(undefined,'official-community',token(),'GET')).body,{binding:{state:'unavailable'}});
+ // No challenges or community posts are created by linking.
+ assert.equal((await adminDb.collection('community_posts').where('communityId','==','official-owned').get()).size,0);
+});
+
+
+test('institutional disclosure commits one original and optional Taba pointer only in isolated emulator',async()=>{
+ const ref=adminDb.doc('kyrub_admin/control_plane/institutional_channels/official_community');
+ await adminDb.doc('community_members/official-owned__admin').update({status:'active'});
+ assert.equal((await ref.get()).get('communityId'),'official-owned');
+ const id='first_store_published';
+ await adminDb.doc('global_challenges/'+id).set({...draft(id),status:'published',rewardXp:2});
+ await adminDb.doc('global_challenges/future-freela-fixture').set({...draft('future-freela-fixture'),status:'published'});
+ const operation='disclose-official-challenge';
+ const input={challengeId:id,shareToSquare:true};
+ const prior=process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;
+ delete process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;
+ assert.equal((await request(input,operation)).status,503);
+ process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED='true';
+ try{
+  assert.equal((await request(input,operation,token('operations'))).status,403);
+  assert.equal((await request({...input,communityId:'official-other'},operation)).status,400);
+  assert.equal((await request({challengeId:'future-freela-fixture',shareToSquare:true},operation)).status,409);
+  assert.equal((await adminDb.collection('community_posts').where('institutionalChallengeId','==','future-freela-fixture').get()).size,0);
+  const results=await Promise.all(Array.from({length:3},()=>request(input,operation)));
+  assert.ok(results.every(r=>r.status===200));
+  assert.equal(results.filter(r=>r.body.disclosure.replay===false).length,1);
+  const postId=results[0].body.disclosure.postId;
+  const post=await adminDb.doc('community_posts/'+postId).get();
+  assert.equal(post.get('authorId'),'kyrub:institutional');
+  assert.equal(post.get('institutionalChallengeId'),id);
+  assert.equal(post.get('communityId'),'official-owned');
+  const pointer=await adminDb.doc('community_square_posts/'+postId).get();
+  assert.equal(pointer.get('postId'),postId);
+  assert.equal(pointer.get('createdAt').toMillis(),post.get('createdAt').toMillis());
+  assert.equal((await adminDb.collection('community_posts').where('institutionalChallengeId','==',id).get()).size,1);
+  assert.equal((await request({...input,shareToSquare:false},operation)).status,409);
+  assert.equal((await adminDb.doc('global_challenges/'+id).get()).get('status'),'published');
+  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+  await assert.rejects(seedVerifiedPost(adminDb,{authenticatedUserId:'admin',kind:'community',postId}),/SEMEADURA_POST_NOT_ELIGIBLE/);
+  assert.equal((await adminDb.doc('users/kyrub:institutional/semeaduraProgress/summary').get()).exists,false);
+  const browser=environment.authenticatedContext('admin').firestore();
+  await assertFails(setDoc(doc(browser,'community_posts/'+postId),{institutionalChallengeId:'forged'},{merge:true}));
+
+  // Continue the same institutional disclosure scenario as a different,
+  // ordinary Kairubido. The existing test project has no welcome trigger;
+  // this checks zero deltas for discovery and a unique publication award.
+  const participant='pilot-disclosure-participant';
+  const participantDb=environment.authenticatedContext(participant).firestore();
+  const visiblePost=await getDoc(doc(participantDb,'community_posts/'+postId));
+  const visiblePointer=await getDoc(doc(participantDb,'community_square_posts/'+postId));
+  assert.equal(visiblePost.data()?.institutionalChallengeId,id);
+  assert.equal(visiblePointer.data()?.postId,visiblePost.id);
+  assert.equal(visiblePointer.data()?.communityId,visiblePost.data()?.communityId);
+  await assertFails(setDoc(doc(participantDb,'community_posts/'+postId),{institutionalChallengeId:'forged'},{merge:true}));
+  const {readUserPlatformChallengeCatalog}=await import('../server/gamification/userPlatformChallengeCatalogService.js');
+  const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+  const {publishFirstStoreAndAwardXp}=await import('../server/gamification/firstStorePublicationAuthority.js');
+  const accountBefore=await readPitangaAccount(adminDb,participant);
+  assert.equal(accountBefore.pitangas,0);
+  assert.equal(accountBefore.xp,0);
+  const originalChallenge=visiblePost.data()?.institutionalChallengeId;
+  const available=(await readUserPlatformChallengeCatalog(adminDb,participant)).challenges.find(c=>c.id===originalChallenge);
+  assert.equal(available?.status,'available');
+  assert.equal(available?.rewardXp,2);
+  assert.equal(available?.rewardPitangas,0);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountBefore);
+  // Run the actual authenticated store creation service in the emulator.
+  // A minimal public profile edit is a fixture, not fabricated publication
+  // evidence. No paid plan or payment records are configured.
+  const {ensureFreePlanForStoreCreation}=await import('../server/actions/freeStoreProvisioningService.js');
+  await ensureAuthUser(participant);
+  const provisioned=await ensureFreePlanForStoreCreation('Bearer '+token(participant));
+  assert.equal(provisioned.plan,'free');
+  assert.equal(provisioned.created,true);
+  const storeId=provisioned.canonicalStoreId;
+  const store=adminDb.doc('stores/'+storeId);
+  const listing=adminDb.doc('marketplace_listings/s_'+participant.length+'_'+participant);
+  assert.equal((await store.get()).get('publicationStatus'),'paused');
+  assert.equal((await listing.get()).exists,false);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountBefore);
+  await adminDb.doc('users/'+participant+'/stores/'+participant).update({name:'Loja piloto fictícia',slug:'loja-piloto-ficticia'});
+  const attempt=()=>publishFirstStoreAndAwardXp(adminDb,{authenticatedUserId:participant,canonicalStoreId:storeId});
+  const publication=await Promise.all([attempt(),attempt()]);
+  assert.equal(publication.filter(x=>!x.replay).length,1);
+  const accountAfter=await readPitangaAccount(adminDb,participant);
+  assert.equal(accountAfter.pitangas-accountBefore.pitangas,0);
+  assert.equal(accountAfter.xp-accountBefore.xp,2);
+  assert.equal(accountAfter.entries.length,1);
+  assert.equal((await listing.get()).get('publicationStatus'),'published');
+  const completed=(await readUserPlatformChallengeCatalog(adminDb,participant)).challenges.find(c=>c.id===originalChallenge);
+  assert.equal(completed?.status,'completed');
+  assert.equal(completed?.completionsConfirmed,1);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountAfter);
+  assert.equal((await adminDb.collection('users/'+participant+'/challengeRewards').get()).size,1);
+  assert.equal((await adminDb.collection('users/admin/xpLedger').get()).size,0);
+  assert.equal((await adminDb.collection('users/kyrub:institutional/xpLedger').get()).size,0);
+
+ }finally{if(prior===undefined)delete process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;else process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED=prior;}
+});
+
 test('malformed and oversized HTTP requests cannot bypass pre-parser ingress admission', async () => {
   let blocked = false;
   for (let i = 0; i <= GLOBAL_CHALLENGE_INGRESS_LIMIT; i++) {

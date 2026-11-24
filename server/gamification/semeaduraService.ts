@@ -40,6 +40,7 @@ export const seedVerifiedPost = async (
     ]);
     if (!post.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
     const postData = post.data();
+    if(postData?.institutionalChallengeId!==undefined)throw Error('SEMEADURA_POST_NOT_ELIGIBLE');
     const authorId = postData?.authorId;
     if (!safeUid(authorId) || postData?.postId !== postId) {
       throw new Error('SEMEADURA_POST_INVALID');
@@ -197,6 +198,7 @@ export const readVerifiedPostSemeadura = async (
   ]);
   if (!post.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
   const postData = post.data();
+  if(postData?.institutionalChallengeId!==undefined)throw Error('SEMEADURA_POST_NOT_ELIGIBLE');
   const authorId = postData?.authorId;
   if (!safeUid(authorId) || postData?.postId !== postId) throw new Error('SEMEADURA_POST_INVALID');
   let canParticipate = true;

@@ -145,3 +145,74 @@ test('wrong project and absent verified fence fail closed without credit', async
   assert.equal((await balance(user.uid).get()).get('availableKCoins'), 100);
   assert.equal((await ledger(user.uid).get()).size, 1);
 });
+
+test('one Auth-created member: welcome and verified first publication remain separate; insufficient conversion never mutates either economy', async () => {
+  assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+  assert.equal(projectId,'demo-kyrub-welcome');
+  const { readPitangaAccount, convertPitangaAccount } = await import('../server/gamification/pitangaAccountService.js');
+  const { publishFirstStoreAndAwardXp, hideVerifiedFirstStorePublication } = await import('../server/gamification/firstStorePublicationAuthority.js');
+  const { readUserPlatformChallengeCatalog } = await import('../server/gamification/userPlatformChallengeCatalogService.js');
+  const signed = await googleSignIn('welcome-publication-integrated');
+  assert.equal(signed.isNewUser,true);
+  const uid=signed.localId;
+  await waitForAward(uid);
+  const first=await readPitangaAccount(db,uid);
+  assert.equal(first.pitangas,100);
+  assert.equal(first.xp,0);
+  assert.equal(first.entries.length,1);
+  const storeId='fixture-integrated-first-store';
+  const store=db.doc(`stores/${storeId}`);
+  const event=db.doc(`users/${uid}/verifiedStoreEvents/first_store_published`);
+  const listing=db.doc(`marketplace_listings/s_${uid.length}_${uid}`);
+  const challenge=db.doc('global_challenges/first_store_published');
+  const grant=()=>publishFirstStoreAndAwardXp(db,{authenticatedUserId:uid,canonicalStoreId:storeId});
+  // Fixture represents a provisioned, unpublished store; actual production
+  // authority performs the publication, evidence and reward transaction.
+  await challenge.set({id:'first_store_published',title:'Primeira publicação',description:'Fixture',status:'published',validationMode:'deterministic',sponsorType:'kyrub',rewardKCoins:0,rewardXp:2,maxCompletionsPerUser:1});
+  await store.set({id:storeId,ownerId:uid,publicationStatus:'paused',firstStoreCreationVerified:true,plan:'free'});
+  await db.doc(`users/${uid}/stores/${uid}`).set({id:uid,ownerId:uid,name:'Loja fictícia',slug:'loja-integrada',plan:'free'});
+  assert.deepEqual(await readPitangaAccount(db,uid),first);
+  assert.equal((await event.get()).exists,false);
+  assert.equal((await listing.get()).exists,false);
+  const initialCatalog=await readUserPlatformChallengeCatalog(db,uid);
+  assert.equal(initialCatalog.challenges.find(c=>c.id==='first_store_published')?.status,'available');
+  const awards=await Promise.all(Array.from({length:4},grant));
+  assert.equal(awards.filter(r=>!r.replay).length,1);
+  assert.equal(awards.filter(r=>r.replay).length,3);
+  const afterPublication=await readPitangaAccount(db,uid);
+  assert.equal(afterPublication.pitangas,100);
+  assert.equal(afterPublication.xp,2);
+  assert.equal(afterPublication.entries.length,2);
+  assert.equal((await db.collection(`users/${uid}/challengeRewards`).get()).size,1);
+  const firstAt=(await store.get()).get('firstPublishedAt');
+  assert.equal((await event.get()).get('publishedAt'),firstAt);
+  assert.equal((await listing.get()).get('publicationStatus'),'published');
+  assert.equal((await listing.get()).get('publishedAt').toDate().toISOString(),firstAt);
+  const completedCatalog=await readUserPlatformChallengeCatalog(db,uid);
+  assert.equal(completedCatalog.challenges.find(c=>c.id==='first_store_published')?.status,'completed');
+  await hideVerifiedFirstStorePublication(db,{authenticatedUserId:uid,canonicalStoreId:storeId});
+  assert.equal((await listing.get()).get('publicationStatus'),'paused');
+  assert.deepEqual(await grant(),{replay:true,pitangas:0,xp:2});
+  assert.equal((await store.get()).get('firstPublishedAt'),firstAt);
+  assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
+  const previousFlag=process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED;
+  try {
+    process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED='true';
+    await assert.rejects(convertPitangaAccount(db,uid,{requestId:'integrated-insufficient',requestedXp:1}),/PITANGA_BALANCE_INSUFFICIENT/);
+    assert.equal((await db.collection(`users/${uid}/pitangaXpConversions`).get()).size,0);
+    assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
+    await db.doc('systemControl/pitangaLegacyWriterFence').set({status:'fenced',writersVerified:false,epoch});
+    await assert.rejects(convertPitangaAccount(db,uid,{requestId:'integrated-unverified-fence',requestedXp:1}),/PITANGA_CONVERSION_WRITERS_UNVERIFIED/);
+    assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
+  } finally {
+    if(previousFlag===undefined)delete process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED;
+    else process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED=previousFlag;
+    await db.doc('systemControl/pitangaLegacyWriterFence').set({status:'fenced',writersVerified:true,epoch});
+  }
+  const again=await googleSignIn('welcome-publication-integrated');
+  assert.equal(again.localId,uid);
+  // Auth Emulator may omit isNewUser for an existing federated account.
+  assert.notEqual(again.isNewUser,true);
+  assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
+});
