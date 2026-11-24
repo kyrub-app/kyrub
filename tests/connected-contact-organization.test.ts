@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { matchesTribeContactName } from '../src/utils/tribeContactSearch';
 import assert from 'node:assert/strict';
 
 const appSource = readFileSync('src/App.tsx', 'utf8');
@@ -74,3 +75,16 @@ test('group management reuses private groups and updates membership natively', (
   assert.match(profileSource, /group\.memberIds\.filter\(id => id !== friendId\)/);
   assert.match(profileSource, /deleteGroup/);
 });
+
+ test('Minha Tribo filters contact names immediately, ignoring accents and case',()=>{
+  const names=['João Silva','Maria José','José Almeida'];
+  const filter=(term:string)=>names.filter(name=>matchesTribeContactName(name,term));
+  assert.deepEqual(filter('j'),names);
+  assert.deepEqual(filter('JOA'),['João Silva']);
+  assert.deepEqual(filter('  jose  al  '),['José Almeida']);
+  assert.deepEqual(filter(''),names);
+  assert.deepEqual(filter('xyz'),[]);
+  assert.match(profileSource,/onChange=\{event => setTribeSearch\(event.target.value\)\}/);
+  assert.match(profileSource,/filteredTribeFriends\.map/);
+  assert.match(profileSource,/filteredTribeFavorites\.map/);
+ });

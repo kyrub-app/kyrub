@@ -55,6 +55,7 @@ import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
+import { matchesTribeContactName } from '../utils/tribeContactSearch';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
@@ -508,6 +509,8 @@ export function ProfileSocialHubNative() {
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
+  const [tribeSearch, setTribeSearch] = useState('');
+  useEffect(() => { setTribeSearch(''); }, [user?.uid, open]);
   const [squareSearch, setSquareSearch] = useState('');
   const [communitySquareEntries, setCommunitySquareEntries] = useState<CommunitySquareEntry[]>([]);
   const [squareMembershipIds, setSquareMembershipIds] = useState<Set<string>>(new Set());
@@ -1269,6 +1272,8 @@ export function ProfileSocialHubNative() {
   const requestCount = directory.connectionRequests.length;
   const newConnectionsCount = suggestionCount + requestCount;
 
+  const filteredTribeFriends = directory.friends.filter(friend => matchesTribeContactName(friend.name, tribeSearch));
+  const filteredTribeFavorites = filteredTribeFriends.filter(friend => friend.favorited);
   const connectionTabs: Array<{
     id: ConnectionSection;
     label: string;
@@ -1749,7 +1754,7 @@ export function ProfileSocialHubNative() {
                   </button>
                   <nav
                     className="grid grid-cols-4 gap-2"
-                    aria-label="Seções de conectados"
+                    aria-label="Seções de Minha Tribo"
                   >
                     {connectionTabs.map(item => (
                       <button
@@ -1790,9 +1795,22 @@ export function ProfileSocialHubNative() {
                     </button>
                   </nav>
 
+                  <div className="relative">
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="search"
+                      aria-label="Pesquisar pessoas na Minha Tribo"
+                      value={tribeSearch}
+                      onChange={event => setTribeSearch(event.target.value)}
+                      placeholder="Pesquisar na minha tribo..."
+                      className="min-h-11 w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-12 text-sm text-white outline-none focus:border-orange-500"
+                    />
+                    {tribeSearch && <button type="button" aria-label="Limpar pesquisa" onClick={() => setTribeSearch('')} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-slate-400"><X aria-hidden="true" className="h-4 w-4" /></button>}
+                  </div>
+
                   {connectionSection === 'connected' && (
                     <div className="grid grid-cols-2 gap-3">
-                      {directory.friends.map(friend => (
+                      {filteredTribeFriends.map(friend => (
                         <ContactCard
                           key={friend.id}
                           friend={friend}
@@ -1809,11 +1827,11 @@ export function ProfileSocialHubNative() {
                           }
                         />
                       ))}
-                      {directory.friends.length === 0 && (
+                      {filteredTribeFriends.length === 0 && (
                         <div className="col-span-2">
                           <EmptyState
-                            title="Nenhuma conexão"
-                            description="Aceite solicitações ou encontre pessoas nas sugestões."
+                            title={tribeSearch.trim() ? 'Nenhuma pessoa encontrada' : 'Nenhuma conexão'}
+                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Aceite solicitações ou encontre pessoas nas sugestões.'}
                           />
                         </div>
                       )}
@@ -1822,9 +1840,7 @@ export function ProfileSocialHubNative() {
 
                   {connectionSection === 'favorites' && (
                     <div className="grid grid-cols-2 gap-3">
-                      {directory.friends
-                        .filter(friend => friend.favorited)
-                        .map(friend => (
+                      {filteredTribeFavorites.map(friend => (
                           <ContactCard
                             key={friend.id}
                             friend={friend}
@@ -1841,12 +1857,11 @@ export function ProfileSocialHubNative() {
                             }
                           />
                         ))}
-                      {directory.friends.filter(friend => friend.favorited)
-                        .length === 0 && (
+                      {filteredTribeFavorites.length === 0 && (
                         <div className="col-span-2">
                           <EmptyState
-                            title="Nenhum favorito"
-                            description="Use a estrela nos contatos para criar sua lista de favoritos."
+                            title={tribeSearch.trim() ? 'Nenhum favorito encontrado' : 'Nenhum favorito'}
+                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Use a estrela nos contatos para criar sua lista de favoritos.'}
                             icon={Star}
                           />
                         </div>
@@ -1907,8 +1922,9 @@ export function ProfileSocialHubNative() {
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
+                          {tribeSearch.trim() && filteredTribeFriends.length === 0 && <p className="text-xs text-slate-400">Nenhuma pessoa encontrada.</p>}
                           <div className="grid gap-2 sm:grid-cols-2">
-                            {directory.friends.map(friend => {
+                            {filteredTribeFriends.map(friend => {
                               const selected = group.memberIds.includes(
                                 friend.id
                               );
