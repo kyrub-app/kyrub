@@ -627,3 +627,68 @@ test('isolated incremental snapshot replaces contributions without duplicate tot
   if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
  }
 });
+
+
+test('accepted seeds enqueue isolated refresh atomically; repeated drains do not duplicate totals',async()=>{
+ const {drainIsolatedGamificationDirtyAccounts,readIsolatedGamificationIncrementalSnapshot}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const admin=await googleSignIn('dirty-queue-admin');
+ const author=await googleSignIn('dirty-queue-author');
+ const second=await googleSignIn('dirty-queue-second');
+ await Promise.all([waitForAward(admin.localId),waitForAward(author.localId),waitForAward(second.localId)]);
+ const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.localId);
+ const reviewer=db.doc('systemControl/semeaduraEconomicReview/reviewers/'+admin.localId);
+ const cache=db.doc('systemControl/gamificationIncrementalPilot');
+ const pending=(id:string)=>cache.collection('pending').doc(id);
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const queuePrior=process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE;
+ const bearer='Bearer '+admin.idToken;
+ const drain=(limit=10)=>drainIsolatedGamificationDirtyAccounts(db,auth,bearer,limit);
+ const read=()=>readIsolatedGamificationIncrementalSnapshot(db,auth,bearer);
+ const postId='dirty-queue-post';
+ const post2='dirty-queue-second-post';
+ const seed=(actor:string,id=postId)=>seedVerifiedPost(db,{kind:'personal',postId:id,authenticatedUserId:actor});
+ try{
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  delete process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE;
+  await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
+  await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
+  await assert.rejects(drain(),/INCREMENTAL_QUEUE_DISABLED/);
+  await db.doc('social_posts/'+postId).set({postId,authorId:author.localId,visibility:'public',publicationType:'feed'});
+  await db.doc('social_posts/'+post2).set({postId:post2,authorId:second.localId,visibility:'public',publicationType:'feed'});
+  await seed('queue-disabled-voter');
+  assert.equal((await pending(author.localId).get()).exists,false);
+  process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE='true';
+  await assert.rejects(seed(author.localId),/SEMEADURA_SELF_RECOGNITION_DENIED/);
+  assert.equal((await pending(author.localId).get()).exists,false);
+  await Promise.all([seed('queue-voter-1'),seed('queue-voter-1'),seed('queue-voter-2')]);
+  await seed('queue-second-voter',post2);
+  assert.equal((await cache.collection('pending').get()).size,2);
+  assert.equal((await read()).refreshedAccounts,0);
+  await assert.rejects(drain(21),/INCREMENTAL_QUEUE_LIMIT_INVALID/);
+  const batch=await drain(1);
+  assert.equal(batch.refreshed,1);assert.equal(batch.moreObserved,true);
+  assert.equal((await cache.collection('pending').get()).size,1);
+  await drain();
+  const snapshot=await read();
+  assert.equal(snapshot.refreshedAccounts,2);
+  assert.deepEqual(snapshot.reconciledEconomySubtotal,{credits:200,debits:0,balance:200});
+  assert.deepEqual(snapshot.authorProjectionSubtotal,{seeds:4,pitangueiras:0,bosques:0});
+  assert.equal((await drain()).refreshed,0);
+  await seed('queue-voter-1');
+  assert.equal((await pending(author.localId).get()).exists,false);
+  await seed('queue-new-voter');
+  await Promise.all([drain(),seed('queue-racing-voter')]);
+  await drain();
+  assert.equal((await pending(author.localId).get()).exists,false);
+  assert.equal((await read()).authorProjectionSubtotal?.seeds,6);
+  assert.equal((await read()).reconciledEconomySubtotal?.balance,200);
+  await profile.update({status:'suspended'});
+  await assert.rejects(drain(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+ }finally{
+  await Promise.all([pending(author.localId).delete(),pending(second.localId).delete(),
+    cache.collection('accounts').doc(author.localId).delete(),cache.collection('accounts').doc(second.localId).delete(),cache.delete()]);
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+  if(queuePrior===undefined)delete process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE;else process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE=queuePrior;
+ }
+});
