@@ -37,3 +37,16 @@ export function validTribeSession(token:unknown,digest:unknown,expiresAt:unknown
  const candidate=tribeSessionDigest(token);
  return !!candidate&&typeof digest==='string'&&/^[0-9a-f]{64}$/.test(digest)&&typeof expiresAt==='number'&&expiresAt>now&&timingSafeEqual(Buffer.from(candidate,'hex'),Buffer.from(digest,'hex'));
 }
+
+/** Auth time, not token issuance time: token refresh is not reauthentication.
+ * Each successful recovery consumes that authentication epoch.
+ */
+export const TRIBE_RECOVERY_AUTH_WINDOW_SECONDS=300;
+export function validTribeRecoveryProof(proof:{uid:unknown;email_verified?:unknown;auth_time?:unknown},actor:string,lastRecoveryAuthTime:unknown,now:number):boolean{
+ const authenticatedAt=proof.auth_time;
+ const seconds=Math.floor(now/1000);
+ return proof.uid===actor&&proof.email_verified===true&&typeof authenticatedAt==='number'&&
+  Number.isSafeInteger(authenticatedAt)&&authenticatedAt>0&&authenticatedAt<=seconds&&
+  seconds-authenticatedAt<=TRIBE_RECOVERY_AUTH_WINDOW_SECONDS&&
+  authenticatedAt>(typeof lastRecoveryAuthTime==='number'&&Number.isSafeInteger(lastRecoveryAuthTime)?lastRecoveryAuthTime:0);
+}

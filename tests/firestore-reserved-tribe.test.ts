@@ -5,6 +5,7 @@ import {getApps,deleteApp} from 'firebase-admin/app';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
 import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit,where} from 'firebase/firestore';
 import {Timestamp} from 'firebase-admin/firestore';
+import {createReservedTribeRecoveryService} from '../server/identity/reservedTribeRecoveryService.js';
 import {buildUserNotification} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
@@ -212,4 +213,41 @@ test('ordinary suggestions never rediscover reserved or blocked contacts',async(
   await adminDb.doc('connections/'+id(actor,peer)).set(connection(actor,peer));
   await setReservedTribeContact(actor,session.token,peer,false);
  }
+});
+
+test('recovery preserves reserved membership and messages and consumes a fresh authentication once',async()=>{
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,session.token,peer,true);
+ const root=adminDb.doc('reserved_tribe_vaults/'+actor);
+ const pair=id(actor,peer);
+ const before=(await adminDb.collection('social_chats/'+pair+'/messages').get()).size;
+ const authTime=Math.floor(Date.now()/1000)-2;
+ // Synthetic verified identities exercise the real recovery transaction.
+ // The production verifier is separately checked to require revocation checking.
+ const recover=createReservedTribeRecoveryService(async token=>{
+  if(token==='revoked')throw Error('revoked');
+  return {uid:token==='other'?outsider:actor,email_verified:token!=='unverified',auth_time:token==='stale'?authTime-600:authTime};
+ });
+ for(const token of ['revoked','other','unverified','stale']){
+  await assert.rejects(recover(token,'new!synthetic','new!synthetic'),/TRIBE_RECOVERY_DENIED/);
+ }
+ await assert.rejects(recover('fresh','new!synthetic','mismatch'),/TRIBE_CODE_INVALID/);
+ await root.update({failures:5,lockedUntil:Date.now()+60000});
+ const attempts=await Promise.allSettled([recover('fresh','new!synthetic','new!synthetic'),recover('fresh','new!synthetic','new!synthetic')]);
+ assert.equal(attempts.filter(item=>item.status==='fulfilled').length,1);
+ assert.equal(attempts.filter(item=>item.status==='rejected').length,1);
+ assert.equal((await root.get()).get('directoryProtected'),true);
+ assert.equal((await root.get()).get('failures'),0);
+ assert.equal((await root.get()).get('lockedUntil'),0);
+ assert.equal((await root.get()).get('lastRecoveryAuthTime'),authTime);
+ assert.ok((await root.collection('contacts').doc(peer).get()).exists);
+ assert.equal((await adminDb.collection('social_chats/'+pair+'/messages').get()).size,before);
+ await assert.rejects(listReservedTribeConnections(actor,session.token),/TRIBE_ACCESS_DENIED/);
+ assert.equal((await unlockReservedTribe(actor,'synthetic!code')).ok,false);
+ const next=await unlockReservedTribe(actor,'new!synthetic');assert.ok(next.ok);
+ if(!next.ok)throw Error('SESSION_MISSING');
+ assert.equal((await listReservedTribeConnections(actor,next.token)).length,1);
+ await setReservedTribeContact(actor,next.token,peer,false);
+ await assert.rejects(recover('fresh','again!synthetic','again!synthetic'),/TRIBE_RECOVERY_DENIED/);
 });

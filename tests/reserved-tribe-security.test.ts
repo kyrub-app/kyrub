@@ -89,3 +89,20 @@ test('ordinary searches and deliberate unlock commands are distinct and preserve
  assert.doesNotMatch(component,/localStorage|sessionStorage|console\.|fetch\(/);
  assert.doesNotMatch(readFileSync('src/components/ProfileSocialHubNative.tsx','utf8'),/ReservedTribeSearchInput/);
 });
+
+test('recovery accepts only verified fresh authentication, not token refresh or replay',async()=>{
+ const {validTribeRecoveryProof}=await import('../server/identity/reservedTribeSecurity.js');
+ const now=1_000_000,proof={uid:'owner',email_verified:true,auth_time:990};
+ assert.equal(validTribeRecoveryProof(proof,'owner',0,now),true);
+ assert.equal(validTribeRecoveryProof({...proof,email_verified:false},'owner',0,now),false);
+ assert.equal(validTribeRecoveryProof({...proof,auth_time:699},'owner',0,now),false);
+ assert.equal(validTribeRecoveryProof({...proof,auth_time:1001},'owner',0,now),false);
+ assert.equal(validTribeRecoveryProof(proof,'another',0,now),false);
+ assert.equal(validTribeRecoveryProof(proof,'owner',990,now),false);
+ assert.equal(validTribeRecoveryProof({...proof,auth_time:991},'owner',990,now),true);
+ const recovery=readFileSync('server/identity/reservedTribeRecoveryService.ts','utf8');
+ assert.match(recovery,/adminAuth.verifyIdToken\(token,true\)/);
+ assert.match(recovery,/lastRecoveryAuthTime:identity.auth_time/);
+ assert.match(recovery,/sessionDigest:'',sessionExpiresAt:0/);
+ assert.doesNotMatch(readFileSync('api/health.ts','utf8'),/reservedTribeRecoveryService/);
+});
