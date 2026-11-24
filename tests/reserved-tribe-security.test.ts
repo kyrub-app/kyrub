@@ -159,7 +159,7 @@ test('pilot panel uses only isolated API projections and clears protected data o
  assert.match(profile,/activeTab === 'connected' && reservedTribePilotClientEnabled\(\)/);
  assert.match(profile,/activeTab === 'connected' && !reservedTribePilotClientEnabled\(\)/);
  assert.match(server,/app.post\('\/api\/social\/reserved-tribe'/);
- assert.match(panel,/setSession\(null\);setReserved\(null\);setTarget\(null\);setChat\(null\)/);
+ assert.match(panel,/setSession\(null\);setReserved\(null\);setTarget\(null\)/);
  assert.match(panel,/visibilitychange/);
  assert.match(panel,/session.expiresAt-Date.now\(\)/);
  assert.doesNotMatch(panel,/localStorage|sessionStorage|firebase\/firestore/);
@@ -171,4 +171,16 @@ test('tribe mutations accept explicit desired membership, not client replacement
  assert.throws(()=>parseReservedTribePilotBody({action:'tribe-member',groupId:'group',connectionId:'pair',member:true,memberIds:[]}),/TRIBE_INVALID/);
  assert.throws(()=>parseReservedTribePilotBody({action:'tribe-create',groupId:'group',name:' '.repeat(4)}),/TRIBE_INVALID/);
  assert.throws(()=>parseReservedTribePilotBody({action:'tribe-delete',groupId:'group',uid:'other'}),/TRIBE_INVALID/);
+});
+
+test('ordinary and reserved chat actions have separate transport contracts and one ephemeral view',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.equal(parseReservedTribePilotBody({action:'ordinary-chat-read',connectionId:'pair'}).action,'ordinary-chat-read');
+ assert.throws(()=>parseReservedTribePilotBody({action:'ordinary-chat-read',connectionId:'pair',session:'a'.repeat(64)}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'chat-read',connectionId:'pair'}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'ordinary-chat-send',connectionId:'pair',messageId:'msg',text:'x'.repeat(4001)}),/TRIBE_INVALID/);
+ const ui=readFileSync('src/components/TribePilotChat.tsx','utf8');
+ assert.match(ui,/POLL_MS=5000/);
+ assert.match(ui,/sequence.current===id/);
+ assert.doesNotMatch(ui,/localStorage|sessionStorage|firebase\/firestore/);
 });

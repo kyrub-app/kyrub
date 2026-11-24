@@ -171,7 +171,8 @@ export async function authorizeTribeRelationship(tx:FirebaseFirestore.Transactio
   tx.get(adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor))
  ]);
  if(ownBlock.exists||otherBlock.exists)throw Error('TRIBE_ACCESS_DENIED');
- if(marker.exists)requireSession(await tx.get(root),token);
+ if(marker.exists){requireSession(await tx.get(root),token);}
+ else if(token!==undefined)throw Error('TRIBE_ACCESS_DENIED');
  return relation;
 }
 

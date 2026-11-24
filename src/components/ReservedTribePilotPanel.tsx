@@ -3,25 +3,25 @@ import {auth} from '../utils/firebase';
 import {requestReservedTribePilot as request,type ReservedTribeUnlock} from '../utils/reservedTribePilotClient';
 import {matchesTribeContactName} from '../utils/tribeContactSearch';
 import {ReservedTribeSearchInput} from './ReservedTribeSearchInput';
+import {TribePilotChat} from './TribePilotChat';
 import type {UserNotification} from '../../shared/userNotifications';
 
 type Relation={id:string;senderId:string;receiverId:string;status:'accepted'|'pending';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string};
 type Directory={connections:Relation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
 type Suggestion={id:string;name:string;connectionStatus:'none'|'pending_sent'};
 type Session={token:string;expiresAt:number};
-type Chat={messages:{id:string;senderId:string;text:string}[]};
 const button='min-h-10 rounded-xl border border-slate-700 px-3 py-2 text-sm text-white disabled:opacity-40';
 const input='min-h-11 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-white';
 
 /** Local emulator only, isolated pilot. Does not replace the full legacy
- * mutation flows, does not offer ordinary chat or connection changes yet. */
+ * external consumers still need migration and browser homologation. */
 export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>void}){
  const [ordinary,setOrdinary]=useState<Directory|null>(null),[reserved,setReserved]=useState<Directory|null>(null);
  const [configured,setConfigured]=useState(false),[section,setSection]=useState<'general'|'favorites'|'tribes'|'new'>('general');
  const [term,setTerm]=useState(''),[session,setSession]=useState<Session|null>(null);
  const [setup,setSetup]=useState(false),[code,setCode]=useState(''),[confirmation,setConfirmation]=useState('');
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
- const [target,setTarget]=useState<Relation|null>(null),[chat,setChat]=useState<Chat|null>(null),[draft,setDraft]=useState('');
+ const [target,setTarget]=useState<Relation|null>(null);
  const [notices,setNotices]=useState<UserNotification[]|null>(null);
  const [suggestions,setSuggestions]=useState<Suggestion[]>([]);
  const [groupName,setGroupName]=useState('');
@@ -31,7 +31,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   setSuggestions([]);setGroupName('');
   ++epoch.current;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
-  setSession(null);setReserved(null);setTarget(null);setChat(null);setDraft('');setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
+  setSession(null);setReserved(null);setTarget(null);setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
   if(old&&auth.currentUser?.uid===owner)void request('lock',{session:old.token}).catch(()=>{});
  },[owner]);
  const stillValid=(s:Session,e:number)=>alive.current&&epoch.current===e&&current.current===s&&s.expiresAt>Date.now()&&auth.currentUser?.uid===owner&&!document.hidden;
@@ -56,7 +56,8 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   return()=>window.clearTimeout(timer);
  },[session,clearPrivate,reload]);
  const unlock=async(secret:string,signal:AbortSignal)=>{
-  const e=epoch.current;
+  if(busy||target||current.current)return false;
+  const e=++epoch.current;setSuggestions([]);
   let result:ReservedTribeUnlock;
   try{result=await request<ReservedTribeUnlock>('unlock',{code:secret},signal);}catch{return false;}
   if(!result.ok)return false;
@@ -107,14 +108,15 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   if(!window.confirm(hide?'Reservar este contato?':'Retirar este contato da Tribo Reservada?'))return;
   void privateAction('membership',{peerId:peer(r),reserved:hide},()=>{setOrdinary(null);clearPrivate();void reload();});
  };
- const openChat=(r:Relation)=>void privateAction<Chat>('chat-read',{connectionId:r.id},data=>{setNotices(null);setTarget(r);setChat(data);setDraft('');});
- const send=(event:FormEvent)=>{event.preventDefault();if(!target||!draft.trim())return;const r=target;void privateAction('chat-send',{connectionId:r.id,messageId:crypto.randomUUID(),text:draft},()=>{setDraft('');setChat(null);});};
+ const openChat=(r:Relation)=>{setNotices(null);setTarget(r);};
+ const closeChat=useCallback(()=>setTarget(null),[]);
+ const chatDenied=useCallback(()=>{setOrdinary(null);clearPrivate();void reload();},[clearPrivate,reload]);
  const ordinaryContacts=(ordinary?.connections??[]).filter(r=>r.status==='accepted');
  const normal=ordinaryContacts.filter(r=>matchesTribeContactName(name(r),term)&&(section!=='favorites'||ordinary?.favoriteIds.includes(peer(r))));
  return <div className="space-y-3" data-reserved-tribe-pilot="true">
   <button className={button} onClick={()=>{clearPrivate();onBack();}}>← Voltar ao perfil</button>
   {error&&<p role="alert" className="text-sm text-red-300">{error}</p>}
-  {!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
+  {!session&&target?<TribePilotChat key={'ordinary:'+target.id} owner={owner} connectionId={target.id} name={name(target)} onClose={closeChat} onDenied={chatDenied}/>:!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
    {([['general','Geral'],['favorites','Frequentes'],['tribes','Tribos'],['new','Novos']] as const).map(([id,label])=><button key={id} aria-pressed={section===id} className={button+(section===id?' border-orange-500':'')} onClick={()=>setSection(id)}>{label}</button>)}
   </nav>
   <ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
@@ -139,17 +141,11 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
     {ordinary.connections.filter(r=>r.status==='pending'&&matchesTribeContactName(name(r),term)).map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm">{name(r)}<div className="mt-2 flex gap-2">{r.receiverId===owner&&<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'accept'})}>Aceitar</button>}<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'remove'})}>{r.receiverId===owner?'Recusar':'Cancelar'}</button></div></div>)}
     <button className={button} disabled={busy} onClick={()=>void loadSuggestions()}>Buscar sugestões</button>
     {suggestions.filter(item=>item.connectionStatus==='none'&&matchesTribeContactName(item.name,term)).map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 text-sm">{item.name}<button className={button+' ml-2'} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:item.id,operation:'request'})}>Conectar</button></div>)}
-  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button></div></div>)}</div>}</>:
+  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button></div></div>)}</div>}</>:
   <section className="space-y-3" aria-label="Tribo Reservada">
    <header className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">Tribo Reservada</h3><button className={button} onClick={()=>{clearPrivate();void reload();}}>Trancar</button></header>
-   <div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>{setTarget(null);setChat(null);setNotices(null);}}>Contatos</button><button className={button} disabled={busy} onClick={()=>void privateAction<{notifications:UserNotification[]}>('notifications',{},data=>{setTarget(null);setChat(null);setNotices(data.notifications);})}>Avisos</button></div>
-   {notices!==null?<div className="space-y-2">{notices.map(n=><div key={n.id} className="rounded-xl border border-slate-700 p-3"><p className="text-sm font-semibold">{n.title}</p><p className="text-sm">{n.body}</p>{!n.readAt&&<button className={button} disabled={busy} onClick={()=>void privateAction('notification-read',{notificationId:n.id},()=>setNotices(old=>old?.map(item=>item.id===n.id?{...item,readAt:new Date().toISOString()}:item)??null))}>Marcar como lida</button>}</div>)}</div>:target?<div className="space-y-2">
-    <h4 className="text-sm font-semibold">{name(target)}</h4>
-    <button className={button} disabled={busy} onClick={()=>openChat(target)}>Atualizar conversa</button>
-    <div className="space-y-2">{chat?.messages.map(m=><p key={m.id} className="rounded-xl bg-slate-900 p-3 text-sm">{m.text}</p>)}</div>
-    <form className="flex gap-2" onSubmit={send}><input className={input} aria-label="Mensagem" value={draft} onChange={e=>setDraft(e.target.value.slice(0,4000))}/><button className={button} disabled={busy||!draft.trim()}>Enviar</button></form>
-    <button className={button} disabled={busy} onClick={()=>{if(window.confirm('Limpar somente seu histórico?'))void privateAction('chat-clear',{connectionId:target.id},()=>setChat({messages:[]}));}}>Excluir conversa</button>
-   </div>:<>
+   <div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>{setTarget(null);setNotices(null);}}>Contatos</button><button className={button} disabled={busy} onClick={()=>void privateAction<{notifications:UserNotification[]}>('notifications',{},data=>{setTarget(null);setNotices(data.notifications);})}>Avisos</button></div>
+   {notices!==null?<div className="space-y-2">{notices.map(n=><div key={n.id} className="rounded-xl border border-slate-700 p-3"><p className="text-sm font-semibold">{n.title}</p><p className="text-sm">{n.body}</p>{!n.readAt&&<button className={button} disabled={busy} onClick={()=>void privateAction('notification-read',{notificationId:n.id},()=>setNotices(old=>old?.map(item=>item.id===n.id?{...item,readAt:new Date().toISOString()}:item)??null))}>Marcar como lida</button>}</div>)}</div>:target?<TribePilotChat key={'reserved:'+target.id} owner={owner} connectionId={target.id} name={name(target)} session={session} onClose={closeChat} onDenied={chatDenied}/>:<>
     {(reserved?.connections??[]).map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3"><p className="text-sm font-semibold">{name(r)}</p><div className="mt-2 flex flex-wrap gap-2"><button className={button} disabled={busy} onClick={()=>openChat(r)}>Conversar</button><button className={button} disabled={busy} onClick={()=>move(r,false)}>Retirar</button></div></div>)}
     <h4 className="text-sm font-semibold">Adicionar contato</h4>
     {ordinaryContacts.map(r=><button key={r.id} className={button+' block w-full text-left'} disabled={busy} onClick={()=>move(r,true)}>{name(r)}</button>)}

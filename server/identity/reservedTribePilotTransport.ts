@@ -23,7 +23,9 @@ const fields={
  'tribe-create':['groupId','name'],'tribe-member':['groupId','connectionId','member'],'tribe-delete':['groupId'],
  membership:['session','peerId','reserved'],recover:['code','confirmation'],
  'chat-read':['session','connectionId'],'chat-send':['session','connectionId','messageId','text'],
- 'chat-clear':['session','connectionId'],'notifications':['session'],
+ 'chat-clear':['session','connectionId'],
+ 'ordinary-chat-read':['connectionId'],'ordinary-chat-send':['connectionId','messageId','text'],'ordinary-chat-clear':['connectionId'],
+ 'notifications':['session'],
  'notification-read':['session','notificationId'],
 } as const;
 type Action=keyof typeof fields;
@@ -44,7 +46,7 @@ export function parseReservedTribePilotBody(input:unknown):{action:Action;data:R
  if(action==='favorite'&&typeof data.favorited!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='membership'&&typeof data.reserved!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='suggestions'&&(typeof data.term!=='string'||data.term.length>128||typeof data.limit!=='number'||!Number.isSafeInteger(data.limit)||data.limit<1||data.limit>50))throw Error('TRIBE_INVALID');
- if(action==='chat-send'&&(typeof data.text!=='string'||data.text.length>4000))throw Error('TRIBE_INVALID');
+ if((action==='chat-send'||action==='ordinary-chat-send')&&(typeof data.text!=='string'||data.text.length>4000))throw Error('TRIBE_INVALID');
  return {action:action as Action,data};
 }
 
@@ -86,6 +88,9 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'tribe-delete':result=await deleteOrdinaryTribe(actor,data.groupId);break;
     case 'membership':result=await setReservedTribeContact(actor,session,data.peerId,data.reserved);break;
     case 'recover':result=await recoverReservedTribeCode(bearer,data.code,data.confirmation);break;
+    case 'ordinary-chat-read':result=await readTribeChat(actor,data.connectionId as string);break;
+    case 'ordinary-chat-send':result=await sendTribeChatMessage(actor,data.connectionId as string,undefined,data.messageId,data.text);break;
+    case 'ordinary-chat-clear':result=await clearTribeChatHistory(actor,data.connectionId as string);break;
     case 'chat-read':result=await readTribeChat(actor,data.connectionId as string,session);break;
     case 'chat-send':result=await sendTribeChatMessage(actor,data.connectionId as string,session,data.messageId,data.text);break;
     case 'chat-clear':result=await clearTribeChatHistory(actor,data.connectionId as string,session);break;

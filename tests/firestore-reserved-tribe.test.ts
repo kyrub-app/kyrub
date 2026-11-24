@@ -334,3 +334,28 @@ test('ordinary tribe updates preserve hidden membership and concurrent visible a
  assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
  await setReservedTribeContact(actor,session.token,peer,false);
 });
+
+test('ordinary and reserved chat transport share history but cannot bypass scope authorization',async()=>{
+ const pair=id(actor,peer);
+ const handle=createReservedTribePilotHandler({allowed:()=>true,project:()=>PROJECT,verify:async token=>({uid:token==='peer'?peer:actor,email_verified:true})});
+ async function call(token:string,body:unknown){
+  let status=0,result:any;
+  const res={setHeader:()=>{},status(code:number){status=code;return this;},json(data:unknown){result=data;}};
+  await handle({method:'POST',headers:{authorization:'Bearer '+token},body},res);
+  return {status,result};
+ }
+ const session=await unlockReservedTribe(actor,'new!synthetic');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const capability=session.token;
+ assert.equal((await call('owner',{action:'ordinary-chat-send',connectionId:pair,messageId:'ordinary-scope-message',text:'Teste de escopo'})).status,200);
+ assert.equal((await call('owner',{action:'chat-read',connectionId:pair,session:capability})).status,403);
+ await setReservedTribeContact(actor,capability,peer,true);
+ for(const body of [{action:'ordinary-chat-read',connectionId:pair},{action:'ordinary-chat-send',connectionId:pair,messageId:'bypass-scope',text:'bypass'},{action:'ordinary-chat-clear',connectionId:pair}])assert.equal((await call('owner',body)).status,403);
+ assert.equal((await call('peer',{action:'ordinary-chat-read',connectionId:pair})).status,200);
+ const protectedChat=await call('owner',{action:'chat-read',connectionId:pair,session:capability});
+ assert.equal(protectedChat.status,200);
+ assert.ok(protectedChat.result.messages.some((row:any)=>row.id==='ordinary-scope-message'));
+ await setReservedTribeContact(actor,capability,peer,false);
+ assert.equal((await call('owner',{action:'chat-read',connectionId:pair,session:capability})).status,403);
+ assert.equal((await call('owner',{action:'ordinary-chat-read',connectionId:pair})).status,200);
+});
