@@ -43,9 +43,9 @@ describe('connected status covers and private groups', () => {
     assert.doesNotMatch(profileSource, /data-kyrub-connected-profile-trigger/);
   });
 
-  test('renders Grupos after Frequentes and before Novos', () => {
+  test('renders Tribos after Frequentes and before Novos', () => {
     const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
-    const groupsIndex = profileSource.indexOf("label: 'Grupos'");
+    const groupsIndex = profileSource.indexOf("label: 'Tribos'");
     const newButtonIndex = profileSource.indexOf('aria-label="Abrir novas conexões"');
     assert.ok(frequentIndex >= 0);
     assert.ok(frequentIndex < groupsIndex);
@@ -59,7 +59,7 @@ describe('connected status covers and private groups', () => {
     assert.match(profileSource, /MAX_GROUP_MEMBERS = 200/);
     assert.match(profileSource, /toggleGroupMember/);
     assert.match(profileSource, /deleteGroup/);
-    assert.match(profileSource, /Nome do novo grupo/);
+    assert.match(profileSource, /Nome da nova tribo/);
   });
 
   test('composes owner-only contact group rules', () => {

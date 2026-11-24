@@ -31,12 +31,12 @@ export function TribeContactMenu({friend,groups,favoriteReady,onFavorite,onGroup
   {position&&createPortal(<div className="fixed inset-0 z-[195]" onClick={close}>
    <div ref={panel} role="group" aria-label={`Opções de ${friend.name}`} onClick={event=>event.stopPropagation()} style={position} className="fixed w-[240px] max-w-[calc(100vw-16px)] overflow-y-auto overscroll-contain rounded-xl border border-slate-700 bg-slate-950 p-1 shadow-2xl">
     {!groupMode?<><button type="button" disabled={!favoriteReady} className={row} onClick={()=>act(onFavorite)}><Star className={'h-4 w-4 text-amber-300 '+(friend.favorited?'fill-current':'')}/>{friend.favorited?'Remover dos favoritos':'Favoritar contato'}</button>
-     <button type="button" className={row} onClick={()=>setGroupMode(true)}><FolderPlus className="h-4 w-4 text-violet-300"/>Adicionar a grupos</button>
+     <button type="button" className={row} onClick={()=>setGroupMode(true)}><FolderPlus className="h-4 w-4 text-violet-300"/>Adicionar a tribos</button>
      <button type="button" disabled={!friend.connectionId} className={row} onClick={()=>act(onClear)}><Trash2 className="h-4 w-4"/>Excluir conversa</button>
      <button type="button" className={row+' text-rose-300'} onClick={()=>act(onRemove)}><UserMinus className="h-4 w-4"/>Remover conexão</button>
      <button type="button" className={row+' text-amber-300'} onClick={()=>act(onReport)}><Flag className="h-4 w-4"/>Denunciar</button></>:<>
      <button type="button" className={row} onClick={()=>setGroupMode(false)}><ChevronLeft className="h-4 w-4"/>Voltar</button>
-     {groups.length===0?<p className="p-3 text-xs text-slate-400">Crie um grupo na guia Grupos.</p>:groups.map(group=><button key={group.id} type="button" role="checkbox" aria-checked={group.memberIds.includes(friend.id)} disabled={busy} className={row} onClick={async()=>{setBusy(true);try{await onGroup(group.id);}finally{setBusy(false);}}}><span className="w-4 text-violet-300">{group.memberIds.includes(friend.id)?'✓':'□'}</span><span className="min-w-0 break-words">{group.name}</span></button>)}
+     {groups.length===0?<p className="p-3 text-xs text-slate-400">Crie uma tribo na guia Tribos.</p>:groups.map(group=><button key={group.id} type="button" role="checkbox" aria-checked={group.memberIds.includes(friend.id)} disabled={busy} className={row} onClick={async()=>{setBusy(true);try{await onGroup(group.id);}finally{setBusy(false);}}}><span className="w-4 text-violet-300">{group.memberIds.includes(friend.id)?'✓':'□'}</span><span className="min-w-0 break-words">{group.name}</span></button>)}
     </>}
    </div>
   </div>,document.body)}

@@ -20,7 +20,7 @@ test('connected organization is owned by the native React profile hub', () => {
 test('connected tabs use the simplified approved order', () => {
   const generalIndex = profileSource.indexOf("label: 'Geral'");
   const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
-  const groupsIndex = profileSource.indexOf("label: 'Grupos'");
+  const groupsIndex = profileSource.indexOf("label: 'Tribos'");
   const newButtonIndex = profileSource.indexOf('aria-label="Abrir novas conexões"');
 
   assert.ok(generalIndex >= 0);
@@ -64,7 +64,7 @@ test('contact cards keep compact favorite, chat and contextual actions', () => {
   assert.match(profileSource, /function ContactCard/);
   assert.match(profileSource, /<TribeContactMenu/);
   assert.match(profileSource, /<MessageCircle className="h-4 w-4"/);
-  for(const label of ['Favoritar contato','Adicionar a grupos','Excluir conversa','Remover conexão','Denunciar'])assert.ok(menu.includes(label));
+  for(const label of ['Favoritar contato','Adicionar a tribos','Excluir conversa','Remover conexão','Denunciar'])assert.ok(menu.includes(label));
   assert.match(menu,/createPortal/);
   assert.match(profileSource,/history_state/);
   assert.match(profileSource,/submitSocialUserReport\(friend.id,reason\)/);
@@ -81,7 +81,7 @@ test('group management reuses private groups and updates membership natively', (
   assert.match(profileSource, /deleteGroup/);
 });
 
- test('Minha Tribo filters contact names immediately, ignoring accents and case',()=>{
+ test('Conectados filters contact names immediately, ignoring accents and case',()=>{
   const names=['João Silva','Maria José','José Almeida'];
   const filter=(term:string)=>names.filter(name=>matchesTribeContactName(name,term));
   assert.deepEqual(filter('j'),names);
@@ -92,4 +92,17 @@ test('group management reuses private groups and updates membership natively', (
   assert.match(profileSource,/onChange=\{event => setTribeSearch\(event.target.value\)\}/);
   assert.match(profileSource,/filteredTribeFriends\.map/);
   assert.match(profileSource,/filteredTribeFavorites\.map/);
+ });
+
+ test('approved naming distinguishes connections, tribes and communities without data migration',()=>{
+ const nav=readFileSync('src/components/WorkspaceTopNavigation.tsx','utf8');
+ const menu=readFileSync('src/components/TribeContactMenu.tsx','utf8');
+ assert.match(nav,/title="Conectados"/);
+ assert.match(nav,/aria-label="Abrir Conectados"/);
+ assert.match(profileSource,/activeTab === 'connected' \? 'Conectados'/);
+ assert.match(profileSource,/label: 'Tribos'/);
+ assert.match(profileSource,/Nome da nova tribo/);
+ assert.match(menu,/Adicionar a tribos/);
+ assert.doesNotMatch(profileSource,/Minha Tribo|label: 'Grupos'/);
+ assert.match(profileSource,/contact_groups/);
  });

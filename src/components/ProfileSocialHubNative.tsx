@@ -1182,7 +1182,7 @@ export function ProfileSocialHubNative() {
     const name = groupNameDraft.trim().slice(0, 60);
     if (!name) return;
     if (groups.length >= MAX_GROUPS) {
-      triggerToast('O limite é de 30 grupos por usuário.', 'warning');
+      triggerToast('O limite é de 30 tribos por usuário.', 'warning');
       return;
     }
     setGroupBusy(true);
@@ -1199,9 +1199,9 @@ export function ProfileSocialHubNative() {
         updatedAt: serverTimestamp(),
       });
       setGroupNameDraft('');
-      triggerToast('Grupo criado.', 'success');
+      triggerToast('Tribo criada.', 'success');
     } catch {
-      triggerToast('Não foi possível criar o grupo.', 'error');
+      triggerToast('Não foi possível criar a tribo.', 'error');
     } finally {
       setGroupBusy(false);
     }
@@ -1226,7 +1226,7 @@ export function ProfileSocialHubNative() {
         tx.update(reference,{memberIds,updatedAt:serverTimestamp()});
       });
     } catch {
-      triggerToast('Não foi possível atualizar o grupo.', 'error');
+      triggerToast('Não foi possível atualizar a tribo.', 'error');
     }
   };
 
@@ -1258,9 +1258,9 @@ export function ProfileSocialHubNative() {
       await deleteDoc(
         doc(db, `users/${user.uid}/contact_groups/${group.id}`)
       );
-      triggerToast('Grupo removido.', 'info');
+      triggerToast('Tribo removida.', 'info');
     } catch {
-      triggerToast('Não foi possível remover o grupo.', 'error');
+      triggerToast('Não foi possível remover a tribo.', 'error');
     }
   };
 
@@ -1298,7 +1298,7 @@ export function ProfileSocialHubNative() {
     },
     {
       id: 'groups',
-      label: 'Grupos',
+      label: 'Tribos',
       count: groups.length,
     },
   ];
@@ -1360,7 +1360,7 @@ export function ProfileSocialHubNative() {
                 Meu perfil
               </span>
               <h2 className="text-base font-black text-white">
-                {activeTab === 'connected' ? 'Minha Tribo' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
+                {activeTab === 'connected' ? 'Conectados' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -1414,7 +1414,7 @@ export function ProfileSocialHubNative() {
                 <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
                   <button type="button" onClick={() => setActiveTab('connected')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
-                    <span className="text-[8px] font-black uppercase">Minha Tribo</span>
+                    <span className="text-[8px] font-black uppercase">Conectados</span>
                   </button>
                   <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
@@ -1761,7 +1761,7 @@ export function ProfileSocialHubNative() {
                   </button>
                   <nav
                     className="grid grid-cols-4 gap-2"
-                    aria-label="Seções de Minha Tribo"
+                    aria-label="Seções de Conectados"
                   >
                     {connectionTabs.map(item => (
                       <button
@@ -1806,10 +1806,10 @@ export function ProfileSocialHubNative() {
                     <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
                     <input
                       type="search"
-                      aria-label="Pesquisar pessoas na Minha Tribo"
+                      aria-label="Pesquisar pessoas em Conectados"
                       value={tribeSearch}
                       onChange={event => setTribeSearch(event.target.value)}
-                      placeholder="Pesquisar na minha tribo..."
+                      placeholder="Pesquisar conectados..."
                       className="min-h-11 w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-12 text-sm text-white outline-none focus:border-orange-500"
                     />
                     {tribeSearch && <button type="button" aria-label="Limpar pesquisa" onClick={() => setTribeSearch('')} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-slate-400"><X aria-hidden="true" className="h-4 w-4" /></button>}
@@ -1880,7 +1880,7 @@ export function ProfileSocialHubNative() {
                           onChange={event =>
                             setGroupNameDraft(event.target.value.slice(0, 60))
                           }
-                          placeholder="Nome do novo grupo"
+                          placeholder="Nome da nova tribo"
                           className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none"
                         />
                         <button
@@ -1916,7 +1916,7 @@ export function ProfileSocialHubNative() {
                               type="button"
                               onClick={() => void deleteGroup(group)}
                               className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-                              aria-label={`Excluir grupo ${group.name}`}
+                              aria-label={`Excluir tribo ${group.name}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
@@ -1960,8 +1960,8 @@ export function ProfileSocialHubNative() {
 
                       {groups.length === 0 && (
                         <EmptyState
-                          title="Nenhum grupo"
-                          description="Crie grupos para organizar seus contatos sem alterar as conexões."
+                          title="Nenhuma tribo"
+                          description="Crie tribos para organizar seus contatos sem alterar as conexões."
                           icon={FolderPlus}
                         />
                       )}
