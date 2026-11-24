@@ -9,6 +9,7 @@ const roots = /^(api|server|src|functions)\//;
 const extensions = /\.(?:ts|tsx|js|mjs|cjs)$/;
 const primitiveCalls = [
   'applyPitangaEarnInTransaction',
+  'settleAcceptedSeedInTransaction',
   'applyPitangaSpendInTransaction',
   'applyPitangaXpConversionInTransaction',
   'issuePitangaVoucherInTransaction',

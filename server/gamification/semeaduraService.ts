@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
+import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
 const safeUid = (value: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(value);
@@ -7,10 +8,9 @@ const safePostId = (value: string): boolean => /^[A-Za-z0-9_-]{1,500}$/.test(val
 
 /**
  * Trusted-only foundation. Persists immutable seed receipts and the authoritative
- * per-post accepted-seeds counter atomically. It NEVER writes Pitangas or XP.
- *
- * Economic settlement is a separate release-gated, auditable step: do not
- * infer money-like rewards from display counts or legacy client-side likes.
+ * per-post accepted-seeds counter atomically. Normally visual only; an
+ * explicitly enrolled local emulator pilot may settle a verified milestone.
+ * No XP or production economic settlement is authorized here.
  */
 export const seedVerifiedPost = async (
   db: Firestore,
@@ -138,6 +138,7 @@ export const seedVerifiedPost = async (
       return { status: plan.status, count: plan.count, closed: plan.nowClosed, authorId };
     }
     const occurredAt = new Date().toISOString();
+    await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key});
     tx.create(receiptRef, {
       kind, postId, communityId, authorId, actorId: actor, occurredAt,
     });

@@ -216,3 +216,68 @@ test('one Auth-created member: welcome and verified first publication remain sep
   assert.notEqual(again.isNewUser,true);
   assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
 });
+
+
+test('isolated semeadura economic pilot credits only the author at a unique milestone',async()=>{
+ const {createHash}=await import('node:crypto');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {semeaduraEconomicPilotEnabled}=await import('../server/gamification/semeaduraEconomicPilot.js');
+ const signed=await googleSignIn('semeadura-economic-author');
+ const uid=signed.localId;
+ await waitForAward(uid);
+ const root=db.collection('users').doc(uid);
+ const postId='isolated-economic-milestone';
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const now=new Date().toISOString();
+ await db.doc('social_posts/'+postId).set({postId,authorId:uid,visibility:'public',publicationType:'feed'});
+ const pilot=root.collection('semeaduraEconomicPilot').doc('activation');
+ const progress=root.collection('semeaduraProgress').doc('summary');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const before=await readPitangaAccount(db,uid);
+ assert.equal(before.pitangas,100);assert.equal(before.xp,0);
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const seed=(actor:string)=>seedVerifiedPost(db,{authenticatedUserId:actor,kind:'personal',postId});
+ try{
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  assert.equal(semeaduraEconomicPilotEnabled(db),true);
+  assert.equal(semeaduraEconomicPilotEnabled(db,{...process.env,VERCEL:'1'}),false);
+  assert.equal(semeaduraEconomicPilotEnabled(db,{...process.env,FIRESTORE_EMULATOR_HOST:'firestore.googleapis.com:443'}),false);
+  await pilot.set({schemaVersion:1,authorId:uid,epoch,acceptedSeeds:0,creditedPitangas:0});
+  await seed('first-voter');
+  assert.equal((await pilot.get()).get('acceptedSeeds'),1);
+  assert.deepEqual(await readPitangaAccount(db,uid),before);
+  // Controlled boundary fixture: 998 prior eligible seeds, not real user
+  // activity. No fabricated currency credit, no production account.
+  await Promise.all([
+   pilot.update({acceptedSeeds:999}),
+   progress.update({acceptedSeeds:999,pitangueiras:0}),
+   stats.update({acceptedSeeds:999,updatedAt:now})
+  ]);
+  await db.doc('systemControl/pitangaLegacyWriterFence').update({writersVerified:false});
+  await assert.rejects(seed('blocked-voter'),/SEMEADURA_ECONOMIC_WRITERS_UNVERIFIED/);
+  assert.equal((await stats.get()).get('acceptedSeeds'),999);
+  assert.deepEqual(await readPitangaAccount(db,uid),before);
+  await db.doc('systemControl/pitangaLegacyWriterFence').update({writersVerified:true});
+  const outcomes=await Promise.all([seed('threshold-voter'),seed('threshold-voter'),seed('next-voter')]);
+  assert.equal(outcomes.filter(r=>r.status==='accepted').length,2);
+  assert.equal(outcomes.filter(r=>r.status==='already_seeded').length,1);
+  const after=await readPitangaAccount(db,uid);
+  assert.equal(after.pitangas,101);assert.equal(after.xp,0);
+  assert.equal((await pilot.get()).get('creditedPitangas'),1);
+  assert.equal((await pilot.get()).get('acceptedSeeds'),1001);
+  assert.equal((await root.collection('rewardLedger').doc('earn_semeadura_1').get()).get('sourceType'),'semeadura');
+  assert.equal((await readPitangaAccount(db,'threshold-voter')).pitangas,0);
+  await assert.rejects(seed(uid),/SEMEADURA_SELF_RECOGNITION_DENIED/);
+  assert.deepEqual(await readPitangaAccount(db,uid),after);
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await seed('visual-only-voter');
+  assert.deepEqual(await readPitangaAccount(db,uid),after);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(seed('after-disabled-gap'),/SEMEADURA_ECONOMIC_CURSOR_CONFLICT/);
+  assert.deepEqual(await readPitangaAccount(db,uid),after);
+ }finally{
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+  await db.doc('systemControl/pitangaLegacyWriterFence').update({writersVerified:true});
+ }
+});
