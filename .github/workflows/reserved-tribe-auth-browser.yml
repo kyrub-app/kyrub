@@ -3,6 +3,12 @@ on:
   pull_request:
     paths:
       - 'src/utils/**'
+      - 'src/components/**'
+      - 'src/App.tsx'
+      - 'src/LegacyApp.tsx'
+      - 'src/main.tsx'
+      - 'tests/fixtures/reserved-tribe-browser.*'
+      - 'tests/reserved-tribe-app-browser.mjs'
       - 'server/identity/**'
       - 'server/firebaseAdmin.ts'
       - 'server.ts'
@@ -44,4 +50,4 @@ jobs:
       - name: Exercise real SDK and pilot HTTP on local emulators
         run: |
           unset FIREBASE_SERVICE_ACCOUNT_JSON GOOGLE_APPLICATION_CREDENTIALS VERCEL VERCEL_ENV
-          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '"'"'npm run dev > /tmp/kyrub-tribe-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/reserved-tribe-auth-browser.mjs'"'"''
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '"'"'npm run dev > /tmp/kyrub-tribe-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/reserved-tribe-auth-browser.mjs; node tests/reserved-tribe-app-browser.mjs'"'"''

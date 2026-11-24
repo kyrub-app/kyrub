@@ -1,7 +1,7 @@
 // Vite test fixture only. Never initialize with live Firebase configuration.
 import {auth,db} from '../../src/utils/firebase';
 import {initializeApp,deleteApp} from 'firebase/app';
-import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,signOut,setPersistence,inMemoryPersistence} from 'firebase/auth';
+import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,signOut,setPersistence,inMemoryPersistence,browserLocalPersistence} from 'firebase/auth';
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,connectFirestoreEmulator,disableNetwork,enableNetwork,doc,getDocFromServer,onSnapshot,updateDoc,serverTimestamp,waitForPendingWrites,terminate} from 'firebase/firestore';
 import {requestReservedTribePilot,reservedTribePilotClientEnabled} from '../../src/utils/reservedTribePilotClient';
 
@@ -16,6 +16,7 @@ window.fixture={
  enabled:reservedTribePilotClientEnabled,
  authEmulator:()=>({host:auth.emulatorConfig?.host,port:auth.emulatorConfig?.port,protocol:auth.emulatorConfig?.protocol}),
  signIn:credentials=>signIn(auth,credentials),
+ async signInForApp(credentials){await setPersistence(auth,browserLocalPersistence);return (await signInWithEmailAndPassword(auth,credentials.email,credentials.password)).user.uid;},
  signOut:()=>signOut(auth),
  call:async(action,fields={})=>{try{return {ok:true,value:await requestReservedTribePilot(action,fields)}}catch(e){return {ok:false,error:e.message}}},
  async queueLegacyStoreWrite(credentials,path){
