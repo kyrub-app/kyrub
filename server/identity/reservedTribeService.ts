@@ -312,3 +312,60 @@ export async function setOrdinaryTribeFavorite(actor:string,connectionId:unknown
   return {favorited};
  });
 }
+
+/** Keep the original private group schema. Use explicit desired membership,
+ * not a replacement of the projected member list or a blind toggle.
+ * This preserves hidden members and concurrent updates. */
+export async function createOrdinaryTribe(actor:string,groupId:unknown,name:unknown){
+ vault(actor);
+ if(!validId(groupId)||typeof name!=='string'||!name.trim()||name.trim().length>60)throw Error('TRIBE_CONTACT_INVALID');
+ const clean=name.trim(),collection=adminDb.collection('users/'+actor+'/contact_groups');
+ return adminDb.runTransaction(async tx=>{
+  const [account,existing,groups]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),tx.get(collection.doc(groupId)),tx.get(collection.limit(31))
+  ]);
+  if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(existing.exists){
+   if(existing.get('ownerId')!==actor||existing.get('groupId')!==groupId||existing.get('name')!==clean)throw Error('TRIBE_GROUP_CONFLICT');
+   return {id:groupId};
+  }
+  if(groups.size>=30)throw Error('TRIBE_LIMIT_REACHED');
+  tx.create(collection.doc(groupId),{groupId,ownerId:actor,name:clean,memberIds:[],createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  return {id:groupId};
+ });
+}
+export async function setOrdinaryTribeMember(actor:string,groupId:unknown,connectionId:unknown,member:unknown){
+ vault(actor);
+ if(!validId(groupId)||!validId(connectionId)||typeof member!=='boolean')throw Error('TRIBE_CONTACT_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const reference=adminDb.doc('users/'+actor+'/contact_groups/'+groupId);
+  const [account,group,relation]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),tx.get(reference),authorizeTribeRelationship(tx,actor,connectionId)
+  ]);
+  const original=group.get('memberIds');
+  if(!account.exists||!group.exists||group.get('ownerId')!==actor||group.get('groupId')!==groupId||!Array.isArray(original)||original.some(item=>!validId(item)))throw Error('TRIBE_ACCESS_DENIED');
+  const peer=peerOf(actor,relation);
+  const members=new Set<string>(original);
+  if(member&&!members.has(peer)&&members.size>=200)throw Error('TRIBE_LIMIT_REACHED');
+  if(members.has(peer)===member)return {member};
+  if(member)members.add(peer);else members.delete(peer);
+  tx.update(reference,{memberIds:[...members],updatedAt:FieldValue.serverTimestamp()});
+  return {member};
+ });
+}
+/** Deleting a group intentionally removes that classification for everyone
+ * in it, but does not modify a connection, reserved marker, favorite or chat. */
+export async function deleteOrdinaryTribe(actor:string,groupId:unknown){
+ vault(actor);
+ if(!validId(groupId))throw Error('TRIBE_CONTACT_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const ref=adminDb.doc('users/'+actor+'/contact_groups/'+groupId);
+  const [account,group]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(ref)]);
+  if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(group.exists){
+   if(group.get('ownerId')!==actor||group.get('groupId')!==groupId)throw Error('TRIBE_ACCESS_DENIED');
+   tx.delete(ref);
+  }
+  return {deleted:true as const};
+ });
+}

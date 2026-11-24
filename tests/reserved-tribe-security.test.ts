@@ -164,3 +164,11 @@ test('pilot panel uses only isolated API projections and clears protected data o
  assert.match(panel,/session.expiresAt-Date.now\(\)/);
  assert.doesNotMatch(panel,/localStorage|sessionStorage|firebase\/firestore/);
 });
+
+test('tribe mutations accept explicit desired membership, not client replacements',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.equal(parseReservedTribePilotBody({action:'tribe-member',groupId:'group',connectionId:'pair',member:true}).action,'tribe-member');
+ assert.throws(()=>parseReservedTribePilotBody({action:'tribe-member',groupId:'group',connectionId:'pair',member:true,memberIds:[]}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'tribe-create',groupId:'group',name:' '.repeat(4)}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'tribe-delete',groupId:'group',uid:'other'}),/TRIBE_INVALID/);
+});

@@ -24,10 +24,11 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  const [target,setTarget]=useState<Relation|null>(null),[chat,setChat]=useState<Chat|null>(null),[draft,setDraft]=useState('');
  const [notices,setNotices]=useState<UserNotification[]|null>(null);
  const [suggestions,setSuggestions]=useState<Suggestion[]>([]);
+ const [groupName,setGroupName]=useState('');
  const current=useRef<Session|null>(null),alive=useRef(false),epoch=useRef(0);
  const pending=useRef<AbortController|null>(null);
  const clearPrivate=useCallback(()=>{
-  setSuggestions([]);
+  setSuggestions([]);setGroupName('');
   ++epoch.current;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
   setSession(null);setReserved(null);setTarget(null);setChat(null);setDraft('');setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
@@ -88,10 +89,10 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   catch{if(stillValid(s,e)){clearPrivate();void reload();}}
   finally{if(pending.current===controller){pending.current=null;setBusy(false);}}
  }
- async function ordinaryAction(action:'connection'|'favorite',fields:Record<string,unknown>){
+ async function ordinaryAction(action:'connection'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete',fields:Record<string,unknown>){
   if(busy||session||!ordinary||document.hidden)return;
   const e=epoch.current;setBusy(true);setError('');
-  try{await request(action,fields);if(alive.current&&epoch.current===e){setSuggestions([]);await reload();}}
+  try{await request(action,fields);if(alive.current&&epoch.current===e){setSuggestions([]);if(action==='tribe-create')setGroupName('');await reload();}}
   catch{if(alive.current&&epoch.current===e){setOrdinary(null);setSuggestions([]);setError('Não foi possível concluir a operação.');}}
   finally{if(alive.current&&epoch.current===e)setBusy(false);}
  }
@@ -118,7 +119,14 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   </nav>
   <ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
   {!ordinary?<button className={button} onClick={()=>void reload()}>Atualizar</button>:section==='tribes'?<div className="space-y-2">
-    {ordinary.tribes.map(group=><p key={group.id} className="rounded-xl border border-slate-700 p-3 text-sm">{group.name} · {group.memberIds.length}</p>)}
+    <form className="flex gap-2" onSubmit={event=>{event.preventDefault();if(groupName.trim())void ordinaryAction('tribe-create',{groupId:crypto.randomUUID(),name:groupName.trim()});}}>
+      <input aria-label="Nome da nova tribo" placeholder="Nome da nova tribo" className={input} value={groupName} maxLength={60} onChange={event=>setGroupName(event.target.value)}/>
+      <button className={button} disabled={busy||!groupName.trim()||ordinary.tribes.length>=30}>Criar</button>
+    </form>
+    {ordinary.tribes.map(group=><section key={group.id} className="rounded-xl border border-slate-700 p-3 space-y-2">
+      <div className="flex items-center justify-between gap-2"><h4 className="text-sm font-semibold">{group.name} · {group.memberIds.length}</h4><button type="button" className={button} disabled={busy} onClick={()=>{if(window.confirm('Excluir esta tribo? As conexões serão mantidas.'))void ordinaryAction('tribe-delete',{groupId:group.id});}}>Excluir</button></div>
+      {ordinaryContacts.filter(r=>matchesTribeContactName(name(r),term)).map(r=><label key={r.id} className="flex items-center gap-2 text-sm min-h-10"><input type="checkbox" checked={group.memberIds.includes(peer(r))} disabled={busy} onChange={event=>void ordinaryAction('tribe-member',{groupId:group.id,connectionId:r.id,member:event.target.checked})}/>{name(r)}</label>)}
+    </section>)}
     {!configured&&!setup&&<button className={button} onClick={()=>setSetup(true)}>Configurar código reservado</button>}
     {setup&&<form className="space-y-2" onSubmit={configure} autoComplete="off">
       <input aria-label="Novo código" type="password" className={input} value={code} onChange={e=>setCode(e.target.value.slice(0,64))} autoComplete="new-password"/>
