@@ -1,4 +1,5 @@
-import {FieldValue} from 'firebase-admin/firestore';
+import {FieldValue,FieldPath} from 'firebase-admin/firestore';
+import {matchesTribeContactName} from '../../src/utils/tribeContactSearch.js';
 import {adminDb} from '../firebaseAdmin.js';
 import {createTribeVerifier,verifyTribeCode,failedTribeAttempt,tribeAttemptLocked,issueTribeSession,validTribeSession,validTribeCode,type TribeAttemptState,type TribeVerifier} from './reservedTribeSecurity.js';
 /** Server-only foundation. No public route or UI is exposed until every contact surface is gated.
@@ -183,4 +184,57 @@ export async function readReservedTribeNotificationScope(tx:FirebaseFirestore.Tr
  if(markers.size>MAX_RESERVED_CONTACTS)throw Error('TRIBE_DIRECTORY_LIMIT');
  if(token!==undefined)requireSession(config,token);
  return {protectedDirectory:config.get('directoryProtected')===true,peers:new Set(markers.docs.map(item=>item.id))};
+}
+
+/** Search only public suggestions eligible for this actor, never return hidden
+ * IDs, account emails, phone numbers or full Firestore documents. This replaces
+ * the old suggestion derivation from an unfiltered users snapshot once wired.
+ * Ordinary search has no secret-code parameter and is never an unlock attempt.
+ */
+export async function searchOrdinaryTribeSuggestions(actor:string,search:unknown,requestedLimit=30){
+ const root=vault(actor);
+ if(typeof search!=='string'||search.length>128||!Number.isSafeInteger(requestedLimit)||requestedLimit<1||requestedLimit>50)throw Error('TRIBE_SEARCH_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const [account,markers,connections,ownBlocks]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),
+   tx.get(root.collection('contacts').limit(MAX_RESERVED_CONTACTS+1)),
+   tx.get(adminDb.collection('connections').where('participantIds','array-contains',actor).limit(MAX_DIRECTORY_CONNECTIONS+1)),
+   tx.get(adminDb.collection('social_contact_blocks/'+actor+'/blocked').limit(MAX_DIRECTORY_CONNECTIONS+1))
+  ]);
+  if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(markers.size>MAX_RESERVED_CONTACTS||connections.size>MAX_DIRECTORY_CONNECTIONS||ownBlocks.size>MAX_DIRECTORY_CONNECTIONS)throw Error('TRIBE_DIRECTORY_LIMIT');
+  const hidden=new Set([actor,...markers.docs.map(item=>item.id),...ownBlocks.docs.map(item=>item.id)]);
+  const outgoing=new Map<string,Relationship>();
+  for(const item of connections.docs){
+   const relation=relationship(item,actor);if(!relation)continue;
+   const peer=peerOf(actor,relation);
+   if(relation.status==='accepted'||relation.receiverId===actor)hidden.add(peer);
+   else outgoing.set(peer,relation);
+  }
+  const matches:Array<{id:string;name:string;avatar:string;role:string;connectionStatus:'none'|'pending_sent';connectionId?:string}>=[];
+  const directory=adminDb.collection('users').where('isProfileVisible','==',true).orderBy(FieldPath.documentId());
+  let cursor:FirebaseFirestore.QueryDocumentSnapshot|undefined;
+  // Bounded scan is intentionally conservative. A dedicated indexed directory
+  // is needed for scale; returning a partial page is preferable to a leak.
+  for(let pageIndex=0;pageIndex<10&&matches.length<requestedLimit;pageIndex++){
+   const page=await tx.get((cursor?directory.startAfter(cursor):directory).limit(100));
+   const eligible=page.docs.filter(doc=>{
+    const name=doc.get('name');
+    return validId(doc.id)&&!hidden.has(doc.id)&&typeof name==='string'&&!!name.trim()&&matchesTribeContactName(name,search);
+   });
+   // Inspect reverse blocks only for eligible profiles; the other direction
+   // was excluded by the actor's own marker collection above.
+   for(const doc of eligible){
+    if(matches.length>=requestedLimit)break;
+    const blocked=await tx.get(adminDb.doc('social_contact_blocks/'+doc.id+'/blocked/'+actor));
+    if(blocked.exists)continue;
+    const pending=outgoing.get(doc.id);
+    const avatar=doc.get('photoUrl'),role=doc.get('role');
+    matches.push({id:doc.id,name:String(doc.get('name')).slice(0,160),avatar:typeof avatar==='string'?avatar.slice(0,2048):'',role:typeof role==='string'?role.slice(0,60):'Kairubido',connectionStatus:pending?'pending_sent':'none',...(pending?{connectionId:pending.id}:{})});
+   }
+   if(page.size<100)break;
+   cursor=page.docs[page.size-1];
+  }
+  return matches;
+ });
 }

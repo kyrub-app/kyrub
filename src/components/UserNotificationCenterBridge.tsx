@@ -232,7 +232,7 @@ export function UserNotificationCenterBridge() {
               notification
             )
           ) {
-            const popup=showBrowserNotification(notification,user);
+            const popup=showBrowserNotification(notification, user);
             if(popup&&isPersonalNotification(notification)){
               browserPersonalRef.current.set(notification.id,popup);
               popup.onclose=()=>browserPersonalRef.current.delete(notification.id);

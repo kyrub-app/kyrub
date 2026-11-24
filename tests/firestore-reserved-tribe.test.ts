@@ -9,7 +9,7 @@ import {buildUserNotification} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -187,4 +187,29 @@ test('reserved inbox suppresses titles, targets and unread counts, with independ
  if(!next.ok)throw Error('SESSION_MISSING');
  await setReservedTribeContact(actor,next.token,peer,false);
  assert.equal((await listUserNotifications({recipientUserId:actor})).unreadCount,1);
+});
+
+test('ordinary suggestions never rediscover reserved or blocked contacts',async()=>{
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const visible='suggestion-visible',blocked='suggestion-blocked',privateProfile='suggestion-private';
+ await Promise.all([
+  adminDb.doc('users/'+visible).set({name:'João Visível',isProfileVisible:true,email:'not-returned@example.test',whatsapp:'12345'}),
+  adminDb.doc('users/'+blocked).set({name:'João Bloqueado',isProfileVisible:true}),
+  adminDb.doc('users/'+privateProfile).set({name:'João Privado',isProfileVisible:false}),
+  adminDb.doc('social_contact_blocks/'+blocked+'/blocked/'+actor).set({targetId:actor})
+ ]);
+ await setReservedTribeContact(actor,session.token,peer,true);
+ await adminDb.doc('connections/'+id(actor,peer)).delete();
+ await adminDb.doc('users/'+peer).update({name:'João Reservado'});
+ try{
+  const matches=await searchOrdinaryTribeSuggestions(actor,'joao');
+  assert.deepEqual(matches.map(row=>row.id),[visible]);
+  assert.ok(!JSON.stringify(matches).includes('not-returned'));
+  assert.ok(!JSON.stringify(matches).includes('12345'));
+  await assert.rejects(searchOrdinaryTribeSuggestions(actor,'x'.repeat(129)),/TRIBE_SEARCH_INVALID/);
+ }finally{
+  await adminDb.doc('connections/'+id(actor,peer)).set(connection(actor,peer));
+  await setReservedTribeContact(actor,session.token,peer,false);
+ }
 });

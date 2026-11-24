@@ -75,3 +75,17 @@ test('ordinary directory and forward destinations are server-projected, not UI-h
  assert.match(service,/authorizeOrdinaryForward/);
  assert.match(service,/directoryProtected:true/);
 });
+
+test('ordinary searches and deliberate unlock commands are distinct and preserve exact code',async()=>{
+ const {splitTribeSearchInput,matchesTribeContactName}=await import('../src/utils/tribeContactSearch.js');
+ assert.deepEqual(splitTribeSearchInput('João',true),{kind:'search',term:'João'});
+ assert.equal(matchesTribeContactName('João Silva','joao'),true);
+ assert.deepEqual(splitTribeSearchInput('!Secret!123',true),{kind:'unlock',code:'Secret!123'});
+ assert.deepEqual(splitTribeSearchInput('!Secret!123',false),{kind:'search',term:'!Secret!123'});
+ assert.deepEqual(splitTribeSearchInput('!',true),{kind:'unlock',code:''});
+ const component=readFileSync('src/components/ReservedTribeSearchInput.tsx','utf8');
+ assert.match(component,/secretMode\?'password':'search'/);
+ assert.match(component,/await onUnlock\(code,controller.signal\)/);
+ assert.doesNotMatch(component,/localStorage|sessionStorage|console\.|fetch\(/);
+ assert.doesNotMatch(readFileSync('src/components/ProfileSocialHubNative.tsx','utf8'),/ReservedTribeSearchInput/);
+});
