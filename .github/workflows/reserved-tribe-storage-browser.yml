@@ -1,0 +1,31 @@
+name: Reserved tribe browser storage guard
+on:
+  pull_request:
+    paths:
+      - 'src/utils/socialPilotStorageGuard.ts'
+      - 'src/utils/reservedTribePilotClient.ts'
+      - 'tests/reserved-tribe-storage-browser.mjs'
+      - '.github/workflows/reserved-tribe-storage-browser.yml'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  storage-guard-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci
+      - name: Install disposable Chromium runner
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Exercise isolated browser storage
+        run: node tests/reserved-tribe-storage-browser.mjs
