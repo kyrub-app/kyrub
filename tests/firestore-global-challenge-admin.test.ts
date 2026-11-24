@@ -544,8 +544,9 @@ test('institutional disclosure commits one original and optional Taba pointer on
  const ref=adminDb.doc('kyrub_admin/control_plane/institutional_channels/official_community');
  await adminDb.doc('community_members/official-owned__admin').update({status:'active'});
  assert.equal((await ref.get()).get('communityId'),'official-owned');
- const id='institutional-disclosure-fixture';
- await adminDb.doc('global_challenges/'+id).set({...draft(id),status:'published'});
+ const id='first_store_published';
+ await adminDb.doc('global_challenges/'+id).set({...draft(id),status:'published',rewardXp:2});
+ await adminDb.doc('global_challenges/future-freela-fixture').set({...draft('future-freela-fixture'),status:'published'});
  const operation='disclose-official-challenge';
  const input={challengeId:id,shareToSquare:true};
  const prior=process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;
@@ -555,6 +556,8 @@ test('institutional disclosure commits one original and optional Taba pointer on
  try{
   assert.equal((await request(input,operation,token('operations'))).status,403);
   assert.equal((await request({...input,communityId:'official-other'},operation)).status,400);
+  assert.equal((await request({challengeId:'future-freela-fixture',shareToSquare:true},operation)).status,409);
+  assert.equal((await adminDb.collection('community_posts').where('institutionalChallengeId','==','future-freela-fixture').get()).size,0);
   const results=await Promise.all(Array.from({length:3},()=>request(input,operation)));
   assert.ok(results.every(r=>r.status===200));
   assert.equal(results.filter(r=>r.body.disclosure.replay===false).length,1);

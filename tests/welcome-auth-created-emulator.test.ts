@@ -151,7 +151,8 @@ test('one Auth-created member: welcome and verified first publication remain sep
   assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
   assert.equal(projectId,'demo-kyrub-welcome');
   const { readPitangaAccount, convertPitangaAccount } = await import('../server/gamification/pitangaAccountService.js');
-  const { verifyFirstStorePublicationForReward } = await import('../server/gamification/firstStorePublishedVerificationService.js');
+  const { publishFirstStoreAndAwardXp, hideVerifiedFirstStorePublication } = await import('../server/gamification/firstStorePublicationAuthority.js');
+  const { readUserPlatformChallengeCatalog } = await import('../server/gamification/userPlatformChallengeCatalogService.js');
   const signed = await googleSignIn('welcome-publication-integrated');
   assert.equal(signed.isNewUser,true);
   const uid=signed.localId;
@@ -165,20 +166,17 @@ test('one Auth-created member: welcome and verified first publication remain sep
   const event=db.doc(`users/${uid}/verifiedStoreEvents/first_store_published`);
   const listing=db.doc(`marketplace_listings/s_${uid.length}_${uid}`);
   const challenge=db.doc('global_challenges/first_store_published');
-  const publishedAt=new Date().toISOString();
-  const grant=()=>verifyFirstStorePublicationForReward(db,{userId:uid,canonicalStoreId:storeId});
-  // Explicit emulator-only fixtures: provisioning is not a publication.
+  const grant=()=>publishFirstStoreAndAwardXp(db,{authenticatedUserId:uid,canonicalStoreId:storeId});
+  // Fixture represents a provisioned, unpublished store; actual production
+  // authority performs the publication, evidence and reward transaction.
   await challenge.set({id:'first_store_published',title:'Primeira publicação',description:'Fixture',status:'published',validationMode:'deterministic',sponsorType:'kyrub',rewardKCoins:0,rewardXp:2,maxCompletionsPerUser:1});
-  await store.set({id:storeId,ownerId:uid,publicationStatus:'draft'});
-  await assert.rejects(grant(),/FIRST_STORE_PUBLICATION_UNVERIFIED/);
+  await store.set({id:storeId,ownerId:uid,publicationStatus:'paused',firstStoreCreationVerified:true,plan:'free'});
+  await db.doc(`users/${uid}/stores/${uid}`).set({id:uid,ownerId:uid,name:'Loja fictícia',slug:'loja-integrada',plan:'free'});
   assert.deepEqual(await readPitangaAccount(db,uid),first);
-  // Seed the trusted publication evidence only in the emulator. This tests
-  // the reward verifier, not the ERP publication transition itself.
-  const batch=db.batch();
-  batch.update(store,{publicationStatus:'published',firstPublishedAt:publishedAt});
-  batch.set(event,{id:'first_store_published',challengeId:'first_store_published',userId:uid,storeId,status:'pending',isFirstPublication:true,publishedAt});
-  batch.set(listing,{listingType:'store',storeId:uid,ownerId:uid,publicationStatus:'published'});
-  await batch.commit();
+  assert.equal((await event.get()).exists,false);
+  assert.equal((await listing.get()).exists,false);
+  const initialCatalog=await readUserPlatformChallengeCatalog(db,uid);
+  assert.equal(initialCatalog.challenges.find(c=>c.id==='first_store_published')?.status,'available');
   const awards=await Promise.all(Array.from({length:4},grant));
   assert.equal(awards.filter(r=>!r.replay).length,1);
   assert.equal(awards.filter(r=>r.replay).length,3);
@@ -187,6 +185,17 @@ test('one Auth-created member: welcome and verified first publication remain sep
   assert.equal(afterPublication.xp,2);
   assert.equal(afterPublication.entries.length,2);
   assert.equal((await db.collection(`users/${uid}/challengeRewards`).get()).size,1);
+  const firstAt=(await store.get()).get('firstPublishedAt');
+  assert.equal((await event.get()).get('publishedAt'),firstAt);
+  assert.equal((await listing.get()).get('publicationStatus'),'published');
+  assert.equal((await listing.get()).get('publishedAt').toDate().toISOString(),firstAt);
+  const completedCatalog=await readUserPlatformChallengeCatalog(db,uid);
+  assert.equal(completedCatalog.challenges.find(c=>c.id==='first_store_published')?.status,'completed');
+  await hideVerifiedFirstStorePublication(db,{authenticatedUserId:uid,canonicalStoreId:storeId});
+  assert.equal((await listing.get()).get('publicationStatus'),'paused');
+  assert.deepEqual(await grant(),{replay:true,pitangas:0,xp:2});
+  assert.equal((await store.get()).get('firstPublishedAt'),firstAt);
+  assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
   const previousFlag=process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED;
   try {
     process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED='true';

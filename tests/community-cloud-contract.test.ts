@@ -374,13 +374,13 @@ test('author menu removes the publication after confirmation, without self-conne
   const service = read('server/communities/communityPostRemovalService.ts');
   const moderation = read('server/admin/socialModerationService.ts');
 
-  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /const isMine = !institutional && viewerId === post\.authorId/);
   assert.match(card, /\{isMine && \([\s\S]*?Remover publicação/);
   assert.match(card, /window\.confirm\('Remover esta publicação definitivamente/);
   assert.match(card, /void run\('remove', onRemove\)/);
   assert.doesNotMatch(card, /Ocultar publicação/);
-  assert.match(card, /\{!isMine && !connection && \(/);
-  assert.match(card, /\{!isMine && connected && \(/);
+  assert.match(card, /\{!institutional && !isMine && !connection && \(/);
+  assert.match(card, /\{!institutional && !isMine && connected && \(/);
   assert.match(card, /\{!isMine && \([\s\S]*?Denunciar publicação/);
   assert.match(container, /onRemove=\{\(\) => removeOwnCommunityPost\(post\)\}/);
   assert.match(client, /transport=community-author-remove/);
@@ -405,7 +405,7 @@ test('Promover entry only appears for a community post author and never starts a
   const card = read('src/components/CommunityPostCard.tsx');
   const preview = read('src/components/ads/KyrubAdsCommunityPromotionPreview.tsx');
 
-  assert.match(card, /const isMine = viewerId === post\.authorId/);
+  assert.match(card, /const isMine = !institutional && viewerId === post\.authorId/);
   assert.match(card, /\{isMine && \([\s\S]*?<Megaphone className="h-4 w-4" \/> Promover/);
   assert.match(card, /setPromotionPreviewOpen\(true\)/);
   assert.match(card, /promotionPreviewOpen && isMine/);

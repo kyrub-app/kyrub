@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { Timestamp, type Firestore, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { projectGlobalChallenge } from './globalChallengeAdminValidation.js';
+import { FIRST_STORE_PUBLISHED_CHALLENGE_ID, planFirstStorePublishedReward } from './firstStorePublishedReward.js';
 import { OFFICIAL_CHALLENGE_AUTHOR_ID, type OfficialChallengeDisclosure, type OfficialCommunityBinding, type OfficialCommunityCandidate } from '../../shared/globalChallengeAdmin.js';
 
 const BINDING='kyrub_admin/control_plane/institutional_channels/official_community';
@@ -75,6 +76,8 @@ export async function discloseOfficialChallenge(actor:string,challengeId:string,
  const db=adminDb;
  if(!officialChallengeDisclosureEnabled(process.env,(db as Firestore&{projectId?:string}).projectId))throw Error('OFFICIAL_CHALLENGE_DISCLOSURE_DISABLED');
  if(!validId(challengeId)||typeof shareToSquare!=='boolean')throw Error('CHALLENGE_INPUT_INVALID');
+ // Only the verified first-publication adapter is admitted in this pilot.
+ if(challengeId!==FIRST_STORE_PUBLISHED_CHALLENGE_ID)throw Error('OFFICIAL_CHALLENGE_NOT_AVAILABLE');
  const now=new Date(),occurredAt=now.toISOString(),timestamp=Timestamp.fromDate(now);
  return db.runTransaction(async tx=>{
   await requireAdmin(db,tx,actor);
@@ -94,6 +97,9 @@ export async function discloseOfficialChallenge(actor:string,challengeId:string,
   if(challenge.id!==challengeId||!['published','active'].includes(challenge.status)||
    (challenge.startsAt&&Date.parse(challenge.startsAt)>now.getTime())||
    (challenge.endsAt&&Date.parse(challenge.endsAt)<=now.getTime()))throw Error('OFFICIAL_CHALLENGE_NOT_AVAILABLE');
+  // Reuse the exact eligibility contract (2 XP, zero Pitangas, one completion).
+  try { planFirstStorePublishedReward(challenge,{userId:actor,storeId:'pilot-contract-check',publishedAt:occurredAt,isFirstPublication:true,isOwnerVerified:true,isMarketplaceVisible:true}); }
+  catch { throw Error('OFFICIAL_CHALLENGE_NOT_AVAILABLE'); }
   const result={challengeId,communityId:community.communityId,postId,sharedToSquare:shareToSquare};
   if(receipt.exists){
    if(receipt.get('challengeId')!==challengeId||receipt.get('communityId')!==community.communityId||receipt.get('postId')!==postId||
