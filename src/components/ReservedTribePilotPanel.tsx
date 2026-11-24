@@ -4,6 +4,7 @@ import {requestReservedTribePilot as request,type ReservedTribeUnlock} from '../
 import {matchesTribeContactName} from '../utils/tribeContactSearch';
 import {ReservedTribeSearchInput} from './ReservedTribeSearchInput';
 import {TribePilotChat} from './TribePilotChat';
+import {ReservedTribeRecoveryPanel} from './ReservedTribeRecoveryPanel';
 import type {UserNotification} from '../../shared/userNotifications';
 
 type Relation={id:string;senderId:string;receiverId:string;status:'accepted'|'pending';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string};
@@ -25,10 +26,11 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  const [notices,setNotices]=useState<UserNotification[]|null>(null);
  const [suggestions,setSuggestions]=useState<Suggestion[]>([]);
  const [groupName,setGroupName]=useState('');
+ const [recovering,setRecovering]=useState(false);
  const current=useRef<Session|null>(null),alive=useRef(false),epoch=useRef(0);
  const pending=useRef<AbortController|null>(null);
  const clearPrivate=useCallback(()=>{
-  setSuggestions([]);setGroupName('');
+  setSuggestions([]);setGroupName('');setRecovering(false);
   ++epoch.current;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
   setSession(null);setReserved(null);setTarget(null);setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
@@ -116,7 +118,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  return <div className="space-y-3" data-reserved-tribe-pilot="true">
   <button className={button} onClick={()=>{clearPrivate();onBack();}}>← Voltar ao perfil</button>
   {error&&<p role="alert" className="text-sm text-red-300">{error}</p>}
-  {!session&&target?<TribePilotChat key={'ordinary:'+target.id} owner={owner} connectionId={target.id} name={name(target)} onClose={closeChat} onDenied={chatDenied}/>:!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
+  {recovering&&!session?<ReservedTribeRecoveryPanel owner={owner} onCancel={()=>{clearPrivate();void reload();}} onRecovered={()=>{clearPrivate();setOrdinary(null);void reload();}}/>:!session&&target?<TribePilotChat key={'ordinary:'+target.id} owner={owner} connectionId={target.id} name={name(target)} onClose={closeChat} onDenied={chatDenied}/>:!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
    {([['general','Geral'],['favorites','Frequentes'],['tribes','Tribos'],['new','Novos']] as const).map(([id,label])=><button key={id} aria-pressed={section===id} className={button+(section===id?' border-orange-500':'')} onClick={()=>setSection(id)}>{label}</button>)}
   </nav>
   <ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
@@ -130,6 +132,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
       {ordinaryContacts.filter(r=>matchesTribeContactName(name(r),term)).map(r=><label key={r.id} className="flex items-center gap-2 text-sm min-h-10"><input type="checkbox" checked={group.memberIds.includes(peer(r))} disabled={busy} onChange={event=>void ordinaryAction('tribe-member',{groupId:group.id,connectionId:r.id,member:event.target.checked})}/>{name(r)}</label>)}
     </section>)}
     {!configured&&!setup&&<button className={button} onClick={()=>setSetup(true)}>Configurar código reservado</button>}
+    {configured&&!setup&&<button type="button" className={button} disabled={busy} onClick={()=>{clearPrivate();setOrdinary(null);setRecovering(true);}}>Redefinir código de acesso</button>}
     {setup&&<form className="space-y-2" onSubmit={configure} autoComplete="off">
       <input aria-label="Novo código" type="password" className={input} value={code} onChange={e=>setCode(e.target.value.slice(0,64))} autoComplete="new-password"/>
       <input aria-label="Confirmar código" type="password" className={input} value={confirmation} onChange={e=>setConfirmation(e.target.value.slice(0,64))} autoComplete="new-password"/>

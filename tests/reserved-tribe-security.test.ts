@@ -184,3 +184,17 @@ test('ordinary and reserved chat actions have separate transport contracts and o
  assert.match(ui,/sequence.current===id/);
  assert.doesNotMatch(ui,/localStorage|sessionStorage|firebase\/firestore/);
 });
+
+test('recovery UI requires provider reauthentication before the new code and never persists secrets',()=>{
+ const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
+ const recovery=readFileSync('src/components/ReservedTribeRecoveryPanel.tsx','utf8');
+ assert.match(panel,/recovering&&!session\?<ReservedTribeRecoveryPanel/);
+ assert.match(recovery,/reauthenticateWithPopup\(user,provider\)/);
+ assert.match(recovery,/reauthenticateWithCredential\(user,EmailAuthProvider.credential/);
+ assert.match(recovery,/getIdTokenResult\(true\)/);
+ assert.match(recovery,/authTime<Math.floor\(started\/1000\)\*1000/);
+ assert.match(recovery,/phase!=='code'/);
+ assert.match(recovery,/request<\{recovered:true\}>\('recover',fields,controller.signal\)/);
+ assert.match(recovery,/visibilitychange/);
+ assert.doesNotMatch(recovery,/localStorage|sessionStorage|console\.|signInWithPopup\(/);
+});
