@@ -317,3 +317,24 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.ok(tag.indexOf('SOS · Informações de emergência')<tag.indexOf('<PresentationFooter mode={membership}'));
  assert.match(tag,/fixed inset-x-0 bottom-0/);
  });
+
+test('QR sharing only encodes public same-deployment destinations',async()=>{
+ const {presentationShareUrl}=await import('../src/utils/presentationShareUrl');
+ const origin='https://kyrub.com',preview='https://isolated-preview.vercel.app';
+ const urls=[origin+'/kairubido/usuario',origin+'/tag/'+'a'.repeat(32),origin+'/cartao/'+'b'.repeat(32),origin+'/comunidade/rock',origin+'/@kyrub-oficial'];
+ for(const url of urls)assert.equal(presentationShareUrl(url,origin),url);
+ for(const url of [origin+'/tag/'+'a'.repeat(32)+'?oobCode=secret',origin+'/kairubido/usuario#secret',origin+'/staff',origin+'/?entry=welcome','https://evil.test/kairubido/usuario',origin+'/tag/invalid','https://user:secret@kyrub.com/kairubido/usuario'])assert.equal(presentationShareUrl(url,origin),null);
+ assert.equal(presentationShareUrl(preview+'/tag/'+'a'.repeat(32),preview),preview+'/tag/'+'a'.repeat(32));
+ assert.equal(presentationShareUrl(origin+'/kairubido/usuario',preview),null);
+ const source=readFileSync('src/components/PresentationShare.tsx','utf8');
+ const native=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(source,/QRCodeSVG/);assert.match(source,/value=\{safeUrl\}/);assert.match(source,/marginSize=\{4\}/);
+ assert.match(native,/showQrByDefault/);assert.doesNotMatch(native,/O QR público da sua página entra na próxima etapa/);
+ assert.doesNotMatch(source,/qrserver|fetch\(/);
+ const React=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {QRCodeSVG}=await import('qrcode.react');
+ const first=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[0],marginSize:4,level:'M'}));
+ const second=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[1],marginSize:4,level:'M'}));
+ assert.match(first,/<svg/);assert.match(first,/<path/);assert.notEqual(first,second);
+});

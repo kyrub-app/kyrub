@@ -4,6 +4,7 @@ import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type Prom
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
+import {PresentationShare} from './PresentationShare';
 import {usePresentationMembership} from './PresentationFooter';
 
 export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
@@ -147,6 +148,7 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
     return <div key={url} className="flex items-center gap-2 rounded-lg border border-[#34443B] p-2 text-sm"><span className="min-w-0 flex-1 break-words">{target.kind==='store'?'Loja':'Comunidade'} · {target.identifier}</span><button type="button" disabled={busy||uploading} className="min-h-11 text-rose-200 underline disabled:opacity-50" onClick={()=>void removeSpace(url)}>Retirar</button></div>;
    })}
   </section>}
+  {tag.enabled&&!tag.blocked&&<PresentationShare url={window.location.origin+'/tag/'+tag.id} title={tag.presentation?.name||'Minha Kyrub Tag'}/>}
   {recoveryCode&&<div className="space-y-2 rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
     <strong>Guarde seu código de recuperação</strong>
     <p>Ele é exibido uma única vez e permite recuperar o gerenciamento caso você perca o acesso ao e-mail. Não grave na etiqueta nem compartilhe.</p>

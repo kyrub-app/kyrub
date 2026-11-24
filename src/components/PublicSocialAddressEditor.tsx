@@ -3,7 +3,7 @@ import { auth } from '../utils/firebase';
 import { PresentationShare } from './PresentationShare';
 import { buildPublicDestinationUrl, buildPublicDestinationPath } from '../../shared/publicDestinationRoutes';
 
-type Props = { kind:'profile'|'community'; ownerId:string; communityId?:string; suggested?:string; onReserved?:()=>void };
+type Props = { kind:'profile'|'community'; ownerId:string; communityId?:string; suggested?:string; onReserved?:()=>void;showQrByDefault?:boolean };
 type Status = {identifier:string|null;eligible:boolean};
 const button = 'min-h-11 rounded-xl border border-slate-600 px-3 py-2 text-sm font-bold text-slate-200 disabled:opacity-50';
 function errorMessage(code:unknown) {
@@ -12,7 +12,7 @@ function errorMessage(code:unknown) {
     : code === 'INVALID_PUBLIC_ADDRESS' ? 'Informe um identificador válido.'
     : 'Não foi possível confirmar o endereço. Tente novamente.';
 }
-export function PublicSocialAddressEditor({kind,ownerId,communityId,suggested='',onReserved}:Props) {
+export function PublicSocialAddressEditor({kind,ownerId,communityId,suggested='',onReserved,showQrByDefault=false}:Props) {
   const [input,setInput] = useState(suggested);
   const [status,setStatus] = useState<Status|null>(null);
   const [busy,setBusy] = useState(false);
@@ -57,7 +57,7 @@ export function PublicSocialAddressEditor({kind,ownerId,communityId,suggested=''
     {url ? <>
       <a href={url.replace('https://kyrub.com','')} className="block break-all text-sm text-orange-300 underline">{url}</a>
       {!status?.eligible && <p className="text-xs text-slate-400">Endereço reservado, mas não está público.</p>}
-      {status?.eligible&&<PresentationShare url={window.location.origin+(buildPublicDestinationPath(kind,status.identifier!)??'')} title={kind==='profile'?'Minha apresentação Kyrub':'Minha comunidade Kyrub'}/>} 
+      {status?.eligible&&<PresentationShare showQrByDefault={showQrByDefault} url={window.location.origin+(buildPublicDestinationPath(kind,status.identifier!)??'')} title={kind==='profile'?'Minha apresentação Kyrub':'Minha comunidade Kyrub'}/>} 
     </> : <>
       <p className="text-xs text-slate-400">{kind==='profile'?'Escolha um identificador próprio, sem usar seu e-mail.':'Escolha um identificador exclusivo da comunidade.'} O endereço permanece mesmo quando o nome de exibição muda.</p>
       <label className="block text-xs text-slate-300">Identificador

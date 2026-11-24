@@ -1,4 +1,5 @@
 import {TagSpacesSelector} from './TagSpacesSelector';
+import {PresentationShare} from './PresentationShare';
 import {useEffect,useState} from 'react';
 import {auth} from '../utils/firebase';
 import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
@@ -96,6 +97,7 @@ export function MultifunctionCardEditor({userId,locked,onSelect,presentationMode
     <button type="button" className={button} disabled={locked||busy||!ready||!urls.length} onClick={()=>void save()}>{presentationMode?'Salvar e publicar espaços':'Salvar e publicar cartão'}</button>
     {currentUrl&&<div className="space-y-2">
       <a href={'/cartao/'+card?.id} className="block break-all text-sm text-orange-300 underline">{currentUrl}</a>
+      {!dirty&&<PresentationShare url={window.location.origin+'/cartao/'+card?.id} title="Meu cartão Kyrub"/>}
       {!presentationMode&&<button type="button" className={button} disabled={locked||busy||dirty} onClick={()=>onSelect?.({name:'Meu cartão multifuncional',url:currentUrl})}>Usar cartão para compartilhar ou gravar</button>}
       <button type="button" className={button} disabled={locked||busy} onClick={()=>void disable()}>Desativar cartão</button>
     </div>}

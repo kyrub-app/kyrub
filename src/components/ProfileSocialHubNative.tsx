@@ -64,6 +64,7 @@ import { ChatModal } from './modals/ChatModal';
 import { ContactPresentationModal } from './ContactPresentationModal';
 import {BlockedContactsPanel} from './BlockedContactsPanel';
 import { MultifunctionCardEditor } from './MultifunctionCardEditor';
+import {PublicSocialAddressEditor} from './PublicSocialAddressEditor';
 import { ProfileTagPresentationSync } from './ProfileTagPresentationSync';
 import { sanitizedWebp } from '../utils/kyrubTagMedia';
 import {
@@ -488,6 +489,7 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [qrOpen,setQrOpen]=useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
@@ -648,6 +650,7 @@ export function ProfileSocialHubNative() {
 
   useEffect(() => {
     if (!open) {
+      setQrOpen(false);
       setNewConnectionsOpen(false);
       return;
     }
@@ -656,7 +659,8 @@ export function ProfileSocialHubNative() {
     setDraftOccupation(profile.occupation??'');
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (savedOpen) setSavedOpen(false);
+      if (qrOpen) setQrOpen(false);
+      else if (savedOpen) setSavedOpen(false);
       else if (offersOpen) setOffersOpen(false);
       else if (editOpen) setEditOpen(false);
       else if (newConnectionsOpen) setNewConnectionsOpen(false);
@@ -666,6 +670,7 @@ export function ProfileSocialHubNative() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     editOpen,
+    qrOpen,
     newConnectionsOpen,
     offersOpen,
     open,
@@ -1442,7 +1447,7 @@ export function ProfileSocialHubNative() {
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
                     <span className="text-[8px] font-black uppercase">Conectados</span>
                   </button>
-                  <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                  <button type="button" onClick={()=>setQrOpen(true)} aria-label="Compartilhar minha apresentação por QR Code" className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
                     <span className="text-[8px] font-black uppercase">QR</span>
                   </button>
@@ -2054,6 +2059,13 @@ export function ProfileSocialHubNative() {
       </div>
 
 
+      {qrOpen&&<div className="fixed inset-0 z-[194] flex items-center justify-center bg-slate-950/95 p-4" onClick={()=>setQrOpen(false)}>
+        <section role="dialog" aria-modal="true" aria-label="QR Code da minha apresentação" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#34443B] bg-[#121A17] p-4 text-white" onClick={event=>event.stopPropagation()}>
+          <header className="mb-3 flex items-center justify-between gap-2"><h3 className="font-bold">Compartilhar minha apresentação</h3><button type="button" className="min-h-11 rounded-lg border border-slate-600 px-3" onClick={()=>setQrOpen(false)}>Fechar</button></header>
+          <p className="mb-3 text-sm text-slate-300">Reserve seu endereço público, se ainda não tiver um. O QR Code não exige adesivo NFC.</p>
+          <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} showQrByDefault/>
+        </section>
+      </div>}
       {newConnectionsOpen && (
         <div className="fixed inset-0 z-[136] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
           <section className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
