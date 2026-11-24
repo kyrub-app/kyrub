@@ -113,6 +113,9 @@ try{
  const sources=[{source:'contact',id:peer},{source:'tag',id:tag},{source:'profile',id:'browser-peer'}];
  for(const source of sources){const value=await success(a,'presentation-relationship',{...source,operation:null});assert.equal(value.state,'accepted');assert.equal(value.peer.connectionId,pair);}
  assert.equal((await a.request.post(origin+'/api/social/reserved-tribe',{data:{action:'presentation-relationship',source:'tag',id:tag,operation:null}})).status(),401);
+ await a.evaluate(tag=>window.fixture.mountRelationship('tag',tag),tag);
+ const widget=a.locator('#fixture-presentation-relationship');
+ await widget.getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'visible'});
  await success(a,'setup',{code,confirmation:code});
  const first=await success(a,'unlock',{code});
  assert.equal(first.ok,true);
@@ -126,7 +129,14 @@ try{
   assert.deepEqual(await success(a,'presentation-relationship',{...source,operation:null}),{state:'unavailable'});
   assert.deepEqual(await success(a,'presentation-relationship',{...source,operation:'connect'}),{state:'unavailable'});
  }
+ await widget.getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'detached'});
+ assert.equal(await widget.getByRole('button',{name:'Conectar',exact:true}).count(),0);
+ await a.evaluate(()=>window.fixture.unmountRelationship());
  assert.equal((await success(b,'presentation-relationship',{source:'contact',id:owner,operation:null})).state,'accepted');
+ await b.evaluate(owner=>window.fixture.mountRelationship('contact',owner),owner);
+ await b.locator('#fixture-presentation-relationship').getByRole('button',{name:'Abrir chat',exact:true}).waitFor({state:'visible'});
+ await b.evaluate(()=>window.fixture.unmountRelationship());
+ console.log('PASS presentation widget hides reserved relationship while counterpart retains authorized chat action');
  await refused(a,'presentation-relationship',{source:'contact',id:peer,operation:null,session:first.token});
  await a.evaluate(()=>localStorage.setItem('kyrub_friends','synthetic'));
  await refused(a,'presentation-relationship',{source:'tag',id:tag,operation:null},'TRIBE_STORAGE_UNVERIFIED');

@@ -352,3 +352,17 @@ test('presentation pilot action is strictly scoped to source, address and operat
  assert.equal(parseReservedTribePilotBody(read).action,'presentation-relationship');
  for(const patch of [{actor:'other'},{session:'a'.repeat(64)},{source:'unknown'},{id:''},{operation:'block'},{operation:['connect']},{operation:undefined}])assert.throws(()=>parseReservedTribePilotBody({...read,...patch}),/TRIBE_INVALID/);
 });
+
+
+test('protected presentation widget has no legacy fallback and invalidates on lifecycle changes',()=>{
+ const component=readFileSync('src/components/PresentationRelationship.tsx','utf8');
+ assert.match(component,/return requestReservedTribePilot<Result>\('presentation-relationship'/);
+ assert.match(component,/if\(reservedTribePilotClientEnabled\(\)\)return <PilotPresentationRelationship/);
+ const pilot=component.slice(component.indexOf('function PilotRelationshipSession'),component.indexOf('function LegacyPresentationRelationship'));
+ assert.doesNotMatch(pilot,/localStorage|sessionStorage|onSnapshot|\/api\/health/);
+ assert.match(pilot,/subscribeSocialPrivacyInvalidation\(invalidate\)/);
+ assert.match(pilot,/auth.currentUser===user/);
+ assert.match(pilot,/controller.signal.aborted\|\|generation!==sequence.current/);
+ assert.match(pilot,/addEventListener\('offline',suspend\)/);
+ assert.match(pilot,/setPeer\(null\);setMessage\(''\)/);
+});
