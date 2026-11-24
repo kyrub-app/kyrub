@@ -17,6 +17,8 @@ const owner='ui-tribe-owner',peer='ui-tribe-peer',pair=[owner,peer].sort().join(
 const ownerName='Pessoa Titular Teste',peerName='Pessoa Contato Teste';
 const password='fictional-ui-login-123',code='fictional-ui-code';
 const message='Mensagem privada de homologacao';
+const newCode='fictional-recovery-code',privateNotice='Aviso reservado de homologacao',systemNotice='Aviso de sistema de homologacao';
+const noticePath='users/'+owner+'/notifications/';
 let browser;
 const blockedFirebase=[];
 async function open(uid){
@@ -51,11 +53,11 @@ async function open(uid){
 }
 async function visible(locator){await locator.waitFor({state:'visible',timeout:20000});}
 async function absent(locator){await locator.waitFor({state:'detached',timeout:20000});}
-async function unlock(panel){
+async function unlock(panel,secret=code){
  const search=panel.getByLabel('Pesquisar pessoas em Conectados');
  await search.fill('!');
  assert.equal(await search.getAttribute('type'),'password');
- await search.fill(code);
+ await search.fill(secret);
  await search.press('Enter');
  await visible(panel.getByRole('region',{name:'Tribo Reservada'}));
  assert.equal(await search.count(),0);
@@ -66,6 +68,8 @@ try{
   await db.doc('users/'+uid).set({uid,name,email:uid+'@example.invalid',photoUrl:'',isProfileVisible:true,createdAt:new Date(),updatedAt:new Date()});
  }
  await db.doc('connections/'+pair).set({senderId:owner,receiverId:peer,participantIds:[owner,peer].sort(),status:'accepted',senderName:ownerName,receiverName:peerName});
+ const notification=(id,category,title)=>({schemaVersion:1,id,recipientUserId:owner,category,eventType:'received',sourceId:id,actorPrincipalId:peer,title,body:'Conteudo ficticio',target:{kind:'none',storeId:'',customerId:'',orderId:''},createdAt:new Date().toISOString(),readAt:''});
+ await Promise.all([db.doc(noticePath+'private-fixture').set(notification('private-fixture','user_forward',privateNotice)),db.doc(noticePath+'system-fixture').set(notification('system-fixture','system',systemNotice))]);
  browser=await chromium.launch({headless:true});
  const a=await open(owner);
  await visible(a.panel.getByText(peerName,{exact:true}));
@@ -116,6 +120,55 @@ try{
  assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
  assert.deepEqual(blockedFirebase,[],'No browser request to remote Firebase');
  console.log('PASS actual app offline closes reserved surface without deleting shared relationship');
+ // Notifications remain unread until a private session explicitly marks them.
+ assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
+ await unlock(a.panel);
+ await a.panel.getByRole('button',{name:'Avisos',exact:true}).click();
+ await visible(a.panel.getByText(privateNotice,{exact:true}));
+ await absent(a.panel.getByText(systemNotice,{exact:true}));
+ await a.panel.getByRole('button',{name:'Marcar como lida',exact:true}).click();
+ await absent(a.panel.getByRole('button',{name:'Marcar como lida',exact:true}));
+ assert.ok((await db.doc(noticePath+'private-fixture').get()).get('readAt'));
+ assert.equal((await db.doc(noticePath+'system-fixture').get()).get('readAt'),'');
+ await a.panel.getByRole('button',{name:'Trancar',exact:true}).click();
+ await absent(a.panel.getByText(privateNotice,{exact:true}));
+ console.log('PASS private notification displayed and read only in reserved UI');
+ // Recover through actual Firebase reauthentication; no old code requested.
+ await a.panel.getByRole('button',{name:'Tribos',exact:true}).click();
+ await a.panel.getByRole('button',{name:'Redefinir código de acesso',exact:true}).click();
+ const recovery=a.panel.getByRole('region',{name:'Redefinir código de acesso'});
+ await visible(recovery);
+ await recovery.getByLabel('Senha da conta').fill('wrong-fixture-password');
+ await recovery.getByRole('button',{name:'Confirmar identidade'}).click();
+ await visible(recovery.getByRole('alert'));
+ assert.equal(await recovery.getByLabel('Novo código',{exact:true}).count(),0);
+ await recovery.getByLabel('Senha da conta').fill(password);
+ await recovery.getByRole('button',{name:'Confirmar identidade'}).click();
+ await visible(recovery.getByLabel('Novo código',{exact:true}));
+ await recovery.getByLabel('Novo código',{exact:true}).fill(newCode);
+ await recovery.getByLabel('Confirmar código',{exact:true}).fill(newCode);
+ await recovery.getByRole('button',{name:'Salvar novo código'}).click();
+ await absent(recovery);
+ await visible(a.panel.getByRole('button',{name:'Redefinir código de acesso'}));
+ const oldSearch=a.panel.getByLabel('Pesquisar pessoas em Conectados');
+ await oldSearch.fill('!');
+ await oldSearch.fill(code);
+ const oldAttempt=a.page.waitForResponse(response=>new URL(response.url()).pathname==='/api/social/reserved-tribe'&&response.request().postDataJSON()?.action==='unlock');
+ await oldSearch.press('Enter');
+ assert.equal((await oldAttempt).status(),200);
+ await a.page.waitForFunction(()=>document.querySelector('[data-reserved-tribe-pilot] input[aria-label="Pesquisar pessoas em Conectados"]')?.type==='search');
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await unlock(a.panel,newCode);
+ await visible(a.panel.getByText(peerName,{exact:true}));
+ await a.panel.getByRole('button',{name:'Conversar',exact:true}).click();
+ await visible(a.panel.getByText('Nenhuma mensagem.',{exact:true}));
+ await a.panel.getByRole('button',{name:'Trancar',exact:true}).click();
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
+ assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
+ assert.ok((await db.doc(noticePath+'private-fixture').get()).get('readAt'));
+ assert.deepEqual(blockedFirebase,[]);
+ console.log('PASS password reauthentication, wrong password denied, old code denied, new code works and shared history preserved');
 }finally{
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
 }
