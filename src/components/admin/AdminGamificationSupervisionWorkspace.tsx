@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Cherry, Sprout, ShieldCheck } from 'lucide-react';
+import { Cherry, Sprout, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 const areas = [
   {id:'pitangas', label:'Pitangas', icon:Cherry, title:'Circulação de Pitangas',
@@ -8,8 +8,11 @@ const areas = [
   {id:'semeadura', label:'Semeadura', icon:Sprout, title:'Jornada Pitangueira',
    metrics:['Sementes aceitas','Pitangueiras','Publicações que atingiram um bosque'],
    description:'A semeadura pertence ao autor. As comunidades não acumulam recompensas próprias.'},
-  {id:'revisao', label:'Revisões', icon:ShieldCheck, title:'Revisões econômicas',
-   metrics:['Casos em revisão','Casos liberados','Inconsistências técnicas'],
+  {id:'suspeitas', label:'Suspeitas de fraude', icon:ShieldAlert, title:'Suspeitas de fraude',
+   metrics:['Indícios técnicos a analisar','Análises em andamento','Análises concluídas'],
+   description:'Indícios de manipulação artificial ou inconsistências técnicas para análise humana. Popularidade, reciprocidade e uso da cota diária não são provas de fraude.'},
+  {id:'revisao', label:'Revisões econômicas', icon:ShieldCheck, title:'Revisões econômicas',
+   metrics:['Casos em revisão','Casos liberados','Decisões registradas'],
    description:'Uma inconsistência não comprova fraude. A revisão humana exige autorização, evidências e registro da decisão.'},
 ] as const;
 
@@ -22,7 +25,7 @@ export default function AdminGamificationSupervisionWorkspace() {
     <section aria-labelledby="admin-gamification-supervision-title" className="mt-4 rounded-2xl border border-slate-800 bg-slate-950/40 p-4">
       <h2 id="admin-gamification-supervision-title" className="text-base font-bold text-white">Supervisão da gamificação</h2>
       <p className="mt-2 text-sm text-slate-400" role="status">Protótipo local · integração administrativa indisponível. Nenhum dado real consultado.</p>
-      <div role="group" aria-label="Áreas da supervisão" className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-3">
+      <div role="group" aria-label="Áreas da supervisão" className="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {areas.map(item=><button key={item.id} type="button" aria-pressed={selected===item.id}
           onClick={()=>setSelected(item.id)}
           className={'flex min-h-11 items-center justify-center gap-2 rounded-xl border px-3 py-2 text-sm font-semibold '+(selected===item.id?'border-emerald-500/50 bg-emerald-500/10 text-emerald-300':'border-slate-700 bg-slate-900 text-slate-300')}>
@@ -38,6 +41,7 @@ export default function AdminGamificationSupervisionWorkspace() {
             <dd className="mt-2 text-sm font-medium text-slate-400">Indisponível</dd>
           </div>)}
         </dl>
+        {selected==='suspeitas'&&<p className="mt-3 text-sm text-slate-400">Não há detector de fraude conectado. Nenhum indício gera punição ou bloqueio automático. A lista de casos ainda está indisponível.</p>}
         {selected==='revisao'&&<p className="mt-3 text-sm text-slate-400">Ações de bloquear, liberar ou alterar saldos não estão disponíveis neste protótipo.</p>}
       </div>
     </section>
