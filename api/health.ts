@@ -80,6 +80,12 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'social-preview-preflight') {
+    const {handleSocialPreviewPreflight}=await import('../server/identity/socialPreviewPreflight.js');
+    await handleSocialPreviewPreflight(request,response);
+    return;
+  }
+
   if (transport === 'reserved-tribe-pilot') {
     response.setHeader('Cache-Control','no-store, private, max-age=0');
     response.setHeader('Pragma','no-cache');

@@ -399,3 +399,40 @@ test('legacy authenticated card transport reuses the ordinary privacy boundary',
  assert.doesNotMatch(branch,/service.resolveContactPresentation/);
  assert.match(branch,/setHeader\('Vary','Authorization'\)/);
 });
+
+test('social Preview preflight is branch-, host-, project- and identity-bound, never activates a pilot',async()=>{
+ const {socialPreviewPreflightAllowed,createSocialPreviewPreflight}=await import('../server/identity/socialPreviewPreflight.js');
+ const env={KYRUB_SOCIAL_PREVIEW_PREFLIGHT:'true',VERCEL:'1',VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'feat/kyrub-social-tag-integration',FIREBASE_PROJECT_ID:'kyrub-tags',VITE_FIREBASE_PROJECT_ID:'kyrub-tags',KYRUB_TAG_PROMO_PILOT_PROJECT_ID:'kyrub-tags',VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE:'true',VITE_FIREBASE_AUTH_DOMAIN:'kyrub-tags.firebaseapp.com',VITE_FIREBASE_STORAGE_BUCKET:'kyrub-tags.firebasestorage.app',VERCEL_URL:'fixture-deployment.vercel.app',KYRUB_SOCIAL_PREVIEW_HOST:'fixture-alias.vercel.app',FIREBASE_SERVICE_ACCOUNT_JSON:'fixture-not-a-credential'};
+ const host=env.KYRUB_SOCIAL_PREVIEW_HOST;
+ assert.equal(socialPreviewPreflightAllowed(env,host),true);
+ for(const override of [
+  {KYRUB_SOCIAL_PREVIEW_PREFLIGHT:undefined},{VERCEL_ENV:'production'},{VERCEL_ENV:'development'},{VERCEL:undefined},
+  {VERCEL_GIT_COMMIT_REF:'main'},{VERCEL_GIT_COMMIT_REF:'feat/kyrub-integrated-presentation-devices'},
+  {FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{VITE_FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{KYRUB_TAG_PROMO_PILOT_PROJECT_ID:'other'},
+  {VITE_FIREBASE_AUTH_DOMAIN:'kyrub-b8d0e.firebaseapp.com'},{VITE_FIREBASE_STORAGE_BUCKET:'kyrub-b8d0e.firebasestorage.app'},
+  {VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE:undefined},{FIREBASE_SERVICE_ACCOUNT_JSON:undefined},{GOOGLE_APPLICATION_CREDENTIALS:'fixture'},
+  {VERCEL_URL:'www.kyrub.com'},{KYRUB_SOCIAL_PREVIEW_HOST:'www.kyrub.com'},{FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'},
+  {FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'},{FIREBASE_STORAGE_EMULATOR_HOST:'127.0.0.1:9199'},
+  {KYRUB_RESERVED_TRIBE_PILOT:'true'},{VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E:'true'},{VITE_KYRUB_FIREBASE_EMULATOR_E2E:'true'}
+ ])assert.equal(socialPreviewPreflightAllowed({...env,...override},host),false);
+ for(const wrongHost of ['www.kyrub.com','admin.kyrub.com','fixture-deployment.vercel.app',undefined,[host]])assert.equal(socialPreviewPreflightAllowed(env,wrongHost),false);
+ let verified=0;
+ const make=(project='kyrub-tags',emailVerified=true)=>createSocialPreviewPreflight({env:()=>env,project:()=>project,verify:async token=>{verified++;if(token!=='fixture-token')throw Error('AUTH_REQUIRED');return {uid:'fictional',email_verified:emailVerified};}});
+ async function invoke(handler:ReturnType<typeof make>,method='GET',authorization:string|undefined='Bearer fixture-token',requestHost=host){
+  let status=0,body:unknown;const headers:Record<string,string>={};
+  const res={setHeader:(name:string,value:string)=>{headers[name]=value;},status:(code:number)=>{status=code;return res;},json:(value:unknown)=>{body=value;}};
+  await handler({method,headers:{host:requestHost,authorization}},res);return {status,body,headers};
+ }
+ assert.equal((await invoke(make(),'POST')).status,405);
+ assert.equal((await invoke(make('kyrub-b8d0e'))).status,404);
+ assert.equal((await invoke(make(),'GET','Bearer fixture-token','www.kyrub.com')).status,404);
+ assert.equal(verified,0);
+ assert.equal((await invoke(make(),'GET','')).status,401);
+ assert.equal((await invoke(make(),'GET','Bearer bad')).status,401);
+ assert.equal((await invoke(make('kyrub-tags',false))).status,401);
+ const ok=await invoke(make());
+ assert.equal(ok.status,200);
+ assert.deepEqual(ok.body,{configuration:'isolated-preview',project:'kyrub-tags',branch:'feat/kyrub-social-tag-integration',identityVerified:true,reservedPilotEnabled:false,firestoreRulesVerified:false,clientCacheVerified:false,releaseApproved:false});
+ assert.equal(ok.headers['Cache-Control'],'no-store, private, max-age=0');
+ assert.equal(JSON.stringify(ok.body).includes('fictional'),false);
+});
