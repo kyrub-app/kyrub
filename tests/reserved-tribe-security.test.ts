@@ -388,3 +388,14 @@ test('public presentation browser adapter is read-only and emulator-exclusive',a
  assert.equal(publicPresentationReadTransport({transport:'manage-kyrub-tag',view:'identity'}),true);
  for(const query of [{transport:'manage-kyrub-tag',id:'fixture'},{transport:'manage-kyrub-tag',view:'identity',id:'fixture'},{transport:'presentation-relationship'},{transport:'reserved-tribe-pilot'}])assert.equal(publicPresentationReadTransport(query),false);
 });
+
+
+test('legacy authenticated card transport reuses the ordinary privacy boundary',()=>{
+ const source=readFileSync('api/health.ts','utf8');
+ const start=source.indexOf("if(queryValue(request.query?.view)==='contact-presentation')");
+ assert.ok(start>=0);
+ const branch=source.slice(start,source.indexOf("response.status(200).json({card:await service.loadOwnedCard(actor)})",start));
+ assert.match(branch,/resolveOrdinaryContactPresentation\(actor,queryValue\(request.query\?\.id\)\)/);
+ assert.doesNotMatch(branch,/service.resolveContactPresentation/);
+ assert.match(branch,/setHeader\('Vary','Authorization'\)/);
+});

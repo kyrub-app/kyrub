@@ -323,8 +323,9 @@ export default async function handler(
       if(method==='GET'){
         if(queryValue(request.query?.view)==='owned-spaces'){response.status(200).json({spaces:await service.listOwnedPresentationSpaces(actor)});return;}
         if(queryValue(request.query?.view)==='contact-presentation'){
-          const presentation=await service.resolveContactPresentation(queryValue(request.query?.id));
-          response.status(200).json({presentation});return;
+          const {resolveOrdinaryContactPresentation}=await import('../server/identity/presentationRelationshipService.js');
+          response.setHeader('Vary','Authorization');
+          response.status(200).json(await resolveOrdinaryContactPresentation(actor,queryValue(request.query?.id)));return;
         }
         response.status(200).json({card:await service.loadOwnedCard(actor)});return;
       }
@@ -334,7 +335,7 @@ export default async function handler(
       response.status(200).json({card:await service.saveOwnedCard(actor,urls)});
     }catch(error){
       const code=error instanceof Error?error.message:'';
-      if(code==='INVALID_CARD')response.status(400).json({error:code});
+      if(code==='INVALID_CARD'||code==='RELATIONSHIP_INVALID')response.status(400).json({error:'INVALID_CARD'});
       else if(code==='CARD_TARGET_UNAVAILABLE')response.status(409).json({error:code});
       else response.status(503).json({error:'CARD_UNAVAILABLE'});
     }

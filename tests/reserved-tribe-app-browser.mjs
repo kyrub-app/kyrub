@@ -423,7 +423,7 @@ try{
  assert.equal(await a.page.evaluate(()=>navigator.clipboard.readText()),tagUrl);
  await a.page.getByRole('button',{name:'Exibir QR Code',exact:true}).click();
  const qr=a.page.getByRole('region',{name:'QR Code do endereço público'});
- await visible(qr.locator('svg'));
+ await visible(qr.getByRole('img',{name:'QR Code para a apresentação pública',exact:true}));
  const downloadEvent=a.page.waitForEvent('download');
  await qr.getByRole('button',{name:'Salvar QR Code (SVG)',exact:true}).click();
  const download=await downloadEvent;assert.equal(download.suggestedFilename(),'kyrub-qr.svg');

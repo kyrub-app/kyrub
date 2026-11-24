@@ -977,3 +977,28 @@ test('presentation routes share reserved privacy, block semantics and bilateral 
  assert.deepEqual(await presentationRelationship(owner,'tag',unit),{state:'unavailable'});
  assert.equal((await message.get()).exists,true);
 });
+
+
+test('authenticated ordinary presentation shares the reserved boundary but public address remains public',async()=>{
+ const {resolveOrdinaryContactPresentation,setSocialContactBlock}=await import('../server/identity/presentationRelationshipService.js');
+ const {resolvePublicPresentationByIdentifier}=await import('../server/identity/publicVisitCardService.js');
+ const {initializeReservedTribe,unlockReservedTribe,setReservedTribeContact}=await import('../server/identity/reservedTribeService.js');
+ const actor='card-boundary-owner',peer='card-boundary-peer',address='card-boundary-peer';
+ await Promise.all([actor,peer].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('users/'+peer+'/public_profile/main').set({name:'Public card fixture',bio:'Public fixture',privateField:'not projected'});
+ await reserveSocialAddress(peer,'profile',address);
+ const pair=[actor,peer].sort().join('_');
+ await adminDb.doc('connections/'+pair).set({senderId:actor,receiverId:peer,participantIds:[actor,peer].sort(),status:'accepted'});
+ assert.equal((await resolveOrdinaryContactPresentation(actor,peer)).presentation?.name,'Public card fixture');
+ await initializeReservedTribe(actor,'card!fixture');
+ const session=await unlockReservedTribe(actor,'card!fixture');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,session.token,peer,true);
+ assert.deepEqual(await resolveOrdinaryContactPresentation(actor,peer),{presentation:null});
+ assert.equal((await resolveOrdinaryContactPresentation(peer,actor)).presentation?.name,actor);
+ assert.equal((await resolvePublicPresentationByIdentifier(address))?.name,'Public card fixture');
+ await setSocialContactBlock(peer,actor,true);
+ assert.deepEqual(await resolveOrdinaryContactPresentation(peer,actor),{presentation:null});
+ assert.deepEqual(await resolveOrdinaryContactPresentation(actor,peer),{presentation:null});
+ assert.equal((await resolvePublicPresentationByIdentifier(address))?.name,'Public card fixture');
+});
