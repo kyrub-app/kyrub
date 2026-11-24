@@ -51,5 +51,7 @@ jobs:
           name: kyrub-isolated-chromium-smoke
           path: |
             playwright-kyrub-isolated-smoke.png
+            playwright-kyrub-challenge-available.png
+            playwright-kyrub-challenge-completed.png
           if-no-files-found: ignore
           retention-days: 3
