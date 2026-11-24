@@ -4,6 +4,9 @@ import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '..
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
+export class SemeaduraDailyLimitError extends Error {
+  constructor(readonly day:string){super('SEMEADURA_DAILY_LIMIT_REACHED');}
+}
 const safeUid = (value: string): boolean => /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const safePostId = (value: string): boolean => /^[A-Za-z0-9_-]{1,500}$/.test(value);
 
@@ -127,7 +130,7 @@ export const seedVerifiedPost = async (
     const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
     const quota = await tx.get(quotaRef);
     const used = readSemeaduraDailyCount(quota.data(),actor,day);
-    if(used>=SEMEADURA_DAILY_LIMIT)throw Error('SEMEADURA_DAILY_LIMIT_REACHED');
+    if(used>=SEMEADURA_DAILY_LIMIT)throw new SemeaduraDailyLimitError(day);
     await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key});
     const quotaData={schemaVersion:1,actorId:actor,day,count:used+1,updatedAt:occurredAt};
     if(quota.exists)tx.update(quotaRef,quotaData);

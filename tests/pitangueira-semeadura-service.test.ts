@@ -257,3 +257,17 @@ test('daily limit uses civil Brasília day and strictly validates server counter
  assert.equal(readSemeaduraDailyCount(counter,'voter','2026-11-25'),100);
  for(const bad of [{count:101},{count:-1},{count:'1'},{count:0},{day:'2026-11-24'},{actorId:'other'},{schemaVersion:2}])assert.throws(()=>readSemeaduraDailyCount({...counter,...bad},'voter','2026-11-25'),/SEMEADURA_DAILY_COUNTER_INVALID/);
 });
+
+test('stale daily allowance responses cannot reopen exhausted cards or roll back server day',async()=>{
+ const {mergeSemeaduraDailyAllowance}=await import('../shared/semeaduraDailyLimit.js');
+ const day='2026-11-24',tomorrow='2026-11-25';
+ const available={dailyDay:day,dailyRemaining:1};
+ const exhausted={dailyDay:day,dailyRemaining:0};
+ assert.deepEqual(mergeSemeaduraDailyAllowance(null,available),available);
+ assert.deepEqual(mergeSemeaduraDailyAllowance(available,exhausted),exhausted);
+ assert.deepEqual(mergeSemeaduraDailyAllowance(exhausted,available),exhausted);
+ const renewed={dailyDay:tomorrow,dailyRemaining:100};
+ assert.deepEqual(mergeSemeaduraDailyAllowance(exhausted,renewed),renewed);
+ assert.deepEqual(mergeSemeaduraDailyAllowance(renewed,exhausted),renewed);
+ assert.deepEqual(mergeSemeaduraDailyAllowance(renewed,{dailyDay:tomorrow,dailyRemaining:99}),{dailyDay:tomorrow,dailyRemaining:99});
+});

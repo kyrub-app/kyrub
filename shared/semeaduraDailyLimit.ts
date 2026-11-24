@@ -15,3 +15,13 @@ export function readSemeaduraDailyCount(data:Record<string,unknown>|undefined,ac
   throw Error('SEMEADURA_DAILY_COUNTER_INVALID');
  return data.count;
 }
+
+export type SemeaduraDailyAllowance={dailyDay:string;dailyRemaining:number};
+/** For a given authenticated viewer the daily allowance only decreases.
+ * An older response must not reopen an exhausted button or roll back the day.
+ * A newer server day replaces the old allowance; browser time never grants it. */
+export function mergeSemeaduraDailyAllowance(previous:SemeaduraDailyAllowance|null,next:SemeaduraDailyAllowance):SemeaduraDailyAllowance{
+ if(!previous||next.dailyDay>previous.dailyDay)return {dailyDay:next.dailyDay,dailyRemaining:next.dailyRemaining};
+ if(next.dailyDay<previous.dailyDay)return previous;
+ return {dailyDay:previous.dailyDay,dailyRemaining:Math.min(previous.dailyRemaining,next.dailyRemaining)};
+}

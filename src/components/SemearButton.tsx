@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { auth } from '../utils/firebase';
-import { SEMEADURA_DAILY_LIMIT, semeaduraDay } from '../../shared/semeaduraDailyLimit';
+import { SEMEADURA_DAILY_LIMIT, semeaduraDay, mergeSemeaduraDailyAllowance, type SemeaduraDailyAllowance } from '../../shared/semeaduraDailyLimit';
 import { calculatePitangueiraJourney, SEEDS_PER_BOSQUE, type SemeaduraPostKind } from '../../shared/pitangueiraJourney';
 
 export const SEMEADURA_UI_ENABLED = import.meta.env?.VITE_SEMEADURA_UI_ENABLED === 'true';
@@ -17,6 +17,9 @@ type SemeaduraStatus = {
   dailyRemaining:number;
 };
 
+class SemeaduraQuotaReached extends Error {
+  constructor(readonly dailyDay:string){super('SEMEADURA_DAILY_LIMIT_REACHED');}
+}
 export async function requestSemeadura(
   action: 'status' | 'semear' | 'journey',
   target?: { kind: SemeaduraPostKind; postId: string },
@@ -31,7 +34,13 @@ export async function requestSemeadura(
     cache: 'no-store',
     signal,
   });
-  if(response.status===429)throw Error('SEMEADURA_DAILY_LIMIT_REACHED');
+  if(response.status===429){
+    const failure=await response.json().catch(()=>null);
+    if(failure?.error==='SEMEADURA_DAILY_LIMIT_REACHED'&&failure.dailyRemaining===0&&
+        typeof failure.dailyDay==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(failure.dailyDay))
+      throw new SemeaduraQuotaReached(failure.dailyDay);
+    throw Error('Semeadura temporariamente indisponível.');
+  }
   if (!response.ok) throw new Error(
     response.status === 409
       ? 'Esta publicação não aceita semeaduras agora.'
@@ -51,7 +60,7 @@ const normalizeSemeadura = (raw: Record<string, unknown>): SemeaduraStatus => {
       raw.closed !== (count === SEEDS_PER_BOSQUE) ||
       typeof raw.dailyDay!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(raw.dailyDay)||
       typeof raw.dailyRemaining!=='number'||!Number.isSafeInteger(raw.dailyRemaining)||raw.dailyRemaining<0||raw.dailyRemaining>SEMEADURA_DAILY_LIMIT||
-      (raw.dailyRemaining===0&&raw.canSemear)) {
+      ((raw.dailyRemaining===0||raw.seeded||raw.closed)&&raw.canSemear)) {
     throw new Error('Resposta de semeadura inconsistente.');
   }
   return {
@@ -86,6 +95,12 @@ function ScopedSemearButton({
   const [visible, setVisible] = useState(false);
   const holderRef = useRef<HTMLDivElement | null>(null);
   const inFlight = useRef(false);
+  const allowanceRef=useRef<SemeaduraDailyAllowance|null>(null);
+  const observeAllowance=useCallback((next:SemeaduraDailyAllowance)=>{
+    const current=mergeSemeaduraDailyAllowance(allowanceRef.current,next);
+    allowanceRef.current=current;
+    return current;
+  },[]);
 
   useEffect(() => {
     const target = holderRef.current;
@@ -108,11 +123,18 @@ function ScopedSemearButton({
     if (!viewerId || auth.currentUser?.uid !== viewerId) return;
     const next = normalizeSemeadura(await requestSemeadura('status', { kind, postId }, signal));
     if (!signal?.aborted && auth.currentUser?.uid === viewerId) {
-      setState(previous => previous?.seeded ? {...next, count:Math.max(previous.count,next.count), closed:previous.closed||next.closed, seeded:true, canSemear:false} : next);
+      const allowance=observeAllowance(next);
+      setState(previous=>{
+        const count=Math.max(previous?.count??0,next.count);
+        const seeded=Boolean(previous?.seeded||next.seeded);
+        const closed=Boolean(previous?.closed||next.closed);
+        return {...next,...allowance,count,seeded,closed,bosqueCompleted:closed,pitangueiras:Math.floor(count/1000),
+          canSemear:next.canSemear&&!seeded&&!closed&&allowance.dailyRemaining>0&&next.dailyDay===allowance.dailyDay};
+      });
       setError('');
-      if(next.dailyRemaining===0)window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:next.dailyDay}}));
+      if(allowance.dailyRemaining===0)window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:allowance.dailyDay}}));
     }
-  }, [kind, postId, viewerId]);
+  }, [kind, postId, viewerId,observeAllowance]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -131,7 +153,9 @@ function ScopedSemearButton({
     };
     const quotaExhausted=(event:Event)=>{
       const detail=(event as CustomEvent<{viewerId?:string;day?:string}>).detail;
-      if(detail?.viewerId===viewerId&&detail.day===semeaduraDay(new Date()))setState(previous=>previous&&previous.dailyDay===detail.day?{...previous,dailyRemaining:0,canSemear:false}:previous);
+      if(detail?.viewerId!==viewerId||auth.currentUser?.uid!==viewerId||typeof detail.day!=='string'||!/^\d{4}-\d{2}-\d{2}$/.test(detail.day))return;
+      const allowance=observeAllowance({dailyDay:detail.day,dailyRemaining:0});
+      if(allowance.dailyRemaining===0)setState(previous=>previous?{...previous,...allowance,canSemear:false}:previous);
     };
     window.addEventListener('kyrub-semeadura-updated', sync);
     window.addEventListener('kyrub-semeadura-quota-exhausted',quotaExhausted);
@@ -140,7 +164,7 @@ function ScopedSemearButton({
       window.removeEventListener('kyrub-semeadura-updated', sync);
       window.removeEventListener('kyrub-semeadura-quota-exhausted',quotaExhausted);
     };
-  }, [kind, postId, viewerId, visible, refresh]);
+  }, [kind, postId, viewerId, visible, refresh,observeAllowance]);
 
   // Only exhausted, visible cards need automatic recovery on a new day.
   // The browser clock only triggers a status read; never grants allowance.
@@ -187,9 +211,10 @@ function ScopedSemearButton({
         detail: { kind, postId },
       }));
     } catch (failure) {
-      if(failure instanceof Error&&failure.message==='SEMEADURA_DAILY_LIMIT_REACHED'&&auth.currentUser?.uid===viewerId){
-        setState(previous=>previous?{...previous,dailyRemaining:0,canSemear:false}:previous);
-        window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:semeaduraDay(new Date())}}));
+      if(failure instanceof SemeaduraQuotaReached&&auth.currentUser?.uid===viewerId){
+        const allowance=observeAllowance({dailyDay:failure.dailyDay,dailyRemaining:0});
+        if(allowance.dailyRemaining===0)setState(previous=>previous?{...previous,...allowance,canSemear:false}:previous);
+        window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:failure.dailyDay}}));
         setError('Limite de 100 sementes por dia atingido. Volte amanhã (horário de Brasília).');
       }else setError('Não foi possível semear. Tente novamente.');
       await refresh().catch(() => undefined);
@@ -218,7 +243,7 @@ function ScopedSemearButton({
         aria-label={`${label} · ${state?.count ?? 0} sementes recebidas`}
         aria-description="Semear é definitivo e não pode ser desfeito. Até 100 sementes enviadas por dia; renovação à meia-noite no horário de Brasília."
         aria-pressed={Boolean(state?.seeded)}
-        title={`${(state?.count ?? 0).toLocaleString('pt-BR')} de ${SEEDS_PER_BOSQUE.toLocaleString('pt-BR')} sementes · ${journey.pitangueiras} pitangueiras · teto de 1 bosque por publicação · Semear é definitivo e não pode ser desfeito`}
+        title={`${(state?.count ?? 0).toLocaleString('pt-BR')} de ${SEEDS_PER_BOSQUE.toLocaleString('pt-BR')} sementes · ${journey.pitangueiras} pitangueiras · teto de 1 bosque por publicação · Semear é definitivo e não pode ser desfeito${state ? ' · '+state.dailyRemaining+' de 100 sementes disponíveis hoje' : ''}`}
         disabled={!state || !state.canSemear || state.seeded || busy || !viewerId}
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
