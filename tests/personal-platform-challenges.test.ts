@@ -78,3 +78,21 @@ test('personal panel includes loading, retry, empty state and no action claiming
   assert.match(ui, /O progresso aparece após confirmação pelo sistema/);
   assert.doesNotMatch(ui, /fetch\(|setDoc\(|updateDoc\(|POST|onClaim|awardReward/);
 });
+
+
+test('institutional post consults the exact canonical challenge without a claim or reward mutation',()=>{
+ const card=read('src/components/CommunityPostCard.tsx');
+ const reference=read('src/components/OfficialChallengeReference.tsx');
+ const hook=read('src/hooks/usePlatformChallenges.ts');
+ assert.match(card,/institutional && post\.institutionalChallengeId === 'first_store_published'/);
+ assert.match(card,/challengeId=\{post\.institutionalChallengeId\}/);
+ assert.match(reference,/usePlatformChallenges\(true,viewerId\)/);
+ assert.match(reference,/\.find\(item=>item\.id===challengeId\)/);
+ assert.match(reference,/Consultar o desafio não concede recompensas/);
+ assert.match(reference,/Desafio indisponível/);
+ assert.match(reference,/Concluído com registro/);
+ assert.doesNotMatch(reference,/\b(?:fetch|setDoc|updateDoc|awardReward|onClaim)\s*\(/);
+ assert.match(hook,/method: 'GET'/);
+ assert.match(hook,/auth\.currentUser\?\.uid!==uid/);
+ assert.match(hook,/result\.uid===expectedViewerId/);
+});

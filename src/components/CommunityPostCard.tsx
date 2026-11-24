@@ -1,3 +1,4 @@
+import { OfficialChallengeReference } from './OfficialChallengeReference';
 import { useEffect, useRef, useState } from 'react';
 import { doc, getDoc } from 'firebase/firestore';
 import { db } from '../utils/firebase';
@@ -297,6 +298,7 @@ export function CommunityPostCard({
         </div>
       </header>
       {post.content && <p className="mt-3 whitespace-pre-line text-sm leading-relaxed text-slate-300">{post.content}</p>}
+      {institutional && post.institutionalChallengeId === 'first_store_published' && <OfficialChallengeReference key={viewerId+':'+post.id} challengeId={post.institutionalChallengeId} viewerId={viewerId} />}
       {post.mediaUrls.length > 0 && <div className="mt-3"><MediaCarousel mediaUrls={post.mediaUrls} /></div>}
       {notice && <p role="status" className="mt-3 rounded-xl border border-sky-600/30 p-2 text-xs text-sky-200">{notice}</p>}
       {reportOpen && !isMine && (
