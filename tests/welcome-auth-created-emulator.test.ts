@@ -306,3 +306,59 @@ test('isolated semeadura economic pilot credits only the author at a unique mile
   await db.doc('systemControl/pitangaLegacyWriterFence').update({writersVerified:true});
  }
 });
+
+
+test('isolated economic review is authorized, audited, revisioned and replay safe',async()=>{
+ const {recordIsolatedSemeaduraReview}=await import('../server/gamification/semeaduraEconomicReview.js');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const {createHash}=await import('node:crypto');
+ const signed=await googleSignIn('audited-review-author');
+ const author=signed.localId;
+ await waitForAward(author);
+ const root='systemControl/semeaduraEconomicReview';
+ const reviewer='audited-fixture-reviewer';
+ const reviewerRef=db.doc(root+'/reviewers/'+reviewer);
+ const hold=db.doc(root+'/holds/author_'+author);
+ const postId='audited-review-post';
+ const postKey=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const seed=()=>seedVerifiedPost(db,{authenticatedUserId:'audited-voter',kind:'personal',postId});
+ const cmd={scope:'author' as const,target:author,caseId:'case-audit-1',eventId:'audit-hold-1',status:'held' as const,expectedRevision:0};
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ try{
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,cmd),/SEMEADURA_REVIEW_PILOT_DISABLED/);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,cmd),/SEMEADURA_REVIEW_NOT_AUTHORIZED/);
+  await reviewerRef.set({schemaVersion:1,reviewerId:reviewer,active:true,fixtureOnly:true});
+  await db.doc('social_posts/'+postId).set({postId,authorId:author,visibility:'public',publicationType:'feed'});
+  await db.doc('users/'+author+'/semeaduraEconomicPilot/activation').set({schemaVersion:1,authorId:author,epoch,acceptedSeeds:0,creditedPitangas:0});
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,{...cmd,status:'cleared'}),/SEMEADURA_REVIEW_TRANSITION_INVALID/);
+  const competing=await Promise.allSettled([
+   recordIsolatedSemeaduraReview(db,reviewer,cmd),
+   recordIsolatedSemeaduraReview(db,reviewer,{...cmd,eventId:'audit-competitor'})
+  ]);
+  assert.equal(competing.filter(v=>v.status==='fulfilled').length,1);
+  assert.equal(competing.filter(v=>v.status==='rejected').length,1);
+  const active=(await hold.get()).data()!;
+  const actual={...cmd,eventId:active.eventId};
+  assert.deepEqual(await recordIsolatedSemeaduraReview(db,reviewer,actual),{revision:1,replayed:true});
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,{...actual,caseId:'other-case'}),/SEMEADURA_REVIEW_EVENT_CONFLICT/);
+  await assert.rejects(seed(),/SEMEADURA_ECONOMIC_REVIEW_HELD/);
+  assert.equal((await db.doc('semeadura_post_stats/'+postKey+'/receipts/audited-voter').get()).exists,false);
+  assert.equal((await balance(author).get()).get('availableKCoins'),100);
+  const release={...cmd,eventId:'audit-clear-1',status:'cleared' as const,expectedRevision:1};
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,{...release,caseId:'other-case'}),/SEMEADURA_REVIEW_TRANSITION_INVALID/);
+  assert.deepEqual(await recordIsolatedSemeaduraReview(db,reviewer,release),{revision:2,replayed:false});
+  assert.equal((await hold.get()).get('status'),'cleared');
+  assert.equal((await db.doc(root+'/events/'+active.eventId).get()).get('status'),'held');
+  assert.equal((await db.doc(root+'/events/audit-clear-1').get()).get('revision'),2);
+  assert.deepEqual(await recordIsolatedSemeaduraReview(db,reviewer,actual),{revision:1,replayed:true});
+  assert.equal((await hold.get()).get('revision'),2);
+  assert.equal((await seed()).status,'accepted');
+  assert.equal((await balance(author).get()).get('availableKCoins'),100);
+  await reviewerRef.update({active:false});
+  await assert.rejects(recordIsolatedSemeaduraReview(db,reviewer,actual),/SEMEADURA_REVIEW_NOT_AUTHORIZED/);
+ }finally{
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+ }
+});
