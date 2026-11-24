@@ -79,3 +79,20 @@ test('Semeadura remains irrevocable and excludes community reward accumulation',
  assert.match(button,/seeded:true,canSemear:false/);
  assert.match(button,/Semear é definitivo e não pode ser desfeito/);
 });
+
+
+test('gamification supervision scaffold stays local, super-admin only and has no data transport',()=>{
+ const app=read('src/components/admin/AdminControlPlaneApp.tsx');
+ const panel=read('src/components/admin/AdminGamificationSupervisionWorkspace.tsx');
+ assert.match(app,/localGamificationSupervision = import\.meta\.env\.DEV && import\.meta\.env\.VITE_GAMIFICATION_SUPERVISION_PROTOTYPE === 'true'/);
+ assert.match(app,/\['localhost','127\.0\.0\.1','admin\.localhost'\]\.includes\(window\.location\.hostname\)/);
+ assert.match(app,/profile\.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges"/);
+ assert.match(app,/localGamificationSupervision && profile\.uid === user\.uid && <AdminWorkspaceRecoveryBoundary/);
+ assert.match(app,/<GlobalChallenges key=\{user\.uid\} user=\{user\} profile=\{profile\}/);
+ assert.match(panel,/Nenhum dado real consultado/);
+ assert.match(panel,/Indisponível/);
+ assert.match(panel,/Pitangas utilizadas/);
+ assert.match(panel,/Jornada Pitangueira/);
+ assert.match(panel,/Revisões econômicas/);
+ assert.doesNotMatch(panel,/from ['"].*firebase|fetch\(|axios|setDoc\(|runTransaction\(|localStorage|sessionStorage/);
+});
