@@ -718,3 +718,23 @@ test('tag-only authentication prepares no Kyrub account; explicit promotion is r
  await adminDb.doc('communities/picker-public').update({visibility:'private'});
  assert.deepEqual((await listOwnedPresentationSpaces('picker-owner')).map(link=>link.kind),['store']);
  });
+
+test('contact presentation uses live public profile and card destinations, not private fields or posts',async()=>{
+ const {resolveContactPresentation}=await import('../server/identity/publicVisitCardService.js');
+ const owner='presentation-owner';
+ await adminDb.doc('users/'+owner).set({name:'Public name',email:'private@example.test',isProfileVisible:true});
+ await adminDb.doc('users/'+owner+'/public_profile/main').set({name:'Apresentação',occupation:'Autônomo',bio:'Olá',photoUrl:'',privateField:'secret'});
+ await adminDb.doc('communities/presentation-community').set({ownerId:owner,name:'Comunidade pública',visibility:'public'});
+ await reserveSocialAddress(owner,'community','presentation-community','presentation-community');
+ await saveOwnedCard(owner,['https://kyrub.com/comunidade/presentation-community']);
+ const result=await resolveContactPresentation(owner);
+ assert.equal(result?.name,'Apresentação');assert.equal(result?.occupation,'Autônomo');
+ assert.equal(result?.links.length,1);
+ assert.deepEqual(Object.keys(result!).sort(),['bio','links','name','occupation','photoUrl']);
+ assert.equal(JSON.stringify(result).includes('private@example.test'),false);
+ await adminDb.doc('communities/presentation-community').update({visibility:'private'});
+ assert.deepEqual((await resolveContactPresentation(owner))?.links,[]);
+ await adminDb.doc('users/'+owner).update({isProfileVisible:false});
+ assert.equal(await resolveContactPresentation(owner),null);
+ assert.equal(await resolveContactPresentation('not-existing-presentation'),null);
+});

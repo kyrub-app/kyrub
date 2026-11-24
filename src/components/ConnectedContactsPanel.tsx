@@ -16,7 +16,7 @@ import {
 } from 'lucide-react';
 import type { Friend, SocialPost } from '../types';
 import { auth } from '../utils/firebase';
-import { MediaCarousel } from './MediaCarousel';
+import { ContactPresentationModal } from './ContactPresentationModal';
 import { submitSocialUserReport } from '../utils/socialReports';
 
 type ExtendedSocialPost = SocialPost & {
@@ -144,153 +144,6 @@ function EmptyState({
       <p className="mx-auto mt-2 max-w-sm text-[10px] leading-relaxed text-slate-500">
         {description}
       </p>
-    </div>
-  );
-}
-
-function PublicUserProfileModal({
-  target,
-  posts,
-  onClose,
-}: {
-  target: PublicProfileTarget | null;
-  posts: ExtendedSocialPost[];
-  onClose: () => void;
-}) {
-  const publicPosts = useMemo(() => {
-    if (!target) return [];
-    return posts.filter(post => {
-      if (post.authorId) return post.authorId === target.id;
-      return post.user === target.name;
-    });
-  }, [posts, target]);
-
-  const feedPosts = publicPosts.filter(
-    post => post.publicationType !== 'status'
-  );
-  const statusPosts = publicPosts.filter(
-    post => post.publicationType === 'status'
-  );
-
-  if (!target) return null;
-
-  return (
-    <div
-      className="fixed inset-0 z-[95] flex items-end justify-center bg-slate-950/90 p-0 backdrop-blur-md sm:items-center sm:p-4"
-      id="public-user-profile-modal"
-    >
-      <section className="flex max-h-[92dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 shadow-2xl sm:rounded-3xl">
-        <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3 sm:px-5">
-          <div className="min-w-0">
-            <span className="block text-[9px] font-black uppercase tracking-[0.18em] text-orange-400">
-              Perfil público
-            </span>
-            <h2 className="truncate text-base font-black text-white">
-              {target.name}
-            </h2>
-          </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="flex h-9 w-9 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-slate-500 hover:text-white"
-            aria-label={`Fechar perfil de ${target.name}`}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </header>
-
-        <div className="flex-1 overflow-y-auto">
-          <section className="border-b border-slate-900 bg-gradient-to-b from-slate-900/90 to-slate-950 px-4 py-5 sm:px-5">
-            <div className="flex items-center gap-4">
-              <Avatar
-                src={target.avatar}
-                name={target.name}
-                className="h-20 w-20 shrink-0 rounded-full border-2 border-orange-500 object-cover shadow-lg shadow-orange-500/10 sm:h-24 sm:w-24"
-              />
-              <div className="min-w-0 flex-1">
-                <h3 className="truncate text-lg font-black text-white">
-                  {target.name}
-                </h3>
-                <p className="mt-1 truncate text-[10px] font-mono uppercase text-teal-400">
-                  {target.role || 'Usuário Kyrub'}
-                </p>
-                <p className="mt-2 line-clamp-3 text-[10px] leading-relaxed text-slate-400">
-                  {target.bio || 'Este usuário ainda não adicionou uma apresentação pública.'}
-                </p>
-                <div className="mt-4 grid grid-cols-2 gap-2">
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
-                    <strong className="block text-sm font-black text-white">
-                      {feedPosts.length}
-                    </strong>
-                    <span className="text-[8px] uppercase text-slate-500">
-                      Publicações
-                    </span>
-                  </div>
-                  <div className="rounded-xl border border-slate-800 bg-slate-900/80 px-2 py-2 text-center">
-                    <strong className="block text-sm font-black text-white">
-                      {statusPosts.length}
-                    </strong>
-                    <span className="text-[8px] uppercase text-slate-500">
-                      Status
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-4 p-4 sm:p-5">
-            <div>
-              <h3 className="text-sm font-black uppercase tracking-wide text-white">
-                Publicações de {target.name}
-              </h3>
-              <p className="mt-1 text-[9px] text-slate-500">
-                Somente informações e conteúdos públicos são exibidos aqui.
-              </p>
-            </div>
-
-            {publicPosts.length === 0 ? (
-              <EmptyState
-                icon={CircleUserRound}
-                title="Nenhuma publicação pública"
-                description="Quando este contato publicar no Feed ou em Status, os conteúdos públicos aparecerão neste perfil."
-              />
-            ) : (
-              <div className="space-y-4">
-                {publicPosts.map(post => (
-                  <article
-                    key={post.id}
-                    className="space-y-3 rounded-2xl border border-slate-800 bg-slate-900 p-4"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={`rounded-full border px-2 py-1 text-[8px] font-black uppercase ${
-                          post.publicationType === 'status'
-                            ? 'border-teal-500/30 bg-teal-500/10 text-teal-300'
-                            : 'border-orange-500/30 bg-orange-500/10 text-orange-300'
-                        }`}
-                      >
-                        {post.publicationType === 'status' ? 'Status' : 'Feed'}
-                      </span>
-                      <span className="font-mono text-[8px] text-slate-500">
-                        {post.time}
-                      </span>
-                    </div>
-                    {post.content && (
-                      <p className="whitespace-pre-line text-xs leading-relaxed text-slate-300">
-                        {post.content}
-                      </p>
-                    )}
-                    {post.mediaUrls && post.mediaUrls.length > 0 && (
-                      <MediaCarousel mediaUrls={post.mediaUrls} />
-                    )}
-                  </article>
-                ))}
-              </div>
-            )}
-          </section>
-        </div>
-      </section>
     </div>
   );
 }
@@ -835,11 +688,15 @@ export function ConnectedContactsPanel({
         </ListModal>
       )}
 
-      <PublicUserProfileModal
-        target={selectedPublicProfile}
-        posts={extendedPosts}
-        onClose={() => setSelectedPublicProfile(null)}
-      />
+      {selectedPublicProfile&&<ContactPresentationModal
+        targetId={selectedPublicProfile.id}
+        onClose={()=>setSelectedPublicProfile(null)}
+        onChat={connectedFriends.some(friend=>friend.id===selectedPublicProfile.id)?()=>{
+          const friend=connectedFriends.find(item=>item.id===selectedPublicProfile.id);
+          if(!friend)return;
+          setSelectedPublicProfile(null);setSelectedChatUser(friend);setShowChatModal(true);
+        }:undefined}
+      />}
     </section>
   );
 }

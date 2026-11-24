@@ -111,3 +111,28 @@ export async function resolvePublicCard(id:string):Promise<{id:string;links:Card
   if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
   return {id,links:links.flatMap(t=>t?[t.link]:[])};
 }
+
+/** Authenticated surface, explicit public projection, no legacy posts or private fields. */
+export async function resolveContactPresentation(targetId:string){
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(targetId))throw Error('INVALID_CARD');
+ const accountRef=adminDb.doc('users/'+targetId),profileRef=accountRef.collection('public_profile').doc('main');
+ const [account,profile,owner]=await Promise.all([accountRef.get(),profileRef.get(),owners().doc(targetId).get()]);
+ if(!account.exists||account.get('isProfileVisible')!==true)return null;
+ const clean=(v:unknown,max:number)=>typeof v==='string'?v.trim().slice(0,max):'';
+ const name=clean(profile.get('name'),160)||clean(account.get('name'),160)||'Kairubido';
+ const photo=clean(profile.get('photoUrl')||account.get('photoUrl'),2048);
+ const cardId=owner.get('id');
+ let links:CardLink[]=[];
+ if(isCardId(cardId)){
+  const record=await cards().doc(cardId).get();
+  if(record.get('ownerId')===targetId&&record.get('enabled')===true){
+   const publicCard=await resolvePublicCard(cardId);
+   links=(publicCard?.links??[]).filter(link=>link.kind==='community'||link.kind==='store');
+  }
+ }
+ const [latestAccount,latestProfile]=await Promise.all([accountRef.get(),profileRef.get()]);
+ if(latestAccount.get('isProfileVisible')!==true||!account.updateTime||!latestAccount.updateTime?.isEqual(account.updateTime)||
+    profile.exists!==latestProfile.exists||(profile.exists&&!latestProfile.updateTime?.isEqual(profile.updateTime!)))return null;
+ return {name,occupation:clean(profile.get('occupation'),90),bio:clean(profile.get('bio'),280),
+  photoUrl:/^https:\/\//i.test(photo)?photo:'',links};
+}

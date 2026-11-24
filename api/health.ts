@@ -250,6 +250,10 @@ export default async function handler(
       }
       if(method==='GET'){
         if(queryValue(request.query?.view)==='owned-spaces'){response.status(200).json({spaces:await service.listOwnedPresentationSpaces(actor)});return;}
+        if(queryValue(request.query?.view)==='contact-presentation'){
+          const presentation=await service.resolveContactPresentation(queryValue(request.query?.id));
+          response.status(200).json({presentation});return;
+        }
         response.status(200).json({card:await service.loadOwnedCard(actor)});return;
       }
       if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}

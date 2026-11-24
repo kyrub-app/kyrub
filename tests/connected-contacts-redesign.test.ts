@@ -24,10 +24,13 @@ test('connected cards use status backgrounds and mobile-safe top navigation', ()
 });
 
 test('contact identity opens a public profile without private Clips controls', () => {
-  assert.match(panelSource, /id="public-user-profile-modal"/);
+  const presentationSource=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+  assert.match(panelSource, /<ContactPresentationModal/);
+  assert.match(presentationSource, /id="public-user-profile-modal"/);
   assert.match(panelSource, /Abrir perfil público de/);
-  assert.match(panelSource, /Perfil público/);
-  assert.match(panelSource, /Somente informações e conteúdos públicos/);
+  assert.match(presentationSource, /Cartão de apresentação/);
+  assert.match(presentationSource, /Somente informações e conteúdos públicos/);
+  assert.doesNotMatch(presentationSource,/MediaCarousel|feedPosts|statusPosts/);
   assert.doesNotMatch(panelSource, /<Copy/);
   assert.doesNotMatch(panelSource, /Informações e configurações do perfil/);
 });

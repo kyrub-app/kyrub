@@ -17,3 +17,6 @@ Na adesão voluntária, escolha opcional da Tag de origem. O servidor importa no
 
 ## Terceiro incremento
 O editor de perfil reaproveita o cartão multifuncional, com catálogo de espaços públicos pertencentes à conta, seleção por nome, confirmação explícita de publicação e seletor opcional de Tags. Não se cria outra coleção de links. Destinos anteriormente cadastrados permanecem editáveis, inclusive indicações públicas. Ainda falta a projeção desses espaços no cartão dos contatos e a sincronização de apresentação/mídia. A publicação do cartão é uma ação separada de salvar nome e biografia.
+
+## Quarto incremento
+Cartão de apresentação compartilhado entre as superfícies de contatos, com nome, foto pública, atividade, biografia, links públicos do cartão multifuncional e ação de chat para conexões existentes. Consulta autenticada no servidor, respeita visibilidade do perfil e dos destinos; sem feed, Status, e-mail, SOS ou campos privados. A apresentação privada não é reconstruída a partir de dados antigos do contato. Capa e sincronização de mídias permanecem pendentes.

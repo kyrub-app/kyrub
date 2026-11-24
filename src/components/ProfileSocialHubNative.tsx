@@ -61,6 +61,7 @@ import { MediaCarousel } from './MediaCarousel';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
+import { ContactPresentationModal } from './ContactPresentationModal';
 import { MultifunctionCardEditor } from './MultifunctionCardEditor';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
@@ -421,14 +422,17 @@ function ContactCard({
   onChat: () => void;
   onRemove: () => void;
 }) {
+  const [showPresentation,setShowPresentation]=useState(false);
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
       <div className="relative">
+        <button type="button" className="block w-full" aria-label={`Abrir apresentação de ${friend.name}`} onClick={()=>setShowPresentation(true)}>
         <Avatar
           src={latestStatus?.mediaUrls?.[0] || friend.avatar}
           name={friend.name}
           className="aspect-[4/3] w-full object-cover"
         />
+        </button>
         {latestStatus && (
           <span className="absolute bottom-2 left-2 rounded-full border border-teal-400/30 bg-slate-950/85 px-2 py-1 text-[8px] font-black uppercase text-teal-300 backdrop-blur">
             Status · {remainingStatusLabel(latestStatus, Date.now())}
@@ -471,6 +475,7 @@ function ContactCard({
           <UserMinus className="h-4 w-4" />
         </button>
       </div>
+      {showPresentation&&<ContactPresentationModal targetId={friend.id} onClose={()=>setShowPresentation(false)} onChat={()=>{setShowPresentation(false);onChat();}}/>}
     </article>
   );
 }
