@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
 import { db, auth } from '../utils/firebase';
 import {isConfirmedSocialSnapshot} from '../utils/socialSnapshotAuthority';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from '../utils/reservedTribePilotClient';
+import {subscribePilotOrdinaryDirectory,type PilotSuggestion} from '../utils/pilotOrdinaryDirectory';
 import {onAuthStateChanged} from 'firebase/auth';
 import {
   collection,
@@ -66,6 +68,8 @@ export function useSocialDirectoryV2({
   triggerToast
 }: UseSocialDirectoryOptions) {
   // Social states
+  const pilot=reservedTribePilotClientEnabled();
+  const [pilotSuggestions,setPilotSuggestions]=useState<PilotSuggestion[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
@@ -76,12 +80,12 @@ export function useSocialDirectoryV2({
   useEffect(()=>onAuthStateChanged(auth,user=>setFavoriteOwner(user?.uid??'')),[]);
   useEffect(()=>{
     setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});
-    if(!isLoggedIn||!favoriteOwner)return;
+    if(!isLoggedIn||!favoriteOwner||pilot)return;
     return onSnapshot(collection(db,'users',favoriteOwner,'contact_favorites'),{includeMetadataChanges:true},snapshot=>{
       if(!isConfirmedSocialSnapshot(snapshot.metadata,favoriteOwner,auth.currentUser?.uid)){setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});return;}
       setFavoriteSnapshot({uid:favoriteOwner,ids:new Set(snapshot.docs.map(item=>item.id)),ready:true});
     },()=>setFavoriteSnapshot({uid:'',ids:new Set(),ready:false}));
-  },[isLoggedIn,favoriteOwner]);
+  },[isLoggedIn,favoriteOwner,pilot]);
   const favoritesReady=isLoggedIn&&favoriteSnapshot.ready&&favoriteSnapshot.uid===favoriteOwner&&auth.currentUser?.uid===favoriteOwner;
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
@@ -104,6 +108,13 @@ export function useSocialDirectoryV2({
       setConnections([]);
       return;
     }
+
+    if(pilot)return subscribePilotOrdinaryDirectory(currentUser.uid,value=>{
+      if(!value){setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);setPilotSuggestions([]);setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});return;}
+      const directory=value.directory;
+      setConfirmedConnectionOwner(currentUser.uid);setConnections(directory.connections);setPilotSuggestions(value.suggestions);
+      setFavoriteSnapshot({uid:currentUser.uid,ids:new Set(directory.favoriteIds),ready:true});
+    },()=>{},true);
 
     const connectionsQuery = query(
       collection(db, 'connections'),
@@ -130,7 +141,7 @@ export function useSocialDirectoryV2({
         setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);
       }
     );
-  }, [isLoggedIn,favoriteOwner]);
+  }, [isLoggedIn,favoriteOwner,pilot]);
   const directoryReady=!!confirmedConnectionOwner&&confirmedConnectionOwner===favoriteOwner&&auth.currentUser?.uid===confirmedConnectionOwner&&isLoggedIn;
   useEffect(() => {
     const currentUid = auth.currentUser?.uid;
@@ -269,6 +280,12 @@ export function useSocialDirectoryV2({
     );
 
     try {
+      if(pilot){
+        if(!directoryReady)return;
+        const relation=connections.find(item=>item.participantIds.includes(friendId));
+        if(relation?.status==='pending'&&relation.receiverId===currentUser.uid){triggerToast('Você já recebeu uma solicitação desta pessoa.','info');return;}
+        await requestReservedTribePilot('connection',{peerId:friendId,operation:relation?'remove':'request'});return;
+      }
       if (existingConnection?.status === 'accepted') {
         await deleteDoc(doc(db, 'connections', connectionId));
         triggerToast('Conexão removida.', 'info');
@@ -339,6 +356,7 @@ export function useSocialDirectoryV2({
   const getSuggestions = () => {
     const currentUid = auth.currentUser?.uid;
     if(!directoryReady)return [];
+    if(pilot)return pilotSuggestions.map(item=>({id:item.id,name:item.name,avatar:item.avatar,role:item.role,bio:'',added:false,isProfileVisible:true,favorited:false,connectionStatus:item.connectionStatus,connectionId:item.connectionId} as Friend));
 
     return dbUsers
       .filter(
@@ -392,6 +410,7 @@ export function useSocialDirectoryV2({
     if(!uid||!favoritesReady||favoriteSnapshot.uid!==uid||!friend?.connectionId){triggerToast('Aguarde a sincronização dos favoritos.','info');return;}
     const reference=doc(db,'users',uid,'contact_favorites',friendId);
     try{
+      if(pilot){await requestReservedTribePilot('favorite',{connectionId:friend.connectionId,favorited:!favoriteSnapshot.ids.has(friendId)});return;}
       if(favoriteSnapshot.ids.has(friendId))await deleteDoc(reference);
       else await setDoc(reference,{connectionId:friend.connectionId,favorited:true,updatedAt:serverTimestamp()});
       if(auth.currentUser?.uid===uid)triggerToast(favoriteSnapshot.ids.has(friendId)?'Contato removido dos favoritos.':'Contato favoritado.','success');
@@ -420,6 +439,7 @@ export function useSocialDirectoryV2({
       getConnectionId(currentUser.uid, request.id);
 
     try {
+      if(pilot){if(directoryReady)await requestReservedTribePilot('connection',{peerId:request.id,operation:'accept'});return;}
       await updateDoc(doc(db, 'connections', connectionId), {
         status: 'accepted',
         acceptedAt: serverTimestamp(),
@@ -454,6 +474,7 @@ export function useSocialDirectoryV2({
     );
 
     try {
+      if(pilot){if(directoryReady)await requestReservedTribePilot('connection',{peerId:requestUserId,operation:'remove'});return;}
       await deleteDoc(doc(db, 'connections', connectionId));
 
       triggerToast(
@@ -470,7 +491,7 @@ export function useSocialDirectoryV2({
   };
 
   return {
-    friends:directoryReady?friends:[],
+    friends:directoryReady?(pilot?friends.filter(friend=>connections.some(item=>item.id===friend.connectionId&&item.status==='accepted')):friends):[],
     directoryReady,
     setFriends,
     dbUsers,

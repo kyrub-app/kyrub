@@ -4,6 +4,8 @@ import {
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
 import {isConfirmedSocialSnapshot} from './socialSnapshotAuthority';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from './reservedTribePilotClient';
+import {subscribePilotOrdinaryDirectory} from './pilotOrdinaryDirectory';
 
 export interface CommunityPostConnection {
   id: string;
@@ -29,7 +31,9 @@ export const subscribeCommunityPostConnections = (
   userId: string,
   onChange: (connections: CommunityPostConnection[]) => void,
   onError: (error: Error) => void,
-): Unsubscribe => onSnapshot(
+): Unsubscribe => {
+ if(reservedTribePilotClientEnabled())return subscribePilotOrdinaryDirectory(userId,value=>onChange(value?.directory.connections??[]),onError);
+ return onSnapshot(
   query(collection(db, 'connections'), where('participantIds', 'array-contains', userId)),
   {includeMetadataChanges:true},
   snapshot => onChange(!isConfirmedSocialSnapshot(snapshot.metadata,userId,auth.currentUser?.uid)?[]:snapshot.docs.flatMap(item => {
@@ -46,7 +50,8 @@ export const subscribeCommunityPostConnections = (
         }] : [];
   })),
   error=>{onChange([]);onError(error);},
-);
+ );
+};
 
 export const readCommunityPostPublicProfile = async (userId: string): Promise<CommunityPublicProfile> => {
   if (!userId || !/^[a-zA-Z0-9_-]{1,128}$/.test(userId)) throw new Error('Perfil inválido.');
@@ -68,6 +73,7 @@ export const requestCommunityPostConnection = async (userId: string): Promise<vo
   const user = auth.currentUser;
   if (!user) throw new Error('Entre no Kyrub para conectar.');
   if (userId === user.uid) throw new Error('Não é possível conectar consigo mesmo.');
+  if(reservedTribePilotClientEnabled()){await requestReservedTribePilot('connection',{peerId:userId,operation:'request'});return;}
   const profile = await readCommunityPostPublicProfile(userId);
   if (!profile.visible) throw new Error('Este perfil não aceita novas conexões.');
   const id = connectionIdFor(user.uid, userId);

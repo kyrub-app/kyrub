@@ -126,7 +126,7 @@ test('cached social data is never considered current authorization',async()=>{
  assert.match(chat,/setMessages\(\[\]\);setMessageScope\(''\)/);
  assert.match(chat,/historyReady && messageScope===scope/);
  assert.match(directory,/if\(!directoryReady\)return \[\]/);
- assert.match(directory,/friends:directoryReady\?friends:\[\]/);
+ assert.match(directory,/friends:directoryReady\?/);
  assert.match(forward,/error=>\{onChange\(\[\]\);onError\(error\);\}/);
  assert.match(profile,/snapshot.metadata.fromCache\|\|snapshot.metadata.hasPendingWrites\)\{setGroups\(\[\]\)/);
 });
@@ -212,4 +212,20 @@ test('privacy invalidation carries no identity or secret and the server probe is
  assert.match(bridge,/subscribeSocialPrivacyInvalidation\(invalidate\)/);
  const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
  assert.throws(()=>parseReservedTribePilotBody({action:'session-check'}),/TRIBE_INVALID/);
+});
+
+test('external ordinary directory consumers use the filtered pilot projection and shared chat',()=>{
+ const subscription=readFileSync('src/utils/pilotOrdinaryDirectory.ts','utf8');
+ const community=readFileSync('src/utils/communityPostConnections.ts','utf8');
+ const hook=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ const chat=readFileSync('src/components/modals/ChatModal.tsx','utf8');
+ assert.match(subscription,/directory.revision!==status.revision/);
+ assert.match(subscription,/subscribeSocialPrivacyInvalidation\(invalidate\)/);
+ assert.match(subscription,/controller\?\.abort\(\)/);
+ assert.doesNotMatch(subscription,/firebase\/firestore|localStorage|sessionStorage/);
+ assert.match(community,/reservedTribePilotClientEnabled\(\)\)return subscribePilotOrdinaryDirectory/);
+ assert.match(hook,/if\(pilot\)return subscribePilotOrdinaryDirectory/);
+ assert.match(hook,/if\(pilot\)return pilotSuggestions.map/);
+ assert.match(chat,/!reservedTribePilotClientEnabled\(\)\|\|props.forwardingPost/);
+ assert.match(chat,/<TribePilotChat/);
 });

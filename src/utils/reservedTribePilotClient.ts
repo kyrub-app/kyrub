@@ -26,6 +26,6 @@ export async function requestReservedTribePilot<T>(action:PilotAction,fields:Rec
  if(!response.ok)throw Error('TRIBE_UNAVAILABLE');
  const result=await response.json() as T;
  if(auth.currentUser!==user||signal?.aborted)throw Error('TRIBE_ACCESS_DENIED');
- if(action==='membership'||action==='recover'||(action==='unlock'&&(result as {ok?:boolean})?.ok===true))publishSocialPrivacyInvalidation();
+ if(action==='connection'||action==='favorite'||action==='tribe-create'||action==='tribe-member'||action==='tribe-delete'||action==='membership'||action==='recover'||(action==='unlock'&&(result as {ok?:boolean})?.ok===true))publishSocialPrivacyInvalidation();
  return result;
 }
