@@ -168,7 +168,13 @@ export default async function handler(
       }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
-      if(['claim-promotional','recover-promotional','rotate-promotional-recovery'].includes(String(data.action))&&
+      if(data.action==='claim-and-publish-promotional'&&Object.keys(data).length===2&&data.presentation!==undefined){
+         const {adminAuth}=await import('../server/firebaseAdmin.js');
+         const identity=await adminAuth.getUser(actor);
+         if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+         response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email,data.presentation));return;
+       }
+       if(['claim-promotional','recover-promotional','rotate-promotional-recovery'].includes(String(data.action))&&
           Object.keys(data).length===(data.action==='recover-promotional'?2:1)){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);

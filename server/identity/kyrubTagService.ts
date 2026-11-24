@@ -64,12 +64,14 @@ export async function provisionPromotionalKyrubTag(){
  return {id,url:tagUrl(id)};
 }
 
-export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEmail:unknown){
+export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEmail:unknown,initialPresentation?:unknown){
  assertTagPilotWriteIsolated();
  validActor(actor);
  const email=normalizeTagRecipientEmail(verifiedEmail);
  if(!promotionalEnabled())throw Error('TAG_PROMO_DISABLED');
  if(!isTagId(id)||!email)throw Error('TAG_FORBIDDEN');
+ const presentation=initialPresentation===undefined?undefined:normalizePromotionalPresentation(initialPresentation);
+ if(presentation?.coverPath||presentation?.avatarPath)throw Error('TAG_PRESENTATION_INVALID');
  const newRecoveryCode=randomBytes(24).toString('hex');
  return adminDb.runTransaction(async tx=>{
   const ref=tags().doc(id),identity=adminDb.doc('kyrub_tag_minimal_identities/'+actor);
@@ -85,9 +87,11 @@ export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEm
     createdFromTag:id,createdAt:new Date().toISOString()});
   }else if(marker.exists&&marker.get('uid')!==actor)throw Error('TAG_FORBIDDEN');
   const next={...data,ownerId:actor,firstOwnerId:actor,ownerEmailHash:hashTagRecipient(id,email),
-   recoveryHash:promotionalRecoveryHash(id,newRecoveryCode),claimedAt:new Date().toISOString()};
+   recoveryHash:promotionalRecoveryHash(id,newRecoveryCode),claimedAt:new Date().toISOString(),
+    ...(presentation?{presentation,enabled:true,updatedAt:new Date().toISOString()}:{})};
   tx.update(ref,{ownerId:actor,firstOwnerId:actor,ownerEmailHash:next.ownerEmailHash,
-   recoveryHash:next.recoveryHash,claimedAt:next.claimedAt});
+   recoveryHash:next.recoveryHash,claimedAt:next.claimedAt,
+    ...(presentation?{presentation,enabled:true,updatedAt:new Date().toISOString()}:{})});
   return {tag:owned(id,next),recoveryCode:newRecoveryCode};
  });
 }

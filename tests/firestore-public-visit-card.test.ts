@@ -341,6 +341,23 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   ]);
   assert.equal((await http(promo.id,'POST',unverified.token,{action:'claim-promotional'})).status,403);
   assert.equal((await http(legacy.id,'POST',one.token,{action:'claim-promotional'})).status,403);
+  const fresh=await provisionPromotionalKyrubTag();
+  const draft={name:'Cartão antes do e-mail',occupation:'Autônomo',about:'Rascunho preservado'};
+  const [pubOne,pubTwo]=await Promise.all([createIdentity('tag-pub-one',true),createIdentity('tag-pub-two',true)]);
+  assert.equal((await http(fresh.id,'POST',unverified.token,{action:'claim-and-publish-promotional',presentation:draft})).status,403);
+  assert.equal((await http(legacy.id,'POST',one.token,{action:'claim-and-publish-promotional',presentation:draft})).status,403);
+  assert.equal((await resolveKyrubTag(fresh.id))?.activation,'email');
+  const publishRace=await Promise.all([pubOne,pubTwo].map(identity=>http(fresh.id,'POST',identity.token,{action:'claim-and-publish-promotional',presentation:draft})));
+  assert.deepEqual(publishRace.map(r=>r.status).sort(),[200,403]);
+  const publisher=publishRace[0].status===200?pubOne:pubTwo;
+  const published=publishRace.find(r=>r.status===200)!.body as {tag:{enabled:boolean;presentation:unknown};recoveryCode:string};
+  assert.equal(published.tag.enabled,true);
+  assert.deepEqual(published.tag.presentation,draft);
+  assert.match(published.recoveryCode,/^[a-f0-9]{48}$/);
+  const repeated=await http(fresh.id,'POST',publisher.token,{action:'claim-and-publish-promotional',presentation:{...draft,name:'Não sobrescrever'}});
+  assert.equal(repeated.status,200);
+  assert.equal((repeated.body as {recoveryCode:unknown}).recoveryCode,null);
+  assert.deepEqual((repeated.body as {tag:{presentation:unknown}}).tag.presentation,draft);
   const race=await Promise.all([
    http(promo.id,'POST',one.token,{action:'claim-promotional'}),
    http(promo.id,'POST',two.token,{action:'claim-promotional'}),

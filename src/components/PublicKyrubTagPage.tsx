@@ -1,5 +1,5 @@
 import {useEffect,useRef,useState} from 'react';
-import {onAuthStateChanged,signOut,type User} from 'firebase/auth';
+import {isSignInWithEmailLink,onAuthStateChanged,signOut,type User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
@@ -27,6 +27,21 @@ function initialDraft(id:string):PromotionalTagPresentation{
  }catch{ /* Private browsing or a new device: start with an empty draft. */ }
  return {...EMPTY_PROMOTIONAL_PRESENTATION};
 }
+const intentKey=(id:string)=>'kyrub.tag.publish-intent.'+id;
+type PublishIntent={email:string;draft:PromotionalTagPresentation;expires:number};
+function readIntent(id:string):PublishIntent|null{
+ try{
+  const key=intentKey(id),raw=localStorage.getItem(key);
+  if(!raw)return null;
+  const v=JSON.parse(raw) as PublishIntent;
+  if(typeof v.email!=='string'||typeof v.expires!=='number'||v.expires<=Date.now()||
+    typeof v.draft?.name!=='string'||typeof v.draft?.occupation!=='string'||typeof v.draft?.about!=='string'){
+   localStorage.removeItem(key);return null;
+  }
+  return {email:v.email,expires:v.expires,draft:{name:v.draft.name.slice(0,80),occupation:v.draft.occupation.slice(0,90),about:v.draft.about.slice(0,320)}};
+ }catch{return null;}
+}
+function clearIntent(id:string){try{localStorage.removeItem(intentKey(id));}catch{}}
 const emergencyServices=[{name:'Polícia Militar',number:'190'},{name:'SAMU',number:'192'},{name:'Bombeiros',number:'193'}] as const;
 
 export function PublicKyrubTagPage({identifier}:{identifier:string}){
@@ -46,6 +61,10 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
  const [recoveryInput,setRecoveryInput]=useState('');
  const [draft,setDraft]=useState<PromotionalTagPresentation>(()=>initialDraft(identifier));
  const lock=useRef(false);
+ const [emailStep,setEmailStep]=useState(()=>isSignInWithEmailLink(auth,window.location.href));
+ const [returning,setReturning]=useState(()=>isSignInWithEmailLink(auth,window.location.href));
+ const [verifiedReturn,setVerifiedReturn]=useState<User|null>(null);
+ const [autoAttempted,setAutoAttempted]=useState(false);
  const manage='/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(identifier);
  const loginPath='/?tagActivation='+encodeURIComponent(identifier);
 
@@ -103,23 +122,42 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   }catch{setNotice('Não foi possível vincular. Entre com a conta reservada e confira seu cadastro Kyrub.');}
   finally{lock.current=false;setBusy(false);setChecked(false);}
  }
- async function claimPromotional(){
-  if(!user?.emailVerified||data?.activation!=='email'||lock.current)return;
+ async function claimPromotional(presentation:PromotionalTagPresentation=draft){
+  if(!user?.emailVerified||auth.currentUser?.uid!==user.uid||data?.activation!=='email'||lock.current)return;
   lock.current=true;setBusy(true);setNotice('');
   try{
-   const result=await request('claim-promotional') as OwnershipResponse;
+   const result=await request('claim-and-publish-promotional',{presentation}) as OwnershipResponse;
    if(result.tag.id!==identifier||result.tag.distribution!=='promotional')throw Error('TAG_INVALID');
    setRecoveryCode(result.recoveryCode??'');
-   let record=result.tag;
-   try{
-    const configured=await request('configure-promotional',{presentation:draft}) as OwnedKyrubTag;
-    if(configured.id===identifier&&configured.distribution==='promotional')record=configured;
-    sessionStorage.removeItem('kyrub.tag.draft.'+identifier);
-   }catch{setNotice('A unidade já pertence a você. Confira sua apresentação e toque em Salvar para publicá-la.');}
-   setOwnerRecord(record);setOwner(true);
+   clearIntent(identifier);
+   try{sessionStorage.removeItem('kyrub.tag.draft.'+identifier);}catch{}
+   setOwnerRecord(result.tag);setOwner(true);
   }catch{setNotice('Não foi possível ativar. Esta unidade pode ter sido ativada por outra pessoa ou a campanha ainda não foi liberada.');}
   finally{lock.current=false;setBusy(false);}
  }
+ function rememberPublication(email:string){
+  const intent:PublishIntent={email:email.trim().toLowerCase(),draft:{name:draft.name,occupation:draft.occupation,about:draft.about},expires:Date.now()+60*60*1000};
+  localStorage.setItem(intentKey(identifier),JSON.stringify(intent));
+ }
+ function verifiedPublication(identity:User){
+  setReturning(false);
+  const intent=readIntent(identifier);
+  if(intent&&identity.emailVerified&&identity.email?.trim().toLowerCase()===intent.email){
+   setDraft(intent.draft);setVerifiedReturn(identity);
+  }else{
+   setEmailStep(false);
+   setNotice('E-mail confirmado. Revise sua apresentação e publique para concluir a ativação.');
+  }
+ }
+ useEffect(()=>{
+  if(!verifiedReturn||!user||user.uid!==verifiedReturn.uid||!user.emailVerified||data?.activation!=='email'||autoAttempted||owner)return;
+  const intent=readIntent(identifier);
+  if(!intent||user.email?.trim().toLowerCase()!==intent.email)return;
+  setAutoAttempted(true);
+  void claimPromotional(intent.draft);
+ // Only a successful email-link callback may trigger automatic publication.
+ // eslint-disable-next-line react-hooks/exhaustive-deps
+ },[verifiedReturn,user,data,autoAttempted,owner,identifier]);
  async function recover(){
   if(!user?.emailVerified||lock.current||!/^[a-f0-9]{48}$/.test(recoveryInput.trim()))return;
   lock.current=true;setBusy(true);setNotice('');
@@ -142,7 +180,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
  return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
   <header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
-   <a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>
+   {!promotional&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
@@ -189,10 +227,13 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.about} rows={3} maxLength={320} placeholder="Sua breve apresentação" onChange={e=>setPresentation('about',e.target.value)}/>
     </label>
     <p className="text-sm text-slate-300">A apresentação pública incluirá um botão SOS com números oficiais. Não são publicados e-mail ou dados médicos.</p>
-    {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
-      <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
-       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar e salvar minha Kyrub Tag'}</button></div>:
-      <TagEmailLinkIdentity tagId={identifier}/>}
+    {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:returning||(!user?.emailVerified&&emailStep)?
+      <TagEmailLinkIdentity tagId={identifier} onBeforeSend={rememberPublication} onVerified={verifiedPublication} resumeEmail={returning?readIntent(identifier)?.email:undefined}/>:
+      <div className="space-y-3">
+       <p className="text-sm text-slate-300">Ao publicar, você solicita a titularidade e autoriza a divulgação da apresentação. Fotos e contatos opcionais podem ser adicionados depois.</p>
+       {user?.emailVerified&&<p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>}
+       <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy||(!!verifiedReturn&&!autoAttempted)} onClick={()=>user?.emailVerified?void claimPromotional():setEmailStep(true)}>{busy?'Ativando…':'Publicar minha Kyrub Tag'}</button>
+      </div>}
    </section>:
    data?.status==='unclaimed'&&data.activation==='account'?
    <section className="space-y-3 rounded-xl border border-[#34443B] p-4"><h1 className="text-xl font-bold">Vincule sua Kyrub Tag</h1>
@@ -227,6 +268,6 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  <a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>
+  {!promotional&&<a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>}
  </div></main>;
 }
