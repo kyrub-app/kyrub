@@ -366,9 +366,17 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.equal(otherList.status,200);
   assert.ok(!(otherList.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
   assert.equal((await adminDb.doc('users/'+publisher.uid).get()).exists,false);
-  const promoted=await http('','POST',publisher.token,{action:'promote-tag-identity'});
+  assert.equal((await http('','POST',losingPublisher.token,{action:'promote-tag-identity-with-presentation',sourceTagId:fresh.id})).status,409);
+  assert.equal((await adminDb.doc('users/'+publisher.uid+'/public_profile/main').get()).exists,false);
+  const promoted=await http('','POST',publisher.token,{action:'promote-tag-identity-with-presentation',sourceTagId:fresh.id});
   assert.equal(promoted.status,200);
   assert.equal((promoted.body as {mode:string}).mode,'full');
+  const imported=(await adminDb.doc('users/'+publisher.uid+'/public_profile/main').get()).data()!;
+  assert.equal(imported.name,draft.name);
+  assert.equal(imported.bio,draft.about);
+  assert.equal(imported.occupation,draft.occupation);
+  assert.deepEqual(Object.keys(imported).sort(),['bio','name','occupation','photoUrl','updatedAt','userId']);
+  assert.equal((await http('','POST',publisher.token,{action:'promote-tag-identity-with-presentation',sourceTagId:fresh.id})).status,200);
   const listAfter=await http('','GET',publisher.token);
   assert.equal(listAfter.status,200);
   assert.ok((listAfter.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));

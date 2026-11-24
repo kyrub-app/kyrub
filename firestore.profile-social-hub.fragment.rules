@@ -14,8 +14,10 @@
             'name',
             'bio',
             'photoUrl',
-            'updatedAt'
+            'updatedAt',
+            'occupation'
           ])
+          && (!('occupation' in data) || (data.occupation is string && data.occupation.size() <= 90))
           && data.userId == userId
           && data.name is string
           && data.name.size() > 0

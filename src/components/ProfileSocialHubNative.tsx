@@ -90,6 +90,7 @@ type ProfileState = {
   email: string;
   photoUrl: string;
   bio: string;
+  occupation?: string;
 };
 
 type ContactGroup = {
@@ -493,6 +494,7 @@ export function ProfileSocialHubNative() {
   });
   const [draftName, setDraftName] = useState('');
   const [draftBio, setDraftBio] = useState('');
+  const [draftOccupation, setDraftOccupation] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
   const [newPostText, setNewPostText] = useState('');
   const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
@@ -639,6 +641,7 @@ export function ProfileSocialHubNative() {
     }
     setDraftName(profile.name);
     setDraftBio(profile.bio);
+    setDraftOccupation(profile.occupation??'');
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
       if (savedOpen) setSavedOpen(false);
@@ -655,6 +658,7 @@ export function ProfileSocialHubNative() {
     offersOpen,
     open,
     profile.bio,
+    profile.occupation,
     profile.name,
     savedOpen,
   ]);
@@ -702,6 +706,7 @@ export function ProfileSocialHubNative() {
         setProfile(current => ({
           ...current,
           bio: readString(data?.bio),
+          occupation: readString(data?.occupation),
           photoUrl: readString(data?.photoUrl) || current.photoUrl,
           name: readString(data?.name) || current.name,
         }));
@@ -1068,6 +1073,7 @@ export function ProfileSocialHubNative() {
       user.email?.split('@')[0] ||
       'Usuário Kyrub';
     const bio = draftBio.trim().slice(0, 280);
+    const occupation=draftOccupation.trim().slice(0,90);
     try {
       await Promise.all([
         setDoc(
@@ -1085,6 +1091,7 @@ export function ProfileSocialHubNative() {
             userId: user.uid,
             name,
             bio,
+            occupation,
             photoUrl: profile.photoUrl || user.photoURL || '',
             updatedAt: serverTimestamp(),
           },
@@ -1095,7 +1102,7 @@ export function ProfileSocialHubNative() {
           photoURL: profile.photoUrl || user.photoURL || null,
         }),
       ]);
-      setProfile(current => ({ ...current, name, bio }));
+      setProfile(current => ({ ...current, name, bio, occupation }));
       setEditOpen(false);
       triggerToast('Perfil atualizado.', 'success');
     } catch {
@@ -2265,6 +2272,10 @@ export function ProfileSocialHubNative() {
                 <label className="block">
                   <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">Nome</span>
                   <input value={draftName} onChange={event => setDraftName(event.target.value.slice(0, 80))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none" />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">O que você faz?</span>
+                  <input value={draftOccupation} onChange={event=>setDraftOccupation(event.target.value.slice(0,90))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none"/>
                 </label>
                 <label className="block">
                   <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">Biografia</span>

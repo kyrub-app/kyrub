@@ -11,3 +11,6 @@ Apelido privado por unidade; seleção explícita de uma ou várias unidades ati
 - Editor de perfil com comunidades e lojas, cartão dos contatos da Minha Tribo e convite opcional de atualização seletiva. Reutilizar seletor e destinos canônicos.
 - Remoção individual de destinos nos adesivos promocionais; revogação explícita.
 - Homologação isolada e aprovação antes de merge.
+
+## Segundo incremento
+Na adesão voluntária, escolha opcional da Tag de origem. O servidor importa nome, atividade e até 280 caracteres de biografia para o perfil existente na arquitetura, somente se ainda não houver conta nem apresentação. O marcador de adesão e a criação do perfil são transacionais. Sem importação de SOS, fotos ou segredos. A apresentação original permanece intacta. A atividade passa a ser editável no perfil. A integração com o editor de espaços e o cartão dos contatos ainda requer implementação.
