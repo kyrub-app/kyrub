@@ -5,6 +5,7 @@ import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {PresentationCard} from './PresentationCard';
 import {PresentationShare} from './PresentationShare';
+import {PresentationFooter,usePresentationMembership} from './PresentationFooter';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
@@ -47,6 +48,7 @@ function clearIntent(id:string){try{localStorage.removeItem(intentKey(id));}catc
 const emergencyServices=[{name:'Polícia Militar',number:'190'},{name:'SAMU',number:'192'},{name:'Bombeiros',number:'193'}] as const;
 
 export function PublicKyrubTagPage({identifier}:{identifier:string}){
+ const membership=usePresentationMembership();
  const [data,setData]=useState<Payload|null>(null);
  const [error,setError]=useState('');
  const [user,setUser]=useState<User|null>(null);
@@ -175,7 +177,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   {ownerRecord?.distribution==='promotional'?
    <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode}/>:
    <OfficialKyrubTagPanel key={user.uid+identifier} userId={user.uid} initialTagId={identifier}/>}
-  <a href={ownerRecord?.distribution==='promotional'?'/?entry=welcome':'/'} className="block p-3 text-center text-sm text-slate-300 underline">Conhecer o Kyrub</a>
+  {ownerRecord?.distribution==='promotional'&&membership==='tag_only'?<PresentationFooter context="owner" mode={membership}/>:<a href="/" className="block p-3 text-center text-sm text-slate-300 underline">Explorar o Kyrub</a>}
  </div></main>;
 
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
@@ -183,7 +185,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
  return <main className={"min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"+(hasSos?" pb-[calc(6rem+env(safe-area-inset-bottom))]":"")}><div className="mx-auto max-w-md space-y-4 py-6">
   <header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
-   {!promotional&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
+   {!promotional&&data?.status!=='active'&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <PresentationCard headingLevel="h1" name={data.presentation.name||'Minha Kyrub Tag'} occupation={data.presentation.occupation} bio={data.presentation.about}
@@ -192,6 +194,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     backgroundUrl={data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined}
     links={data.links}>
     <PresentationShare url={window.location.origin+'/tag/'+encodeURIComponent(identifier)} title={data.presentation.name||'Minha Kyrub Tag'}/>
+    <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
    </PresentationCard>:
    promotional?
@@ -249,7 +252,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  {!promotional&&<a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>}
+  {authReady&&data?.status==='active'?<PresentationFooter mode={membership}/>:!promotional&&<a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>}
  </div>
  {hasSos&&data?.presentation&&<aside aria-label="Acesso à emergência" className="fixed inset-x-0 bottom-0 z-40 border-t border-[#34443B] bg-[#121A17] px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"><div className="mx-auto max-w-md space-y-2">
      <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>

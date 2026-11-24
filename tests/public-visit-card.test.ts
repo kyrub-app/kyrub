@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
 import {parseCardTargets,cardLink,isCardId,isBoundTarget} from '../server/identity/publicCardPolicy';
 import {resolveKyrubAppRoute} from '../src/utils/appRoutes';
 test('multi destination card is bounded, typed and contains only canonical public URLs',()=>{
@@ -304,4 +305,15 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.match(tag,/fixed inset-x-0 bottom-0/);assert.match(tag,/aria-controls="tag-sos-panel"/);
  assert.match(tag,/<PresentationShare/);assert.match(profile,/<PresentationShare/);
  assert.doesNotMatch(profile,/SOS|Abrir chat/);
+ });
+
+ test('presentation footer differentiates visitor and verified owner and keeps SOS available',()=>{
+ const footer=readFileSync('src/components/PresentationFooter.tsx','utf8');
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(footer,/view=identity/);assert.match(footer,/Sua Tag é só o começo!/);assert.match(footer,/Uma aproximação. Infinitas possibilidades./);
+ assert.match(footer,/context==='owner'.*Aproveite os dados/);assert.match(footer,/border-\[#F47825\]/);
+ assert.match(tag,/<PresentationFooter mode=\{membership\}/);assert.match(profile,/<PresentationFooter mode=\{membership\}/);
+ assert.ok(tag.indexOf('SOS · Informações de emergência')<tag.indexOf('<PresentationFooter mode={membership}'));
+ assert.match(tag,/fixed inset-x-0 bottom-0/);
  });

@@ -2,6 +2,7 @@ import {useEffect,useState} from 'react';
 import {isTagId,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import type {User} from 'firebase/auth';
 import {auth} from '../utils/firebase';
+import {PresentationFooter} from './PresentationFooter';
 
 /**
  * An email-only Kyrub Tag identity can browse without silently becoming a full
@@ -75,7 +76,8 @@ export function KyrubTagOnlyEntry({user,onPromoted,onRetry,unavailable=false}:{
      {source.presentation.about.length>280&&<p className="text-amber-200">A biografia do perfil aceita 280 caracteres. A versão completa ficará preservada na Tag.</p>}
      <p className="text-xs text-slate-300">Ao criar a conta, estes dados serão usados no perfil. SOS e código de recuperação não serão importados. Você poderá editar a apresentação e a visibilidade do perfil.</p></div>}
    </section>}
-   {!unavailable&&<button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void promote()}>{busy?'Preparando acesso…':'Quero criar minha conta Kairubido'}</button>}
+   {!unavailable&&<PresentationFooter context="owner" mode="tag_only" busy={busy} onJoin={()=>void promote()}/>}
+   {/* Explicit consent action: Quero criar minha conta Kairubido. */}
    <a className="block min-h-11 rounded-xl border border-[#34443B] p-3 text-center text-sm" href="/?entry=welcome">Conhecer o Kyrub sem criar conta</a>
    {unavailable&&<button type="button" className="w-full rounded-xl border border-[#34443B] p-3 text-sm" onClick={onRetry}>Tentar verificar novamente</button>}
    {notice&&<p role="status" className="text-sm text-amber-200">{notice}</p>}

@@ -1,8 +1,10 @@
 import {useEffect,useState} from 'react';
 import {PresentationCard} from './PresentationCard';
 import {PresentationShare} from './PresentationShare';
+import {PresentationFooter,usePresentationMembership} from './PresentationFooter';
 type Data={kind:'profile'|'community';identifier:string;name:string;description:string;image:string;presentation?:{name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;backgroundUrl:string;links:{name:string;url:string}[]}};
 export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'community';identifier?:string}) {
+  const membership=usePresentationMembership();
   const [data,setData]=useState<Data|null>(null);
   const [state,setState]=useState<'loading'|'missing'|'error'|'ready'>('loading');
   useEffect(()=>{
@@ -34,7 +36,7 @@ export function PublicSocialDestinationPage({kind,identifier}:{kind?:'profile'|'
         <p className="text-sm text-orange-300">{data.identifier}</p>
         <p className="whitespace-pre-wrap break-words text-sm text-slate-300">{data.description}</p>
       </article>):<p role="status" className="rounded-xl bg-slate-900 p-4">{state==='loading'?'Consultando endereço…':state==='missing'?'Este endereço não está disponível.':'Não foi possível carregar o endereço. Tente atualizar a página.'}</p>}
-      <a href="/" className="block rounded-xl bg-orange-500 p-3 text-center font-bold text-slate-950">Explorar Kyrub</a>
+      {state==='ready'&&data?.kind==='profile'&&data.presentation?<PresentationFooter mode={membership}/>:<a href="/" className="block rounded-xl bg-orange-500 p-3 text-center font-bold text-slate-950">Explorar Kyrub</a>}
     </div>
   </main>;
 }
