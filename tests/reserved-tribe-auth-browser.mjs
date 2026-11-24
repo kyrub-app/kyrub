@@ -71,6 +71,36 @@ try{
  await signalA.context().close();
  console.log('PASS local invalidation delivered once, no self-echo, remote tabs still invalidated');
  const a=await open(),b=await open();
+ // Google-only mock identities: actual Firebase SDK credential recovery,
+ // not the production Google popup.
+ const google=await open(),googleOther=await open();
+ const googleProfile={sub:'fictional-google-owner-subject',email:'google-owner@example.invalid',email_verified:true,name:'Google fixture owner'};
+ const otherProfile={sub:'fictional-google-other-subject',email:'google-other@example.invalid',email_verified:true,name:'Google fixture other'};
+ const googleOwner=await google.evaluate(profile=>window.fixture.signInGoogleFixture(profile),googleProfile);
+ const otherGoogle=await googleOther.evaluate(profile=>window.fixture.signInGoogleFixture(profile),otherProfile);
+ assert.notEqual(googleOwner.uid,otherGoogle.uid);
+ assert.deepEqual(googleOwner.providers,['google.com']);
+ assert.equal(googleOwner.verified,true);
+ await db.doc('users/'+googleOwner.uid).set({name:'Google fixture owner',isProfileVisible:true});
+ await db.doc('users/'+otherGoogle.uid).set({name:'Google fixture other',isProfileVisible:true});
+ await success(google,'setup',{code,confirmation:code});
+ const googleSession=await success(google,'unlock',{code});
+ assert.equal(googleSession.ok,true);
+ const wrongProof=await google.evaluate(profile=>window.fixture.reauthenticateGoogleFixture(profile),otherProfile);
+ assert.equal(wrongProof.ok,false);
+ await success(google,'session-check',{session:googleSession.token});
+ const freshProof=await google.evaluate(profile=>window.fixture.reauthenticateGoogleFixture(profile),googleProfile);
+ assert.deepEqual(freshProof,{ok:true,uid:googleOwner.uid,verified:true,provider:'google.com'});
+ const replacement='google-fixture-replacement';
+ assert.deepEqual(await success(google,'recover',{code:replacement,confirmation:replacement}),{recovered:true});
+ await refused(google,'session-check',{session:googleSession.token});
+ assert.deepEqual(await success(google,'unlock',{code}),{ok:false});
+ assert.equal((await success(google,'unlock',{code:replacement})).ok,true);
+ await refused(google,'recover',{code:'replayed-google-code',confirmation:'replayed-google-code'});
+ assert.equal((await success(google,'unlock',{code:replacement})).ok,true);
+ await refused(googleOther,'recover',{code:replacement,confirmation:replacement});
+ await google.context().close();await googleOther.context().close();
+ console.log('PASS Google mock provider SDK reauthentication, wrong identity denied, old session/code revoked and recovery proof replay rejected');
  // Real unauthenticated server endpoint and client both deny access.
  assert.equal((await a.request.post(origin+'/api/social/reserved-tribe',{data:{action:'status'}})).status(),401);
  await refused(a,'status',{},'AUTH_REQUIRED');

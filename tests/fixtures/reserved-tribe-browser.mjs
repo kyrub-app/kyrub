@@ -1,7 +1,7 @@
 // Vite test fixture only. Never initialize with live Firebase configuration.
 import {auth,db} from '../../src/utils/firebase';
 import {initializeApp,deleteApp} from 'firebase/app';
-import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,signOut,setPersistence,inMemoryPersistence,browserLocalPersistence} from 'firebase/auth';
+import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,GoogleAuthProvider,signInWithCredential,reauthenticateWithCredential,signOut,setPersistence,inMemoryPersistence,browserLocalPersistence} from 'firebase/auth';
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,connectFirestoreEmulator,disableNetwork,enableNetwork,doc,getDocFromServer,onSnapshot,updateDoc,serverTimestamp,waitForPendingWrites,terminate} from 'firebase/firestore';
 import {publishSocialPrivacyInvalidation,subscribeSocialPrivacyInvalidation} from '../../src/utils/socialPrivacyInvalidation';
 import {requestReservedTribePilot,reservedTribePilotClientEnabled} from '../../src/utils/reservedTribePilotClient';
@@ -17,6 +17,21 @@ window.fixture={
  enabled:reservedTribePilotClientEnabled,
  authEmulator:()=>({host:auth.emulatorConfig?.host,port:auth.emulatorConfig?.port,protocol:auth.emulatorConfig?.protocol}),
  signIn:credentials=>signIn(auth,credentials),
+ // Documented Firebase emulator mock ID token; fixture only.
+ async signInGoogleFixture(profile){
+  await setPersistence(auth,inMemoryPersistence);
+  const result=await signInWithCredential(auth,GoogleAuthProvider.credential(JSON.stringify(profile)));
+  return {uid:result.user.uid,verified:result.user.emailVerified,providers:result.user.providerData.map(row=>row.providerId)};
+ },
+ async reauthenticateGoogleFixture(profile){
+  const user=auth.currentUser;
+  if(!user)throw Error('FIXTURE_AUTH_REQUIRED');
+  try{
+   const result=await reauthenticateWithCredential(user,GoogleAuthProvider.credential(JSON.stringify(profile)));
+   const proof=await result.user.getIdTokenResult(true);
+   return {ok:true,uid:result.user.uid,verified:proof.claims.email_verified,provider:proof.signInProvider};
+  }catch(error){return {ok:false,code:error.code??'FIXTURE_REAUTH_FAILED'};}
+ },
  async signInForApp(credentials){await setPersistence(auth,browserLocalPersistence);return (await signInWithEmailAndPassword(auth,credentials.email,credentials.password)).user.uid;},
  signOut:()=>signOut(auth),
  call:async(action,fields={})=>{try{return {ok:true,value:await requestReservedTribePilot(action,fields)}}catch(e){return {ok:false,error:e.message}}},
