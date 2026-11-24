@@ -630,7 +630,7 @@ test('isolated incremental snapshot replaces contributions without duplicate tot
 
 
 test('accepted seeds enqueue isolated refresh atomically; repeated drains do not duplicate totals',async()=>{
- const {drainIsolatedGamificationDirtyAccounts,readIsolatedGamificationIncrementalSnapshot}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {drainIsolatedGamificationDirtyAccounts,readIsolatedGamificationIncrementalSnapshot,runIsolatedGamificationQueueCycle}=await import('../server/gamification/semeaduraAdminSupervision.js');
  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
  const admin=await googleSignIn('dirty-queue-admin');
  const author=await googleSignIn('dirty-queue-author');
@@ -666,10 +666,16 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
   assert.equal((await cache.collection('pending').get()).size,2);
   assert.equal((await read()).refreshedAccounts,0);
   await assert.rejects(drain(21),/INCREMENTAL_QUEUE_LIMIT_INVALID/);
-  const batch=await drain(1);
-  assert.equal(batch.refreshed,1);assert.equal(batch.moreObserved,true);
+  const cycle=(maxBatches:number)=>runIsolatedGamificationQueueCycle(db,auth,bearer,{batchSize:1,maxBatches});
+  await assert.rejects(cycle(6),/INCREMENTAL_QUEUE_CYCLE_LIMIT_INVALID/);
+  const batch=await cycle(1);
+  assert.equal(batch.processed,1);assert.equal(batch.moreObserved,true);
+  assert.equal(batch.stopReason,'batch-budget-reached');
   assert.equal((await cache.collection('pending').get()).size,1);
-  await drain();
+  const rest=await cycle(3);
+  assert.equal(rest.processed,1);assert.equal(rest.batches,1);
+  assert.equal(rest.stopReason,'no-more-in-last-snapshot');
+  assert.equal(rest.schedulerInstalled,false);
   const snapshot=await read();
   assert.equal(snapshot.refreshedAccounts,2);
   assert.deepEqual(snapshot.reconciledEconomySubtotal,{credits:200,debits:0,balance:200});
