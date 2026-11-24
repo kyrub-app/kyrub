@@ -49,7 +49,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
     if(status.revision!==dir.revision){setOrdinary(null);revision.current=null;return;}
     revision.current=dir.revision;setConfigured(status.configured);setOrdinary(dir);
    }
-  }catch{if(alive.current&&epoch.current===e&&sequence===reloadSequence.current){setOrdinary(null);revision.current=null;setError('Não foi possível consultar os conectados.');}}
+  }catch(error){if(alive.current&&epoch.current===e&&sequence===reloadSequence.current){setOrdinary(null);revision.current=null;setError(error instanceof Error&&error.message==='TRIBE_STORAGE_UNVERIFIED'?'Ambiente de homologação não verificado. Use um perfil de navegador isolado, sem cache persistente ou service worker anterior.':'Não foi possível consultar os conectados.');}}
  },[owner]);
  useEffect(()=>{
   alive.current=true;void reload();

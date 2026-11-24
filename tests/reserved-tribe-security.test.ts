@@ -255,3 +255,19 @@ test('residual pilot consumers do not fetch raw social directories and chat clos
  assert.match(rules,/connectionData\(\).status == 'accepted'\s+&& ordinaryDirectoryClientAllowed\(request.auth.uid\)/);
  assert.equal((receipts.match(/ordinaryDirectoryClientAllowed\(request.auth.uid\)/g)||[]).length,3);
 });
+
+test('pilot storage gate refuses legacy Firestore databases, stale workers and unavailable enumeration',async()=>{
+ const {inspectSocialPilotStorage}=await import('../src/utils/socialPilotStorageGuard.js');
+ const clean={databases:async()=>[{name:'firebaseLocalStorageDb'}],hasServiceWorker:async()=>false};
+ assert.equal(await inspectSocialPilotStorage(clean),'ready');
+ assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{name:'firestore/[DEFAULT]/kyrub-security-test/main'}]}),'legacy-cache');
+ assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{name:'firestore/[DEFAULT]/kyrub-b8d0e/main'}]}),'legacy-cache');
+ assert.equal(await inspectSocialPilotStorage({...clean,hasServiceWorker:async()=>true}),'service-worker');
+ assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>{throw Error('denied');}}),'unverified');
+ assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{}]}),'unverified');
+ const client=readFileSync('src/utils/reservedTribePilotClient.ts','utf8');
+ const gate=readFileSync('src/utils/socialPilotStorageGuard.ts','utf8');
+ assert.equal((client.match(/await verifySocialPilotStorage\(\)/g)||[]).length,2);
+ assert.match(client,/if\(action!=='lock'\)await verifySocialPilotStorage\(\)/);
+ assert.doesNotMatch(gate,/deleteDatabase\(|clearIndexedDbPersistence\(|\.unregister\(/);
+});

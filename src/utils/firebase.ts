@@ -43,7 +43,7 @@ export const storage = getStorage(app);
 if (isolatedE2E) connectStorageEmulator(storage, '127.0.0.1', 9199);
 
 const socialMemoryPilot = import.meta.env?.VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E === 'true';
-if(socialMemoryPilot&&!isolatedE2E)throw Error('SOCIAL_MEMORY_CACHE_REQUIRES_LOCAL_EMULATOR');
+if(socialMemoryPilot&&(!isolatedE2E||app.options.projectId!=='kyrub-security-test'))throw Error('SOCIAL_MEMORY_CACHE_REQUIRES_LOCAL_EMULATOR');
 
 const initializeOfflineFirstFirestore = () => {
   // The opt-in pilot must fail closed; do not fall back to a persistent instance.
