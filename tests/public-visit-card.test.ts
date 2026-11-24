@@ -296,3 +296,12 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
  assert.match(client,/TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH/);
 });
+
+ test('public profile and tag use same presentation but emergency action stays on tag',()=>{
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(tag,/<PresentationCard/);assert.match(profile,/<PresentationCard/);
+ assert.match(tag,/fixed inset-x-0 bottom-0/);assert.match(tag,/aria-controls="tag-sos-panel"/);
+ assert.match(tag,/<PresentationShare/);assert.match(profile,/<PresentationShare/);
+ assert.doesNotMatch(profile,/SOS|Abrir chat/);
+ });

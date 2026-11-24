@@ -349,7 +349,12 @@ export default async function handler(
       const { resolveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
       const result = await resolveSocialAddress(kind,identifier);
       if (!result) response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
-      else response.status(200).json(result);
+      else if(kind==='profile'){
+        const {resolvePublicPresentationByIdentifier}=await import('../server/identity/publicVisitCardService.js');
+        const presentation=await resolvePublicPresentationByIdentifier(identifier);
+        if(!presentation){response.status(404).json({error:'PUBLIC_ADDRESS_NOT_FOUND'});return;}
+        response.status(200).json({...result,name:presentation.name,description:presentation.bio,image:presentation.photoUrl,presentation});
+      }else response.status(200).json(result);
     } catch {
       response.status(503).json({ error: 'PUBLIC_ADDRESS_UNAVAILABLE' });
     }

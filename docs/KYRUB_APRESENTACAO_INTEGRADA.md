@@ -29,3 +29,6 @@ Imagem de fundo opcional e independente de foto e capa, com camada escura para l
 
 ## Componente visual comum e ações contextuais
 PresentationCard reúne foto, capa, fundo, nome, atividade, biografia e espaços públicos. ContactPresentationModal mantém a ação de chat; PublicKyrubTagPage mantém o SOS, contatos de emergência e edição da unidade. A Tag promocional permite retirar cada espaço de forma independente, inclusive quando bloqueada, sem reativá-la. Nenhuma alteração de titularidade, segredo, perfil, outras unidades ou NFC. Importação de mídia da Tag para o perfil e homologação funcional continuam pendentes.
+
+## Simplificação: primeiro incremento
+O endereço permanente /kairubido/{identificador} renderiza PresentationCard com a mesma projeção pública do cartão da Minha Tribo, sem SOS nem chat. Link copiável e compartilhamento nativo no endereço público e na Tag publicada; sem QR externo. SOS fixo na parte inferior da Tag ativa, com painel rolável e espaço reservado para não encobrir o conteúdo. O editor visual, o modo de acompanhar perfil com consentimento e controle de privacidade, QR local e importação de imagens ainda precisam ser concluídos. Nenhuma alteração em produção.

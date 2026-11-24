@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { auth } from '../utils/firebase';
+import { PresentationShare } from './PresentationShare';
 import { buildPublicDestinationUrl, buildPublicDestinationPath } from '../../shared/publicDestinationRoutes';
 
 type Props = { kind:'profile'|'community'; ownerId:string; communityId?:string; suggested?:string; onReserved?:()=>void };
@@ -56,7 +57,7 @@ export function PublicSocialAddressEditor({kind,ownerId,communityId,suggested=''
     {url ? <>
       <a href={url.replace('https://kyrub.com','')} className="block break-all text-sm text-orange-300 underline">{url}</a>
       {!status?.eligible && <p className="text-xs text-slate-400">Endereço reservado, mas não está público.</p>}
-      <button type="button" className={button} disabled={!status?.eligible} onClick={()=>void navigator.clipboard.writeText(url).then(()=>setMessage('Link copiado.')).catch(()=>setMessage('Selecione e copie o link.'))}>Copiar link</button>
+      {status?.eligible&&<PresentationShare url={window.location.origin+(buildPublicDestinationPath(kind,status.identifier!)??'')} title={kind==='profile'?'Minha apresentação Kyrub':'Minha comunidade Kyrub'}/>} 
     </> : <>
       <p className="text-xs text-slate-400">{kind==='profile'?'Escolha um identificador próprio, sem usar seu e-mail.':'Escolha um identificador exclusivo da comunidade.'} O endereço permanece mesmo quando o nome de exibição muda.</p>
       <label className="block text-xs text-slate-300">Identificador

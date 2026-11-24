@@ -774,3 +774,17 @@ test('contact presentation uses live public profile and card destinations, not p
  assert.equal(JSON.stringify(publicPromotionalPresentation(normalized)).includes(path),false);
  assert.throws(()=>normalizePromotionalPresentation({...base,backgroundPath:promotionalMediaPath(id,'cover',asset)}),/TAG_PRESENTATION_INVALID/);
  });
+
+ test('public permanent address presents the same safe identity as the social card',async()=>{
+ const {resolvePublicPresentationByIdentifier,resolveContactPresentation}=await import('../server/identity/publicVisitCardService.js');
+ const uid='share-presentation-owner';
+ await adminDb.doc('users/'+uid).set({name:'Share',isProfileVisible:true,email:'private@example.test'});
+ await adminDb.doc('users/'+uid+'/public_profile/main').set({name:'Share',bio:'Sobre',occupation:'Autônomo',photoUrl:'',coverUrl:'',backgroundUrl:''});
+ await reserveSocialAddress(uid,'profile','share-presentation');
+ const result=await resolvePublicPresentationByIdentifier('share-presentation');
+ assert.deepEqual(result,await resolveContactPresentation(uid));assert.equal(result?.name,'Share');
+ assert.equal(JSON.stringify(result).includes('private@example.test'),false);
+ assert.equal(await resolvePublicPresentationByIdentifier(uid),null);
+ await adminDb.doc('users/'+uid).update({isProfileVisible:false});
+ assert.equal(await resolvePublicPresentationByIdentifier('share-presentation'),null);
+ });

@@ -136,3 +136,19 @@ export async function resolveContactPresentation(targetId:string){
  return {name,occupation:clean(profile.get('occupation'),90),bio:clean(profile.get('bio'),280),
   photoUrl:/^https:\/\//i.test(photo)?photo:'',coverUrl:/^https:\/\//i.test(clean(profile.get('coverUrl'),2048))?clean(profile.get('coverUrl'),2048):'',backgroundUrl:/^https:\/\//i.test(clean(profile.get('backgroundUrl'),2048))?clean(profile.get('backgroundUrl'),2048):'',links};
 }
+
+/** Permanent public profile address resolves the same safe presentation as the social card.
+ * Never accept a raw owner UID from an unauthenticated request.
+ */
+export async function resolvePublicPresentationByIdentifier(identifier:string){
+ if(!buildPublicDestinationUrl('profile',identifier))return null;
+ const mappingRef=adminDb.doc('public_social_addresses/profile:'+identifier);
+ const mapping=await mappingRef.get();
+ const record=mapping.data();
+ if(record?.kind!=='profile'||record.identifier!==identifier||typeof record.targetId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(record.targetId))return null;
+ const presentation=await resolveContactPresentation(record.targetId);
+ if(!presentation)return null;
+ const current=await mappingRef.get();
+ if(!mapping.updateTime||!current.updateTime?.isEqual(mapping.updateTime))return null;
+ return presentation;
+}
