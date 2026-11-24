@@ -57,16 +57,17 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   const leave=()=>{clearPrivate();setOrdinary(null);revision.current=null;};
   document.addEventListener('visibilitychange',hide);window.addEventListener('pagehide',leave);
   const authStop=auth.onAuthStateChanged(user=>{if(user?.uid!==owner){clearPrivate();setOrdinary(null);revision.current=null;}});
-  const invalidate=()=>{clearPrivate();setOrdinary(null);revision.current=null;if(!document.hidden)void reload();};
+  const invalidate=()=>{clearPrivate();setOrdinary(null);revision.current=null;if(!document.hidden&&navigator.onLine!==false)void reload();};
   const stopInvalidation=subscribeSocialPrivacyInvalidation(invalidate,false);
-  const offline=()=>invalidate();window.addEventListener('offline',offline);
-  return()=>{alive.current=false;clearPrivate();authStop();stopInvalidation();window.removeEventListener('offline',offline);document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',leave);};
+  const offline=()=>invalidate();const online=()=>{if(!document.hidden&&auth.currentUser?.uid===owner)void reload();};
+  window.addEventListener('offline',offline);window.addEventListener('online',online);
+  return()=>{alive.current=false;clearPrivate();authStop();stopInvalidation();window.removeEventListener('offline',offline);window.removeEventListener('online',online);document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',leave);};
  },[owner,clearPrivate,reload]);
  useEffect(()=>{
   // Server remains authoritative even across devices or without BroadcastChannel.
   let stopped=false;
   const verify=async()=>{
-   if(stopped||document.hidden||auth.currentUser?.uid!==owner||probe.current||busy||recovering)return;
+   if(stopped||document.hidden||navigator.onLine===false||auth.currentUser?.uid!==owner||probe.current||busy||recovering)return;
    const e=epoch.current,s=current.current,controller=new AbortController();probe.current=controller;
    try{
     const result=await request<{revision:number}>(s?'session-check':'status',s?{session:s.token}:{},controller.signal);
@@ -85,7 +86,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  },[session,clearPrivate,reload]);
  const unlock=async(secret:string,signal:AbortSignal)=>{
   if(busy||target||current.current)return false;
-  const e=++epoch.current;setSuggestions([]);
+  const e=++epoch.current;probe.current?.abort();probe.current=null;setSuggestions([]);
   let result:ReservedTribeUnlock;
   try{result=await request<ReservedTribeUnlock>('unlock',{code:secret},signal);}catch{return false;}
   if(!result.ok)return false;

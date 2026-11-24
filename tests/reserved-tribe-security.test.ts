@@ -284,3 +284,15 @@ test('pilot does not mount legacy contact decorators or local contact management
  assert.match(root,/\{!reservedTribePilotClientEnabled\(\) && <ProfileConnectedCardsPolishBridge \/>\}/);
  assert.match(tab,/isConnectedContactsActive && \(reservedTribePilotClientEnabled\(\) \? \([\s\S]*?<p role="status"[\s\S]*?\) : \(\s*<ConnectedContactsPanel/);
 });
+
+
+test('reserved search retains a submitted attempt across focus changes and reconnect only reloads the ordinary directory',()=>{
+ const search=readFileSync('src/components/ReservedTribeSearchInput.tsx','utf8');
+ const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
+ assert.match(search,/attempt.current=controller;setSecret\(''\);setBusy\(true\)/);
+ assert.match(search,/readOnly=\{busy\}/);
+ assert.match(search,/onBlur=\{\(\)=>\{if\(!attempt.current&&!busy&&secretMode\)reset\(\);\}\}/);
+ assert.match(panel,/window.addEventListener\('online',online\)/);
+ assert.match(panel,/window.removeEventListener\('online',online\)/);
+ assert.match(panel,/const online=\(\)=>\{if\(!document.hidden&&auth.currentUser\?\.uid===owner\)void reload\(\);\}/);
+});

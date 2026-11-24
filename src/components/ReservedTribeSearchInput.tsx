@@ -21,10 +21,11 @@ export function ReservedTribeSearchInput({term,onSearch,unlockAvailable,ownerSco
  };
  async function submit(event:FormEvent){
   event.preventDefault();
-  if(!secretMode||busy||!unlockAvailable)return;
+  if(!secretMode||busy||attempt.current||!unlockAvailable)return;
   const code=secret;
-  setSecret('');
-  const controller=new AbortController();attempt.current=controller;setBusy(true);
+  // Mark the attempt before updating the input: focus/blur can occur during
+  // the ensuing render, before React's busy state is visible to handlers.
+  const controller=new AbortController();attempt.current=controller;setSecret('');setBusy(true);
   try{await onUnlock(code,controller.signal);}
   catch{/* No code or transport errors exposed in the ordinary search. */}
   finally{if(attempt.current===controller){attempt.current=null;setBusy(false);setSecretMode(false);}}
@@ -34,8 +35,8 @@ export function ReservedTribeSearchInput({term,onSearch,unlockAvailable,ownerSco
   <input type={secretMode?'password':'search'} aria-label="Pesquisar pessoas em Conectados"
    value={secretMode?secret:term} onChange={event=>change(event.target.value)}
    placeholder="Pesquisar conectados..." autoComplete={secretMode?'new-password':'off'}
-   autoCapitalize="none" spellCheck={false} disabled={busy}
-   onBlur={()=>{if(!busy&&secretMode)reset();}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();reset();onSearch('');}}}
+   autoCapitalize="none" spellCheck={false} readOnly={busy}
+   onBlur={()=>{if(!attempt.current&&!busy&&secretMode)reset();}} onKeyDown={event=>{if(event.key==='Escape'){event.stopPropagation();reset();onSearch('');}}}
    className="min-h-11 w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-12 text-sm text-white outline-none focus:border-orange-500"/>
   {(term||secretMode)&&<button type="button" aria-label="Limpar pesquisa" onMouseDown={event=>event.preventDefault()} onClick={()=>{reset();onSearch('');}} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-slate-400"><X aria-hidden="true" className="h-4 w-4"/></button>}
   <button type="submit" className="sr-only" tabIndex={-1}>Pesquisar</button>

@@ -28,6 +28,12 @@ async function open(uid){
   return route.abort();
  });
  const page=await context.newPage();
+ // Record only action names/status; never print request/response bodies, secrets or tokens.
+ const allowedActions=new Set(['status','setup','unlock','directory','reserved-directory','membership','session-check','lock','chat-read','chat-send','chat-clear','ordinary-chat-read','notifications','notification-read','recover']);
+ page.on('response',response=>{
+  if(new URL(response.url()).pathname!=='/api/social/reserved-tribe')return;
+  try{const action=response.request().postDataJSON()?.action;if(allowedActions.has(action))console.log('UI pilot action:',action,response.status());}catch{/* No raw payload diagnostics. */}
+ });
  await page.goto(origin+'/tests/fixtures/reserved-tribe-browser.html');
  await page.waitForFunction(()=>window.fixture?.enabled()===true);
  assert.equal(await page.evaluate(credentials=>window.fixture.signInForApp(credentials),{email:uid+'@example.invalid',password}),uid);
@@ -47,8 +53,9 @@ async function visible(locator){await locator.waitFor({state:'visible',timeout:2
 async function absent(locator){await locator.waitFor({state:'detached',timeout:20000});}
 async function unlock(panel){
  const search=panel.getByLabel('Pesquisar pessoas em Conectados');
- await search.fill('!'+code);
+ await search.fill('!');
  assert.equal(await search.getAttribute('type'),'password');
+ await search.fill(code);
  await search.press('Enter');
  await visible(panel.getByRole('region',{name:'Tribo Reservada'}));
  assert.equal(await search.count(),0);
@@ -102,6 +109,10 @@ try{
  await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
  await absent(a.panel.getByText(peerName,{exact:true}));
  await a.page.context().setOffline(false);
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ await a.panel.getByRole('button',{name:'Tribos',exact:true}).click();
+ await visible(a.panel.getByRole('button',{name:'Redefinir código de acesso'}));
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
  assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
  assert.deepEqual(blockedFirebase,[],'No browser request to remote Firebase');
  console.log('PASS actual app offline closes reserved surface without deleting shared relationship');
