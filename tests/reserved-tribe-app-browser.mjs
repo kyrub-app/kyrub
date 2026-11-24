@@ -24,9 +24,16 @@ let browser;
 const blockedFirebase=[];
 async function open(uid){
  const context=await browser.newContext({viewport:{width:390,height:844},serviceWorkers:'block'});
- await context.route('**/*',route=>{
+ let statusGate=null;
+ await context.route('**/*',async route=>{
   const url=new URL(route.request().url());
-  if([origin,'http://127.0.0.1:9099','http://127.0.0.1:8088','http://127.0.0.1:9199'].includes(url.origin))return route.continue();
+  if([origin,'http://127.0.0.1:9099','http://127.0.0.1:8088','http://127.0.0.1:9199'].includes(url.origin)){
+   const gate=statusGate;
+   if(gate&&url.origin===origin&&url.pathname==='/api/social/reserved-tribe'&&route.request().postDataJSON()?.action==='status'){
+    gate.observe();await gate.wait;
+   }
+   return route.continue();
+  }
   if(/(^|\.)(firebaseio\.com|firebaseapp\.com|firebasestorage\.app)$/.test(url.hostname)||['identitytoolkit.googleapis.com','securetoken.googleapis.com','firestore.googleapis.com','firebasestorage.googleapis.com'].includes(url.hostname))blockedFirebase.push(url.origin);
   return route.abort();
  });
@@ -50,7 +57,14 @@ async function open(uid){
  await page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
  const panel=page.locator('[data-reserved-tribe-pilot="true"]');
  await panel.waitFor({state:'visible',timeout:30000});
- return {page,panel};
+ return {page,panel,holdStatus(){
+  assert.equal(statusGate,null);
+  let observe,release;
+  const observed=new Promise(resolve=>{observe=resolve});
+  const wait=new Promise(resolve=>{release=resolve});
+  statusGate={observe,wait};
+  return {observed,release:()=>{statusGate=null;release();}};
+ }};
 }
 async function visible(locator){await locator.waitFor({state:'visible',timeout:20000});}
 async function absent(locator){await locator.waitFor({state:'detached',timeout:20000});}
@@ -140,20 +154,15 @@ try{
  await inbox.getByRole('button',{name:'Fechar notificações'}).click();
  // Hold status responses while reopening the actual panel. No secret may
  // enter an ordinary search before the server confirms configuration.
- const pilotPattern='**/api/social/reserved-tribe';
- let releaseStatus;
- const statusGate=new Promise(resolve=>{releaseStatus=resolve});
- const delayStatus=async route=>{
-  if(route.request().postDataJSON()?.action==='status')await statusGate;
-  await route.continue();
- };
- await a.page.route(pilotPattern,delayStatus);
+ const hold=a.holdStatus();
+ let timer;
  try{
   await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
   await visible(a.panel);
+  await Promise.race([hold.observed,new Promise((_,reject)=>{timer=setTimeout(()=>reject(Error('STATUS_REQUEST_NOT_OBSERVED')),10000);})]);
   await visible(a.panel.getByRole('status').filter({hasText:'Conectados indisponíveis enquanto a consulta não for confirmada.'}));
   assert.equal(await a.panel.getByLabel('Pesquisar pessoas em Conectados').count(),0);
- }finally{releaseStatus();await a.page.unroute(pilotPattern,delayStatus);}
+ }finally{clearTimeout(timer);hold.release();}
  await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
  console.log('PASS reopened panel with delayed status never exposes premature ordinary search');
  console.log('PASS general bell hides private notice and read-all only marks ordinary inbox');
