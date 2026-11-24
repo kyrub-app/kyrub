@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {chromium} from 'playwright';
 import {initializeApp,deleteApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
-import {getFirestore} from 'firebase-admin/firestore';
+import {getFirestore,FieldValue} from 'firebase-admin/firestore';
 
 const project='kyrub-security-test',origin='http://127.0.0.1:3000';
 assert.equal(process.env.FIREBASE_PROJECT_ID,project);
@@ -215,6 +215,60 @@ try{
  assert.ok((await db.doc(noticePath+'private-fixture').get()).get('readAt'));
  assert.deepEqual(blockedFirebase,[]);
  console.log('PASS password reauthentication, wrong password denied, old code denied, new code works and shared history preserved');
+ // Independent contexts share neither BroadcastChannel nor browser storage.
+ // Do not focus the second page: the first must remain visible so this tests
+ // server polling, rather than the existing visibility-change lock.
+ await unlock(a.panel,newCode);
+ await visible(a.panel.getByText(peerName,{exact:true}));
+ await a.page.evaluate(()=>{
+  if(document.hidden)throw Error('OWNER_DOCUMENT_NOT_VISIBLE');
+  window.__fixtureVisibilityChanges=0;
+  document.addEventListener('visibilitychange',()=>window.__fixtureVisibilityChanges++);
+ });
+ const block=db.doc('social_contact_blocks/'+peer+'/blocked/'+owner);
+ const revisionRefs=[owner,peer].map(uid=>db.doc('social_directory_revisions/'+uid));
+ const applyBlock=async blocked=>db.runTransaction(async tx=>{
+  await tx.get(block);
+  if(blocked)tx.set(block,{targetId:owner});else tx.delete(block);
+  // Synthetic emulator-only mutation models the #1273 integration contract.
+  // The actual block endpoint is not yet present in this branch.
+  for(const ref of revisionRefs)tx.set(ref,{revision:FieldValue.increment(1)},{merge:true});
+ });
+ assert.notEqual(a.page.context(),b.page.context());
+ await applyBlock(true);
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await absent(a.panel.getByText(peerName,{exact:true}));
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
+ assert.equal(await a.page.evaluate(()=>document.hidden),false);
+ await unlock(a.panel,newCode);
+ await absent(a.panel.getByText(peerName,{exact:true}));
+ await applyBlock(false);
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ await unlock(a.panel,newCode);
+ await visible(a.panel.getByText(peerName,{exact:true}));
+ assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
+ assert.equal((await db.doc('connections/'+pair).get()).get('status'),'accepted');
+ console.log('PASS visible reserved panel invalidates after server-side block/unblock revision without a visibility change');
+ // Now use the real authenticated ordinary relationship API in B, without
+ // invoking a local browser event or writing the relationship from Admin.
+ const removed=await b.page.evaluate(async target=>{
+  const {requestReservedTribePilot}=await import('/src/utils/reservedTribePilotClient.ts');
+  return requestReservedTribePilot('connection',{peerId:target,operation:'remove'});
+ },owner);
+ assert.deepEqual(removed,{status:'none'});
+ await absent(a.panel.getByRole('region',{name:'Tribo Reservada'}));
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ assert.equal(await a.page.evaluate(()=>window.__fixtureVisibilityChanges),0);
+ assert.equal(await a.page.evaluate(()=>document.hidden),false);
+ await unlock(a.panel,newCode);
+ await absent(a.panel.getByText(peerName,{exact:true}));
+ assert.equal((await db.doc('connections/'+pair).get()).exists,false);
+ assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
+ assert.ok((await db.doc('reserved_tribe_vaults/'+owner+'/contacts/'+peer).get()).exists);
+ assert.deepEqual(blockedFirebase,[]);
+ console.log('PASS authenticated removal in independent context closes visible reserved panel and preserves message history and reservation marker');
 }finally{
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
 }
