@@ -426,6 +426,7 @@ match /connections/{connectionId} {
           && isValidId(connectionId)
           && connectionExists()
           && connectionData().status == 'accepted'
+          && ordinaryDirectoryClientAllowed(request.auth.uid)
           && request.auth.uid in connectionData().participantIds
           && !exists(/databases/$(database)/documents/reserved_tribe_vaults/$(request.auth.uid)/contacts/$(ownReservedPeer()));
       }

@@ -121,10 +121,13 @@ test('reserved chat denies direct SDK access while the other participant retains
  await assert.rejects(readTribeChat(actor,pair,next.token),/TRIBE_ACCESS_DENIED/);
  await adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor).delete();
  await setReservedTribeContact(actor,next.token,peer,false);
- await assertSucceeds(getDoc(doc(owner,base+'/messages/old')));
+ await assertFails(getDoc(doc(owner,base+'/messages/old')));
+ assert.ok((await readTribeChat(actor,pair)).messages.some(row=>row.id==='old')|| (await readTribeChat(actor,pair)).clearedAt);
  assert.equal((await readTribeChat(actor,pair)).messages.length,1);
  const ordinaryPair=id(actor,other);
- await assertSucceeds(setDoc(doc(owner,'social_chats/'+ordinaryPair+'/messages/ordinary'),{senderId:actor,receiverId:other,text:'normal',createdAt:serverTimestamp()}));
+ await assertFails(setDoc(doc(owner,'social_chats/'+ordinaryPair+'/messages/ordinary'),{senderId:actor,receiverId:other,text:'normal',createdAt:serverTimestamp()}));
+ await sendTribeChatMessage(actor,ordinaryPair,undefined,'ordinary','normal');
+ assert.ok((await readTribeChat(actor,ordinaryPair)).messages.some(row=>row.id==='ordinary'));
 });
 
 test('server directory excludes reserved contacts from tribes, favorites and forward targets',async()=>{
@@ -405,4 +408,15 @@ test('ordinary forwarding commits message, cooldown and notice atomically; reser
  await setReservedTribeContact(actor,session.token,peer,false);
  await adminDb.doc('communities/'+communityId).update({visibility:'private'});
  await assert.rejects(forwardOrdinaryCommunityPost(actor,{...fields,messageId:'private-forward'}),/TRIBE_ACCESS_DENIED/);
+});
+
+test('migrated owners cannot directly read or mutate ordinary chat and receipts; counterpart remains independent',async()=>{
+ const pair=id(actor,peer),base='social_chats/'+pair,owner=env.authenticatedContext(actor).firestore(),counterpart=env.authenticatedContext(peer).firestore();
+ await assertFails(getDocs(query(collection(owner,base+'/messages'),limit(100))));
+ await assertFails(getDoc(doc(owner,base+'/history_state/'+actor)));
+ await assertFails(setDoc(doc(owner,base+'/history_state/'+actor),{clearedAt:serverTimestamp()}));
+ await assertFails(getDoc(doc(owner,'community_direct_forward_receipts','pilot-forward-post__'+actor+'__'+peer)));
+ await assertFails(getDoc(doc(owner,'community_direct_forward_receipts','missing__'+actor+'__'+peer)));
+ await assertSucceeds(getDocs(query(collection(counterpart,base+'/messages'),limit(100))));
+ await readTribeChat(actor,pair);
 });

@@ -65,7 +65,8 @@ import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import {TribeContactMenu} from './TribeContactMenu';
 import {ReservedTribePilotPanel} from './ReservedTribePilotPanel';
-import {reservedTribePilotClientEnabled} from '../utils/reservedTribePilotClient';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from '../utils/reservedTribePilotClient';
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import {submitSocialUserReport} from '../utils/socialReports';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
@@ -290,7 +291,7 @@ function SocialCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const isStatus = post.publicationType === 'status';
   const isOwnPost = post.authorId === currentUserId;
-  const authorConnection = resolvePostAuthorConnection(currentUserId, post, friends, connections);
+  const authorConnection = resolvePostAuthorConnection(currentUserId, post, reservedTribePilotClientEnabled()?friends.filter(friend=>connections.some(item=>item.id===friend.connectionId&&item.status==='accepted')):friends, connections);
 
   return (
     <article className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 shadow-lg">
@@ -533,6 +534,7 @@ export function ProfileSocialHubNative() {
     triggerToast,
   });
   useEffect(()=>{if(!directory.directoryReady){setChatTarget(null);setChatMessageText('');setRemoveContactTarget(null);setSelectedTaggedUserIds([]);}},[directory.directoryReady]);
+  useEffect(()=>{if(!reservedTribePilotClientEnabled())return;return subscribeSocialPrivacyInvalidation(()=>{setChatTarget(null);setChatMessageText('');setRemoveContactTarget(null);setSelectedTaggedUserIds([]);setGroups([]);});},[]);
 
   useEffect(() => {
     const handleRemoveIntent = (event: Event) => {
@@ -706,7 +708,7 @@ export function ProfileSocialHubNative() {
 
   useEffect(() => {
     directory.setDbUsers([]);
-    if (!user) return;
+    if (!user||reservedTribePilotClientEnabled()) return;
     return onSnapshot(collection(db, 'users'), {includeMetadataChanges:true},snapshot => {
       if(auth.currentUser?.uid!==user.uid||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites){directory.setDbUsers([]);return;}
       directory.setDbUsers(
@@ -738,7 +740,7 @@ export function ProfileSocialHubNative() {
 
   useEffect(() => {
     setGroups([]);
-    if (!user) return;
+    if (!user||reservedTribePilotClientEnabled()) return;
     return onSnapshot(
       collection(db, `users/${user.uid}/contact_groups`),
       {includeMetadataChanges:true},
@@ -1244,7 +1246,8 @@ export function ProfileSocialHubNative() {
     if(!uid||auth.currentUser?.uid!==uid||!friend.connectionId||!directory.friends.some(item=>item.id===friend.id&&item.connectionId===friend.connectionId))return;
     if(!window.confirm('Excluir o histórico desta conversa somente para você? O outro contato continuará com as mensagens.'))return;
     try{
-      await setDoc(doc(db,'social_chats',friend.connectionId,'history_state',uid),{clearedAt:serverTimestamp()});
+      if(reservedTribePilotClientEnabled())await requestReservedTribePilot('ordinary-chat-clear',{connectionId:friend.connectionId});
+      else await setDoc(doc(db,'social_chats',friend.connectionId,'history_state',uid),{clearedAt:serverTimestamp()});
       if(auth.currentUser?.uid===uid)triggerToast('Histórico excluído da sua visualização.','success');
     }catch{triggerToast('Não foi possível excluir a conversa. Tente novamente.','error');}
   };

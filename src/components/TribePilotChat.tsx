@@ -1,5 +1,6 @@
 import {useEffect,useRef,useState,type FormEvent} from 'react';
 import {auth} from '../utils/firebase';
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import {buildCommunityPostInternalLink} from '../utils/communityPostForwarding';
 import {OPEN_COMMUNITY_FROM_SQUARE_EVENT} from '../utils/communitySquareFeed';
 import type {CloudCommunityPost} from '../utils/communityCloud';
@@ -22,7 +23,7 @@ export function TribePilotChat({owner,connectionId,name,session,forwardingPost,i
  useEffect(()=>{
   active.current=true;setChat(null);setDraft(initialText??'');setBusy(false);setSendError('');
   let timer:number|undefined;
-  const usable=()=>active.current&&auth.currentUser?.uid===owner&&!document.hidden&&(!session||session.expiresAt>Date.now());
+  const usable=()=>active.current&&auth.currentUser?.uid===owner&&!document.hidden&&navigator.onLine!==false&&(!session||session.expiresAt>Date.now());
   const invalidate=()=>{++sequence.current;controller.current?.abort();controller.current=null;inFlight.current=false;setChat(null);setDraft('');setBusy(false);};
   const fail=()=>{invalidate();if(active.current)deniedRef.current();};
   const schedule=()=>{if(timer!==undefined)window.clearTimeout(timer);if(usable())timer=window.setTimeout(()=>void refresh(),POLL_MS);};
@@ -41,12 +42,13 @@ export function TribePilotChat({owner,connectionId,name,session,forwardingPost,i
   const hide=()=>{if(document.hidden){invalidate();closeRef.current();}};
   const pagehide=()=>{invalidate();closeRef.current();};
   const authStop=auth.onAuthStateChanged(user=>{if(user?.uid!==owner){invalidate();closeRef.current();}});
-  document.addEventListener('visibilitychange',hide);window.addEventListener('pagehide',pagehide);
+  const stopPrivacy=subscribeSocialPrivacyInvalidation(pagehide);
+  document.addEventListener('visibilitychange',hide);window.addEventListener('pagehide',pagehide);window.addEventListener('offline',pagehide);
   void refresh();
-  return()=>{active.current=false;++sequence.current;controller.current?.abort();controller.current=null;inFlight.current=false;if(timer!==undefined)window.clearTimeout(timer);authStop();document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',pagehide);};
+  return()=>{active.current=false;++sequence.current;controller.current?.abort();controller.current=null;inFlight.current=false;if(timer!==undefined)window.clearTimeout(timer);authStop();stopPrivacy();document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',pagehide);window.removeEventListener('offline',pagehide);};
  },[owner,connectionId,session]);
  async function mutate(kind:'send'|'clear'){
-  if(busy||!active.current||!chat||auth.currentUser?.uid!==owner||document.hidden||(session&&session.expiresAt<=Date.now()))return;
+  if(busy||!active.current||!chat||auth.currentUser?.uid!==owner||document.hidden||navigator.onLine===false||(session&&session.expiresAt<=Date.now()))return;
   if(kind==='send'&&!draft.trim())return;
   if(kind==='clear'&&!window.confirm('Excluir o histórico somente da sua visualização?'))return;
   const id=++sequence.current;controller.current?.abort();

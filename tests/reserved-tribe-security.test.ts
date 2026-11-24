@@ -241,3 +241,17 @@ test('forward contract rejects client-selected recipient and requires canonical 
  assert.equal(hasCanonicalForwardLink('https://evil.example/?community=community&post=post','community','post'),false);
  assert.equal(hasCanonicalForwardLink('https://www.kyrub.com/?community=community&post=post&post=other','community','post'),false);
 });
+
+test('residual pilot consumers do not fetch raw social directories and chat closes on privacy invalidation',()=>{
+ const profile=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ const legacy=readFileSync('src/LegacyApp.tsx','utf8');
+ const chat=readFileSync('src/components/TribePilotChat.tsx','utf8');
+ const rules=readFileSync('firestore.rules','utf8');
+ const receipts=readFileSync('firestore.communities.fragment.rules','utf8').split('match /community_direct_forward_receipts/{receiptId}')[1].split('// Wall interactions')[0];
+ assert.match(profile,/if \(!user\|\|reservedTribePilotClientEnabled\(\)\) return/);
+ assert.match(legacy,/if \(!isLoggedIn\|\|reservedTribePilotClientEnabled\(\)\) return/);
+ assert.match(chat,/subscribeSocialPrivacyInvalidation\(pagehide\)/);
+ assert.match(chat,/addEventListener\('offline',pagehide\)/);
+ assert.match(rules,/connectionData\(\).status == 'accepted'\s+&& ordinaryDirectoryClientAllowed\(request.auth.uid\)/);
+ assert.equal((receipts.match(/ordinaryDirectoryClientAllowed\(request.auth.uid\)/g)||[]).length,3);
+});

@@ -672,12 +672,14 @@
       }
 
       allow get: if isSignedIn()
+        && ordinaryDirectoryClientAllowed(request.auth.uid)
         && ((resource == null && receiptId.matches('^.+__' + request.auth.uid + '__.+$'))
           || (resource != null && existing().actorId == request.auth.uid
             && isUnreservedPeer(request.auth.uid, existing().receiverId)));
       allow list: if false;
 
       allow create: if isSignedIn()
+        && ordinaryDirectoryClientAllowed(request.auth.uid)
         && incoming().keys().hasAll([
           'postId', 'communityId', 'actorId', 'receiverId', 'connectionId', 'messageId', 'forwardedAt'
         ])
@@ -688,6 +690,7 @@
         && validForwardDestination(incoming());
 
       allow update: if isSignedIn()
+        && ordinaryDirectoryClientAllowed(request.auth.uid)
         && existing().actorId == request.auth.uid
         && incoming().diff(existing()).affectedKeys().hasOnly(['messageId', 'forwardedAt'])
         && incoming().messageId != existing().messageId
