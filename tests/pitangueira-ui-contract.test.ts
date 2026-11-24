@@ -94,5 +94,9 @@ test('gamification supervision scaffold stays local, super-admin only and has no
  assert.match(panel,/Pitangas utilizadas/);
  assert.match(panel,/Jornada Pitangueira/);
  assert.match(panel,/Revisões econômicas/);
+ assert.match(panel,/id:'suspeitas', label:'Suspeitas de fraude'/);
+ assert.match(panel,/Nenhum indício gera punição ou bloqueio automático/);
+ assert.match(panel,/Não há detector de fraude conectado/);
+ assert.match(panel,/id:'revisao', label:'Revisões econômicas'/);
  assert.doesNotMatch(panel,/from ['"].*firebase|fetch\(|axios|setDoc\(|runTransaction\(|localStorage|sessionStorage/);
 });
