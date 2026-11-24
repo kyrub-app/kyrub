@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "tribe": {
+    "pr": 1272,
+    "ref": "feat/minha-tribo-clear-private-chat",
+    "sha": "fe281319346d8b22a7251d4e09b8034ac3015c3d"
+  },
+  "tag": {
+    "pr": 1273,
+    "ref": "feat/kyrub-integrated-presentation-devices",
+    "sha": "efe2c7ba10428d2cc13f5b5c9270a57f43d9f80a",
+    "basePr": 1271,
+    "baseSha": "6d6cf9e0bd36572bb81198e665cea784e4ad9ab5"
+  },
+  "mergeBase": "4134b44e0351555dd9e3583adf6f279202ee842b",
+  "changedFromBase": {
+    "tribe": 60,
+    "tag": 62
+  },
+  "shared": [
+    "api/health.ts",
+    "firestore.rules",
+    "package.json",
+    "src/LegacyApp.tsx",
+    "src/components/ProfileSocialHubNative.tsx",
+    "src/components/UserNotificationCenterBridge.tsx",
+    "src/hooks/useChatMessages.ts",
+    "src/hooks/useSocialDirectoryV2.ts",
+    "src/utils/firebase.ts"
+  ]
+}

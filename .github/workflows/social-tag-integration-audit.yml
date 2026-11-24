@@ -1,0 +1,22 @@
+name: Social and Tag integration merge audit
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/social-tag-integration-audit.yml'
+      - 'docs/social-tag-integration-inputs.json'
+      - 'scripts/audit-social-tag-integration.mjs'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: node scripts/audit-social-tag-integration.mjs
