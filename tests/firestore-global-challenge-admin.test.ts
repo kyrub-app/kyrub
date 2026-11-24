@@ -577,6 +577,61 @@ test('institutional disclosure commits one original and optional Taba pointer on
   assert.equal((await adminDb.doc('users/kyrub:institutional/semeaduraProgress/summary').get()).exists,false);
   const browser=environment.authenticatedContext('admin').firestore();
   await assertFails(setDoc(doc(browser,'community_posts/'+postId),{institutionalChallengeId:'forged'},{merge:true}));
+
+  // Continue the same institutional disclosure scenario as a different,
+  // ordinary Kairubido. The existing test project has no welcome trigger;
+  // this checks zero deltas for discovery and a unique publication award.
+  const participant='pilot-disclosure-participant';
+  const participantDb=environment.authenticatedContext(participant).firestore();
+  const visiblePost=await getDoc(doc(participantDb,'community_posts/'+postId));
+  const visiblePointer=await getDoc(doc(participantDb,'community_square_posts/'+postId));
+  assert.equal(visiblePost.data()?.institutionalChallengeId,id);
+  assert.equal(visiblePointer.data()?.postId,visiblePost.id);
+  assert.equal(visiblePointer.data()?.communityId,visiblePost.data()?.communityId);
+  await assertFails(setDoc(doc(participantDb,'community_posts/'+postId),{institutionalChallengeId:'forged'},{merge:true}));
+  const {readUserPlatformChallengeCatalog}=await import('../server/gamification/userPlatformChallengeCatalogService.js');
+  const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+  const {publishFirstStoreAndAwardXp}=await import('../server/gamification/firstStorePublicationAuthority.js');
+  const accountBefore=await readPitangaAccount(adminDb,participant);
+  assert.equal(accountBefore.pitangas,0);
+  assert.equal(accountBefore.xp,0);
+  const originalChallenge=visiblePost.data()?.institutionalChallengeId;
+  const available=(await readUserPlatformChallengeCatalog(adminDb,participant)).challenges.find(c=>c.id===originalChallenge);
+  assert.equal(available?.status,'available');
+  assert.equal(available?.rewardXp,2);
+  assert.equal(available?.rewardPitangas,0);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountBefore);
+  // Run the actual authenticated store creation service in the emulator.
+  // A minimal public profile edit is a fixture, not fabricated publication
+  // evidence. No paid plan or payment records are configured.
+  const {ensureFreePlanForStoreCreation}=await import('../server/actions/freeStoreProvisioningService.js');
+  await ensureAuthUser(participant);
+  const provisioned=await ensureFreePlanForStoreCreation('Bearer '+token(participant));
+  assert.equal(provisioned.plan,'free');
+  assert.equal(provisioned.created,true);
+  const storeId=provisioned.canonicalStoreId;
+  const store=adminDb.doc('stores/'+storeId);
+  const listing=adminDb.doc('marketplace_listings/s_'+participant.length+'_'+participant);
+  assert.equal((await store.get()).get('publicationStatus'),'paused');
+  assert.equal((await listing.get()).exists,false);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountBefore);
+  await adminDb.doc('users/'+participant+'/stores/'+participant).update({name:'Loja piloto fictícia',slug:'loja-piloto-ficticia'});
+  const attempt=()=>publishFirstStoreAndAwardXp(adminDb,{authenticatedUserId:participant,canonicalStoreId:storeId});
+  const publication=await Promise.all([attempt(),attempt()]);
+  assert.equal(publication.filter(x=>!x.replay).length,1);
+  const accountAfter=await readPitangaAccount(adminDb,participant);
+  assert.equal(accountAfter.pitangas-accountBefore.pitangas,0);
+  assert.equal(accountAfter.xp-accountBefore.xp,2);
+  assert.equal(accountAfter.entries.length,1);
+  assert.equal((await listing.get()).get('publicationStatus'),'published');
+  const completed=(await readUserPlatformChallengeCatalog(adminDb,participant)).challenges.find(c=>c.id===originalChallenge);
+  assert.equal(completed?.status,'completed');
+  assert.equal(completed?.completionsConfirmed,1);
+  assert.deepEqual(await readPitangaAccount(adminDb,participant),accountAfter);
+  assert.equal((await adminDb.collection('users/'+participant+'/challengeRewards').get()).size,1);
+  assert.equal((await adminDb.collection('users/admin/xpLedger').get()).size,0);
+  assert.equal((await adminDb.collection('users/kyrub:institutional/xpLedger').get()).size,0);
+
  }finally{if(prior===undefined)delete process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED;else process.env.KYRUB_OFFICIAL_CHALLENGE_DISCLOSURE_ENABLED=prior;}
 });
 
