@@ -14,9 +14,9 @@ export function TagEmailLinkIdentity({tagId,onBeforeSend,onVerified,resumeEmail}
   if(!isTagId(tagId)||!pending)return;
   let existing:string|null=null;
   try{existing=sessionStorage.getItem(key);}catch{}
-  existing=existing||resumeEmail||null;
-  if(existing)void complete(existing);
-  // An e-mail opened in a new browser tab requires typing the address again.
+  existing=resumeEmail||existing||null;
+  if(existing){setEmail(existing);void complete(existing);}
+  // A different browser without a saved publication intent requires typing the address again.
   // Never put the address in the NFC URL or the Firebase action URL.
  // eslint-disable-next-line react-hooks/exhaustive-deps
  },[tagId]);

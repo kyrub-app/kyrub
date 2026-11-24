@@ -358,6 +358,21 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.equal(repeated.status,200);
   assert.equal((repeated.body as {recoveryCode:unknown}).recoveryCode,null);
   assert.deepEqual((repeated.body as {tag:{presentation:unknown}}).tag.presentation,draft);
+  const losingPublisher=publisher.uid===pubOne.uid?pubTwo:pubOne;
+  const listBefore=await http('','GET',publisher.token);
+  assert.equal(listBefore.status,200);
+  assert.ok((listBefore.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  const otherList=await http('','GET',losingPublisher.token);
+  assert.equal(otherList.status,200);
+  assert.ok(!(otherList.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  assert.equal((await adminDb.doc('users/'+publisher.uid).get()).exists,false);
+  const promoted=await http('','POST',publisher.token,{action:'promote-tag-identity'});
+  assert.equal(promoted.status,200);
+  assert.equal((promoted.body as {mode:string}).mode,'full');
+  const listAfter=await http('','GET',publisher.token);
+  assert.equal(listAfter.status,200);
+  assert.ok((listAfter.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  assert.equal((await adminDb.doc('kyrub_official_tags/'+fresh.id).get()).get('ownerId'),publisher.uid);
   const race=await Promise.all([
    http(promo.id,'POST',one.token,{action:'claim-promotional'}),
    http(promo.id,'POST',two.token,{action:'claim-promotional'}),
