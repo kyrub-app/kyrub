@@ -41,6 +41,7 @@ function nonce(){
 }
 
 export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
+ const productionPanel=window.location.hostname==='admin.kyrub.com';
  const [batches,setBatches]=useState<Batch[]>([]);
  const [readiness,setReadiness]=useState<Readiness|null>(null);
  const [selected,setSelected]=useState('');
@@ -62,13 +63,14 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean;readiness?:Readiness}>;
  }
  useEffect(()=>{
+  if(productionPanel)return;
   const ctrl=new AbortController();setReady(false);setBatches([]);setNotice('');
   void request('GET',undefined,ctrl.signal).then(result=>{
    if(ctrl.signal.aborted)return;
    setBatches((result.batches??[]).map(validateBatch));setReadiness(result.readiness??null);setReady(true);
   }).catch(()=>{if(!ctrl.signal.aborted)setNotice('Inventário indisponível. Verifique o acesso Super Admin.');});
   return()=>{ctrl.abort();writer.current?.abort();};
- },[user.uid]);
+ },[user.uid,productionPanel]);
  async function issue(){
   if(!ready||!readiness?.canIssue||busy||writing||!confirm)return;
   setBusy(true);setNotice('');
@@ -111,10 +113,16 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
    if(writer.current===controller){writer.current=null;setWriting(false);}
   }
  }
+ if(productionPanel)return <a className="inline-flex min-h-11 items-center rounded-xl bg-[#F47825] px-4 py-2 font-bold text-[#121A17]" href="https://kyrub-git-feat-kyrub-tag-promoti-ebbdb4-kyrubapp-6434s-projects.vercel.app/?kyrub_admin_preview=1#admin-kyrub-tag-promotional">Abrir gravador de teste</a>;
+ if(!ready)return <p role="status">{notice||'Abrindo o gravador…'}</p>;
  return <section className="space-y-4 text-sm text-slate-200">
-  <p className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-amber-100">Fluxo de homologação. A emissão e a primeira ativação promocional ficam desativadas por padrão no servidor. Não distribuir unidades sem validar o lote e a leitura física.</p>
-  <div className="space-y-3 rounded-xl border border-[#34443B] p-3">
-   <h5 className="font-semibold">Prontidão do primeiro piloto</h5>
+  <AdminKyrubTagNfcWizard user={user} readiness={readiness} batches={batches}
+   onBatch={batch=>{
+    setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)]);
+    setSelected(batch.units[0]?.id??'');
+   }}/>
+  <details className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <summary className="cursor-pointer font-semibold">Diagnóstico do piloto</summary>
    {!readiness?<p role="status" className="text-amber-200">Não foi possível confirmar o isolamento. A emissão permanece indisponível.</p>:
     <>
      <p className={readiness.isolation==='unsafe'?'text-amber-200':'text-emerald-300'}>
@@ -125,12 +133,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
      <p>Emissão: {readiness.issuanceEnabled?'habilitada':'desligada'} · Primeira ativação: {readiness.activationEnabled?'habilitada':'desligada'} · Identidade mínima: {readiness.minimalIdentityGateConfigured?'configurada no servidor':'não confirmada'}</p>
      <p className="text-amber-200">Login por e-mail, regras Storage publicadas e leitura NFC física ainda dependem de homologação manual.</p>
     </>}
-  </div>
-  <AdminKyrubTagNfcWizard user={user} readiness={readiness} batches={batches}
-   onBatch={batch=>{
-    setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)]);
-    setSelected(batch.units[0]?.id??'');
-   }}/>
+  </details>
   <details className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <summary className="cursor-pointer font-semibold">Modo manual avançado · Emissão e gravação isoladas</summary>
    <div className="mt-3 space-y-3">

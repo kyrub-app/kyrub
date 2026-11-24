@@ -181,12 +181,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
  return <section className="space-y-4 rounded-xl border border-[#34443B] bg-[#18231E] p-4">
   <div>
    <h5 className="text-base font-bold">Gravação sequencial · Um adesivo por vez</h5>
-   <p className="mt-1 text-slate-300">O Kyrub prepara um identificador, grava uma URL temporária e confere o que o chip realmente devolve. Somente a leitura correta libera o próximo adesivo.</p>
-  </div>
-  <div className="grid grid-cols-3 gap-2">
-   <div className="rounded-lg bg-[#121A17] p-2"><strong className="block text-xl">{sessionPrepared}</strong><span className="text-xs text-slate-300">Preparados nesta sessão</span></div>
-   <div className="rounded-lg bg-[#121A17] p-2"><strong className="block text-xl">{sessionVerified}</strong><span className="text-xs text-slate-300">Conferidos nesta sessão</span></div>
-   <div className="rounded-lg bg-[#121A17] p-2"><strong className="block text-xl">{allVerified}</strong><span className="text-xs text-slate-300">Conferidos no inventário visível</span></div>
+   <p className="mt-1 text-slate-300">Separe um adesivo vazio para o teste.</p>
   </div>
   {!canPilot&&<p role="status" className="rounded-lg border border-amber-400/30 p-3 text-amber-100">
    A gravação sequencial está bloqueada até a prévia usar um Firebase de homologação isolado e o Super Admin habilitar o piloto. Nenhuma tag real será cadastrada neste estado.
@@ -217,6 +212,6 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
       disabled={!canPilot||working} onClick={()=>resume(batch,unit)}>Retomar unidade {unit.id.slice(-8)}</button>)}
    </div>
   </details>}
-  <p className="text-xs text-slate-400">“Conferido” significa leitura NDEF correspondente e registro da declaração do navegador. Não comprova que o chip seja original ou impossível de copiar. O inventário mostra os lotes recentes, não representa uma contagem total vitalícia.</p>
+  <details><summary className="cursor-pointer">Resumo da sessão</summary><p>{sessionPrepared} preparados · {sessionVerified} conferidos · {allVerified} conferidos no inventário visível.</p></details>
  </section>;
 }
