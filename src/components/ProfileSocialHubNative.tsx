@@ -1348,7 +1348,7 @@ export function ProfileSocialHubNative() {
                 Meu perfil
               </span>
               <h2 className="text-base font-black text-white">
-                {activeTab === 'connected' ? 'Conectados' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
+                {activeTab === 'connected' ? 'Minha Tribo' : activeTab === 'square' ? 'Praça' : 'Central Pessoal'}
               </h2>
             </div>
             <button
@@ -1402,7 +1402,7 @@ export function ProfileSocialHubNative() {
                 <div className="mt-5 grid grid-cols-4 gap-2" aria-label="Ações da página pessoal">
                   <button type="button" onClick={() => setActiveTab('connected')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
-                    <span className="text-[8px] font-black uppercase">Conectados</span>
+                    <span className="text-[8px] font-black uppercase">Minha Tribo</span>
                   </button>
                   <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>

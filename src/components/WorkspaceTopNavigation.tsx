@@ -68,8 +68,8 @@ export function WorkspaceTopNavigation({
         type="button"
         onClick={onConnections}
         className={navButtonClass}
-        title="Conectados"
-        aria-label="Abrir Conectados"
+        title="Minha Tribo"
+        aria-label="Abrir Minha Tribo"
       >
         <Users className="h-4 w-4" aria-hidden="true" />
       </button>

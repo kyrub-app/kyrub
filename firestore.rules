@@ -425,6 +425,17 @@ match /connections/{connectionId} {
 
       allow read, write: if false;
 
+      // Individual history visibility: no shared message is deleted or edited.
+      match /history_state/{userId} {
+        allow get: if canAccessMessages() && request.auth.uid == userId;
+        allow list, delete: if false;
+        allow create, update: if canAccessMessages()
+          && request.auth.uid == userId
+          && incoming().keys().hasAll(['clearedAt'])
+          && incoming().keys().hasOnly(['clearedAt'])
+          && incoming().clearedAt == request.time;
+      }
+
       match /messages/{messageId} {
         allow get: if canAccessMessages()
           && isValidId(messageId);

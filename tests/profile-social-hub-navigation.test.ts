@@ -319,3 +319,15 @@ test('the signed-in header moves Pitangas/XP to the private Central and retains 
   assert.match(sessionNavigationSource, /id="header-connected-trigger"/);
   assert.match(sessionNavigationSource, /id="header-saved-trigger"/);
 });
+
+test('Minha Tribo retains groups and individual chat history controls',()=>{
+ const hook=readFileSync('src/hooks/useChatMessages.ts','utf8');
+ assert.match(sessionNavigationSource,/title="Minha Tribo"/);
+ assert.match(profileSource,/activeTab === 'connected' \? 'Minha Tribo'/);
+ assert.match(profileSource,/label: 'Grupos'/);
+ assert.match(chatSource,/Confirmar exclusão da conversa/);
+ assert.match(hook,/history_state/);
+ assert.match(hook,/clearedAt:serverTimestamp\(\)/);
+ assert.match(hook,/message\.createdAt/);
+ assert.doesNotMatch(hook,/deleteDoc/);
+});
