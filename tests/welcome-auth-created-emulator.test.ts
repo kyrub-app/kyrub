@@ -683,6 +683,19 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
   assert.equal((await pending(author.localId).get()).exists,false);
   assert.equal((await read()).authorProjectionSubtotal?.seeds,6);
   assert.equal((await read()).reconciledEconomySubtotal?.balance,200);
+  // Synthetic boundary fixture, as in the economic-pilot tests.
+  // No historical reward is invented. Only the next accepted seed pays.
+  const progress=db.doc('users/'+author.localId+'/semeaduraProgress/summary');
+  const enrollment=db.doc('users/'+author.localId+'/semeaduraEconomicPilot/activation');
+  await progress.update({acceptedSeeds:999,pitangueiras:0});
+  await enrollment.set({schemaVersion:1,authorId:author.localId,epoch,acceptedSeeds:999,creditedPitangas:0});
+  await Promise.all([seed('queue-threshold-voter'),seed('queue-threshold-voter')]);
+  await drain();
+  const milestone=await read();
+  assert.deepEqual(milestone.reconciledEconomySubtotal,{credits:201,debits:0,balance:201});
+  assert.deepEqual(milestone.authorProjectionSubtotal,{seeds:1001,pitangueiras:1,bosques:0});
+  assert.equal((await balance(author.localId).get()).get('availableKCoins'),101);
+  assert.equal((await drain()).refreshed,0);
   await profile.update({status:'suspended'});
   await assert.rejects(drain(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
  }finally{
