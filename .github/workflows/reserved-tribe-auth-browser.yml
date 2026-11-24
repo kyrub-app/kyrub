@@ -1,0 +1,47 @@
+name: Reserved tribe authenticated browser
+on:
+  pull_request:
+    paths:
+      - 'src/utils/**'
+      - 'server/identity/**'
+      - 'server/firebaseAdmin.ts'
+      - 'server.ts'
+      - 'firestore*.rules'
+      - 'firebase.security.json'
+      - 'tests/reserved-tribe-auth-browser.mjs'
+      - '.github/workflows/reserved-tribe-auth-browser.yml'
+      - 'package*.json'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  auth-emulator-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      FIREBASE_PROJECT_ID: kyrub-security-test
+      GCLOUD_PROJECT: kyrub-security-test
+      VITE_KYRUB_FIREBASE_EMULATOR_E2E: 'true'
+      VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E: 'true'
+      KYRUB_RESERVED_TRIBE_PILOT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Exercise real SDK and pilot HTTP on local emulators
+        run: |
+          unset FIREBASE_SERVICE_ACCOUNT_JSON GOOGLE_APPLICATION_CREDENTIALS VERCEL VERCEL_ENV
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore 'bash -euo pipefail -c '"'"'npm run dev > /tmp/kyrub-tribe-server.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/api/health >/dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/api/health; node tests/reserved-tribe-auth-browser.mjs'"'"''
