@@ -5,6 +5,7 @@ import {getApps,deleteApp} from 'firebase-admin/app';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
 import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit,where} from 'firebase/firestore';
 import {Timestamp} from 'firebase-admin/firestore';
+import {createReservedTribePilotHandler} from '../server/identity/reservedTribePilotTransport.js';
 import {createReservedTribeRecoveryService} from '../server/identity/reservedTribeRecoveryService.js';
 import {buildUserNotification} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
@@ -250,4 +251,33 @@ test('recovery preserves reserved membership and messages and consumes a fresh a
  assert.equal((await listReservedTribeConnections(actor,next.token)).length,1);
  await setReservedTribeContact(actor,next.token,peer,false);
  await assert.rejects(recover('fresh','again!synthetic','again!synthetic'),/TRIBE_RECOVERY_DENIED/);
+});
+
+test('isolated transport authenticates the actor, rejects injected identity and revokes only the matching session',async()=>{
+ const handle=createReservedTribePilotHandler({allowed:()=>true,project:()=>PROJECT,verify:async token=>{
+  if(token==='bad')throw Error('invalid');
+  return {uid:token==='peer'?peer:actor,email_verified:token!=='unverified'};
+ }});
+ async function call(token:string,body:unknown,method='POST'){
+  let status=0,result:any;
+  const headers:Record<string,string>={};
+  const response={setHeader:(key:string,value:string)=>{headers[key]=value;},status(code:number){status=code;return this;},json(value:unknown){result=value;}};
+  await handle({method,headers:{authorization:'Bearer '+token},body},response);
+  assert.match(headers['Cache-Control'],/no-store/);
+  return {status,result};
+ }
+ assert.equal((await call('bad',{action:'status'})).status,401);
+ assert.equal((await call('unverified',{action:'status'})).status,401);
+ assert.equal((await call('owner',{action:'status'},'GET')).status,405);
+ assert.equal((await call('owner',{action:'directory',actorId:peer})).status,400);
+ assert.equal((await call('owner',{action:'status'})).result.configured,true);
+ const unlocked=await call('owner',{action:'unlock',code:'new!synthetic'});assert.equal(unlocked.status,200);assert.equal(unlocked.result.ok,true);
+ const token=unlocked.result.token;
+ assert.equal((await call('peer',{action:'reserved-directory',session:token})).status,403);
+ assert.equal((await call('owner',{action:'reserved-directory',session:token})).status,200);
+ const next=await call('owner',{action:'unlock',code:'new!synthetic'});assert.equal(next.result.ok,true);
+ assert.equal((await call('owner',{action:'lock',session:token})).status,200);
+ assert.equal((await call('owner',{action:'reserved-directory',session:next.result.token})).status,200);
+ await call('owner',{action:'lock',session:next.result.token});
+ assert.equal((await call('owner',{action:'reserved-directory',session:next.result.token})).status,403);
 });

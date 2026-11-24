@@ -28,6 +28,10 @@
   },
   "rewrites": [
     {
+      "source": "/api/social/reserved-tribe",
+      "destination": "/api/health?transport=reserved-tribe-pilot"
+    },
+    {
       "source": "/api/admin/global-challenges",
       "destination": "/api/admin/operations/health?transport=global-challenges"
     },

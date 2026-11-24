@@ -238,3 +238,24 @@ export async function searchOrdinaryTribeSuggestions(actor:string,search:unknown
   return matches;
  });
 }
+
+/** Used by the isolated pilot only. No contact IDs or secret material. */
+export async function getReservedTribeSetupStatus(actor:string){
+ const root=vault(actor);
+ return adminDb.runTransaction(async tx=>{
+  const [account,config]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(root)]);
+  if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
+  return {configured:config.exists,directoryProtected:config.get('directoryProtected')===true};
+ });
+}
+export async function lockReservedTribeSession(actor:string,token:unknown){
+ const root=vault(actor);
+ return adminDb.runTransaction(async tx=>{
+  const config=await tx.get(root);
+  if(!config.exists)return {locked:true as const};
+  // A stale browser tab cannot invalidate a newer unlock.
+  if(!validTribeSession(token,config.get('sessionDigest'),config.get('sessionExpiresAt'),Date.now()))return {locked:true as const};
+  tx.update(root,{sessionDigest:'',sessionExpiresAt:0,updatedAt:FieldValue.serverTimestamp()});
+  return {locked:true as const};
+ });
+}

@@ -130,3 +130,24 @@ test('cached social data is never considered current authorization',async()=>{
  assert.match(forward,/error=>\{onChange\(\[\]\);onError\(error\);\}/);
  assert.match(profile,/snapshot.metadata.fromCache\|\|snapshot.metadata.hasPendingWrites\)\{setGroups\(\[\]\)/);
 });
+
+test('pilot route is explicitly disabled outside local isolated Auth and Firestore emulators',async()=>{
+ const {reservedTribePilotEnvironmentAllowed,parseReservedTribePilotBody,createReservedTribePilotHandler}=await import('../server/identity/reservedTribePilotTransport.js');
+ const env={KYRUB_RESERVED_TRIBE_PILOT:'true',FIREBASE_PROJECT_ID:'kyrub-security-test',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'};
+ assert.equal(reservedTribePilotEnvironmentAllowed(env),true);
+ for(const override of [{VERCEL:'1'},{VERCEL_ENV:'preview'},{NODE_ENV:'production'},{FIREBASE_PROJECT_ID:'kyrub-b8d0e'},{FIREBASE_PROJECT_ID:'kyrub-tags'},{FIRESTORE_EMULATOR_HOST:undefined},{FIREBASE_AUTH_EMULATOR_HOST:undefined},{KYRUB_RESERVED_TRIBE_PILOT:'false'}])assert.equal(reservedTribePilotEnvironmentAllowed({...env,...override}),false);
+ assert.throws(()=>parseReservedTribePilotBody({action:'unlock',code:'test!code',uid:'other'}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'reserved-directory'}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'constructor'}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({action:'membership',session:'bad',peerId:'peer',reserved:true}),/TRIBE_INVALID/);
+ assert.equal(parseReservedTribePilotBody({action:'unlock',code:'test!code'}).action,'unlock');
+ let status=0,called=0;
+ const res={setHeader:()=>{},status(value:number){status=value;return this;},json:()=>{}};
+ const handler=createReservedTribePilotHandler({allowed:()=>false,project:()=>{called++;return 'kyrub-security-test';},verify:async()=>{called++;return {uid:'owner',email_verified:true};}});
+ await handler({method:'POST',headers:{authorization:'Bearer synthetic'},body:{action:'status'}},res);
+ assert.equal(status,404);assert.equal(called,0);
+ const client=readFileSync('src/utils/reservedTribePilotClient.ts','utf8');
+ assert.match(client,/VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E/);
+ assert.match(client,/cache:'no-store'/);
+ assert.doesNotMatch(client,/localStorage|sessionStorage|console\./);
+});
