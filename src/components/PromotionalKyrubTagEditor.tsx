@@ -3,6 +3,7 @@ import {auth} from '../utils/firebase';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PromotionalSosContact} from '../../shared/kyrubTagPromotional';
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
+import {parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
 
 export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
  const [tag,setTag]=useState(initial);
@@ -72,6 +73,23 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
   finally{setBusy(false);}
  }
+ async function removeSpace(url:string){
+  const user=auth.currentUser;
+  if(!user||busy||uploading||!window.confirm('Retirar este espaço somente desta Kyrub Tag?'))return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'remove-promotional-space',url})
+   });
+   if(!res.ok)throw Error('TAG_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id||updated.distribution!=='promotional')throw Error('TAG_FAILED');
+   setTag(updated);setNotice('Espaço retirado somente desta Tag.');
+  }catch{setNotice('Não foi possível retirar o espaço. Confira a unidade e tente novamente.');}
+  finally{setBusy(false);}
+ }
  async function rotateRecovery(){
   if(busy||!auth.currentUser)return;
   if(!window.confirm('Gerar um novo código de recuperação? O código antigo será invalidado. Guarde o novo em um local seguro.'))return;
@@ -100,6 +118,13 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <strong>Estado: {tag.blocked?'Bloqueada por segurança':tag.enabled?'Pública':'Ainda não publicada'}</strong>
    <p className="mt-1 text-slate-300">Somente quem tiver acesso à sua identidade autenticada poderá gerenciar esta unidade.</p>
   </div>
+  {tag.urls.some(url=>{const target=parsePublicDestinationUrl(url);return target?.kind==='store'||target?.kind==='community';})&&<section className="space-y-2 rounded-xl border border-[#34443B] p-3">
+   <h2 className="font-semibold">Espaços vinculados a esta Tag</h2>
+   <p className="text-xs text-slate-300">Retire um destino sem alterar o perfil, os outros adesivos ou o SOS.</p>
+   {tag.urls.map(url=>{const target=parsePublicDestinationUrl(url);if(!target||(target.kind!=='store'&&target.kind!=='community'))return null;
+    return <div key={url} className="flex items-center gap-2 rounded-lg border border-[#34443B] p-2 text-sm"><span className="min-w-0 flex-1 break-words">{target.kind==='store'?'Loja':'Comunidade'} · {target.identifier}</span><button type="button" disabled={busy||uploading} className="min-h-11 text-rose-200 underline disabled:opacity-50" onClick={()=>void removeSpace(url)}>Retirar</button></div>;
+   })}
+  </section>}
   {recoveryCode&&<div className="space-y-2 rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
     <strong>Guarde seu código de recuperação</strong>
     <p>Ele é exibido uma única vez e permite recuperar o gerenciamento caso você perca o acesso ao e-mail. Não grave na etiqueta nem compartilhe.</p>

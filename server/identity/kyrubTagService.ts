@@ -353,6 +353,21 @@ export async function addOwnedCardSpacesToTags(actor:string,ids:unknown,urls:unk
   return {tags:updates.map(item=>owned(item.ref.id,{...item.data,targets:item.targets}))};
  });
 }
+/** Remove destinations only; never republish a blocked or unpublished unit. */
+export async function removePromotionalTagSpace(actor:string,id:string,url:unknown){
+ assertTagPilotWriteIsolated();validActor(actor);
+ if(!isTagId(id)||typeof url!=='string')throw Error('TAG_INVALID');
+ const target=parsePublicDestinationUrl(url);
+ if(!target||(target.kind!=='store'&&target.kind!=='community'))throw Error('TAG_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const ref=tags().doc(id),data=(await tx.get(ref)).data();
+  if(data?.ownerId!==actor||data.distribution!=='promotional')throw Error('TAG_FORBIDDEN');
+  const existing=Array.isArray(data.targets)?data.targets.filter(isBoundTarget):[];
+  const targets=existing.filter(t=>t.kind!==target.kind||t.identifier!==target.identifier);
+  if(targets.length!==existing.length)tx.update(ref,{targets,updatedAt:new Date().toISOString()});
+  return owned(id,{...data,targets});
+ });
+}
 export async function configureKyrubTag(actor:string,id:string,urls:unknown){
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');

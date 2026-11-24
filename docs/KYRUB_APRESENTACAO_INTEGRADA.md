@@ -26,3 +26,6 @@ Sincronização explícita a partir do perfil salvo: escolha uma ou várias Tags
 
 ## Personalização de fundo
 Imagem de fundo opcional e independente de foto e capa, com camada escura para leitura. Pode ser adicionada/removida no perfil e no editor promocional de cada Tag. Cópia seletiva do fundo do perfil salvo para unidades escolhidas usa o mesmo fluxo de reencodificação, verificação de mídia e transação. Nenhuma publicação automática; mídia de fundo da Tag usa slot privado próprio e proxy revogável. Homologação de navegador e Storage pendente.
+
+## Componente visual comum e ações contextuais
+PresentationCard reúne foto, capa, fundo, nome, atividade, biografia e espaços públicos. ContactPresentationModal mantém a ação de chat; PublicKyrubTagPage mantém o SOS, contatos de emergência e edição da unidade. A Tag promocional permite retirar cada espaço de forma independente, inclusive quando bloqueada, sem reativá-la. Nenhuma alteração de titularidade, segredo, perfil, outras unidades ou NFC. Importação de mídia da Tag para o perfil e homologação funcional continuam pendentes.

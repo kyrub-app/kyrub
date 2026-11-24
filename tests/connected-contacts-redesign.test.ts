@@ -64,3 +64,13 @@ test('wrapper replaces only the legacy connected body', () => {
   assert.match(globalCss, /connected-contacts-redesign-active/);
   assert.match(globalCss, /> \.space-y-6/);
 });
+
+ test('shared presentation is visual only and wrappers retain context actions',()=>{
+ const shared=readFileSync('src/components/PresentationCard.tsx','utf8');
+ const contact=readFileSync('src/components/ContactPresentationModal.tsx','utf8');
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ assert.match(contact,/<PresentationCard/);assert.match(tag,/<PresentationCard/);
+ assert.match(contact,/Abrir chat/);assert.doesNotMatch(contact,/SOS · Informações de emergência/);
+ assert.match(tag,/SOS · Informações de emergência/);assert.doesNotMatch(tag,/Abrir chat/);
+ assert.doesNotMatch(shared,/SOS|Abrir chat|firebase|fetch\(/);
+ });

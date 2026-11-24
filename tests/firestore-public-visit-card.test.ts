@@ -417,6 +417,14 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.equal((await loadOwnedKyrubTag(publisher.uid,fresh.id)).presentation?.name,expected.name);
   assert.equal((await loadOwnedKyrubTag(publisher.uid,second.id)).presentation?.about,expected.bio);
   assert.deepEqual((await loadOwnedKyrubTag(publisher.uid,thirdTag.id)).presentation,draft);
+  const removal={action:'remove-promotional-space',url:space};
+  assert.equal((await http(fresh.id,'POST',losingPublisher.token,removal)).status,403);
+  assert.equal((await http(fresh.id,'POST',publisher.token,removal)).status,200);
+  assert.equal((await http(fresh.id,'POST',publisher.token,removal)).status,200);
+  assert.deepEqual((await resolveKyrubTag(fresh.id))?.links,[]);
+  assert.deepEqual((await resolveKyrubTag(second.id))?.links.map(l=>l.url),[space]);
+  assert.equal((await loadOwnedKyrubTag(publisher.uid,fresh.id)).presentation?.name,expected.name);
+  assert.equal((await adminDb.doc('kyrub_official_tags/'+fresh.id).get()).get('recoveryHash'),beforeSync.recoveryHash);
   await adminDb.doc('communities/tag-spaces-test').update({visibility:'private'});
   assert.deepEqual((await resolveKyrubTag(fresh.id))?.links,[]);
   assert.equal((await http('','POST',publisher.token,attach)).status,409);

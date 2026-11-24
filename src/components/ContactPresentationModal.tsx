@@ -1,8 +1,8 @@
 import {useEffect,useState} from 'react';
 import {createPortal} from 'react-dom';
-import {MessageCircle,Store,Users,X,UserRound,ChevronRight} from 'lucide-react';
+import {MessageCircle,X} from 'lucide-react';
 import {auth} from '../utils/firebase';
-import {buildPublicDestinationPath,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
+import {PresentationCard} from './PresentationCard';
 type Presentation={name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;backgroundUrl:string;links:{kind:string;name:string;url:string}[]};
 export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:string;onClose:()=>void;onChat?:()=>void}){
  const [state,setState]=useState<{id:string;presentation:Presentation|null;status:'loading'|'ready'|'error'}>({id:'',presentation:null,status:'loading'});
@@ -30,24 +30,11 @@ export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:str
    </header>
    {state.id!==targetId||state.status==='loading'?<p role="status" className="py-5 text-sm text-slate-300">Consultando apresentação…</p>:
    state.status==='error'?<p role="alert" className="py-5 text-sm">Não foi possível consultar a apresentação. <button type="button" onClick={()=>setRetry(v=>v+1)} className="underline">Tentar novamente</button></p>:
-   !presentation?<p className="py-5 text-sm text-slate-300">A apresentação deste Kairubido não está pública.</p>:<div className="relative isolate overflow-hidden rounded-xl space-y-4 p-3 pt-4">
-    {presentation.backgroundUrl&&<img src={presentation.backgroundUrl} alt="" aria-hidden="true" referrerPolicy="no-referrer" className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-20"/>}
-    {presentation.coverUrl&&<img src={presentation.coverUrl} alt="Capa da apresentação" referrerPolicy="no-referrer" className="h-28 w-full rounded-xl object-cover"/>}
-    <div className="flex items-center gap-3">
-     {presentation.photoUrl?<img src={presentation.photoUrl} alt="" referrerPolicy="no-referrer" className="h-20 w-20 rounded-full object-cover"/>:<div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#26352D]"><UserRound className="h-9 w-9"/></div>}
-     <div className="min-w-0"><h3 className="break-words text-xl font-bold">{presentation.name}</h3>{presentation.occupation&&<p className="text-sm text-[#F47825]">{presentation.occupation}</p>}</div>
-    </div>
-    {presentation.bio&&<p className="whitespace-pre-wrap break-words text-sm text-slate-200">{presentation.bio}</p>}
-    {(['community','store'] as const).map(kind=>{
-     const links=presentation.links.filter(link=>link.kind===kind);
-     return links.length>0&&<section key={kind} className="space-y-2"><h4 className="font-semibold">{kind==='community'?'Comunidades':'Lojas e vitrines'}</h4>
-      {links.map(link=>{const parsed=parsePublicDestinationUrl(link.url);const path=parsed&&parsed.kind===kind?buildPublicDestinationPath(kind,parsed.identifier):null;
-       return path&&<a href={path} key={link.url} className="flex min-h-12 items-center gap-3 rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm">{kind==='community'?<Users className="h-5 w-5 shrink-0 text-[#F47825]"/>:<Store className="h-5 w-5 shrink-0 text-[#F47825]"/>}<span className="min-w-0 flex-1 break-words">{link.name}</span><ChevronRight className="h-4 w-4"/></a>;})}
-     </section>;
-    })}
+   !presentation?<p className="py-5 text-sm text-slate-300">A apresentação deste Kairubido não está pública.</p>:<PresentationCard {...presentation}>
     <p className="text-xs text-slate-400">Somente informações e conteúdos públicos são exibidos aqui.</p>
-   </div>}
-   {onChat&&<button type="button" onClick={onChat} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] font-bold text-[#121A17]"><MessageCircle className="h-5 w-5"/>Abrir chat</button>}
+    {onChat&&<button type="button" onClick={onChat} className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] font-bold text-[#121A17]"><MessageCircle className="h-5 w-5"/>Abrir chat</button>}
+   </PresentationCard>}
+   {!presentation&&onChat&&<button type="button" onClick={onChat} className="mt-4 flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] font-bold text-[#121A17]"><MessageCircle className="h-5 w-5"/>Abrir chat</button>}
   </section>
  </div>,document.body);
 }

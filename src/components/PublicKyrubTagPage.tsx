@@ -3,6 +3,7 @@ import {isSignInWithEmailLink,onAuthStateChanged,signOut,type User} from 'fireba
 import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
+import {PresentationCard} from './PresentationCard';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
@@ -183,24 +184,12 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
    {!promotional&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
-   <section className="relative isolate overflow-hidden space-y-4 rounded-2xl border border-[#34443B] p-4">
-    {data.presentation.hasBackground&&<img src={publicPromotionalTagImageUrl(identifier,'background')} alt="" aria-hidden="true" referrerPolicy="no-referrer" className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-20"/>}
-    <div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C] text-sm text-slate-300">
-     {data.presentation.hasCover?<img className="h-full w-full object-cover" alt="Foto de capa do cartão digital"
-       src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/>:'Apresentação digital · Capa opcional'}
-    </div>
-    <div className="flex items-center gap-3">
-     {data.presentation.hasAvatar&&<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular"
-       src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>}
-     <h1 className="text-2xl font-bold">{data.presentation.name||'Minha Kyrub Tag'}</h1>
-    </div>
-    {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
-    {data.presentation.about&&<p className="whitespace-pre-wrap text-slate-200">{data.presentation.about}</p>}
-     {data.links.length>0&&<section className="space-y-2"><h2 className="font-semibold">Meus espaços no Kyrub</h2>
-      {data.links.map(link=>{const target=parsePublicDestinationUrl(link.url);if(!target||(target.kind!=='store'&&target.kind!=='community'))return null;
-       return <a key={link.url} className="block rounded-xl border border-[#34443B] p-3" href={buildPublicDestinationPath(target.kind,target.identifier)??'/'}>{link.name}</a>;})}
-     </section>}
-    <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
+   <PresentationCard headingLevel="h1" name={data.presentation.name||'Minha Kyrub Tag'} occupation={data.presentation.occupation} bio={data.presentation.about}
+    photoUrl={data.presentation.hasAvatar?publicPromotionalTagImageUrl(identifier,'avatar'):undefined}
+    coverUrl={data.presentation.hasCover?publicPromotionalTagImageUrl(identifier,'cover'):undefined}
+    backgroundUrl={data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined}
+    links={data.links}>
+    <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
      <h2 className="font-semibold">Emergência no Brasil</h2>
      <p className="text-xs text-slate-300">Toque em um número para abrir o discador. Esta página não envia alertas nem aciona socorro automaticamente.</p>
@@ -217,7 +206,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
      </div>}
     </div>}
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
-   </section>:
+   </PresentationCard>:
    promotional?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
     <h1 className="text-2xl font-bold">Sua apresentação, do seu jeito.</h1>
