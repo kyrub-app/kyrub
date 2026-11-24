@@ -20,3 +20,6 @@ O editor de perfil reaproveita o cartão multifuncional, com catálogo de espaç
 
 ## Quarto incremento
 Cartão de apresentação compartilhado entre as superfícies de contatos, com nome, foto pública, atividade, biografia, links públicos do cartão multifuncional e ação de chat para conexões existentes. Consulta autenticada no servidor, respeita visibilidade do perfil e dos destinos; sem feed, Status, e-mail, SOS ou campos privados. A apresentação privada não é reconstruída a partir de dados antigos do contato. Capa e sincronização de mídias permanecem pendentes.
+
+## Quinto incremento
+Sincronização explícita a partir do perfil salvo: escolha uma ou várias Tags promocionais ativas, selecione texto, foto própria armazenada no Firebase e/ou capa. As imagens são reencodadas e carregadas separadamente para cada unidade, sem reutilizar referências privadas entre dispositivos. A publicação dos campos é transacional, condicionada à titularidade e à revisão da fonte. Fotos externas não são copiadas. SOS, destinos e credenciais permanecem intactos. O editor passa a permitir capa e o cartão de apresentação a exibi-la. Ainda falta importação de mídia da Tag para o perfil, remoção seletiva de destinos, testes reais de Storage e navegador, e limpeza de arquivos staged sem referência após falha. Não habilitar em produção sem homologação.

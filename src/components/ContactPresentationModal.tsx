@@ -3,7 +3,7 @@ import {createPortal} from 'react-dom';
 import {MessageCircle,Store,Users,X,UserRound,ChevronRight} from 'lucide-react';
 import {auth} from '../utils/firebase';
 import {buildPublicDestinationPath,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
-type Presentation={name:string;occupation:string;bio:string;photoUrl:string;links:{kind:string;name:string;url:string}[]};
+type Presentation={name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;links:{kind:string;name:string;url:string}[]};
 export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:string;onClose:()=>void;onChat?:()=>void}){
  const [state,setState]=useState<{id:string;presentation:Presentation|null;status:'loading'|'ready'|'error'}>({id:'',presentation:null,status:'loading'});
  const [retry,setRetry]=useState(0);
@@ -31,6 +31,7 @@ export function ContactPresentationModal({targetId,onClose,onChat}:{targetId:str
    {state.id!==targetId||state.status==='loading'?<p role="status" className="py-5 text-sm text-slate-300">Consultando apresentação…</p>:
    state.status==='error'?<p role="alert" className="py-5 text-sm">Não foi possível consultar a apresentação. <button type="button" onClick={()=>setRetry(v=>v+1)} className="underline">Tentar novamente</button></p>:
    !presentation?<p className="py-5 text-sm text-slate-300">A apresentação deste Kairubido não está pública.</p>:<div className="space-y-4 pt-4">
+    {presentation.coverUrl&&<img src={presentation.coverUrl} alt="Capa da apresentação" referrerPolicy="no-referrer" className="h-28 w-full rounded-xl object-cover"/>}
     <div className="flex items-center gap-3">
      {presentation.photoUrl?<img src={presentation.photoUrl} alt="" referrerPolicy="no-referrer" className="h-20 w-20 rounded-full object-cover"/>:<div className="flex h-20 w-20 shrink-0 items-center justify-center rounded-full bg-[#26352D]"><UserRound className="h-9 w-9"/></div>}
      <div className="min-w-0"><h3 className="break-words text-xl font-bold">{presentation.name}</h3>{presentation.occupation&&<p className="text-sm text-[#F47825]">{presentation.occupation}</p>}</div>

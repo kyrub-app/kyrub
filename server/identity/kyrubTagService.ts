@@ -263,6 +263,57 @@ export async function renameOwnedKyrubTag(actor:string,id:string,value:unknown){
  });
 }
 
+/** Copy an explicitly reviewed saved profile to selected promotional units.
+ * No cross-device storage reference; private media has already been staged per unit.
+ */
+export async function syncProfilePresentationToTags(actor:string,input:unknown){
+ assertTagPilotWriteIsolated();validActor(actor);
+ if(!input||typeof input!=='object'||Array.isArray(input))throw Error('TAG_INVALID');
+ const data=input as Record<string,unknown>;
+ const {tagIds,expected,fields,media}=data;
+ if(Object.keys(data).some(k=>!['tagIds','expected','fields','media'].includes(k))||
+  !Array.isArray(tagIds)||!tagIds.length||tagIds.length>100||!tagIds.every(isTagId)||new Set(tagIds).size!==tagIds.length||
+  !Array.isArray(fields)||!fields.length||new Set(fields).size!==fields.length||!fields.every(k=>['text','avatar','cover'].includes(k))||
+  !expected||typeof expected!=='object'||Array.isArray(expected)||!media||typeof media!=='object'||Array.isArray(media))throw Error('TAG_INVALID');
+ const reviewed=expected as Record<string,unknown>,mediaMap=media as Record<string,unknown>;
+ const keys=['name','occupation','bio','photoUrl','coverUrl'];
+ if(Object.keys(reviewed).length!==keys.length||!keys.every(k=>typeof reviewed[k]==='string'&&String(reviewed[k]).length<=2048)||
+  Object.keys(mediaMap).some(id=>!tagIds.includes(id)))throw Error('TAG_INVALID');
+ const slots=(['avatar','cover'] as const).filter(slot=>fields.includes(slot));
+ if(slots.some(slot=>!reviewed[slot==='avatar'?'photoUrl':'coverUrl']))throw Error('TAG_INVALID');
+ const prepared=new Map<string,{avatarPath?:string;coverPath?:string}>();
+ for(const id of tagIds){
+  const raw=mediaMap[id];
+  if(slots.length&&(!raw||typeof raw!=='object'||Array.isArray(raw)))throw Error('TAG_INVALID');
+  const item=(raw??{}) as Record<string,unknown>;
+  if(Object.keys(item).length!==slots.length||!slots.every(slot=>typeof item[slot+'Path']==='string'&&item[slot+'Path']))throw Error('TAG_INVALID');
+  const images={...(slots.includes('avatar')?{avatarPath:item.avatarPath as string}:{}),...(slots.includes('cover')?{coverPath:item.coverPath as string}:{})};
+  if(slots.length){
+   const unit=(await tags().doc(id).get()).data();
+   if(unit?.ownerId!==actor||unit.distribution!=='promotional'||unit.enabled!==true||unit.blocked===true)throw Error('TAG_FORBIDDEN');
+   await validatePromotionalMediaReferences(actor,id,{...EMPTY_PROMOTIONAL_PRESENTATION,...images});
+  }
+  prepared.set(id,images);
+ }
+ return adminDb.runTransaction(async tx=>{
+  const accountRef=adminDb.doc('users/'+actor),profileRef=accountRef.collection('public_profile').doc('main');
+  const refs=tagIds.map(id=>tags().doc(id));
+  const [account,profile,...units]=await Promise.all([tx.get(accountRef),tx.get(profileRef),...refs.map(ref=>tx.get(ref))]);
+  if(!account.exists||!profile.exists)throw Error('TAG_FORBIDDEN');
+  if(keys.some(k=>(typeof profile.get(k)==='string'?profile.get(k):'')!==reviewed[k]))throw Error('TAG_CHANGED');
+  const text=fields.includes('text')?normalizePromotionalPresentation({name:reviewed.name,occupation:reviewed.occupation,about:reviewed.bio}):null;
+  const updates=units.map((snap,i)=>{
+   const unit=snap.data();
+   if(unit?.ownerId!==actor||unit.distribution!=='promotional'||unit.enabled!==true||unit.blocked===true)throw Error('TAG_FORBIDDEN');
+   const existing=normalizePromotionalPresentation(unit.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
+   const presentation=normalizePromotionalPresentation({...existing,...(text??{}),...prepared.get(refs[i].id)});
+   return {ref:refs[i],unit,presentation};
+  });
+  for(const item of updates)tx.update(item.ref,{presentation:item.presentation,updatedAt:new Date().toISOString()});
+  return {tags:updates.map(item=>owned(item.ref.id,{...item.unit,presentation:item.presentation}))};
+ });
+}
+
 /** Add only explicitly selected destinations from the owner's published card. */
 export async function addOwnedCardSpacesToTags(actor:string,ids:unknown,urls:unknown){
  assertTagPilotWriteIsolated();validActor(actor);

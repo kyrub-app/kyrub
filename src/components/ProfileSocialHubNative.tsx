@@ -63,6 +63,8 @@ import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { ContactPresentationModal } from './ContactPresentationModal';
 import { MultifunctionCardEditor } from './MultifunctionCardEditor';
+import { ProfileTagPresentationSync } from './ProfileTagPresentationSync';
+import { sanitizedWebp } from '../utils/kyrubTagMedia';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
   withinCommunitySquareWindow, type CommunitySquareEntry,
@@ -93,6 +95,7 @@ type ProfileState = {
   photoUrl: string;
   bio: string;
   occupation?: string;
+  coverUrl?: string;
 };
 
 type ContactGroup = {
@@ -713,6 +716,7 @@ export function ProfileSocialHubNative() {
           ...current,
           bio: readString(data?.bio),
           occupation: readString(data?.occupation),
+          coverUrl: readString(data?.coverUrl),
           photoUrl: readString(data?.photoUrl) || current.photoUrl,
           name: readString(data?.name) || current.name,
         }));
@@ -1167,6 +1171,23 @@ export function ProfileSocialHubNative() {
     } finally {
       setPhotoBusy(false);
     }
+  };
+
+  const uploadPresentationCover = async (event: ChangeEvent<HTMLInputElement>)=>{
+    const file=event.target.files?.[0];event.target.value='';
+    if(!user||!file||photoBusy)return;
+    setPhotoBusy(true);
+    try{
+      const blob=await sanitizedWebp(file,'cover');
+      if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
+      const image=ref(storage,'profile-images/'+user.uid+'/cover-'+crypto.randomUUID()+'.webp');
+      await uploadBytes(image,blob,{contentType:'image/webp'});
+      const coverUrl=await getDownloadURL(image);
+      if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
+      await setDoc(doc(db,'users',user.uid,'public_profile','main'),{userId:user.uid,name:profile.name||'Kairubido',bio:profile.bio,photoUrl:profile.photoUrl,coverUrl,updatedAt:serverTimestamp()},{merge:true});
+      triggerToast('Capa da apresentação atualizada.','success');
+    }catch{triggerToast('Não foi possível salvar a capa.','error');}
+    finally{setPhotoBusy(false);}
   };
 
   const restoreGooglePhoto = async () => {
@@ -2292,6 +2313,12 @@ export function ProfileSocialHubNative() {
                   Salvar perfil público
                 </button>
               </form>
+              <section className="space-y-2 rounded-xl border border-slate-700 p-3">
+                <h4 className="font-semibold">Capa da apresentação</h4>
+                {profile.coverUrl&&<img src={profile.coverUrl} alt="Capa atual" className="h-28 w-full rounded-xl object-cover"/>}
+                <label className="block text-sm">Alterar capa<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={uploadPresentationCover} className="mt-2 block w-full text-xs"/></label>
+              </section>
+              <ProfileTagPresentationSync key={'sync-'+user.uid} userId={user.uid} disabled={photoBusy}/>
               <MultifunctionCardEditor key={user.uid} userId={user.uid} locked={photoBusy} presentationMode />
 
               <button

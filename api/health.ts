@@ -168,6 +168,12 @@ export default async function handler(
         const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
         response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
       }
+      if(data.action==='sync-profile-presentation'&&Object.keys(data).length===2&&!id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.syncProfilePresentationToTags(actor,data.input));return;
+      }
       if((data.action==='rename-tag'&&Object.keys(data).length===2)||(data.action==='add-card-spaces-to-tags'&&Object.keys(data).length===3&&!id)){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);

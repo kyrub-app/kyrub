@@ -15,8 +15,10 @@
             'bio',
             'photoUrl',
             'updatedAt',
-            'occupation'
+            'occupation',
+            'coverUrl'
           ])
+          && (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() <= 2048))
           && (!('occupation' in data) || (data.occupation is string && data.occupation.size() <= 90))
           && data.userId == userId
           && data.name is string
