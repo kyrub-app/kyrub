@@ -1,6 +1,6 @@
 import type {KyrubMcpHttpRequest,KyrubMcpHttpResponse} from '../mcp/kyrubiaMcpServer.js';
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
-import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions} from './reservedTribeService.js';
+import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite} from './reservedTribeService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from './reservedTribeChatService.js';
 import {recoverReservedTribeCode} from './reservedTribeRecoveryService.js';
 import {listReservedUserNotifications,markReservedUserNotificationRead} from '../notifications/userNotificationService.js';
@@ -19,6 +19,7 @@ const validSession=(value:unknown):value is string=>typeof value==='string'&&/^[
 const fields={
  status:[],setup:['code','confirmation'],unlock:['code'],lock:['session'],
  'directory':[],'reserved-directory':['session'],suggestions:['term','limit'],
+ connection:['peerId','operation'],favorite:['connectionId','favorited'],
  membership:['session','peerId','reserved'],recover:['code','confirmation'],
  'chat-read':['session','connectionId'],'chat-send':['session','connectionId','messageId','text'],
  'chat-clear':['session','connectionId'],'notifications':['session'],
@@ -36,6 +37,8 @@ export function parseReservedTribePilotBody(input:unknown):{action:Action;data:R
  for(const key of ['peerId','connectionId','messageId','notificationId'])if(keys.includes(key)&&!validId(data[key]))throw Error('TRIBE_INVALID');
  if(keys.includes('code')&&(typeof data.code!=='string'||data.code.length>64))throw Error('TRIBE_INVALID');
  if(keys.includes('confirmation')&&(typeof data.confirmation!=='string'||data.confirmation.length>64))throw Error('TRIBE_INVALID');
+ if(action==='connection'&&!['request','accept','remove'].includes(String(data.operation)))throw Error('TRIBE_INVALID');
+ if(action==='favorite'&&typeof data.favorited!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='membership'&&typeof data.reserved!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='suggestions'&&(typeof data.term!=='string'||data.term.length>128||typeof data.limit!=='number'||!Number.isSafeInteger(data.limit)||data.limit<1||data.limit>50))throw Error('TRIBE_INVALID');
  if(action==='chat-send'&&(typeof data.text!=='string'||data.text.length>4000))throw Error('TRIBE_INVALID');
@@ -73,6 +76,8 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'directory':result=await getOrdinaryTribeDirectory(actor);break;
     case 'reserved-directory':result=await getReservedTribeDirectory(actor,session);break;
     case 'suggestions':result=await searchOrdinaryTribeSuggestions(actor,data.term,data.limit as number);break;
+    case 'connection':result=await mutateOrdinaryConnection(actor,data.peerId,data.operation);break;
+    case 'favorite':result=await setOrdinaryTribeFavorite(actor,data.connectionId,data.favorited);break;
     case 'membership':result=await setReservedTribeContact(actor,session,data.peerId,data.reserved);break;
     case 'recover':result=await recoverReservedTribeCode(bearer,data.code,data.confirmation);break;
     case 'chat-read':result=await readTribeChat(actor,data.connectionId as string,session);break;

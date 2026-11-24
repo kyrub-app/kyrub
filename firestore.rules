@@ -322,6 +322,7 @@ match /connections/{connectionId} {
     );
 
   allow create: if isSignedIn()
+    && ordinaryDirectoryClientAllowed(request.auth.uid)
     && hasValidConnectionId()
     && hasValidParticipants(incoming())
     && incoming().senderId == request.auth.uid
@@ -354,6 +355,7 @@ match /connections/{connectionId} {
     ]);
 
   allow update: if isSignedIn()
+    && ordinaryDirectoryClientAllowed(request.auth.uid)
     && request.auth.uid == existing().receiverId
     && existing().status == 'pending'
     && incoming().status == 'accepted'
@@ -387,17 +389,17 @@ match /connections/{connectionId} {
   allow delete: if isSignedIn()
     && (
       isAdmin()
-      || (
-        existing().status == 'pending'
+      || (ordinaryDirectoryClientAllowed(request.auth.uid) && (
+        (existing().status == 'pending'
         && (
           request.auth.uid == existing().senderId
           || request.auth.uid == existing().receiverId
+        ))
+        || (
+          existing().status == 'accepted'
+          && request.auth.uid in existing().participantIds
         )
-      )
-      || (
-        existing().status == 'accepted'
-        && request.auth.uid in existing().participantIds
-      )
+      ))
     );
 }
 

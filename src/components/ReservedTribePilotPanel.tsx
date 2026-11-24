@@ -7,6 +7,7 @@ import type {UserNotification} from '../../shared/userNotifications';
 
 type Relation={id:string;senderId:string;receiverId:string;status:'accepted'|'pending';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string};
 type Directory={connections:Relation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
+type Suggestion={id:string;name:string;connectionStatus:'none'|'pending_sent'};
 type Session={token:string;expiresAt:number};
 type Chat={messages:{id:string;senderId:string;text:string}[]};
 const button='min-h-10 rounded-xl border border-slate-700 px-3 py-2 text-sm text-white disabled:opacity-40';
@@ -22,9 +23,11 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  const [error,setError]=useState(''),[busy,setBusy]=useState(false);
  const [target,setTarget]=useState<Relation|null>(null),[chat,setChat]=useState<Chat|null>(null),[draft,setDraft]=useState('');
  const [notices,setNotices]=useState<UserNotification[]|null>(null);
+ const [suggestions,setSuggestions]=useState<Suggestion[]>([]);
  const current=useRef<Session|null>(null),alive=useRef(false),epoch=useRef(0);
  const pending=useRef<AbortController|null>(null);
  const clearPrivate=useCallback(()=>{
+  setSuggestions([]);
   ++epoch.current;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
   setSession(null);setReserved(null);setTarget(null);setChat(null);setDraft('');setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
@@ -85,9 +88,23 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   catch{if(stillValid(s,e)){clearPrivate();void reload();}}
   finally{if(pending.current===controller){pending.current=null;setBusy(false);}}
  }
+ async function ordinaryAction(action:'connection'|'favorite',fields:Record<string,unknown>){
+  if(busy||session||!ordinary||document.hidden)return;
+  const e=epoch.current;setBusy(true);setError('');
+  try{await request(action,fields);if(alive.current&&epoch.current===e){setSuggestions([]);await reload();}}
+  catch{if(alive.current&&epoch.current===e){setOrdinary(null);setSuggestions([]);setError('Não foi possível concluir a operação.');}}
+  finally{if(alive.current&&epoch.current===e)setBusy(false);}
+ }
+ async function loadSuggestions(){
+  if(busy||session||!ordinary)return;
+  const e=epoch.current;setBusy(true);setSuggestions([]);
+  try{const rows=await request<Suggestion[]>('suggestions',{term,limit:30});if(alive.current&&epoch.current===e&&!current.current&&!document.hidden)setSuggestions(rows);}
+  catch{if(alive.current&&epoch.current===e)setError('Não foi possível buscar pessoas.');}
+  finally{if(alive.current&&epoch.current===e)setBusy(false);}
+ }
  const move=(r:Relation,hide:boolean)=>{
   if(!window.confirm(hide?'Reservar este contato?':'Retirar este contato da Tribo Reservada?'))return;
-  void privateAction('membership',{peerId:peer(r),reserved:hide},()=>{clearPrivate();void reload();});
+  void privateAction('membership',{peerId:peer(r),reserved:hide},()=>{setOrdinary(null);clearPrivate();void reload();});
  };
  const openChat=(r:Relation)=>void privateAction<Chat>('chat-read',{connectionId:r.id},data=>{setNotices(null);setTarget(r);setChat(data);setDraft('');});
  const send=(event:FormEvent)=>{event.preventDefault();if(!target||!draft.trim())return;const r=target;void privateAction('chat-send',{connectionId:r.id,messageId:crypto.randomUUID(),text:draft},()=>{setDraft('');setChat(null);});};
@@ -99,7 +116,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   {!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
    {([['general','Geral'],['favorites','Frequentes'],['tribes','Tribos'],['new','Novos']] as const).map(([id,label])=><button key={id} aria-pressed={section===id} className={button+(section===id?' border-orange-500':'')} onClick={()=>setSection(id)}>{label}</button>)}
   </nav>
-  <ReservedTribeSearchInput term={term} onSearch={setTerm} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
+  <ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
   {!ordinary?<button className={button} onClick={()=>void reload()}>Atualizar</button>:section==='tribes'?<div className="space-y-2">
     {ordinary.tribes.map(group=><p key={group.id} className="rounded-xl border border-slate-700 p-3 text-sm">{group.name} · {group.memberIds.length}</p>)}
     {!configured&&!setup&&<button className={button} onClick={()=>setSetup(true)}>Configurar código reservado</button>}
@@ -109,7 +126,12 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
       <p className="text-xs text-slate-400">Após configurar, digite ! seguido do código na pesquisa e confirme.</p>
       <button className={button} disabled={busy||code.length<8||code!==confirmation}>Salvar código</button>
     </form>}
-  </div>:section==='new'?<p className="text-sm text-slate-400">Novas conexões ainda não migradas neste piloto.</p>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm">{name(r)}</div>)}</div>}</>:
+  </div>:section==='new'?<div className="space-y-2">
+    <h4 className="text-sm font-semibold">Solicitações</h4>
+    {ordinary.connections.filter(r=>r.status==='pending'&&matchesTribeContactName(name(r),term)).map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm">{name(r)}<div className="mt-2 flex gap-2">{r.receiverId===owner&&<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'accept'})}>Aceitar</button>}<button className={button} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:peer(r),operation:'remove'})}>{r.receiverId===owner?'Recusar':'Cancelar'}</button></div></div>)}
+    <button className={button} disabled={busy} onClick={()=>void loadSuggestions()}>Buscar sugestões</button>
+    {suggestions.filter(item=>item.connectionStatus==='none'&&matchesTribeContactName(item.name,term)).map(item=><div key={item.id} className="rounded-xl border border-slate-700 p-3 text-sm">{item.name}<button className={button+' ml-2'} disabled={busy} onClick={()=>void ordinaryAction('connection',{peerId:item.id,operation:'request'})}>Conectar</button></div>)}
+  </div>:<div className="grid grid-cols-2 gap-2">{normal.map(r=><div key={r.id} className="rounded-xl border border-slate-700 p-3 text-sm"><p>{name(r)}</p><div className="mt-2 flex flex-wrap gap-1"><button className={button} disabled={busy} onClick={()=>void ordinaryAction('favorite',{connectionId:r.id,favorited:!ordinary.favoriteIds.includes(peer(r))})}>{ordinary.favoriteIds.includes(peer(r))?'Desfavoritar':'Favoritar'}</button><button className={button} disabled={busy} onClick={()=>{if(window.confirm('Remover esta conexão?'))void ordinaryAction('connection',{peerId:peer(r),operation:'remove'});}}>Remover</button></div></div>)}</div>}</>:
   <section className="space-y-3" aria-label="Tribo Reservada">
    <header className="flex items-center justify-between gap-2"><h3 className="text-base font-semibold">Tribo Reservada</h3><button className={button} onClick={()=>{clearPrivate();void reload();}}>Trancar</button></header>
    <div className="flex gap-2"><button className={button} disabled={busy} onClick={()=>{setTarget(null);setChat(null);setNotices(null);}}>Contatos</button><button className={button} disabled={busy} onClick={()=>void privateAction<{notifications:UserNotification[]}>('notifications',{},data=>{setTarget(null);setChat(null);setNotices(data.notifications);})}>Avisos</button></div>

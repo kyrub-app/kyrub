@@ -259,3 +259,56 @@ export async function lockReservedTribeSession(actor:string,token:unknown){
   return {locked:true as const};
  });
 }
+
+/** Ordinary mutations never grant access to a reserved peer. The other
+ * participant's privacy classification is independent of the actor's. */
+export async function mutateOrdinaryConnection(actor:string,peer:unknown,operation:unknown){
+ const root=vault(actor);
+ if(!validId(peer)||peer===actor||!['request','accept','remove'].includes(String(operation)))throw Error('TRIBE_CONTACT_INVALID');
+ const canonical=[actor,peer].sort().join('_');
+ const ids=[...new Set([canonical,peer+'_'+actor,actor+'_'+peer])].filter(validId);
+ if(!validId(canonical))throw Error('TRIBE_CONTACT_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const [account,target,marker,ownBlock,reverseBlock,...pairs]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),tx.get(adminDb.doc('users/'+peer)),
+   tx.get(root.collection('contacts').doc(peer)),
+   tx.get(adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+peer)),
+   tx.get(adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor)),
+   ...ids.map(id=>tx.get(adminDb.doc('connections/'+id)))
+  ]);
+  if(!account.exists||marker.exists)throw Error('TRIBE_ACCESS_DENIED');
+  const existing=pairs.filter(snap=>snap.exists);
+  if(existing.length>1)throw Error('TRIBE_ACCESS_DENIED');
+  const record=existing[0];
+  const relation=record?relationship(record,actor):null;
+  if(record&&(!relation||peerOf(actor,relation)!==peer))throw Error('TRIBE_ACCESS_DENIED');
+  if(operation==='remove'){
+   if(record)tx.delete(record.ref);
+   return {status:'none'};
+  }
+  if(!target.exists||ownBlock.exists||reverseBlock.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(operation==='accept'){
+   if(relation?.status==='accepted')return {status:'accepted'};
+   if(!record||relation?.status!=='pending'||relation.receiverId!==actor)throw Error('TRIBE_ACCESS_DENIED');
+   tx.update(record.ref,{status:'accepted',acceptedAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+   return {status:'accepted'};
+  }
+  if(relation)return {status:relation.status};
+  if(target.get('isProfileVisible')!==true)throw Error('TRIBE_ACCESS_DENIED');
+  const name=(snap:FirebaseFirestore.DocumentSnapshot)=>typeof snap.get('name')==='string'?String(snap.get('name')).slice(0,160):'Kairubido';
+  const avatar=(snap:FirebaseFirestore.DocumentSnapshot)=>snap.get('isProfileVisible')===true&&typeof snap.get('photoUrl')==='string'?String(snap.get('photoUrl')).slice(0,2048):'';
+  tx.create(adminDb.doc('connections/'+canonical),{senderId:actor,receiverId:peer,participantIds:[actor,peer].sort(),status:'pending',senderName:name(account),receiverName:name(target),senderAvatar:avatar(account),receiverAvatar:avatar(target),createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  return {status:'pending'};
+ });
+}
+export async function setOrdinaryTribeFavorite(actor:string,connectionId:unknown,favorited:unknown){
+ vault(actor);
+ if(!validId(connectionId)||typeof favorited!=='boolean')throw Error('TRIBE_CONTACT_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const relation=await authorizeTribeRelationship(tx,actor,connectionId);
+  const reference=adminDb.doc('users/'+actor+'/contact_favorites/'+peerOf(actor,relation));
+  if(favorited)tx.set(reference,{connectionId,favorited:true,updatedAt:FieldValue.serverTimestamp()});
+  else tx.delete(reference);
+  return {favorited};
+ });
+}

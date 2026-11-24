@@ -1,5 +1,5 @@
 import {auth} from './firebase';
-type PilotAction='status'|'setup'|'unlock'|'lock'|'directory'|'reserved-directory'|'suggestions'|'membership'|'recover'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
+type PilotAction='status'|'setup'|'unlock'|'lock'|'directory'|'reserved-directory'|'suggestions'|'connection'|'favorite'|'membership'|'recover'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
 export type ReservedTribeUnlock={ok:false}|{ok:true;token:string;expiresAt:number};
 /** Homologation-only client, not mounted by any production component.
  * Never persist a code or capability. Reject a changed auth session after

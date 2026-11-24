@@ -11,7 +11,7 @@ import {buildUserNotification} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -280,4 +280,28 @@ test('isolated transport authenticates the actor, rejects injected identity and 
  assert.equal((await call('owner',{action:'reserved-directory',session:next.result.token})).status,200);
  await call('owner',{action:'lock',session:next.result.token});
  assert.equal((await call('owner',{action:'reserved-directory',session:next.result.token})).status,403);
+});
+
+test('ordinary connection and favorite mutations preserve reserved contacts and counterpart independence',async()=>{
+ const candidate='new-ordinary-candidate';
+ await adminDb.doc('users/'+candidate).set({name:'Novo contato',isProfileVisible:true});
+ await Promise.all([mutateOrdinaryConnection(actor,candidate,'request'),mutateOrdinaryConnection(actor,candidate,'request')]);
+ const pair=id(actor,candidate);
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'pending');
+ await assert.rejects(mutateOrdinaryConnection(actor,candidate,'accept'),/TRIBE_ACCESS_DENIED/);
+ await mutateOrdinaryConnection(candidate,actor,'accept');
+ await setOrdinaryTribeFavorite(actor,pair,true);
+ assert.ok((await getOrdinaryTribeDirectory(actor)).favoriteIds.includes(candidate));
+ await setOrdinaryTribeFavorite(actor,pair,false);
+ assert.ok(!(await getOrdinaryTribeDirectory(actor)).favoriteIds.includes(candidate));
+ const session=await unlockReservedTribe(actor,'new!synthetic');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,session.token,candidate,true);
+ await assert.rejects(mutateOrdinaryConnection(actor,candidate,'remove'),/TRIBE_ACCESS_DENIED/);
+ await assert.rejects(setOrdinaryTribeFavorite(actor,pair,true),/TRIBE_ACCESS_DENIED/);
+ await assertFails(deleteDoc(doc(env.authenticatedContext(actor).firestore(),'connections/'+pair)));
+ await mutateOrdinaryConnection(candidate,actor,'remove');
+ assert.equal((await adminDb.doc('connections/'+pair).get()).exists,false);
+ assert.ok((await adminDb.doc('reserved_tribe_vaults/'+actor+'/contacts/'+candidate).get()).exists);
+ await setReservedTribeContact(actor,session.token,candidate,false);
 });
