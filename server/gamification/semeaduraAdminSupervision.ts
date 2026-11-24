@@ -44,9 +44,14 @@ export async function readIsolatedGamificationAccountSupervision(
 ) {
   const reviewerId = await authenticateIsolatedSupervisor(db,auth,authorization);
   if (!uid(targetUid)) throw Error('GAMIFICATION_SUPERVISION_INPUT_INVALID');
-  const root = db.collection('users').doc(targetUid);
   return db.runTransaction(async tx => {
     await requireIsolatedSupervisor(db,tx,reviewerId);
+    return readAccountProjection(db,tx,targetUid);
+  },{readOnly:true});
+}
+
+async function readAccountProjection(db:Firestore,tx:Transaction,targetUid:string) {
+  const root=db.collection('users').doc(targetUid);
     const [balance, ledger, progress] = await Promise.all([
       tx.get(root.collection('pitangaBalance').doc('balance')),
       tx.get(root.collection('rewardLedger').limit(LIMIT+1)),
@@ -91,8 +96,8 @@ export async function readIsolatedGamificationAccountSupervision(
     return {scope:'single-account' as const, environment:'isolated-emulator' as const,
       ledgerCoverage:coverage, observedEntries:ledger.size, economy, journey,
       journeySource:'author-projection-not-receipt-reconciliation' as const, findings};
-  },{readOnly:true});
 }
+
 
 
 const GLOBAL_ACCOUNT_LIMIT=100;
@@ -179,4 +184,78 @@ export async function readIsolatedGamificationGlobalSupervision(
       observedAuthorProjections:progress.size,economy,journey,
       externalWritersVerified:false,journeyReceiptReconciled:false,findings};
   },{readOnly:true});
+}
+
+
+const snapshotRoot='systemControl/gamificationIncrementalPilot';
+const metricKeys=['credits','debits','balance','seeds','pitangueiras','bosques','accounts','economyKnown','journeyKnown'] as const;
+type Metrics=Record<typeof metricKeys[number],number>;
+const zeroMetrics=():Metrics=>({credits:0,debits:0,balance:0,seeds:0,pitangueiras:0,bosques:0,accounts:0,economyKnown:0,journeyKnown:0});
+function validatedMetrics(value:unknown):Metrics {
+  if(!value||typeof value!=='object')throw Error('INCREMENTAL_STATE_INVALID');
+  const data=value as Metrics;
+  if(metricKeys.some(k=>!Number.isSafeInteger(data[k])||data[k]<0)||
+     data.credits-data.debits!==data.balance||data.economyKnown>data.accounts||
+     data.journeyKnown>data.accounts)throw Error('INCREMENTAL_STATE_INVALID');
+  return Object.fromEntries(metricKeys.map(k=>[k,data[k]])) as Metrics;
+}
+function snapshotView(metrics:Metrics,updatedAt:string|null){
+  return {scope:'refreshed-accounts-only' as const,environment:'isolated-emulator' as const,
+    updatedAt,refreshedAccounts:metrics.accounts,economyKnown:metrics.economyKnown,
+    journeyKnown:metrics.journeyKnown,
+    reconciledEconomySubtotal:metrics.economyKnown?{credits:metrics.credits,debits:metrics.debits,balance:metrics.balance}:null,
+    authorProjectionSubtotal:metrics.journeyKnown?{seeds:metrics.seeds,pitangueiras:metrics.pitangueiras,bosques:metrics.bosques}:null,
+    globalCoverageVerified:false,automaticRefresh:false,mayBeStale:true};
+}
+
+/** Refresh one account from authoritative sources in the same transaction
+ * as replacing its old contribution. Only derived admin cache is written.
+ * No production writers, triggers, scheduler, or claims of global coverage.
+ * A failed/incomplete reconciliation removes that account's old subtotal. */
+export async function refreshIsolatedGamificationIncrementalAccount(
+ db:Firestore,auth:Auth,authorization:string,targetUid:string,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!uid(targetUid))throw Error('GAMIFICATION_SUPERVISION_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const ref=db.doc(snapshotRoot), contributionRef=ref.collection('accounts').doc(targetUid);
+  const [summary,prior,source]=await Promise.all([tx.get(ref),tx.get(contributionRef),readAccountProjection(db,tx,targetUid)]);
+  if(summary.exists&&summary.get('schemaVersion')!==1)throw Error('INCREMENTAL_STATE_INVALID');
+  if(prior.exists&&(!summary.exists||prior.get('schemaVersion')!==1||prior.get('accountId')!==targetUid))
+    throw Error('INCREMENTAL_STATE_INVALID');
+  const total=summary.exists?validatedMetrics(summary.get('metrics')):zeroMetrics();
+  const previous=prior.exists?validatedMetrics(prior.get('metrics')):zeroMetrics();
+  if(prior.exists&&previous.accounts!==1)throw Error('INCREMENTAL_STATE_INVALID');
+  const next:Metrics={...zeroMetrics(),accounts:1,
+    ...(source.economy?{...source.economy,economyKnown:1}:{}),
+    ...(source.journey?{...source.journey,journeyKnown:1}:{})};
+  const merged=zeroMetrics();
+  for(const key of metricKeys){
+    if(total[key]<previous[key])throw Error('INCREMENTAL_STATE_INVALID');
+    merged[key]=safeAdd(total[key]-previous[key],next[key]);
+  }
+  validatedMetrics(merged);
+  const updatedAt=new Date().toISOString();
+  tx.set(contributionRef,{schemaVersion:1,accountId:targetUid,metrics:next,updatedAt});
+  tx.set(ref,{schemaVersion:1,metrics:merged,updatedAt});
+  return snapshotView(merged,updatedAt);
+ });
+}
+
+/** Fixed-size read of the derived cache; the timestamp is the last refresh,
+ * not proof that every account is current. Never used for economic decisions. */
+export async function readIsolatedGamificationIncrementalSnapshot(
+ db:Firestore,auth:Auth,authorization:string,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const summary=await tx.get(db.doc(snapshotRoot));
+  if(!summary.exists)return snapshotView(zeroMetrics(),null);
+  const updatedAt=summary.get('updatedAt');
+  if(summary.get('schemaVersion')!==1||typeof updatedAt!=='string'||!Number.isFinite(Date.parse(updatedAt)))
+    throw Error('INCREMENTAL_STATE_INVALID');
+  return snapshotView(validatedMetrics(summary.get('metrics')),updatedAt);
+ },{readOnly:true});
 }
