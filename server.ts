@@ -64,6 +64,13 @@ app.use(
   })
 );
 
+app.post('/api/social/reserved-tribe',async(request,response)=>{
+  try{
+    const {handleReservedTribePilotRequest}=await import('./server/identity/reservedTribePilotTransport.js');
+    await handleReservedTribePilotRequest(request,response);
+  }catch{response.status(503).json({error:'TRIBE_UNAVAILABLE'});}
+});
+
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;
 

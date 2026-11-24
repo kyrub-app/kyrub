@@ -87,7 +87,7 @@ test('ordinary searches and deliberate unlock commands are distinct and preserve
  assert.match(component,/secretMode\?'password':'search'/);
  assert.match(component,/await onUnlock\(code,controller.signal\)/);
  assert.doesNotMatch(component,/localStorage|sessionStorage|console\.|fetch\(/);
- assert.doesNotMatch(readFileSync('src/components/ProfileSocialHubNative.tsx','utf8'),/ReservedTribeSearchInput/);
+ assert.match(readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8'),/ReservedTribeSearchInput/);
 });
 
 test('recovery accepts only verified fresh authentication, not token refresh or replay',async()=>{
@@ -150,4 +150,17 @@ test('pilot route is explicitly disabled outside local isolated Auth and Firesto
  assert.match(client,/VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E/);
  assert.match(client,/cache:'no-store'/);
  assert.doesNotMatch(client,/localStorage|sessionStorage|console\./);
+});
+
+test('pilot panel uses only isolated API projections and clears protected data on exit',()=>{
+ const profile=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
+ const server=readFileSync('server.ts','utf8');
+ assert.match(profile,/activeTab === 'connected' && reservedTribePilotClientEnabled\(\)/);
+ assert.match(profile,/activeTab === 'connected' && !reservedTribePilotClientEnabled\(\)/);
+ assert.match(server,/app.post\('\/api\/social\/reserved-tribe'/);
+ assert.match(panel,/setSession\(null\);setReserved\(null\);setTarget\(null\);setChat\(null\)/);
+ assert.match(panel,/visibilitychange/);
+ assert.match(panel,/session.expiresAt-Date.now\(\)/);
+ assert.doesNotMatch(panel,/localStorage|sessionStorage|firebase\/firestore/);
 });

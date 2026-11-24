@@ -64,6 +64,8 @@ import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import {TribeContactMenu} from './TribeContactMenu';
+import {ReservedTribePilotPanel} from './ReservedTribePilotPanel';
+import {reservedTribePilotClientEnabled} from '../utils/reservedTribePilotClient';
 import {submitSocialUserReport} from '../utils/socialReports';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
@@ -1753,7 +1755,8 @@ export function ProfileSocialHubNative() {
                 </>
               )}
 
-              {activeTab === 'connected' && (
+              {activeTab === 'connected' && reservedTribePilotClientEnabled() && <ReservedTribePilotPanel key={user.uid} owner={user.uid} onBack={()=>{setOpen(false);document.getElementById('header-user-profile-trigger')?.click();}}/>}
+              {activeTab === 'connected' && !reservedTribePilotClientEnabled() && (
                 <div className="space-y-4">
                   <button
                     type="button"
@@ -2037,7 +2040,7 @@ export function ProfileSocialHubNative() {
       </div>
 
 
-      {newConnectionsOpen && (
+      {newConnectionsOpen && !reservedTribePilotClientEnabled() && (
         <div className="fixed inset-0 z-[136] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
           <section className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
             <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">

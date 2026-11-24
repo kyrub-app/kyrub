@@ -5,11 +5,13 @@ export type ReservedTribeUnlock={ok:false}|{ok:true;token:string;expiresAt:numbe
  * Never persist a code or capability. Reject a changed auth session after
  * every await; callers must also clear the session on unmount/visibility.
  */
+export function reservedTribePilotClientEnabled(){
+ return import.meta.env?.DEV===true&&import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'&&
+    import.meta.env?.VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E==='true'&&typeof window!=='undefined'&&
+    ['localhost','127.0.0.1'].includes(window.location.hostname)&&auth.app.options.projectId==='kyrub-security-test';
+}
 export async function requestReservedTribePilot<T>(action:PilotAction,fields:Record<string,unknown>={},signal?:AbortSignal):Promise<T>{
- if(import.meta.env?.DEV!==true||import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E!=='true'||
-    import.meta.env?.VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E!=='true'||
-    !['localhost','127.0.0.1'].includes(window.location.hostname)||
-    auth.app.options.projectId!=='kyrub-security-test')throw Error('TRIBE_UNAVAILABLE');
+ if(!reservedTribePilotClientEnabled())throw Error('TRIBE_UNAVAILABLE');
  const user=auth.currentUser;
  if(!user)throw Error('AUTH_REQUIRED');
  const idToken=await user.getIdToken(action==='recover');
