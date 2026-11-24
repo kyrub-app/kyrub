@@ -436,3 +436,14 @@ test('social Preview preflight is branch-, host-, project- and identity-bound, n
  assert.equal(ok.headers['Cache-Control'],'no-store, private, max-age=0');
  assert.equal(JSON.stringify(ok.body).includes('fictional'),false);
 });
+
+
+test('integration Preview never initializes Admin against an inherited production credential',async()=>{
+ const {assertIntegrationPreviewAdminProject}=await import('../server/firebaseAdmin.js');
+ const env={VERCEL_ENV:'preview',VERCEL_GIT_COMMIT_REF:'feat/kyrub-social-tag-integration',FIREBASE_PROJECT_ID:'kyrub-tags',VITE_FIREBASE_PROJECT_ID:'kyrub-tags'};
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject(env,'kyrub-tags'));
+ for(const project of ['kyrub-b8d0e',undefined,'other'])assert.throws(()=>assertIntegrationPreviewAdminProject(env,project),/SOCIAL_PREVIEW_ADMIN_PROJECT_UNSAFE/);
+ for(const patch of [{FIREBASE_PROJECT_ID:undefined},{VITE_FIREBASE_PROJECT_ID:'kyrub-b8d0e'}])assert.throws(()=>assertIntegrationPreviewAdminProject({...env,...patch},'kyrub-tags'),/SOCIAL_PREVIEW_ADMIN_PROJECT_UNSAFE/);
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_ENV:'production'},'kyrub-b8d0e'));
+ assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_GIT_COMMIT_REF:'feat/kyrub-integrated-presentation-devices'},'kyrub-tags'));
+});
