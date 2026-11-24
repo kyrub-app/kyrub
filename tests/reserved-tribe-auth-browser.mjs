@@ -1,6 +1,5 @@
 // Real browser SDK, pilot client and HTTP transport; fictional emulator accounts only.
 import assert from 'node:assert/strict';
-import {build} from 'esbuild';
 import {chromium} from 'playwright';
 import {initializeApp,deleteApp} from 'firebase-admin/app';
 import {getAuth} from 'firebase-admin/auth';
@@ -12,26 +11,10 @@ assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
 assert.equal(process.env.KYRUB_RESERVED_TRIBE_PILOT,'true');
 assert.ok(!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS&&!process.env.VERCEL&&!process.env.VERCEL_ENV);
-const bundle=await build({
- stdin:{contents:`
-  import {auth,db} from './src/utils/firebase';
-  import {signInWithCustomToken,signOut,setPersistence,inMemoryPersistence} from 'firebase/auth';
-  import {requestReservedTribePilot,reservedTribePilotClientEnabled} from './src/utils/reservedTribePilotClient';
-  window.fixture={
-   projects:()=>[auth.app.options.projectId,db.app.options.projectId],
-   enabled:reservedTribePilotClientEnabled,
-   signIn:async token=>{await setPersistence(auth,inMemoryPersistence);return (await signInWithCustomToken(auth,token)).user.uid},
-   signOut:()=>signOut(auth),
-   call:async (action,fields={})=>{try{return {ok:true,value:await requestReservedTribePilot(action,fields)}}catch(e){return {ok:false,error:e.message}}},
-  };
- `,resolveDir:process.cwd(),loader:'ts'},
- bundle:true,write:false,format:'esm',platform:'browser',
- define:{'import.meta.env':JSON.stringify({DEV:true,VITE_KYRUB_FIREBASE_EMULATOR_E2E:'true',VITE_KYRUB_SOCIAL_MEMORY_CACHE_E2E:'true'})},
-});
 const app=initializeApp({projectId:project},'reserved-tribe-http-browser');
 const auth=getAuth(app),db=getFirestore(app);
 const owner='browser-tribe-owner',peer='browser-tribe-peer',pair=[owner,peer].sort().join('_');
-const code='fixture-only-code';
+const code='fixture-only-code',password='fixture-auth-only-123';
 let browser;
 let releaseResponse;
 const call=(page,action,fields={})=>page.evaluate(({action,fields})=>window.fixture.call(action,fields),{action,fields});
@@ -45,30 +28,28 @@ async function refused(page,action,fields={},error='TRIBE_UNAVAILABLE'){
 }
 try{
  for(const uid of [owner,peer]){
-  await auth.createUser({uid,email:uid+'@example.invalid',emailVerified:true});
+  await auth.createUser({uid,email:uid+'@example.invalid',emailVerified:true,password});
   await db.doc('users/'+uid).set({name:uid,isProfileVisible:true});
  }
  await db.doc('connections/'+pair).set({senderId:owner,receiverId:peer,participantIds:[owner,peer].sort(),status:'accepted',senderName:owner,receiverName:peer});
- const ownerToken=await auth.createCustomToken(owner),peerToken=await auth.createCustomToken(peer);
+ const ownerToken={email:owner+'@example.invalid',password},peerToken={email:peer+'@example.invalid',password};
+ const storePath='users/'+owner+'/stores/'+owner;
+ await db.doc(storePath).set({id:owner,ownerId:owner,ownerEmail:owner+'@example.invalid',name:'Fixture store',slug:'fixture-store',description:'before',logo:'',banner:'',primaryColor:'#121A17',plan:'free',keywords:[],offerImages:[],address:'',contact:'',status:'open',createdAt:new Date(),updatedAt:new Date()});
  browser=await chromium.launch({headless:true});
  const forbidden=[];
  async function open(){
   const ctx=await browser.newContext({serviceWorkers:'block'});
   await ctx.route('**/*',async route=>{
    const url=new URL(route.request().url());
-   if(url.origin===origin&&url.pathname==='/__tribe_fixture'){
-    return route.fulfill({contentType:'text/html',body:'<!doctype html><script type="module" src="/__tribe_fixture.js"></script>'});
-   }
-   if(url.origin===origin&&url.pathname==='/__tribe_fixture.js'){
-    return route.fulfill({contentType:'text/javascript',body:bundle.outputFiles[0].text});
-   }
    if([origin,'http://127.0.0.1:9099','http://127.0.0.1:8088','http://127.0.0.1:9199'].includes(url.origin))return route.continue();
-   forbidden.push(url.origin);return route.abort();
+   forbidden.push(url.origin);console.log('Blocked browser origin:',url.origin);return route.abort();
   });
   const page=await ctx.newPage();
-  await page.goto(origin+'/__tribe_fixture');
+  page.on('requestfailed',request=>{const url=new URL(request.url());console.log('Browser request failed:',request.method(),url.origin,request.failure()?.errorText??'unknown');});
+  await page.goto(origin+'/tests/fixtures/reserved-tribe-browser.html');
   await page.waitForFunction(()=>window.fixture?.enabled()===true);
   assert.deepEqual(await page.evaluate(()=>window.fixture.projects()),[project,project]);
+  assert.deepEqual(await page.evaluate(()=>window.fixture.authEmulator()),{host:'127.0.0.1',port:9099,protocol:'http'});
   return page;
  }
  const a=await open(),b=await open();
@@ -136,6 +117,19 @@ try{
  assert.equal((await db.collection('social_chats/'+pair+'/messages').get()).size,1);
  assert.deepEqual(forbidden,[]);
  console.log('PASS delayed response discarded across account change, logout denied, explicit revocation and shared records preserved');
+ // Use a separate named app with actual SDK persistent cache, in the same
+ // disposable origin, to queue a valid private-store edit while offline.
+ await a.evaluate(({credentials,path})=>window.fixture.queueLegacyStoreWrite(credentials,path),{credentials:ownerToken,path:storePath});
+ assert.equal((await db.doc(storePath).get()).get('description'),'before');
+ await refused(a,'directory',{},'TRIBE_STORAGE_UNVERIFIED');
+ assert.equal((await db.doc(storePath).get()).get('description'),'before');
+ assert.equal(await a.evaluate(()=>window.fixture.pendingStoreWrite()),true);
+ await a.evaluate(()=>window.fixture.flushLegacyStoreWrite());
+ assert.equal((await db.doc(storePath).get()).get('description'),'after-offline-fixture');
+ assert.equal(await a.evaluate(()=>window.fixture.pendingStoreWrite()),false);
+ await refused(a,'directory',{},'TRIBE_STORAGE_UNVERIFIED');
+ assert.deepEqual(forbidden,[]);
+ console.log('PASS real persistent SDK pending private-store write preserved and reconciled without cache deletion');
 }finally{
  releaseResponse?.();
  try{await browser?.close();}finally{await db.terminate();await deleteApp(app);}
