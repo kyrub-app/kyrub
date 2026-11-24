@@ -54,5 +54,7 @@ jobs:
             playwright-kyrub-challenge-available.png
             playwright-kyrub-challenge-completed.png
             playwright-kyrub-erp-navigation-failure.png
+            playwright-kyrub-challenge-available-failure.png
+            playwright-kyrub-challenge-completed-failure.png
           if-no-files-found: ignore
           retention-days: 3
