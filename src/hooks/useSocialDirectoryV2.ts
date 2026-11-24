@@ -1,5 +1,9 @@
 import { useEffect, useState } from 'react';
 import { db, auth } from '../utils/firebase';
+import {isConfirmedSocialSnapshot} from '../utils/socialSnapshotAuthority';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from '../utils/reservedTribePilotClient';
+import {subscribePilotOrdinaryDirectory,type PilotSuggestion} from '../utils/pilotOrdinaryDirectory';
+import {onAuthStateChanged} from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -64,10 +68,25 @@ export function useSocialDirectoryV2({
   triggerToast
 }: UseSocialDirectoryOptions) {
   // Social states
+  const pilot=reservedTribePilotClientEnabled();
+  const [pilotSuggestions,setPilotSuggestions]=useState<PilotSuggestion[]>([]);
   const [friends, setFriends] = useState<Friend[]>([]);
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const [confirmedConnectionOwner,setConfirmedConnectionOwner]=useState('');
+  const [favoriteOwner,setFavoriteOwner]=useState(auth.currentUser?.uid??'');
+  const [favoriteSnapshot,setFavoriteSnapshot]=useState<{uid:string;ids:Set<string>;ready:boolean}>({uid:'',ids:new Set(),ready:false});
+  useEffect(()=>onAuthStateChanged(auth,user=>setFavoriteOwner(user?.uid??'')),[]);
+  useEffect(()=>{
+    setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});
+    if(!isLoggedIn||!favoriteOwner||pilot)return;
+    return onSnapshot(collection(db,'users',favoriteOwner,'contact_favorites'),{includeMetadataChanges:true},snapshot=>{
+      if(!isConfirmedSocialSnapshot(snapshot.metadata,favoriteOwner,auth.currentUser?.uid)){setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});return;}
+      setFavoriteSnapshot({uid:favoriteOwner,ids:new Set(snapshot.docs.map(item=>item.id)),ready:true});
+    },()=>setFavoriteSnapshot({uid:'',ids:new Set(),ready:false}));
+  },[isLoggedIn,favoriteOwner,pilot]);
+  const favoritesReady=isLoggedIn&&favoriteSnapshot.ready&&favoriteSnapshot.uid===favoriteOwner&&auth.currentUser?.uid===favoriteOwner;
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -83,11 +102,19 @@ export function useSocialDirectoryV2({
 
   useEffect(() => {
     const currentUser = auth.currentUser;
+    setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);
 
-    if (!isLoggedIn || !currentUser) {
+    if (!isLoggedIn || !currentUser || currentUser.uid!==favoriteOwner) {
       setConnections([]);
       return;
     }
+
+    if(pilot)return subscribePilotOrdinaryDirectory(currentUser.uid,value=>{
+      if(!value){setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);setPilotSuggestions([]);setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});return;}
+      const directory=value.directory;
+      setConfirmedConnectionOwner(currentUser.uid);setConnections(directory.connections);setPilotSuggestions(value.suggestions);
+      setFavoriteSnapshot({uid:currentUser.uid,ids:new Set(directory.favoriteIds),ready:true});
+    },()=>{},true);
 
     const connectionsQuery = query(
       collection(db, 'connections'),
@@ -96,7 +123,12 @@ export function useSocialDirectoryV2({
 
     return onSnapshot(
       connectionsQuery,
+      {includeMetadataChanges:true},
       snapshot => {
+        if(!isConfirmedSocialSnapshot(snapshot.metadata,currentUser.uid,auth.currentUser?.uid)){
+          setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);return;
+        }
+        setConfirmedConnectionOwner(currentUser.uid);
         setConnections(
           snapshot.docs.map(snapshotDoc => ({
             id: snapshotDoc.id,
@@ -106,14 +138,15 @@ export function useSocialDirectoryV2({
       },
       error => {
         console.error('Falha ao escutar conexões:', error);
-        setConnections([]);
+        setConfirmedConnectionOwner('');setConnections([]);setFriends([]);setConnectionRequests([]);
       }
     );
-  }, [isLoggedIn]);
+  }, [isLoggedIn,favoriteOwner,pilot]);
+  const directoryReady=!!confirmedConnectionOwner&&confirmedConnectionOwner===favoriteOwner&&auth.currentUser?.uid===confirmedConnectionOwner&&isLoggedIn;
   useEffect(() => {
     const currentUid = auth.currentUser?.uid;
 
-    if (!isLoggedIn || !currentUid) {
+    if (!isLoggedIn || !currentUid || !directoryReady) {
       setFriends([]);
       setConnectionRequests([]);
       return;
@@ -185,7 +218,7 @@ export function useSocialDirectoryV2({
             '',
           isProfileVisible:
             dbUser?.isProfileVisible !== false,
-          favorited: previousFriend?.favorited ?? false,
+          favorited: favoriteSnapshot.uid===currentUid&&favoriteSnapshot.ids.has(otherUid),
           connectionStatus: 'accepted',
           connectionId: connection.id
         };
@@ -228,7 +261,7 @@ export function useSocialDirectoryV2({
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn]);
+  }, [connections, dbUsers, isLoggedIn, favoriteSnapshot,directoryReady]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
@@ -247,6 +280,12 @@ export function useSocialDirectoryV2({
     );
 
     try {
+      if(pilot){
+        if(!directoryReady)return;
+        const relation=connections.find(item=>item.participantIds.includes(friendId));
+        if(relation?.status==='pending'&&relation.receiverId===currentUser.uid){triggerToast('Você já recebeu uma solicitação desta pessoa.','info');return;}
+        await requestReservedTribePilot('connection',{peerId:friendId,operation:relation?'remove':'request'});return;
+      }
       if (existingConnection?.status === 'accepted') {
         await deleteDoc(doc(db, 'connections', connectionId));
         triggerToast('Conexão removida.', 'info');
@@ -316,6 +355,8 @@ export function useSocialDirectoryV2({
   // Get Suggested Friends
   const getSuggestions = () => {
     const currentUid = auth.currentUser?.uid;
+    if(!directoryReady)return [];
+    if(pilot)return pilotSuggestions.map(item=>({id:item.id,name:item.name,avatar:item.avatar,role:item.role,bio:'',added:false,isProfileVisible:true,favorited:false,connectionStatus:item.connectionStatus,connectionId:item.connectionId} as Friend));
 
     return dbUsers
       .filter(
@@ -363,15 +404,17 @@ export function useSocialDirectoryV2({
   };
 
   // Favorite Friend toggle
-  const handleToggleFavoriteFriend = (friendId: string) => {
-    setFriends(prev =>
-      prev.map(f => {
-        if (f.id !== friendId) return f;
-        const nowFavorited = !(f as any).favorited;
-        triggerToast(nowFavorited ? `${f.name} adicionado aos favoritos!` : `${f.name} removido dos favoritos.`, 'success');
-        return { ...f, favorited: nowFavorited } as any;
-      })
-    );
+  const handleToggleFavoriteFriend = async (friendId: string) => {
+    const uid=auth.currentUser?.uid;
+    const friend=friends.find(item=>item.id===friendId&&item.connectionStatus==='accepted');
+    if(!uid||!favoritesReady||favoriteSnapshot.uid!==uid||!friend?.connectionId){triggerToast('Aguarde a sincronização dos favoritos.','info');return;}
+    const reference=doc(db,'users',uid,'contact_favorites',friendId);
+    try{
+      if(pilot){await requestReservedTribePilot('favorite',{connectionId:friend.connectionId,favorited:!favoriteSnapshot.ids.has(friendId)});return;}
+      if(favoriteSnapshot.ids.has(friendId))await deleteDoc(reference);
+      else await setDoc(reference,{connectionId:friend.connectionId,favorited:true,updatedAt:serverTimestamp()});
+      if(auth.currentUser?.uid===uid)triggerToast(favoriteSnapshot.ids.has(friendId)?'Contato removido dos favoritos.':'Contato favoritado.','success');
+    }catch{triggerToast('Não foi possível atualizar os favoritos.','error');}
   };
 
   // Favorite Store toggle
@@ -396,6 +439,7 @@ export function useSocialDirectoryV2({
       getConnectionId(currentUser.uid, request.id);
 
     try {
+      if(pilot){if(directoryReady)await requestReservedTribePilot('connection',{peerId:request.id,operation:'accept'});return;}
       await updateDoc(doc(db, 'connections', connectionId), {
         status: 'accepted',
         acceptedAt: serverTimestamp(),
@@ -430,6 +474,7 @@ export function useSocialDirectoryV2({
     );
 
     try {
+      if(pilot){if(directoryReady)await requestReservedTribePilot('connection',{peerId:requestUserId,operation:'remove'});return;}
       await deleteDoc(doc(db, 'connections', connectionId));
 
       triggerToast(
@@ -446,17 +491,19 @@ export function useSocialDirectoryV2({
   };
 
   return {
-    friends,
+    friends:directoryReady?(pilot?friends.filter(friend=>connections.some(item=>item.id===friend.connectionId&&item.status==='accepted')):friends):[],
+    directoryReady,
     setFriends,
     dbUsers,
     setDbUsers,
-    connectionRequests,
+    connectionRequests:directoryReady?connectionRequests:[],
     setConnectionRequests,
     favoriteStoreIds,
     setFavoriteStoreIds,
     handleToggleFriend,
     getSuggestions,
     handleToggleFavoriteFriend,
+    favoritesReady,
     handleToggleFavoriteStore,
     handleAcceptRequest,
     handleDeclineRequest

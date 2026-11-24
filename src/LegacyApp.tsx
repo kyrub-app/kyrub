@@ -96,6 +96,8 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 // Firebase & Sync engine integration imports
 import { db, auth } from './utils/firebase';
 import { listenCollection, resolveConflictLWW } from './utils/syncEngine';
+import {reservedTribePilotClientEnabled} from './utils/reservedTribePilotClient';
+import {subscribeSocialPrivacyInvalidation} from './utils/socialPrivacyInvalidation';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
 import {
   buildUserStoreCreateData,
@@ -1078,7 +1080,8 @@ export default function App() {
 
   // Keep only the authorized signed-in user directory listener.
   useEffect(() => {
-    if (!isLoggedIn) return;
+    setDbUsers([]);
+    if (!isLoggedIn||reservedTribePilotClientEnabled()) return;
 
     const unsubscribeUsers = listenCollection('users', docs => {
       setDbUsers(docs);
@@ -1087,7 +1090,8 @@ export default function App() {
     return () => {
       unsubscribeUsers();
     };
-  }, [isLoggedIn]);
+  }, [isLoggedIn,authenticatedUserId]);
+  useEffect(()=>{if(!reservedTribePilotClientEnabled())return;return subscribeSocialPrivacyInvalidation(()=>{setSelectedChatUser(null);setShowChatModal(false);});},[]);
 
   useEffect(() => {
     const checkAlarms = setInterval(() => {

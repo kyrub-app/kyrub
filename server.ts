@@ -32,6 +32,7 @@ import { createStoreCustomerChatRouter } from "./server/chat/storeCustomerChatRo
 import { createStoreCampaignRouter } from "./server/campaigns/storeCampaignRouter";
 import { createUserCommunicationPreferenceRouter } from "./server/notifications/userCommunicationPreferenceRouter";
 import { createUserNotificationRouter } from "./server/notifications/userNotificationRouter";
+import { notificationInboxEmulatorAllowed, verifyNotificationInboxEmulatorIdentity } from "./server/notifications/notificationInboxEmulatorIdentity.js";
 import { createPaymentIntentRouter } from "./server/payments/paymentIntentRouter";
 import { createStorePromotionManagementRouter } from "./server/payments/storePromotionManagementRouter";
 import { createStoreRewardRouter } from "./server/payments/storeRewardRouter";
@@ -63,6 +64,13 @@ app.use(
     },
   })
 );
+
+app.post('/api/social/reserved-tribe',async(request,response)=>{
+  try{
+    const {handleReservedTribePilotRequest}=await import('./server/identity/reservedTribePilotTransport.js');
+    await handleReservedTribePilotRequest(request,response);
+  }catch{response.status(503).json({error:'TRIBE_UNAVAILABLE'});}
+});
 
 const apiKey = process.env.GEMINI_API_KEY || "";
 let ai: GoogleGenAI | null = null;
@@ -275,7 +283,8 @@ app.use(
 app.use(
   "/api/notifications",
   integrationRateLimiter,
-  createUserNotificationRouter()
+  createUserNotificationRouter(notificationInboxEmulatorAllowed(process.env)
+    ? {verifyInboxIdentity:verifyNotificationInboxEmulatorIdentity} : {})
 );
 
 app.use(

@@ -8,6 +8,15 @@ service cloud.firestore {
     }
 
     // --- Helpers ---
+    // This account-level switch is server-owned. A Firestore query cannot
+    // safely act as a per-document privacy filter.
+    function ordinaryDirectoryClientAllowed(uid) {
+      let path = /databases/$(database)/documents/reserved_tribe_vaults/$(uid);
+      return !exists(path) || get(path).data.get('directoryProtected', false) != true;
+    }
+    function isUnreservedPeer(uid, peer) {
+      return !exists(/databases/$(database)/documents/reserved_tribe_vaults/$(uid)/contacts/$(peer));
+    }
     function isValidId(id) { return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$'); }
     function incoming() { return request.resource.data; }
     function existing() { return resource.data; }
@@ -308,11 +317,12 @@ match /connections/{connectionId} {
 
   allow read: if isSignedIn()
     && (
-      request.auth.uid in existing().participantIds
+      (request.auth.uid in existing().participantIds && ordinaryDirectoryClientAllowed(request.auth.uid))
       || isAdmin()
     );
 
   allow create: if isSignedIn()
+    && ordinaryDirectoryClientAllowed(request.auth.uid)
     && hasValidConnectionId()
     && hasValidParticipants(incoming())
     && incoming().senderId == request.auth.uid
@@ -345,6 +355,7 @@ match /connections/{connectionId} {
     ]);
 
   allow update: if isSignedIn()
+    && ordinaryDirectoryClientAllowed(request.auth.uid)
     && request.auth.uid == existing().receiverId
     && existing().status == 'pending'
     && incoming().status == 'accepted'
@@ -378,17 +389,17 @@ match /connections/{connectionId} {
   allow delete: if isSignedIn()
     && (
       isAdmin()
-      || (
-        existing().status == 'pending'
+      || (ordinaryDirectoryClientAllowed(request.auth.uid) && (
+        (existing().status == 'pending'
         && (
           request.auth.uid == existing().senderId
           || request.auth.uid == existing().receiverId
+        ))
+        || (
+          existing().status == 'accepted'
+          && request.auth.uid in existing().participantIds
         )
-      )
-      || (
-        existing().status == 'accepted'
-        && request.auth.uid in existing().participantIds
-      )
+      ))
     );
 }
 
@@ -405,12 +416,19 @@ match /connections/{connectionId} {
         ).data;
       }
 
+      function ownReservedPeer() {
+        return request.auth.uid == connectionData().senderId
+          ? connectionData().receiverId : connectionData().senderId;
+      }
+
       function canAccessMessages() {
         return isSignedIn()
           && isValidId(connectionId)
           && connectionExists()
           && connectionData().status == 'accepted'
-          && request.auth.uid in connectionData().participantIds;
+          && ordinaryDirectoryClientAllowed(request.auth.uid)
+          && request.auth.uid in connectionData().participantIds
+          && !exists(/databases/$(database)/documents/reserved_tribe_vaults/$(request.auth.uid)/contacts/$(ownReservedPeer()));
       }
 
       function hasValidReceiver() {
@@ -424,6 +442,17 @@ match /connections/{connectionId} {
       }
 
       allow read, write: if false;
+
+      // Individual history visibility: no shared message is deleted or edited.
+      match /history_state/{userId} {
+        allow get: if canAccessMessages() && request.auth.uid == userId;
+        allow list, delete: if false;
+        allow create, update: if canAccessMessages()
+          && request.auth.uid == userId
+          && incoming().keys().hasAll(['clearedAt'])
+          && incoming().keys().hasOnly(['clearedAt'])
+          && incoming().clearedAt == request.time;
+      }
 
       match /messages/{messageId} {
         allow get: if canAccessMessages()
@@ -488,6 +517,9 @@ match /connections/{connectionId} {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isSignedIn();
     }
+
+    // Server-only invalidation counter; never a client subscription or write.
+    match /social_directory_revisions/{userId} { allow read, write: if false; }
 
     match /artifacts { allow list: if isSignedIn(); }
     match /tenants { allow list: if isSignedIn(); }

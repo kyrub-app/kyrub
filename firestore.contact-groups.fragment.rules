@@ -29,10 +29,12 @@
       }
 
       allow read: if isSignedIn()
-        && request.auth.uid == userId;
+        && request.auth.uid == userId
+        && ordinaryDirectoryClientAllowed(userId);
 
       allow create: if isSignedIn()
         && request.auth.uid == userId
+        && ordinaryDirectoryClientAllowed(userId)
         && incoming().ownerId == request.auth.uid
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
@@ -40,6 +42,7 @@
 
       allow update: if isSignedIn()
         && request.auth.uid == userId
+        && ordinaryDirectoryClientAllowed(userId)
         && existing().ownerId == request.auth.uid
         && incoming().groupId == existing().groupId
         && incoming().ownerId == existing().ownerId
@@ -54,5 +57,35 @@
 
       allow delete: if isSignedIn()
         && request.auth.uid == userId
+        && ordinaryDirectoryClientAllowed(userId)
         && existing().ownerId == request.auth.uid;
+    }
+
+    // Private contact favorites, independent from public posts and stores.
+    match /users/{userId}/contact_favorites/{contactId} {
+      function owner() { return isSignedIn() && request.auth.uid == userId; }
+      function validFavorite() {
+        let data = incoming();
+        let connection = get(/databases/$(database)/documents/connections/$(data.connectionId)).data;
+        return isValidId(contactId) && contactId != userId
+          && isValidId(data.connectionId)
+          && data.keys().hasOnly(['connectionId','favorited','updatedAt'])
+          && data.favorited == true && data.updatedAt == request.time
+          && connection.status == 'accepted'
+          && ((connection.senderId == userId && connection.receiverId == contactId)
+            || (connection.receiverId == userId && connection.senderId == contactId));
+      }
+      allow read: if owner() && ordinaryDirectoryClientAllowed(userId);
+      allow delete: if owner() && ordinaryDirectoryClientAllowed(userId);
+      allow create, update: if owner() && ordinaryDirectoryClientAllowed(userId) && validFavorite();
+    }
+
+    // Secret verifier, attempt counter and session digest are server-only.
+    match /reserved_tribe_vaults/{userId} {
+      allow read, write: if false;
+    }
+
+    // Reserved memberships are directional and must never appear in a client SDK read.
+    match /reserved_tribe_vaults/{userId}/contacts/{peerId} {
+      allow read, write: if false;
     }

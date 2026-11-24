@@ -1,4 +1,6 @@
 import React, { useEffect, useRef } from 'react';
+import {reservedTribePilotClientEnabled} from '../../utils/reservedTribePilotClient';
+import {TribePilotChat} from '../TribePilotChat';
 import { useChatMessages } from '../../hooks/useChatMessages';
 import { auth } from '../../utils/firebase';
 import { OPEN_COMMUNITY_FROM_SQUARE_EVENT } from '../../utils/communitySquareFeed';
@@ -17,7 +19,7 @@ interface ChatModalProps {
   forwardingPost?: CloudCommunityPost | null;
 }
 
-export const ChatModal: React.FC<ChatModalProps> = ({
+const LegacyChatModal: React.FC<ChatModalProps> = ({
   isOpen,
   onClose,
   selectedChatUser,
@@ -29,6 +31,9 @@ export const ChatModal: React.FC<ChatModalProps> = ({
 }) => {
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
   const [forwardSendError, setForwardSendError] = React.useState('');
+  const [clearError, setClearError] = React.useState('');
+  const [showClear, setShowClear] = React.useState(false);
+  useEffect(()=>{setShowClear(false);setClearError('');},[isOpen,selectedChatUser?.connectionId]);
   const isChatEnabled = Boolean(
     isOpen
     && selectedChatUser
@@ -40,6 +45,11 @@ export const ChatModal: React.FC<ChatModalProps> = ({
     messages,
     isLoading,
     isSending,
+    isClearing,
+    historyReady,
+    historyError,
+    retryHistory,
+    clearConversation,
     error,
     sendMessage
   } = useChatMessages({
@@ -63,7 +73,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
   const handleSendChatMessage = async (event: React.FormEvent) => {
     event.preventDefault();
 
-    if (!isChatEnabled || isSending || !chatMessageText.trim()) return;
+    if (!isChatEnabled || !historyReady || isSending || isClearing || !chatMessageText.trim()) return;
 
     try {
       setForwardSendError('');
@@ -146,6 +156,10 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               </span>
             </div>
           </div>
+          <div className="flex shrink-0 items-center gap-2">
+          <button type="button" aria-label="Opções da conversa" aria-expanded={showClear}
+            className="flex h-10 w-10 items-center justify-center rounded-full border border-slate-800 bg-slate-900 text-lg text-slate-400"
+            onClick={()=>setShowClear(v=>!v)}>⋮</button>
           <button
             type="button"
             onClick={closeChat}
@@ -154,7 +168,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           >
             ×
           </button>
+          </div>
         </div>
+        {showClear&&<div className="space-y-2 border-b border-slate-800 p-3">
+          <p className="text-sm text-slate-300">Excluir o histórico apenas da sua conta? A outra pessoa continuará com as mensagens e vocês poderão conversar novamente.</p>
+          <button type="button" disabled={!historyReady||isClearing||isSending}
+            className="rounded-xl border border-red-500/40 px-3 py-3 text-sm font-semibold text-red-300 disabled:opacity-50"
+            onClick={async()=>{setClearError('');try{await clearConversation();setShowClear(false);}catch{setClearError('Não foi possível excluir a conversa. Tente novamente.');}}}
+          >{isClearing?'Excluindo…':'Confirmar exclusão da conversa'}</button>
+          <button type="button" disabled={isClearing} className="ml-2 p-3 text-sm underline" onClick={()=>setShowClear(false)}>Cancelar</button>
+        </div>}
+        {clearError&&<p role="alert" className="p-3 text-red-300">{clearError}</p>}
+        {historyError&&<div role="alert" className="p-3 text-red-300">{historyError} <button type="button" onClick={retryHistory} className="underline">Tentar novamente</button></div>}
 
         <div className="flex-1 overflow-y-auto bg-slate-950/40 p-4">
           <div className="space-y-3.5">
@@ -227,7 +252,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
               );
             })}
 
-            {!isLoading && isChatEnabled && messages.length === 0 && (
+            {!isLoading && historyReady && isChatEnabled && messages.length === 0 && (
               <div className="py-12 text-center text-xs italic text-slate-500">
                 Nenhuma mensagem anterior. Digite algo abaixo para iniciar a conversa.
               </div>
@@ -250,7 +275,7 @@ export const ChatModal: React.FC<ChatModalProps> = ({
           />
           <button
             type="submit"
-            disabled={!isChatEnabled || isSending || !chatMessageText.trim()}
+            disabled={!isChatEnabled || !historyReady || isSending || isClearing || !chatMessageText.trim()}
             className="min-w-20 rounded-xl bg-orange-600 px-4 py-3 text-xs font-black uppercase tracking-wider text-white transition-colors hover:bg-orange-500 disabled:cursor-not-allowed disabled:bg-slate-800 disabled:text-slate-500"
           >
             {isSending ? 'Enviando' : 'Enviar'}
@@ -259,4 +284,18 @@ export const ChatModal: React.FC<ChatModalProps> = ({
       </div>
     </div>
   );
+};
+
+/** Same protected ordinary chat from Praça, profiles and communities.
+ * Forwarding in the pilot also goes through the authenticated atomic API. */
+export const ChatModal: React.FC<ChatModalProps> = props=>{
+ if(!reservedTribePilotClientEnabled())return <LegacyChatModal {...props}/>;
+ const owner=auth.currentUser?.uid,friend=props.selectedChatUser;
+ if(!props.isOpen||!owner||!friend||friend.connectionStatus!=='accepted'||!friend.connectionId)return null;
+ const close=()=>{props.setChatMessageText('');props.setSelectedChatUser(null);props.onClose();};
+ return <div role="dialog" aria-modal="true" aria-label="Conversa" className="fixed inset-0 z-[220] flex items-end justify-center bg-slate-950/95 p-3 sm:items-center">
+  <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-950 p-4">
+   <TribePilotChat key={owner+':'+friend.connectionId} owner={owner} connectionId={friend.connectionId} name={friend.name||'Kairubido'} forwardingPost={props.forwardingPost} initialText={props.chatMessageText} onMessageSent={text=>{props.setChatMessageText('');props.onMessageSent?.(text);}} onClose={close} onDenied={close}/>
+  </div>
+ </div>;
 };

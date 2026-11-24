@@ -155,7 +155,7 @@ describe('native React profile social hub', () => {
   test('restores the simplified connected navigation and nested new contacts', () => {
     const generalIndex = profileSource.indexOf("label: 'Geral'");
     const frequentIndex = profileSource.indexOf("label: 'Frequentes'");
-    const groupsIndex = profileSource.indexOf("label: 'Grupos'");
+    const groupsIndex = profileSource.indexOf("label: 'Tribos'");
     const newButtonIndex = profileSource.indexOf(
       'aria-label="Abrir novas conexões"'
     );
@@ -192,7 +192,7 @@ describe('native React profile social hub', () => {
     assert.match(profileSource, /contact_groups/);
     assert.match(profileSource, /const MAX_GROUPS = 30/);
     assert.match(profileSource, /const MAX_GROUP_MEMBERS = 200/);
-    assert.match(profileSource, /Criar grupo|Nome do novo grupo/);
+    assert.match(profileSource, /Criar tribo|Nome da nova tribo/);
     assert.match(profileSource, /toggleGroupMember/);
     assert.match(profileSource, /deleteGroup/);
   });
@@ -318,4 +318,16 @@ test('the signed-in header moves Pitangas/XP to the private Central and retains 
   assert.match(sessionNavigationSource, /id="header-guest-notifications-trigger"/);
   assert.match(sessionNavigationSource, /id="header-connected-trigger"/);
   assert.match(sessionNavigationSource, /id="header-saved-trigger"/);
+});
+
+test('Conectados retains groups and individual chat history controls',()=>{
+ const hook=readFileSync('src/hooks/useChatMessages.ts','utf8');
+ assert.match(sessionNavigationSource,/title="Conectados"/);
+ assert.match(profileSource,/activeTab === 'connected' \? 'Conectados'/);
+ assert.match(profileSource,/label: 'Tribos'/);
+ assert.match(chatSource,/Confirmar exclusão da conversa/);
+ assert.match(hook,/history_state/);
+ assert.match(hook,/clearedAt:serverTimestamp\(\)/);
+ assert.match(hook,/message\.createdAt/);
+ assert.doesNotMatch(hook,/deleteDoc/);
 });

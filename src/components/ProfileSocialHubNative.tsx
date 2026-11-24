@@ -5,6 +5,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -36,7 +37,6 @@ import {
   Store as StoreIcon,
   Trash2,
   ShieldCheck,
-  UserMinus,
   UserPlus,
   Users,
   X,
@@ -49,18 +49,25 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  runTransaction,
   updateDoc,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Friend, SocialPost } from '../types';
 import { usePublicSocialFeed } from '../hooks/usePublicSocialFeed';
 import { useSocialDirectoryV2 } from '../hooks/useSocialDirectoryV2';
+import { matchesTribeContactName } from '../utils/tribeContactSearch';
 import { buildPublicStorefrontPath } from '../utils/appRoutes';
 import { auth, db, storage } from '../utils/firebase';
 import { MediaCarousel } from './MediaCarousel';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
+import {TribeContactMenu} from './TribeContactMenu';
+import {ReservedTribePilotPanel} from './ReservedTribePilotPanel';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from '../utils/reservedTribePilotClient';
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
+import {submitSocialUserReport} from '../utils/socialReports';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
   withinCommunitySquareWindow, type CommunitySquareEntry,
@@ -284,7 +291,7 @@ function SocialCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const isStatus = post.publicationType === 'status';
   const isOwnPost = post.authorId === currentUserId;
-  const authorConnection = resolvePostAuthorConnection(currentUserId, post, friends, connections);
+  const authorConnection = resolvePostAuthorConnection(currentUserId, post, friends, connections, reservedTribePilotClientEnabled());
 
   return (
     <article className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 shadow-lg">
@@ -409,15 +416,13 @@ function SocialCard({
 function ContactCard({
   friend,
   latestStatus,
-  onFavorite,
   onChat,
-  onRemove,
+  menu,
 }: {
   friend: Friend;
   latestStatus?: ExtendedSocialPost;
-  onFavorite: () => void;
   onChat: () => void;
-  onRemove: () => void;
+  menu: ReactNode;
 }) {
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
@@ -432,18 +437,7 @@ function ContactCard({
             Status · {remainingStatusLabel(latestStatus, Date.now())}
           </span>
         )}
-        <button
-          type="button"
-          onClick={onFavorite}
-          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 backdrop-blur ${
-            friend.favorited ? 'text-amber-300' : 'text-slate-400'
-          }`}
-          aria-label={
-            friend.favorited ? 'Remover dos favoritos' : 'Favoritar contato'
-          }
-        >
-          <Star className={`h-4 w-4 ${friend.favorited ? 'fill-current' : ''}`} />
-        </button>
+        {friend.favorited&&<span aria-label="Contato favorito" className="absolute right-2 top-2 rounded-full bg-slate-950/80 p-2 text-amber-300"><Star className="h-4 w-4 fill-current"/></span>}
       </div>
       <div className="min-h-[72px] p-3">
         <h4 className="truncate text-xs font-black text-white">{friend.name}</h4>
@@ -460,14 +454,7 @@ function ContactCard({
           <MessageCircle className="h-4 w-4" />
           Chat
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-          aria-label={`Remover ${friend.name}`}
-        >
-          <UserMinus className="h-4 w-4" />
-        </button>
+        {menu}
       </div>
     </article>
   );
@@ -508,6 +495,8 @@ export function ProfileSocialHubNative() {
   const [groupNameDraft, setGroupNameDraft] = useState('');
   const [groupBusy, setGroupBusy] = useState(false);
   const [stores, setStores] = useState<MarketplaceStore[]>([]);
+  const [tribeSearch, setTribeSearch] = useState('');
+  useEffect(() => { setTribeSearch(''); }, [user?.uid, open]);
   const [squareSearch, setSquareSearch] = useState('');
   const [communitySquareEntries, setCommunitySquareEntries] = useState<CommunitySquareEntry[]>([]);
   const [squareMembershipIds, setSquareMembershipIds] = useState<Set<string>>(new Set());
@@ -522,6 +511,7 @@ export function ProfileSocialHubNative() {
   const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
+  useEffect(()=>{setGroups([]);setChatTarget(null);setRemoveContactTarget(null);setChatMessageText('');setSelectedTaggedUserIds([]);setNewConnectionsOpen(false);},[user?.uid]);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const socialFeed = usePublicSocialFeed();
@@ -543,6 +533,8 @@ export function ProfileSocialHubNative() {
     isLoggedIn: Boolean(user),
     triggerToast,
   });
+  useEffect(()=>{if(!directory.directoryReady){setChatTarget(null);setChatMessageText('');setRemoveContactTarget(null);setSelectedTaggedUserIds([]);}},[directory.directoryReady]);
+  useEffect(()=>{if(!reservedTribePilotClientEnabled())return;return subscribeSocialPrivacyInvalidation(()=>{setChatTarget(null);setChatMessageText('');setRemoveContactTarget(null);setSelectedTaggedUserIds([]);setGroups([]);});},[]);
 
   useEffect(() => {
     const handleRemoveIntent = (event: Event) => {
@@ -715,12 +707,14 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
-    return onSnapshot(collection(db, 'users'), snapshot => {
+    directory.setDbUsers([]);
+    if (!user||reservedTribePilotClientEnabled()) return;
+    return onSnapshot(collection(db, 'users'), {includeMetadataChanges:true},snapshot => {
+      if(auth.currentUser?.uid!==user.uid||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites){directory.setDbUsers([]);return;}
       directory.setDbUsers(
         snapshot.docs.map(item => ({ id: item.id, ...item.data() }))
       );
-    });
+    },()=>directory.setDbUsers([]));
   }, [directory.setDbUsers, user]);
 
   useEffect(() => {
@@ -745,10 +739,13 @@ export function ProfileSocialHubNative() {
   }, [user]);
 
   useEffect(() => {
-    if (!user) return;
+    setGroups([]);
+    if (!user||reservedTribePilotClientEnabled()) return;
     return onSnapshot(
       collection(db, `users/${user.uid}/contact_groups`),
+      {includeMetadataChanges:true},
       snapshot => {
+        if(auth.currentUser?.uid!==user.uid||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites){setGroups([]);return;}
         setGroups(
           snapshot.docs
             .flatMap(item => {
@@ -1196,7 +1193,7 @@ export function ProfileSocialHubNative() {
     const name = groupNameDraft.trim().slice(0, 60);
     if (!name) return;
     if (groups.length >= MAX_GROUPS) {
-      triggerToast('O limite é de 30 grupos por usuário.', 'warning');
+      triggerToast('O limite é de 30 tribos por usuário.', 'warning');
       return;
     }
     setGroupBusy(true);
@@ -1213,9 +1210,9 @@ export function ProfileSocialHubNative() {
         updatedAt: serverTimestamp(),
       });
       setGroupNameDraft('');
-      triggerToast('Grupo criado.', 'success');
+      triggerToast('Tribo criada.', 'success');
     } catch {
-      triggerToast('Não foi possível criar o grupo.', 'error');
+      triggerToast('Não foi possível criar a tribo.', 'error');
     } finally {
       setGroupBusy(false);
     }
@@ -1226,21 +1223,46 @@ export function ProfileSocialHubNative() {
     friendId: string
   ) => {
     if (!user) return;
-    const memberIds = group.memberIds.includes(friendId)
-      ? group.memberIds.filter(id => id !== friendId)
-      : [...group.memberIds, friendId].slice(0, MAX_GROUP_MEMBERS);
+    const selected=group.memberIds.includes(friendId);
+    if(auth.currentUser?.uid!==user.uid||!directory.friends.some(friend=>friend.id===friendId))return;
     try {
-      await updateDoc(
-        doc(db, `users/${user.uid}/contact_groups/${group.id}`),
-        {
-          memberIds,
-          updatedAt: serverTimestamp(),
-        }
-      );
+      await runTransaction(db,async tx=>{
+        const reference=doc(db,`users/${user.uid}/contact_groups/${group.id}`);
+        const snapshot=await tx.get(reference);
+        if(!snapshot.exists()||auth.currentUser?.uid!==user.uid)throw Error('GROUP_UNAVAILABLE');
+        const members=snapshot.get('memberIds') as string[];
+        if(!Array.isArray(members))throw Error('GROUP_UNAVAILABLE');
+        if(!selected&&!members.includes(friendId)&&members.length>=MAX_GROUP_MEMBERS)throw Error('GROUP_FULL');
+        const memberIds=selected?members.filter(id=>id!==friendId):[...new Set([...members,friendId])];
+        tx.update(reference,{memberIds,updatedAt:serverTimestamp()});
+      });
     } catch {
-      triggerToast('Não foi possível atualizar o grupo.', 'error');
+      triggerToast('Não foi possível atualizar a tribo.', 'error');
     }
   };
+
+  const clearContactConversation=async(friend:Friend)=>{
+    const uid=user?.uid;
+    if(!uid||auth.currentUser?.uid!==uid||!friend.connectionId||!directory.friends.some(item=>item.id===friend.id&&item.connectionId===friend.connectionId))return;
+    if(!window.confirm('Excluir o histórico desta conversa somente para você? O outro contato continuará com as mensagens.'))return;
+    try{
+      if(reservedTribePilotClientEnabled())await requestReservedTribePilot('ordinary-chat-clear',{connectionId:friend.connectionId});
+      else await setDoc(doc(db,'social_chats',friend.connectionId,'history_state',uid),{clearedAt:serverTimestamp()});
+      if(auth.currentUser?.uid===uid)triggerToast('Histórico excluído da sua visualização.','success');
+    }catch{triggerToast('Não foi possível excluir a conversa. Tente novamente.','error');}
+  };
+  const reportContact=async(friend:Friend)=>{
+    const reason=window.prompt('Por que deseja denunciar este contato? Informe de 3 a 500 caracteres.');
+    if(reason===null)return;
+    if(reason.trim().length<3||reason.trim().length>500){triggerToast('Informe um motivo entre 3 e 500 caracteres.','error');return;}
+    if(auth.currentUser?.uid!==user?.uid)return;
+    try{const result=await submitSocialUserReport(friend.id,reason);triggerToast(result==='already_reported'?'Você já denunciou este usuário.':'Denúncia encaminhada à moderação.','success');}
+    catch{triggerToast('Não foi possível enviar a denúncia.','error');}
+  };
+  const renderContactMenu=(friend:Friend)=><TribeContactMenu friend={friend} groups={groups} favoriteReady={directory.favoritesReady}
+    onFavorite={()=>void directory.handleToggleFavoriteFriend(friend.id)}
+    onGroup={async(id)=>{const group=groups.find(item=>item.id===id);if(group)await toggleGroupMember(group,friend.id);}}
+    onClear={()=>void clearContactConversation(friend)} onRemove={()=>setRemoveContactTarget(friend)} onReport={()=>void reportContact(friend)}/>;
 
   const deleteGroup = async (group: ContactGroup) => {
     if (!user) return;
@@ -1248,9 +1270,9 @@ export function ProfileSocialHubNative() {
       await deleteDoc(
         doc(db, `users/${user.uid}/contact_groups/${group.id}`)
       );
-      triggerToast('Grupo removido.', 'info');
+      triggerToast('Tribo removida.', 'info');
     } catch {
-      triggerToast('Não foi possível remover o grupo.', 'error');
+      triggerToast('Não foi possível remover a tribo.', 'error');
     }
   };
 
@@ -1269,6 +1291,8 @@ export function ProfileSocialHubNative() {
   const requestCount = directory.connectionRequests.length;
   const newConnectionsCount = suggestionCount + requestCount;
 
+  const filteredTribeFriends = directory.friends.filter(friend => matchesTribeContactName(friend.name, tribeSearch));
+  const filteredTribeFavorites = filteredTribeFriends.filter(friend => friend.favorited);
   const connectionTabs: Array<{
     id: ConnectionSection;
     label: string;
@@ -1286,7 +1310,7 @@ export function ProfileSocialHubNative() {
     },
     {
       id: 'groups',
-      label: 'Grupos',
+      label: 'Tribos',
       count: groups.length,
     },
   ];
@@ -1734,7 +1758,8 @@ export function ProfileSocialHubNative() {
                 </>
               )}
 
-              {activeTab === 'connected' && (
+              {activeTab === 'connected' && reservedTribePilotClientEnabled() && <ReservedTribePilotPanel key={user.uid} owner={user.uid} onBack={()=>{setOpen(false);document.getElementById('header-user-profile-trigger')?.click();}}/>}
+              {activeTab === 'connected' && !reservedTribePilotClientEnabled() && (
                 <div className="space-y-4">
                   <button
                     type="button"
@@ -1749,7 +1774,7 @@ export function ProfileSocialHubNative() {
                   </button>
                   <nav
                     className="grid grid-cols-4 gap-2"
-                    aria-label="Seções de conectados"
+                    aria-label="Seções de Conectados"
                   >
                     {connectionTabs.map(item => (
                       <button
@@ -1790,30 +1815,39 @@ export function ProfileSocialHubNative() {
                     </button>
                   </nav>
 
+                  <div className="relative">
+                    <Search aria-hidden="true" className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="search"
+                      aria-label="Pesquisar pessoas em Conectados"
+                      value={tribeSearch}
+                      onChange={event => setTribeSearch(event.target.value)}
+                      placeholder="Pesquisar conectados..."
+                      className="min-h-11 w-full rounded-2xl border border-slate-800 bg-slate-900 py-3 pl-10 pr-12 text-sm text-white outline-none focus:border-orange-500"
+                    />
+                    {tribeSearch && <button type="button" aria-label="Limpar pesquisa" onClick={() => setTribeSearch('')} className="absolute right-1 top-1/2 flex h-10 w-10 -translate-y-1/2 items-center justify-center text-slate-400"><X aria-hidden="true" className="h-4 w-4" /></button>}
+                  </div>
+
                   {connectionSection === 'connected' && (
                     <div className="grid grid-cols-2 gap-3">
-                      {directory.friends.map(friend => (
+                      {filteredTribeFriends.map(friend => (
                         <ContactCard
                           key={friend.id}
                           friend={friend}
                           latestStatus={connectedStatusByAuthor.get(friend.id)}
-                          onFavorite={() =>
-                            directory.handleToggleFavoriteFriend(friend.id)
-                          }
+                          menu={renderContactMenu(friend)}
                           onChat={() => {
                             setChatMessageText('');
                             setChatTarget(friend);
                           }}
-                          onRemove={() =>
-                            setRemoveContactTarget(friend)
-                          }
+                          
                         />
                       ))}
-                      {directory.friends.length === 0 && (
+                      {filteredTribeFriends.length === 0 && (
                         <div className="col-span-2">
                           <EmptyState
-                            title="Nenhuma conexão"
-                            description="Aceite solicitações ou encontre pessoas nas sugestões."
+                            title={tribeSearch.trim() ? 'Nenhuma pessoa encontrada' : 'Nenhuma conexão'}
+                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Aceite solicitações ou encontre pessoas nas sugestões.'}
                           />
                         </div>
                       )}
@@ -1822,31 +1856,24 @@ export function ProfileSocialHubNative() {
 
                   {connectionSection === 'favorites' && (
                     <div className="grid grid-cols-2 gap-3">
-                      {directory.friends
-                        .filter(friend => friend.favorited)
-                        .map(friend => (
+                      {filteredTribeFavorites.map(friend => (
                           <ContactCard
                             key={friend.id}
                             friend={friend}
                             latestStatus={connectedStatusByAuthor.get(friend.id)}
-                            onFavorite={() =>
-                              directory.handleToggleFavoriteFriend(friend.id)
-                            }
+                            menu={renderContactMenu(friend)}
                             onChat={() => {
                               setChatMessageText('');
                               setChatTarget(friend);
                             }}
-                            onRemove={() =>
-                              setRemoveContactTarget(friend)
-                            }
+                            
                           />
                         ))}
-                      {directory.friends.filter(friend => friend.favorited)
-                        .length === 0 && (
+                      {filteredTribeFavorites.length === 0 && (
                         <div className="col-span-2">
                           <EmptyState
-                            title="Nenhum favorito"
-                            description="Use a estrela nos contatos para criar sua lista de favoritos."
+                            title={tribeSearch.trim() ? 'Nenhum favorito encontrado' : 'Nenhum favorito'}
+                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Use Favoritar contato no menu de três pontos.'}
                             icon={Star}
                           />
                         </div>
@@ -1866,7 +1893,7 @@ export function ProfileSocialHubNative() {
                           onChange={event =>
                             setGroupNameDraft(event.target.value.slice(0, 60))
                           }
-                          placeholder="Nome do novo grupo"
+                          placeholder="Nome da nova tribo"
                           className="min-w-0 flex-1 rounded-xl border border-slate-800 bg-slate-950 px-3 text-xs text-white outline-none"
                         />
                         <button
@@ -1902,13 +1929,14 @@ export function ProfileSocialHubNative() {
                               type="button"
                               onClick={() => void deleteGroup(group)}
                               className="flex h-9 w-9 items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-                              aria-label={`Excluir grupo ${group.name}`}
+                              aria-label={`Excluir tribo ${group.name}`}
                             >
                               <Trash2 className="h-4 w-4" />
                             </button>
                           </div>
+                          {tribeSearch.trim() && filteredTribeFriends.length === 0 && <p className="text-xs text-slate-400">Nenhuma pessoa encontrada.</p>}
                           <div className="grid gap-2 sm:grid-cols-2">
-                            {directory.friends.map(friend => {
+                            {filteredTribeFriends.map(friend => {
                               const selected = group.memberIds.includes(
                                 friend.id
                               );
@@ -1945,8 +1973,8 @@ export function ProfileSocialHubNative() {
 
                       {groups.length === 0 && (
                         <EmptyState
-                          title="Nenhum grupo"
-                          description="Crie grupos para organizar seus contatos sem alterar as conexões."
+                          title="Nenhuma tribo"
+                          description="Crie tribos para organizar seus contatos sem alterar as conexões."
                           icon={FolderPlus}
                         />
                       )}
@@ -2015,7 +2043,7 @@ export function ProfileSocialHubNative() {
       </div>
 
 
-      {newConnectionsOpen && (
+      {newConnectionsOpen && !reservedTribePilotClientEnabled() && (
         <div className="fixed inset-0 z-[136] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
           <section className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
             <header className="flex items-center justify-between border-b border-slate-900 px-4 py-3">

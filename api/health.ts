@@ -80,6 +80,19 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'reserved-tribe-pilot') {
+    response.setHeader('Cache-Control','no-store, private, max-age=0');
+    response.setHeader('Pragma','no-cache');
+    response.setHeader('Vary','Authorization');
+    try{
+      const {handleReservedTribePilotRequest}=await import('../server/identity/reservedTribePilotTransport.js');
+      await handleReservedTribePilotRequest(request,response);
+    }catch{
+      response.status(503).json({error:'TRIBE_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'official-operational-phase') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     if((request.method??'GET').toUpperCase()!=='GET'){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}

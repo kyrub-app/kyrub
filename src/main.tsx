@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { reservedTribePilotClientEnabled } from './utils/reservedTribePilotClient';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
 import { KyrubAiConversationCloudSyncGate } from './components/KyrubAiConversationCloudSyncGate';
@@ -45,7 +46,7 @@ createRoot(rootElement).render(
       <KyrubAiConversationCloudSyncGate>
         <>
           <ProfileNextPolishBridge />
-          <ProfileConnectedCardsPolishBridge />
+          {!reservedTribePilotClientEnabled() && <ProfileConnectedCardsPolishBridge />}
           <ProfileConnectedImageFitBridge />
           <ProfileContactGroupsPolishBridge />
           <ProfileOffersFiltersBridge />

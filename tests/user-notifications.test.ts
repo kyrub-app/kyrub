@@ -97,7 +97,7 @@ describe('canonical user notifications', () => {
       singleUpdates[0],
       /transaction\.update\(reference, \{ readAt: now\.toISOString\(\) \}\);/
     );
-    assert.match(allBlock, /batch\.update\(document\.ref, \{ readAt \}\)/);
+    assert.match(allBlock, /transaction\.update\(document\.ref,\{readAt\}\)/);
   });
 
   test('direct browser Firestore access has no notification rule surface', () => {
@@ -231,4 +231,14 @@ describe('canonical user notifications', () => {
     assert.match(rules, /existsAfter\(\/databases\/\$\(database\)\/documents\/social_chats/);
   });
 
+});
+
+test('reserved person notifications are projected server-side before inbox delivery',()=>{
+ const service=readFileSync('server/notifications/userNotificationService.ts','utf8');
+ const bridge=readFileSync('src/components/UserNotificationCenterBridge.tsx','utf8');
+ assert.match(service,/isReservedNotification\(notification,policy.peers\)/);
+ assert.match(service,/unread.docs.filter/);
+ assert.match(service,/listReservedUserNotifications/);
+ assert.match(bridge,/inbox.personalBrowserNotificationsAllowed===true/);
+ assert.match(bridge,/sequence!==refreshSequence.current/);
 });

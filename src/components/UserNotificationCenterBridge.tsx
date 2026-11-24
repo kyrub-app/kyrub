@@ -1,3 +1,4 @@
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
@@ -83,10 +84,12 @@ const openNotificationTarget = (
   return true;
 };
 
+const isPersonalNotification=(notification:UserNotification)=>notification.category==='user_forward'||notification.category==='community_group_invite';
+
 const showBrowserNotification = (
   notification: UserNotification,
   user: User
-): void => {
+): Notification | undefined => {
   if (
     typeof window === 'undefined' ||
     !('Notification' in window) ||
@@ -100,13 +103,20 @@ const showBrowserNotification = (
     tag: notification.id,
   });
   browserNotification.onclick = () => {
-    window.focus();
-    void markUserNotificationRead(notification.id).catch(error =>
-      console.warn('Não foi possível marcar a notificação do navegador como lida.', error)
-    );
-    openNotificationTarget(notification, user);
     browserNotification.close();
+    if(auth.currentUser?.uid!==user.uid)return;
+    // A notification shown earlier may now be reserved. Revalidate before navigation.
+    void (async()=>{
+      const latest=await loadUserNotificationInbox(100);
+      if(auth.currentUser?.uid!==user.uid)return;
+      const current=latest.notifications.find(item=>item.id===notification.id);
+      if(!current||(isPersonalNotification(current)&&latest.personalBrowserNotificationsAllowed!==true))return;
+      await markUserNotificationRead(current.id);
+      if(auth.currentUser?.uid!==user.uid)return;
+      window.focus();openNotificationTarget(current,user);
+    })().catch(()=>{});
   };
+  return browserNotification;
 };
 
 export function UserNotificationCenterBridge() {
@@ -124,6 +134,8 @@ export function UserNotificationCenterBridge() {
   const [errorMessage, setErrorMessage] = useState('');
   const notificationBaselineRef = useRef<Set<string> | null>(null);
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
+  const browserPersonalRef=useRef(new Map<string,Notification>());
+  const refreshSequence=useRef(0);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
 
@@ -132,6 +144,9 @@ export function UserNotificationCenterBridge() {
   }, [preferences]);
 
   useEffect(() => {
+    ++refreshSequence.current;
+    for(const popup of browserPersonalRef.current.values())popup.close();
+    browserPersonalRef.current.clear();
     notificationBaselineRef.current = null;
     setResolvedInvites({});
     setPendingInviteResponse(null);
@@ -195,9 +210,15 @@ export function UserNotificationCenterBridge() {
       notificationBaselineRef.current = null;
       return;
     }
+    const sequence=++refreshSequence.current;
     if (!silent) setLoading(true);
     try {
       const inbox = await loadUserNotificationInbox(60);
+      if(sequence!==refreshSequence.current||auth.currentUser?.uid!==user.uid)return;
+      if(inbox.personalBrowserNotificationsAllowed!==true){
+        for(const popup of browserPersonalRef.current.values())popup.close();
+        browserPersonalRef.current.clear();
+      }
       const nextIds = new Set(inbox.notifications.map(item => item.id));
       const baseline = notificationBaselineRef.current;
       const currentPreferences = preferencesRef.current;
@@ -206,12 +227,17 @@ export function UserNotificationCenterBridge() {
           if (
             !baseline.has(notification.id) &&
             !notification.readAt &&
+            (!isPersonalNotification(notification)||inbox.personalBrowserNotificationsAllowed===true) &&
             shouldDeliverUserNotificationToBrowser(
               currentPreferences,
               notification
             )
           ) {
-            showBrowserNotification(notification, user);
+            const popup=showBrowserNotification(notification, user);
+            if(popup&&isPersonalNotification(notification)){
+              browserPersonalRef.current.set(notification.id,popup);
+              popup.onclose=()=>browserPersonalRef.current.delete(notification.id);
+            }
           }
         }
       }
@@ -220,6 +246,11 @@ export function UserNotificationCenterBridge() {
       setUnreadCount(inbox.unreadCount);
       setErrorMessage('');
     } catch (error) {
+      if(sequence!==refreshSequence.current||auth.currentUser?.uid!==user.uid)return;
+      // Never continue displaying an old inbox when authorization is uncertain.
+      setNotifications([]);setUnreadCount(0);notificationBaselineRef.current=null;
+      for(const popup of browserPersonalRef.current.values())popup.close();
+      browserPersonalRef.current.clear();
       if (!silent) {
         setErrorMessage(
           error instanceof Error
@@ -228,7 +259,7 @@ export function UserNotificationCenterBridge() {
         );
       }
     } finally {
-      if (!silent) setLoading(false);
+      if(sequence===refreshSequence.current)setLoading(false);
     }
   }, [user]);
 
@@ -238,6 +269,17 @@ export function UserNotificationCenterBridge() {
     const timer = window.setInterval(() => void refresh(true), 15000);
     return () => window.clearInterval(timer);
   }, [refresh, user]);
+
+  useEffect(()=>{
+    if(!user)return;
+    const invalidate=()=>{
+      ++refreshSequence.current;setNotifications([]);setUnreadCount(0);setResolvedInvites({});setPendingInviteResponse(null);
+      notificationBaselineRef.current=null;
+      for(const popup of browserPersonalRef.current.values())popup.close();browserPersonalRef.current.clear();
+      if(!document.hidden)void refresh(true);
+    };
+    return subscribeSocialPrivacyInvalidation(invalidate);
+  },[user,refresh]);
 
   useEffect(() => {
     if (open) void refresh();
@@ -301,7 +343,7 @@ export function UserNotificationCenterBridge() {
       }
     }
 
-    if (user && openNotificationTarget(notification, user)) {
+    if (user && auth.currentUser?.uid===user.uid && openNotificationTarget(notification, user)) {
       setOpen(false);
     }
   };

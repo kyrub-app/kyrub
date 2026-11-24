@@ -4,6 +4,7 @@ import { auth } from './firebase';
 export interface UserNotificationInbox {
   notifications: UserNotification[];
   unreadCount: number;
+  personalBrowserNotificationsAllowed: boolean;
 }
 
 const currentUser = () => {
