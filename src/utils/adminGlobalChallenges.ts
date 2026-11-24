@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth';
 import { assertKyrubChallengeDefinition, type KyrubChallengeDefinition } from '../../shared/gamification';
-import type { GlobalChallengeListOptions, GlobalChallengePage } from '../../shared/globalChallengeAdmin';
+import type { GlobalChallengeListOptions, GlobalChallengePage, OfficialCommunityBinding } from '../../shared/globalChallengeAdmin';
 
 export class GlobalChallengeApiError extends Error {
   constructor(readonly status: number, readonly code: string, readonly retryAfter = 0) {
@@ -34,6 +34,8 @@ export const createGlobalChallengeAdminClient = (user: Pick<User, 'getIdToken'>)
       ...(options.status ? { status: options.status } : {}), ...(options.cursor ? { cursor: options.cursor } : {}) }, undefined, signal),
     get: (id: string, signal?: AbortSignal) => request<{ challenge: KyrubChallengeDefinition }>({ operation: 'get', challengeId: id }, undefined, signal),
     create: (challenge: KyrubChallengeDefinition, signal?: AbortSignal) => request<{ challenge: KyrubChallengeDefinition }>({ operation: 'create' }, assertKyrubChallengeDefinition(challenge), signal),
+    officialCommunity: (signal?:AbortSignal) => request<{binding:OfficialCommunityBinding}>({operation:'official-community'},undefined,signal),
+    linkOfficialCommunity: (communityId:string,signal?:AbortSignal) => request<{binding:OfficialCommunityBinding}>({operation:'link-official-community'},{communityId},signal),
     publish: (challengeId: string, signal?: AbortSignal) => request<{ challenge: KyrubChallengeDefinition }>({ operation: 'publish' }, { challengeId }, signal),
   };
 };

@@ -5,6 +5,7 @@
     "deploymentEnabled": {
       "*": false,
       "fix/gamification-activation-delivery": false,
+      "test/gamification-integrated-rewards-v1": false,
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,

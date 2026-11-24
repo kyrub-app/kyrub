@@ -5,3 +5,10 @@ export const GLOBAL_CHALLENGE_MODES: readonly KyrubChallengeValidationMode[] = [
 export const GLOBAL_CHALLENGE_FIELDS = ['id', 'title', 'description', 'status', 'validationMode', 'rewardKCoins', 'rewardXp', 'startsAt', 'endsAt', 'maxCompletions', 'maxCompletionsPerUser', 'sponsorType', 'sponsorId'] as const;
 export interface GlobalChallengePage { items: KyrubChallengeDefinition[]; nextCursor: string | null }
 export interface GlobalChallengeListOptions { status?: KyrubChallengeStatus; limit?: number; cursor?: string }
+
+/** The institutional destination is server-owned, not a community name or client flag. */
+export type OfficialCommunityCandidate = { communityId: string; name: string };
+export type OfficialCommunityBinding =
+  | { state: 'unlinked'; candidates: OfficialCommunityCandidate[]; truncated: boolean }
+  | { state: 'linked'; community: OfficialCommunityCandidate }
+  | { state: 'unavailable' };

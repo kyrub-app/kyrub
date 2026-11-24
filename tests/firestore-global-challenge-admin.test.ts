@@ -577,3 +577,44 @@ test('ingress limit rejects unauthenticated floods without trusting forwarded he
   }
   assert.equal(blocked, true);
 });
+
+
+test('institutional community binding is owner-authorized, unique, audited and server-only',async()=>{
+ const path='kyrub_admin/control_plane/institutional_channels/official_community';
+ const ref=adminDb.doc(path);
+ const fixture=async(id:string,ownerId:string,visibility='public',status='active')=>{
+  await adminDb.doc('communities/'+id).set({communityId:id,ownerId,name:'Fixture '+id,visibility});
+  await adminDb.doc('community_members/'+id+'__'+ownerId).set({membershipId:id+'__'+ownerId,communityId:id,userId:ownerId,role:'owner',status});
+ };
+ await fixture('official-owned','admin');
+ await fixture('official-other','other-user');
+ await fixture('official-private','admin','private');
+ await fixture('official-inactive','admin','public','pending');
+ assert.equal((await request(undefined,'official-community',null,'GET')).status,401);
+ assert.equal((await request(undefined,'official-community',token('operations'),'GET')).status,403);
+ const empty=await request(undefined,'official-community',token(),'GET');
+ assert.equal(empty.status,200);assert.equal(empty.body.binding.state,'unlinked');
+ assert.ok(empty.body.binding.candidates.some((v:{communityId:string})=>v.communityId==='official-owned'));
+ assert.ok(!empty.body.binding.candidates.some((v:{communityId:string})=>['official-other','official-private'].includes(v.communityId)));
+ assert.equal((await request({communityId:'official-owned',actorId:'admin'},'link-official-community')).status,400);
+ for(const id of ['official-other','official-private','official-inactive','missing'])assert.equal((await request({communityId:id},'link-official-community')).status,403);
+ assert.equal((await ref.get()).exists,false);
+ assert.equal((await request({communityId:'official-owned'},'link-official-community',token('operations'))).status,403);
+ const results=await Promise.all(Array.from({length:4},()=>request({communityId:'official-owned'},'link-official-community')));
+ assert.ok(results.every(r=>r.status===200&&r.body.binding.state==='linked'));
+ assert.deepEqual(results[0].body.binding,{state:'linked',community:{communityId:'official-owned',name:'Fixture official-owned'}});
+ assert.equal((await ref.collection('audit').get()).size,1);
+ assert.equal((await ref.get()).get('ownerId'),'admin');
+ await fixture('official-second','admin');
+ assert.equal((await request({communityId:'official-second'},'link-official-community')).status,409);
+ assert.equal((await ref.get()).get('communityId'),'official-owned');
+ for(const uid of ['admin','ordinary']){
+  const browser=environment.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(browser,path)));
+  await assertFails(setDoc(doc(browser,path),{communityId:'official-other'}));
+ }
+ await adminDb.doc('community_members/official-owned__admin').update({status:'pending'});
+ assert.deepEqual((await request(undefined,'official-community',token(),'GET')).body,{binding:{state:'unavailable'}});
+ // No challenges or community posts are created by linking.
+ assert.equal((await adminDb.collection('community_posts').where('communityId','==','official-owned').get()).size,0);
+});

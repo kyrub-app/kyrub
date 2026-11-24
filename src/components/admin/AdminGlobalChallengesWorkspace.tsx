@@ -1,3 +1,4 @@
+import { OfficialCommunityBindingPanel } from './OfficialCommunityBindingPanel';
 import { useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import type { User } from 'firebase/auth';
 import type { AdminProfile } from '../../utils/adminControlPlane';
@@ -101,6 +102,7 @@ function ChallengeWorkspace({ user }: { user: Pick<User, 'uid' | 'getIdToken'> }
   if (blocked) return <div role="alert" ref={errorRef} tabIndex={-1} className="rounded-xl border border-amber-500/30 p-4 text-sm text-amber-200">{error}</div>;
   const field = (key: keyof typeof form, value: string) => setForm(previous => ({ ...previous, [key]: value }));
   return <section aria-label="Gerenciar desafios globais" className="space-y-5">
+    <OfficialCommunityBindingPanel api={api} />
     <div className="flex flex-wrap items-end justify-between gap-3">
       <label className="text-xs text-slate-300">Estado do desafio<select aria-label="Filtrar por estado" value={filter} disabled={busy} onChange={event => { setFilter(event.target.value as typeof filter); setCursors([undefined]); setSelectedId(''); }} className={inputClass}>
         <option value="">Todos os estados</option>{GLOBAL_CHALLENGE_STATUSES.map(status => <option key={status} value={status}>{statusLabels[status]}</option>)}

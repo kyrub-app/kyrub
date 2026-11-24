@@ -1,4 +1,5 @@
 import { adminAuth } from '../firebaseAdmin.js';
+import {readOfficialCommunityBinding,linkOfficialCommunity} from './officialCommunityBinding.js';
 import { consumeGlobalChallengeActorLimit } from './globalChallengeAdminRateLimit.js';
 import { authorizeIntegrationReadiness } from '../admin/integrationReadinessService.js';
 import { createGlobalChallengeDraft, publishGlobalChallenge, getGlobalChallenge, listGlobalChallenges } from './globalChallengeAdminRepository.js';
@@ -39,6 +40,11 @@ const authorizeGlobalChallengeAdmin = async (authorization: string) => {
 
 export const queryGlobalChallengeAdmin = async (authorization: string, query: Record<string, unknown>) => {
   const actor = await authorizeGlobalChallengeAdmin(authorization);
+  if(query.operation==='official-community'){
+    if(Object.keys(query).some(key=>key!=='operation'&&key!=='transport'))throw new GlobalChallengeInputError('CHALLENGE_QUERY_INVALID');
+    await consumeGlobalChallengeActorLimit(actor.uid,'read');
+    return {binding:await readOfficialCommunityBinding(actor.uid)};
+  }
   const options = parseGlobalChallengeRead(query);
   await consumeGlobalChallengeActorLimit(actor.uid, 'read');
   if (options.operation === 'get') return { challenge: await getGlobalChallenge(options.challengeId, actor.uid) };
@@ -64,11 +70,22 @@ export const executeGlobalChallengeAdmin = async (authorization: string, operati
   throw new GlobalChallengeInputError('CHALLENGE_OPERATION_INVALID');
 };
 
+export async function executeOfficialCommunityLink(authorization:string,input:unknown){
+ const actor=await authorizeGlobalChallengeAdmin(authorization);
+ if(!input||typeof input!=='object'||Array.isArray(input)||Object.keys(input).length!==1||
+  !('communityId' in input)||typeof input.communityId!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(input.communityId))
+  throw new GlobalChallengeInputError('CHALLENGE_INPUT_INVALID');
+ await consumeGlobalChallengeActorLimit(actor.uid);
+ return {binding:await linkOfficialCommunity(actor.uid,input.communityId,new Date().toISOString())};
+}
+
 export const mapGlobalChallengeAdminError = (error: unknown) => {
   const message = error instanceof Error ? error.message : '';
   const code = error && typeof error === 'object' && 'code' in error ? String(error.code) : '';
   if (message === 'AUTH_REQUIRED' || code === 'AUTH_REQUIRED') return { status: 401, body: { code: 'AUTH_REQUIRED' } };
   if (message === 'FORBIDDEN' || message === 'EMAIL_NOT_VERIFIED') return { status: 403, body: { code: 'FORBIDDEN' } };
+  if(message==='OFFICIAL_COMMUNITY_OWNER_REQUIRED')return {status:403,body:{code:message}};
+  if(message==='OFFICIAL_COMMUNITY_ALREADY_LINKED')return {status:409,body:{code:message}};
   if (message === 'GLOBAL_CHALLENGE_NOT_FOUND') return { status: 404, body: { code: message } };
   if (['GLOBAL_CHALLENGE_ALREADY_EXISTS', 'GLOBAL_CHALLENGE_NOT_DRAFT', 'GLOBAL_CHALLENGE_ID_MISMATCH'].includes(message)) return { status: 409, body: { code: message } };
   if (error instanceof GlobalChallengeInputError || /^CHALLENGE_|^GLOBAL_CHALLENGE_SPONSOR_INVALID/.test(message)) return { status: 400, body: { code: 'CHALLENGE_INPUT_INVALID' } };
