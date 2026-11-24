@@ -28,13 +28,43 @@ if (isolatedE2E && (typeof window === 'undefined' ||
   !['localhost', '127.0.0.1'].includes(window.location.hostname))) {
   throw Error('FIREBASE_E2E_REQUIRES_LOCALHOST');
 }
+// Pilot configuration is permitted only on a Vercel preview. The production
+// domain always retains the established Firebase project even if someone sets
+// a pilot env variable by mistake. A preview must opt in explicitly and must
+// never silently fall back to production if its isolated keys are incomplete.
+const pilotPreview = typeof window !== 'undefined' &&
+  window.location.protocol === 'https:' && window.location.hostname.endsWith('.vercel.app');
+const pilotClientRequested = import.meta.env?.VITE_KYRUB_TAG_PILOT_CLIENT_FIREBASE === 'true' && pilotPreview;
+function isolatedPilotConfig() {
+  const environment = import.meta.env;
+  const projectId = String(environment.VITE_FIREBASE_PROJECT_ID ?? '').trim();
+  const apiKey = String(environment.VITE_FIREBASE_API_KEY ?? '').trim();
+  const authDomain = String(environment.VITE_FIREBASE_AUTH_DOMAIN ?? '').trim();
+  const storageBucket = String(environment.VITE_FIREBASE_STORAGE_BUCKET ?? '').trim();
+  const messagingSenderId = String(environment.VITE_FIREBASE_MESSAGING_SENDER_ID ?? '').trim();
+  const appId = String(environment.VITE_FIREBASE_APP_ID ?? '').trim();
+  if (!/^[a-z][a-z0-9-]{4,60}$/.test(projectId) ||
+    projectId === firebaseConfig.projectId ||
+    authDomain !== projectId + '.firebaseapp.com' ||
+    storageBucket !== projectId + '.firebasestorage.app' ||
+    !apiKey || !messagingSenderId || !appId) {
+    throw Error('TAG_PILOT_FIREBASE_CONFIG_INVALID');
+  }
+  return {apiKey, authDomain, projectId, storageBucket, messagingSenderId, appId};
+}
 const selectedConfig = isolatedE2E
   ? { ...firebaseConfig, projectId: 'kyrub-security-test', authDomain: 'kyrub-security-test.firebaseapp.com', storageBucket: 'kyrub-security-test.firebasestorage.app', apiKey: 'fake-emulator-key', appId: '1:000000000000:web:fictional' }
-  : firebaseConfig;
+  : pilotClientRequested ? isolatedPilotConfig() : firebaseConfig;
 
 const app = getApps().length === 0
   ? initializeApp(selectedConfig)
   : getApp();
+
+// A pre-initialized Firebase app must never bypass the pilot's isolated
+// configuration: refuse the session rather than authenticate on production.
+if (pilotClientRequested && app.options.projectId !== selectedConfig.projectId) {
+  throw Error('TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH');
+}
 
 export const auth = getAuth(app);
 if (isolatedE2E) connectAuthEmulator(auth, 'http://127.0.0.1:9099', { disableWarnings: true });

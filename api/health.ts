@@ -99,6 +99,24 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'public-kyrub-tag-media') {
+    response.setHeader('Cache-Control','private, no-store, max-age=0');
+    response.setHeader('X-Content-Type-Options','nosniff');
+    response.setHeader('Cross-Origin-Resource-Policy','same-origin');
+    const method=(request.method??'GET').toUpperCase();
+    if(method!=='GET'){response.setHeader('Allow','GET');response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const id=queryValue(request.query?.id),slot=queryValue(request.query?.slot);
+    try{
+      const {getPublicPromotionalTagImage}=await import('../server/identity/kyrubTagMediaService.js');
+      const bytes=await getPublicPromotionalTagImage(id,slot);
+      if(!bytes){response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});return;}
+      response.setHeader('Content-Type','image/webp');
+      response.status(200);
+      (response as ResponseLike&{send(body:Buffer):void}).send(bytes);
+    }catch{response.status(404).json({error:'TAG_MEDIA_NOT_FOUND'});}
+    return;
+  }
+
   if (transport === 'public-kyrub-tag' || transport === 'manage-kyrub-tag') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase(),managing=transport==='manage-kyrub-tag';
@@ -119,11 +137,29 @@ export default async function handler(
     try{
       const service=await import('../server/identity/kyrubTagService.js');
       if(!managing){const result=await service.resolveKyrubTag(id);response.status(result?200:404).json(result??{error:'TAG_NOT_FOUND'});return;}
-      if(method==='GET'){response.status(200).json(queryValue(request.query?.view)==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;}
+      if(method==='GET'){
+        const view=queryValue(request.query?.view);
+        if(view==='identity'){
+          const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+          response.status(200).json(await identity.getTagIdentityMode(actor));return;
+        }
+        response.status(200).json(view==='destinations'?await service.loadTagDestinationCatalog(actor,id):id?await service.loadOwnedKyrubTag(actor,id):await service.listOwnedKyrubTags(actor));return;
+      }
       if(method==='DELETE'){response.status(200).json(await service.disableKyrubTag(actor,id));return;}
       const body=request.body;
       if(!body||typeof body!=='object'||Array.isArray(body)){response.status(400).json({error:'TAG_INVALID'});return;}
       const data=body as Record<string,unknown>;
+      if(data.action==='prepare-promotional-identity'&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identityRecord=await adminAuth.getUser(actor);
+        if(identityRecord.disabled||identityRecord.emailVerified!==true||!identityRecord.email)throw Error('TAG_FORBIDDEN');
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.prepareTagMinimalIdentity(actor,id));return;
+      }
+      if(data.action==='promote-tag-identity'&&Object.keys(data).length===1){
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
+      }
       if(data.action==='claim-reserved'&&Object.keys(data).length===1){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);
@@ -132,10 +168,43 @@ export default async function handler(
       }
       if(data.action==='claim'&&Object.keys(data).length===2){response.status(200).json(await service.claimKyrubTag(actor,id,data.code));return;}
       if(data.action==='configure'&&Object.keys(data).length===2){response.status(200).json(await service.configureKyrubTag(actor,id,data.urls));return;}
+      if(data.action==='claim-and-publish-promotional'&&Object.keys(data).length===2&&data.presentation!==undefined){
+         const {adminAuth}=await import('../server/firebaseAdmin.js');
+         const identity=await adminAuth.getUser(actor);
+         if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+         response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email,data.presentation));return;
+       }
+       if(['claim-promotional','recover-promotional','rotate-promotional-recovery'].includes(String(data.action))&&
+          Object.keys(data).length===(data.action==='recover-promotional'?2:1)){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        if(data.action==='claim-promotional'){
+          response.status(200).json(await service.claimPromotionalKyrubTag(actor,id,identity.email));return;
+        }
+        if(data.action==='rotate-promotional-recovery'){
+          response.status(200).json(await service.rotatePromotionalRecoveryCode(actor,id));return;
+        }
+        response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
+      }
+      if(data.action==='configure-promotional'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation));return;
+      }
+      if((data.action==='block-promotional'||data.action==='unblock-promotional')&&Object.keys(data).length===1){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalBlock(actor,id,data.action==='block-promotional'));return;
+      }
       response.status(400).json({error:'TAG_INVALID'});
     }catch(error){
       const code=error instanceof Error?error.message:'';
-      if(code==='TAG_INVALID'||code==='INVALID_CARD')response.status(400).json({error:'TAG_INVALID'});
+      if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
+      else if(code==='TAG_PROMO_DISABLED'||code==='TAG_PILOT_PROJECT_UNSAFE')response.status(409).json({error:code});
+      else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});

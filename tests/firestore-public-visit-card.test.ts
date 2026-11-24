@@ -286,3 +286,388 @@ test('official test history cleanup archives atomically and refuses provider, in
  await assert.rejects(inspectOfficialTestHistory('cleanup-admin',safe.digest,true),/TEST_HISTORY_STALE_PREVIEW|TEST_HISTORY_BLOCKED/);
  assert.ok((await inspectOfficialTestHistory('cleanup-admin')).blocked.includes('LIMPEZA_ANTERIOR'));
 });
+
+
+test('promotional first-claimer and recovery end-to-end through Firebase Auth + Firestore emulators',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
+ const {
+  provisionPromotionalKyrubTag,provisionKyrubTag,
+  configureKyrubTag,loadTagDestinationCatalog,
+  loadOwnedKyrubTag,resolveKyrubTag,rotatePromotionalRecoveryCode
+ }=await import('../server/identity/kyrubTagService.js');
+ const {adminAuth}=await import('../server/firebaseAdmin.js');
+ const api=(await import('../api/health.js')).default;
+ const originalFlag=process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+ async function createIdentity(uid:string,verified:boolean){
+  const email=uid+'@example.test',password='isolated-strong-password-only';
+  await adminAuth.createUser({uid,email,password,emailVerified:verified});
+  const response=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+'/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{
+   method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  assert.equal(response.ok,true);
+  const result=await response.json() as {idToken:string};
+  assert.ok(result.idToken);
+  return {uid,email,token:result.idToken};
+ }
+ async function http(tagId:string,method:'GET'|'POST',token:string|null,body?:Record<string,unknown>,publicView=false){
+  let status=0,result:unknown;
+  const response={
+   setHeader(_name:string,_value:string){},
+   status(n:number){status=n;return response;},
+   json(value:unknown){result=value;}
+  };
+  await api({
+   method,
+   headers:token?{authorization:'Bearer '+token}:{},
+   query:{transport:publicView?'public-kyrub-tag':'manage-kyrub-tag',id:tagId},
+   ...(body?{body}:{}),
+  } as never,response as never);
+  return {status,body:result};
+ }
+ try{
+  delete process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+  await assert.rejects(provisionPromotionalKyrubTag(),/TAG_PROMO_DISABLED/);
+  process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED='true';
+  const promo=await provisionPromotionalKyrubTag(),legacy=await provisionKyrubTag('adesivo');
+  assert.notEqual(promo.id,legacy.id);
+  assert.equal((await resolveKyrubTag(promo.id))?.activation,'email');
+  assert.equal((await resolveKyrubTag(legacy.id))?.activation,'code');
+  assert.equal((await http(promo.id,'GET',null,undefined,true)).status,200);
+  const [one,two,third,unverified]=await Promise.all([
+   createIdentity('tag-promo-one',true),
+   createIdentity('tag-promo-two',true),
+   createIdentity('tag-promo-third',true),
+   createIdentity('tag-promo-unverified',false),
+  ]);
+  assert.equal((await http(promo.id,'POST',unverified.token,{action:'claim-promotional'})).status,403);
+  assert.equal((await http(legacy.id,'POST',one.token,{action:'claim-promotional'})).status,403);
+  const fresh=await provisionPromotionalKyrubTag();
+  const draft={name:'Cartão antes do e-mail',occupation:'Autônomo',about:'Rascunho preservado'};
+  const [pubOne,pubTwo]=await Promise.all([createIdentity('tag-pub-one',true),createIdentity('tag-pub-two',true)]);
+  assert.equal((await http(fresh.id,'POST',unverified.token,{action:'claim-and-publish-promotional',presentation:draft})).status,403);
+  assert.equal((await http(legacy.id,'POST',one.token,{action:'claim-and-publish-promotional',presentation:draft})).status,403);
+  assert.equal((await resolveKyrubTag(fresh.id))?.activation,'email');
+  const publishRace=await Promise.all([pubOne,pubTwo].map(identity=>http(fresh.id,'POST',identity.token,{action:'claim-and-publish-promotional',presentation:draft})));
+  assert.deepEqual(publishRace.map(r=>r.status).sort(),[200,403]);
+  const publisher=publishRace[0].status===200?pubOne:pubTwo;
+  const published=publishRace.find(r=>r.status===200)!.body as {tag:{enabled:boolean;presentation:unknown};recoveryCode:string};
+  assert.equal(published.tag.enabled,true);
+  assert.deepEqual(published.tag.presentation,draft);
+  assert.match(published.recoveryCode,/^[a-f0-9]{48}$/);
+  const repeated=await http(fresh.id,'POST',publisher.token,{action:'claim-and-publish-promotional',presentation:{...draft,name:'Não sobrescrever'}});
+  assert.equal(repeated.status,200);
+  assert.equal((repeated.body as {recoveryCode:unknown}).recoveryCode,null);
+  assert.deepEqual((repeated.body as {tag:{presentation:unknown}}).tag.presentation,draft);
+  const losingPublisher=publisher.uid===pubOne.uid?pubTwo:pubOne;
+  const listBefore=await http('','GET',publisher.token);
+  assert.equal(listBefore.status,200);
+  assert.ok((listBefore.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  const otherList=await http('','GET',losingPublisher.token);
+  assert.equal(otherList.status,200);
+  assert.ok(!(otherList.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  assert.equal((await adminDb.doc('users/'+publisher.uid).get()).exists,false);
+  const promoted=await http('','POST',publisher.token,{action:'promote-tag-identity'});
+  assert.equal(promoted.status,200);
+  assert.equal((promoted.body as {mode:string}).mode,'full');
+  const listAfter=await http('','GET',publisher.token);
+  assert.equal(listAfter.status,200);
+  assert.ok((listAfter.body as {tags:{id:string}[]}).tags.some(tag=>tag.id===fresh.id));
+  assert.equal((await adminDb.doc('kyrub_official_tags/'+fresh.id).get()).get('ownerId'),publisher.uid);
+  const race=await Promise.all([
+   http(promo.id,'POST',one.token,{action:'claim-promotional'}),
+   http(promo.id,'POST',two.token,{action:'claim-promotional'}),
+  ]);
+  assert.deepEqual(race.map(r=>r.status).sort(),[200,403]);
+  const winnerIndex=race.findIndex(r=>r.status===200);
+  const owner=winnerIndex===0?one:two,attacker=winnerIndex===0?two:one;
+  const victory=race[winnerIndex].body as {tag:{id:string;distribution:string};recoveryCode:string};
+  assert.equal(victory.tag.id,promo.id);
+  assert.equal(victory.tag.distribution,'promotional');
+  assert.match(victory.recoveryCode,/^[a-f0-9]{48}$/);
+  const stored=(await adminDb.doc('kyrub_official_tags/'+promo.id).get()).data()!;
+  assert.equal(stored.ownerId,owner.uid);
+  assert.equal(stored.firstOwnerId,owner.uid);
+  assert.equal(stored.distribution,'promotional');
+  assert.equal(stored.enabled,false);
+  assert.equal(stored.activationHash,null);
+  assert.equal(typeof stored.recoveryHash,'string');
+  assert.equal(JSON.stringify(stored).includes(victory.recoveryCode),false);
+  assert.equal(JSON.stringify(stored).includes(owner.email),false);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'claim-promotional'})).status,200);
+  const replay=await http(promo.id,'POST',owner.token,{action:'claim-promotional'});
+  assert.deepEqual((replay.body as {recoveryCode:unknown}).recoveryCode,null);
+  assert.equal((await http(promo.id,'GET',attacker.token)).status,403);
+  assert.equal((await http(promo.id,'POST',attacker.token,{
+   action:'configure-promotional',presentation:{name:'Fraude',occupation:'',about:''}
+  })).status,403);
+  await assert.rejects(configureKyrubTag(owner.uid,promo.id,['https://kyrub.com/@shop-a']),/TAG_FORBIDDEN/);
+  await assert.rejects(loadTagDestinationCatalog(owner.uid,promo.id),/TAG_FORBIDDEN/);
+  assert.equal((await http(promo.id,'GET',null,undefined,true)).status,404);
+  const presentation={name:'Entregador A',occupation:'Entregas',about:'Meu cartão público sem contato privado'};
+  // Updating a Firebase Auth email verification status must immediately revoke
+  // the ability to edit or block this tag even with an older signed ID token.
+  await adminAuth.updateUser(owner.uid,{emailVerified:false});
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'block-promotional'})).status,403);
+  await adminAuth.updateUser(owner.uid,{emailVerified:true});
+  const configured=await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation});
+  assert.equal(configured.status,200);
+  const publicCard=await http(promo.id,'GET',null,undefined,true);
+  assert.equal(publicCard.status,200);
+  const projected=publicCard.body as {status:string;presentation:unknown;links:unknown[]};
+  assert.equal(projected.status,'active');
+  assert.deepEqual(projected.presentation,{...presentation,hasCover:false,hasAvatar:false,sosContacts:[]});
+  assert.deepEqual(projected.links,[]);
+  assert.equal(JSON.stringify(projected).includes(owner.uid),false);
+  assert.equal(JSON.stringify(projected).includes(owner.email),false);
+  assert.equal(JSON.stringify(projected).includes('recoveryHash'),false);
+  const privateAndPublic={
+   ...presentation,emergencyContacts:[
+    {name:'Família A',relationship:'Irmã',phone:'11987654321',whatsapp:true,shareInSos:false,consentConfirmed:false},
+    {name:'Contato B',relationship:'Amigo',phone:'11991234567',whatsapp:true,shareInSos:true,consentConfirmed:true}
+   ]
+  };
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:privateAndPublic})).status,200);
+  const sosCard=await http(promo.id,'GET',null,undefined,true);
+  assert.equal(sosCard.status,200);
+  const safeSos=(sosCard.body as {presentation:{sosContacts:{name:string;phone:string}[]}}).presentation.sosContacts;
+  assert.deepEqual(safeSos,[{name:'Contato B',relationship:'Amigo',phone:'+5511991234567',whatsapp:true}]);
+  assert.equal(JSON.stringify(sosCard.body).includes('Família A'),false);
+  assert.equal(JSON.stringify(sosCard.body).includes('11987654321'),false);
+  const unconsented={...privateAndPublic,emergencyContacts:[
+   {...privateAndPublic.emergencyContacts[0],shareInSos:true}
+  ]};
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:unconsented})).status,400);
+  // Images cannot be attached by arbitrary path or external URL.
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation:{
+   ...presentation,coverPath:'https://example.com/foreign-photo.jpg'
+  }})).status,400);
+  const rot=await http(promo.id,'POST',owner.token,{action:'rotate-promotional-recovery'});
+  assert.equal(rot.status,200);
+  const newCode=(rot.body as {recoveryCode:string}).recoveryCode;
+  assert.match(newCode,/^[a-f0-9]{48}$/);
+  assert.notEqual(newCode,victory.recoveryCode);
+  assert.equal((await http(promo.id,'POST',third.token,{
+   action:'recover-promotional',recoveryCode:victory.recoveryCode
+  })).status,403);
+  assert.equal((await http(promo.id,'POST',attacker.token,{action:'block-promotional'})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'block-promotional'})).status,200);
+  assert.equal(await resolveKyrubTag(promo.id),null);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'unblock-promotional'})).status,200);
+  assert.equal((await http(promo.id,'GET',null,undefined,true)).status,404);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'configure-promotional',presentation})).status,200);
+  const recovery=await http(promo.id,'POST',third.token,{action:'recover-promotional',recoveryCode:newCode});
+  assert.equal(recovery.status,200);
+  const rotatedAgain=(recovery.body as {recoveryCode:string;tag:{blocked:boolean}}).recoveryCode;
+  assert.notEqual(rotatedAgain,newCode);
+  assert.equal((recovery.body as {tag:{blocked:boolean}}).tag.blocked,true);
+  const recoveredStored=(await adminDb.doc('kyrub_official_tags/'+promo.id).get()).data()!;
+  assert.equal(recoveredStored.ownerId,third.uid);
+  assert.equal(recoveredStored.firstOwnerId,owner.uid);
+  assert.equal(recoveredStored.enabled,false);
+  assert.equal(recoveredStored.blocked,true);
+  assert.equal((await adminDb.doc('kyrub_tag_minimal_identities/'+third.uid).get()).get('mode'),'tag_only');
+  assert.equal((await adminDb.doc('users/'+third.uid).get()).exists,false);
+  assert.equal((await http(promo.id,'GET',owner.token)).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'unblock-promotional'})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'rotate-promotional-recovery'})).status,403);
+  assert.equal((await http(promo.id,'POST',owner.token,{action:'recover-promotional',recoveryCode:newCode})).status,403);
+  assert.equal((await http(promo.id,'POST',third.token,{action:'unblock-promotional'})).status,200);
+  assert.equal((await http(promo.id,'POST',third.token,{action:'configure-promotional',presentation})).status,200);
+  assert.equal((await loadOwnedKyrubTag(third.uid,promo.id)).enabled,true);
+  assert.equal((await http(legacy.id,'GET',null,undefined,true)).status,200);
+  const browser=env.authenticatedContext(third.uid).firestore(),anon=env.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(browser,'kyrub_official_tags/'+promo.id)));
+  await assertFails(getDoc(doc(anon,'kyrub_official_tags/'+promo.id)));
+  await assertFails(setDoc(doc(browser,'kyrub_official_tags/'+promo.id),{ownerId:owner.uid}));
+  delete process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+  const extra=await adminDb.doc('kyrub_official_tags/'+'a'.repeat(32)).create({
+   model:'adesivo',distribution:'promotional',ownerId:null,enabled:false,blocked:false,
+   activationHash:null,reservedEmailHash:null,targets:[],externalUrls:[],presentation:{name:'',occupation:'',about:''}
+  });
+  assert.ok(extra.writeTime);
+  assert.equal((await http('a'.repeat(32),'POST',owner.token,{action:'claim-promotional'})).status,409);
+  assert.equal((await resolveKyrubTag('a'.repeat(32)))?.activation,'setup');
+ }finally{
+  if(originalFlag===undefined)delete process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+  else process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=originalFlag;
+ }
+});
+
+
+test('promotional Super Admin batch issuance: no recipient, authenticated, idempotent and isolated from pilot',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
+ const {adminAuth}=await import('../server/firebaseAdmin.js');
+ const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
+ const {resolveKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const prev=process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+ const previousHost=process.env.VERCEL_URL;
+ const password='isolated-promotional-issuer-only';
+ async function login(uid:string,role:string,status:string){
+  const email=uid+'@example.test';
+  await adminAuth.createUser({uid,email,password,emailVerified:true});
+  await adminDb.doc('kyrub_admin/control_plane/admins/'+uid).set({uid,role,status});
+  const response=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+
+   '/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{
+   method:'POST',headers:{'Content-Type':'application/json'},
+   body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  assert.equal(response.ok,true);
+  const result=await response.json() as {idToken:string};
+  return 'Bearer '+result.idToken;
+ }
+ try{
+  const admin=await login('promo-admin','super_admin','active');
+  const other=await login('promo-member','operations','active');
+  const suspended=await login('promo-suspended','super_admin','suspended');
+  const req={action:'issue',count:3,requestId:'b'.repeat(32)};
+  delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+  assert.equal((await handlePromotionalBatch(admin,'POST',req)).status,409);
+  process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED='true';
+  assert.equal((await handlePromotionalBatch('','POST',req)).status,401);
+  assert.equal((await handlePromotionalBatch(other,'POST',req)).status,403);
+  assert.equal((await handlePromotionalBatch(suspended,'POST',req)).status,403);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...req,count:11})).status,400);
+  const first=await Promise.all([handlePromotionalBatch(admin,'POST',req),handlePromotionalBatch(admin,'POST',req)]);
+  assert.deepEqual(first.map(x=>x.status).sort(),[200,201]);
+  const created=first.find(x=>x.status===201)?.body as {batch:{
+   id:string;count:number;model:string;units:{id:string;url:string;physicalStatus:string}[]
+  };replay:boolean};
+  assert.equal(created.batch.id,req.requestId);
+  assert.equal(created.batch.count,3);
+  assert.equal(created.replay,false);
+  assert.equal(created.batch.units.length,3);
+  assert.equal(new Set(created.batch.units.map(x=>x.id)).size,3);
+  for(const unit of created.batch.units){
+   assert.match(unit.id,/^[a-f0-9]{32}$/);
+   assert.equal(unit.url,'https://kyrub.com/tag/'+unit.id);
+   assert.equal(unit.physicalStatus,'not_verified');
+   const record=(await adminDb.doc('kyrub_official_tags/'+unit.id).get()).data()!;
+   assert.equal(record.model,'adesivo');
+   assert.equal(record.distribution,'promotional');
+   assert.equal(record.ownerId,null);
+   assert.equal(record.activationHash,null);
+   assert.equal(record.reservedEmailHash,null);
+   assert.equal(record.promotionalBatchId,req.requestId);
+   assert.equal((await resolveKyrubTag(unit.id))?.status,'unclaimed');
+   assert.equal(JSON.stringify(record).includes('promo-admin@example.test'),false);
+  }
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...req,count:2})).status,409);
+  const listed=await handlePromotionalBatch(admin,'GET',undefined);
+  assert.equal(listed.status,200);
+  const ready=(listed.body as {readiness:{isolation:string;canIssue:boolean;clientProjectMatchesServer:boolean}}).readiness;
+  assert.equal(ready.isolation,'emulator');
+  assert.equal(ready.clientProjectMatchesServer,true);
+  assert.equal(ready.canIssue,true);
+  const list=listed.body as {batches:typeof created.batch[]};
+  assert.equal(list.batches.filter(b=>b.id===req.requestId).length,1);
+  assert.equal((await handlePromotionalBatch(other,'GET',undefined)).status,403);
+  const audit=await adminDb.collection('kyrub_admin/control_plane/audit_logs')
+   .where('targetId','==',req.requestId).get();
+  assert.equal(audit.size,1);
+  assert.equal(audit.docs[0].get('action'),'admin.kyrub_tag.promotional_batch_issued');
+  process.env.VERCEL_URL='kyrub-pilot-safe.vercel.app';
+  const unitId=created.batch.units[0].id;
+  const url='https://kyrub-pilot-safe.vercel.app/tag/'+unitId;
+  const readback={action:'confirm-readback',batchId:req.requestId,tagId:unitId,readUrl:url};
+  assert.equal((await handlePromotionalBatch(other,'POST',readback)).status,403);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,readUrl:'https://kyrub.com/tag/'+unitId})).status,409);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,readUrl:url+'?wrong=1'})).status,409);
+  assert.equal((await handlePromotionalBatch(admin,'POST',{...readback,tagId:'f'.repeat(32)})).status,409);
+  const verified=await handlePromotionalBatch(admin,'POST',readback);
+  assert.equal(verified.status,200);
+  const verifiedBody=verified.body as {batch:{units:{id:string;physicalStatus:string}[]};replay:boolean};
+  assert.equal(verifiedBody.replay,false);
+  assert.equal(verifiedBody.batch.units.find(item=>item.id===unitId)?.physicalStatus,'readback_confirmed');
+  const repeated=await handlePromotionalBatch(admin,'POST',readback);
+  assert.equal(repeated.status,200);
+  assert.equal((repeated.body as {replay:boolean}).replay,true);
+  const nextInventory=await handlePromotionalBatch(admin,'GET',undefined);
+  const observedBatch=(nextInventory.body as {batches:typeof created.batch[]}).batches
+   .find(batch=>batch.id===req.requestId);
+  assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='readback_confirmed').length,1);
+  assert.equal(observedBatch?.units.filter(item=>item.physicalStatus==='not_verified').length,2);
+  const readbackAudit=await adminDb.collection('kyrub_admin/control_plane/audit_logs')
+   .where('targetId','==',unitId).get();
+  assert.equal(readbackAudit.size,1);
+  assert.equal(readbackAudit.docs[0].get('action'),'admin.kyrub_tag.promotional_readback_confirmed');
+  assert.equal(readbackAudit.docs[0].get('verificationMethod'),'browser-reported-ndef-readback');
+  // Independent pilot inventory still exists and is not reissued or reassigned.
+  const pilot=(await adminDb.doc('kyrub_tag_pilot_lots/experimental-001/units/001').get()).data();
+  if(pilot?.tagId){
+   assert.ok(!created.batch.units.some(unit=>unit.id===pilot.tagId));
+   assert.equal((await adminDb.doc('kyrub_official_tags/'+pilot.tagId).get()).get('distribution'),undefined);
+  }
+ }finally{
+  if(prev===undefined)delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+  else process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED=prev;
+  if(previousHost===undefined)delete process.env.VERCEL_URL;
+  else process.env.VERCEL_URL=previousHost;
+ }
+});
+
+
+test('tag-only authentication prepares no Kyrub account; explicit promotion is required',async()=>{
+ if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIREBASE_AUTH_EMULATOR_HOST??''))throw Error('LOCAL_AUTH_EMULATOR_REQUIRED');
+ const {adminAuth}=await import('../server/firebaseAdmin.js');
+ const {provisionPromotionalKyrubTag,provisionKyrubTag}=await import('../server/identity/kyrubTagService.js');
+ const {getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+ const api=(await import('../api/health.js')).default;
+ const original=process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+ const password='isolated-tag-only-identity';
+ async function authToken(uid:string,verified:boolean){
+  const email=uid+'@example.test';
+  await adminAuth.createUser({uid,email,password,emailVerified:verified});
+  const response=await fetch('http://'+process.env.FIREBASE_AUTH_EMULATOR_HOST+
+    '/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=demo-key',{
+    method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({email,password,returnSecureToken:true})
+  });
+  assert.equal(response.ok,true);
+  const data=await response.json() as {idToken:string};
+  return data.idToken;
+ }
+ async function route(uidToken:string,tagId:string,method:'GET'|'POST',body?:Record<string,unknown>,view='identity'){
+  let status=0,value:unknown;
+  const response={setHeader(){},status(n:number){status=n;return response;},json(data:unknown){value=data;}};
+  await api({method,headers:{authorization:'Bearer '+uidToken},
+    query:{transport:'manage-kyrub-tag',id:tagId,view},...(body?{body}:{})} as never,response as never);
+  return {status,body:value};
+ }
+ try{
+  process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED='true';
+  const unit=await provisionPromotionalKyrubTag(),protectedUnit=await provisionKyrubTag('adesivo');
+  const ownerToken=await authToken('tag-minimal-owner',true);
+  const unverifiedToken=await authToken('tag-minimal-unverified',false);
+  assert.deepEqual(await getTagIdentityMode('tag-minimal-owner'),{mode:'unclassified'});
+  assert.equal((await route(unverifiedToken,unit.id,'POST',{action:'prepare-promotional-identity'})).status,403);
+  assert.equal((await route(ownerToken,protectedUnit.id,'POST',{action:'prepare-promotional-identity'})).status,403);
+  const prepared=await route(ownerToken,unit.id,'POST',{action:'prepare-promotional-identity'});
+  assert.deepEqual(prepared,{status:200,body:{mode:'tag_only'}});
+  assert.equal((await route(ownerToken,unit.id,'POST',{action:'prepare-promotional-identity'})).status,200);
+  assert.deepEqual((await route(ownerToken,'','GET')).body,{mode:'tag_only'});
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('kyrub_tag_minimal_identities/tag-minimal-owner').get()).get('mode'),'tag_only');
+  const claimed=await route(ownerToken,unit.id,'POST',{action:'claim-promotional'});
+  assert.equal(claimed.status,200);
+  const afterClaim=await adminDb.doc('kyrub_tag_minimal_identities/tag-minimal-owner').get();
+  assert.equal(afterClaim.get('mode'),'tag_only');
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+  // No anonymous or unrelated user can promote a different identity.
+  assert.equal((await route(unverifiedToken,'','POST',{action:'promote-tag-identity'})).status,409);
+  const promoted=await route(ownerToken,'','POST',{action:'promote-tag-identity'});
+  assert.equal(promoted.status,200);
+  assert.deepEqual((promoted.body as {mode:string;replay:boolean}),{mode:'full',replay:false});
+  assert.deepEqual((await route(ownerToken,'','POST',{action:'promote-tag-identity'})).body,{mode:'full',replay:true});
+  assert.deepEqual((await route(ownerToken,'','GET')).body,{mode:'full'});
+  // Only the explicit app bootstrap may create the user/store after consent.
+  assert.equal((await adminDb.doc('users/tag-minimal-owner').get()).exists,false);
+  assert.equal((await adminDb.doc('users/tag-minimal-owner/stores/tag-minimal-owner').get()).exists,false);
+ }finally{
+  if(original===undefined)delete process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED;
+  else process.env.KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED=original;
+ }
+});

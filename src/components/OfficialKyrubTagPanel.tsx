@@ -2,6 +2,7 @@ import {useEffect,useRef,useState} from 'react';
 import {doc,updateDoc,serverTimestamp} from 'firebase/firestore';
 import {UserRound,Store,Users,MessageCircle,Instagram,Check,Eye} from 'lucide-react';
 import {KyrubTagDestinationRow} from './KyrubTagDestinationRow';
+import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {PublicSocialAddressEditor} from './PublicSocialAddressEditor';
 import {auth,db} from '../utils/firebase';
 import {isTagId,KYRUB_TAG_MODEL_LABELS,buildTagExternalUrl,parseTagExternalUrl,type TagDestinationCatalog,type TagDestinationOption,type TagExternalKind,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
@@ -13,6 +14,7 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
  const [catalog,setCatalog]=useState<TagDestinationCatalog|null>(null),[catalogError,setCatalogError]=useState(false),[revision,setRevision]=useState(0),[filter,setFilter]=useState(''),[externalValues,setExternalValues]=useState<Record<TagExternalKind,string>>({whatsapp:'',instagram:''}),[added,setAdded]=useState<TagDestinationOption[]>([]),[privacyConfirm,setPrivacyConfirm]=useState(false);
  const [lookupUrl,setLookupUrl]=useState(''),[lookupBusy,setLookupBusy]=useState(false),[pilotRecovered,setPilotRecovered]=useState(false),[reload,setReload]=useState(0);
  const lock=useRef(false);
+ const selectedIsPromotional=tags.find(t=>t.id===selected)?.distribution==='promotional';
  async function request(method:string,tagId='',body?:unknown,signal?:AbortSignal,view=''){
   const user=auth.currentUser;if(!user||user.uid!==userId)throw Error('AUTH_REQUIRED');
   const token=await user.getIdToken();
@@ -20,13 +22,13 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
   if(!res.ok)throw Error('TAG_REQUEST_FAILED');return res.json();
  }
  useEffect(()=>{const ctrl=new AbortController();setReady(false);setTags([]);setCode('');setSelected('');setPilotRecovered(false);
- void request('GET',initialTagId??'',undefined,ctrl.signal).then(data=>{if(!ctrl.signal.aborted){if(initialTagId){setTags([data]);setSelected(data.id);setUrls(data.urls);}else{setTags(data.tags);setPilotRecovered(data.pilotRecovered===true);if(data.tags.length===1){setSelected(data.tags[0].id);setUrls(data.tags[0].urls);}}setReady(true);if(data.hasMore)setNotice('Exibindo os primeiros 100 dispositivos.');}}).catch(()=>{if(!ctrl.signal.aborted)setNotice('Não foi possível consultar os dispositivos oficiais.');});return()=>ctrl.abort();},[userId,initialTagId,reload]);
+ void request('GET',initialTagId??'',undefined,ctrl.signal).then(data=>{if(!ctrl.signal.aborted){if(initialTagId){setTags([data]);setSelected(data.id);setUrls(data.urls);}else{setTags(data.tags);setPilotRecovered(data.pilotRecovered===true);if(data.tags.length===1){setSelected(data.tags[0].id);setUrls(data.tags[0].urls);}}setReady(true);if(data.hasMore)setNotice('Exibindo os primeiros 100 dispositivos.');}}).catch(()=>{if(!ctrl.signal.aborted)setNotice('Não foi possível consultar suas Kyrub Tags. Atualize a lista para tentar novamente.');});return()=>ctrl.abort();},[userId,initialTagId,reload]);
  useEffect(()=>{setAdded([]);setExternalValues({whatsapp:'',instagram:''});},[userId,selected]);
  useEffect(()=>{
   const ctrl=new AbortController();setCatalog(null);setCatalogError(false);setFilter('');setPrivacyConfirm(false);
-  if(selected)void request('GET',selected,undefined,ctrl.signal,'destinations').then(data=>{if(!ctrl.signal.aborted)setCatalog(data);}).catch(()=>{if(!ctrl.signal.aborted)setCatalogError(true);});
+  if(selected&&!selectedIsPromotional)void request('GET',selected,undefined,ctrl.signal,'destinations').then(data=>{if(!ctrl.signal.aborted)setCatalog(data);}).catch(()=>{if(!ctrl.signal.aborted)setCatalogError(true);});
   return()=>ctrl.abort();
- },[userId,selected,revision]);
+ },[userId,selected,selectedIsPromotional,revision]);
  const apply=(tag:OwnedKyrubTag)=>{setTags(current=>[...current.filter(t=>t.id!==tag.id),tag]);setSelected(tag.id);setUrls(tag.urls);};
  async function findOwnedTag(){
   const candidate=lookupUrl.trim().toLowerCase();
@@ -37,7 +39,7 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
   try{
    const found=await request('GET',target) as OwnedKyrubTag;
    if(found.id!==target||!isTagId(found.id))throw Error('TAG_INVALID');
-   apply(found);setLookupUrl('');setNotice('Unidade localizada e vinculada a esta conta. Agora escolha seus destinos públicos.');
+   apply(found);setLookupUrl('');setNotice('Unidade localizada e vinculada à sua conta. Abra o gerenciamento para personalizar.');
   }catch{setNotice('Não foi possível localizar uma unidade vinculada a esta sessão. Confira o endereço e a conta autenticada.');}
   finally{setLookupBusy(false);}
  }
@@ -74,17 +76,19 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
  const filtered=(kind:string)=>options.filter(o=>o.kind===kind&&(!filter||o.name.toLocaleLowerCase('pt-BR').includes(filter.toLocaleLowerCase('pt-BR'))));
  const optionButton=(o:TagDestinationOption)=> <button key={o.url} type="button" aria-pressed={urls.includes(o.url)} disabled={busy||(!urls.includes(o.url)&&urls.length>=CARD_LIMIT)} onClick={()=>toggle(o.url)} className={btn+' flex w-full items-center justify-between text-left '+(urls.includes(o.url)?'border-orange-500 bg-orange-500/10':'')}><span>{o.name}</span><span>{urls.includes(o.url)?<Check className="h-5 w-5 text-orange-300"/>:'+'}</span></button>;
  return <section className={initialTagId?"space-y-4 rounded-[24px] bg-[#121A17] p-5 text-[#F5F5F3]":"space-y-4 rounded-2xl border border-[#34443B] bg-[#121A17] p-4 text-[#F5F5F3]"}>
- {!initialTagId&&<><h5 className="font-bold text-white">Kyrub Tag oficial</h5><p className="text-sm text-slate-300">Cada unidade tem vínculo definitivo e acesso público independente.</p></>}
- {!initialTagId&&<details className="rounded-xl border border-slate-700 p-3"><summary className="cursor-pointer text-sm font-medium">Vincular outra unidade com código de ativação</summary><label className="block text-sm">Identificador da unidade<input className="mt-1 w-full rounded-xl bg-slate-900 p-3" value={id} onChange={e=>setId(e.target.value.trim().toLowerCase())} maxLength={32} disabled={busy||!ready}/></label>
+ {!initialTagId&&<><h5 className="font-bold text-white">Minhas Kyrub Tags</h5><p className="text-sm text-slate-300">Gerencie seus adesivos promocionais e produtos oficiais protegidos. Cada unidade tem acesso público independente.</p></>}
+ {!initialTagId&&<details className="rounded-xl border border-slate-700 p-3"><summary className="cursor-pointer text-sm font-medium">Vincular produto protegido com código de ativação</summary><label className="block text-sm">Identificador da unidade<input className="mt-1 w-full rounded-xl bg-slate-900 p-3" value={id} onChange={e=>setId(e.target.value.trim().toLowerCase())} maxLength={32} disabled={busy||!ready}/></label>
  <label className="block text-sm">Código secreto de ativação<input type="password" autoComplete="off" className="mt-1 w-full rounded-xl bg-slate-900 p-3" value={code} onChange={e=>setCode(e.target.value.trim().toLowerCase())} maxLength={32} disabled={busy||!ready}/></label>
  <p className="text-xs text-slate-400">A vinculação é intransferível. O código é de uso único. Nenhum dado pessoal será divulgado automaticamente.</p>
  <button type="button" className={btn} disabled={busy||!ready||!isTagId(id)||!isTagId(code)} onClick={()=>void claim()}>Vincular definitivamente</button></details>}
- {!initialTagId&&<h6 className="text-sm font-bold">Minhas unidades oficiais</h6>}
- {!initialTagId&&tags.map(t=><button key={t.id} type="button" className={btn+' block w-full text-left'} disabled={busy} onClick={()=>{setSelected(t.id);setUrls(t.urls);}}>{KYRUB_TAG_MODEL_LABELS[t.model]} · {t.id.slice(-8)} · {t.enabled?'Pública':'Vinculada · não publicada'}</button>)}
+ {!initialTagId&&<h6 className="text-sm font-bold">Minhas unidades vinculadas</h6>}
+ {!initialTagId&&tags.map(t=><button key={t.id} type="button" className={btn+' block w-full text-left'} disabled={busy} onClick={()=>{setSelected(t.id);setUrls(t.urls);}}>{KYRUB_TAG_MODEL_LABELS[t.model]} · {t.id.slice(-8)} · {t.distribution==='promotional'?'Promocional · '+(t.blocked?'Bloqueada':t.enabled?'Pública':'Não publicada'):t.enabled?'Pública':'Vinculada · não publicada'}</button>)}
  {!initialTagId&&pilotRecovered&&<p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">A unidade experimental foi localizada por uma leitura direta e segura. A consulta geral de dispositivos precisa ser verificada; sua titularidade não foi alterada.</p>}
- {!initialTagId&&ready&&tags.length===0&&<div className="rounded-xl border border-dashed border-[#34443B] p-3 text-sm text-slate-300"><p>Nenhuma Kyrub Tag oficial encontrada nesta sessão. A preparação local de NFC não conta como vínculo.</p><button type="button" className="mt-2 underline" disabled={busy||lookupBusy} onClick={()=>setReload(v=>v+1)}>Atualizar lista</button></div>}
+ {!initialTagId&&!ready&&notice&&<button type="button" className="text-sm underline" disabled={busy||lookupBusy} onClick={()=>{setNotice('');setReload(v=>v+1);}}>Tentar consultar novamente</button>}
+ {!initialTagId&&ready&&tags.length===0&&<div className="rounded-xl border border-dashed border-[#34443B] p-3 text-sm text-slate-300"><p>Nenhuma Kyrub Tag vinculada a esta conta foi encontrada. Se acabou de ativar uma unidade, confira se entrou com o mesmo e-mail e atualize a lista.</p><button type="button" className="mt-2 underline" disabled={busy||lookupBusy} onClick={()=>setReload(v=>v+1)}>Atualizar lista</button></div>}
  {!initialTagId&&<details className="rounded-xl border border-[#34443B] p-3"><summary className="cursor-pointer text-sm font-medium">Não encontrou uma tag já vinculada?</summary><p className="mt-3 text-xs text-slate-300">Cole o endereço kyrub.com/tag/... da sua unidade. A verificação é feita pelo servidor e só abre unidades pertencentes à conta autenticada.</p><label className="mt-3 block text-sm">Endereço da Kyrub Tag<input type="url" value={lookupUrl} onChange={e=>setLookupUrl(e.target.value)} placeholder="https://kyrub.com/tag/..." className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm" autoComplete="off" maxLength={200} disabled={busy||lookupBusy}/></label><button type="button" className={btn+' mt-3'} disabled={busy||lookupBusy||(!isTagId(lookupUrl.trim())&&!/^https:\/\/(?:www\.)?kyrub\.com\/tag\/[a-f0-9]{32}\/?$/i.test(lookupUrl.trim()))} onClick={()=>void findOwnedTag()}>{lookupBusy?'Consultando…':'Verificar minha unidade'}</button></details>}
- {tag&&<div className="space-y-4" key={tag.id}>
+ {tag?.distribution==='promotional'&&<PromotionalKyrubTagEditor key={tag.id} initial={tag} />}
+ {tag&&tag.distribution!=='promotional'&&<div className="space-y-4" key={tag.id}>
  <p className="text-sm font-medium uppercase tracking-wide text-[#F47825]">Kyrub Tag · {KYRUB_TAG_MODEL_LABELS[tag.model]}</p>
  <h6 className="text-[26px] font-bold leading-tight text-[#F5F5F3]">Personalize sua Kyrub Tag</h6>
  <p className="text-lg leading-snug text-[#F5F5F3]">Escolha o que deseja compartilhar.</p>
