@@ -331,3 +331,16 @@ test('ordinary block contract rejects actor injection and nonboolean desired sta
  assert.equal(parseReservedTribePilotBody({action:'social-block',peerId:'peer',blocked:true}).action,'social-block');
  for(const fields of [{uid:'another',blocked:true},{blocked:'true'},{blocked:false,session:'a'.repeat(64)}])assert.throws(()=>parseReservedTribePilotBody({action:'social-block',peerId:'peer',...fields}),/TRIBE_INVALID/);
 });
+
+
+test('integration block adapter never reads or migrates legacy keys in the protected pilot',()=>{
+ const hook=readFileSync('src/hooks/useSocialBlocks.ts','utf8');
+ const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
+ assert.match(hook,/if\(reservedTribePilotClientEnabled\(\)\)return \[\]/);
+ assert.match(hook,/if\(reservedTribePilotClientEnabled\(\)\|\|running.has/);
+ assert.match(hook,/requestReservedTribePilot<\{blocked:boolean\}>\('social-block'/);
+ assert.match(hook,/if\(pilot\)return subscribePilotOrdinaryDirectory/);
+ assert.match(hook,/isConfirmedSocialSnapshot\(result.metadata,uid,auth.currentUser\?\.uid\)/);
+ assert.match(directory,/useSocialBlocks\(!pilot&&isLoggedIn\?favoriteOwner:undefined\)/);
+ assert.match(directory,/blocksReady && !ownBlocked\(user.id\)/);
+});

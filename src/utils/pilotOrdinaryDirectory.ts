@@ -3,7 +3,7 @@ import {requestReservedTribePilot as request} from './reservedTribePilotClient';
 import {subscribeSocialPrivacyInvalidation} from './socialPrivacyInvalidation';
 
 export type PilotRelation={id:string;senderId:string;receiverId:string;participantIds:string[];status:'pending'|'accepted';senderName?:string;receiverName?:string;senderRole?:string;receiverRole?:string;senderAvatar?:string;receiverAvatar?:string;senderBio?:string;receiverBio?:string};
-export type PilotDirectory={revision:number;connections:PilotRelation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
+export type PilotDirectory={revision:number;connections:PilotRelation[];favoriteIds:string[];blockedContacts:{id:string;name:string}[];tribes:{id:string;name:string;memberIds:string[]}[]};
 export type PilotSuggestion={id:string;name:string;avatar:string;role:string;connectionStatus:'none'|'pending_sent';connectionId?:string};
 export type PilotOrdinaryProjection={directory:PilotDirectory;suggestions:PilotSuggestion[]};
 
