@@ -5,10 +5,11 @@ import {matchesTribeContactName} from '../utils/tribeContactSearch';
 import {ReservedTribeSearchInput} from './ReservedTribeSearchInput';
 import {TribePilotChat} from './TribePilotChat';
 import {ReservedTribeRecoveryPanel} from './ReservedTribeRecoveryPanel';
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import type {UserNotification} from '../../shared/userNotifications';
 
 type Relation={id:string;senderId:string;receiverId:string;status:'accepted'|'pending';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string};
-type Directory={connections:Relation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
+type Directory={revision:number;connections:Relation[];favoriteIds:string[];tribes:{id:string;name:string;memberIds:string[]}[]};
 type Suggestion={id:string;name:string;connectionStatus:'none'|'pending_sent'};
 type Session={token:string;expiresAt:number};
 const button='min-h-10 rounded-xl border border-slate-700 px-3 py-2 text-sm text-white disabled:opacity-40';
@@ -29,29 +30,54 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
  const [recovering,setRecovering]=useState(false);
  const current=useRef<Session|null>(null),alive=useRef(false),epoch=useRef(0);
  const pending=useRef<AbortController|null>(null);
+ const revision=useRef<number|null>(null);
+ const probe=useRef<AbortController|null>(null);
+ const reloadSequence=useRef(0);
  const clearPrivate=useCallback(()=>{
   setSuggestions([]);setGroupName('');setRecovering(false);
-  ++epoch.current;pending.current?.abort();pending.current=null;
+  ++epoch.current;++reloadSequence.current;probe.current?.abort();probe.current=null;pending.current?.abort();pending.current=null;
   const old=current.current;current.current=null;
   setSession(null);setReserved(null);setTarget(null);setNotices(null);setBusy(false);setError('');setCode('');setConfirmation('');setSetup(false);setTerm('');
   if(old&&auth.currentUser?.uid===owner)void request('lock',{session:old.token}).catch(()=>{});
  },[owner]);
  const stillValid=(s:Session,e:number)=>alive.current&&epoch.current===e&&current.current===s&&s.expiresAt>Date.now()&&auth.currentUser?.uid===owner&&!document.hidden;
  const reload=useCallback(async()=>{
-  const e=epoch.current;
+  const e=epoch.current,sequence=++reloadSequence.current;
   try{
-   const [status,dir]=await Promise.all([request<{configured:boolean}>('status'),request<Directory>('directory')]);
-   if(alive.current&&epoch.current===e&&auth.currentUser?.uid===owner){setConfigured(status.configured);setOrdinary(dir);}
-  }catch{if(alive.current&&epoch.current===e){setOrdinary(null);setError('Não foi possível consultar os conectados.');}}
+   const [status,dir]=await Promise.all([request<{configured:boolean;revision:number}>('status'),request<Directory>('directory')]);
+   if(alive.current&&epoch.current===e&&sequence===reloadSequence.current&&auth.currentUser?.uid===owner&&!document.hidden){
+    if(status.revision!==dir.revision){setOrdinary(null);revision.current=null;return;}
+    revision.current=dir.revision;setConfigured(status.configured);setOrdinary(dir);
+   }
+  }catch{if(alive.current&&epoch.current===e&&sequence===reloadSequence.current){setOrdinary(null);revision.current=null;setError('Não foi possível consultar os conectados.');}}
  },[owner]);
  useEffect(()=>{
   alive.current=true;void reload();
   const hide=()=>{if(document.hidden){clearPrivate();setOrdinary(null);}else void reload();};
-  const leave=()=>clearPrivate();
+  const leave=()=>{clearPrivate();setOrdinary(null);revision.current=null;};
   document.addEventListener('visibilitychange',hide);window.addEventListener('pagehide',leave);
-  const authStop=auth.onAuthStateChanged(user=>{if(user?.uid!==owner){clearPrivate();setOrdinary(null);}});
-  return()=>{alive.current=false;clearPrivate();authStop();document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',leave);};
+  const authStop=auth.onAuthStateChanged(user=>{if(user?.uid!==owner){clearPrivate();setOrdinary(null);revision.current=null;}});
+  const invalidate=()=>{clearPrivate();setOrdinary(null);revision.current=null;if(!document.hidden)void reload();};
+  const stopInvalidation=subscribeSocialPrivacyInvalidation(invalidate,false);
+  const offline=()=>invalidate();window.addEventListener('offline',offline);
+  return()=>{alive.current=false;clearPrivate();authStop();stopInvalidation();window.removeEventListener('offline',offline);document.removeEventListener('visibilitychange',hide);window.removeEventListener('pagehide',leave);};
  },[owner,clearPrivate,reload]);
+ useEffect(()=>{
+  // Server remains authoritative even across devices or without BroadcastChannel.
+  let stopped=false;
+  const verify=async()=>{
+   if(stopped||document.hidden||auth.currentUser?.uid!==owner||probe.current||busy||recovering)return;
+   const e=epoch.current,s=current.current,controller=new AbortController();probe.current=controller;
+   try{
+    const result=await request<{revision:number}>(s?'session-check':'status',s?{session:s.token}:{},controller.signal);
+    if(stopped||!alive.current||epoch.current!==e||controller.signal.aborted)return;
+    if(revision.current!==result.revision){clearPrivate();setOrdinary(null);revision.current=null;void reload();}
+   }catch{if(!stopped&&alive.current&&epoch.current===e&&!controller.signal.aborted){clearPrivate();setOrdinary(null);revision.current=null;}}
+   finally{if(probe.current===controller)probe.current=null;}
+  };
+  const timer=window.setInterval(()=>void verify(),5000);
+  return()=>{stopped=true;window.clearInterval(timer);probe.current?.abort();probe.current=null;};
+ },[owner,busy,recovering,clearPrivate,reload]);
  useEffect(()=>{
   if(!session)return;
   const timer=window.setTimeout(()=>{clearPrivate();void reload();},Math.max(0,session.expiresAt-Date.now()));
@@ -70,9 +96,9 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   }
   current.current=next;
   try{
-   const directory=await request<Directory>('reserved-directory',{session:next.token},signal);
-   if(!stillValid(next,e)||signal.aborted){clearPrivate();return false;}
-   setReserved(directory);setSession(next);setTerm('');return true;
+   const [directory,ordinaryNow]=await Promise.all([request<Directory>('reserved-directory',{session:next.token},signal),request<Directory>('directory',{},signal)]);
+   if(!stillValid(next,e)||signal.aborted||directory.revision!==ordinaryNow.revision){clearPrivate();setOrdinary(null);void reload();return false;}
+   revision.current=directory.revision;setOrdinary(ordinaryNow);setReserved(directory);setSession(next);setTerm('');return true;
   }catch{clearPrivate();return false;}
  };
  async function configure(event:FormEvent){

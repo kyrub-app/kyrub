@@ -87,7 +87,7 @@ export async function setReservedTribeContact(actor:string,token:unknown,peer:un
   const current=await tx.get(marker);
   if(!reserved){
    requireSession(config,token);
-   if(current.exists)tx.delete(marker);
+   if(current.exists){tx.delete(marker);tx.update(root,{directoryRevision:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp()});}
    return {reserved:false};
   }
   const ids=[...new Set([actor+'_'+peer,peer+'_'+actor])].filter(validId);
@@ -100,7 +100,7 @@ export async function setReservedTribeContact(actor:string,token:unknown,peer:un
    requireSession(config,token);
    tx.create(marker,{peerId:peer,createdAt:FieldValue.serverTimestamp()});
    // Once enrolled, require the server directory even after the last removal.
-   tx.update(root,{directoryProtected:true,updatedAt:FieldValue.serverTimestamp()});
+   tx.update(root,{directoryProtected:true,directoryRevision:FieldValue.increment(1),updatedAt:FieldValue.serverTimestamp()});
   }
   requireSession(config,token);
   return {reserved:true};
@@ -139,7 +139,7 @@ async function projectTribeDirectory(actor:string,scope:'ordinary'|'reserved',to
   }):[];
   const forwardTargets=scope==='ordinary'?filtered.filter(item=>item.status==='accepted').map(item=>({connectionId:item.id,peerId:peerOf(actor,item)})):[];
   if(scope==='reserved')requireSession(config,token);
-  return {connections:filtered,favoriteIds,tribes,forwardTargets};
+  return {connections:filtered,favoriteIds,tribes,forwardTargets,revision:directoryRevision(config)};
  });
 }
 export const getOrdinaryTribeDirectory=(actor:string)=>projectTribeDirectory(actor,'ordinary');
@@ -240,13 +240,16 @@ export async function searchOrdinaryTribeSuggestions(actor:string,search:unknown
  });
 }
 
+const directoryRevision=(snapshot:FirebaseFirestore.DocumentSnapshot):number=>{
+ const revision=snapshot.get('directoryRevision');return Number.isSafeInteger(revision)&&revision>=0?revision:0;
+};
 /** Used by the isolated pilot only. No contact IDs or secret material. */
 export async function getReservedTribeSetupStatus(actor:string){
  const root=vault(actor);
  return adminDb.runTransaction(async tx=>{
   const [account,config]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(root)]);
   if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
-  return {configured:config.exists,directoryProtected:config.get('directoryProtected')===true};
+  return {configured:config.exists,directoryProtected:config.get('directoryProtected')===true,revision:directoryRevision(config)};
  });
 }
 export async function lockReservedTribeSession(actor:string,token:unknown){
@@ -368,5 +371,15 @@ export async function deleteOrdinaryTribe(actor:string,groupId:unknown){
    tx.delete(ref);
   }
   return {deleted:true as const};
+ });
+}
+
+/** Lightweight authorization probe, no contact identifiers or message data. */
+export async function checkReservedTribeSession(actor:string,token:unknown){
+ const root=vault(actor);
+ return adminDb.runTransaction(async tx=>{
+  const config=await tx.get(root);
+  requireSession(config,token);
+  return {revision:directoryRevision(config)};
  });
 }

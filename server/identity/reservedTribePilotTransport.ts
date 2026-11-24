@@ -1,6 +1,6 @@
 import type {KyrubMcpHttpRequest,KyrubMcpHttpResponse} from '../mcp/kyrubiaMcpServer.js';
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
-import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe} from './reservedTribeService.js';
+import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,checkReservedTribeSession} from './reservedTribeService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from './reservedTribeChatService.js';
 import {recoverReservedTribeCode} from './reservedTribeRecoveryService.js';
 import {listReservedUserNotifications,markReservedUserNotificationRead} from '../notifications/userNotificationService.js';
@@ -17,7 +17,7 @@ export function reservedTribePilotEnvironmentAllowed(env:Record<string,string|un
 const validId=(value:unknown):value is string=>typeof value==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(value);
 const validSession=(value:unknown):value is string=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value);
 const fields={
- status:[],setup:['code','confirmation'],unlock:['code'],lock:['session'],
+ status:[],setup:['code','confirmation'],unlock:['code'],lock:['session'],'session-check':['session'],
  'directory':[],'reserved-directory':['session'],suggestions:['term','limit'],
  connection:['peerId','operation'],favorite:['connectionId','favorited'],
  'tribe-create':['groupId','name'],'tribe-member':['groupId','connectionId','member'],'tribe-delete':['groupId'],
@@ -78,6 +78,7 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'setup':if(data.code!==data.confirmation)throw Error('TRIBE_CODE_INVALID');await initializeReservedTribe(actor,data.code);result={configured:true};break;
     case 'unlock':{const unlocked=await unlockReservedTribe(actor,data.code);result=unlocked.ok?unlocked:{ok:false};break;}
     case 'lock':result=await lockReservedTribeSession(actor,session);break;
+    case 'session-check':result=await checkReservedTribeSession(actor,session);break;
     case 'directory':result=await getOrdinaryTribeDirectory(actor);break;
     case 'reserved-directory':result=await getReservedTribeDirectory(actor,session);break;
     case 'suggestions':result=await searchOrdinaryTribeSuggestions(actor,data.term,data.limit as number);break;

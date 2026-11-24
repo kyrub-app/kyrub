@@ -1,5 +1,6 @@
 import {auth} from './firebase';
-type PilotAction='status'|'setup'|'unlock'|'lock'|'directory'|'reserved-directory'|'suggestions'|'connection'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete'|'membership'|'recover'|'ordinary-chat-read'|'ordinary-chat-send'|'ordinary-chat-clear'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
+import {publishSocialPrivacyInvalidation} from './socialPrivacyInvalidation';
+type PilotAction='status'|'setup'|'unlock'|'lock'|'session-check'|'directory'|'reserved-directory'|'suggestions'|'connection'|'favorite'|'tribe-create'|'tribe-member'|'tribe-delete'|'membership'|'recover'|'ordinary-chat-read'|'ordinary-chat-send'|'ordinary-chat-clear'|'chat-read'|'chat-send'|'chat-clear'|'notifications'|'notification-read';
 export type ReservedTribeUnlock={ok:false}|{ok:true;token:string;expiresAt:number};
 /** Homologation-only client, not mounted by any production component.
  * Never persist a code or capability. Reject a changed auth session after
@@ -25,5 +26,6 @@ export async function requestReservedTribePilot<T>(action:PilotAction,fields:Rec
  if(!response.ok)throw Error('TRIBE_UNAVAILABLE');
  const result=await response.json() as T;
  if(auth.currentUser!==user||signal?.aborted)throw Error('TRIBE_ACCESS_DENIED');
+ if(action==='membership'||action==='recover'||(action==='unlock'&&(result as {ok?:boolean})?.ok===true))publishSocialPrivacyInvalidation();
  return result;
 }

@@ -1,3 +1,4 @@
+import {subscribeSocialPrivacyInvalidation} from '../utils/socialPrivacyInvalidation';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { onAuthStateChanged, type User } from 'firebase/auth';
@@ -268,6 +269,17 @@ export function UserNotificationCenterBridge() {
     const timer = window.setInterval(() => void refresh(true), 15000);
     return () => window.clearInterval(timer);
   }, [refresh, user]);
+
+  useEffect(()=>{
+    if(!user)return;
+    const invalidate=()=>{
+      ++refreshSequence.current;setNotifications([]);setUnreadCount(0);setResolvedInvites({});setPendingInviteResponse(null);
+      notificationBaselineRef.current=null;
+      for(const popup of browserPersonalRef.current.values())popup.close();browserPersonalRef.current.clear();
+      if(!document.hidden)void refresh(true);
+    };
+    return subscribeSocialPrivacyInvalidation(invalidate);
+  },[user,refresh]);
 
   useEffect(() => {
     if (open) void refresh();

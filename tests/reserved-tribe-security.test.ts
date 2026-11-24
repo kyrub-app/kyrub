@@ -198,3 +198,18 @@ test('recovery UI requires provider reauthentication before the new code and nev
  assert.match(recovery,/visibilitychange/);
  assert.doesNotMatch(recovery,/localStorage|sessionStorage|console\.|signInWithPopup\(/);
 });
+
+test('privacy invalidation carries no identity or secret and the server probe is authoritative',async()=>{
+ const signal=readFileSync('src/utils/socialPrivacyInvalidation.ts','utf8');
+ const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
+ const bridge=readFileSync('src/components/UserNotificationCenterBridge.tsx','utf8');
+ assert.match(signal,/postMessage\('refresh'\)/);
+ assert.doesNotMatch(signal,/localStorage\.|sessionStorage\.|token:|peerId:|uid:/);
+ assert.match(panel,/subscribeSocialPrivacyInvalidation\(invalidate,false\)/);
+ assert.match(panel,/s\?'session-check':'status'/);
+ assert.match(panel,/status.revision!==dir.revision/);
+ assert.match(panel,/directory.revision!==ordinaryNow.revision/);
+ assert.match(bridge,/subscribeSocialPrivacyInvalidation\(invalidate\)/);
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ assert.throws(()=>parseReservedTribePilotBody({action:'session-check'}),/TRIBE_INVALID/);
+});

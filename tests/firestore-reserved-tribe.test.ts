@@ -11,7 +11,7 @@ import {buildUserNotification} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -358,4 +358,27 @@ test('ordinary and reserved chat transport share history but cannot bypass scope
  await setReservedTribeContact(actor,capability,peer,false);
  assert.equal((await call('owner',{action:'chat-read',connectionId:pair,session:capability})).status,403);
  assert.equal((await call('owner',{action:'ordinary-chat-read',connectionId:pair})).status,200);
+});
+
+test('directory revision and live session probe invalidate stale projections across devices',async()=>{
+ const before=await getReservedTribeSetupStatus(actor);
+ const session=await unlockReservedTribe(actor,'new!synthetic');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ assert.equal((await checkReservedTribeSession(actor,session.token)).revision,before.revision);
+ await setReservedTribeContact(actor,session.token,peer,true);
+ const hidden=await getOrdinaryTribeDirectory(actor);
+ assert.equal(hidden.revision,before.revision+1);
+ assert.equal((await getReservedTribeDirectory(actor,session.token)).revision,hidden.revision);
+ assert.ok(!hidden.connections.some(row=>row.senderId===peer||row.receiverId===peer));
+ await setReservedTribeContact(actor,session.token,peer,true);
+ assert.equal((await getReservedTribeSetupStatus(actor)).revision,hidden.revision);
+ await setReservedTribeContact(actor,session.token,peer,false);
+ assert.equal((await getOrdinaryTribeDirectory(actor)).revision,hidden.revision+1);
+ const next=await unlockReservedTribe(actor,'new!synthetic');assert.ok(next.ok);
+ if(!next.ok)throw Error('SESSION_MISSING');
+ await assert.rejects(checkReservedTribeSession(actor,session.token),/TRIBE_ACCESS_DENIED/);
+ await lockReservedTribeSession(actor,session.token);
+ await checkReservedTribeSession(actor,next.token);
+ await lockReservedTribeSession(actor,next.token);
+ await assert.rejects(checkReservedTribeSession(actor,next.token),/TRIBE_ACCESS_DENIED/);
 });
