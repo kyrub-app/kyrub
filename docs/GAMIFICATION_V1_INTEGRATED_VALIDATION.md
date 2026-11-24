@@ -15,3 +15,14 @@ O novo cenário em tests/welcome-auth-created-emulator.test.ts reutiliza o Auth/
 ## Liberação continua bloqueada
 
 Consultar docs/PITANGA_WRITER_DEPLOYMENT_EVIDENCE.md e docs/GAMIFICATION_ACTIVATION_DELIVERY.md. Revisão estática não prova todos os escritores implantados. Não habilitar flags, writersVerified em projetos reais, emitir Pitangas/XP, publicar regras ou alterar faturamento. Não requer Blaze para o emulador. Sem mudanças em runtime.
+
+
+## Jornada transversal — diretriz do proprietário, 24/11/2026
+
+A validação comercial e a social/gamificação compõem um único E2E de aceitação: descoberta da Kyrub (Tag ou acesso direto), cadastro autenticado, comunidade, desafio da plataforma divulgado em publicação da comunidade e encaminhado à Taba, engajamento/Conectados, Catu e loja, publicação verificada, pedido/ERP/estoque/conciliação, conta de recompensas e conversão voluntária.
+
+Não transformar a ordem de teste em pré-requisito obrigatório do produto: loja e acesso direto continuam independentes de comunidade/Tag. A publicação divulga um desafio; a autoridade continua sendo o cadastro canônico do Control Plane e a comprovação server-side do evento. Encaminhamento não cria novo desafio nem duplica recompensa; expiração da Taba não elimina o desafio na origem. Semeadura não representa saldo creditado hoje. A ligação de divulgação de desafio ao post canônico e seu CTA deve ser auditada antes de qualquer implementação. Reutilizar a mesma conta de aceitação e uma segunda identidade para interações que exigem outra pessoa. Não conceder 900 Pitangas artificiais em ambiente real para forçar conversão. Conversão positiva deve usar saldo legitimamente creditado ou fixture explicitamente isolada, jamais equivalência visual.
+
+Dependências: #1274 autenticação isolada aprovada conforme relato do Work; regras publicadas e cache ainda não comprovados, piloto reservado desligado; inventário de escritores econômicos e autorização de emissão ainda pendentes; testes Pix/PSP e GPS condicionados a seus próprios gates. Não misturar branches nem habilitar funcionalidades para contornar bloqueios. E2E automatizado complementa, não substitui aceitação real.
+
+CI 790fda5: build, Validate Kyrub e Phase 10 aprovados; workflow Welcome falhou na última asserção do novo teste (linha 206), porque Auth Emulator omite isNewUser em login existente. O teste havia alcançado a etapa após as verificações de saldo, publicação concorrente e recusa de conversão. Corrigida a asserção para notEqual(true), mesmo contrato dos testes existentes, mantendo igualdade de UID e extrato. Nova execução pendente.

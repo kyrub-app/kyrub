@@ -203,6 +203,7 @@ test('one Auth-created member: welcome and verified first publication remain sep
   }
   const again=await googleSignIn('welcome-publication-integrated');
   assert.equal(again.localId,uid);
-  assert.equal(again.isNewUser,false);
+  // Auth Emulator may omit isNewUser for an existing federated account.
+  assert.notEqual(again.isNewUser,true);
   assert.deepEqual(await readPitangaAccount(db,uid),afterPublication);
 });
