@@ -1,3 +1,4 @@
+import {TagSpacesSelector} from './TagSpacesSelector';
 import {useEffect,useState} from 'react';
 import {auth} from '../utils/firebase';
 import {buildPublicDestinationUrl,parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
@@ -12,6 +13,7 @@ export function MultifunctionCardEditor({userId,locked,onSelect}:{userId:string;
   const [ready,setReady]=useState(false);
   const [busy,setBusy]=useState(false);
   const [message,setMessage]=useState('');
+  const [offerSpaces,setOfferSpaces]=useState(false);
   async function request(method:string,body?:unknown,signal?:AbortSignal){
     const user=auth.currentUser;
     if(!user||user.uid!==userId)throw Error('AUTH_REQUIRED');
@@ -35,7 +37,7 @@ export function MultifunctionCardEditor({userId,locked,onSelect}:{userId:string;
   const save=async()=>{
     if(locked||busy||!ready||!urls.length)return;
     setBusy(true);onSelect(null);
-    try{const result=await request('POST',{urls});if(!result?.enabled)throw Error('CARD_UNAVAILABLE');setCard(result);setUrls(result.urls);setMessage('Cartão publicado. Selecione-o para gravar ou compartilhar.');}
+    try{const result=await request('POST',{urls});if(!result?.enabled)throw Error('CARD_UNAVAILABLE');setCard(result);setUrls(result.urls);setMessage('Cartão publicado. Selecione-o para gravar ou compartilhar.');setOfferSpaces(true);}
     catch(e){setMessage(e instanceof Error&&e.message==='CARD_TARGET_UNAVAILABLE'?'Um destino não está público ou não pertence ao seu perfil. Confira os endereços.':'Não foi possível salvar o cartão.');}
     finally{setBusy(false);}
   };
@@ -66,6 +68,8 @@ export function MultifunctionCardEditor({userId,locked,onSelect}:{userId:string;
       <button type="button" className={button} disabled={locked||busy||dirty} onClick={()=>onSelect({name:'Meu cartão multifuncional',url:currentUrl})}>Usar cartão para compartilhar ou gravar</button>
       <button type="button" className={button} disabled={locked||busy} onClick={()=>void disable()}>Desativar cartão</button>
     </div>}
+    {currentUrl&&!dirty&&card?.urls.some(url=>['store','community'].includes(parsePublicDestinationUrl(url)?.kind??''))&&
+      <TagSpacesSelector key={userId+card.id+JSON.stringify(card.urls)} userId={userId} urls={card.urls} open={offerSpaces} onOpen={setOfferSpaces} disabled={locked||busy}/>}
     <p role="status" className="text-xs text-slate-300">{message}</p>
   </div>;
 }

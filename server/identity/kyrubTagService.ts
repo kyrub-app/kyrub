@@ -18,7 +18,7 @@ export const hashTagRecipient=(id:string,email:string)=>createHash('sha256').upd
 function owned(id:string,data:Record<string,unknown>):OwnedKyrubTag{
  if(!isTagId(id)||!isTagModel(data.model))throw Error('TAG_UNAVAILABLE');
  const targets=Array.isArray(data.targets)?data.targets.filter(isBoundTarget).slice(0,CARD_LIMIT):[];
- return {id,model:data.model,enabled:data.enabled===true,urls:[...targets.map(t=>cardLink(t,'Destino').url),...externalLinks(data.externalUrls).map(t=>t.url)].slice(0,CARD_LIMIT),
+ return {id,model:data.model,enabled:data.enabled===true,...(typeof data.nickname==='string'&&data.nickname?{nickname:data.nickname}:{}),urls:[...targets.map(t=>cardLink(t,'Destino').url),...externalLinks(data.externalUrls).map(t=>t.url)].slice(0,CARD_LIMIT),
  ...(data.distribution==='promotional'?{distribution:'promotional' as const,presentation:normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION),blocked:data.blocked===true}:{})};
 }
 // Trusted manufacturing service only. No client or HTTP provisioning route.
@@ -120,7 +120,7 @@ export async function recoverPromotionalKyrubTag(actor:string,id:string,verified
     !/^[a-f0-9]{64}$/.test(oldHash)||!timingSafeEqual(Buffer.from(oldHash,'hex'),Buffer.from(requestedHash,'hex')))throw Error('TAG_FORBIDDEN');
   const update={ownerId:actor,ownerEmailHash:hashTagRecipient(id,email),recoveryHash:promotionalRecoveryHash(id,nextRecoveryCode),
     recoveryCount:typeof data.recoveryCount==='number'?data.recoveryCount+1:1,lastRecoveredAt:new Date().toISOString(),
-    enabled:false,blocked:true};
+    enabled:false,blocked:true,nickname:'',targets:[]};
   if(!account.exists&&!marker.exists){
    tx.create(identity,{uid:actor,mode:'tag_only',source:'kyrub_tag_promo',
     createdFromTag:id,createdAt:new Date().toISOString()});
@@ -250,6 +250,57 @@ export async function loadTagDestinationCatalog(actor:string,id:string):Promise<
   for(const option of group)if(option)options.push({kind:option.kind,name:option.name,url:option.url});
  }
  return {profile,options,unavailable:current.urls.filter(url=>!options.some(o=>o.url===url))};
+}
+export async function renameOwnedKyrubTag(actor:string,id:string,value:unknown){
+ assertTagPilotWriteIsolated();validActor(actor);
+ if(!isTagId(id)||typeof value!=='string'||value.length>48||/[\u0000-\u001f\u007f]/.test(value))throw Error('TAG_INVALID');
+ const nickname=value.trim();
+ return adminDb.runTransaction(async tx=>{
+  const ref=tags().doc(id),data=(await tx.get(ref)).data();
+  if(!data||data.ownerId!==actor)throw Error('TAG_FORBIDDEN');
+  tx.update(ref,{nickname});
+  return owned(id,{...data,nickname});
+ });
+}
+
+/** Add only explicitly selected destinations from the owner's published card. */
+export async function addOwnedCardSpacesToTags(actor:string,ids:unknown,urls:unknown){
+ assertTagPilotWriteIsolated();validActor(actor);
+ if(!Array.isArray(ids)||ids.length<1||ids.length>100||!ids.every(isTagId)||new Set(ids).size!==ids.length)throw Error('TAG_INVALID');
+ const requested=parseCardTargets(urls);
+ if(requested.some(t=>t.kind==='profile'))throw Error('INVALID_CARD');
+ const ownerRef=adminDb.doc('public_visit_card_owners/'+actor);
+ const owner=(await ownerRef.get()).data();
+ if(!isTagId(owner?.id))throw Error('CARD_TARGET_UNAVAILABLE');
+ const cardRef=adminDb.doc('public_visit_cards/'+owner.id),original=await cardRef.get(),source=original.data();
+ if(source?.ownerId!==actor||source.enabled!==true||!Array.isArray(source.targets))throw Error('CARD_TARGET_UNAVAILABLE');
+ const available=source.targets.filter(isBoundTarget);
+ const selected=requested.map(t=>available.find(b=>b.kind===t.kind&&b.identifier===t.identifier));
+ if(selected.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
+ const resolved=await Promise.all(selected.map(t=>t?resolveTarget(actor,t,t.bindingId):null));
+ if(resolved.some(t=>!t))throw Error('CARD_TARGET_UNAVAILABLE');
+ const additions=resolved.flatMap(t=>t?[t.binding]:[]);
+ return adminDb.runTransaction(async tx=>{
+  const refs=ids.map(id=>tags().doc(id));
+  const [account,currentOwner,currentCard,...units]=await Promise.all([
+   tx.get(adminDb.doc('users/'+actor)),tx.get(ownerRef),tx.get(cardRef),...refs.map(ref=>tx.get(ref))
+  ]);
+  if(!account.exists||currentOwner.get('id')!==owner.id||!original.updateTime||!currentCard.updateTime?.isEqual(original.updateTime))throw Error('CARD_TARGET_UNAVAILABLE');
+  const updates=units.map((snap,i)=>{
+   const data=snap.data();
+   if(!data||data.ownerId!==actor||data.blocked===true||data.enabled!==true||!isTagModel(data.model))throw Error('TAG_FORBIDDEN');
+   const merged=Array.isArray(data.targets)?data.targets.filter(isBoundTarget):[];
+   for(const target of additions){
+    const previous=merged.find(t=>t.kind===target.kind&&t.identifier===target.identifier);
+    if(previous&&previous.bindingId!==target.bindingId)throw Error('TAG_CHANGED');
+    if(!previous)merged.push(target);
+   }
+   if(merged.length+externalLinks(data.externalUrls).length>CARD_LIMIT)throw Error('INVALID_CARD');
+   return {ref:refs[i],data,targets:merged};
+  });
+  for(const item of updates)tx.update(item.ref,{targets:item.targets,updatedAt:new Date().toISOString()});
+  return {tags:updates.map(item=>owned(item.ref.id,{...item.data,targets:item.targets}))};
+ });
 }
 export async function configureKyrubTag(actor:string,id:string,urls:unknown){
  validActor(actor);

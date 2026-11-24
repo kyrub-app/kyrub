@@ -13,6 +13,7 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
  const [tags,setTags]=useState<OwnedKyrubTag[]>([]),[id,setId]=useState(''),[code,setCode]=useState(''),[selected,setSelected]=useState(''),[urls,setUrls]=useState<string[]>([]),[busy,setBusy]=useState(false),[ready,setReady]=useState(false),[notice,setNotice]=useState('');
  const [catalog,setCatalog]=useState<TagDestinationCatalog|null>(null),[catalogError,setCatalogError]=useState(false),[revision,setRevision]=useState(0),[filter,setFilter]=useState(''),[externalValues,setExternalValues]=useState<Record<TagExternalKind,string>>({whatsapp:'',instagram:''}),[added,setAdded]=useState<TagDestinationOption[]>([]),[privacyConfirm,setPrivacyConfirm]=useState(false);
  const [lookupUrl,setLookupUrl]=useState(''),[lookupBusy,setLookupBusy]=useState(false),[pilotRecovered,setPilotRecovered]=useState(false),[reload,setReload]=useState(0);
+ const [nickname,setNickname]=useState('');
  const lock=useRef(false);
  const selectedIsPromotional=tags.find(t=>t.id===selected)?.distribution==='promotional';
  async function request(method:string,tagId='',body?:unknown,signal?:AbortSignal,view=''){
@@ -57,6 +58,14 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
   try{apply(await request('DELETE',selected));setNotice('Acesso público desta unidade desativado. O vínculo permanece.');}catch{setNotice('Não foi possível desativar.');}finally{setBusy(false);}
  }
  const tag=tags.find(t=>t.id===selected);
+ useEffect(()=>{setNickname(tag?.nickname??'');},[tag?.id,tag?.nickname]);
+ async function renameTag(){
+  if(!tag||busy||lock.current)return;
+  lock.current=true;setBusy(true);setNotice('');
+  try{apply(await request('POST',tag.id,{action:'rename-tag',nickname}));setNotice('Apelido privado salvo.');}
+  catch{setNotice('Não foi possível salvar o apelido.');}
+  finally{lock.current=false;setBusy(false);}
+ }
  const options=[...(catalog?.options??[]),...added.filter(o=>!catalog?.options.some(c=>c.url===o.url))];
  const selectedOptions=urls.map(url=>options.find(o=>o.url===url)??{url,name:'Destino indisponível — remova para continuar'});
  const toggle=(url:string)=>{setNotice('');setUrls(current=>current.includes(url)?current.filter(x=>x!==url):current.length<CARD_LIMIT?[...current,url]:current);};
@@ -82,11 +91,18 @@ export function OfficialKyrubTagPanel({userId,initialTagId}:{userId:string;initi
  <p className="text-xs text-slate-400">A vinculação é intransferível. O código é de uso único. Nenhum dado pessoal será divulgado automaticamente.</p>
  <button type="button" className={btn} disabled={busy||!ready||!isTagId(id)||!isTagId(code)} onClick={()=>void claim()}>Vincular definitivamente</button></details>}
  {!initialTagId&&<h6 className="text-sm font-bold">Minhas unidades vinculadas</h6>}
- {!initialTagId&&tags.map(t=><button key={t.id} type="button" className={btn+' block w-full text-left'} disabled={busy} onClick={()=>{setSelected(t.id);setUrls(t.urls);}}>{KYRUB_TAG_MODEL_LABELS[t.model]} · {t.id.slice(-8)} · {t.distribution==='promotional'?'Promocional · '+(t.blocked?'Bloqueada':t.enabled?'Pública':'Não publicada'):t.enabled?'Pública':'Vinculada · não publicada'}</button>)}
+ {!initialTagId&&tags.map(t=><button key={t.id} type="button" className={btn+' block w-full text-left'} disabled={busy} onClick={()=>{setSelected(t.id);setUrls(t.urls);}}>{t.nickname||KYRUB_TAG_MODEL_LABELS[t.model]} · {t.id.slice(-8)} · {t.distribution==='promotional'?'Promocional · '+(t.blocked?'Bloqueada':t.enabled?'Pública':'Não publicada'):t.enabled?'Pública':'Vinculada · não publicada'}</button>)}
  {!initialTagId&&pilotRecovered&&<p role="status" className="rounded-xl border border-amber-500/40 bg-amber-500/10 p-3 text-xs text-amber-100">A unidade experimental foi localizada por uma leitura direta e segura. A consulta geral de dispositivos precisa ser verificada; sua titularidade não foi alterada.</p>}
  {!initialTagId&&!ready&&notice&&<button type="button" className="text-sm underline" disabled={busy||lookupBusy} onClick={()=>{setNotice('');setReload(v=>v+1);}}>Tentar consultar novamente</button>}
  {!initialTagId&&ready&&tags.length===0&&<div className="rounded-xl border border-dashed border-[#34443B] p-3 text-sm text-slate-300"><p>Nenhuma Kyrub Tag vinculada a esta conta foi encontrada. Se acabou de ativar uma unidade, confira se entrou com o mesmo e-mail e atualize a lista.</p><button type="button" className="mt-2 underline" disabled={busy||lookupBusy} onClick={()=>setReload(v=>v+1)}>Atualizar lista</button></div>}
  {!initialTagId&&<details className="rounded-xl border border-[#34443B] p-3"><summary className="cursor-pointer text-sm font-medium">Não encontrou uma tag já vinculada?</summary><p className="mt-3 text-xs text-slate-300">Cole o endereço kyrub.com/tag/... da sua unidade. A verificação é feita pelo servidor e só abre unidades pertencentes à conta autenticada.</p><label className="mt-3 block text-sm">Endereço da Kyrub Tag<input type="url" value={lookupUrl} onChange={e=>setLookupUrl(e.target.value)} placeholder="https://kyrub.com/tag/..." className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm" autoComplete="off" maxLength={200} disabled={busy||lookupBusy}/></label><button type="button" className={btn+' mt-3'} disabled={busy||lookupBusy||(!isTagId(lookupUrl.trim())&&!/^https:\/\/(?:www\.)?kyrub\.com\/tag\/[a-f0-9]{32}\/?$/i.test(lookupUrl.trim()))} onClick={()=>void findOwnedTag()}>{lookupBusy?'Consultando…':'Verificar minha unidade'}</button></details>}
+ {tag&&<div className="space-y-2 rounded-xl border border-[#34443B] p-3">
+  <label className="block text-sm">Apelido privado do dispositivo
+   <input value={nickname} maxLength={48} disabled={busy} placeholder="Ex.: Meu capacete" onChange={e=>setNickname(e.target.value)} className="mt-1 min-h-11 w-full rounded-xl bg-slate-900 p-3"/>
+  </label>
+  <p className="text-xs text-slate-400">Somente você verá este apelido.</p>
+  <button type="button" className={btn} disabled={busy||nickname.trim()===(tag.nickname??'')} onClick={()=>void renameTag()}>Salvar apelido</button>
+ </div>}
  {tag?.distribution==='promotional'&&<PromotionalKyrubTagEditor key={tag.id} initial={tag} />}
  {tag&&tag.distribution!=='promotional'&&<div className="space-y-4" key={tag.id}>
  <p className="text-sm font-medium uppercase tracking-wide text-[#F47825]">Kyrub Tag · {KYRUB_TAG_MODEL_LABELS[tag.model]}</p>

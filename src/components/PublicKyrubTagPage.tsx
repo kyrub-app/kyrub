@@ -195,6 +195,10 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     </div>
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
     {data.presentation.about&&<p className="whitespace-pre-wrap text-slate-200">{data.presentation.about}</p>}
+     {data.links.length>0&&<section className="space-y-2"><h2 className="font-semibold">Meus espaços no Kyrub</h2>
+      {data.links.map(link=>{const target=parsePublicDestinationUrl(link.url);if(!target||(target.kind!=='store'&&target.kind!=='community'))return null;
+       return <a key={link.url} className="block rounded-xl border border-[#34443B] p-3" href={buildPublicDestinationPath(target.kind,target.identifier)??'/'}>{link.name}</a>;})}
+     </section>}
     <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
      <h2 className="font-semibold">Emergência no Brasil</h2>
