@@ -5,6 +5,7 @@ import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
 import {PresentationShare} from './PresentationShare';
+import {PresentationVisualEditor} from './PresentationVisualEditor';
 import {usePresentationMembership} from './PresentationFooter';
 
 export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
@@ -156,29 +157,12 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
     <button type="button" className="rounded-lg border border-amber-400/50 p-2" onClick={()=>void navigator.clipboard.writeText(recoveryCode).then(()=>setNotice('Código copiado. Guarde em local privado.')).catch(()=>setNotice('Selecione o código e copie manualmente.'))}>Copiar código</button>
     <button type="button" className="ml-2 underline" onClick={()=>setRecoveryCode('')}>Já guardei</button>
    </div>}
-  <section className="space-y-3 rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm">
-   <strong className="text-white">Imagem de capa e foto de apresentação</strong>
-   <p className="text-slate-300">Fotos opcionais. O dispositivo transforma a imagem em WebP e remove metadados antes de enviar. O cartão público só apresenta fotos enquanto a tag estiver ativa.</p>
-   {(['cover','avatar','background'] as const).map(slot=><div key={slot} className="space-y-2">
-    <label className="block font-semibold">{slot==='cover'?'Foto de capa':slot==='avatar'?'Foto de perfil':'Imagem de fundo'}
-     <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" disabled={busy||uploading||tag.blocked}
-      onChange={event=>{const file=event.currentTarget.files?.[0];if(file)void upload(slot,file);event.currentTarget.value='';}}/>
-    </label>
-    {(slot==='cover'?coverPreview:slot==='avatar'?avatarPreview:backgroundPreview)&&<img alt={slot==='cover'?'Prévia de capa':slot==='avatar'?'Prévia de perfil':'Prévia de fundo'}
-      src={slot==='cover'?coverPreview:slot==='avatar'?avatarPreview:backgroundPreview} className={slot==='avatar'?'h-24 w-24 rounded-full object-cover':'h-28 w-full rounded-xl object-cover'} />}
-    {(slot==='cover'?presentation.coverPath:slot==='avatar'?presentation.avatarPath:presentation.backgroundPath)&&
-     <button className="text-sm text-orange-300 underline" disabled={busy||uploading} type="button" onClick={()=>removeImage(slot)}>Remover foto</button>}
-   </div>)}
-  </section>
-  <label className="block text-sm">Nome de apresentação
-   <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={presentation.name} maxLength={80} disabled={busy} placeholder="Como deseja ser chamado?" onChange={e=>set('name',e.target.value)}/>
-  </label>
-  <label className="block text-sm">O que você faz?
-   <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={presentation.occupation} maxLength={90} disabled={busy} placeholder="Ex.: Entregador, comerciante, autônomo" onChange={e=>set('occupation',e.target.value)}/>
-  </label>
-  <label className="block text-sm">Sobre você
-   <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" rows={3} value={presentation.about} maxLength={320} disabled={busy} placeholder="Uma breve apresentação" onChange={e=>set('about',e.target.value)}/>
-  </label>
+  <PresentationVisualEditor name={presentation.name} occupation={presentation.occupation} bio={presentation.about} photoUrl={avatarPreview} coverUrl={coverPreview} backgroundUrl={backgroundPreview}
+   disabled={busy||uploading||!!tag.blocked} maxBio={320}
+   onText={(field,value)=>set(field==='bio'?'about':field,value)} onImage={(slot,file)=>void upload(slot,file)} onRemove={removeImage}
+   links={tag.urls.flatMap(url=>{const target=parsePublicDestinationUrl(url);return target?[{name:target.identifier,url}]:[];})}>
+   <p className="text-xs text-slate-300">As imagens são opcionais, tratadas localmente e publicadas apenas após salvar. SOS e código de recuperação são configurações separadas.</p>
+  </PresentationVisualEditor>
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Contatos de emergência (opcionais)</strong>
    <p className="text-sm text-slate-300">O botão SOS sempre oferece 190, 192 e 193 no Brasil. Você pode cadastrar até dois contatos particulares, inclusive com opção de WhatsApp. Eles ficam ocultos até você autorizar a divulgação e declarar que a pessoa concordou.</p>

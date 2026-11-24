@@ -63,9 +63,7 @@ import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
 import { ContactPresentationModal } from './ContactPresentationModal';
 import {BlockedContactsPanel} from './BlockedContactsPanel';
-import { MultifunctionCardEditor } from './MultifunctionCardEditor';
 import {PublicSocialAddressEditor} from './PublicSocialAddressEditor';
-import { ProfileTagPresentationSync } from './ProfileTagPresentationSync';
 import { sanitizedWebp } from '../utils/kyrubTagMedia';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
@@ -2341,8 +2339,6 @@ export function ProfileSocialHubNative() {
                 <label className="block text-sm">Alterar fundo<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={event=>void uploadPresentationImage(event,'background')} className="mt-2 block w-full text-xs"/></label>
                 {profile.backgroundUrl&&<button type="button" disabled={photoBusy} className="text-sm underline" onClick={()=>{if(auth.currentUser?.uid===user.uid)void setDoc(doc(db,'users',user.uid,'public_profile','main'),{backgroundUrl:'',updatedAt:serverTimestamp()},{merge:true}).catch(()=>triggerToast('Não foi possível remover o fundo.','error'));}}>Remover fundo</button>}
               </section>
-              <ProfileTagPresentationSync key={'sync-'+user.uid} userId={user.uid} disabled={photoBusy}/>
-              <MultifunctionCardEditor key={user.uid} userId={user.uid} locked={photoBusy} presentationMode />
 
               <button
                 type="button"

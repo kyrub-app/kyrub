@@ -338,3 +338,18 @@ test('QR sharing only encodes public same-deployment destinations',async()=>{
  const second=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[1],marginSize:4,level:'M'}));
  assert.match(first,/<svg/);assert.match(first,/<path/);assert.notEqual(first,second);
 });
+
+test('the live unified profile and promotional device share an in-card visual editor',()=>{
+ const profile=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const tag=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const visual=readFileSync('src/components/PresentationVisualEditor.tsx','utf8');
+ const bridge=readFileSync('src/components/ProfileVerificationBridge.tsx','utf8');
+ const legacy=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(bridge,/<ProfilePublicIdentityEditor user=\{user\}/);
+ assert.match(profile,/<PresentationVisualEditor/);assert.match(tag,/<PresentationVisualEditor/);
+ assert.match(visual,/<PresentationCard/);assert.match(profile,/writeBatch\(db\)/);assert.match(profile,/await batch.commit\(\)/);
+ assert.match(profile,/<MultifunctionCardEditor/);assert.match(profile,/<ProfileTagPresentationSync/);
+ assert.doesNotMatch(legacy,/<ProfileTagPresentationSync|<MultifunctionCardEditor/);
+ assert.match(tag,/Contatos de emergência/);assert.match(tag,/rotateRecovery/);
+ assert.doesNotMatch(visual,/firebase|recoveryCode|emergencyContacts/);
+});
