@@ -592,6 +592,8 @@ test('isolated incremental snapshot replaces contributions without duplicate tot
   await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
   await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
   assert.equal((await read()).refreshedAccounts,0);
+  await assert.rejects(refresh('incremental-missing-account'),/INCREMENTAL_ACCOUNT_UNAVAILABLE/);
+  assert.equal((await read()).refreshedAccounts,0);
   await projection.set({authorId:a.localId,acceptedSeeds:999,pitangueiras:0});
   await Promise.all([refresh(a.localId),refresh(a.localId),refresh(b.localId)]);
   const initial=await read();
