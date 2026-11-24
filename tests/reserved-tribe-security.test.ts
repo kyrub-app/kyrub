@@ -258,18 +258,23 @@ test('residual pilot consumers do not fetch raw social directories and chat clos
 
 test('pilot storage gate refuses legacy Firestore databases, stale workers and unavailable enumeration',async()=>{
  const {inspectSocialPilotStorage}=await import('../src/utils/socialPilotStorageGuard.js');
- const clean={databases:async()=>[{name:'firebaseLocalStorageDb'}],hasServiceWorker:async()=>false};
+ const clean={databases:async()=>[{name:'firebaseLocalStorageDb'}],hasServiceWorker:async()=>false,storageKeys:async()=>['kyrub_orders','kyrub_products','kyrub_favorite_stores','kyrub_posts_uid','firebase:authUser:example:[DEFAULT]']};
  assert.equal(await inspectSocialPilotStorage(clean),'ready');
  assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{name:'firestore/[DEFAULT]/kyrub-security-test/main'}]}),'legacy-cache');
  assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{name:'firestore/[DEFAULT]/kyrub-b8d0e/main'}]}),'legacy-cache');
  assert.equal(await inspectSocialPilotStorage({...clean,hasServiceWorker:async()=>true}),'service-worker');
  assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>{throw Error('denied');}}),'unverified');
  assert.equal(await inspectSocialPilotStorage({...clean,databases:async()=>[{}]}),'unverified');
+ for(const key of ['kyrub_friends','kyrub_connection_requests','kyrub_hidden_suggestions_other','kyrub_blocked_users_other']){
+  assert.equal(await inspectSocialPilotStorage({...clean,storageKeys:async()=>[key]}),'legacy-social-storage');
+ }
+ assert.equal(await inspectSocialPilotStorage({...clean,storageKeys:async()=>{throw Error('denied');}}),'unverified');
  const client=readFileSync('src/utils/reservedTribePilotClient.ts','utf8');
  const gate=readFileSync('src/utils/socialPilotStorageGuard.ts','utf8');
  assert.equal((client.match(/await verifySocialPilotStorage\(\)/g)||[]).length,2);
  assert.match(client,/if\(action!=='lock'\)await verifySocialPilotStorage\(\)/);
- assert.doesNotMatch(gate,/deleteDatabase\(|clearIndexedDbPersistence\(|\.unregister\(/);
+ assert.match(gate,/enumerateStorageKeys\(window\.localStorage\),\.\.\.enumerateStorageKeys\(window\.sessionStorage\)/);
+ assert.doesNotMatch(gate,/deleteDatabase\(|clearIndexedDbPersistence\(|\.unregister\(|\.getItem\(|\.removeItem\(|\.clear\(|\.setItem\(/);
 });
 
 
