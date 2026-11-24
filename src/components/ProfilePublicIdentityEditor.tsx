@@ -9,6 +9,7 @@ import {sanitizedWebp} from '../utils/kyrubTagMedia';
 import {PresentationVisualEditor,type PresentationImageSlot} from './PresentationVisualEditor';
 import {MultifunctionCardEditor} from './MultifunctionCardEditor';
 import {ProfileTagPresentationSync} from './ProfileTagPresentationSync';
+import {ProfileTagImageImport} from './ProfileTagImageImport';
 
 type PublicProfileDraft={name:string;bio:string;occupation:string;photoUrl:string;coverUrl:string;backgroundUrl:string};
 const imageField={avatar:'photoUrl',cover:'coverUrl',background:'backgroundUrl'} as const;
@@ -95,6 +96,7 @@ export function ProfilePublicIdentityEditor({user}:{user:User}){
   </form>
   <details className="rounded-xl border border-slate-700 p-3"><summary className="cursor-pointer font-semibold">Comunidades e lojas</summary><div className="mt-3"><MultifunctionCardEditor key={user.uid} userId={user.uid} locked={disabled||dirty} presentationMode/></div></details>
   <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid}/>
+  <ProfileTagImageImport key={'import-'+user.uid} uid={user.uid} disabled={disabled||dirty} current={draft} onImported={images=>{setDraft(value=>({...value,...images}));setSaved(value=>value?{...value,...images}:value);if(images.photoUrl)broadcastProfileUpdate(user,draft.name,images.photoUrl);}}/>
   <ProfileTagPresentationSync key={'sync-'+user.uid} userId={user.uid} disabled={disabled||dirty}/>
  </section>;
 }

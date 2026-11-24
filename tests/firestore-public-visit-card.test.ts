@@ -866,3 +866,21 @@ test('follow-profile is explicit per unit and privacy pauses identity without di
  await setPromotionalPresentationMode(uid,id,'custom');
  assert.equal((await resolveKyrubTag(id))?.presentation?.name,'Custom name');
 });
+
+test('image import rejects invalid selection, wrong owner and missing source before storage access',async()=>{
+ const {importTagProfileImages}=await import('../server/identity/kyrubTagMediaService.js');
+ const uid='image-import-owner',other='image-import-other',id='d1'.repeat(16);
+ await adminDb.doc('users/'+uid).set({name:'Owner',isProfileVisible:true});
+ await adminDb.doc('users/'+other).set({name:'Other',isProfileVisible:true});
+ const profile=adminDb.doc('users/'+uid+'/public_profile/main');
+ await profile.set({userId:uid,name:'Owner',bio:'',photoUrl:'',updatedAt:new Date()});
+ await adminDb.doc('users/'+other+'/public_profile/main').set({userId:other,name:'Other',photoUrl:''});
+ await adminDb.doc('kyrub_official_tags/'+id).set({ownerId:uid,distribution:'promotional',model:'adesivo',enabled:true,blocked:false,presentation:{name:'Tag',occupation:'',about:''},targets:[]});
+ await assert.rejects(importTagProfileImages(uid,id,[]),/TAG_INVALID/);
+ await assert.rejects(importTagProfileImages(uid,id,['avatar','avatar']),/TAG_INVALID/);
+ await assert.rejects(importTagProfileImages(other,id,['avatar']),/TAG_FORBIDDEN/);
+ await assert.rejects(importTagProfileImages(uid,id,['avatar']),/TAG_MEDIA_INVALID/);
+ await profile.update({photoUrl:'https://example.test/existing.webp'});
+ assert.deepEqual(await importTagProfileImages(uid,id,['avatar']),{images:{},skipped:['avatar']});
+ assert.equal((await profile.get()).get('photoUrl'),'https://example.test/existing.webp');
+});

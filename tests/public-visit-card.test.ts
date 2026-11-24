@@ -365,3 +365,16 @@ test('follow profile has explicit consent, fail-closed visibility and separate S
  assert.match(editor,/Acompanhar meu perfil/);assert.match(editor,/Apresentação personalizada/);
  assert.match(media,/data.presentationMode==='follow-profile'/);
 });
+
+test('image import is opt-in, independently copied, and does not prevent account promotion',()=>{
+ const entry=readFileSync('src/components/KyrubTagOnlyEntry.tsx','utf8');
+ const service=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ assert.match(entry,/imageSlots,setImageSlots/);assert.match(entry,/Continuar para o Kyrub/);
+ assert.match(service,/export async function importTagProfileImages/);
+ assert.match(service,/verifiedObject\(path,id,slot,actor\)/);
+ assert.match(service,/freshTag.get\('ownerId'\)!==actor/);
+ assert.match(service,/freshProfile.get\(imageField\[slot\]\)/);
+ assert.match(service,/firebaseStorageDownloadTokens:token/);
+ assert.match(editor,/<ProfileTagImageImport/);
+});

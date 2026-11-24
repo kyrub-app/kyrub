@@ -156,6 +156,13 @@ export default async function handler(
         const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
         response.status(200).json(await identity.prepareTagMinimalIdentity(actor,id));return;
       }
+      if(data.action==='import-tag-profile-images'&&Object.keys(data).length===2&&id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        const media=await import('../server/identity/kyrubTagMediaService.js');
+        response.status(200).json(await media.importTagProfileImages(actor,id,data.slots));return;
+      }
       if(data.action==='promote-tag-identity-with-presentation'&&Object.keys(data).length===2&&!id){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const record=await adminAuth.getUser(actor);

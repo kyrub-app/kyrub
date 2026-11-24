@@ -1,3 +1,7 @@
+import {randomUUID} from 'node:crypto';
+import {FieldValue} from 'firebase-admin/firestore';
+import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
+import {normalizePromotionalPresentation} from '../../shared/kyrubTagPromotional.js';
 import {adminDb,adminStorage,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {isPromotionalMediaPath,type PromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
@@ -53,4 +57,54 @@ export async function getPublicPromotionalTagImage(id:string,slot:unknown):Promi
  if(!after.updateTime?.isEqual(snap.updateTime)||after.get('blocked')===true||
    after.get('enabled')!==true||after.get('ownerId')!==data.ownerId)return null;
  return bytes;
+}
+
+const imageField={avatar:'photoUrl',cover:'coverUrl',background:'backgroundUrl'} as const;
+const slots=['avatar','cover','background'] as const;
+const isSlot=(value:unknown):value is Slot=>slots.includes(value as Slot);
+
+/** The server derives all source paths from the owned Tag, not from client input.
+ * Copy only selected empty profile slots; never overwrite an existing image.
+ * The destination is an independent ordinary profile asset, not a Tag capability.
+ */
+export async function importTagProfileImages(actor:string,id:string,selection:unknown){
+ assertTagPilotWriteIsolated();
+ if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor)||!isTagId(id)||!Array.isArray(selection)||selection.length<1||selection.length>3||!selection.every(isSlot)||new Set(selection).size!==selection.length)throw Error('TAG_INVALID');
+ const requested=selection as Slot[];
+ const accountRef=adminDb.doc('users/'+actor),profileRef=accountRef.collection('public_profile').doc('main');
+ const markerRef=adminDb.doc('kyrub_tag_minimal_identities/'+actor),tagRef=adminDb.doc('kyrub_official_tags/'+id);
+ const [account,profile,marker,tag]=await Promise.all([accountRef.get(),profileRef.get(),markerRef.get(),tagRef.get()]);
+ if((!account.exists&&marker.get('mode')!=='full')||marker.get('mode')==='tag_only'||!profile.exists||profile.get('userId')!==actor||
+  tag.get('ownerId')!==actor||tag.get('distribution')!=='promotional'||tag.get('enabled')!==true||tag.get('blocked')===true)throw Error('TAG_FORBIDDEN');
+ const source=normalizePromotionalPresentation(tag.get('presentation'));
+ const pending=requested.filter(slot=>!profile.get(imageField[slot]));
+ if(pending.some(slot=>!pathOf(source,slot)))throw Error('TAG_MEDIA_INVALID');
+ if(!pending.length)return {images:{},skipped:requested};
+ const prepared:Partial<Record<Slot,{path:string;url:string}>>={};
+ // Stage independent files with fresh download tokens; no source URL/token is reused.
+ for(const slot of pending){
+  const path=pathOf(source,slot)!;
+  const original=await verifiedObject(path,id,slot,actor);
+  const [bytes]=await original.download();
+  if(!bytes.length||bytes.length>MAX_MEDIA_BYTES)throw Error('TAG_MEDIA_INVALID');
+  const destination='profile-images/'+actor+'/'+slot+'-'+randomUUID()+'.webp';
+  const token=randomUUID();
+  const store=bucket();
+  await store.file(destination).save(bytes,{resumable:false,metadata:{contentType:'image/webp',metadata:{firebaseStorageDownloadTokens:token}}});
+  prepared[slot]={path:destination,url:'https://firebasestorage.googleapis.com/v0/b/'+encodeURIComponent(store.name)+'/o/'+encodeURIComponent(destination)+'?alt=media&token='+encodeURIComponent(token)};
+ }
+ // Reject if source ownership, paths, publication or profile slots changed in flight.
+ // Existing images are never replaced; a response lost after commit can be retried.
+ return adminDb.runTransaction(async tx=>{
+  const [freshTag,freshAccount,freshProfile,freshMarker]=await Promise.all([tx.get(tagRef),tx.get(accountRef),tx.get(profileRef),tx.get(markerRef)]);
+  if(freshTag.get('ownerId')!==actor||freshTag.get('distribution')!=='promotional'||freshTag.get('enabled')!==true||freshTag.get('blocked')===true||
+     (!freshAccount.exists&&freshMarker.get('mode')!=='full')||freshMarker.get('mode')==='tag_only'||!freshProfile.exists||freshProfile.get('userId')!==actor)throw Error('TAG_FORBIDDEN');
+  const fresh=normalizePromotionalPresentation(freshTag.get('presentation'));
+  if(pending.some(slot=>pathOf(source,slot)!==pathOf(fresh,slot)||!!freshProfile.get(imageField[slot])))throw Error('TAG_CHANGED');
+  const images:Record<string,string>={};
+  for(const slot of pending)images[imageField[slot]]=prepared[slot]!.url;
+  tx.update(profileRef,{...images,updatedAt:FieldValue.serverTimestamp()});
+  if(freshAccount.exists&&images.photoUrl)tx.update(accountRef,{photoUrl:images.photoUrl,updatedAt:FieldValue.serverTimestamp()});
+  return {images,skipped:requested.filter(slot=>!pending.includes(slot))};
+ });
 }
