@@ -58,9 +58,9 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
      typeof h.reviewedBy!=='string'||! /^[A-Za-z0-9_-]{1,128}$/.test(h.reviewedBy)||
      typeof h.updatedAt!=='string'||!Number.isFinite(Date.parse(h.updatedAt)))
    throw Error('SEMEADURA_ECONOMIC_REVIEW_INVALID');
-  // Audited transitions must match their immutable event. Legacy test fixtures
-  // without revision remain accepted only inside this isolated emulator pilot.
-  if(h.revision!==undefined||h.eventId!==undefined){
+  // All review projections must match their immutable event; missing audit
+  // fields fail closed, including old unaudited fixtures.
+  {
    if(!Number.isSafeInteger(h.revision)||h.revision<1||typeof h.eventId!=='string'||! /^[A-Za-z0-9_-]{1,128}$/.test(h.eventId))
     throw Error('SEMEADURA_ECONOMIC_REVIEW_INVALID');
    const event=await tx.get(db.doc('systemControl/semeaduraEconomicReview/events/'+h.eventId));
