@@ -24,6 +24,7 @@ export function resolvePostAuthorConnection(
   post: PostAuthor,
   friends: readonly Friend[],
   connections: readonly CommunityPostConnection[],
+  requireCanonical = false,
 ): { status: PostAuthorConnectionState; friend: Friend | null } {
   const authorId = post.authorId;
   if (!viewerId || !authorId || authorId === viewerId) {
@@ -46,10 +47,10 @@ export function resolvePostAuthorConnection(
     friend.id === authorId &&
     friend.added &&
     friend.connectionStatus === 'accepted' &&
-    Boolean(friend.connectionId)
+    Boolean(friend.connectionId) && (!requireCanonical || friend.connectionId === canonical?.id)
   );
 
-  if (canonical?.status === 'accepted' || (!canonical && connectedFriend)) {
+  if (canonical?.status === 'accepted' || (!requireCanonical && !canonical && connectedFriend)) {
     const id = canonical?.id || connectedFriend?.connectionId;
     if (!id) return { status: 'none', friend: null };
     const displayFriend: Friend = {

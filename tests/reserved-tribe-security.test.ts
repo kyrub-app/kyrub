@@ -120,7 +120,7 @@ test('cached social data is never considered current authorization',async()=>{
  const directory=readFileSync('src/hooks/useSocialDirectoryV2.ts','utf8');
  const forward=readFileSync('src/utils/communityPostConnections.ts','utf8');
  const profile=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
- assert.match(firebase,/socialMemoryPilot&&!isolatedE2E/);
+ assert.match(firebase,/socialMemoryPilot&&\(!isolatedE2E\|\|app.options.projectId!=='kyrub-security-test'\)/);
  assert.match(firebase,/localCache:memoryLocalCache\(\)/);
  assert.match(firebase,/persistentLocalCache\(/);
  assert.match(chat,/setMessages\(\[\]\);setMessageScope\(''\)/);

@@ -27,6 +27,7 @@ import { useLiveAuthorIdentities } from '../hooks/useLiveAuthorIdentities';
 import { displayAuthorName, displayAuthorAvatar } from '../utils/authorDisplayIdentity';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
+import {reservedTribePilotClientEnabled} from '../utils/reservedTribePilotClient';
 import {
   subscribeCommunitySquareFeed, withinCommunitySquareWindow, type CommunitySquareEntry,
 } from '../utils/communitySquareFeed';
@@ -353,7 +354,7 @@ export function PublicSocialFeedPanel({
         const commentsOpen = expandedComments.has(post.id);
         const isStatus = post.publicationType === 'status';
         const authorConnection = resolvePostAuthorConnection(
-          currentUserId, post, friends, communityConnections,
+          currentUserId, post, friends, communityConnections, reservedTribePilotClientEnabled(),
         );
         const connectedAuthor = authorConnection.friend;
         const suggestedAuthor = suggestedUsers.find(friend => friend.id === post.authorId);

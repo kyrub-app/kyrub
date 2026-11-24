@@ -291,7 +291,7 @@ function SocialCard({
   const [menuOpen, setMenuOpen] = useState(false);
   const isStatus = post.publicationType === 'status';
   const isOwnPost = post.authorId === currentUserId;
-  const authorConnection = resolvePostAuthorConnection(currentUserId, post, reservedTribePilotClientEnabled()?friends.filter(friend=>connections.some(item=>item.id===friend.connectionId&&item.status==='accepted')):friends, connections);
+  const authorConnection = resolvePostAuthorConnection(currentUserId, post, friends, connections, reservedTribePilotClientEnabled());
 
   return (
     <article className="space-y-3 rounded-3xl border border-slate-800 bg-slate-900 p-4 shadow-lg">

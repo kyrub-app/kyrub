@@ -77,7 +77,7 @@ test('both actual Praça surfaces get canonical connection and chat opening from
   assert.match(publicFeed, /setConnectionsReady\(true\)/);
   assert.match(publicFeed, /setConnectionsReady\(false\)/);
   assert.match(publicFeed, /connectionsReady && authorConnection\.status === 'none' && suggestedAuthor/);
-  assert.match(native, /resolvePostAuthorConnection\(currentUserId, post, friends, connections\)/);
+  assert.match(native, /resolvePostAuthorConnection\(currentUserId, post, friends, connections, reservedTribePilotClientEnabled\(\)\)/);
   assert.match(native, /authorConnection\.status === 'accepted' && authorConnection\.friend/);
   assert.match(native, /onOpenChat\(authorConnection\.friend!\)/);
   assert.match(native, /friends=\{directory\.friends\}/);
@@ -94,4 +94,15 @@ test('Semear uses a reddish seed and native personal posts use canonical Semear 
   assert.match(native, /SEMEADURA_UI_ENABLED && post\.visibility === 'public' && post\.publicationType !== 'status'/);
   assert.match(native, /<SemearButton kind="personal" postId=\{post\.id\} viewerId=\{currentUserId\}/);
   assert.match(native, /onClick=\{onToggleLike\}/); // Existing non-eligible posts remain unchanged.
+});
+
+test('pilot requires canonical accepted relationship on both Praça surfaces',()=>{
+ assert.equal(resolvePostAuthorConnection(viewer,post,[friend],[],true).friend,null);
+ assert.equal(resolvePostAuthorConnection(viewer,post,[friend],[accepted],true).status,'accepted');
+ assert.equal(resolvePostAuthorConnection(viewer,post,[friend],[{...accepted,status:'pending'}],true).friend,null);
+ const stale={...friend,connectionId:'stale-pair',bio:'stale-bio'};
+ assert.equal(resolvePostAuthorConnection(viewer,post,[stale],[accepted],true).friend?.connectionId,accepted.id);
+ assert.notEqual(resolvePostAuthorConnection(viewer,post,[stale],[accepted],true).friend?.bio,'stale-bio');
+ const publicFeed=readFileSync('src/components/PublicSocialFeedPanel.tsx','utf8');
+ assert.match(publicFeed,/currentUserId, post, friends, communityConnections, reservedTribePilotClientEnabled\(\)/);
 });

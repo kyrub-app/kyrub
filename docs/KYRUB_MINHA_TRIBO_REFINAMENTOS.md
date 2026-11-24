@@ -82,3 +82,16 @@ Piloto mantém Firestore em memória e valida o projeto efetivo do app. Antes de
 
 ### Auditoria integral reproduzível
 Executar node scripts/audit-social-storage-surfaces.mjs no checkout da branch para inventário de candidatos por arquivo/linha/categoria. É uma busca estática conservadora (não uma certificação de segurança); revisar cada ocorrência e import dinâmico. O conector não disponibilizou árvore integral nesta sessão, logo o script precisa ser executado no checkout/CI. Não inclui conteúdo ou valores das linhas na saída.
+
+## Comparação pré-integração #1272 × #1273 (24/11/2026)
+Referências examinadas: #1272 8eac61a020bce5e48e7fdaeed22fe80ea45a73af (base main, 45 arquivos alterados); #1273 efe2c7ba10428d2cc13f5b5c9270a57f43d9f80a (base feat/kyrub-tag-promotional-activation-v1, 49 arquivos). Ancestral comum 4134b44e0351555dd9e3583adf6f279202ee842b. Comparação #1273 frente a #1272: 121 commits à frente e 23 atrás. Oito arquivos em comum nas listas das PRs (sobreposição não equivale a conflito textual confirmado):
+- api/health.ts: conservar multiplexador das duas APIs e os guards de isolamento.
+- firestore.rules: compor restrições de diretório/reserva com bloqueios centralizados #1273; validar regras efetivas pós-composição.
+- package.json: preservar scripts e dependências de ambas; conferir lockfile.
+- src/LegacyApp.tsx e src/components/ProfileSocialHubNative.tsx: preservar edição/apresentação integrada, diretório filtrado e descarte de estado.
+- src/components/UserNotificationCenterBridge.tsx: combinar notificações de conexão com classificação e invalidação reservada.
+- src/hooks/useChatMessages.ts: autorização dos dois sentidos do bloqueio e proteção de histórico; piloto usa chat compartilhado.
+- src/hooks/useSocialDirectoryV2.ts: garantir filtros de bloqueio, sugestões e reserva na mesma autoridade.
+Além disso #1273 possui PresentationRelationship.tsx e presentationRelationshipService.ts, useSocialBlocks.ts e ConnectedContactsPanel.tsx; devem entrar na auditoria após integração, mesmo fora da lista de oito. Apresentação pública não pode revelar o estado reservado do titular nem contornar conexão/chat/aviso protegidos; serviço de vínculo deve consultar política da reserva para o ator antes de mutar, e aplicar bloqueios em ambos os sentidos. Não alterar #1273 até conclusão da homologação isolada; preparar futura branch de integração, sem merge automático em main.
+
+Revisão 8eac61a: 15 workflows passaram; Application build e Validate Kyrub falharam. Logs do Validate identificaram duas asserções estáticas desatualizadas (guard de projeto Firebase e assinatura do resolvedor da Praça). Corrigidas as asserções e centralizada exigência de relação canônica explícita nas duas superfícies da Praça em modo piloto, com testes comportamentais de Friend obsoleto. Não enfraquecer a política para satisfazer regex. Adicionado workflow Social storage surface audit com checkout sem credenciais persistidas, permissão somente leitura, artefato de caminhos/linhas sem conteúdo. A execução e revisão do inventário aguardam resultado desta revisão. Não há merge ou deploy de produção; ainda não comprovada compatibilidade textual e funcional das duas PRs.
