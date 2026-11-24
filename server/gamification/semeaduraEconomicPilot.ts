@@ -40,6 +40,26 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
  const fence=await tx.get(db.doc('systemControl/pitangaLegacyWriterFence'));
  if(fence.get('status')!=='fenced'||fence.get('writersVerified')!==true||fence.get('epoch')!==epoch)
  throw Error('SEMEADURA_ECONOMIC_WRITERS_UNVERIFIED');
+ // Explicit server-only review holds, never inferred from friendships,
+ // shared networks, reports alone or engagement volume. No balance reversal.
+ // Read in the same transaction so a concurrent hold cannot race a credit.
+ const holds=[
+  {scope:'author',target:authorId},
+  {scope:'actor',target:actorId},
+  {scope:'post',target:postKey},
+ ] as const;
+ const holdSnapshots=await Promise.all(holds.map(h=>tx.get(db.doc(`systemControl/semeaduraEconomicReview/holds/${h.scope}_${h.target}`))));
+ for(let i=0;i<holds.length;i++){
+  const snap=holdSnapshots[i];if(!snap.exists)continue;
+  const h=snap.data(),expected=holds[i];
+  if(h?.schemaVersion!==1||h.scope!==expected.scope||h.target!==expected.target||
+     typeof h.caseId!=='string'||! /^[A-Za-z0-9_-]{1,128}$/.test(h.caseId)||
+     (h.status!=='held'&&h.status!=='cleared')||
+     typeof h.reviewedBy!=='string'||! /^[A-Za-z0-9_-]{1,128}$/.test(h.reviewedBy)||
+     typeof h.updatedAt!=='string'||!Number.isFinite(Date.parse(h.updatedAt)))
+   throw Error('SEMEADURA_ECONOMIC_REVIEW_INVALID');
+  if(h.status==='held')throw Error('SEMEADURA_ECONOMIC_REVIEW_HELD');
+ }
  const nextSeeds=previousSeeds+1;
  const nextCredits=Math.floor(nextSeeds/SEEDS_PER_PITANGUEIRA);
  if(nextCredits===state.creditedPitangas){

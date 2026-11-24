@@ -259,6 +259,22 @@ test('isolated semeadura economic pilot credits only the author at a unique mile
   assert.equal((await stats.get()).get('acceptedSeeds'),999);
   assert.deepEqual(await readPitangaAccount(db,uid),before);
   await db.doc('systemControl/pitangaLegacyWriterFence').update({writersVerified:true});
+  // A server-side review must stop settlement before the accepted-seed
+  // transaction writes any receipt, projection, cursor or balance.
+  // These are explicit emulator fixtures, not real moderation decisions.
+  for(const [scope,target] of [['author',uid],['actor','threshold-voter'],['post',key]]){
+   const hold=db.doc('systemControl/semeaduraEconomicReview/holds/'+scope+'_'+target);
+   const evidence={schemaVersion:1,scope,target,caseId:'isolated-review',reviewedBy:'fixture-reviewer',updatedAt:now};
+   await hold.set({...evidence,status:'held'});
+   await assert.rejects(seed('threshold-voter'),/SEMEADURA_ECONOMIC_REVIEW_HELD/);
+   assert.equal((await stats.get()).get('acceptedSeeds'),999);
+   assert.equal((await pilot.get()).get('acceptedSeeds'),999);
+   assert.equal((await stats.collection('receipts').doc('threshold-voter').get()).exists,false);
+   assert.deepEqual(await readPitangaAccount(db,uid),before);
+   await hold.update({status:'unknown'});
+   await assert.rejects(seed('threshold-voter'),/SEMEADURA_ECONOMIC_REVIEW_INVALID/);
+   await hold.set({...evidence,status:'cleared'});
+  }
   const outcomes=await Promise.all([seed('threshold-voter'),seed('threshold-voter'),seed('next-voter')]);
   assert.equal(outcomes.filter(r=>r.status==='accepted').length,2);
   assert.equal(outcomes.filter(r=>r.status==='already_seeded').length,1);
@@ -270,6 +286,15 @@ test('isolated semeadura economic pilot credits only the author at a unique mile
   assert.equal((await readPitangaAccount(db,'threshold-voter')).pitangas,0);
   await assert.rejects(seed(uid),/SEMEADURA_SELF_RECOGNITION_DENIED/);
   assert.deepEqual(await readPitangaAccount(db,uid),after);
+  // Placing a hold after settlement must not erase existing receipts or
+  // alter the historical credit. Replay remains read-only/idempotent.
+  const postHold=db.doc('systemControl/semeaduraEconomicReview/holds/post_'+key);
+  await postHold.update({status:'held'});
+  assert.equal((await seed('threshold-voter')).status,'already_seeded');
+  await assert.rejects(seed('new-held-voter'),/SEMEADURA_ECONOMIC_REVIEW_HELD/);
+  assert.deepEqual(await readPitangaAccount(db,uid),after);
+  assert.equal((await stats.get()).get('acceptedSeeds'),1001);
+  await postHold.update({status:'cleared'});
   delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
   await seed('visual-only-voter');
   assert.deepEqual(await readPitangaAccount(db,uid),after);

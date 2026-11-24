@@ -138,3 +138,17 @@ test('seed receipts are irrevocable even by their actor; old community progress 
  assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
  assert.deepEqual((await old.get()).data(),historical);
 });
+
+test('economic review controls cannot be created, inspected, cleared or removed by clients',async()=>{
+ const path='systemControl/semeaduraEconomicReview/holds/author_author';
+ const hold={schemaVersion:1,scope:'author',target:'author',status:'held',caseId:'test-case',reviewedBy:'fixture',updatedAt:new Date().toISOString()};
+ await db.doc(path).set(hold);
+ for(const uid of ['author','voter','attacker']){
+  const client=environment.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(client,path)));
+  await assertFails(setDoc(doc(client,path),{status:'cleared'},{merge:true}));
+  await assertFails(deleteDoc(doc(client,path)));
+  await assertFails(setDoc(doc(client,'systemControl/semeaduraEconomicReview/holds/actor_'+uid),{status:'held'}));
+ }
+ assert.deepEqual((await db.doc(path).get()).data(),hold);
+});
