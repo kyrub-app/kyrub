@@ -56,6 +56,7 @@ async function visible(locator){await locator.waitFor({state:'visible',timeout:2
 async function absent(locator){await locator.waitFor({state:'detached',timeout:20000});}
 async function unlock(panel,secret=code){
  const search=panel.getByLabel('Pesquisar pessoas em Conectados');
+ await visible(search);
  await search.fill('!');
  assert.equal(await search.getAttribute('type'),'password');
  await search.fill(secret);
@@ -137,8 +138,24 @@ try{
  assert.ok((await db.doc(noticePath+'system-fixture').get()).get('readAt'));
  assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');
  await inbox.getByRole('button',{name:'Fechar notificações'}).click();
- await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
- await visible(a.panel);
+ // Hold status responses while reopening the actual panel. No secret may
+ // enter an ordinary search before the server confirms configuration.
+ const pilotPattern='**/api/social/reserved-tribe';
+ let releaseStatus;
+ const statusGate=new Promise(resolve=>{releaseStatus=resolve});
+ const delayStatus=async route=>{
+  if(route.request().postDataJSON()?.action==='status')await statusGate;
+  await route.continue();
+ };
+ await a.page.route(pilotPattern,delayStatus);
+ try{
+  await a.page.evaluate(()=>window.dispatchEvent(new Event('kyrub:open-connections')));
+  await visible(a.panel);
+  await visible(a.panel.getByRole('status').filter({hasText:'Conectados indisponíveis enquanto a consulta não for confirmada.'}));
+  assert.equal(await a.panel.getByLabel('Pesquisar pessoas em Conectados').count(),0);
+ }finally{releaseStatus();await a.page.unroute(pilotPattern,delayStatus);}
+ await visible(a.panel.getByLabel('Pesquisar pessoas em Conectados'));
+ console.log('PASS reopened panel with delayed status never exposes premature ordinary search');
  console.log('PASS general bell hides private notice and read-all only marks ordinary inbox');
  // Notifications remain unread until a private session explicitly marks them.
  assert.equal((await db.doc(noticePath+'private-fixture').get()).get('readAt'),'');

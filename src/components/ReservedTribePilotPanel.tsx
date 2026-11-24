@@ -47,7 +47,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
    const [status,dir]=await Promise.all([request<{configured:boolean;revision:number}>('status'),request<Directory>('directory')]);
    if(alive.current&&epoch.current===e&&sequence===reloadSequence.current&&auth.currentUser?.uid===owner&&!document.hidden){
     if(status.revision!==dir.revision){setOrdinary(null);revision.current=null;return;}
-    revision.current=dir.revision;setConfigured(status.configured);setOrdinary(dir);
+    revision.current=dir.revision;setConfigured(status.configured);setOrdinary(dir);setError('');
    }
   }catch(error){if(alive.current&&epoch.current===e&&sequence===reloadSequence.current){setOrdinary(null);revision.current=null;setError(error instanceof Error&&error.message==='TRIBE_STORAGE_UNVERIFIED'?'Ambiente de homologação não verificado. Use um perfil de navegador isolado, sem cache persistente ou service worker anterior.':'Não foi possível consultar os conectados.');}}
  },[owner]);
@@ -85,7 +85,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   return()=>window.clearTimeout(timer);
  },[session,clearPrivate,reload]);
  const unlock=async(secret:string,signal:AbortSignal)=>{
-  if(busy||target||current.current)return false;
+  if(!ordinary||!configured||busy||target||current.current||document.hidden||navigator.onLine===false)return false;
   const e=++epoch.current;probe.current?.abort();probe.current=null;setSuggestions([]);
   let result:ReservedTribeUnlock;
   try{result=await request<ReservedTribeUnlock>('unlock',{code:secret},signal);}catch{return false;}
@@ -148,7 +148,7 @@ export function ReservedTribePilotPanel({owner,onBack}:{owner:string;onBack:()=>
   {recovering&&!session?<ReservedTribeRecoveryPanel owner={owner} onCancel={()=>{clearPrivate();void reload();}} onRecovered={()=>{clearPrivate();setOrdinary(null);void reload();}}/>:!session&&target?<TribePilotChat key={'ordinary:'+target.id} owner={owner} connectionId={target.id} name={name(target)} onClose={closeChat} onDenied={chatDenied}/>:!session?<><nav className="grid grid-cols-4 gap-1" aria-label="Seções de Conectados">
    {([['general','Geral'],['favorites','Frequentes'],['tribes','Tribos'],['new','Novos']] as const).map(([id,label])=><button key={id} aria-pressed={section===id} className={button+(section===id?' border-orange-500':'')} onClick={()=>setSection(id)}>{label}</button>)}
   </nav>
-  <ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>
+  {ordinary?<ReservedTribeSearchInput term={term} onSearch={value=>{setTerm(value);setSuggestions([]);}} unlockAvailable={configured} ownerScope={owner} onUnlock={unlock}/>:<p role="status" className="text-sm text-slate-400">Conectados indisponíveis enquanto a consulta não for confirmada.</p>}
   {!ordinary?<button className={button} onClick={()=>void reload()}>Atualizar</button>:section==='tribes'?<div className="space-y-2">
     <form className="flex gap-2" onSubmit={event=>{event.preventDefault();if(groupName.trim())void ordinaryAction('tribe-create',{groupId:crypto.randomUUID(),name:groupName.trim()});}}>
       <input aria-label="Nome da nova tribo" placeholder="Nome da nova tribo" className={input} value={groupName} maxLength={60} onChange={event=>setGroupName(event.target.value)}/>

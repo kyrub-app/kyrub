@@ -316,3 +316,11 @@ test('notification inbox emulator verifier is opt-in and rejects deployed or cre
  assert.equal((router.match(/await requireInboxIdentity\(/g)||[]).length,3);
  assert.equal((router.match(/await requireIdentity\(request/g)||[]).length,3);
 });
+
+
+test('Conectados does not render the search before a matching server directory and status',()=>{
+ const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
+ assert.match(panel,/status.revision!==dir.revision/);
+ assert.match(panel,/\{ordinary\?<ReservedTribeSearchInput/);
+ assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|current.current/);
+});
