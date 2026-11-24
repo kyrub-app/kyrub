@@ -74,3 +74,8 @@
       allow read, delete: if owner();
       allow create, update: if owner() && validFavorite();
     }
+
+    // Secret verifier, attempt counter and session digest are server-only.
+    match /reserved_tribe_vaults/{userId} {
+      allow read, write: if false;
+    }

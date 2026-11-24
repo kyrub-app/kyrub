@@ -118,3 +118,10 @@ test('favorites are private, persistent and require an accepted connection to th
  await assertFails(setDoc(doc(owner,path),{...payload(),secret:'unexpected'}));
  await assertSucceeds(deleteDoc(doc(owner,path)));
 });
+
+ test('reserved tribe verifier and session cannot be read or changed by any client',async()=>{
+ const path='reserved_tribe_vaults/'+OWNER_ID;
+ await environment.withSecurityRulesDisabled(async ctx=>{await setDoc(doc(ctx.firestore(),path),{salt:'synthetic',digest:'synthetic',failures:4,sessionDigest:'synthetic'});});
+ const owner=environment.authenticatedContext(OWNER_ID).firestore(),other=environment.authenticatedContext('outsider').firestore();
+ for(const client of [owner,other]){await assertFails(getDoc(doc(client,path)));await assertFails(setDoc(doc(client,path),{failures:0}));await assertFails(deleteDoc(doc(client,path)));}
+ });
