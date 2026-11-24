@@ -5,6 +5,8 @@ import {getApps,deleteApp} from 'firebase-admin/app';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
 import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit,where} from 'firebase/firestore';
 import {Timestamp} from 'firebase-admin/firestore';
+import {buildUserNotification} from '../shared/userNotifications.js';
+import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
 import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward} from '../server/identity/reservedTribeService.js';
@@ -151,4 +153,38 @@ test('server directory excludes reserved contacts from tribes, favorites and for
  assert.ok((await getOrdinaryTribeDirectory(actor)).tribes[0].memberIds.includes(peer));
  await assertFails(getDocs(query(collection(owner,'connections'),where('participantIds','array-contains',actor))));
  await assertSucceeds(getDoc(doc(env.authenticatedContext(peer).firestore(),'connections/'+id(actor,peer))));
+});
+
+test('reserved inbox suppresses titles, targets and unread counts, with independent read state',async()=>{
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const scope='users/'+actor+'/notifications/';
+ const make=(key:string,who:string,category:'user_forward'|'community_group_invite'|'system',createdAt:string)=>buildUserNotification({id:key,recipientUserId:actor,category,eventType:'received',sourceId:key,actorPrincipalId:who,title:'Aviso '+who,body:'Conteúdo '+who,createdAt});
+ await Promise.all([
+  adminDb.doc(scope+'hidden').set(make('hidden',peer,'user_forward','2026-11-24T12:04:00Z')),
+  adminDb.doc(scope+'ordinary').set(make('ordinary',other,'user_forward','2026-11-24T12:03:00Z')),
+  adminDb.doc(scope+'system').set(make('system',peer,'system','2026-11-24T12:02:00Z')),
+  adminDb.doc(scope+'invite').set(make('invite',peer,'community_group_invite','2026-11-24T12:01:00Z'))
+ ]);
+ await setReservedTribeContact(actor,session.token,peer,true);
+ const normal=await listUserNotifications({recipientUserId:actor,limit:1});
+ assert.deepEqual(normal.notifications.map(row=>row.id),['ordinary']);
+ assert.equal(normal.unreadCount,2);assert.equal(normal.personalBrowserNotificationsAllowed,false);
+ const secret=await listReservedUserNotifications({recipientUserId:actor},session.token);
+ assert.deepEqual(secret.notifications.map(row=>row.id),['hidden','invite']);
+ assert.equal(secret.unreadCount,2);assert.equal(secret.personalBrowserNotificationsAllowed,false);
+ await assert.rejects(listReservedUserNotifications({recipientUserId:actor},undefined),/USER_NOTIFICATION_NOT_FOUND/);
+ await assert.rejects(markUserNotificationRead({recipientUserId:actor,notificationId:'hidden'}),/USER_NOTIFICATION_NOT_FOUND/);
+ await assert.rejects(markReservedUserNotificationRead({recipientUserId:actor,notificationId:'ordinary'},session.token),/USER_NOTIFICATION_NOT_FOUND/);
+ assert.equal(await markAllUserNotificationsRead({recipientUserId:actor}),2);
+ assert.equal((await adminDb.doc(scope+'hidden').get()).get('readAt'),'');
+ assert.equal((await listUserNotifications({recipientUserId:actor})).unreadCount,0);
+ await markReservedUserNotificationRead({recipientUserId:actor,notificationId:'hidden'},session.token);
+ assert.equal((await listReservedUserNotifications({recipientUserId:actor},session.token)).unreadCount,1);
+ await lockReservedTribe(actor);
+ await assert.rejects(listReservedUserNotifications({recipientUserId:actor},session.token),/TRIBE_ACCESS_DENIED/);
+ const next=await unlockReservedTribe(actor,'synthetic!code');assert.ok(next.ok);
+ if(!next.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,next.token,peer,false);
+ assert.equal((await listUserNotifications({recipientUserId:actor})).unreadCount,1);
 });

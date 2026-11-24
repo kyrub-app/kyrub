@@ -1,4 +1,5 @@
-import type { DocumentData } from 'firebase-admin/firestore';
+import { FieldPath, type DocumentData } from 'firebase-admin/firestore';
+import { readReservedTribeNotificationScope } from '../identity/reservedTribeService.js';
 import { adminDb } from '../firebaseAdmin.js';
 import {
   userNotificationPath,
@@ -10,6 +11,7 @@ import {
 export interface UserNotificationInbox {
   notifications: UserNotification[];
   unreadCount: number;
+  personalBrowserNotificationsAllowed: boolean;
 }
 
 type NotificationDocument = {
@@ -79,31 +81,47 @@ const parseNotification = (
 const notificationsCollection = (recipientUserId: string) =>
   adminDb.collection(`users/${recipientUserId}/notifications`);
 
-export const listUserNotifications = async (input: {
-  recipientUserId: string;
-  limit?: number;
-}): Promise<UserNotificationInbox> => {
-  const recipientUserId = clean(input.recipientUserId);
-  if (!recipientUserId) throw new Error('USER_NOTIFICATION_USER_REQUIRED');
-  const limit = Math.max(1, Math.min(100, input.limit ?? 50));
+// Only person-origin events are protected; a commercial/store or system
+// event is not reclassified merely because an identifier happens to match.
+const isPersonal = (notification: UserNotification): boolean =>
+  notification.category === 'user_forward' || notification.category === 'community_group_invite';
+const isReservedNotification = (notification: UserNotification, peers: Set<string>): boolean =>
+  isPersonal(notification) && peers.has(notification.actorPrincipalId);
 
-  const [recentSnapshot, unreadSnapshot] = await Promise.all([
-    notificationsCollection(recipientUserId)
-      .orderBy('createdAt', 'desc')
-      .limit(limit)
-      .get(),
-    notificationsCollection(recipientUserId)
-      .where('readAt', '==', '')
-      .get(),
-  ]);
-
-  return {
-    notifications: recentSnapshot.docs.map(document =>
-      parseNotification(document, recipientUserId)
-    ),
-    unreadCount: unreadSnapshot.size,
-  };
-};
+async function projectInbox(input:{recipientUserId:string;limit?:number},scope:'ordinary'|'reserved',token?:unknown):Promise<UserNotificationInbox>{
+  const recipientUserId=clean(input.recipientUserId);
+  if(!recipientUserId)throw Error('USER_NOTIFICATION_USER_REQUIRED');
+  const limit=Math.max(1,Math.min(100,Math.floor(input.limit??50)));
+  if(!Number.isFinite(limit))throw Error('USER_NOTIFICATION_REQUIRED');
+  if(scope==='reserved'&&typeof token!=='string')throw Error('USER_NOTIFICATION_NOT_FOUND');
+  return adminDb.runTransaction(async transaction=>{
+    const policy=await readReservedTribeNotificationScope(transaction,recipientUserId,scope==='reserved'?token:undefined);
+    const visible=(notification:UserNotification)=>isReservedNotification(notification,policy.peers)===(scope==='reserved');
+    const collection=notificationsCollection(recipientUserId);
+    const ordered=collection.orderBy('createdAt','desc').orderBy(FieldPath.documentId(),'desc');
+    const notifications:UserNotification[]=[];
+    let cursor:FirebaseFirestore.QueryDocumentSnapshot|undefined;
+    while(notifications.length<limit){
+      const page=await transaction.get((cursor?ordered.startAfter(cursor):ordered).limit(100));
+      for(const document of page.docs){
+        const row=parseNotification(document,recipientUserId);
+        if(visible(row))notifications.push(row);
+        if(notifications.length===limit)break;
+      }
+      if(page.size<100)break;
+      cursor=page.docs[page.size-1];
+    }
+    const unread=await transaction.get(collection.where('readAt','==',''));
+    const unreadCount=unread.docs.filter(document=>visible(parseNotification(document,recipientUserId))).length;
+    if(scope==='reserved')await readReservedTribeNotificationScope(transaction,recipientUserId,token);
+    return {notifications,unreadCount,personalBrowserNotificationsAllowed:scope==='ordinary'&&!policy.protectedDirectory};
+  });
+}
+export const listUserNotifications=(input:{recipientUserId:string;limit?:number}):Promise<UserNotificationInbox>=>
+  projectInbox(input,'ordinary');
+// No public route until the reserved interface and isolated authentication are ready.
+export const listReservedUserNotifications=(input:{recipientUserId:string;limit?:number},token:unknown):Promise<UserNotificationInbox>=>
+  projectInbox(input,'reserved',token);
 
 export const markUserNotificationRead = async (input: {
   recipientUserId: string;
@@ -128,6 +146,8 @@ export const markUserNotificationRead = async (input: {
       { id: snapshot.id, data: () => snapshot.data()! },
       recipientUserId
     );
+    const policy=await readReservedTribeNotificationScope(transaction,recipientUserId);
+    if(isReservedNotification(notification,policy.peers))throw Error('USER_NOTIFICATION_NOT_FOUND');
     if (notification.readAt) return;
     transaction.update(reference, { readAt: now.toISOString() });
   });
@@ -141,18 +161,36 @@ export const markAllUserNotificationsRead = async (input: {
   if (!recipientUserId) throw new Error('USER_NOTIFICATION_USER_REQUIRED');
   const now = input.now ?? new Date();
   if (Number.isNaN(now.getTime())) throw new Error('USER_NOTIFICATION_TIME_INVALID');
-  const snapshot = await notificationsCollection(recipientUserId)
-    .where('readAt', '==', '')
-    .limit(200)
-    .get();
-  if (snapshot.empty) return 0;
-
-  const batch = adminDb.batch();
-  const readAt = now.toISOString();
-  for (const document of snapshot.docs) {
-    parseNotification(document, recipientUserId);
-    batch.update(document.ref, { readAt });
-  }
-  await batch.commit();
-  return snapshot.size;
+  return adminDb.runTransaction(async transaction=>{
+    const policy=await readReservedTribeNotificationScope(transaction,recipientUserId);
+    const ordered=notificationsCollection(recipientUserId).where('readAt','==','').orderBy(FieldPath.documentId());
+    const visible:FirebaseFirestore.QueryDocumentSnapshot[]=[];
+    let cursor:FirebaseFirestore.QueryDocumentSnapshot|undefined;
+    while(visible.length<200){
+      const page=await transaction.get((cursor?ordered.startAfter(cursor):ordered).limit(200));
+      for(const document of page.docs){
+        if(!isReservedNotification(parseNotification(document,recipientUserId),policy.peers))visible.push(document);
+        if(visible.length===200)break;
+      }
+      if(page.size<200)break;
+      cursor=page.docs[page.size-1];
+    }
+    const readAt=now.toISOString();
+    for(const document of visible)transaction.update(document.ref,{readAt});
+    return visible.length;
+  });
 };
+
+export async function markReservedUserNotificationRead(input:{recipientUserId:string;notificationId:string},token:unknown){
+ const recipientUserId=clean(input.recipientUserId),notificationId=clean(input.notificationId);
+ if(typeof token!=='string'||!recipientUserId||!notificationId)throw Error('USER_NOTIFICATION_NOT_FOUND');
+ return adminDb.runTransaction(async transaction=>{
+  const reference=adminDb.doc(userNotificationPath(recipientUserId,notificationId));
+  const snapshot=await transaction.get(reference);
+  if(!snapshot.exists)throw Error('USER_NOTIFICATION_NOT_FOUND');
+  const notification=parseNotification({id:snapshot.id,data:()=>snapshot.data()!},recipientUserId);
+  const policy=await readReservedTribeNotificationScope(transaction,recipientUserId,token);
+  if(!isReservedNotification(notification,policy.peers))throw Error('USER_NOTIFICATION_NOT_FOUND');
+  if(!notification.readAt)transaction.update(reference,{readAt:new Date().toISOString()});
+ });
+}

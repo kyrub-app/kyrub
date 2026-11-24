@@ -173,3 +173,14 @@ export async function authorizeTribeRelationship(tx:FirebaseFirestore.Transactio
  if(marker.exists)requireSession(await tx.get(root),token);
  return relation;
 }
+
+/** Server-only notification policy, read in the same transaction as inbox or
+ * read-state changes. Never return private marker IDs to the browser.
+ */
+export async function readReservedTribeNotificationScope(tx:FirebaseFirestore.Transaction,actor:string,token?:unknown){
+ const root=vault(actor);
+ const [config,markers]=await Promise.all([tx.get(root),tx.get(root.collection('contacts').limit(MAX_RESERVED_CONTACTS+1))]);
+ if(markers.size>MAX_RESERVED_CONTACTS)throw Error('TRIBE_DIRECTORY_LIMIT');
+ if(token!==undefined)requireSession(config,token);
+ return {protectedDirectory:config.get('directoryProtected')===true,peers:new Set(markers.docs.map(item=>item.id))};
+}
