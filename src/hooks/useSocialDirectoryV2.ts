@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { db, auth } from '../utils/firebase';
+import {onAuthStateChanged} from 'firebase/auth';
 import {
   collection,
   deleteDoc,
@@ -68,6 +69,18 @@ export function useSocialDirectoryV2({
   const [dbUsers, setDbUsers] = useState<any[]>([]);
   const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
   const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const [favoriteOwner,setFavoriteOwner]=useState(auth.currentUser?.uid??'');
+  const [favoriteSnapshot,setFavoriteSnapshot]=useState<{uid:string;ids:Set<string>;ready:boolean}>({uid:'',ids:new Set(),ready:false});
+  useEffect(()=>onAuthStateChanged(auth,user=>setFavoriteOwner(user?.uid??'')),[]);
+  useEffect(()=>{
+    setFavoriteSnapshot({uid:'',ids:new Set(),ready:false});
+    if(!isLoggedIn||!favoriteOwner)return;
+    return onSnapshot(collection(db,'users',favoriteOwner,'contact_favorites'),{includeMetadataChanges:true},snapshot=>{
+      if(auth.currentUser?.uid!==favoriteOwner||snapshot.metadata.fromCache||snapshot.metadata.hasPendingWrites)return;
+      setFavoriteSnapshot({uid:favoriteOwner,ids:new Set(snapshot.docs.map(item=>item.id)),ready:true});
+    },()=>setFavoriteSnapshot({uid:'',ids:new Set(),ready:false}));
+  },[isLoggedIn,favoriteOwner]);
+  const favoritesReady=isLoggedIn&&favoriteSnapshot.ready&&favoriteSnapshot.uid===favoriteOwner&&auth.currentUser?.uid===favoriteOwner;
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -185,7 +198,7 @@ export function useSocialDirectoryV2({
             '',
           isProfileVisible:
             dbUser?.isProfileVisible !== false,
-          favorited: previousFriend?.favorited ?? false,
+          favorited: favoriteSnapshot.uid===currentUid&&favoriteSnapshot.ids.has(otherUid),
           connectionStatus: 'accepted',
           connectionId: connection.id
         };
@@ -228,7 +241,7 @@ export function useSocialDirectoryV2({
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn]);
+  }, [connections, dbUsers, isLoggedIn, favoriteSnapshot]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
@@ -363,15 +376,16 @@ export function useSocialDirectoryV2({
   };
 
   // Favorite Friend toggle
-  const handleToggleFavoriteFriend = (friendId: string) => {
-    setFriends(prev =>
-      prev.map(f => {
-        if (f.id !== friendId) return f;
-        const nowFavorited = !(f as any).favorited;
-        triggerToast(nowFavorited ? `${f.name} adicionado aos favoritos!` : `${f.name} removido dos favoritos.`, 'success');
-        return { ...f, favorited: nowFavorited } as any;
-      })
-    );
+  const handleToggleFavoriteFriend = async (friendId: string) => {
+    const uid=auth.currentUser?.uid;
+    const friend=friends.find(item=>item.id===friendId&&item.connectionStatus==='accepted');
+    if(!uid||!favoritesReady||favoriteSnapshot.uid!==uid||!friend?.connectionId){triggerToast('Aguarde a sincronização dos favoritos.','info');return;}
+    const reference=doc(db,'users',uid,'contact_favorites',friendId);
+    try{
+      if(favoriteSnapshot.ids.has(friendId))await deleteDoc(reference);
+      else await setDoc(reference,{connectionId:friend.connectionId,favorited:true,updatedAt:serverTimestamp()});
+      if(auth.currentUser?.uid===uid)triggerToast(favoriteSnapshot.ids.has(friendId)?'Contato removido dos favoritos.':'Contato favoritado.','success');
+    }catch{triggerToast('Não foi possível atualizar os favoritos.','error');}
   };
 
   // Favorite Store toggle
@@ -457,6 +471,7 @@ export function useSocialDirectoryV2({
     handleToggleFriend,
     getSuggestions,
     handleToggleFavoriteFriend,
+    favoritesReady,
     handleToggleFavoriteStore,
     handleAcceptRequest,
     handleDeclineRequest

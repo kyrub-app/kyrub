@@ -56,14 +56,18 @@ test('frequent contacts are filtered in React and receive an empty state', () =>
     /directory\.friends[\s\S]*\.filter\(friend => friend\.favorited\)/
   );
   assert.match(profileSource, /Nenhum favorito/);
-  assert.match(profileSource, /Use a estrela nos contatos/);
+  assert.match(profileSource, /Use Favoritar contato/);
 });
 
-test('contact cards keep compact favorite, chat and remove actions', () => {
+test('contact cards keep compact favorite, chat and contextual actions', () => {
+  const menu=readFileSync('src/components/TribeContactMenu.tsx','utf8');
   assert.match(profileSource, /function ContactCard/);
-  assert.match(profileSource, /aria-label=\{[\s\S]*Favoritar contato/);
+  assert.match(profileSource, /<TribeContactMenu/);
   assert.match(profileSource, /<MessageCircle className="h-4 w-4"/);
-  assert.match(profileSource, /aria-label=\{`Remover \$\{friend\.name\}`\}/);
+  for(const label of ['Favoritar contato','Adicionar a grupos','Excluir conversa','Remover conexão','Denunciar'])assert.ok(menu.includes(label));
+  assert.match(menu,/createPortal/);
+  assert.match(profileSource,/history_state/);
+  assert.match(profileSource,/submitSocialUserReport\(friend.id,reason\)/);
   assert.match(profileSource, /grid-cols-\[1fr_42px\]/);
   assert.match(profileSource, /aspect-\[4\/3\]/);
 });
@@ -72,7 +76,8 @@ test('group management reuses private groups and updates membership natively', (
   assert.match(profileSource, /users\/\$\{user\.uid\}\/contact_groups/);
   assert.match(profileSource, /toggleGroupMember/);
   assert.match(profileSource, /group\.memberIds\.includes\(friendId\)/);
-  assert.match(profileSource, /group\.memberIds\.filter\(id => id !== friendId\)/);
+  assert.match(profileSource, /members\.filter\(id=>id!==friendId\)/);
+  assert.match(profileSource, /runTransaction\(db/);
   assert.match(profileSource, /deleteGroup/);
 });
 

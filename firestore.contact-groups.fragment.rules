@@ -56,3 +56,21 @@
         && request.auth.uid == userId
         && existing().ownerId == request.auth.uid;
     }
+
+    // Private contact favorites, independent from public posts and stores.
+    match /users/{userId}/contact_favorites/{contactId} {
+      function owner() { return isSignedIn() && request.auth.uid == userId; }
+      function validFavorite() {
+        let data = incoming();
+        let connection = get(/databases/$(database)/documents/connections/$(data.connectionId)).data;
+        return isValidId(contactId) && contactId != userId
+          && isValidId(data.connectionId)
+          && data.keys().hasOnly(['connectionId','favorited','updatedAt'])
+          && data.favorited == true && data.updatedAt == request.time
+          && connection.status == 'accepted'
+          && ((connection.senderId == userId && connection.receiverId == contactId)
+            || (connection.receiverId == userId && connection.senderId == contactId));
+      }
+      allow read, delete: if owner();
+      allow create, update: if owner() && validFavorite();
+    }

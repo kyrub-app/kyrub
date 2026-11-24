@@ -5,6 +5,7 @@ import {
   useState,
   type ChangeEvent,
   type FormEvent,
+  type ReactNode,
 } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -36,7 +37,6 @@ import {
   Store as StoreIcon,
   Trash2,
   ShieldCheck,
-  UserMinus,
   UserPlus,
   Users,
   X,
@@ -49,6 +49,7 @@ import {
   onSnapshot,
   serverTimestamp,
   setDoc,
+  runTransaction,
   updateDoc,
 } from 'firebase/firestore';
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
@@ -62,6 +63,8 @@ import { MediaCarousel } from './MediaCarousel';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
+import {TribeContactMenu} from './TribeContactMenu';
+import {submitSocialUserReport} from '../utils/socialReports';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
   withinCommunitySquareWindow, type CommunitySquareEntry,
@@ -410,15 +413,13 @@ function SocialCard({
 function ContactCard({
   friend,
   latestStatus,
-  onFavorite,
   onChat,
-  onRemove,
+  menu,
 }: {
   friend: Friend;
   latestStatus?: ExtendedSocialPost;
-  onFavorite: () => void;
   onChat: () => void;
-  onRemove: () => void;
+  menu: ReactNode;
 }) {
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
@@ -433,18 +434,7 @@ function ContactCard({
             Status · {remainingStatusLabel(latestStatus, Date.now())}
           </span>
         )}
-        <button
-          type="button"
-          onClick={onFavorite}
-          className={`absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full border border-white/15 bg-slate-950/80 backdrop-blur ${
-            friend.favorited ? 'text-amber-300' : 'text-slate-400'
-          }`}
-          aria-label={
-            friend.favorited ? 'Remover dos favoritos' : 'Favoritar contato'
-          }
-        >
-          <Star className={`h-4 w-4 ${friend.favorited ? 'fill-current' : ''}`} />
-        </button>
+        {friend.favorited&&<span aria-label="Contato favorito" className="absolute right-2 top-2 rounded-full bg-slate-950/80 p-2 text-amber-300"><Star className="h-4 w-4 fill-current"/></span>}
       </div>
       <div className="min-h-[72px] p-3">
         <h4 className="truncate text-xs font-black text-white">{friend.name}</h4>
@@ -461,14 +451,7 @@ function ContactCard({
           <MessageCircle className="h-4 w-4" />
           Chat
         </button>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="flex h-10 w-[42px] items-center justify-center rounded-xl border border-red-500/20 bg-red-500/10 text-red-300"
-          aria-label={`Remover ${friend.name}`}
-        >
-          <UserMinus className="h-4 w-4" />
-        </button>
+        {menu}
       </div>
     </article>
   );
@@ -1229,21 +1212,45 @@ export function ProfileSocialHubNative() {
     friendId: string
   ) => {
     if (!user) return;
-    const memberIds = group.memberIds.includes(friendId)
-      ? group.memberIds.filter(id => id !== friendId)
-      : [...group.memberIds, friendId].slice(0, MAX_GROUP_MEMBERS);
+    const selected=group.memberIds.includes(friendId);
+    if(auth.currentUser?.uid!==user.uid||!directory.friends.some(friend=>friend.id===friendId))return;
     try {
-      await updateDoc(
-        doc(db, `users/${user.uid}/contact_groups/${group.id}`),
-        {
-          memberIds,
-          updatedAt: serverTimestamp(),
-        }
-      );
+      await runTransaction(db,async tx=>{
+        const reference=doc(db,`users/${user.uid}/contact_groups/${group.id}`);
+        const snapshot=await tx.get(reference);
+        if(!snapshot.exists()||auth.currentUser?.uid!==user.uid)throw Error('GROUP_UNAVAILABLE');
+        const members=snapshot.get('memberIds') as string[];
+        if(!Array.isArray(members))throw Error('GROUP_UNAVAILABLE');
+        if(!selected&&!members.includes(friendId)&&members.length>=MAX_GROUP_MEMBERS)throw Error('GROUP_FULL');
+        const memberIds=selected?members.filter(id=>id!==friendId):[...new Set([...members,friendId])];
+        tx.update(reference,{memberIds,updatedAt:serverTimestamp()});
+      });
     } catch {
       triggerToast('Não foi possível atualizar o grupo.', 'error');
     }
   };
+
+  const clearContactConversation=async(friend:Friend)=>{
+    const uid=user?.uid;
+    if(!uid||auth.currentUser?.uid!==uid||!friend.connectionId||!directory.friends.some(item=>item.id===friend.id&&item.connectionId===friend.connectionId))return;
+    if(!window.confirm('Excluir o histórico desta conversa somente para você? O outro contato continuará com as mensagens.'))return;
+    try{
+      await setDoc(doc(db,'social_chats',friend.connectionId,'history_state',uid),{clearedAt:serverTimestamp()});
+      if(auth.currentUser?.uid===uid)triggerToast('Histórico excluído da sua visualização.','success');
+    }catch{triggerToast('Não foi possível excluir a conversa. Tente novamente.','error');}
+  };
+  const reportContact=async(friend:Friend)=>{
+    const reason=window.prompt('Por que deseja denunciar este contato? Informe de 3 a 500 caracteres.');
+    if(reason===null)return;
+    if(reason.trim().length<3||reason.trim().length>500){triggerToast('Informe um motivo entre 3 e 500 caracteres.','error');return;}
+    if(auth.currentUser?.uid!==user?.uid)return;
+    try{const result=await submitSocialUserReport(friend.id,reason);triggerToast(result==='already_reported'?'Você já denunciou este usuário.':'Denúncia encaminhada à moderação.','success');}
+    catch{triggerToast('Não foi possível enviar a denúncia.','error');}
+  };
+  const renderContactMenu=(friend:Friend)=><TribeContactMenu friend={friend} groups={groups} favoriteReady={directory.favoritesReady}
+    onFavorite={()=>void directory.handleToggleFavoriteFriend(friend.id)}
+    onGroup={async(id)=>{const group=groups.find(item=>item.id===id);if(group)await toggleGroupMember(group,friend.id);}}
+    onClear={()=>void clearContactConversation(friend)} onRemove={()=>setRemoveContactTarget(friend)} onReport={()=>void reportContact(friend)}/>;
 
   const deleteGroup = async (group: ContactGroup) => {
     if (!user) return;
@@ -1815,16 +1822,12 @@ export function ProfileSocialHubNative() {
                           key={friend.id}
                           friend={friend}
                           latestStatus={connectedStatusByAuthor.get(friend.id)}
-                          onFavorite={() =>
-                            directory.handleToggleFavoriteFriend(friend.id)
-                          }
+                          menu={renderContactMenu(friend)}
                           onChat={() => {
                             setChatMessageText('');
                             setChatTarget(friend);
                           }}
-                          onRemove={() =>
-                            setRemoveContactTarget(friend)
-                          }
+                          
                         />
                       ))}
                       {filteredTribeFriends.length === 0 && (
@@ -1845,23 +1848,19 @@ export function ProfileSocialHubNative() {
                             key={friend.id}
                             friend={friend}
                             latestStatus={connectedStatusByAuthor.get(friend.id)}
-                            onFavorite={() =>
-                              directory.handleToggleFavoriteFriend(friend.id)
-                            }
+                            menu={renderContactMenu(friend)}
                             onChat={() => {
                               setChatMessageText('');
                               setChatTarget(friend);
                             }}
-                            onRemove={() =>
-                              setRemoveContactTarget(friend)
-                            }
+                            
                           />
                         ))}
                       {filteredTribeFavorites.length === 0 && (
                         <div className="col-span-2">
                           <EmptyState
                             title={tribeSearch.trim() ? 'Nenhum favorito encontrado' : 'Nenhum favorito'}
-                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Use a estrela nos contatos para criar sua lista de favoritos.'}
+                            description={tribeSearch.trim() ? 'Tente outro nome ou limpe a pesquisa.' : 'Use Favoritar contato no menu de três pontos.'}
                             icon={Star}
                           />
                         </div>

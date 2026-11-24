@@ -100,3 +100,21 @@ test('invalid group shapes and unauthenticated access are rejected', async () =>
   );
   await assertFails(getDoc(doc(visitor, GROUP_PATH)));
 });
+
+test('favorites are private, persistent and require an accepted connection to that contact',async()=>{
+ const owner=environment.authenticatedContext(OWNER_ID).firestore();
+ const peer=environment.authenticatedContext('contact-peer').firestore();
+ const path='users/'+OWNER_ID+'/contact_favorites/contact-peer';
+ const payload=()=>({connectionId:'favorite-pair',favorited:true,updatedAt:serverTimestamp()});
+ await assertFails(setDoc(doc(owner,path),payload()));
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),'connections/favorite-pair'),{senderId:OWNER_ID,receiverId:'contact-peer',participantIds:[OWNER_ID,'contact-peer'],status:'accepted'});
+ });
+ await assertSucceeds(setDoc(doc(owner,path),payload()));
+ await assertSucceeds(getDoc(doc(owner,path)));
+ await assertFails(getDoc(doc(peer,path)));
+ await assertFails(setDoc(doc(peer,path),payload()));
+ await assertFails(setDoc(doc(owner,'users/'+OWNER_ID+'/contact_favorites/unrelated'),payload()));
+ await assertFails(setDoc(doc(owner,path),{...payload(),secret:'unexpected'}));
+ await assertSucceeds(deleteDoc(doc(owner,path)));
+});
