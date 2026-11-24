@@ -296,3 +296,12 @@ test('reserved search retains a submitted attempt across focus changes and recon
  assert.match(panel,/window.removeEventListener\('online',online\)/);
  assert.match(panel,/const online=\(\)=>\{if\(!document.hidden&&auth.currentUser\?\.uid===owner\)void reload\(\);\}/);
 });
+
+
+test('privacy signals share one channel per document and release the last subscription',()=>{
+ const source=readFileSync('src/utils/socialPrivacyInvalidation.ts','utf8');
+ assert.equal((source.match(/new BroadcastChannel\(CHANNEL\)/g)||[]).length,1);
+ assert.match(source,/const channel=sharedChannel\?\?openChannel\(\)/);
+ assert.match(source,/if\(includeLocal\)window.addEventListener\(EVENT,onInvalidate\)/);
+ assert.match(source,/if\(--listeners===0\)\{channel.close\(\);sharedChannel=undefined;\}/);
+});

@@ -3,6 +3,7 @@ import {auth,db} from '../../src/utils/firebase';
 import {initializeApp,deleteApp} from 'firebase/app';
 import {getAuth,connectAuthEmulator,signInWithEmailAndPassword,signOut,setPersistence,inMemoryPersistence,browserLocalPersistence} from 'firebase/auth';
 import {initializeFirestore,persistentLocalCache,persistentMultipleTabManager,connectFirestoreEmulator,disableNetwork,enableNetwork,doc,getDocFromServer,onSnapshot,updateDoc,serverTimestamp,waitForPendingWrites,terminate} from 'firebase/firestore';
+import {publishSocialPrivacyInvalidation,subscribeSocialPrivacyInvalidation} from '../../src/utils/socialPrivacyInvalidation';
 import {requestReservedTribePilot,reservedTribePilotClientEnabled} from '../../src/utils/reservedTribePilotClient';
 
 if(!reservedTribePilotClientEnabled()||auth.app.options.projectId!=='kyrub-security-test')throw Error('LOCAL_PILOT_REQUIRED');
@@ -55,3 +56,16 @@ window.fixture={
   await deleteApp(legacy.app);
  },
 };
+
+// Browser-only fixture counters; no identity or payload is transmitted.
+let signalCounts={local:0,remote:0};
+let stopSignals=()=>{};
+window.fixture.startSignalProbe=()=>{
+ stopSignals();signalCounts={local:0,remote:0};
+ const local=subscribeSocialPrivacyInvalidation(()=>signalCounts.local++);
+ const remote=subscribeSocialPrivacyInvalidation(()=>signalCounts.remote++,false);
+ stopSignals=()=>{local();remote();};
+};
+window.fixture.signalCounts=()=>({...signalCounts});
+window.fixture.publishSignal=publishSocialPrivacyInvalidation;
+window.fixture.stopSignalProbe=()=>stopSignals();

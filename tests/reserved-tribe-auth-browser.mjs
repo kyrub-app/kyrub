@@ -52,6 +52,24 @@ try{
   assert.deepEqual(await page.evaluate(()=>window.fixture.authEmulator()),{host:'127.0.0.1',port:9099,protocol:'http'});
   return page;
  }
+ // Reproduce the same-document echo regression using real BroadcastChannel.
+ // Both subscribers must hear a remote document; only opt-in hears local.
+ const signalA=await open(),signalB=await signalA.context().newPage();
+ await signalB.goto(origin+'/tests/fixtures/reserved-tribe-browser.html');
+ await signalB.waitForFunction(()=>window.fixture?.enabled()===true);
+ await signalA.evaluate(()=>window.fixture.startSignalProbe());
+ await signalB.evaluate(()=>window.fixture.startSignalProbe());
+ await signalA.evaluate(()=>window.fixture.publishSignal());
+ await signalB.waitForFunction(()=>{const c=window.fixture.signalCounts();return c.local===1&&c.remote===1;});
+ assert.deepEqual(await signalA.evaluate(()=>window.fixture.signalCounts()),{local:1,remote:0});
+ // Round trip provides a second delivery barrier, rather than relying on sleep.
+ await signalB.evaluate(()=>window.fixture.publishSignal());
+ await signalA.waitForFunction(()=>{const c=window.fixture.signalCounts();return c.local===2&&c.remote===1;});
+ assert.deepEqual(await signalB.evaluate(()=>window.fixture.signalCounts()),{local:2,remote:1});
+ await signalA.evaluate(()=>window.fixture.stopSignalProbe());
+ await signalB.evaluate(()=>window.fixture.stopSignalProbe());
+ await signalA.context().close();
+ console.log('PASS local invalidation delivered once, no self-echo, remote tabs still invalidated');
  const a=await open(),b=await open();
  // Real unauthenticated server endpoint and client both deny access.
  assert.equal((await a.request.post(origin+'/api/social/reserved-tribe',{data:{action:'status'}})).status(),401);
