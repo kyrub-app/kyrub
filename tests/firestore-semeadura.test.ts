@@ -152,3 +152,36 @@ test('economic review controls cannot be created, inspected, cleared or removed 
  }
  assert.deepEqual((await db.doc(path).get()).data(),hold);
 });
+
+test('100th daily seed is atomic across personal and community posts; replay and next day do not reset receipts',async()=>{
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const day=semeaduraDay(new Date());
+ const quota=db.doc('users/voter/semeaduraDailyUsage/'+day);
+ await Promise.all([personal('quota-personal'),community('quota-community'),personal('quota-extra')]);
+ // Boundary fixture only: previous 99 accepted sends in this test day.
+ await quota.set({schemaVersion:1,actorId:'voter',day,count:99});
+ const settled=await Promise.allSettled([semear('personal','quota-personal','voter'),semear('community','quota-community','voter')]);
+ assert.equal(settled.filter(r=>r.status==='fulfilled').length,1);
+ const rejected=settled.find(r=>r.status==='rejected');
+ assert.match(String(rejected?.reason),/SEMEADURA_DAILY_LIMIT_REACHED/);
+ assert.equal((await quota.get()).get('count'),100);
+ const winner=settled[0].status==='fulfilled'?{kind:'personal' as const,postId:'quota-personal'}:{kind:'community' as const,postId:'quota-community'};
+ assert.equal((await semear(winner.kind,winner.postId,'voter')).status,'already_seeded');
+ const unavailable=await readVerifiedPostSemeadura(db,{kind:'personal',postId:'quota-extra',authenticatedUserId:'voter'});
+ assert.equal(unavailable.canSemear,false);assert.equal(unavailable.dailyRemaining,0);assert.equal(unavailable.count,0);
+ await assert.rejects(semear('personal','quota-extra','voter'),/SEMEADURA_DAILY_LIMIT_REACHED/);
+ assert.equal((await quota.get()).get('count'),100);
+ assert.equal((await semear('personal','quota-extra','another-voter')).status,'accepted');
+ const total=(await readPersonalSemeaduraJourney(db,'author')).totalSeeds+(await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds;
+ assert.equal(total,2);
+ const client=environment.authenticatedContext('voter').firestore();
+ await assertFails(getDoc(doc(client,quota.path)));
+ await assertFails(setDoc(doc(client,quota.path),{count:1},{merge:true}));
+ await assertFails(deleteDoc(doc(client,quota.path)));
+ // An unrelated previous-day document does not consume today's allowance.
+ const yesterday=semeaduraDay(new Date(Date.now()-86400000));
+ await db.doc('users/fresh-voter/semeaduraDailyUsage/'+yesterday).set({schemaVersion:1,actorId:'fresh-voter',day:yesterday,count:100});
+ assert.equal((await semear('personal','quota-extra','fresh-voter')).status,'accepted');
+ assert.equal((await db.doc('users/fresh-voter/semeaduraDailyUsage/'+day).get()).get('count'),1);
+ assert.equal((await semear('personal','quota-extra','fresh-voter')).status,'already_seeded');
+});

@@ -74,6 +74,8 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
     if (code === 'SEMEADURA_INVALID_INPUT') {
       response.status(400).json({ error: code });
+    } else if (code === 'SEMEADURA_DAILY_LIMIT_REACHED') {
+      response.status(429).json({error:code});
     } else if (code.startsWith('SEMEADURA_')) {
       response.status(409).json({ error: code });
     } else {

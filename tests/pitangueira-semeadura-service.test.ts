@@ -246,3 +246,14 @@ test('mutation authentication rejects revoked, expired, disabled and mismatched 
  await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,verify:async()=>{throw Error('invalid signature')}}),/invalid signature/);
  await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,getUser:async()=>{throw Error('identity backend unavailable')}}),/identity backend unavailable/);
 });
+
+test('daily limit uses civil Brasília day and strictly validates server counters',async()=>{
+ const {semeaduraDay,readSemeaduraDailyCount,SEMEADURA_DAILY_LIMIT}=await import('../shared/semeaduraDailyLimit.js');
+ assert.equal(SEMEADURA_DAILY_LIMIT,100);
+ assert.equal(semeaduraDay(new Date('2026-11-25T02:59:59.999Z')),'2026-11-24');
+ assert.equal(semeaduraDay(new Date('2026-11-25T03:00:00.000Z')),'2026-11-25');
+ assert.equal(readSemeaduraDailyCount(undefined,'voter','2026-11-25'),0);
+ const counter={schemaVersion:1,actorId:'voter',day:'2026-11-25',count:100};
+ assert.equal(readSemeaduraDailyCount(counter,'voter','2026-11-25'),100);
+ for(const bad of [{count:101},{count:-1},{count:'1'},{count:0},{day:'2026-11-24'},{actorId:'other'},{schemaVersion:2}])assert.throws(()=>readSemeaduraDailyCount({...counter,...bad},'voter','2026-11-25'),/SEMEADURA_DAILY_COUNTER_INVALID/);
+});

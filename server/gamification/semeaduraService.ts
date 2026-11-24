@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
+import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
@@ -118,10 +119,22 @@ export const seedVerifiedPost = async (
     if (plan.status !== 'accepted') {
       return { status: plan.status, count: plan.count, closed: plan.nowClosed, authorId };
     }
-    const occurredAt = new Date().toISOString();
+    // Use the server clock within each transaction attempt. Day-specific
+    // keys avoid carrying unused allowance or resetting lifetime receipts.
+    const now = new Date();
+    const occurredAt = now.toISOString();
+    const day = semeaduraDay(now);
+    const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
+    const quota = await tx.get(quotaRef);
+    const used = readSemeaduraDailyCount(quota.data(),actor,day);
+    if(used>=SEMEADURA_DAILY_LIMIT)throw Error('SEMEADURA_DAILY_LIMIT_REACHED');
     await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key});
+    const quotaData={schemaVersion:1,actorId:actor,day,count:used+1,updatedAt:occurredAt};
+    if(quota.exists)tx.update(quotaRef,quotaData);
+    else tx.create(quotaRef,quotaData);
     tx.create(receiptRef, {
       kind, postId, communityId, authorId, actorId: actor, occurredAt,
+      quotaDay:day,
     });
     const nextStats = {
       kind, postId, communityId, authorId,
@@ -156,6 +169,7 @@ export const readVerifiedPostSemeadura = async (
 ): Promise<{
   count: number; closed: boolean; seeded: boolean; canSemear: boolean;
   authorId: string; pitangueiras: number; bosqueCompleted: boolean;
+  dailyDay:string; dailyRemaining:number;
 }> => {
   const { authenticatedUserId: actor, kind, postId } = input;
   if (!safeUid(actor) || !safePostId(postId) || (kind !== 'personal' && kind !== 'community')) {
@@ -165,8 +179,10 @@ export const readVerifiedPostSemeadura = async (
   const postRef = db.doc(`${kind === 'community' ? 'community_posts' : 'social_posts'}/${postId}`);
   const statsRef = db.collection('semeadura_post_stats').doc(key);
   const receiptRef = statsRef.collection('receipts').doc(actor);
-  const [post, stats, receipt] = await Promise.all([
+  const dailyDay=semeaduraDay(new Date());
+  const [post, stats, receipt, quota] = await Promise.all([
     postRef.get(), statsRef.get(), receiptRef.get(),
+    db.doc(`users/${actor}/semeaduraDailyUsage/${dailyDay}`).get(),
   ]);
   if (!post.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
   const postData = post.data();
@@ -212,10 +228,12 @@ export const readVerifiedPostSemeadura = async (
       receipt.data()?.communityId !== (kind === 'community' ? postData?.communityId : ''))) {
     throw new Error('SEMEADURA_RECEIPT_INVALID');
   }
+  const dailyRemaining=SEMEADURA_DAILY_LIMIT-readSemeaduraDailyCount(quota.data(),actor,dailyDay);
   return {
+    dailyDay,dailyRemaining,
     count, closed: count === SEEDS_PER_BOSQUE, seeded: receipt.exists,
     canSemear: canParticipate && actor !== authorId && !receipt.exists &&
-      count < SEEDS_PER_BOSQUE,
+      count < SEEDS_PER_BOSQUE && dailyRemaining>0,
     authorId, pitangueiras: Math.floor(count / 1000),
     bosqueCompleted: count === SEEDS_PER_BOSQUE,
   };
