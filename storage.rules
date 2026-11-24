@@ -122,6 +122,38 @@ service firebase.storage {
         && request.auth.uid == userId;
     }
 
+    // Public promotional Tag images have no permanent download token.
+    // Public display goes through the server, which checks blocked + enabled.
+    // Only the current verified email owner can upload and privately inspect media.
+    match /kyrub-tag-media/{tagId}/{slot}/{assetId} {
+      allow read: if isSignedIn()
+        && request.auth.token.email_verified == true
+        && slot in ['cover', 'avatar', 'background']
+        && firestore.exists(/databases/(default)/documents/kyrub_official_tags/$(tagId))
+        && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.distribution == 'promotional'
+        && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.ownerId == request.auth.uid;
+
+      allow create: if isSignedIn()
+        && resource == null
+        && request.auth.token.email_verified == true
+        && slot in ['cover', 'avatar', 'background']
+        && assetId.matches('[a-f0-9]{32}')
+        && firestore.exists(/databases/(default)/documents/kyrub_official_tags/$(tagId))
+        && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.distribution == 'promotional'
+        && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.ownerId == request.auth.uid
+        && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.blocked == false
+        && request.resource.size > 0
+        && request.resource.size <= 1024 * 1024
+        && request.resource.contentType == 'image/webp'
+        && request.resource.metadata.ownerId == request.auth.uid
+        && request.resource.metadata.tagId == tagId
+        && request.resource.metadata.purpose == slot;
+
+      // New files use fresh random IDs; no replacement or client deletion.
+      // Server-side lifecycle cleanup remains a release prerequisite.
+      allow update, delete: if false;
+    }
+
     match /community-covers/{communityId}/{ownerId}/{fileName} {
       allow read: if canReadCommunity(communityId);
 

@@ -223,3 +223,12 @@ test('private community groups are included in the deployed rules composition', 
     index.fields.some(field => field.fieldPath === 'memberIds' && field.arrayConfig === 'CONTAINS')
   ));
 });
+
+
+test('artifact hardening preserves the social block helper and owner-only block match', () => {
+  const base = readFileSync('firestore.rules', 'utf8');
+  const result = hardenKyrubArtifactRules(base);
+  assert.match(result, /function noSocialContactBlock\(first, second\)/);
+  assert.match(result, /match \/social_contact_blocks\/\{ownerId\}\/blocked\/\{targetId\}/);
+  assert.match(result, /noSocialContactBlock\(connectionData\(\).senderId, connectionData\(\).receiverId\)/);
+});
