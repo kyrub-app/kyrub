@@ -440,3 +440,60 @@ test('isolated technical evidence reports integrity only without writing holds o
   if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
  }
 });
+
+
+test('isolated admin supervision authenticates real emulator identity and reconciles bounded account data',async()=>{
+ const {readIsolatedGamificationAccountSupervision}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const admin=await googleSignIn('supervision-admin');
+ const person=await googleSignIn('supervision-account');
+ const actor=await googleSignIn('supervision-voter');
+ await Promise.all([waitForAward(admin.localId),waitForAward(person.localId),waitForAward(actor.localId)]);
+ const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.localId);
+ const reviewer=db.doc('systemControl/semeaduraEconomicReview/reviewers/'+admin.localId);
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const authorization='Bearer '+admin.idToken;
+ const read=()=>readIsolatedGamificationAccountSupervision(db,auth,authorization,person.localId);
+ try{
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_DISABLED/);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(readIsolatedGamificationAccountSupervision(db,auth,'Bearer invalid',person.localId),/GAMIFICATION_SUPERVISION_AUTH_REQUIRED/);
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
+  await assert.rejects(readIsolatedGamificationAccountSupervision(db,auth,'Bearer '+person.idToken,admin.localId),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  const postId='supervision-account-post';
+  await db.doc('social_posts/'+postId).set({postId,authorId:person.localId,visibility:'public',publicationType:'feed'});
+  await seedVerifiedPost(db,{kind:'personal',postId,authenticatedUserId:actor.localId});
+  const result=await read();
+  assert.equal(result.scope,'single-account');
+  assert.equal(result.ledgerCoverage,'complete');
+  assert.deepEqual(result.economy,{credits:100,debits:0,balance:100});
+  assert.deepEqual(result.journey,{seeds:1,pitangueiras:0,bosques:0});
+  assert.deepEqual(result.findings,[]);
+  assert.equal(JSON.stringify(result).includes(person.localId),false);
+  await balance(person.localId).update({availableKCoins:999});
+  const bad=await read();
+  assert.equal(bad.economy,null);
+  assert.ok(bad.findings.includes('PITANGA_LEDGER_OR_BALANCE_INVALID'));
+  assert.equal((await balance(person.localId).get()).get('availableKCoins'),999);
+  await balance(person.localId).update({availableKCoins:100});
+  const batch=db.batch();
+  // Synthetic malformed records exercise the read ceiling without issuing any currency.
+  for(let i=0;i<200;i++)batch.set(ledger(person.localId).doc('sample-'+i),{synthetic:true});
+  await batch.commit();
+  const partial=await read();
+  assert.equal(partial.ledgerCoverage,'partial');
+  assert.equal(partial.observedEntries,201);
+  assert.equal(partial.economy,null);
+  await profile.update({status:'suspended'});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await profile.update({status:'active'});
+  await auth.updateUser(admin.localId,{disabled:true});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_AUTH_REQUIRED/);
+ }finally{
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+ }
+});
