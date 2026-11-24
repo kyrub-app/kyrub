@@ -45,3 +45,6 @@ Rodada c4cc4ce 6/6 workflows aprovados. Rodada 1b2f2b0 ainda em andamento na con
 
 ## Jornada pública conjunta — navegador local
 Adicionado adapter Express somente GET para leitura pública Tag e perfil, e identidade da sessão via handler Vercel original; flag KYRUB_PUBLIC_PRESENTATION_E2E, projeto kyrub-security-test, NODE_ENV=test, emuladores loopback exatos e ausência de credenciais/Vercel. Não habilita escrita de Tag nem novos transportes externos. Roteiro navegador com titular fictício e Tag virtual follow-profile: URL real /tag, copiar link com clipboard Chromium, gerar e baixar SVG, conferir tel:190/192/193 sem discar, solicitar conexão via Tag, aceitar no sino, consultar perfil /kairubido, reservar contato e verificar que a relação não aparece em nenhum endereço público, preservando conexão e modo. Testes ainda não executados neste commit; validação física de NFC/câmera, Storage real, revisão de cache e prévia continuam pendentes. Nenhuma mudança de faturamento, Firebase real ou produção.
+
+## Ajuste de contrato da proteção de pesquisa
+Run 45475160216 (b0b866b), artefato 14958304480 inspecionado: prebuild 2566/2567, única falha na expressão regular que não incluía presentationTarget no guard de desbloqueio. Atualizado teste para exigir também o novo bloqueio durante cartão aberto, sem alterar código de segurança. CI do conjunto ainda pendente.

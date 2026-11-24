@@ -322,7 +322,7 @@ test('Conectados does not render the search before a matching server directory a
  const panel=readFileSync('src/components/ReservedTribePilotPanel.tsx','utf8');
  assert.match(panel,/status.revision!==dir.revision/);
  assert.match(panel,/\{ordinary\?<ReservedTribeSearchInput/);
- assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|current.current/);
+ assert.match(panel,/if\(!ordinary\|\|!configured\|\|busy\|\|target\|\|presentationTarget\|\|current\.current/);
 });
 
 
