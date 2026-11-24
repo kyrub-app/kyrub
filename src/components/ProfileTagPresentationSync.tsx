@@ -3,8 +3,8 @@ import {doc,getDocFromServer} from 'firebase/firestore';
 import {auth,db} from '../utils/firebase';
 import {KYRUB_TAG_MODEL_LABELS,type OwnedKyrubTag} from '../../shared/kyrubTagContract';
 import {loadOwnedProfileImageFile,ownedProfileImagePath,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
-type Snapshot={name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string};
-type Field='text'|'avatar'|'cover';
+type Snapshot={name:string;occupation:string;bio:string;photoUrl:string;coverUrl:string;backgroundUrl:string};
+type Field='text'|'avatar'|'cover'|'background';
 const endpoint='/api/health?transport=manage-kyrub-tag';
 export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disabled:boolean}){
  const [open,setOpen]=useState(false),[expanded,setExpanded]=useState(false),[busy,setBusy]=useState(false),[notice,setNotice]=useState('');
@@ -24,7 +24,7 @@ export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disa
    if(ctrl.signal.aborted||auth.currentUser?.uid!==userId)return;
    if(!profile.exists()){setNotice('Salve seu perfil antes de sincronizar.');return;}
    const read=(key:string)=>typeof profile.get(key)==='string'?profile.get(key) as string:'';
-   setSource({name:read('name'),occupation:read('occupation'),bio:read('bio'),photoUrl:read('photoUrl'),coverUrl:read('coverUrl')});
+   setSource({name:read('name'),occupation:read('occupation'),bio:read('bio'),photoUrl:read('photoUrl'),coverUrl:read('coverUrl'),backgroundUrl:read('backgroundUrl')});
    setTags(result.tags.filter(t=>t.distribution==='promotional'&&t.enabled&&!t.blocked));
   }).catch(()=>{if(!ctrl.signal.aborted)setNotice('Não foi possível consultar a apresentação. Feche e tente novamente.');});
   return()=>ctrl.abort();
@@ -33,8 +33,8 @@ export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disa
   if(!source||!ids.length||!fields.length||lock.current||disabled)return;
   lock.current=true;setBusy(true);setNotice('');
   try{
-   const slots=(['avatar','cover'] as const).filter(slot=>fields.includes(slot));
-   const files=await Promise.all(slots.map(slot=>loadOwnedProfileImageFile(userId,slot==='avatar'?source.photoUrl:source.coverUrl,slot)));
+   const slots=(['avatar','cover','background'] as const).filter(slot=>fields.includes(slot));
+   const files=await Promise.all(slots.map(slot=>loadOwnedProfileImageFile(userId,slot==='avatar'?source.photoUrl:slot==='cover'?source.coverUrl:source.backgroundUrl,slot)));
    const media:Record<string,Record<string,string>>={};
    for(const id of ids){
     if(auth.currentUser?.uid!==userId)throw Error('AUTH_REQUIRED');
@@ -63,9 +63,9 @@ export function ProfileTagPresentationSync({userId,disabled}:{userId:string;disa
     <div className="rounded-xl border border-slate-700 p-3 text-sm">
       <p className="font-semibold">{source.name}</p><p>{source.occupation}</p><p className="whitespace-pre-wrap">{source.bio}</p>
     </div>
-    {(['text','avatar','cover'] as const).map(field=>{
-     const available=field==='text'?source.name.length<=80:!!ownedProfileImagePath(userId,field==='avatar'?source.photoUrl:source.coverUrl,field);
-     return <label key={field} className="flex min-h-10 gap-2 items-center text-sm"><input type="checkbox" checked={fields.includes(field)} disabled={busy||!available} onChange={e=>setFields(current=>e.target.checked?[...current,field]:current.filter(f=>f!==field))}/>{field==='text'?'Nome, atividade e biografia':field==='avatar'?'Foto de perfil':'Capa'}{!available?' (indisponível para copiar)':''}</label>;
+    {(['text','avatar','cover','background'] as const).map(field=>{
+     const available=field==='text'?source.name.length<=80:!!ownedProfileImagePath(userId,field==='avatar'?source.photoUrl:field==='cover'?source.coverUrl:source.backgroundUrl,field);
+     return <label key={field} className="flex min-h-10 gap-2 items-center text-sm"><input type="checkbox" checked={fields.includes(field)} disabled={busy||!available} onChange={e=>setFields(current=>e.target.checked?[...current,field]:current.filter(f=>f!==field))}/>{field==='text'?'Nome, atividade e biografia':field==='avatar'?'Foto de perfil':field==='cover'?'Capa':'Imagem de fundo'}{!available?' (indisponível para copiar)':''}</label>;
     })}
     <p className="text-xs text-slate-400">Fotos externas, como a do Google, não são copiadas. Envie uma imagem própria para usar na Tag. SOS, destinos e titularidade não serão alterados.</p>
     <button type="button" disabled={busy||disabled||!ids.length||!fields.length} className="min-h-12 w-full rounded-xl bg-[#F47825] font-bold text-[#121A17] disabled:opacity-50" onClick={()=>void save()}>{busy?'Atualizando…':'Atualizar Tags selecionadas'}</button>

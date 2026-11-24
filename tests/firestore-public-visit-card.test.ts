@@ -402,7 +402,7 @@ test('promotional first-claimer and recovery end-to-end through Firebase Auth + 
   assert.deepEqual((await resolveKyrubTag(second.id))?.links.map(l=>l.url),[space]);
   assert.deepEqual((await resolveKyrubTag(thirdTag.id))?.links,[]);
   assert.deepEqual((await loadOwnedKyrubTag(publisher.uid,fresh.id)).presentation,draft);
-  const expected={name:'Novo nome',occupation:'Comerciante',bio:'Apresentação atualizada',photoUrl:'',coverUrl:''};
+  const expected={name:'Novo nome',occupation:'Comerciante',bio:'Apresentação atualizada',photoUrl:'',coverUrl:'',backgroundUrl:''};
   await adminDb.doc('users/'+publisher.uid+'/public_profile/main').update(expected);
   const beforeSync=(await adminDb.doc('kyrub_official_tags/'+fresh.id).get()).data()!;
   const sync={action:'sync-profile-presentation',input:{tagIds:[fresh.id,second.id],expected,fields:['text'],media:{}}};
@@ -745,7 +745,7 @@ test('contact presentation uses live public profile and card destinations, not p
  const result=await resolveContactPresentation(owner);
  assert.equal(result?.name,'Apresentação');assert.equal(result?.occupation,'Autônomo');
  assert.equal(result?.links.length,1);
- assert.deepEqual(Object.keys(result!).sort(),['bio','coverUrl','links','name','occupation','photoUrl']);
+ assert.deepEqual(Object.keys(result!).sort(),['backgroundUrl','bio','coverUrl','links','name','occupation','photoUrl']);
  assert.equal(JSON.stringify(result).includes('private@example.test'),false);
  await adminDb.doc('communities/presentation-community').update({visibility:'private'});
  assert.deepEqual((await resolveContactPresentation(owner))?.links,[]);
@@ -753,3 +753,16 @@ test('contact presentation uses live public profile and card destinations, not p
  assert.equal(await resolveContactPresentation(owner),null);
  assert.equal(await resolveContactPresentation('not-existing-presentation'),null);
 });
+
+ test('optional promotional background is scoped to its own media slot and never leaks storage paths',async()=>{
+ const {normalizePromotionalPresentation,publicPromotionalPresentation,isPromotionalMediaPath,promotionalMediaPath}=await import('../shared/kyrubTagPromotional.js');
+ const id='a'.repeat(32),asset='b'.repeat(32),path=promotionalMediaPath(id,'background',asset);
+ const base={name:'Teste',occupation:'',about:''};
+ assert.equal(isPromotionalMediaPath(path,id,'background'),true);
+ assert.equal(isPromotionalMediaPath(path,id,'cover'),false);
+ assert.equal(isPromotionalMediaPath(path,'c'.repeat(32),'background'),false);
+ const normalized=normalizePromotionalPresentation({...base,backgroundPath:path});
+ assert.equal(publicPromotionalPresentation(normalized).hasBackground,true);
+ assert.equal(JSON.stringify(publicPromotionalPresentation(normalized)).includes(path),false);
+ assert.throws(()=>normalizePromotionalPresentation({...base,backgroundPath:promotionalMediaPath(id,'cover',asset)}),/TAG_PRESENTATION_INVALID/);
+ });

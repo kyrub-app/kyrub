@@ -96,6 +96,7 @@ type ProfileState = {
   bio: string;
   occupation?: string;
   coverUrl?: string;
+  backgroundUrl?: string;
 };
 
 type ContactGroup = {
@@ -717,6 +718,7 @@ export function ProfileSocialHubNative() {
           bio: readString(data?.bio),
           occupation: readString(data?.occupation),
           coverUrl: readString(data?.coverUrl),
+          backgroundUrl: readString(data?.backgroundUrl),
           photoUrl: readString(data?.photoUrl) || current.photoUrl,
           name: readString(data?.name) || current.name,
         }));
@@ -1173,20 +1175,20 @@ export function ProfileSocialHubNative() {
     }
   };
 
-  const uploadPresentationCover = async (event: ChangeEvent<HTMLInputElement>)=>{
+  const uploadPresentationImage = async (event: ChangeEvent<HTMLInputElement>,slot:'cover'|'background')=>{
     const file=event.target.files?.[0];event.target.value='';
     if(!user||!file||photoBusy)return;
     setPhotoBusy(true);
     try{
-      const blob=await sanitizedWebp(file,'cover');
+      const blob=await sanitizedWebp(file,slot);
       if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
-      const image=ref(storage,'profile-images/'+user.uid+'/cover-'+crypto.randomUUID()+'.webp');
+      const image=ref(storage,'profile-images/'+user.uid+'/'+slot+'-'+crypto.randomUUID()+'.webp');
       await uploadBytes(image,blob,{contentType:'image/webp'});
-      const coverUrl=await getDownloadURL(image);
+      const imageUrl=await getDownloadURL(image);
       if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
-      await setDoc(doc(db,'users',user.uid,'public_profile','main'),{userId:user.uid,name:profile.name||'Kairubido',bio:profile.bio,photoUrl:profile.photoUrl,coverUrl,updatedAt:serverTimestamp()},{merge:true});
-      triggerToast('Capa da apresentação atualizada.','success');
-    }catch{triggerToast('Não foi possível salvar a capa.','error');}
+      await setDoc(doc(db,'users',user.uid,'public_profile','main'),{userId:user.uid,name:profile.name||'Kairubido',bio:profile.bio,photoUrl:profile.photoUrl,[slot+'Url']:imageUrl,updatedAt:serverTimestamp()},{merge:true});
+      triggerToast('Imagem da apresentação atualizada.','success');
+    }catch{triggerToast('Não foi possível salvar a imagem.','error');}
     finally{setPhotoBusy(false);}
   };
 
@@ -2316,7 +2318,14 @@ export function ProfileSocialHubNative() {
               <section className="space-y-2 rounded-xl border border-slate-700 p-3">
                 <h4 className="font-semibold">Capa da apresentação</h4>
                 {profile.coverUrl&&<img src={profile.coverUrl} alt="Capa atual" className="h-28 w-full rounded-xl object-cover"/>}
-                <label className="block text-sm">Alterar capa<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={uploadPresentationCover} className="mt-2 block w-full text-xs"/></label>
+                <label className="block text-sm">Alterar capa<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={event=>void uploadPresentationImage(event,'cover')} className="mt-2 block w-full text-xs"/></label>
+              </section>
+              <section className="space-y-2 rounded-xl border border-slate-700 p-3">
+                <h4 className="font-semibold">Imagem de fundo da apresentação</h4>
+                <p className="text-xs text-slate-400">Personalize o cartão inteiro. A imagem recebe uma camada escura para manter o texto legível.</p>
+                {profile.backgroundUrl&&<img src={profile.backgroundUrl} alt="Fundo atual" className="h-28 w-full rounded-xl object-cover"/>}
+                <label className="block text-sm">Alterar fundo<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={event=>void uploadPresentationImage(event,'background')} className="mt-2 block w-full text-xs"/></label>
+                {profile.backgroundUrl&&<button type="button" disabled={photoBusy} className="text-sm underline" onClick={()=>{if(auth.currentUser?.uid===user.uid)void setDoc(doc(db,'users',user.uid,'public_profile','main'),{backgroundUrl:'',updatedAt:serverTimestamp()},{merge:true}).catch(()=>triggerToast('Não foi possível remover o fundo.','error'));}}>Remover fundo</button>}
               </section>
               <ProfileTagPresentationSync key={'sync-'+user.uid} userId={user.uid} disabled={photoBusy}/>
               <MultifunctionCardEditor key={user.uid} userId={user.uid} locked={photoBusy} presentationMode />

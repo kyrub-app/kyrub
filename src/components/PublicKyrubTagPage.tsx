@@ -183,7 +183,8 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
    {!promotional&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
-   <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
+   <section className="relative isolate overflow-hidden space-y-4 rounded-2xl border border-[#34443B] p-4">
+    {data.presentation.hasBackground&&<img src={publicPromotionalTagImageUrl(identifier,'background')} alt="" aria-hidden="true" referrerPolicy="no-referrer" className="pointer-events-none absolute inset-0 -z-10 h-full w-full object-cover opacity-20"/>}
     <div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C] text-sm text-slate-300">
      {data.presentation.hasCover?<img className="h-full w-full object-cover" alt="Foto de capa do cartão digital"
        src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/>:'Apresentação digital · Capa opcional'}

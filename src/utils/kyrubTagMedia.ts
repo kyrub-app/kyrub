@@ -5,7 +5,7 @@ import {isPromotionalMediaPath,promotionalMediaPath} from '../../shared/kyrubTag
 
 const MAX_SOURCE_BYTES=8*1024*1024;
 const MAX_WEBP_BYTES=1024*1024;
-type Slot='cover'|'avatar';
+type Slot='cover'|'avatar'|'background';
 const allowed=new Set(['image/jpeg','image/png','image/webp']);
 
 export async function sanitizedWebp(file:File,slot:Slot):Promise<Blob>{
@@ -13,7 +13,7 @@ export async function sanitizedWebp(file:File,slot:Slot):Promise<Blob>{
   throw Error('Use uma foto JPEG, PNG ou WebP de até 8 MB.');
  const bitmap=await createImageBitmap(file);
  try{
-  const maximum=slot==='cover'?1440:640;
+  const maximum=slot==='avatar'?640:1440;
   const scale=Math.min(1,maximum/Math.max(bitmap.width,bitmap.height));
   const canvas=document.createElement('canvas');
   canvas.width=Math.max(1,Math.round(bitmap.width*scale));

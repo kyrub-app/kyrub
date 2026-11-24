@@ -4,9 +4,9 @@ import {isPromotionalMediaPath,type PromotionalTagPresentation} from '../../shar
 
 const MAX_MEDIA_BYTES=1024*1024;
 const bucket=()=>adminStorage.bucket(getFirebaseAdminProjectId()+'.firebasestorage.app');
-type Slot='cover'|'avatar';
+type Slot='cover'|'avatar'|'background';
 const pathOf=(presentation:PromotionalTagPresentation,slot:Slot)=>
- slot==='cover'?presentation.coverPath: presentation.avatarPath;
+ slot==='cover'?presentation.coverPath:slot==='avatar'?presentation.avatarPath:presentation.backgroundPath;
 
 async function verifiedObject(path:string,id:string,slot:Slot,ownerId?:string){
  if(!isPromotionalMediaPath(path,id,slot))throw Error('TAG_MEDIA_INVALID');
@@ -23,7 +23,7 @@ async function verifiedObject(path:string,id:string,slot:Slot,ownerId?:string){
 export async function validatePromotionalMediaReferences(
  actor:string,id:string,presentation:PromotionalTagPresentation
 ){
- for(const slot of ['cover','avatar'] as const){
+ for(const slot of ['cover','avatar','background'] as const){
   const path=pathOf(presentation,slot);
   if(path)await verifiedObject(path,id,slot,actor);
  }
@@ -36,7 +36,7 @@ export async function validatePromotionalMediaReferences(
  * Previously cached/downloaded images cannot be recalled from a visitor.
  */
 export async function getPublicPromotionalTagImage(id:string,slot:unknown):Promise<Buffer|null>{
- if(!isTagId(id)||(slot!=='cover'&&slot!=='avatar'))return null;
+ if(!isTagId(id)||(slot!=='cover'&&slot!=='avatar'&&slot!=='background'))return null;
  const ref=adminDb.collection('kyrub_official_tags').doc(id);
  const snap=await ref.get(),data=snap.data();
  if(!data||data.distribution!=='promotional'||data.enabled!==true||data.blocked===true||

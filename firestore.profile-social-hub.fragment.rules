@@ -16,8 +16,10 @@
             'photoUrl',
             'updatedAt',
             'occupation',
-            'coverUrl'
+            'coverUrl',
+            'backgroundUrl'
           ])
+          && (!('backgroundUrl' in data) || (data.backgroundUrl is string && data.backgroundUrl.size() <= 2048))
           && (!('coverUrl' in data) || (data.coverUrl is string && data.coverUrl.size() <= 2048))
           && (!('occupation' in data) || (data.occupation is string && data.occupation.size() <= 90))
           && data.userId == userId

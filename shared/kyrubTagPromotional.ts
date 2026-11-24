@@ -20,6 +20,7 @@ export type PromotionalTagPresentation={
   emergencyContacts?:PromotionalSosContact[];
   coverPath?:string;
   avatarPath?:string;
+  backgroundPath?:string;
 };
 export type PublicPromotionalTagPresentation={
   name:string;
@@ -27,11 +28,12 @@ export type PublicPromotionalTagPresentation={
   about:string;
   hasCover:boolean;
   hasAvatar:boolean;
+  hasBackground?:boolean;
   sosContacts:PublicSosContact[];
 };
-export const promotionalMediaPath=(id:string,slot:'cover'|'avatar',asset:string)=>`kyrub-tag-media/${id}/${slot}/${asset}`;
-const mediaPathRegex=/^kyrub-tag-media\/([a-f0-9]{32})\/(cover|avatar)\/([a-f0-9]{32})$/;
-export function isPromotionalMediaPath(path:string,id:string,slot:'cover'|'avatar'):boolean{
+export const promotionalMediaPath=(id:string,slot:'cover'|'avatar'|'background',asset:string)=>`kyrub-tag-media/${id}/${slot}/${asset}`;
+const mediaPathRegex=/^kyrub-tag-media\/([a-f0-9]{32})\/(cover|avatar|background)\/([a-f0-9]{32})$/;
+export function isPromotionalMediaPath(path:string,id:string,slot:'cover'|'avatar'|'background'):boolean{
  const parsed=mediaPathRegex.exec(path);
  return parsed!==null&&parsed[1]===id&&parsed[2]===slot;
 }
@@ -100,7 +102,7 @@ export function normalizePromotionalSosContacts(input:unknown):PromotionalSosCon
 
 export function publicPromotionalPresentation(input:PromotionalTagPresentation):PublicPromotionalTagPresentation{
  return {name:input.name,occupation:input.occupation,about:input.about,
-  hasCover:!!input.coverPath,hasAvatar:!!input.avatarPath,
+  hasCover:!!input.coverPath,hasAvatar:!!input.avatarPath,...(input.backgroundPath?{hasBackground:true}:{}),
   sosContacts:(input.emergencyContacts??[]).filter(c=>c.shareInSos&&c.consentConfirmed)
    .map(({name,relationship,phone,whatsapp})=>({name,relationship,phone,whatsapp}))};
 }
@@ -108,10 +110,10 @@ export function publicPromotionalPresentation(input:PromotionalTagPresentation):
 export function normalizePromotionalPresentation(input:unknown):PromotionalTagPresentation{
   if(!input||typeof input!=='object'||Array.isArray(input))throw Error('TAG_PRESENTATION_INVALID');
   const entry=input as Record<string,unknown>;
-  if(Object.keys(entry).some(key=>!['name','occupation','about','emergencyContacts','coverPath','avatarPath'].includes(key)))
+  if(Object.keys(entry).some(key=>!['name','occupation','about','emergencyContacts','coverPath','avatarPath','backgroundPath'].includes(key)))
    throw Error('TAG_PRESENTATION_INVALID');
-  const mediaField=(slot:'cover'|'avatar')=>{
-   const key=slot==='cover'?'coverPath':'avatarPath',value=entry[key];
+  const mediaField=(slot:'cover'|'avatar'|'background')=>{
+   const key=slot+'Path',value=entry[key];
    if(value===undefined||value==='')return '';
    if(typeof value!=='string'||value.length>160||!mediaPathRegex.test(value))throw Error('TAG_PRESENTATION_INVALID');
    if(mediaPathRegex.exec(value)?.[2]!==slot)throw Error('TAG_PRESENTATION_INVALID');
@@ -120,5 +122,6 @@ export function normalizePromotionalPresentation(input:unknown):PromotionalTagPr
   return {name:clean(entry.name,80),occupation:clean(entry.occupation,90),about:clean(entry.about,320),
    ...(entry.emergencyContacts!==undefined?{emergencyContacts:normalizePromotionalSosContacts(entry.emergencyContacts)}:{}),
    ...(entry.coverPath!==undefined?{coverPath:mediaField('cover')}:{}),
-   ...(entry.avatarPath!==undefined?{avatarPath:mediaField('avatar')}:{})};
+   ...(entry.avatarPath!==undefined?{avatarPath:mediaField('avatar')}:{}),
+   ...(entry.backgroundPath!==undefined?{backgroundPath:mediaField('background')}:{})};
 }

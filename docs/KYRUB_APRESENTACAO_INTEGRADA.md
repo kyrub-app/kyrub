@@ -23,3 +23,6 @@ Cartão de apresentação compartilhado entre as superfícies de contatos, com n
 
 ## Quinto incremento
 Sincronização explícita a partir do perfil salvo: escolha uma ou várias Tags promocionais ativas, selecione texto, foto própria armazenada no Firebase e/ou capa. As imagens são reencodadas e carregadas separadamente para cada unidade, sem reutilizar referências privadas entre dispositivos. A publicação dos campos é transacional, condicionada à titularidade e à revisão da fonte. Fotos externas não são copiadas. SOS, destinos e credenciais permanecem intactos. O editor passa a permitir capa e o cartão de apresentação a exibi-la. Ainda falta importação de mídia da Tag para o perfil, remoção seletiva de destinos, testes reais de Storage e navegador, e limpeza de arquivos staged sem referência após falha. Não habilitar em produção sem homologação.
+
+## Personalização de fundo
+Imagem de fundo opcional e independente de foto e capa, com camada escura para leitura. Pode ser adicionada/removida no perfil e no editor promocional de cada Tag. Cópia seletiva do fundo do perfil salvo para unidades escolhidas usa o mesmo fluxo de reencodificação, verificação de mídia e transação. Nenhuma publicação automática; mídia de fundo da Tag usa slot privado próprio e proxy revogável. Homologação de navegador e Storage pendente.

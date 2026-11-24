@@ -12,17 +12,18 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  const [notice,setNotice]=useState('');
  const [coverPreview,setCoverPreview]=useState('');
  const [avatarPreview,setAvatarPreview]=useState('');
+  const [backgroundPreview,setBackgroundPreview]=useState('');
  const [uploading,setUploading]=useState(false);
- const previews=useRef<{cover:string;avatar:string}>({cover:'',avatar:''});
- const setPreview=(slot:'cover'|'avatar',url:string)=>{
+ const previews=useRef<{cover:string;avatar:string;background:string}>({cover:'',avatar:'',background:''});
+ const setPreview=(slot:'cover'|'avatar'|'background',url:string)=>{
   if(previews.current[slot].startsWith('blob:'))URL.revokeObjectURL(previews.current[slot]);
   previews.current[slot]=url;
-  if(slot==='cover')setCoverPreview(url);else setAvatarPreview(url);
+  if(slot==='cover')setCoverPreview(url);else if(slot==='avatar')setAvatarPreview(url);else setBackgroundPreview(url);
  };
  useEffect(()=>{
   let mounted=true;
-  const initialPaths={cover:initial.presentation?.coverPath??'',avatar:initial.presentation?.avatarPath??''};
-  for(const slot of ['cover','avatar'] as const)if(initialPaths[slot]){
+  const initialPaths={cover:initial.presentation?.coverPath??'',avatar:initial.presentation?.avatarPath??'',background:initial.presentation?.backgroundPath??''};
+  for(const slot of ['cover','avatar','background'] as const)if(initialPaths[slot]){
    void loadPrivatePromotionalTagImage(initial.id,slot,initialPaths[slot]).then(url=>{
     if(!url)return;
     if(mounted)setPreview(slot,url);
@@ -39,19 +40,19 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  function updateContact(index:number,patch:Partial<PromotionalSosContact>){
   setPresentation(current=>({...current,emergencyContacts:(current.emergencyContacts??[]).map((item,i)=>i===index?{...item,...patch}:item)}));
  }
- async function upload(slot:'cover'|'avatar',file:File|undefined){
+ async function upload(slot:'cover'|'avatar'|'background',file:File|undefined){
   if(!file||busy||uploading||tag.blocked)return;
   setUploading(true);setNotice('');
   try{
    const result=await uploadPromotionalTagImage(file,tag.id,slot);
-   setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:result.path}));
+   setPresentation(current=>({...current,[slot+'Path']:result.path}));
    setPreview(slot,result.previewUrl);
    setNotice('Foto preparada. Toque em Salvar e publicar para atualizar seu cartão.');
   }catch(e){setNotice(e instanceof Error?e.message:'Não foi possível enviar esta foto.');}
   finally{setUploading(false);}
  }
- function removeImage(slot:'cover'|'avatar'){
-  setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:''}));
+ function removeImage(slot:'cover'|'avatar'|'background'){
+  setPresentation(current=>({...current,[slot+'Path']:''}));
   setPreview(slot,'');
  }
  async function execute(action:'configure-promotional'|'block-promotional'|'unblock-promotional',extras:Record<string,unknown>={}){
@@ -109,14 +110,14 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
   <section className="space-y-3 rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm">
    <strong className="text-white">Imagem de capa e foto de apresentação</strong>
    <p className="text-slate-300">Fotos opcionais. O dispositivo transforma a imagem em WebP e remove metadados antes de enviar. O cartão público só apresenta fotos enquanto a tag estiver ativa.</p>
-   {(['cover','avatar'] as const).map(slot=><div key={slot} className="space-y-2">
-    <label className="block font-semibold">{slot==='cover'?'Foto de capa':'Foto de perfil'}
+   {(['cover','avatar','background'] as const).map(slot=><div key={slot} className="space-y-2">
+    <label className="block font-semibold">{slot==='cover'?'Foto de capa':slot==='avatar'?'Foto de perfil':'Imagem de fundo'}
      <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" disabled={busy||uploading||tag.blocked}
       onChange={event=>{const file=event.currentTarget.files?.[0];if(file)void upload(slot,file);event.currentTarget.value='';}}/>
     </label>
-    {(slot==='cover'?coverPreview:avatarPreview)&&<img alt={slot==='cover'?'Prévia de capa':'Prévia de perfil'}
-      src={slot==='cover'?coverPreview:avatarPreview} className={slot==='cover'?'h-28 w-full rounded-xl object-cover':'h-24 w-24 rounded-full object-cover'} />}
-    {(slot==='cover'?presentation.coverPath:presentation.avatarPath)&&
+    {(slot==='cover'?coverPreview:slot==='avatar'?avatarPreview:backgroundPreview)&&<img alt={slot==='cover'?'Prévia de capa':slot==='avatar'?'Prévia de perfil':'Prévia de fundo'}
+      src={slot==='cover'?coverPreview:slot==='avatar'?avatarPreview:backgroundPreview} className={slot==='avatar'?'h-24 w-24 rounded-full object-cover':'h-28 w-full rounded-xl object-cover'} />}
+    {(slot==='cover'?presentation.coverPath:slot==='avatar'?presentation.avatarPath:presentation.backgroundPath)&&
      <button className="text-sm text-orange-300 underline" disabled={busy||uploading} type="button" onClick={()=>removeImage(slot)}>Remover foto</button>}
    </div>)}
   </section>

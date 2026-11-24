@@ -128,7 +128,7 @@ service firebase.storage {
     match /kyrub-tag-media/{tagId}/{slot}/{assetId} {
       allow read: if isSignedIn()
         && request.auth.token.email_verified == true
-        && slot in ['cover', 'avatar']
+        && slot in ['cover', 'avatar', 'background']
         && firestore.exists(/databases/(default)/documents/kyrub_official_tags/$(tagId))
         && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.distribution == 'promotional'
         && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.ownerId == request.auth.uid;
@@ -136,7 +136,7 @@ service firebase.storage {
       allow create: if isSignedIn()
         && resource == null
         && request.auth.token.email_verified == true
-        && slot in ['cover', 'avatar']
+        && slot in ['cover', 'avatar', 'background']
         && assetId.matches('[a-f0-9]{32}')
         && firestore.exists(/databases/(default)/documents/kyrub_official_tags/$(tagId))
         && firestore.get(/databases/(default)/documents/kyrub_official_tags/$(tagId)).data.distribution == 'promotional'

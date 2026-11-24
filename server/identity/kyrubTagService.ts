@@ -71,7 +71,7 @@ export async function claimPromotionalKyrubTag(actor:string,id:string,verifiedEm
  if(!promotionalEnabled())throw Error('TAG_PROMO_DISABLED');
  if(!isTagId(id)||!email)throw Error('TAG_FORBIDDEN');
  const presentation=initialPresentation===undefined?undefined:normalizePromotionalPresentation(initialPresentation);
- if(presentation?.coverPath||presentation?.avatarPath)throw Error('TAG_PRESENTATION_INVALID');
+ if(presentation?.coverPath||presentation?.avatarPath||presentation?.backgroundPath)throw Error('TAG_PRESENTATION_INVALID');
  const newRecoveryCode=randomBytes(24).toString('hex');
  return adminDb.runTransaction(async tx=>{
   const ref=tags().doc(id),identity=adminDb.doc('kyrub_tag_minimal_identities/'+actor);
@@ -273,21 +273,21 @@ export async function syncProfilePresentationToTags(actor:string,input:unknown){
  const {tagIds,expected,fields,media}=data;
  if(Object.keys(data).some(k=>!['tagIds','expected','fields','media'].includes(k))||
   !Array.isArray(tagIds)||!tagIds.length||tagIds.length>100||!tagIds.every(isTagId)||new Set(tagIds).size!==tagIds.length||
-  !Array.isArray(fields)||!fields.length||new Set(fields).size!==fields.length||!fields.every(k=>['text','avatar','cover'].includes(k))||
+  !Array.isArray(fields)||!fields.length||new Set(fields).size!==fields.length||!fields.every(k=>['text','avatar','cover','background'].includes(k))||
   !expected||typeof expected!=='object'||Array.isArray(expected)||!media||typeof media!=='object'||Array.isArray(media))throw Error('TAG_INVALID');
  const reviewed=expected as Record<string,unknown>,mediaMap=media as Record<string,unknown>;
- const keys=['name','occupation','bio','photoUrl','coverUrl'];
+ const keys=['name','occupation','bio','photoUrl','coverUrl','backgroundUrl'];
  if(Object.keys(reviewed).length!==keys.length||!keys.every(k=>typeof reviewed[k]==='string'&&String(reviewed[k]).length<=2048)||
   Object.keys(mediaMap).some(id=>!tagIds.includes(id)))throw Error('TAG_INVALID');
- const slots=(['avatar','cover'] as const).filter(slot=>fields.includes(slot));
- if(slots.some(slot=>!reviewed[slot==='avatar'?'photoUrl':'coverUrl']))throw Error('TAG_INVALID');
- const prepared=new Map<string,{avatarPath?:string;coverPath?:string}>();
+ const slots=(['avatar','cover','background'] as const).filter(slot=>fields.includes(slot));
+ if(slots.some(slot=>!reviewed[slot==='avatar'?'photoUrl':slot==='cover'?'coverUrl':'backgroundUrl']))throw Error('TAG_INVALID');
+ const prepared=new Map<string,{avatarPath?:string;coverPath?:string;backgroundPath?:string}>();
  for(const id of tagIds){
   const raw=mediaMap[id];
   if(slots.length&&(!raw||typeof raw!=='object'||Array.isArray(raw)))throw Error('TAG_INVALID');
   const item=(raw??{}) as Record<string,unknown>;
   if(Object.keys(item).length!==slots.length||!slots.every(slot=>typeof item[slot+'Path']==='string'&&item[slot+'Path']))throw Error('TAG_INVALID');
-  const images={...(slots.includes('avatar')?{avatarPath:item.avatarPath as string}:{}),...(slots.includes('cover')?{coverPath:item.coverPath as string}:{})};
+  const images={...(slots.includes('avatar')?{avatarPath:item.avatarPath as string}:{}),...(slots.includes('cover')?{coverPath:item.coverPath as string}:{}),...(slots.includes('background')?{backgroundPath:item.backgroundPath as string}:{})};
   if(slots.length){
    const unit=(await tags().doc(id).get()).data();
    if(unit?.ownerId!==actor||unit.distribution!=='promotional'||unit.enabled!==true||unit.blocked===true)throw Error('TAG_FORBIDDEN');

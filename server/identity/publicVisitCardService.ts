@@ -134,5 +134,5 @@ export async function resolveContactPresentation(targetId:string){
  if(latestAccount.get('isProfileVisible')!==true||!account.updateTime||!latestAccount.updateTime?.isEqual(account.updateTime)||
     profile.exists!==latestProfile.exists||(profile.exists&&!latestProfile.updateTime?.isEqual(profile.updateTime!)))return null;
  return {name,occupation:clean(profile.get('occupation'),90),bio:clean(profile.get('bio'),280),
-  photoUrl:/^https:\/\//i.test(photo)?photo:'',coverUrl:/^https:\/\//i.test(clean(profile.get('coverUrl'),2048))?clean(profile.get('coverUrl'),2048):'',links};
+  photoUrl:/^https:\/\//i.test(photo)?photo:'',coverUrl:/^https:\/\//i.test(clean(profile.get('coverUrl'),2048))?clean(profile.get('coverUrl'),2048):'',backgroundUrl:/^https:\/\//i.test(clean(profile.get('backgroundUrl'),2048))?clean(profile.get('backgroundUrl'),2048):'',links};
 }
