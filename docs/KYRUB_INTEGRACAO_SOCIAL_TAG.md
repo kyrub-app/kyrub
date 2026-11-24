@@ -64,3 +64,6 @@ Preparado transporte GET social-preview-preflight separado do piloto reservado. 
 
 ## Configuração da branch — proteção Admin antes da credencial
 774ee81: 9/9 workflows aprovados. Inspeção Vercel confirmou ausência de variáveis específicas na branch #1274 e presença de variáveis compartilhadas preview/production. Adicionado guard no bootstrap Admin para a branch exata em Preview, antes de initializeApp e também quando reutiliza app existente. Exige concordância de projeto do servidor, cliente e credencial com kyrub-tags. Não altera #1271/#1273/main, não torna deployments antigos seguros retroativamente, não habilita piloto. A credencial sensível não será recuperada do conector nem exposta; deve ser inserida diretamente no escopo Preview da branch. CI do guard pendente.
+
+## Diagnóstico autenticado pelo navegador
+Work confirmou login kyrub-tags, preflight direto 401 sem Bearer e ausência de noSocialContactBlock nas regras publicadas. Adicionada tela exclusiva do alias fixo com ?diagnostico=isolamento-social, guard do projeto cliente e flag existente. Não monta os bridges normais nesse modo; usa sessão Firebase e GET sem expor token nem conteúdo arbitrário. Não comprova regras/cache/release. Novo CI pendente; nenhuma regra publicada.

@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import {SocialPreviewDiagnostic,socialPreviewDiagnosticEnabled} from './components/SocialPreviewDiagnostic';
 import { reservedTribePilotClientEnabled } from './utils/reservedTribePilotClient';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
 import { GerencialIntegrationsNativeBridge } from './components/GerencialIntegrationsNativeBridge';
@@ -43,7 +44,7 @@ if (!rootElement) {
 createRoot(rootElement).render(
   <StrictMode>
     <AppErrorBoundary>
-      <KyrubAiConversationCloudSyncGate>
+      {socialPreviewDiagnosticEnabled() ? <SocialPreviewDiagnostic /> : <KyrubAiConversationCloudSyncGate>
         <>
           <ProfileNextPolishBridge />
           {!reservedTribePilotClientEnabled() && <ProfileConnectedCardsPolishBridge />}
@@ -68,7 +69,7 @@ createRoot(rootElement).render(
           <App />
           <KyrubiaMarketplaceFilterGuard />
         </>
-      </KyrubAiConversationCloudSyncGate>
+      </KyrubAiConversationCloudSyncGate>}
     </AppErrorBoundary>
   </StrictMode>
 );

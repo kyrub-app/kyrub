@@ -447,3 +447,24 @@ test('integration Preview never initializes Admin against an inherited productio
  assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_ENV:'production'},'kyrub-b8d0e'));
  assert.doesNotThrow(()=>assertIntegrationPreviewAdminProject({...env,VERCEL_GIT_COMMIT_REF:'feat/kyrub-integrated-presentation-devices'},'kyrub-tags'));
 });
+
+
+test('authenticated preview diagnostic is exact-origin only and returns no token or arbitrary response',async()=>{
+ const {isSocialPreviewDiagnostic,runSocialPreviewDiagnostic,SOCIAL_PREVIEW_HOST,SOCIAL_PREVIEW_BRANCH}=await import('../src/utils/socialPreviewDiagnostic.js');
+ const location={protocol:'https:',hostname:SOCIAL_PREVIEW_HOST,port:'',pathname:'/',search:'?diagnostico=isolamento-social'};
+ assert.equal(isSocialPreviewDiagnostic(location,true,'kyrub-tags'),true);
+ for(const patch of [{hostname:'www.kyrub.com'},{hostname:'other.vercel.app'},{protocol:'http:'},{port:'444'},{pathname:'/staff'},{search:''}])assert.equal(isSocialPreviewDiagnostic({...location,...patch},true,'kyrub-tags'),false);
+ assert.equal(isSocialPreviewDiagnostic(location,false,'kyrub-tags'),false);
+ assert.equal(isSocialPreviewDiagnostic(location,true,'kyrub-b8d0e'),false);
+ const user={getIdToken:async()=>'fictional-token'};let current:typeof user|null=user;let calls=0;
+ const good={configuration:'isolated-preview',project:'kyrub-tags',branch:SOCIAL_PREVIEW_BRANCH,identityVerified:true,reservedPilotEnabled:false,firestoreRulesVerified:false,clientCacheVerified:false,releaseApproved:false};
+ const request:typeof fetch=async(url,init)=>{calls++;assert.equal(url,'/api/health?transport=social-preview-preflight');assert.equal(init?.method,'GET');assert.equal(init?.cache,'no-store');assert.equal(init?.redirect,'error');assert.equal(new Headers(init?.headers).get('authorization'),'Bearer fictional-token');return new Response(JSON.stringify({...good,unexpected:'do not render'}),{status:200});};
+ const deps={allowed:()=>true,current:()=>current,request};const signal=new AbortController().signal;
+ assert.deepEqual(await runSocialPreviewDiagnostic(deps,signal),{status:200,verified:true});
+ assert.deepEqual(await runSocialPreviewDiagnostic({...deps,request:async()=>new Response(JSON.stringify({...good,project:'other'}),{status:200})},signal),{status:200,verified:false});
+ assert.deepEqual(await runSocialPreviewDiagnostic({...deps,request:async()=>new Response('untrusted',{status:401})},signal),{status:401,verified:false});
+ await assert.rejects(runSocialPreviewDiagnostic({...deps,allowed:()=>false},signal));
+ current=null;await assert.rejects(runSocialPreviewDiagnostic(deps,signal));assert.equal(calls,1);
+ current={getIdToken:async()=>{current=null;return 'fixture';}};await assert.rejects(runSocialPreviewDiagnostic(deps,signal));assert.equal(calls,1);
+ const root=readFileSync('src/main.tsx','utf8');assert.match(root,/socialPreviewDiagnosticEnabled\(\) \? <SocialPreviewDiagnostic \/> : <KyrubAiConversationCloudSyncGate>/);
+});
