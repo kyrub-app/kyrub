@@ -49,17 +49,30 @@ test('Pitangueira remains personal and separated from community pages and econom
   assert.match(account, /viewerId=\{auth\.currentUser\?\.uid \|\| ''\}/);
   assert.match(account, /xp=\{mode === 'xp' \? \(account\?\.xp \?\? null\) : undefined\}/);
   assert.match(panel, /function CocarXpIcon\(\)/);
-  assert.match(panel, /const showCanonicalXp = !communityId && xp !== undefined/);
+  assert.match(panel, /const showCanonicalXp = xp !== undefined/);
   assert.match(panel, /showCanonicalXp && \(/);
   assert.match(panel, /Cocar · XP/);
   assert.match(panel, /aria-label="Cocar, XP da conta de recompensas"/);
   assert.match(panel, /xp\.toLocaleString\('pt-BR'\)/);
   assert.doesNotMatch(community, /SemeaduraJourneyPanel|community-journey/);
-  assert.match(panel, /Esta jornada é visual\. As recompensas pertencem aos autores, não à comunidade\./);
+  assert.doesNotMatch(panel, /communityId|community-journey|Jornada coletiva/);
   assert.match(panel, /Pitangas equivalentes/);
-  assert.match(panel, /ainda não creditadas/);
+  assert.match(panel, /créditos efetivamente registrados/);
   // All new server-only counter/receipt paths remain inaccessible to clients.
   assert.match(rules, /match \/\{document=\*\*\} \{\s*allow read, write: if false;/);
   assert.doesNotMatch(rules, /match \/semeadura_post_stats\//);
   assert.doesNotMatch(rules, /match \/semeaduraProgress\//);
+});
+
+test('Semeadura remains irrevocable and excludes community reward accumulation',()=>{
+ const service=read('server/gamification/semeaduraService.ts');
+ const handler=read('server/gamification/semeaduraHandler.ts');
+ const button=read('src/components/SemearButton.tsx');
+ assert.doesNotMatch(service,/communityProgressRef|readCommunitySemeaduraJourney|communities\/.*semeaduraProgress/);
+ assert.doesNotMatch(handler,/community-journey|readCommunitySemeaduraJourney/);
+ assert.match(handler,/\['semear', 'status'\]/);
+ assert.doesNotMatch(service,/tx\.delete\(receiptRef/);
+ assert.match(button,/state\.seeded \|\| busy/);
+ assert.match(button,/seeded:true,canSemear:false/);
+ assert.match(button,/Semear é definitivo e não pode ser desfeito/);
 });

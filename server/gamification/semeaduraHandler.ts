@@ -1,6 +1,6 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
-import { readCommunitySemeaduraJourney, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
+import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -43,17 +43,15 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     return;
   }
 
+  // No undo or toggle transport: an accepted seed is permanent for its canonical post.
   const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
     ? request.body as Record<string, unknown> : null;
   const isJourney = body?.action === 'journey' && Object.keys(body).length === 1;
-  const isCommunityJourney = body?.action === 'community-journey' &&
-    typeof body.communityId === 'string' &&
-    Object.keys(body).length === 2;
   const isPostAction = body && ['semear', 'status'].includes(String(body.action)) &&
     (body.kind === 'personal' || body.kind === 'community') &&
     typeof body.postId === 'string' &&
     Object.keys(body).every(k => ['action','kind','postId'].includes(k));
-  if (!isJourney && !isCommunityJourney && !isPostAction) {
+  if (!isJourney && !isPostAction) {
     response.status(400).json({ error: 'SEMEADURA_INVALID_INPUT' });
     return;
   }
@@ -61,12 +59,6 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     if (isJourney) {
       response.status(200).json({
         journey: await readPersonalSemeaduraJourney(adminDb, actor),
-      });
-      return;
-    }
-    if (isCommunityJourney) {
-      response.status(200).json({
-        journey: await readCommunitySemeaduraJourney(adminDb, actor, body!.communityId as string),
       });
       return;
     }

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Firestore } from 'firebase-admin/firestore';
-import { readCommunitySemeaduraJourney, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from '../server/gamification/semeaduraService';
+import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from '../server/gamification/semeaduraService';
 import { handleSemeadura } from '../server/gamification/semeaduraHandler';
 
 type RecordValue = Record<string, unknown>;
@@ -92,23 +92,21 @@ test('authenticated status reads canonical receipts and increments the personal 
   assert.equal([...db.records.keys()].filter(k => /rewardLedger|xpLedger|pitangaBalance/.test(k)).length, 0);
 });
 
-test('community projections accrue only visually and do not credit community owner', async () => {
-  const db = new FakeDb(); community(db, 'post-collective');
-  join(db, 'active-voter');
-  await seedVerifiedPost(db.asFirestore(), {
-    kind: 'community', postId: 'post-collective', authenticatedUserId: 'active-voter',
-  });
-  const journey = await readCommunitySemeaduraJourney(db.asFirestore(), 'owner-a', 'community-a');
-  assert.equal(journey.totalSeeds, 1);
-  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'author-a')).totalSeeds, 1);
-  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(), 'owner-a')).totalSeeds, 0);
-  assert.equal(db.records.get('communities/community-a/semeaduraProgress/summary')?.acceptedSeeds, 1);
-  db.records.set('communities/community-a', { ownerId: 'owner-a', visibility: 'private' });
-  await assert.rejects(readCommunitySemeaduraJourney(db.asFirestore(), 'outsider', 'community-a'),
-    /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
+test('community posts accrue exclusively to authors; legacy community aggregate is untouched', async () => {
+  const db = new FakeDb(); community(db, 'post-collective'); join(db, 'active-voter');
+  const legacyPath='communities/community-a/semeaduraProgress/summary';
+  const historical={communityId:'community-a',acceptedSeeds:42,bosques:0};
+  db.records.set(legacyPath,historical);
+  const target={kind:'community' as const,postId:'post-collective',authenticatedUserId:'active-voter'};
+  assert.equal((await seedVerifiedPost(db.asFirestore(),target)).status,'accepted');
+  assert.equal((await seedVerifiedPost(db.asFirestore(),target)).status,'already_seeded');
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(),'author-a')).totalSeeds,1);
+  assert.equal((await readPersonalSemeaduraJourney(db.asFirestore(),'owner-a')).totalSeeds,0);
+  assert.deepEqual(db.records.get(legacyPath),historical);
+  assert.equal((await readVerifiedPostSemeadura(db.asFirestore(),target)).canSemear,false);
 });
 
-test('server rejects edited personal/collective progress instead of minting another tree', async () => {
+test('server rejects edited personal progress instead of minting another tree', async () => {
   const db = new FakeDb(); community(db, 'post-corrupt'); join(db, 'member');
   await seedVerifiedPost(db.asFirestore(), { kind: 'community', postId: 'post-corrupt', authenticatedUserId: 'member' });
   db.records.set('users/author-a/semeaduraProgress/summary', {

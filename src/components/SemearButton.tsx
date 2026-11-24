@@ -15,8 +15,8 @@ type SemeaduraStatus = {
 };
 
 export async function requestSemeadura(
-  action: 'status' | 'semear' | 'journey' | 'community-journey',
-  target?: { kind: SemeaduraPostKind; postId: string } | { communityId: string },
+  action: 'status' | 'semear' | 'journey',
+  target?: { kind: SemeaduraPostKind; postId: string },
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const token = await auth.currentUser?.getIdToken();
@@ -58,15 +58,20 @@ const normalizeSemeadura = (raw: Record<string, unknown>): SemeaduraStatus => {
   };
 };
 
-export function SemearButton({
-  kind, postId, viewerId, className, compact = false,
-}: {
+type SemearButtonProps = {
   kind: SemeaduraPostKind;
   postId: string;
   viewerId: string;
   className?: string;
   compact?: boolean;
-}) {
+};
+export function SemearButton(props: SemearButtonProps) {
+  // Isolate receipt state and in-flight responses across accounts and posts.
+  return <ScopedSemearButton key={JSON.stringify([props.viewerId,props.kind,props.postId])} {...props} />;
+}
+function ScopedSemearButton({
+  kind, postId, viewerId, className, compact = false,
+}: SemearButtonProps) {
   const [state, setState] = useState<SemeaduraStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -92,12 +97,13 @@ export function SemearButton({
   }, [kind, postId]);
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
+    if (!viewerId || auth.currentUser?.uid !== viewerId) return;
     const next = normalizeSemeadura(await requestSemeadura('status', { kind, postId }, signal));
-    if (!signal?.aborted) {
-      setState(next);
+    if (!signal?.aborted && auth.currentUser?.uid === viewerId) {
+      setState(previous => previous?.seeded ? {...next, count:Math.max(previous.count,next.count), closed:previous.closed||next.closed, seeded:true, canSemear:false} : next);
       setError('');
     }
-  }, [kind, postId]);
+  }, [kind, postId, viewerId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -122,7 +128,7 @@ export function SemearButton({
   }, [kind, postId, viewerId, visible, refresh]);
 
   const semear = async () => {
-    if (!state?.canSemear || inFlight.current || !viewerId) return;
+    if (!state?.canSemear || state.seeded || inFlight.current || !viewerId || auth.currentUser?.uid!==viewerId) return;
     inFlight.current = true;
     setBusy(true);
     setError('');
@@ -131,6 +137,14 @@ export function SemearButton({
       if (result.status !== 'accepted' && result.status !== 'already_seeded' &&
           result.status !== 'closed') {
         throw new Error('Resultado de semeadura desconhecido.');
+      }
+      // The authenticated server has confirmed an irreversible receipt.
+      // Lock immediately, even if the follow-up read fails or is stale.
+      if(auth.currentUser?.uid!==viewerId)return;
+      if(result.status==='accepted'||result.status==='already_seeded'){
+        setState(previous=>previous?{...previous,seeded:true,canSemear:false}:previous);
+      }else{
+        setState(previous=>previous?{...previous,canSemear:false}:previous);
       }
       // Query the authoritative status after the write. Never infer account
       // awards or allow an optimistic increment on a potentially failed write.
@@ -168,9 +182,10 @@ export function SemearButton({
     <div ref={holderRef} className="min-w-0">
       <button type="button"
         aria-label={`${label} · ${state?.count ?? 0} sementes recebidas`}
+        aria-description="Semear é definitivo e não pode ser desfeito."
         aria-pressed={Boolean(state?.seeded)}
-        title={`${(state?.count ?? 0).toLocaleString('pt-BR')} de ${SEEDS_PER_BOSQUE.toLocaleString('pt-BR')} sementes · ${journey.pitangueiras} pitangueiras · teto de 1 bosque por publicação`}
-        disabled={!state || !state.canSemear || busy || !viewerId}
+        title={`${(state?.count ?? 0).toLocaleString('pt-BR')} de ${SEEDS_PER_BOSQUE.toLocaleString('pt-BR')} sementes · ${journey.pitangueiras} pitangueiras · teto de 1 bosque por publicação · Semear é definitivo e não pode ser desfeito`}
+        disabled={!state || !state.canSemear || state.seeded || busy || !viewerId}
         onClick={() => void semear()}
         className={className ?? 'flex min-h-11 w-full min-w-0 items-center justify-center gap-1 rounded-xl border border-slate-700 bg-slate-950 px-2 text-xs font-bold text-emerald-300 disabled:opacity-60'}>
         {!compact && (state?.closed ? (

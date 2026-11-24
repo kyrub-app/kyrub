@@ -2,9 +2,14 @@ name: Welcome 100 Pitangas isolated contracts
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, test-gamification-transversal-browser]
     paths:
       - 'server/gamification/pitangaAccount*.ts'
+      - 'server/gamification/semeadura*.ts'
+      - 'src/components/SemearButton.tsx'
+      - 'src/components/SemeaduraJourneyPanel.tsx'
+      - 'tests/firestore-semeadura.test.ts'
+      - 'tests/pitangueira-*.test.ts'
       - 'src/components/tabs/PitangaAccount.tsx'
       - 'tests/pitanga-account*.test.ts'
       - 'api/health.ts'
@@ -85,6 +90,13 @@ jobs:
           tests/welcome-authenticated-grant.test.ts
           tests/first-login-receipt-writer.test.ts
           tests/welcome-trusted-auth-registration.test.ts
+      - name: Compose rules for seed receipt regression
+        run: npm run firestore:compose
+      - name: Verify author-only permanent seeds in Firestore Emulator
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.security.json --project kyrub-security-test --only firestore
+          "node --test --test-concurrency=1 --import tsx tests/firestore-semeadura.test.ts"
       - name: Verify atomic welcome grant against isolated Firestore Emulator
         run: >-
           npx --yes firebase-tools emulators:exec

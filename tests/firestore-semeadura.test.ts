@@ -5,9 +5,9 @@ import { after, before, beforeEach, test } from 'node:test';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import {
-  readCommunitySemeaduraJourney, readPersonalSemeaduraJourney,
+  readPersonalSemeaduraJourney,
   readVerifiedPostSemeadura, seedVerifiedPost,
 } from '../server/gamification/semeaduraService';
 
@@ -79,7 +79,7 @@ test('one author can accumulate concurrent seeds from personal and community pos
   ]);
   assert.deepEqual(results.map(result => result.status), ['accepted', 'accepted']);
   assert.equal((await readPersonalSemeaduraJourney(db, 'author')).totalSeeds, 2);
-  assert.equal((await readCommunitySemeaduraJourney(db, 'voter', 'rock')).totalSeeds, 1);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
   assert.equal((await db.collection('users/author/rewardLedger').get()).size, 0);
   assert.equal((await db.collection('users/author/xpLedger').get()).size, 0);
 });
@@ -112,11 +112,29 @@ test('the two concurrent final seeds yield exactly ONE winner, then close the po
   assert.equal((await db.collection('semeadura_post_stats/'+key+'/receipts').get()).size,1);
 });
 
-test('community seeds count toward the AUTHOR, not the owner, and toward a visual community bosque', async () => {
+test('community seeds count toward the AUTHOR only, not owner or community', async () => {
   await community('rock-post');
   assert.equal((await semear('community','rock-post','voter')).status,'accepted');
   assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
   assert.equal((await readPersonalSemeaduraJourney(db,'community-owner')).totalSeeds,0);
-  assert.equal((await readCommunitySemeaduraJourney(db,'voter','rock')).totalSeeds,1);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
   await assert.rejects(semear('community','rock-post','outsider'), /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
+});
+
+test('seed receipts are irrevocable even by their actor; old community progress stays untouched',async()=>{
+ await community('permanent-post');
+ const old=db.doc('communities/rock/semeaduraProgress/summary');
+ const historical={communityId:'rock',acceptedSeeds:77,bosques:0};
+ await old.set(historical);
+ const key=createHash('sha256').update('community\0permanent-post').digest('hex');
+ const receiptPath='semeadura_post_stats/'+key+'/receipts/voter';
+ await semear('community','permanent-post','voter');
+ const actor=environment.authenticatedContext('voter').firestore();
+ await assertFails(deleteDoc(doc(actor,receiptPath)));
+ await assertFails(setDoc(doc(actor,receiptPath),{actorId:'voter'}));
+ await assertFails(setDoc(doc(actor,'communities/rock/semeaduraProgress/summary'),{acceptedSeeds:100000}));
+ assert.equal((await semear('community','permanent-post','voter')).status,'already_seeded');
+ assert.equal((await db.doc(receiptPath).get()).exists,true);
+ assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
+ assert.deepEqual((await old.get()).data(),historical);
 });
