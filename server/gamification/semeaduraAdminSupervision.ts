@@ -305,3 +305,29 @@ export async function drainIsolatedGamificationDirtyAccounts(
  return {scope:'isolated-seed-dirty-queue' as const,refreshed,moreObserved:pending.size>limit,
   globalCoverageVerified:false,automaticWorkerInstalled:false};
 }
+
+
+/** One bounded invocation for future worker integration. Never starts a
+ * scheduler, keeps a server alive, or grants a machine administrator role.
+ * The caller supplies a verified isolated supervisor session; a real
+ * scheduled worker needs a separate service identity and release review.
+ * Failures propagate, preserving unprocessed markers for a later invocation. */
+export async function runIsolatedGamificationQueueCycle(
+ db:Firestore,auth:Auth,authorization:string,
+ options:{batchSize:number;maxBatches:number}={batchSize:10,maxBatches:3},
+){
+ if(!options||!Number.isSafeInteger(options.batchSize)||options.batchSize<1||options.batchSize>20||
+    !Number.isSafeInteger(options.maxBatches)||options.maxBatches<1||options.maxBatches>5)
+   throw Error('INCREMENTAL_QUEUE_CYCLE_LIMIT_INVALID');
+ let processed=0,batches=0,moreObserved=false;
+ for(let i=0;i<options.maxBatches;i++){
+  const result=await drainIsolatedGamificationDirtyAccounts(db,auth,authorization,options.batchSize);
+  batches++;
+  processed+=result.refreshed;
+  moreObserved=result.moreObserved;
+  if(!moreObserved)break;
+ }
+ return {scope:'isolated-queue-cycle' as const,processed,batches,moreObserved,
+   stopReason:moreObserved?'batch-budget-reached' as const:'no-more-in-last-snapshot' as const,
+   globalCoverageVerified:false,schedulerInstalled:false};
+}
