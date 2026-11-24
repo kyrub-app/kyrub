@@ -370,3 +370,73 @@ test('isolated economic review is authorized, audited, revisioned and replay saf
   if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
  }
 });
+
+
+test('isolated technical evidence reports integrity only without writing holds or balances',async()=>{
+ const {inspectIsolatedSemeaduraEvidence}=await import('../server/gamification/semeaduraReviewEvidence.js');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const {createHash}=await import('node:crypto');
+ const signed=await googleSignIn('evidence-author');
+ const author=signed.localId;
+ await waitForAward(author);
+ const root='systemControl/semeaduraEconomicReview';
+ const reviewer='evidence-fixture-reviewer';
+ const postId='evidence-post';
+ const target={kind:'personal' as const,postId};
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const receipts=stats.collection('receipts');
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const inspect=()=>inspectIsolatedSemeaduraEvidence(db,reviewer,target);
+ try{
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(inspect(),/SEMEADURA_REVIEW_PILOT_DISABLED/);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(inspect(),/SEMEADURA_REVIEW_NOT_AUTHORIZED/);
+  await db.doc(root+'/reviewers/'+reviewer).set({schemaVersion:1,reviewerId:reviewer,active:true,fixtureOnly:true});
+  await db.doc('social_posts/'+postId).set({postId,authorId:author,visibility:'public',publicationType:'feed'});
+  for(let i=0;i<3;i++)await seedVerifiedPost(db,{...target,authenticatedUserId:'evidence-voter-'+i});
+  const good=await inspect();
+  assert.equal(good.coverage,'complete');
+  assert.equal(good.observedReceipts,3);
+  assert.equal(good.projectedSeeds,3);
+  assert.deepEqual(good.findings,[]);
+  assert.equal(good.requiresTechnicalReview,false);
+  await receipts.doc('evidence-voter-0').update({quotaDay:'2000-01-01'});
+  await receipts.doc('evidence-voter-1').update({actorId:author});
+  await stats.update({acceptedSeeds:5});
+  const bad=await inspect();
+  assert.deepEqual(bad.findings,['COUNTER_RECEIPT_MISMATCH','INVALID_RECEIPT','SELF_SEED_RECEIPT']);
+  assert.equal(bad.invalidReceipts,2);
+  assert.equal(bad.selfReceipts,1);
+  assert.equal(bad.requiresTechnicalReview,true);
+  assert.equal(JSON.stringify(bad).includes('evidence-voter-'),false);
+  // Legacy receipts without quotaDay are not automatically misconduct.
+  const original=(await receipts.doc('evidence-voter-2').get()).data()!;
+  const {quotaDay:unused,...legacy}=original;
+  await receipts.doc('evidence-voter-2').set(legacy);
+  assert.equal((await inspect()).legacyWithoutQuotaDay,1);
+  await stats.update({acceptedSeeds:1});
+  assert.ok((await inspect()).findings.includes('COUNTER_BELOW_OBSERVED'));
+  // Explicit synthetic data to exercise bounded sampling, never rewarded.
+  const batch=db.batch();
+  for(let i=0;i<498;i++){
+   const actorId='sample-'+String(i).padStart(4,'0');
+   batch.set(receipts.doc(actorId),{...legacy,actorId});
+  }
+  await batch.commit();
+  await stats.update({acceptedSeeds:800});
+  const partial=await inspect();
+  assert.equal(partial.coverage,'partial');
+  assert.equal(partial.observedReceipts,501);
+  assert.equal(partial.findings.includes('COUNTER_RECEIPT_MISMATCH'),false);
+  await stats.delete();
+  assert.ok((await inspect()).findings.includes('ORPHAN_RECEIPTS'));
+  assert.equal((await db.doc(root+'/holds/author_'+author).get()).exists,false);
+  assert.equal((await db.doc(root+'/holds/post_'+key).get()).exists,false);
+  assert.equal((await balance(author).get()).get('availableKCoins'),100);
+  assert.equal((await ledger(author).get()).size,1);
+ }finally{
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+ }
+});
