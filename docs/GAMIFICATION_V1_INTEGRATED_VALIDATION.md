@@ -29,3 +29,6 @@ CI 790fda5: build, Validate Kyrub e Phase 10 aprovados; workflow Welcome falhou 
 
 ## Vínculo institucional — primeira etapa
 Vinculação explícita e única de comunidade pública própria por Super Admin ativo e proprietário com membership owner ativo. GET/POST autenticados reutilizam autorização e cotas existentes; rechecagem transacional e auditoria. Documento server-only, sem alteração de regras de comunidades, autorias, recompensas ou postagens. Não é possível substituir vínculo nesta etapa; futura operação de suspensão/reconfiguração exige revisão. A divulgação de desafios e Taba continua pendente. A comunidade real ainda precisa ser selecionada após homologação autorizada. CI do vínculo pendente.
+
+### Resultado do CI e correção do teste
+12949ce: Application build e Welcome 100 aprovados. Validate Kyrub falhou no primeiro GET do teste institucional (429 em vez de 401): os casos de saturação deliberada do ingress eram anteriores ao teste novo. Movido o teste institucional para antes de ambos os casos de saturação, sem modificar limites, autorização, regras ou runtime. Acrescentado teste UI para carregamento sob demanda, seleção exata, cancelamento, confirmação e reconsulta do vínculo; novo CI pendente.
