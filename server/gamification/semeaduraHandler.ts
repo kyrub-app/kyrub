@@ -1,5 +1,6 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { adminDb } from '../firebaseAdmin.js';
+import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
+import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
 import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
 
 type RequestLike = {
@@ -34,37 +35,38 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     return;
   }
 
+  // Exact discriminated request: no coercion, undo, toggle or caller UID.
+  const body = parseSemeaduraRequest(request.body);
+  if(!body){
+    response.status(400).json({error:'SEMEADURA_INVALID_INPUT'});
+    return;
+  }
   let actor = '';
   try {
-    actor = (await verifyFirebaseIdToken(token)).uid;
+    actor=body.action==='semear'
+      ? await authorizeSemeaduraMutation(token,{
+          verify:verifyFirebaseIdToken,
+          getUser:uid=>adminAuth.getUser(uid),
+          actualProject:getFirebaseAdminProjectId,
+          expectedProject:process.env.FIREBASE_PROJECT_ID?.trim()||'kyrub-b8d0e',
+          now:Date.now,
+        })
+      : (await verifyFirebaseIdToken(token)).uid;
     if (!actor) throw Error('INVALID_FIREBASE_IDENTITY');
   } catch {
     response.status(401).json({ error: 'AUTH_INVALID' });
     return;
   }
 
-  // No undo or toggle transport: an accepted seed is permanent for its canonical post.
-  const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
-    ? request.body as Record<string, unknown> : null;
-  const isJourney = body?.action === 'journey' && Object.keys(body).length === 1;
-  const isPostAction = body && ['semear', 'status'].includes(String(body.action)) &&
-    (body.kind === 'personal' || body.kind === 'community') &&
-    typeof body.postId === 'string' &&
-    Object.keys(body).every(k => ['action','kind','postId'].includes(k));
-  if (!isJourney && !isPostAction) {
-    response.status(400).json({ error: 'SEMEADURA_INVALID_INPUT' });
-    return;
-  }
   try {
-    if (isJourney) {
+    if (body.action==='journey') {
       response.status(200).json({
         journey: await readPersonalSemeaduraJourney(adminDb, actor),
       });
       return;
     }
-    const target = { authenticatedUserId: actor, kind: body!.kind as 'personal' | 'community',
-      postId: body!.postId as string };
-    const result = body!.action === 'status'
+    const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
+    const result = body.action === 'status'
       ? await readVerifiedPostSemeadura(adminDb, target)
       : await seedVerifiedPost(adminDb, target);
     response.status(200).json(result);

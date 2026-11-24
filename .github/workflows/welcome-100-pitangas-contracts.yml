@@ -79,6 +79,8 @@ jobs:
       - name: Run isolated welcome contract and transaction tests
         run: >-
           node --test --import tsx
+          tests/pitangueira-semeadura-service.test.ts
+          tests/pitangueira-ui-contract.test.ts
           tests/pitanga-account-handler.test.ts
           tests/pitanga-account-ui.test.ts
           tests/first-login-welcome-100-contract.test.ts

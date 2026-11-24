@@ -209,3 +209,40 @@ test('transport is explicitly OFF by default, does not create a serverless funct
   const service = readFileSync('server/gamification/semeaduraService.ts', 'utf8');
   assert.doesNotMatch(service, /applyPitangaEarnInTransaction|applyVerifiedPitangaXpConversionInTransaction|xpLedger/);
 });
+
+
+test('strict request parsing rejects coerced read actions, unseed, actor injection and malformed targets',async()=>{
+ const {parseSemeaduraRequest}=await import('../server/gamification/semeaduraRequestAuthority.js');
+ const target={kind:'community',postId:'post-a'};
+ assert.deepEqual(parseSemeaduraRequest({action:'status',...target}),{action:'status',...target});
+ assert.deepEqual(parseSemeaduraRequest({action:'semear',...target}),{action:'semear',...target});
+ assert.deepEqual(parseSemeaduraRequest({action:'journey'}),{action:'journey'});
+ for(const value of [
+  {action:['status'],...target},{action:['semear'],...target},{action:'dessemear',...target},
+  {action:'toggle',...target},{action:'community-journey',communityId:'abc'},
+  {action:'semear',...target,authenticatedUserId:'other'},
+  {action:'status',kind:'community',postId:'../private'},
+  {action:'semear',kind:'community',postId:['post-a']},
+  {action:'semear',kind:'community'},null,[],{action:'journey',userId:'other'},
+ ])assert.equal(parseSemeaduraRequest(value),null);
+});
+
+test('mutation authentication rejects revoked, expired, disabled and mismatched accounts',async()=>{
+ const {authorizeSemeaduraMutation}=await import('../server/gamification/semeaduraRequestAuthority.js');
+ const now=Date.parse('2026-11-24T20:00:00Z'),project='demo-test',uid='actor';
+ const token=(extra:Record<string,unknown>={})=>'header.'+Buffer.from(JSON.stringify({sub:uid,aud:project,exp:now/1000+600,auth_time:now/1000-60,...extra})).toString('base64url')+'.signature';
+ let verified=0,lookups=0;
+ const deps={verify:async()=>{verified++;return {uid}},getUser:async()=>{lookups++;return {uid,disabled:false,tokensValidAfterTime:new Date(now-120000).toISOString()}},actualProject:()=>project,expectedProject:project,now:()=>now};
+ assert.equal(await authorizeSemeaduraMutation(token(),deps),uid);
+ assert.equal(verified,1);assert.equal(lookups,1);
+ for(const extra of [{exp:now/1000},{sub:'other'},{aud:'other'},{auth_time:'bad'},{auth_time:now/1000+301}]){
+  await assert.rejects(authorizeSemeaduraMutation(token(extra),deps),/SEMEADURA_AUTH_INVALID/);
+ }
+ assert.equal(lookups,1,'invalid signed claims never query user records');
+ for(const account of [{uid,disabled:true},{uid:'other',disabled:false},{uid,disabled:false,tokensValidAfterTime:new Date(now-1000).toISOString()},{uid,disabled:false,tokensValidAfterTime:'invalid'}]){
+  await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,getUser:async()=>account}),/SEMEADURA_AUTH_INVALID/);
+ }
+ await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,actualProject:()=> 'other'}),/SEMEADURA_AUTH_PROJECT_MISMATCH/);
+ await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,verify:async()=>{throw Error('invalid signature')}}),/invalid signature/);
+ await assert.rejects(authorizeSemeaduraMutation(token(),{...deps,getUser:async()=>{throw Error('identity backend unavailable')}}),/identity backend unavailable/);
+});

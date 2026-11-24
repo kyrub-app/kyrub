@@ -70,7 +70,10 @@ test('Semeadura remains irrevocable and excludes community reward accumulation',
  const button=read('src/components/SemearButton.tsx');
  assert.doesNotMatch(service,/communityProgressRef|readCommunitySemeaduraJourney|communities\/.*semeaduraProgress/);
  assert.doesNotMatch(handler,/community-journey|readCommunitySemeaduraJourney/);
- assert.match(handler,/\['semear', 'status'\]/);
+ const authority=read('server/gamification/semeaduraRequestAuthority.ts');
+ assert.match(authority,/body\.action!=='status'&&body\.action!=='semear'/);
+ assert.match(handler,/parseSemeaduraRequest\(request\.body\)/);
+ assert.match(handler,/authorizeSemeaduraMutation\(token/);
  assert.doesNotMatch(service,/tx\.delete\(receiptRef/);
  assert.match(button,/state\.seeded \|\| busy/);
  assert.match(button,/seeded:true,canSemear:false/);
