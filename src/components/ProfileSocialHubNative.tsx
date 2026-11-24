@@ -61,6 +61,10 @@ import { MediaCarousel } from './MediaCarousel';
 import { SEMEADURA_UI_ENABLED, SemearButton } from './SemearButton';
 import { resolvePostAuthorConnection } from '../utils/socialPostConnections';
 import { ChatModal } from './modals/ChatModal';
+import { ContactPresentationModal } from './ContactPresentationModal';
+import {BlockedContactsPanel} from './BlockedContactsPanel';
+import {PublicSocialAddressEditor} from './PublicSocialAddressEditor';
+import { sanitizedWebp } from '../utils/kyrubTagMedia';
 import {
   OPEN_COMMUNITY_FROM_SQUARE_EVENT, subscribeCommunitySquareFeed,
   withinCommunitySquareWindow, type CommunitySquareEntry,
@@ -90,6 +94,9 @@ type ProfileState = {
   email: string;
   photoUrl: string;
   bio: string;
+  occupation?: string;
+  coverUrl?: string;
+  backgroundUrl?: string;
 };
 
 type ContactGroup = {
@@ -419,14 +426,17 @@ function ContactCard({
   onChat: () => void;
   onRemove: () => void;
 }) {
+  const [showPresentation,setShowPresentation]=useState(false);
   return (
     <article className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900">
       <div className="relative">
+        <button type="button" className="block w-full" aria-label={`Abrir apresentação de ${friend.name}`} onClick={()=>setShowPresentation(true)}>
         <Avatar
           src={latestStatus?.mediaUrls?.[0] || friend.avatar}
           name={friend.name}
           className="aspect-[4/3] w-full object-cover"
         />
+        </button>
         {latestStatus && (
           <span className="absolute bottom-2 left-2 rounded-full border border-teal-400/30 bg-slate-950/85 px-2 py-1 text-[8px] font-black uppercase text-teal-300 backdrop-blur">
             Status · {remainingStatusLabel(latestStatus, Date.now())}
@@ -469,6 +479,7 @@ function ContactCard({
           <UserMinus className="h-4 w-4" />
         </button>
       </div>
+      {showPresentation&&<ContactPresentationModal targetId={friend.id} onClose={()=>setShowPresentation(false)} onChat={()=>{setShowPresentation(false);onChat();}}/>}
     </article>
   );
 }
@@ -476,9 +487,11 @@ function ContactCard({
 export function ProfileSocialHubNative() {
   const [open, setOpen] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
+  const [qrOpen,setQrOpen]=useState(false);
   const [savedOpen, setSavedOpen] = useState(false);
   const [offersOpen, setOffersOpen] = useState(false);
   const [newConnectionsOpen, setNewConnectionsOpen] = useState(false);
+  const [suggestionPresentation,setSuggestionPresentation]=useState<string|null>(null);
   const [newConnectionsTab, setNewConnectionsTab] =
     useState<NewConnectionsTab>('requests');
   const [activeTab, setActiveTab] = useState<ProfileTab>('publications');
@@ -493,6 +506,7 @@ export function ProfileSocialHubNative() {
   });
   const [draftName, setDraftName] = useState('');
   const [draftBio, setDraftBio] = useState('');
+  const [draftOccupation, setDraftOccupation] = useState('');
   const [photoBusy, setPhotoBusy] = useState(false);
   const [newPostText, setNewPostText] = useState('');
   const [postMediaUrls, setPostMediaUrls] = useState<string[]>([]);
@@ -634,14 +648,17 @@ export function ProfileSocialHubNative() {
 
   useEffect(() => {
     if (!open) {
+      setQrOpen(false);
       setNewConnectionsOpen(false);
       return;
     }
     setDraftName(profile.name);
     setDraftBio(profile.bio);
+    setDraftOccupation(profile.occupation??'');
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key !== 'Escape') return;
-      if (savedOpen) setSavedOpen(false);
+      if (qrOpen) setQrOpen(false);
+      else if (savedOpen) setSavedOpen(false);
       else if (offersOpen) setOffersOpen(false);
       else if (editOpen) setEditOpen(false);
       else if (newConnectionsOpen) setNewConnectionsOpen(false);
@@ -651,10 +668,12 @@ export function ProfileSocialHubNative() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [
     editOpen,
+    qrOpen,
     newConnectionsOpen,
     offersOpen,
     open,
     profile.bio,
+    profile.occupation,
     profile.name,
     savedOpen,
   ]);
@@ -702,6 +721,9 @@ export function ProfileSocialHubNative() {
         setProfile(current => ({
           ...current,
           bio: readString(data?.bio),
+          occupation: readString(data?.occupation),
+          coverUrl: readString(data?.coverUrl),
+          backgroundUrl: readString(data?.backgroundUrl),
           photoUrl: readString(data?.photoUrl) || current.photoUrl,
           name: readString(data?.name) || current.name,
         }));
@@ -1068,6 +1090,7 @@ export function ProfileSocialHubNative() {
       user.email?.split('@')[0] ||
       'Usuário Kyrub';
     const bio = draftBio.trim().slice(0, 280);
+    const occupation=draftOccupation.trim().slice(0,90);
     try {
       await Promise.all([
         setDoc(
@@ -1085,6 +1108,7 @@ export function ProfileSocialHubNative() {
             userId: user.uid,
             name,
             bio,
+            occupation,
             photoUrl: profile.photoUrl || user.photoURL || '',
             updatedAt: serverTimestamp(),
           },
@@ -1095,7 +1119,7 @@ export function ProfileSocialHubNative() {
           photoURL: profile.photoUrl || user.photoURL || null,
         }),
       ]);
-      setProfile(current => ({ ...current, name, bio }));
+      setProfile(current => ({ ...current, name, bio, occupation }));
       setEditOpen(false);
       triggerToast('Perfil atualizado.', 'success');
     } catch {
@@ -1154,6 +1178,23 @@ export function ProfileSocialHubNative() {
     } finally {
       setPhotoBusy(false);
     }
+  };
+
+  const uploadPresentationImage = async (event: ChangeEvent<HTMLInputElement>,slot:'cover'|'background')=>{
+    const file=event.target.files?.[0];event.target.value='';
+    if(!user||!file||photoBusy)return;
+    setPhotoBusy(true);
+    try{
+      const blob=await sanitizedWebp(file,slot);
+      if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
+      const image=ref(storage,'profile-images/'+user.uid+'/'+slot+'-'+crypto.randomUUID()+'.webp');
+      await uploadBytes(image,blob,{contentType:'image/webp'});
+      const imageUrl=await getDownloadURL(image);
+      if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
+      await setDoc(doc(db,'users',user.uid,'public_profile','main'),{userId:user.uid,name:profile.name||'Kairubido',bio:profile.bio,photoUrl:profile.photoUrl,[slot+'Url']:imageUrl,updatedAt:serverTimestamp()},{merge:true});
+      triggerToast('Imagem da apresentação atualizada.','success');
+    }catch{triggerToast('Não foi possível salvar a imagem.','error');}
+    finally{setPhotoBusy(false);}
   };
 
   const restoreGooglePhoto = async () => {
@@ -1404,7 +1445,7 @@ export function ProfileSocialHubNative() {
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-teal-500/15 text-teal-300"><Users className="h-4 w-4" /></span>
                     <span className="text-[8px] font-black uppercase">Conectados</span>
                   </button>
-                  <button type="button" onClick={() => triggerToast('O QR público da sua página entra na próxima etapa.', 'info')} className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
+                  <button type="button" onClick={()=>setQrOpen(true)} aria-label="Compartilhar minha apresentação por QR Code" className="flex min-w-0 flex-col items-center gap-2 rounded-2xl border border-slate-800 bg-slate-900 px-1 py-3 text-slate-300">
                     <span className="flex h-10 w-10 items-center justify-center rounded-full bg-slate-800"><QrCode className="h-4 w-4" /></span>
                     <span className="text-[8px] font-black uppercase">QR</span>
                   </button>
@@ -1790,6 +1831,7 @@ export function ProfileSocialHubNative() {
                     </button>
                   </nav>
 
+                  <BlockedContactsPanel uid={user.uid}/>
                   {connectionSection === 'connected' && (
                     <div className="grid grid-cols-2 gap-3">
                       {directory.friends.map(friend => (
@@ -2015,6 +2057,13 @@ export function ProfileSocialHubNative() {
       </div>
 
 
+      {qrOpen&&<div className="fixed inset-0 z-[194] flex items-center justify-center bg-slate-950/95 p-4" onClick={()=>setQrOpen(false)}>
+        <section role="dialog" aria-modal="true" aria-label="QR Code da minha apresentação" className="max-h-[90dvh] w-full max-w-md overflow-y-auto rounded-2xl border border-[#34443B] bg-[#121A17] p-4 text-white" onClick={event=>event.stopPropagation()}>
+          <header className="mb-3 flex items-center justify-between gap-2"><h3 className="font-bold">Compartilhar minha apresentação</h3><button type="button" className="min-h-11 rounded-lg border border-slate-600 px-3" onClick={()=>setQrOpen(false)}>Fechar</button></header>
+          <p className="mb-3 text-sm text-slate-300">Reserve seu endereço público, se ainda não tiver um. O QR Code não exige adesivo NFC.</p>
+          <PublicSocialAddressEditor key={user.uid} kind="profile" ownerId={user.uid} showQrByDefault/>
+        </section>
+      </div>}
       {newConnectionsOpen && (
         <div className="fixed inset-0 z-[136] flex items-end justify-center bg-slate-950/95 backdrop-blur-md sm:items-center sm:p-4">
           <section className="flex max-h-[92dvh] w-full max-w-xl flex-col overflow-hidden rounded-t-3xl border border-slate-800 bg-slate-950 sm:rounded-3xl">
@@ -2133,11 +2182,12 @@ export function ProfileSocialHubNative() {
                       key={friend.id}
                       className="flex min-w-0 flex-col overflow-hidden rounded-3xl border border-slate-800 bg-slate-900"
                     >
+                      <button type="button" aria-label={`Abrir apresentação de ${friend.name}`} onClick={()=>setSuggestionPresentation(friend.id)}>
                       <Avatar
                         src={friend.avatar}
                         name={friend.name}
                         className="aspect-[4/3] w-full object-cover"
-                      />
+                      /></button>
                       <div className="min-h-[72px] p-3">
                         <h4 className="truncate text-xs font-black text-white">
                           {friend.name}
@@ -2148,9 +2198,7 @@ export function ProfileSocialHubNative() {
                       </div>
                       <button
                         type="button"
-                        onClick={() =>
-                          setRemoveContactTarget(friend)
-                        }
+                        onClick={()=>setSuggestionPresentation(friend.id)}
                         className="m-2 mt-auto flex h-10 items-center justify-center gap-2 rounded-xl bg-teal-500 px-2 text-[9px] font-black uppercase text-slate-950"
                       >
                         <UserPlus className="h-4 w-4" />
@@ -2267,6 +2315,10 @@ export function ProfileSocialHubNative() {
                   <input value={draftName} onChange={event => setDraftName(event.target.value.slice(0, 80))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none" />
                 </label>
                 <label className="block">
+                  <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">O que você faz?</span>
+                  <input value={draftOccupation} onChange={event=>setDraftOccupation(event.target.value.slice(0,90))} className="w-full rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none"/>
+                </label>
+                <label className="block">
                   <span className="mb-1 block text-[8px] font-black uppercase text-slate-500">Biografia</span>
                   <textarea value={draftBio} onChange={event => setDraftBio(event.target.value.slice(0, 280))} rows={3} className="w-full resize-none rounded-xl border border-slate-800 bg-slate-950 px-3 py-3 text-xs text-white outline-none" />
                   <span className="mt-1 block text-right text-[8px] text-slate-600">{draftBio.length}/280</span>
@@ -2275,6 +2327,18 @@ export function ProfileSocialHubNative() {
                   Salvar perfil público
                 </button>
               </form>
+              <section className="space-y-2 rounded-xl border border-slate-700 p-3">
+                <h4 className="font-semibold">Capa da apresentação</h4>
+                {profile.coverUrl&&<img src={profile.coverUrl} alt="Capa atual" className="h-28 w-full rounded-xl object-cover"/>}
+                <label className="block text-sm">Alterar capa<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={event=>void uploadPresentationImage(event,'cover')} className="mt-2 block w-full text-xs"/></label>
+              </section>
+              <section className="space-y-2 rounded-xl border border-slate-700 p-3">
+                <h4 className="font-semibold">Imagem de fundo da apresentação</h4>
+                <p className="text-xs text-slate-400">Personalize o cartão inteiro. A imagem recebe uma camada escura para manter o texto legível.</p>
+                {profile.backgroundUrl&&<img src={profile.backgroundUrl} alt="Fundo atual" className="h-28 w-full rounded-xl object-cover"/>}
+                <label className="block text-sm">Alterar fundo<input type="file" accept="image/jpeg,image/png,image/webp" disabled={photoBusy} onChange={event=>void uploadPresentationImage(event,'background')} className="mt-2 block w-full text-xs"/></label>
+                {profile.backgroundUrl&&<button type="button" disabled={photoBusy} className="text-sm underline" onClick={()=>{if(auth.currentUser?.uid===user.uid)void setDoc(doc(db,'users',user.uid,'public_profile','main'),{backgroundUrl:'',updatedAt:serverTimestamp()},{merge:true}).catch(()=>triggerToast('Não foi possível remover o fundo.','error'));}}>Remover fundo</button>}
+              </section>
 
               <button
                 type="button"
@@ -2450,6 +2514,7 @@ export function ProfileSocialHubNative() {
         </div>
       )}
 
+      {suggestionPresentation&&<ContactPresentationModal targetId={suggestionPresentation} onClose={()=>setSuggestionPresentation(null)}/>}
       <ChatModal
         isOpen={Boolean(chatTarget)}
         onClose={() => setChatTarget(null)}

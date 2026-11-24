@@ -3,6 +3,10 @@ import {isSignInWithEmailLink,onAuthStateChanged,signOut,type User} from 'fireba
 import {auth} from '../utils/firebase';
 import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
+import {PresentationCard} from './PresentationCard';
+import {PresentationShare} from './PresentationShare';
+import {PresentationRelationship} from './PresentationRelationship';
+import {PresentationFooter,usePresentationMembership} from './PresentationFooter';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
 import {publicPromotionalTagImageUrl} from '../utils/kyrubTagMedia';
@@ -45,6 +49,7 @@ function clearIntent(id:string){try{localStorage.removeItem(intentKey(id));}catc
 const emergencyServices=[{name:'Polícia Militar',number:'190'},{name:'SAMU',number:'192'},{name:'Bombeiros',number:'193'}] as const;
 
 export function PublicKyrubTagPage({identifier}:{identifier:string}){
+ const membership=usePresentationMembership();
  const [data,setData]=useState<Payload|null>(null);
  const [error,setError]=useState('');
  const [user,setUser]=useState<User|null>(null);
@@ -173,46 +178,28 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
   {ownerRecord?.distribution==='promotional'?
    <PromotionalKyrubTagEditor initial={ownerRecord} oneTimeRecoveryCode={recoveryCode}/>:
    <OfficialKyrubTagPanel key={user.uid+identifier} userId={user.uid} initialTagId={identifier}/>}
-  <a href={ownerRecord?.distribution==='promotional'?'/?entry=welcome':'/'} className="block p-3 text-center text-sm text-slate-300 underline">Conhecer o Kyrub</a>
+  {ownerRecord?.distribution==='promotional'&&membership==='tag_only'?<PresentationFooter context="owner" mode={membership}/>:<a href="/" className="block p-3 text-center text-sm text-slate-300 underline">Explorar o Kyrub</a>}
  </div></main>;
 
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
- return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
+ const hasSos=authReady&&data?.status==='active'&&!!data.presentation;
+ return <main className={"min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"+(hasSos?" pb-[calc(6rem+env(safe-area-inset-bottom))]":"")}><div className="mx-auto max-w-md space-y-4 py-6">
   <header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
-   {!promotional&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
+   {!promotional&&data?.status!=='active'&&<a href="/?entry=welcome" className="text-sm text-slate-300 underline">Conhecer o Kyrub</a>}
   </header>
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
-   <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
-    <div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C] text-sm text-slate-300">
-     {data.presentation.hasCover?<img className="h-full w-full object-cover" alt="Foto de capa do cartão digital"
-       src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/>:'Apresentação digital · Capa opcional'}
-    </div>
-    <div className="flex items-center gap-3">
-     {data.presentation.hasAvatar&&<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular"
-       src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>}
-     <h1 className="text-2xl font-bold">{data.presentation.name||'Minha Kyrub Tag'}</h1>
-    </div>
-    {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
-    {data.presentation.about&&<p className="whitespace-pre-wrap text-slate-200">{data.presentation.about}</p>}
-    <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
-    {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
-     <h2 className="font-semibold">Emergência no Brasil</h2>
-     <p className="text-xs text-slate-300">Toque em um número para abrir o discador. Esta página não envia alertas nem aciona socorro automaticamente.</p>
-     {emergencyServices.map(service=><a key={service.number} className="flex min-h-11 items-center justify-between rounded-lg border border-[#34443B] p-3" href={'tel:'+service.number}><span>{service.name}</span><strong>{service.number}</strong></a>)}
-     {data.presentation.sosContacts.length>0&&<div className="space-y-3 border-t border-rose-400/40 pt-3">
-      <h3 className="font-semibold">Pessoas de confiança</h3>
-      <p className="text-xs text-slate-300">Contatos disponibilizados voluntariamente pelo titular. Não há serviço de atendimento ou monitoramento de emergência.</p>
-      {data.presentation.sosContacts.map(contact=><div key={contact.phone} className="space-y-2 rounded-lg border border-[#34443B] p-3">
-       <p className="font-semibold">{contact.name}{contact.relationship?' · '+contact.relationship:''}</p>
-       <a className="inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline" href={'tel:'+contact.phone}>Ligar para {contact.phone}</a>
-       {contact.whatsapp&&<a className="ml-2 inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline"
-         href={'https://wa.me/'+contact.phone.replace(/\D/g,'')} target="_blank" rel="noopener noreferrer">WhatsApp do contato</a>}
-      </div>)}
-     </div>}
-    </div>}
+   <PresentationCard headingLevel="h1" name={data.presentation.name||'Minha Kyrub Tag'} occupation={data.presentation.occupation} bio={data.presentation.about}
+    photoUrl={data.presentation.profileMedia?.photoUrl||(data.presentation.hasAvatar?publicPromotionalTagImageUrl(identifier,'avatar'):undefined)}
+    coverUrl={data.presentation.profileMedia?.coverUrl||(data.presentation.hasCover?publicPromotionalTagImageUrl(identifier,'cover'):undefined)}
+    backgroundUrl={data.presentation.profileMedia?.backgroundUrl||(data.presentation.hasBackground?publicPromotionalTagImageUrl(identifier,'background'):undefined)}
+    links={data.links}>
+    {data.presentation.profilePaused&&<p className="text-sm text-slate-300">Apresentação temporariamente indisponível. O acesso ao SOS permanece disponível.</p>}
+    {!data.presentation.profilePaused&&<PresentationRelationship source="tag" id={identifier}/>}
+    <PresentationShare url={window.location.origin+'/tag/'+encodeURIComponent(identifier)} title={data.presentation.name||'Minha Kyrub Tag'}/>
+    <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     <button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>
-   </section>:
+   </PresentationCard>:
    promotional?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
     <h1 className="text-2xl font-bold">Sua apresentação, do seu jeito.</h1>
@@ -268,6 +255,26 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <button type="button" className="block text-sm underline text-slate-300" disabled={busy} onClick={()=>void signOut(auth)}>Verificar outro e-mail</button></>:<TagEmailLinkIdentity tagId={identifier}/>}
   </section>}
   {notice&&<p role="status" className="text-sm text-slate-200">{notice}</p>}
-  {!promotional&&<a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>}
- </div></main>;
+  {authReady&&data?.status==='active'?<PresentationFooter mode={membership}/>:!promotional&&<a href="/?entry=welcome" className="block rounded-xl border border-[#34443B] p-3 text-center">Conhecer o Kyrub</a>}
+ </div>
+ {hasSos&&data?.presentation&&<aside aria-label="Acesso à emergência" className="fixed inset-x-0 bottom-0 z-40 border-t border-[#34443B] bg-[#121A17] px-4 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))]"><div className="mx-auto max-w-md space-y-2">
+     <button type="button" className="min-h-12 w-full rounded-xl bg-red-800 p-3 font-bold text-white" aria-expanded={showSos} aria-controls="tag-sos-panel" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
+    {showSos&&<div id="tag-sos-panel" className="max-h-[55dvh] overflow-y-auto space-y-2 rounded-xl border border-rose-600/50 bg-[#121A17] p-3">
+     <h2 className="font-semibold">Emergência no Brasil</h2>
+     <p className="text-xs text-slate-300">Toque em um número para abrir o discador. Esta página não envia alertas nem aciona socorro automaticamente.</p>
+     {emergencyServices.map(service=><a key={service.number} className="flex min-h-11 items-center justify-between rounded-lg border border-[#34443B] p-3" href={'tel:'+service.number}><span>{service.name}</span><strong>{service.number}</strong></a>)}
+     {data.presentation.sosContacts.length>0&&<div className="space-y-3 border-t border-rose-400/40 pt-3">
+      <h3 className="font-semibold">Pessoas de confiança</h3>
+      <p className="text-xs text-slate-300">Contatos disponibilizados voluntariamente pelo titular. Não há serviço de atendimento ou monitoramento de emergência.</p>
+      {data.presentation.sosContacts.map(contact=><div key={contact.phone} className="space-y-2 rounded-lg border border-[#34443B] p-3">
+       <p className="font-semibold">{contact.name}{contact.relationship?' · '+contact.relationship:''}</p>
+       <a className="inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline" href={'tel:'+contact.phone}>Ligar para {contact.phone}</a>
+       {contact.whatsapp&&<a className="ml-2 inline-flex min-h-10 items-center rounded-lg bg-[#24332C] px-3 underline"
+         href={'https://wa.me/'+contact.phone.replace(/\D/g,'')} target="_blank" rel="noopener noreferrer">WhatsApp do contato</a>}
+      </div>)}
+     </div>}
+    </div>}
+
+ </div></aside>}
+ </main>;
 }

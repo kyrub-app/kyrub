@@ -22,6 +22,7 @@ service cloud.firestore {
       allow read: if isSignedIn();
       allow create: if isSignedIn()
               && request.auth.uid == userId
+              && (!exists(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(userId)) || get(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(userId)).data.mode != 'tag_only')
               && incoming().keys().hasAll([
                 'uid',
                 'name',
@@ -271,6 +272,15 @@ service cloud.firestore {
     }
 
     // --- Kyrub Social Connections & Feed ---
+    function noSocialContactBlock(first, second) {
+      return !exists(/databases/$(database)/documents/social_contact_blocks/$(first)/blocked/$(second))
+        && !exists(/databases/$(database)/documents/social_contact_blocks/$(second)/blocked/$(first));
+    }
+    match /social_contact_blocks/{ownerId}/blocked/{targetId} {
+      allow read: if isSignedIn() && request.auth.uid == ownerId;
+      allow write: if false;
+    }
+
 match /connections/{connectionId} {
   function hasValidConnectionId() {
     return connectionId.size() > 0
@@ -316,6 +326,9 @@ match /connections/{connectionId} {
     && hasValidConnectionId()
     && hasValidParticipants(incoming())
     && incoming().senderId == request.auth.uid
+    && noSocialContactBlock(incoming().senderId, incoming().receiverId)
+    && (!exists(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().senderId)) || get(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().senderId)).data.mode != 'tag_only')
+    && (!exists(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().receiverId)) || get(/databases/$(database)/documents/kyrub_tag_minimal_identities/$(incoming().receiverId)).data.mode != 'tag_only')
     && incoming().status == 'pending'
     && incoming().createdAt == request.time
     && incoming().updatedAt == request.time
@@ -347,6 +360,7 @@ match /connections/{connectionId} {
   allow update: if isSignedIn()
     && request.auth.uid == existing().receiverId
     && existing().status == 'pending'
+    && noSocialContactBlock(existing().senderId, existing().receiverId)
     && incoming().status == 'accepted'
     && hasImmutableParticipants()
     && incoming().diff(existing()).affectedKeys().hasOnly([
@@ -410,7 +424,8 @@ match /connections/{connectionId} {
           && isValidId(connectionId)
           && connectionExists()
           && connectionData().status == 'accepted'
-          && request.auth.uid in connectionData().participantIds;
+          && request.auth.uid in connectionData().participantIds
+          && noSocialContactBlock(connectionData().senderId, connectionData().receiverId);
       }
 
       function hasValidReceiver() {

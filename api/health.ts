@@ -156,9 +156,54 @@ export default async function handler(
         const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
         response.status(200).json(await identity.prepareTagMinimalIdentity(actor,id));return;
       }
+      if(data.action==='import-tag-profile-images'&&Object.keys(data).length===2&&id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        const media=await import('../server/identity/kyrubTagMediaService.js');
+        response.status(200).json(await media.importTagProfileImages(actor,id,data.slots));return;
+      }
+      if(data.action==='promote-tag-identity-with-presentation'&&Object.keys(data).length===2&&!id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        if(typeof data.sourceTagId!=='string')throw Error('TAG_INVALID');
+        const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+        response.status(200).json(await identity.promoteTagIdentityToKyrub(actor,data.sourceTagId));return;
+      }
       if(data.action==='promote-tag-identity'&&Object.keys(data).length===1){
         const identity=await import('../server/identity/kyrubTagMinimalIdentityService.js');
         response.status(200).json(await identity.promoteTagIdentityToKyrub(actor));return;
+      }
+      if(data.action==='set-promotional-presentation-mode'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalPresentationMode(actor,id,data.mode));return;
+      }
+      if(data.action==='set-promotional-social'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.setPromotionalSocialEnabled(actor,id,data.enabled));return;
+      }
+      if(data.action==='remove-promotional-space'&&Object.keys(data).length===2){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.removePromotionalTagSpace(actor,id,data.url));return;
+      }
+      if(data.action==='sync-profile-presentation'&&Object.keys(data).length===2&&!id){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const record=await adminAuth.getUser(actor);
+        if(record.disabled||record.emailVerified!==true||!record.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(await service.syncProfilePresentationToTags(actor,data.input));return;
+      }
+      if((data.action==='rename-tag'&&Object.keys(data).length===2)||(data.action==='add-card-spaces-to-tags'&&Object.keys(data).length===3&&!id)){
+        const {adminAuth}=await import('../server/firebaseAdmin.js');
+        const identity=await adminAuth.getUser(actor);
+        if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
+        response.status(200).json(data.action==='rename-tag'?await service.renameOwnedKyrubTag(actor,id,data.nickname):await service.addOwnedCardSpacesToTags(actor,data.tagIds,data.urls));return;
       }
       if(data.action==='claim-reserved'&&Object.keys(data).length===1){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
@@ -212,6 +257,34 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'presentation-relationship') {
+    response.setHeader('Cache-Control','no-store, max-age=0');
+    const method=(request.method??'GET').toUpperCase();
+    if(!['GET','POST'].includes(method)){response.status(405).json({error:'METHOD_NOT_ALLOWED'});return;}
+    const header=headerValue(request.headers.authorization??request.headers.Authorization);
+    let actor:string|null=null;
+    if(header||method==='POST'){
+      try{
+        const {authenticateConsultantRequest}=await import('../server/ai/consultantAuth.js');
+        actor=(await authenticateConsultantRequest(header)).uid;
+      }catch{response.status(401).json({error:'AUTH_REQUIRED'});return;}
+    }
+    try{
+      const {presentationRelationship,setSocialContactBlock}=await import('../server/identity/presentationRelationshipService.js');
+      const source=queryValue(request.query?.source),id=queryValue(request.query?.id);
+      const body=request.body as Record<string,unknown>|undefined;
+      if(method==='POST'&&(!body||Object.keys(body).length!==1||typeof body.action!=='string')){response.status(400).json({error:'RELATIONSHIP_INVALID'});return;}
+      if(method==='POST'&&source==='contact'&&actor&&(body?.action==='block'||body?.action==='unblock')){
+        response.status(200).json(await setSocialContactBlock(actor,id,body.action==='block'));return;
+      }
+      response.status(200).json(await presentationRelationship(actor,source,id,method==='POST'?body?.action:undefined));
+    }catch(error){
+      const code=error instanceof Error?error.message:'';
+      response.status(code==='RELATIONSHIP_CHANGED'?409:code==='RELATIONSHIP_INVALID'?400:503).json({error:code==='RELATIONSHIP_CHANGED'||code==='RELATIONSHIP_INVALID'?code:'RELATIONSHIP_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'public-visit-card' || transport === 'manage-public-visit-card') {
     response.setHeader('Cache-Control','no-store, max-age=0');
     const method=(request.method??'GET').toUpperCase();
@@ -234,7 +307,14 @@ export default async function handler(
         const result=await service.resolvePublicCard(queryValue(request.query?.id));
         response.status(result?200:404).json(result??{error:'CARD_NOT_FOUND'});return;
       }
-      if(method==='GET'){response.status(200).json({card:await service.loadOwnedCard(actor)});return;}
+      if(method==='GET'){
+        if(queryValue(request.query?.view)==='owned-spaces'){response.status(200).json({spaces:await service.listOwnedPresentationSpaces(actor)});return;}
+        if(queryValue(request.query?.view)==='contact-presentation'){
+          const presentation=await service.resolveContactPresentation(queryValue(request.query?.id));
+          response.status(200).json({presentation});return;
+        }
+        response.status(200).json({card:await service.loadOwnedCard(actor)});return;
+      }
       if(method==='DELETE'){response.status(200).json({card:await service.disableOwnedCard(actor)});return;}
       const body=request.body;
       const urls=body&&typeof body==='object'&&!Array.isArray(body)?(body as Record<string,unknown>).urls:null;
@@ -316,7 +396,12 @@ export default async function handler(
       const { resolveSocialAddress } = await import('../server/identity/publicSocialAddressService.js');
       const result = await resolveSocialAddress(kind,identifier);
       if (!result) response.status(404).json({ error: 'PUBLIC_ADDRESS_NOT_FOUND' });
-      else response.status(200).json(result);
+      else if(kind==='profile'){
+        const {resolvePublicPresentationByIdentifier}=await import('../server/identity/publicVisitCardService.js');
+        const presentation=await resolvePublicPresentationByIdentifier(identifier);
+        if(!presentation){response.status(404).json({error:'PUBLIC_ADDRESS_NOT_FOUND'});return;}
+        response.status(200).json({...result,name:presentation.name,description:presentation.bio,image:presentation.photoUrl,presentation});
+      }else response.status(200).json(result);
     } catch {
       response.status(503).json({ error: 'PUBLIC_ADDRESS_UNAVAILABLE' });
     }

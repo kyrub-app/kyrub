@@ -3,6 +3,16 @@ name: Store security rules
 on:
   pull_request:
     paths:
+      - 'server/identity/**'
+      - 'shared/kyrubTag*.ts'
+      - 'src/components/*Presentation*.tsx'
+      - 'src/components/*KyrubTag*.tsx'
+      - 'src/components/ProfilePublicIdentityEditor.tsx'
+      - 'src/components/ProfileTagImageImport.tsx'
+      - 'src/components/UserNotificationCenterBridge.tsx'
+      - 'src/hooks/useSocialBlocks.ts'
+      - 'api/health.ts'
+      - 'storage.rules'
       - 'firestore.rules'
       - 'firestore.store-security.rules'
       - 'firestore.admin-control-plane.fragment.rules'
@@ -115,4 +125,39 @@ jobs:
             firestore-rules.log
             kyrubia-conversations-rules.log
             artifacts-hardening.log
+          if-no-files-found: ignore
+
+  tag-integration:
+    name: Kyrub Tag integration (isolated emulators)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    env:
+      FIREBASE_PROJECT_ID: demo-public-visit-card
+      GCLOUD_PROJECT: demo-public-visit-card
+      GOOGLE_CLOUD_PROJECT: demo-public-visit-card
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - name: Run Tag ownership, presentation, social and media integration
+        shell: bash
+        run: |
+          set -o pipefail
+          unset GOOGLE_APPLICATION_CREDENTIALS FIREBASE_SERVICE_ACCOUNT_JSON VERCEL VERCEL_ENV
+          npm run test:tag-integration 2>&1 | tee tag-integration.log
+      - name: Upload integration failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tag-integration-failure-log
+          path: tag-integration.log
           if-no-files-found: ignore

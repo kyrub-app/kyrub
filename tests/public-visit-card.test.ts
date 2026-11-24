@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
+import {readFileSync} from 'node:fs';
 import {parseCardTargets,cardLink,isCardId,isBoundTarget} from '../server/identity/publicCardPolicy';
 import {resolveKyrubAppRoute} from '../src/utils/appRoutes';
 test('multi destination card is bounded, typed and contains only canonical public URLs',()=>{
@@ -295,4 +296,85 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.match(client,/projectId === firebaseConfig\.projectId/);
  assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
  assert.match(client,/TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH/);
+});
+
+ test('public profile and tag use same presentation but emergency action stays on tag',()=>{
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(tag,/<PresentationCard/);assert.match(profile,/<PresentationCard/);
+ assert.match(tag,/fixed inset-x-0 bottom-0/);assert.match(tag,/aria-controls="tag-sos-panel"/);
+ assert.match(tag,/<PresentationShare/);assert.match(profile,/<PresentationShare/);
+ assert.doesNotMatch(profile,/SOS|Abrir chat/);
+ });
+
+ test('presentation footer differentiates visitor and verified owner and keeps SOS available',()=>{
+ const footer=readFileSync('src/components/PresentationFooter.tsx','utf8');
+ const tag=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ const profile=readFileSync('src/components/PublicSocialDestinationPage.tsx','utf8');
+ assert.match(footer,/view=identity/);assert.match(footer,/Sua Tag é só o começo!/);assert.match(footer,/Uma aproximação. Infinitas possibilidades./);
+ assert.match(footer,/context==='owner'.*Aproveite os dados/);assert.match(footer,/border-\[#F47825\]/);
+ assert.match(tag,/<PresentationFooter mode=\{membership\}/);assert.match(profile,/<PresentationFooter mode=\{membership\}/);
+ assert.ok(tag.indexOf('SOS · Informações de emergência')<tag.indexOf('<PresentationFooter mode={membership}'));
+ assert.match(tag,/fixed inset-x-0 bottom-0/);
+ });
+
+test('QR sharing only encodes public same-deployment destinations',async()=>{
+ const {presentationShareUrl}=await import('../src/utils/presentationShareUrl');
+ const origin='https://kyrub.com',preview='https://isolated-preview.vercel.app';
+ const urls=[origin+'/kairubido/usuario',origin+'/tag/'+'a'.repeat(32),origin+'/cartao/'+'b'.repeat(32),origin+'/comunidade/rock',origin+'/@kyrub-oficial'];
+ for(const url of urls)assert.equal(presentationShareUrl(url,origin),url);
+ for(const url of [origin+'/tag/'+'a'.repeat(32)+'?oobCode=secret',origin+'/kairubido/usuario#secret',origin+'/staff',origin+'/?entry=welcome','https://evil.test/kairubido/usuario',origin+'/tag/invalid','https://user:secret@kyrub.com/kairubido/usuario'])assert.equal(presentationShareUrl(url,origin),null);
+ assert.equal(presentationShareUrl(preview+'/tag/'+'a'.repeat(32),preview),preview+'/tag/'+'a'.repeat(32));
+ assert.equal(presentationShareUrl(origin+'/kairubido/usuario',preview),null);
+ const source=readFileSync('src/components/PresentationShare.tsx','utf8');
+ const native=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(source,/QRCodeSVG/);assert.match(source,/value=\{safeUrl\}/);assert.match(source,/marginSize=\{4\}/);
+ assert.match(native,/showQrByDefault/);assert.doesNotMatch(native,/O QR público da sua página entra na próxima etapa/);
+ assert.doesNotMatch(source,/qrserver|fetch\(/);
+ const React=await import('react');
+ const {renderToStaticMarkup}=await import('react-dom/server');
+ const {QRCodeSVG}=await import('qrcode.react');
+ const first=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[0],marginSize:4,level:'M'}));
+ const second=renderToStaticMarkup(React.createElement(QRCodeSVG,{value:urls[1],marginSize:4,level:'M'}));
+ assert.match(first,/<svg/);assert.match(first,/<path/);assert.notEqual(first,second);
+});
+
+test('the live unified profile and promotional device share an in-card visual editor',()=>{
+ const profile=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ const tag=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const visual=readFileSync('src/components/PresentationVisualEditor.tsx','utf8');
+ const bridge=readFileSync('src/components/ProfileVerificationBridge.tsx','utf8');
+ const legacy=readFileSync('src/components/ProfileSocialHubNative.tsx','utf8');
+ assert.match(bridge,/<ProfilePublicIdentityEditor user=\{user\}/);
+ assert.match(profile,/<PresentationVisualEditor/);assert.match(tag,/<PresentationVisualEditor/);
+ assert.match(visual,/<PresentationCard/);assert.match(profile,/writeBatch\(db\)/);assert.match(profile,/await batch.commit\(\)/);
+ assert.match(profile,/<MultifunctionCardEditor/);assert.match(profile,/<ProfileTagPresentationSync/);
+ assert.doesNotMatch(legacy,/<ProfileTagPresentationSync|<MultifunctionCardEditor/);
+ assert.match(tag,/Contatos de emergência/);assert.match(tag,/rotateRecovery/);
+ assert.doesNotMatch(visual,/firebase|recoveryCode|emergencyContacts/);
+});
+
+test('follow profile has explicit consent, fail-closed visibility and separate SOS',()=>{
+ const service=readFileSync('server/identity/kyrubTagService.ts','utf8');
+ const editor=readFileSync('src/components/PromotionalKyrubTagEditor.tsx','utf8');
+ const media=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ assert.match(service,/setPromotionalPresentationMode/);
+ assert.match(service,/latestAccount.get\('isProfileVisible'\)!==true/);
+ assert.match(service,/profilePaused:true/);
+ assert.match(service,/sosContacts:custom.sosContacts/);
+ assert.match(editor,/Acompanhar meu perfil/);assert.match(editor,/Apresentação personalizada/);
+ assert.match(media,/data.presentationMode==='follow-profile'/);
+});
+
+test('image import is opt-in, independently copied, and does not prevent account promotion',()=>{
+ const entry=readFileSync('src/components/KyrubTagOnlyEntry.tsx','utf8');
+ const service=readFileSync('server/identity/kyrubTagMediaService.ts','utf8');
+ const editor=readFileSync('src/components/ProfilePublicIdentityEditor.tsx','utf8');
+ assert.match(entry,/imageSlots,setImageSlots/);assert.match(entry,/Continuar para o Kyrub/);
+ assert.match(service,/export async function importTagProfileImages/);
+ assert.match(service,/verifiedObject\(path,id,slot,actor\)/);
+ assert.match(service,/freshTag.get\('ownerId'\)!==actor/);
+ assert.match(service,/freshProfile.get\(imageField\[slot\]\)/);
+ assert.match(service,/firebaseStorageDownloadTokens:token/);
+ assert.match(editor,/<ProfileTagImageImport/);
 });

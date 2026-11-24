@@ -199,8 +199,9 @@ test('unified profile editor stores public fields separately from protected cred
   assert.match(unified, /type Tab = 'perfil' \| 'conta' \| 'dados' \| 'seguranca' \| 'documentos' \| 'validacao'/);
   assert.match(unified, /<ProfilePublicIdentityEditor user=\{user\}/);
   assert.match(publicEditor, /Salvar perfil/);
-  assert.match(publicEditor, /setDoc\(/);
-  assert.match(publicEditor, /\{ merge: true \}/);
+  assert.match(publicEditor, /writeBatch\(db\)/);
+  assert.match(publicEditor, /await batch.commit\(\)/);
+  assert.match(publicEditor, /\{\s*merge:\s*true\s*\}/);
   assert.match(unified, /Hash protegido no servidor/);
   assert.match(unified, /Nunca é salvo no navegador ou no Firestore público/);
   assert.doesNotMatch(center, /ProfileSettingsPanel|Simulate Firebase Write I\/O latency/);

@@ -105,6 +105,7 @@ export function useChatMessages({
         setError(null);
       },
       listenerError => {
+        setMessages([]);
         setIsLoading(false);
         setError(getErrorMessage(listenerError));
       }

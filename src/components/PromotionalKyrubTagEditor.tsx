@@ -3,8 +3,13 @@ import {auth} from '../utils/firebase';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PromotionalSosContact} from '../../shared/kyrubTagPromotional';
 import {loadPrivatePromotionalTagImage,uploadPromotionalTagImage} from '../utils/kyrubTagMedia';
 import type {OwnedKyrubTag} from '../../shared/kyrubTagContract';
+import {parsePublicDestinationUrl} from '../../shared/publicDestinationRoutes';
+import {PresentationShare} from './PresentationShare';
+import {PresentationVisualEditor} from './PresentationVisualEditor';
+import {usePresentationMembership} from './PresentationFooter';
 
 export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial:OwnedKyrubTag;oneTimeRecoveryCode?:string|null}){
+ const membership=usePresentationMembership();
  const [tag,setTag]=useState(initial);
  const [presentation,setPresentation]=useState<PromotionalTagPresentation>(initial.presentation??EMPTY_PROMOTIONAL_PRESENTATION);
  const [recoveryCode,setRecoveryCode]=useState(oneTimeRecoveryCode??'');
@@ -12,17 +17,18 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  const [notice,setNotice]=useState('');
  const [coverPreview,setCoverPreview]=useState('');
  const [avatarPreview,setAvatarPreview]=useState('');
+  const [backgroundPreview,setBackgroundPreview]=useState('');
  const [uploading,setUploading]=useState(false);
- const previews=useRef<{cover:string;avatar:string}>({cover:'',avatar:''});
- const setPreview=(slot:'cover'|'avatar',url:string)=>{
+ const previews=useRef<{cover:string;avatar:string;background:string}>({cover:'',avatar:'',background:''});
+ const setPreview=(slot:'cover'|'avatar'|'background',url:string)=>{
   if(previews.current[slot].startsWith('blob:'))URL.revokeObjectURL(previews.current[slot]);
   previews.current[slot]=url;
-  if(slot==='cover')setCoverPreview(url);else setAvatarPreview(url);
+  if(slot==='cover')setCoverPreview(url);else if(slot==='avatar')setAvatarPreview(url);else setBackgroundPreview(url);
  };
  useEffect(()=>{
   let mounted=true;
-  const initialPaths={cover:initial.presentation?.coverPath??'',avatar:initial.presentation?.avatarPath??''};
-  for(const slot of ['cover','avatar'] as const)if(initialPaths[slot]){
+  const initialPaths={cover:initial.presentation?.coverPath??'',avatar:initial.presentation?.avatarPath??'',background:initial.presentation?.backgroundPath??''};
+  for(const slot of ['cover','avatar','background'] as const)if(initialPaths[slot]){
    void loadPrivatePromotionalTagImage(initial.id,slot,initialPaths[slot]).then(url=>{
     if(!url)return;
     if(mounted)setPreview(slot,url);
@@ -39,19 +45,19 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
  function updateContact(index:number,patch:Partial<PromotionalSosContact>){
   setPresentation(current=>({...current,emergencyContacts:(current.emergencyContacts??[]).map((item,i)=>i===index?{...item,...patch}:item)}));
  }
- async function upload(slot:'cover'|'avatar',file:File|undefined){
+ async function upload(slot:'cover'|'avatar'|'background',file:File|undefined){
   if(!file||busy||uploading||tag.blocked)return;
   setUploading(true);setNotice('');
   try{
    const result=await uploadPromotionalTagImage(file,tag.id,slot);
-   setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:result.path}));
+   setPresentation(current=>({...current,[slot+'Path']:result.path}));
    setPreview(slot,result.previewUrl);
    setNotice('Foto preparada. Toque em Salvar e publicar para atualizar seu cartão.');
   }catch(e){setNotice(e instanceof Error?e.message:'Não foi possível enviar esta foto.');}
   finally{setUploading(false);}
  }
- function removeImage(slot:'cover'|'avatar'){
-  setPresentation(current=>({...current,[slot==='cover'?'coverPath':'avatarPath']:''}));
+ function removeImage(slot:'cover'|'avatar'|'background'){
+  setPresentation(current=>({...current,[slot+'Path']:''}));
   setPreview(slot,'');
  }
  async function execute(action:'configure-promotional'|'block-promotional'|'unblock-promotional',extras:Record<string,unknown>={}){
@@ -69,6 +75,55 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    setTag(updated);
    setNotice(action==='configure-promotional'?'Sua apresentação foi publicada.':action==='block-promotional'?'Sua tag foi bloqueada. Seu cartão não está mais público.':'Bloqueio removido. Revise e publique a apresentação para reativá-la.');
   }catch{setNotice('Não foi possível concluir. Confira sua sessão e tente novamente.');}
+  finally{setBusy(false);}
+ }
+ async function changeMode(mode:'custom'|'follow-profile'){
+  const user=auth.currentUser;if(!user||busy||uploading||tag.blocked||mode===(tag.presentationMode??'custom'))return;
+  if(!window.confirm(mode==='follow-profile'?'Autorizar que esta Tag exiba automaticamente nome, atividade, biografia, foto, capa e fundo do seu perfil público, inclusive futuras alterações? Se o perfil ficar reservado, esses dados serão ocultados. Seus espaços e SOS não serão modificados.':'Voltar à apresentação personalizada anteriormente salva nesta Tag? Ela será exibida novamente se a Tag estiver publicada.'))return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify({action:'set-promotional-presentation-mode',mode})
+   });
+   if(!res.ok)throw Error('MODE_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id||updated.presentationMode!==mode)throw Error('MODE_FAILED');
+   setTag(updated);setNotice(mode==='follow-profile'?'Esta Tag acompanha seu perfil público.':'Apresentação personalizada restaurada.');
+  }catch{setNotice('Não foi possível mudar o modo. Para acompanhar o perfil, salve-o, mantenha-o público e publique a Tag.');}
+  finally{setBusy(false);}
+ }
+ async function toggleSocial(){
+  const user=auth.currentUser;if(!user||busy||uploading)return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'set-promotional-social',enabled:!tag.socialEnabled})
+   });
+   if(!res.ok)throw Error('TAG_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id)throw Error('TAG_FAILED');
+   setTag(updated);setNotice(updated.socialEnabled?'Conexões pelo NFC autorizadas.':'Conexões pelo NFC desativadas.');
+  }catch{setNotice('Não foi possível alterar. Para permitir conexões, mantenha seu perfil público.');}
+  finally{setBusy(false);}
+ }
+ async function removeSpace(url:string){
+  const user=auth.currentUser;
+  if(!user||busy||uploading||!window.confirm('Retirar este espaço somente desta Kyrub Tag?'))return;
+  setBusy(true);setNotice('');
+  try{
+   const token=await user.getIdToken(true);
+   const res=await fetch('/api/health?transport=manage-kyrub-tag&id='+encodeURIComponent(tag.id),{
+    method:'POST',cache:'no-store',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+    body:JSON.stringify({action:'remove-promotional-space',url})
+   });
+   if(!res.ok)throw Error('TAG_FAILED');
+   const updated=await res.json() as OwnedKyrubTag;
+   if(auth.currentUser?.uid!==user.uid||updated.id!==tag.id||updated.distribution!=='promotional')throw Error('TAG_FAILED');
+   setTag(updated);setNotice('Espaço retirado somente desta Tag.');
+  }catch{setNotice('Não foi possível retirar o espaço. Confira a unidade e tente novamente.');}
   finally{setBusy(false);}
  }
  async function rotateRecovery(){
@@ -99,6 +154,24 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
    <strong>Estado: {tag.blocked?'Bloqueada por segurança':tag.enabled?'Pública':'Ainda não publicada'}</strong>
    <p className="mt-1 text-slate-300">Somente quem tiver acesso à sua identidade autenticada poderá gerenciar esta unidade.</p>
   </div>
+  {(membership==='full'||tag.presentationMode==='follow-profile')&&<section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+   <h2 className="font-semibold">Apresentação deste dispositivo</h2>
+   <label className="flex items-start gap-2 text-sm"><input type="radio" name={'presentation-mode-'+tag.id} checked={tag.presentationMode==='follow-profile'} disabled={busy||uploading||!!tag.blocked||membership!=='full'||!tag.enabled} onChange={()=>void changeMode('follow-profile')}/><span><strong>Acompanhar meu perfil</strong><br/>Atualizações do perfil público aparecem automaticamente nesta Tag. Se o perfil ficar reservado, os dados ficam ocultos; ao torná-lo público novamente, o acompanhamento retorna.</span></label>
+   <label className="flex items-start gap-2 text-sm"><input type="radio" name={'presentation-mode-'+tag.id} checked={tag.presentationMode!=='follow-profile'} disabled={busy||uploading||!!tag.blocked} onChange={()=>void changeMode('custom')}/><span><strong>Apresentação personalizada</strong><br/>Mantenha uma apresentação independente para este dispositivo.</span></label>
+   <p className="text-xs text-slate-300">SOS, espaços vinculados e permissões sociais continuam individuais. O modo personalizado preserva seus próprios dados.</p>
+  </section>}
+  {membership==='full'&&<section className="rounded-xl border border-[#34443B] p-3 space-y-2">
+   <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!tag.socialEnabled} disabled={busy||uploading} onChange={()=>void toggleSocial()}/>Permitir conexões por esta Tag</label>
+   <p className="text-xs text-slate-300">Opcional. O SOS continua disponível mesmo sem interação social.</p>
+  </section>}
+  {tag.urls.some(url=>{const target=parsePublicDestinationUrl(url);return target?.kind==='store'||target?.kind==='community';})&&<section className="space-y-2 rounded-xl border border-[#34443B] p-3">
+   <h2 className="font-semibold">Espaços vinculados a esta Tag</h2>
+   <p className="text-xs text-slate-300">Retire um destino sem alterar o perfil, os outros adesivos ou o SOS.</p>
+   {tag.urls.map(url=>{const target=parsePublicDestinationUrl(url);if(!target||(target.kind!=='store'&&target.kind!=='community'))return null;
+    return <div key={url} className="flex items-center gap-2 rounded-lg border border-[#34443B] p-2 text-sm"><span className="min-w-0 flex-1 break-words">{target.kind==='store'?'Loja':'Comunidade'} · {target.identifier}</span><button type="button" disabled={busy||uploading} className="min-h-11 text-rose-200 underline disabled:opacity-50" onClick={()=>void removeSpace(url)}>Retirar</button></div>;
+   })}
+  </section>}
+  {tag.enabled&&!tag.blocked&&<PresentationShare url={window.location.origin+'/tag/'+tag.id} title={tag.presentation?.name||'Minha Kyrub Tag'}/>}
   {recoveryCode&&<div className="space-y-2 rounded-xl border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
     <strong>Guarde seu código de recuperação</strong>
     <p>Ele é exibido uma única vez e permite recuperar o gerenciamento caso você perca o acesso ao e-mail. Não grave na etiqueta nem compartilhe.</p>
@@ -106,29 +179,12 @@ export function PromotionalKyrubTagEditor({initial,oneTimeRecoveryCode}:{initial
     <button type="button" className="rounded-lg border border-amber-400/50 p-2" onClick={()=>void navigator.clipboard.writeText(recoveryCode).then(()=>setNotice('Código copiado. Guarde em local privado.')).catch(()=>setNotice('Selecione o código e copie manualmente.'))}>Copiar código</button>
     <button type="button" className="ml-2 underline" onClick={()=>setRecoveryCode('')}>Já guardei</button>
    </div>}
-  <section className="space-y-3 rounded-xl border border-[#34443B] bg-[#1D2924] p-3 text-sm">
-   <strong className="text-white">Imagem de capa e foto de apresentação</strong>
-   <p className="text-slate-300">Fotos opcionais. O dispositivo transforma a imagem em WebP e remove metadados antes de enviar. O cartão público só apresenta fotos enquanto a tag estiver ativa.</p>
-   {(['cover','avatar'] as const).map(slot=><div key={slot} className="space-y-2">
-    <label className="block font-semibold">{slot==='cover'?'Foto de capa':'Foto de perfil'}
-     <input type="file" accept="image/jpeg,image/png,image/webp" className="mt-1 block w-full text-sm" disabled={busy||uploading||tag.blocked}
-      onChange={event=>{const file=event.currentTarget.files?.[0];if(file)void upload(slot,file);event.currentTarget.value='';}}/>
-    </label>
-    {(slot==='cover'?coverPreview:avatarPreview)&&<img alt={slot==='cover'?'Prévia de capa':'Prévia de perfil'}
-      src={slot==='cover'?coverPreview:avatarPreview} className={slot==='cover'?'h-28 w-full rounded-xl object-cover':'h-24 w-24 rounded-full object-cover'} />}
-    {(slot==='cover'?presentation.coverPath:presentation.avatarPath)&&
-     <button className="text-sm text-orange-300 underline" disabled={busy||uploading} type="button" onClick={()=>removeImage(slot)}>Remover foto</button>}
-   </div>)}
-  </section>
-  <label className="block text-sm">Nome de apresentação
-   <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={presentation.name} maxLength={80} disabled={busy} placeholder="Como deseja ser chamado?" onChange={e=>set('name',e.target.value)}/>
-  </label>
-  <label className="block text-sm">O que você faz?
-   <input className="mt-1 min-h-11 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={presentation.occupation} maxLength={90} disabled={busy} placeholder="Ex.: Entregador, comerciante, autônomo" onChange={e=>set('occupation',e.target.value)}/>
-  </label>
-  <label className="block text-sm">Sobre você
-   <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" rows={3} value={presentation.about} maxLength={320} disabled={busy} placeholder="Uma breve apresentação" onChange={e=>set('about',e.target.value)}/>
-  </label>
+  {tag.presentationMode==='follow-profile'?<p className="rounded-xl border border-[#34443B] p-3 text-sm">A apresentação acompanha o perfil público. Edite os dados e imagens no perfil; os dados personalizados anteriores ficam preservados. Você pode continuar editando o SOS abaixo.</p>:<PresentationVisualEditor name={presentation.name} occupation={presentation.occupation} bio={presentation.about} photoUrl={avatarPreview} coverUrl={coverPreview} backgroundUrl={backgroundPreview}
+   disabled={busy||uploading||!!tag.blocked} maxBio={320}
+   onText={(field,value)=>set(field==='bio'?'about':field,value)} onImage={(slot,file)=>void upload(slot,file)} onRemove={removeImage}
+   links={tag.urls.flatMap(url=>{const target=parsePublicDestinationUrl(url);return target?[{name:target.identifier,url}]:[];})}>
+   <p className="text-xs text-slate-300">As imagens são opcionais, tratadas localmente e publicadas apenas após salvar. SOS e código de recuperação são configurações separadas.</p>
+  </PresentationVisualEditor>}
   <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
    <strong>Contatos de emergência (opcionais)</strong>
    <p className="text-sm text-slate-300">O botão SOS sempre oferece 190, 192 e 193 no Brasil. Você pode cadastrar até dois contatos particulares, inclusive com opção de WhatsApp. Eles ficam ocultos até você autorizar a divulgação e declarar que a pessoa concordou.</p>
