@@ -354,6 +354,10 @@ test('isolated economic review is authorized, audited, revisioned and replay saf
   assert.equal((await db.doc(root+'/events/audit-clear-1').get()).get('revision'),2);
   assert.deepEqual(await recordIsolatedSemeaduraReview(db,reviewer,actual),{revision:1,replayed:true});
   assert.equal((await hold.get()).get('revision'),2);
+  await hold.update({caseId:'tampered-case'});
+  await assert.rejects(seed(),/SEMEADURA_ECONOMIC_REVIEW_INVALID/);
+  assert.equal((await db.doc('semeadura_post_stats/'+postKey+'/receipts/audited-voter').get()).exists,false);
+  await hold.update({caseId:cmd.caseId});
   assert.equal((await seed()).status,'accepted');
   assert.equal((await balance(author).get()).get('availableKCoins'),100);
   await reviewerRef.update({active:false});
