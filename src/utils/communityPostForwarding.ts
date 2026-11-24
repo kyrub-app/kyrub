@@ -2,6 +2,7 @@ import {
   collection, doc, getDoc, runTransaction, serverTimestamp, Timestamp,
 } from 'firebase/firestore';
 import { auth, db } from './firebase';
+import {reservedTribePilotClientEnabled,requestReservedTribePilot} from './reservedTribePilotClient';
 import type { CloudCommunityPost } from './communityCloud';
 import { COMMUNITY_SQUARE_WINDOW_MS } from './communitySquareFeed';
 import { recordCommunityPostForwardMetric } from './communityOrganicMetrics';
@@ -82,6 +83,7 @@ export const sendCommunityPostToConnectedUser = async (input: {
   if (!text || text.length > 4000 || !text.includes(buildCommunityPostInternalLink(input.post))) {
     throw new Error('O encaminhamento precisa conter a referência original da publicação.');
   }
+  if(reservedTribePilotClientEnabled())return requestReservedTribePilot<CommunityForwardReceipt>('ordinary-forward',{connectionId:input.connectionId,postId:input.post.id,communityId:input.post.communityId,messageId:crypto.randomUUID(),text});
   const receiptId = `${input.post.id}__${actorId}__${input.recipientId}`;
   const receiptRef = doc(db, 'community_direct_forward_receipts', receiptId);
   const messageRef = doc(collection(db, 'social_chats', input.connectionId, 'messages'));

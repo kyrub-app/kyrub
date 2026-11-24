@@ -7,7 +7,8 @@ import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,lim
 import {Timestamp} from 'firebase-admin/firestore';
 import {createReservedTribePilotHandler} from '../server/identity/reservedTribePilotTransport.js';
 import {createReservedTribeRecoveryService} from '../server/identity/reservedTribeRecoveryService.js';
-import {buildUserNotification} from '../shared/userNotifications.js';
+import {forwardOrdinaryCommunityPost} from '../server/identity/reservedTribeForwardService.js';
+import {buildUserNotification,buildUserNotificationId,userNotificationPath} from '../shared/userNotifications.js';
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
@@ -381,4 +382,27 @@ test('directory revision and live session probe invalidate stale projections acr
  await checkReservedTribeSession(actor,next.token);
  await lockReservedTribeSession(actor,next.token);
  await assert.rejects(checkReservedTribeSession(actor,next.token),/TRIBE_ACCESS_DENIED/);
+});
+
+test('ordinary forwarding commits message, cooldown and notice atomically; reserved destination is denied',async()=>{
+ const communityId='pilot-forward-community',postId='pilot-forward-post',pair=id(actor,peer);
+ await adminDb.doc('communities/'+communityId).set({visibility:'public'});
+ await adminDb.doc('community_posts/'+postId).set({communityId,authorId:other});
+ const fields={connectionId:pair,communityId,postId,messageId:'pilot-forward-message',text:'https://www.kyrub.com/?community='+communityId+'&post='+postId};
+ const result=await forwardOrdinaryCommunityPost(actor,fields);
+ assert.equal(result.recipientId,peer);
+ const receipt=adminDb.doc('community_direct_forward_receipts/'+postId+'__'+actor+'__'+peer);
+ const message=adminDb.doc('social_chats/'+pair+'/messages/'+fields.messageId);
+ const notice=adminDb.doc(userNotificationPath(peer,buildUserNotificationId({category:'user_forward',eventType:'received',sourceId:fields.messageId})));
+ assert.ok((await message.get()).exists);assert.equal((await receipt.get()).get('messageId'),fields.messageId);assert.equal((await notice.get()).get('actorPrincipalId'),actor);
+ assert.deepEqual(await forwardOrdinaryCommunityPost(actor,fields),result);
+ await assert.rejects(forwardOrdinaryCommunityPost(actor,{...fields,messageId:'duplicate-forward'}),/TRIBE_FORWARD_DUPLICATE/);
+ assert.equal((await adminDb.doc('social_chats/'+pair+'/messages/duplicate-forward').get()).exists,false);
+ const session=await unlockReservedTribe(actor,'new!synthetic');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(actor,session.token,peer,true);
+ await assert.rejects(forwardOrdinaryCommunityPost(actor,{...fields,messageId:'reserved-forward'}),/TRIBE_ACCESS_DENIED/);
+ await setReservedTribeContact(actor,session.token,peer,false);
+ await adminDb.doc('communities/'+communityId).update({visibility:'private'});
+ await assert.rejects(forwardOrdinaryCommunityPost(actor,{...fields,messageId:'private-forward'}),/TRIBE_ACCESS_DENIED/);
 });

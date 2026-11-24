@@ -287,16 +287,15 @@ const LegacyChatModal: React.FC<ChatModalProps> = ({
 };
 
 /** Same protected ordinary chat from Praça, profiles and communities.
- * Forwarding retains its existing atomic receipt/message contract until
- * migrated; server rules continue to deny forwarding to reserved peers. */
+ * Forwarding in the pilot also goes through the authenticated atomic API. */
 export const ChatModal: React.FC<ChatModalProps> = props=>{
- if(!reservedTribePilotClientEnabled()||props.forwardingPost)return <LegacyChatModal {...props}/>;
+ if(!reservedTribePilotClientEnabled())return <LegacyChatModal {...props}/>;
  const owner=auth.currentUser?.uid,friend=props.selectedChatUser;
  if(!props.isOpen||!owner||!friend||friend.connectionStatus!=='accepted'||!friend.connectionId)return null;
  const close=()=>{props.setChatMessageText('');props.setSelectedChatUser(null);props.onClose();};
  return <div role="dialog" aria-modal="true" aria-label="Conversa" className="fixed inset-0 z-[220] flex items-end justify-center bg-slate-950/95 p-3 sm:items-center">
   <div className="w-full max-w-md rounded-2xl border border-slate-800 bg-slate-950 p-4">
-   <TribePilotChat key={owner+':'+friend.connectionId} owner={owner} connectionId={friend.connectionId} name={friend.name||'Kairubido'} onClose={close} onDenied={close}/>
+   <TribePilotChat key={owner+':'+friend.connectionId} owner={owner} connectionId={friend.connectionId} name={friend.name||'Kairubido'} forwardingPost={props.forwardingPost} initialText={props.chatMessageText} onMessageSent={text=>{props.setChatMessageText('');props.onMessageSent?.(text);}} onClose={close} onDenied={close}/>
   </div>
  </div>;
 };

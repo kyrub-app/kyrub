@@ -226,6 +226,18 @@ test('external ordinary directory consumers use the filtered pilot projection an
  assert.match(community,/reservedTribePilotClientEnabled\(\)\)return subscribePilotOrdinaryDirectory/);
  assert.match(hook,/if\(pilot\)return subscribePilotOrdinaryDirectory/);
  assert.match(hook,/if\(pilot\)return pilotSuggestions.map/);
- assert.match(chat,/!reservedTribePilotClientEnabled\(\)\|\|props.forwardingPost/);
+ assert.match(chat,/if\(!reservedTribePilotClientEnabled\(\)\)return/);
  assert.match(chat,/<TribePilotChat/);
+});
+
+test('forward contract rejects client-selected recipient and requires canonical original link',async()=>{
+ const {parseReservedTribePilotBody}=await import('../server/identity/reservedTribePilotTransport.js');
+ const {hasCanonicalForwardLink}=await import('../server/identity/reservedTribeForwardService.js');
+ const fields={action:'ordinary-forward',connectionId:'pair',postId:'post',communityId:'community',messageId:'msg',text:'https://www.kyrub.com/?community=community&post=post'};
+ assert.equal(parseReservedTribePilotBody(fields).action,'ordinary-forward');
+ assert.throws(()=>parseReservedTribePilotBody({...fields,recipientId:'other'}),/TRIBE_INVALID/);
+ assert.throws(()=>parseReservedTribePilotBody({...fields,session:'a'.repeat(64)}),/TRIBE_INVALID/);
+ assert.equal(hasCanonicalForwardLink(fields.text,'community','post'),true);
+ assert.equal(hasCanonicalForwardLink('https://evil.example/?community=community&post=post','community','post'),false);
+ assert.equal(hasCanonicalForwardLink('https://www.kyrub.com/?community=community&post=post&post=other','community','post'),false);
 });

@@ -1,6 +1,7 @@
 import type {KyrubMcpHttpRequest,KyrubMcpHttpResponse} from '../mcp/kyrubiaMcpServer.js';
 import {adminAuth,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {getReservedTribeSetupStatus,initializeReservedTribe,unlockReservedTribe,lockReservedTribeSession,setReservedTribeContact,getOrdinaryTribeDirectory,getReservedTribeDirectory,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,checkReservedTribeSession} from './reservedTribeService.js';
+import {forwardOrdinaryCommunityPost} from './reservedTribeForwardService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from './reservedTribeChatService.js';
 import {recoverReservedTribeCode} from './reservedTribeRecoveryService.js';
 import {listReservedUserNotifications,markReservedUserNotificationRead} from '../notifications/userNotificationService.js';
@@ -24,6 +25,7 @@ const fields={
  membership:['session','peerId','reserved'],recover:['code','confirmation'],
  'chat-read':['session','connectionId'],'chat-send':['session','connectionId','messageId','text'],
  'chat-clear':['session','connectionId'],
+ 'ordinary-forward':['connectionId','postId','communityId','messageId','text'],
  'ordinary-chat-read':['connectionId'],'ordinary-chat-send':['connectionId','messageId','text'],'ordinary-chat-clear':['connectionId'],
  'notifications':['session'],
  'notification-read':['session','notificationId'],
@@ -37,7 +39,7 @@ export function parseReservedTribePilotBody(input:unknown):{action:Action;data:R
  const keys:readonly string[]=fields[action as Action];
  if(Object.keys(data).length!==keys.length+1||keys.some(key=>!Object.prototype.hasOwnProperty.call(data,key)))throw Error('TRIBE_INVALID');
  if(keys.includes('session')&&!validSession(data.session))throw Error('TRIBE_INVALID');
- for(const key of ['peerId','connectionId','messageId','notificationId','groupId'])if(keys.includes(key)&&!validId(data[key]))throw Error('TRIBE_INVALID');
+ for(const key of ['peerId','connectionId','messageId','notificationId','groupId','postId','communityId'])if(keys.includes(key)&&!validId(data[key]))throw Error('TRIBE_INVALID');
  if(keys.includes('code')&&(typeof data.code!=='string'||data.code.length>64))throw Error('TRIBE_INVALID');
  if(keys.includes('confirmation')&&(typeof data.confirmation!=='string'||data.confirmation.length>64))throw Error('TRIBE_INVALID');
  if(action==='connection'&&!['request','accept','remove'].includes(String(data.operation)))throw Error('TRIBE_INVALID');
@@ -46,7 +48,7 @@ export function parseReservedTribePilotBody(input:unknown):{action:Action;data:R
  if(action==='favorite'&&typeof data.favorited!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='membership'&&typeof data.reserved!=='boolean')throw Error('TRIBE_INVALID');
  if(action==='suggestions'&&(typeof data.term!=='string'||data.term.length>128||typeof data.limit!=='number'||!Number.isSafeInteger(data.limit)||data.limit<1||data.limit>50))throw Error('TRIBE_INVALID');
- if((action==='chat-send'||action==='ordinary-chat-send')&&(typeof data.text!=='string'||data.text.length>4000))throw Error('TRIBE_INVALID');
+ if((action==='chat-send'||action==='ordinary-chat-send'||action==='ordinary-forward')&&(typeof data.text!=='string'||data.text.length>4000))throw Error('TRIBE_INVALID');
  return {action:action as Action,data};
 }
 
@@ -89,6 +91,7 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
     case 'tribe-delete':result=await deleteOrdinaryTribe(actor,data.groupId);break;
     case 'membership':result=await setReservedTribeContact(actor,session,data.peerId,data.reserved);break;
     case 'recover':result=await recoverReservedTribeCode(bearer,data.code,data.confirmation);break;
+    case 'ordinary-forward':result=await forwardOrdinaryCommunityPost(actor,{connectionId:data.connectionId,postId:data.postId,communityId:data.communityId,messageId:data.messageId,text:data.text});break;
     case 'ordinary-chat-read':result=await readTribeChat(actor,data.connectionId as string);break;
     case 'ordinary-chat-send':result=await sendTribeChatMessage(actor,data.connectionId as string,undefined,data.messageId,data.text);break;
     case 'ordinary-chat-clear':result=await clearTribeChatHistory(actor,data.connectionId as string);break;
@@ -103,7 +106,7 @@ export function createReservedTribePilotHandler(deps:{allowed:()=>boolean;projec
    const code=error instanceof Error?error.message:'';
    if(['TRIBE_INVALID','TRIBE_CODE_INVALID','TRIBE_SEARCH_INVALID','TRIBE_CONTACT_INVALID','TRIBE_MESSAGE_INVALID'].includes(code))response.status(400).json({error:'TRIBE_INVALID'});
    else if(['TRIBE_ACCESS_DENIED','TRIBE_RECOVERY_DENIED','TRIBE_SETUP_UNAVAILABLE','TRIBE_CONNECTION_REQUIRED','USER_NOTIFICATION_NOT_FOUND'].includes(code))response.status(403).json({error:'TRIBE_ACCESS_DENIED'});
-   else if(['TRIBE_LIMIT_REACHED','TRIBE_DIRECTORY_LIMIT','TRIBE_MESSAGE_CONFLICT','TRIBE_GROUP_CONFLICT'].includes(code))response.status(409).json({error:code});
+   else if(['TRIBE_LIMIT_REACHED','TRIBE_DIRECTORY_LIMIT','TRIBE_MESSAGE_CONFLICT','TRIBE_GROUP_CONFLICT','TRIBE_FORWARD_DUPLICATE'].includes(code))response.status(409).json({error:code});
    else response.status(503).json({error:'TRIBE_UNAVAILABLE'});
    // Never log request bodies, codes, capabilities, IDs or raw SDK exceptions.
   }
