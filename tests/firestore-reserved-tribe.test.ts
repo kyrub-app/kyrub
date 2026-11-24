@@ -12,7 +12,7 @@ import {buildUserNotification,buildUserNotificationId,userNotificationPath} from
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession,ordinaryPresentationPeerAllowed} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession,ordinaryPresentationPeerAllowed,invalidateSocialPair} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -496,4 +496,52 @@ test('directory projections exclude stale blocked relations, favorites, groups a
  assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
  assert.equal((await adminDb.doc('users/'+titular+'/contact_favorites/'+contact).get()).get('favorited'),true);
  assert.deepEqual((await adminDb.doc('users/'+titular+'/contact_groups/fixture').get()).get('memberIds'),[contact,regular]);
+});
+
+
+test('social pair revision invalidates both devices without creating an unconfigured vault',async()=>{
+ const owner='revision-block-owner',peer='revision-block-peer',other='revision-block-other';
+ const pair=id(owner,peer);
+ await Promise.all([owner,peer,other].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('connections/'+pair).set(connection(owner,peer));
+ await initializeReservedTribe(owner,'revision!fixture');
+ const unlocked=await unlockReservedTribe(owner,'revision!fixture');assert.ok(unlocked.ok);
+ if(!unlocked.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(owner,unlocked.token,peer,true);
+ const ownerBefore=await getReservedTribeSetupStatus(owner);
+ const peerBefore=await getReservedTribeSetupStatus(peer);
+ const otherBefore=await getReservedTribeSetupStatus(other);
+ assert.equal(peerBefore.configured,false);
+ const block=adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+owner);
+ await adminDb.runTransaction(async tx=>{await tx.get(block);tx.set(block,{targetId:owner});invalidateSocialPair(tx,peer,owner);});
+ assert.equal((await checkReservedTribeSession(owner,unlocked.token)).revision,ownerBefore.revision+1);
+ assert.equal((await getReservedTribeDirectory(owner,unlocked.token)).revision,ownerBefore.revision+1);
+ assert.deepEqual((await getReservedTribeDirectory(owner,unlocked.token)).connections,[]);
+ assert.deepEqual(await getReservedTribeSetupStatus(peer),{...peerBefore,revision:peerBefore.revision+1});
+ assert.equal((await getOrdinaryTribeDirectory(peer)).revision,peerBefore.revision+1);
+ assert.deepEqual(await getReservedTribeSetupStatus(other),otherBefore);
+ assert.equal((await adminDb.doc('reserved_tribe_vaults/'+peer).get()).exists,false);
+ for(const uid of [owner,peer,other]){
+  const client=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(client,'social_directory_revisions',peer)));
+  await assertFails(setDoc(doc(client,'social_directory_revisions',uid),{revision:999}));
+ }
+ await adminDb.runTransaction(async tx=>{await tx.get(block);tx.delete(block);invalidateSocialPair(tx,peer,owner);});
+ assert.equal((await getReservedTribeDirectory(owner,unlocked.token)).revision,ownerBefore.revision+2);
+ assert.equal((await getReservedTribeDirectory(owner,unlocked.token)).connections.length,1);
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
+ // Ordinary requests and acceptance also invalidate both accounts.
+ const initialOther=(await getReservedTribeSetupStatus(other)).revision;
+ const initialPeer=(await getReservedTribeSetupStatus(peer)).revision;
+ await mutateOrdinaryConnection(peer,other,'request');
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,initialPeer+1);
+ assert.equal((await getReservedTribeSetupStatus(other)).revision,initialOther+1);
+ await mutateOrdinaryConnection(other,peer,'accept');
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,initialPeer+2);
+ assert.equal((await getReservedTribeSetupStatus(other)).revision,initialOther+2);
+ await mutateOrdinaryConnection(other,peer,'remove');
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,initialPeer+3);
+ assert.equal((await getReservedTribeSetupStatus(other)).revision,initialOther+3);
+ await mutateOrdinaryConnection(other,peer,'remove');
+ assert.equal((await getReservedTribeSetupStatus(peer)).revision,initialPeer+3);
 });

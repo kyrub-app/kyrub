@@ -518,6 +518,9 @@ match /connections/{connectionId} {
       allow update, delete: if isSignedIn();
     }
 
+    // Server-only invalidation counter; never a client subscription or write.
+    match /social_directory_revisions/{userId} { allow read, write: if false; }
+
     match /artifacts { allow list: if isSignedIn(); }
     match /tenants { allow list: if isSignedIn(); }
   }
