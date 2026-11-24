@@ -147,6 +147,23 @@ export const getReservedTribeDirectory=(actor:string,token:unknown)=>projectTrib
 export const listOrdinaryTribeConnections=async(actor:string)=>(await getOrdinaryTribeDirectory(actor)).connections;
 export const listReservedTribeConnections=async(actor:string,token:unknown)=>(await getReservedTribeDirectory(actor,token)).connections;
 
+/** Common integration boundary for ordinary relationship lookups/mutations
+ * from a public profile, Kyrub Tag, contact card or other server entrypoint.
+ * Call inside the SAME transaction before reading/returning relationship data
+ * or writing anything; target must already be resolved and actor verified.
+ * False deliberately conflates unavailable, self, blocked and reserved.
+ * The caller must not disclose why. Never examine the counterpart's vault.
+ */
+export async function ordinaryPresentationPeerAllowed(tx:FirebaseFirestore.Transaction,actor:string,peer:unknown):Promise<boolean>{
+ if(!validId(actor)||!validId(peer)||peer===actor)return false;
+ const [marker,ownBlock,otherBlock]=await Promise.all([
+  tx.get(vault(actor).collection('contacts').doc(peer)),
+  tx.get(adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+peer)),
+  tx.get(adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor))
+ ]);
+ return !marker.exists&&!ownBlock.exists&&!otherBlock.exists;
+}
+
 /** Ordinary forwarding may never target a reserved peer, even when unlocked.
  * Call from the same transaction as the forwarding write.
  */

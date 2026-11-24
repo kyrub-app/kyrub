@@ -12,7 +12,7 @@ import {buildUserNotification,buildUserNotificationId,userNotificationPath} from
 import {listUserNotifications,listReservedUserNotifications,markUserNotificationRead,markAllUserNotificationsRead,markReservedUserNotificationRead} from '../server/notifications/userNotificationService.js';
 import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
-import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession} from '../server/identity/reservedTribeService.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship,getOrdinaryTribeDirectory,getReservedTribeDirectory,authorizeOrdinaryForward,searchOrdinaryTribeSuggestions,mutateOrdinaryConnection,setOrdinaryTribeFavorite,createOrdinaryTribe,setOrdinaryTribeMember,deleteOrdinaryTribe,getReservedTribeSetupStatus,checkReservedTribeSession,lockReservedTribeSession,ordinaryPresentationPeerAllowed} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
 if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
 delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
@@ -419,4 +419,37 @@ test('migrated owners cannot directly read or mutate ordinary chat and receipts;
  await assertFails(getDoc(doc(owner,'community_direct_forward_receipts','missing__'+actor+'__'+peer)));
  await assertSucceeds(getDocs(query(collection(counterpart,base+'/messages'),limit(100))));
  await readTribeChat(actor,pair);
+});
+
+
+test('ordinary presentation boundary denies reserved relationship and either block without leaking counterpart reservation',async()=>{
+ const titular='presentation-owner-fixture',contact='presentation-peer-fixture',regular='presentation-ordinary-fixture';
+ const pair=id(titular,contact);
+ await Promise.all([titular,contact,regular].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await adminDb.doc('connections/'+pair).set(connection(titular,contact));
+ const allowed=(actor:string,target:unknown)=>adminDb.runTransaction(tx=>ordinaryPresentationPeerAllowed(tx,actor,target));
+ assert.equal(await allowed(titular,contact),true);
+ await initializeReservedTribe(titular,'presentation!fixture');
+ const unlocked=await unlockReservedTribe(titular,'presentation!fixture');assert.ok(unlocked.ok);
+ if(!unlocked.ok)throw Error('SESSION_MISSING');
+ await setReservedTribeContact(titular,unlocked.token,contact,true);
+ assert.equal(await allowed(titular,contact),false);
+ assert.equal(await allowed(contact,titular),true);
+ assert.equal(await allowed(titular,regular),true);
+ assert.equal(await allowed(titular,titular),false);
+ assert.equal(await allowed(titular,'invalid/path'),false);
+ const own=adminDb.doc('social_contact_blocks/'+titular+'/blocked/'+regular);
+ const otherBlock=adminDb.doc('social_contact_blocks/'+regular+'/blocked/'+titular);
+ await own.set({targetId:regular});
+ assert.equal(await allowed(titular,regular),false);
+ assert.equal(await allowed(regular,titular),false);
+ await own.delete();await otherBlock.set({targetId:titular});
+ assert.equal(await allowed(titular,regular),false);
+ assert.equal(await allowed(regular,titular),false);
+ await otherBlock.delete();
+ assert.equal(await allowed(titular,regular),true);
+ // No reservation or block was propagated to the shared relationship.
+ assert.equal((await adminDb.doc('connections/'+pair).get()).get('status'),'accepted');
+ await setReservedTribeContact(titular,unlocked.token,contact,false);
+ assert.equal(await allowed(titular,contact),true);
 });
