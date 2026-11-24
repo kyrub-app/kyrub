@@ -50,6 +50,62 @@ before(async () => {
 });
 after(async () => { await deleteApp(app); });
 
+
+test('isolated global supervision reconciles canonical accounts and suppresses incomplete totals',async()=>{
+ const {readIsolatedGamificationGlobalSupervision}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const admin=await googleSignIn('global-supervision-admin');
+ const person=await googleSignIn('global-supervision-person');
+ await Promise.all([waitForAward(admin.localId),waitForAward(person.localId)]);
+ const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.localId);
+ const reviewer=db.doc('systemControl/semeaduraEconomicReview/reviewers/'+admin.localId);
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const read=()=>readIsolatedGamificationGlobalSupervision(db,auth,'Bearer '+admin.idToken);
+ const projections=[admin.localId,person.localId].map(id=>db.doc('users/'+id+'/semeaduraProgress/summary'));
+ const synthetic=Array.from({length:99},(_,i)=>db.doc('users/global-synthetic-'+i+'/semeaduraProgress/summary'));
+ const orphan=db.doc('users/global-orphan/rewardLedger/entry');
+ try{
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_DISABLED/);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
+  await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
+  // Controlled projection fixtures: not actual seeds, never credited.
+  await Promise.all(projections.map((ref,i)=>ref.set({authorId:[admin.localId,person.localId][i],acceptedSeeds:999,pitangueiras:0})));
+  const clean=await read();
+  assert.equal(clean.economyCoverage,'complete');
+  assert.deepEqual(clean.economy,{credits:200,debits:0,balance:200,accounts:2});
+  assert.deepEqual(clean.journey,{seeds:1998,pitangueiras:0,bosques:0,authors:2});
+  assert.equal(clean.externalWritersVerified,false);
+  assert.equal(clean.journeyReceiptReconciled,false);
+  assert.deepEqual(clean.findings,[]);
+  await balance(person.localId).update({availableKCoins:101});
+  const mismatch=await read();
+  assert.equal(mismatch.economy,null);
+  assert.ok(mismatch.findings.includes('GLOBAL_CANONICAL_ECONOMY_INVALID'));
+  assert.deepEqual(mismatch.journey,clean.journey);
+  await balance(person.localId).update({availableKCoins:100});
+  await orphan.set({id:'entry',userId:'global-orphan',economy:'k_coin'});
+  assert.equal((await read()).economy,null);
+  await orphan.delete();
+  const batch=db.batch();
+  synthetic.forEach((ref,i)=>batch.set(ref,{authorId:'global-synthetic-'+i,acceptedSeeds:0,pitangueiras:0}));
+  await batch.commit();
+  const partial=await read();
+  assert.equal(partial.journeyCoverage,'partial');
+  assert.equal(partial.observedAuthorProjections,101);
+  assert.equal(partial.journey,null);
+  assert.deepEqual(partial.economy,clean.economy);
+  await profile.update({status:'suspended'});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+ }finally{
+  const cleanup=db.batch();
+  [...projections,...synthetic,orphan].forEach(ref=>cleanup.delete(ref));
+  await cleanup.commit();
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+ }
+});
+
 test('real Auth creation event automatically grants 100; later login keeps one award', async () => {
   const first = await googleSignIn('welcome-real-creation');
   assert.equal(first.isNewUser, true);
