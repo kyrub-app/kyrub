@@ -5,6 +5,15 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 
 const origin = 'http://127.0.0.1:3000';
+assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
+assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+assert.equal(process.env.FIREBASE_PROJECT_ID,'kyrub-security-test');
+assert.equal(process.env.GCLOUD_PROJECT,'kyrub-security-test');
+assert.equal(process.env.GOOGLE_CLOUD_PROJECT,'kyrub-security-test');
+assert.equal(process.env.KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL,'true');
+assert.equal(process.env.NODE_ENV==='production',false);
+assert.ok(!process.env.VERCEL&&!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS);
+
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1365, height: 900 } });
@@ -107,6 +116,89 @@ try {
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
+  // Institutional publication fixture from the exact canonical data contract.
+  // The Admin disclosure transaction itself is independently tested in
+  // demo-global-challenges; this browser test does not bypass its release gate.
+  const communityId='chromium-official-community-fixture';
+  const institutionalPostId='chromium-official-challenge-fixture';
+  const now=new Date(),nowIso=now.toISOString();
+  await Promise.all([
+    db.doc('communities/'+communityId).set({communityId,ownerId:'chromium-institutional-owner',ownerName:'Fixture',ownerAvatar:'',
+      name:'Comunidade oficial de teste',description:'Homologação isolada',category:'Kyrub',location:'',visibility:'public',
+      rules:'Respeito',coverImage:'',coverPath:'',memberCount:1,lastMembershipChangeId:communityId+'__chromium-institutional-owner',
+      createdAtIso:nowIso,createdAt:now,updatedAtIso:nowIso,updatedAt:now,activityAtIso:nowIso,activityAt:now}),
+    db.doc('community_posts/'+institutionalPostId).set({postId:institutionalPostId,communityId,authorId:'kyrub:institutional',
+      authorName:'Kyrub Oficial',authorAvatar:'',institutionalChallengeId:'first_store_published',
+      content:'Publique sua primeira loja — desafio de homologação',mediaUrls:[],allowComments:true,pinnedCommentId:'',
+      createdAtIso:nowIso,createdAt:now,updatedAtIso:nowIso,updatedAt:now}),
+    db.doc('community_square_posts/'+institutionalPostId).set({postId:institutionalPostId,communityId,createdAt:now}),
+  ]);
+  const checkInstitutionalChallenge=async (expected)=>{
+    await page.goto(origin+'/?app=1',{waitUntil:'domcontentloaded'});
+    const bootstrap=page.locator('#kyrub-bootstrap-screen');
+    const taba=page.getByRole('button',{name:'Taba — Praça',exact:true});
+    const card=page.locator('[data-community-post-id="'+institutionalPostId+'"]');
+    const details=card.locator('[aria-label="Detalhes do desafio da plataforma"]');
+    const expectedStatus=expected==='available'?'Disponível':'Concluído com registro';
+    let verified=false,lastError;
+    for(let attempt=1;attempt<=4;attempt++){
+      try{
+        await page.locator('#root-app-container').waitFor({state:'visible',timeout:20000});
+        await bootstrap.waitFor({state:'hidden',timeout:20000});
+        await page.waitForTimeout(1200);
+        await bootstrap.waitFor({state:'hidden',timeout:20000});
+        if(!await card.isVisible()){
+          await taba.click({timeout:10000});
+          await page.locator('#praca-tab-container').waitFor({state:'visible',timeout:15000});
+          await card.waitFor({state:'visible',timeout:20000});
+        }
+        if(!await details.isVisible()){
+          const catalogResponse=page.waitForResponse(r=>r.url().includes('transport=global-challenge-catalog')&&r.request().method()==='GET',{timeout:15000});
+          const [response]=await Promise.all([catalogResponse,card.getByRole('button',{name:'Ver desafio',exact:true}).click({timeout:10000})]);
+          assert.equal(response.status(),200,await response.text());
+          const payload=await response.json();
+          const original=payload.challenges.find(c=>c.id==='first_store_published');
+          assert.equal(original?.status,expected);
+          assert.equal(original?.rewardXp,2);
+          assert.equal(original?.rewardPitangas,0);
+        }
+        await details.getByText(expectedStatus,{exact:true}).waitFor({timeout:10000});
+        // Verify all visible assertions from one DOM snapshot, not separate
+        // reads that could span a LegacyApp remount.
+        const rendered=await card.evaluate(el=>{
+          const panel=el.querySelector('[aria-label="Detalhes do desafio da plataforma"]');
+          return {author:el.querySelector('header')?.textContent??'',details:panel?.innerText??''};
+        },undefined,{timeout:10000});
+        assert.match(rendered.author,/Kyrub Oficial/);
+        assert.ok(rendered.details.split('\n').some(line=>line.trim()===expectedStatus),'Canonical challenge status not visible');
+        assert.match(rendered.details,/2 XP · 0 Pitangas/);
+        assert.match(rendered.details,/Consultar o desafio não concede recompensas/);
+        // Require the complete panel to remain open after a second read. Do
+        // not silently accept a transient render as stable visual acceptance.
+        await page.waitForTimeout(1000);
+        assert.equal(await details.isVisible(),true,'Challenge panel disappeared after consultation');
+        const stable=await details.innerText({timeout:5000});
+        assert.match(stable,/Consultar o desafio não concede recompensas/);
+        assert.ok(stable.split('\n').some(line=>line.trim()===expectedStatus));
+        verified=true;break;
+      }catch(error){
+        lastError=error;
+        console.log('CHALLENGE_READ_RETRY',expected,attempt,String(error).split('\n')[0]);
+        // Only read/navigation retries. Do not repeat the ERP publication.
+      }
+    }
+    if(!verified){
+      await page.screenshot({path:'playwright-kyrub-challenge-'+expected+'-failure.png',fullPage:true});
+      const diagnostic=await page.evaluate(()=>({url:location.href,bootstrap:!!document.querySelector('#kyrub-bootstrap-screen'),body:document.body.innerText.slice(0,2500)}));
+      throw Error('Challenge consultation unstable: '+JSON.stringify({expected,diagnostic,errors,browserWarnings:browserWarnings.slice(-15),failedRequests:failedRequests.slice(-15)}),{cause:lastError});
+    }
+    assert.equal((await db.collection('users/'+uid+'/xpLedger').get()).size,expected==='available'?0:1);
+    assert.equal((await db.collection('users/'+uid+'/rewardLedger').get()).size,0);
+    assert.deepEqual(forbiddenFirebaseRequests,[]);
+    await page.screenshot({path:expected==='available'?'playwright-kyrub-challenge-available.png':'playwright-kyrub-challenge-completed.png',fullPage:true});
+  };
+  await checkInstitutionalChallenge('available');
+  await page.goto(origin+'/',{waitUntil:'domcontentloaded'});
   // Root / now opens the real Renda/Catu workspace directly, including for
   // authenticated users. The old optional ?entry=renda onboarding screen
   // has a separate #renda-entry-open-full-app button; that is NOT the root UX.
@@ -126,12 +218,41 @@ try {
     }));
     throw new Error('Retailer navigation entry absent: ' + JSON.stringify(diagnostic), { cause: error });
   }
-  await page.getByRole('button', { name: 'Acessar loja' }).waitFor({ timeout: 30000 });
-  await retailerEntry.click();
-  await page.locator('#erp-main-header').waitFor({ state: 'visible', timeout: 15000 });
-  await page.locator('#orange-house-config-btn').click();
-  await page.getByText('Configurações da Loja', { exact: true }).waitFor({ state: 'visible', timeout: 15000 });
-  await page.getByTestId('store-publication-toggle').waitFor({ state: 'visible', timeout: 15000 });
+  // Cloud product synchronization can legitimately remount LegacyApp while
+  // entering the ERP. Wait for bootstrap and reopen only non-mutating UI.
+  // Never force a click, dispatch DOM events or substitute a direct API call
+  // for the publication toggle.
+  const configToggle=page.getByTestId('store-publication-toggle');
+  const bootstrap=page.locator('#kyrub-bootstrap-screen');
+  const erpHeader=page.locator('#erp-main-header');
+  const configButton=page.locator('#orange-house-config-btn');
+  let configError;
+  for(let attempt=1;attempt<=4;attempt++){
+    try{
+      await bootstrap.waitFor({state:'hidden',timeout:20000});
+      await page.waitForTimeout(1200);
+      await bootstrap.waitFor({state:'hidden',timeout:20000});
+      if(await configToggle.isVisible())break;
+      if(!await erpHeader.isVisible()){
+        await page.getByRole('button',{name:'Acessar loja',exact:true}).waitFor({state:'visible',timeout:10000});
+        await retailerEntry.click({timeout:10000});
+        await erpHeader.waitFor({state:'visible',timeout:10000});
+      }
+      await bootstrap.waitFor({state:'hidden',timeout:10000});
+      await configButton.click({timeout:10000});
+      await page.getByText('Configurações da Loja',{exact:true}).waitFor({state:'visible',timeout:10000});
+      await configToggle.waitFor({state:'visible',timeout:10000});
+      break;
+    }catch(error){
+      configError=error;
+      console.log('ERP_CONFIG_NAVIGATION_RETRY',attempt, String(error).split('\n')[0]);
+    }
+  }
+  if(!await configToggle.isVisible()){
+    await page.screenshot({path:'playwright-kyrub-erp-navigation-failure.png',fullPage:true});
+    const diagnostic=await page.evaluate(()=>({url:location.href,bootstrap:!!document.querySelector('#kyrub-bootstrap-screen'),erp:!!document.querySelector('#erp-main-header'),config:!!document.querySelector('#orange-house-config-btn'),body:document.body.innerText.slice(0,2200)}));
+    throw Error('ERP configuration unavailable after bounded UI navigation: '+JSON.stringify({diagnostic,errors,browserWarnings:browserWarnings.slice(-15),failedRequests:failedRequests.slice(-15)}),{cause:configError});
+  }
   assert.equal(await page.getByTestId('store-publication-toggle').getAttribute('aria-label'), 'Publicar loja no marketplace');
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Retailer interface must remain emulator-isolated');
 
@@ -198,7 +319,9 @@ try {
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Chromium must remain isolated');
   assert.equal((await db.collection(`users/${uid}/xpLedger`).get()).size, 1);
   assert.equal((await db.doc(`users/${uid}/rewardLedger/earn_first_store_${uid}`).get()).exists, false);
-  console.log('Chromium app smoke and authenticated emulator-backed publication API passed.');
+  await checkInstitutionalChallenge('completed');
+  assert.equal((await db.collection('users/'+uid+'/challengeRewards').get()).size,1);
+  console.log('Chromium Taba challenge discovery, actual ERP publication and completed challenge consultation passed.');
 } finally {
   await browser.close();
 }
