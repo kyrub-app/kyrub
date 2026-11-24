@@ -37,3 +37,13 @@ test('vault is server-only and the foundation is not exposed prematurely',()=>{
  assert.match(service,/runTransaction/);
  assert.doesNotMatch(api,/reservedTribeService/);
 });
+
+test('reserved membership is server-only and the directory projection is gated',()=>{
+ const rules=readFileSync('firestore.contact-groups.fragment.rules','utf8');
+ const service=readFileSync('server/identity/reservedTribeService.ts','utf8');
+ assert.match(rules,/match \/reserved_tribe_vaults\/\{userId\}\/contacts\/\{peerId\} \{\s*allow read, write: if false;/);
+ assert.match(service,/listOrdinaryTribeConnections/);
+ assert.match(service,/listReservedTribeConnections/);
+ assert.match(service,/authorizeTribeRelationship/);
+ assert.match(service,/requireSession\(config,token\)/);
+});

@@ -4,8 +4,11 @@ import {createTribeVerifier,verifyTribeCode,failedTribeAttempt,tribeAttemptLocke
 /** Server-only foundation. No public route or UI is exposed until every contact surface is gated.
  * Callers must derive actor exclusively from verified authentication, never request body.
  */
+const validId=(value:unknown):value is string=>typeof value==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(value);
+const MAX_RESERVED_CONTACTS=200;
+const MAX_DIRECTORY_CONNECTIONS=1000;
 function vault(actor:string){
- if(!/^[A-Za-z0-9_-]{1,128}$/.test(actor))throw Error('TRIBE_ACCESS_DENIED');
+ if(!validId(actor))throw Error('TRIBE_ACCESS_DENIED');
  return adminDb.doc('reserved_tribe_vaults/'+actor);
 }
 export async function initializeReservedTribe(actor:string,code:unknown){
@@ -48,4 +51,98 @@ export async function lockReservedTribe(actor:string){
  await adminDb.runTransaction(async tx=>{
   if((await tx.get(reference)).exists)tx.update(reference,{sessionDigest:'',sessionExpiresAt:0,updatedAt:FieldValue.serverTimestamp()});
  });
+}
+
+type Relationship={id:string;senderId:string;receiverId:string;participantIds:string[];status:'pending'|'accepted';senderName?:string;receiverName?:string;senderAvatar?:string;receiverAvatar?:string;senderRole?:string;receiverRole?:string;senderBio?:string;receiverBio?:string};
+function relationship(snapshot:FirebaseFirestore.DocumentSnapshot,actor:string):Relationship|null{
+ const row=snapshot.data();
+ if(!row||!validId(snapshot.id)||!validId(row.senderId)||!validId(row.receiverId)||row.senderId===row.receiverId||
+    ![row.senderId,row.receiverId].includes(actor)||!Array.isArray(row.participantIds)||row.participantIds.length!==2||
+    !row.participantIds.includes(row.senderId)||!row.participantIds.includes(row.receiverId)||
+    !['pending','accepted'].includes(row.status))return null;
+ // Never return unknown fields or private account data.
+ const result:Relationship={id:snapshot.id,senderId:row.senderId,receiverId:row.receiverId,participantIds:[row.senderId,row.receiverId],status:row.status};
+ for(const field of ['senderName','receiverName','senderAvatar','receiverAvatar','senderRole','receiverRole','senderBio','receiverBio'] as const){
+  if(typeof row[field]==='string')result[field]=row[field];
+ }
+ return result;
+}
+const peerOf=(actor:string,relation:Relationship)=>relation.senderId===actor?relation.receiverId:relation.senderId;
+function requireSession(snapshot:FirebaseFirestore.DocumentSnapshot,token:unknown){
+ const data=snapshot.data();
+ if(!data||!validTribeSession(token,data.sessionDigest,data.sessionExpiresAt,Date.now()))throw Error('TRIBE_ACCESS_DENIED');
+}
+/** One private membership per peer, never a field on the shared connection.
+ * The relationship, chat and counterpart's groups remain untouched.
+ * Both supported connection ID orders are checked; a reserved peer stays
+ * reserved even if the shared relationship is later removed/recreated.
+ */
+export async function setReservedTribeContact(actor:string,token:unknown,peer:unknown,reserved:unknown){
+ const root=vault(actor);
+ if(!validId(peer)||peer===actor||typeof reserved!=='boolean')throw Error('TRIBE_CONTACT_INVALID');
+ return adminDb.runTransaction(async tx=>{
+  const config=await tx.get(root);requireSession(config,token);
+  const marker=root.collection('contacts').doc(peer);
+  const current=await tx.get(marker);
+  if(!reserved){
+   requireSession(config,token);
+   if(current.exists)tx.delete(marker);
+   return {reserved:false};
+  }
+  const ids=[...new Set([actor+'_'+peer,peer+'_'+actor])].filter(validId);
+  const records=await Promise.all(ids.map(id=>tx.get(adminDb.doc('connections/'+id))));
+  const accepted=records.map(item=>relationship(item,actor)).find(item=>item?.status==='accepted'&&peerOf(actor,item)===peer);
+  if(!accepted)throw Error('TRIBE_CONNECTION_REQUIRED');
+  if(!current.exists){
+   const members=await tx.get(root.collection('contacts').limit(MAX_RESERVED_CONTACTS+1));
+   if(members.size>=MAX_RESERVED_CONTACTS)throw Error('TRIBE_LIMIT_REACHED');
+   requireSession(config,token);
+   tx.create(marker,{peerId:peer,createdAt:FieldValue.serverTimestamp()});
+  }
+  requireSession(config,token);
+  return {reserved:true};
+ });
+}
+/** Server-only directory projection. No protected IDs/counts are returned to
+ * the ordinary list. The existing direct Firestore query is NOT yet replaced;
+ * do not expose membership mutations until that migration is finished.
+ */
+async function listTribeConnections(actor:string,scope:'ordinary'|'reserved',token?:unknown){
+ const root=vault(actor);
+ return adminDb.runTransaction(async tx=>{
+  const [account,config]=await Promise.all([tx.get(adminDb.doc('users/'+actor)),tx.get(root)]);
+  if(!account.exists)throw Error('TRIBE_ACCESS_DENIED');
+  if(scope==='reserved')requireSession(config,token);
+  const [markers,connections]=await Promise.all([
+   tx.get(root.collection('contacts').limit(MAX_RESERVED_CONTACTS+1)),
+   tx.get(adminDb.collection('connections').where('participantIds','array-contains',actor).limit(MAX_DIRECTORY_CONNECTIONS+1))
+  ]);
+  if(markers.size>MAX_RESERVED_CONTACTS||connections.size>MAX_DIRECTORY_CONNECTIONS)throw Error('TRIBE_DIRECTORY_LIMIT');
+  const hidden=new Set(markers.docs.map(item=>item.id));
+  const filtered=connections.docs.flatMap(item=>{
+   const relation=relationship(item,actor);
+   if(!relation)return [];
+   const isReserved=hidden.has(peerOf(actor,relation));
+   return scope==='reserved'?(isReserved&&relation.status==='accepted'?[relation]:[]):(!isReserved?[relation]:[]);
+  });
+  if(scope==='reserved')requireSession(config,token);
+  return filtered;
+ });
+}
+export const listOrdinaryTribeConnections=(actor:string)=>listTribeConnections(actor,'ordinary');
+export const listReservedTribeConnections=(actor:string,token:unknown)=>listTribeConnections(actor,'reserved',token);
+
+/** Use for server chat/directory operations after verified auth, in the same
+ * transaction as the operation. A public relationship is not permission
+ * to access this actor's reserved conversations without the vault capability.
+ */
+export async function authorizeTribeRelationship(tx:FirebaseFirestore.Transaction,actor:string,connectionId:string,token?:unknown){
+ const root=vault(actor);
+ if(!validId(connectionId))throw Error('TRIBE_ACCESS_DENIED');
+ const reference=adminDb.doc('connections/'+connectionId);
+ const relation=relationship(await tx.get(reference),actor);
+ if(!relation||relation.status!=='accepted')throw Error('TRIBE_ACCESS_DENIED');
+ const marker=await tx.get(root.collection('contacts').doc(peerOf(actor,relation)));
+ if(marker.exists)requireSession(await tx.get(root),token);
+ return relation;
 }

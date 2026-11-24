@@ -79,3 +79,8 @@
     match /reserved_tribe_vaults/{userId} {
       allow read, write: if false;
     }
+
+    // Reserved memberships are directional and must never appear in a client SDK read.
+    match /reserved_tribe_vaults/{userId}/contacts/{peerId} {
+      allow read, write: if false;
+    }

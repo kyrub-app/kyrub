@@ -1,0 +1,73 @@
+import assert from 'node:assert/strict';
+import {before,after,test} from 'node:test';
+import {readFileSync} from 'node:fs';
+import {getApps,deleteApp} from 'firebase-admin/app';
+import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
+import {doc,getDoc,getDocs,collection,setDoc,deleteDoc} from 'firebase/firestore';
+import {adminDb} from '../server/firebaseAdmin.js';
+import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship} from '../server/identity/reservedTribeService.js';
+const PROJECT='kyrub-security-test';
+if(!/^(127\.0\.0\.1|localhost):\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST??''))throw Error('LOCAL_FIRESTORE_EMULATOR_REQUIRED');
+delete process.env.FIREBASE_SERVICE_ACCOUNT_JSON;delete process.env.GOOGLE_APPLICATION_CREDENTIALS;delete process.env.VERCEL;
+process.env.FIREBASE_PROJECT_ID=PROJECT;
+let env:RulesTestEnvironment;
+const actor='reserved-owner',peer='reserved-peer',other='ordinary-peer',outsider='unrelated-user',pending='pending-peer';
+const id=(a:string,b:string)=>[a,b].sort().join('_');
+const connection=(a:string,b:string,status='accepted')=>({senderId:a,receiverId:b,participantIds:[a,b].sort(),status,senderName:a,receiverName:b});
+before(async()=>{
+ env=await initializeTestEnvironment({projectId:PROJECT,firestore:{rules:readFileSync('.firebase/firestore.combined.rules','utf8'),host:'127.0.0.1',port:8088}});
+ await env.clearFirestore();
+ await Promise.all([actor,peer,other,outsider,pending].map(uid=>adminDb.doc('users/'+uid).set({name:uid,isProfileVisible:true})));
+ await Promise.all([adminDb.doc('connections/'+id(actor,peer)).set(connection(actor,peer)),adminDb.doc('connections/'+id(actor,other)).set(connection(actor,other)),adminDb.doc('connections/'+id(actor,pending)).set(connection(actor,pending,'pending'))]);
+});
+after(async()=>{await env?.cleanup();await adminDb.terminate();await Promise.all(getApps().map(app=>deleteApp(app)));});
+test('reservation is private, authorized, directional and leaves shared relationship intact',async()=>{
+ await initializeReservedTribe(actor,'synthetic!code');
+ await assert.rejects(initializeReservedTribe(actor,'new!synthetic'),/TRIBE_SETUP_UNAVAILABLE/);
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const token=session.token;
+ await assert.rejects(setReservedTribeContact(actor,'incorrect',peer,true),/TRIBE_ACCESS_DENIED/);
+ await assert.rejects(setReservedTribeContact(outsider,token,peer,true),/TRIBE_ACCESS_DENIED/);
+ await assert.rejects(setReservedTribeContact(actor,token,pending,true),/TRIBE_CONNECTION_REQUIRED/);
+ await assert.rejects(setReservedTribeContact(actor,token,outsider,true),/TRIBE_CONNECTION_REQUIRED/);
+ await Promise.all([setReservedTribeContact(actor,token,peer,true),setReservedTribeContact(actor,token,peer,true)]);
+ assert.equal((await adminDb.doc('connections/'+id(actor,peer)).get()).get('status'),'accepted');
+ const normal=await listOrdinaryTribeConnections(actor);
+ assert.equal(normal.length,2);
+ assert.ok(!normal.some(x=>x.participantIds.includes(peer)));
+ assert.equal((await listReservedTribeConnections(actor,token)).length,1);
+ assert.equal((await listOrdinaryTribeConnections(peer)).length,1);
+ await assert.rejects(listReservedTribeConnections(actor,'invalid'),/TRIBE_ACCESS_DENIED/);
+ await assert.rejects(adminDb.runTransaction(tx=>authorizeTribeRelationship(tx,actor,id(actor,peer))),/TRIBE_ACCESS_DENIED/);
+ assert.equal((await adminDb.runTransaction(tx=>authorizeTribeRelationship(tx,actor,id(actor,peer),token))).status,'accepted');
+ assert.equal((await adminDb.runTransaction(tx=>authorizeTribeRelationship(tx,peer,id(actor,peer)))).status,'accepted');
+ const path='reserved_tribe_vaults/'+actor+'/contacts/'+peer;
+ for(const uid of [actor,peer,outsider]){
+  const client=env.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(client,path)));
+  await assertFails(getDocs(collection(client,'reserved_tribe_vaults',actor,'contacts')));
+  await assertFails(setDoc(doc(client,path),{peerId:peer}));
+  await assertFails(deleteDoc(doc(client,path)));
+ }
+ // Legacy shared reads still work; migration is explicitly required before UI exposure.
+ await assertSucceeds(getDoc(doc(env.authenticatedContext(actor).firestore(),'connections/'+id(actor,peer))));
+ await lockReservedTribe(actor);
+ await assert.rejects(listReservedTribeConnections(actor,token),/TRIBE_ACCESS_DENIED/);
+ const next=await unlockReservedTribe(actor,'synthetic!code');assert.ok(next.ok);
+ if(!next.ok)throw Error('SESSION_MISSING');
+ await assert.rejects(setReservedTribeContact(actor,token,peer,false),/TRIBE_ACCESS_DENIED/);
+ await setReservedTribeContact(actor,next.token,peer,false);
+ assert.equal((await listReservedTribeConnections(actor,next.token)).length,0);
+ assert.equal((await listOrdinaryTribeConnections(actor)).length,3);
+ assert.equal((await adminDb.doc('connections/'+id(actor,peer)).get()).get('status'),'accepted');
+});
+test('five wrong codes persist across requests and a correct code cannot bypass lockout',async()=>{
+ for(let i=0;i<5;i++)assert.equal((await unlockReservedTribe(actor,'wrong!code')).ok,false);
+ assert.equal((await unlockReservedTribe(actor,'synthetic!code')).ok,false);
+ const vault=await adminDb.doc('reserved_tribe_vaults/'+actor).get();
+ assert.equal(vault.get('failures'),5);
+ assert.ok(vault.get('lockedUntil')>Date.now());
+ await adminDb.doc('reserved_tribe_vaults/'+actor).update({lockedUntil:Date.now()-1});
+ const result=await unlockReservedTribe(actor,'synthetic!code');assert.ok(result.ok);
+});
