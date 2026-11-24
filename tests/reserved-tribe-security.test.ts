@@ -47,3 +47,18 @@ test('reserved membership is server-only and the directory projection is gated',
  assert.match(service,/authorizeTribeRelationship/);
  assert.match(service,/requireSession\(config,token\)/);
 });
+
+test('reserved chat direct access is denied and server operations enforce relationship authorization',()=>{
+ const rules=readFileSync('firestore.rules','utf8');
+ const chat=readFileSync('server/identity/reservedTribeChatService.ts','utf8');
+ const service=readFileSync('server/identity/reservedTribeService.ts','utf8');
+ assert.match(rules,/reserved_tribe_vaults\/\$\(request.auth.uid\)\/contacts\/\$\(ownReservedPeer\(\)\)/);
+ assert.match(chat,/export async function readTribeChat/);
+ assert.match(chat,/export async function sendTribeChatMessage/);
+ assert.match(chat,/export async function clearTribeChatHistory/);
+ assert.match(chat,/authorizeTribeRelationship\(tx,actor,connectionId,token\)/);
+ assert.match(chat,/where\('createdAt','>',cutoff\)/);
+ assert.match(chat,/history_state'\)\.doc\(actor\)/);
+ assert.match(service,/ownBlock.exists\|\|otherBlock.exists/);
+ assert.doesNotMatch(readFileSync('api/health.ts','utf8'),/reservedTribeChatService/);
+});

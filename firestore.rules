@@ -405,12 +405,18 @@ match /connections/{connectionId} {
         ).data;
       }
 
+      function ownReservedPeer() {
+        return request.auth.uid == connectionData().senderId
+          ? connectionData().receiverId : connectionData().senderId;
+      }
+
       function canAccessMessages() {
         return isSignedIn()
           && isValidId(connectionId)
           && connectionExists()
           && connectionData().status == 'accepted'
-          && request.auth.uid in connectionData().participantIds;
+          && request.auth.uid in connectionData().participantIds
+          && !exists(/databases/$(database)/documents/reserved_tribe_vaults/$(request.auth.uid)/contacts/$(ownReservedPeer()));
       }
 
       function hasValidReceiver() {

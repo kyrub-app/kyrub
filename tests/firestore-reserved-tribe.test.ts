@@ -3,7 +3,9 @@ import {before,after,test} from 'node:test';
 import {readFileSync} from 'node:fs';
 import {getApps,deleteApp} from 'firebase-admin/app';
 import {initializeTestEnvironment,assertFails,assertSucceeds,type RulesTestEnvironment} from '@firebase/rules-unit-testing';
-import {doc,getDoc,getDocs,collection,setDoc,deleteDoc} from 'firebase/firestore';
+import {doc,getDoc,getDocs,collection,setDoc,deleteDoc,serverTimestamp,query,limit} from 'firebase/firestore';
+import {Timestamp} from 'firebase-admin/firestore';
+import {readTribeChat,sendTribeChatMessage,clearTribeChatHistory} from '../server/identity/reservedTribeChatService.js';
 import {adminDb} from '../server/firebaseAdmin.js';
 import {initializeReservedTribe,unlockReservedTribe,lockReservedTribe,setReservedTribeContact,listOrdinaryTribeConnections,listReservedTribeConnections,authorizeTribeRelationship} from '../server/identity/reservedTribeService.js';
 const PROJECT='kyrub-security-test';
@@ -70,4 +72,51 @@ test('five wrong codes persist across requests and a correct code cannot bypass 
  assert.ok(vault.get('lockedUntil')>Date.now());
  await adminDb.doc('reserved_tribe_vaults/'+actor).update({lockedUntil:Date.now()-1});
  const result=await unlockReservedTribe(actor,'synthetic!code');assert.ok(result.ok);
+});
+
+test('reserved chat denies direct SDK access while the other participant retains normal chat',async()=>{
+ const session=await unlockReservedTribe(actor,'synthetic!code');assert.ok(session.ok);
+ if(!session.ok)throw Error('SESSION_MISSING');
+ const pair=id(actor,peer),base='social_chats/'+pair;
+ await setReservedTribeContact(actor,session.token,peer,true);
+ await adminDb.doc(base+'/messages/old').set({senderId:peer,receiverId:actor,text:'mensagem antiga',createdAt:Timestamp.fromMillis(Date.now()-60000)});
+ const owner=env.authenticatedContext(actor).firestore(),counterpart=env.authenticatedContext(peer).firestore(),stranger=env.authenticatedContext(outsider).firestore();
+ await assertFails(getDoc(doc(owner,base+'/messages/old')));
+ await assertFails(getDocs(query(collection(owner,base+'/messages'),limit(100))));
+ await assertFails(setDoc(doc(owner,base+'/messages/bypass'),{senderId:actor,receiverId:peer,text:'bypass',createdAt:serverTimestamp()}));
+ await assertFails(getDoc(doc(owner,base+'/history_state/'+actor)));
+ await assertFails(setDoc(doc(owner,base+'/history_state/'+actor),{clearedAt:serverTimestamp()}));
+ await assertFails(getDoc(doc(stranger,base+'/messages/old')));
+ await assertSucceeds(getDoc(doc(counterpart,base+'/messages/old')));
+ await assertSucceeds(setDoc(doc(counterpart,base+'/messages/peer-new'),{senderId:peer,receiverId:actor,text:'recebida normalmente',createdAt:serverTimestamp()}));
+ await assertRejectNoSession();
+ async function assertRejectNoSession(){
+  await assert.rejects(readTribeChat(actor,pair),/TRIBE_ACCESS_DENIED/);
+  await assert.rejects(sendTribeChatMessage(actor,pair,'invalid','invalid-message','sem acesso'),/TRIBE_ACCESS_DENIED/);
+  await assert.rejects(clearTribeChatHistory(actor,pair),/TRIBE_ACCESS_DENIED/);
+ }
+ assert.equal((await readTribeChat(actor,pair,session.token)).messages.length,2);
+ await Promise.all([sendTribeChatMessage(actor,pair,session.token,'message-once','olá'),sendTribeChatMessage(actor,pair,session.token,'message-once','olá')]);
+ await assert.rejects(sendTribeChatMessage(actor,pair,session.token,'message-once','outro conteúdo'),/TRIBE_MESSAGE_CONFLICT/);
+ assert.equal((await readTribeChat(actor,pair,session.token)).messages.length,3);
+ await clearTribeChatHistory(actor,pair,session.token);
+ assert.equal((await readTribeChat(actor,pair,session.token)).messages.length,0);
+ assert.equal((await readTribeChat(peer,pair)).messages.length,3);
+ // Guarantee a strictly later commit in the emulator, including timestamp granularity.
+ await new Promise(resolve=>setTimeout(resolve,20));
+ await sendTribeChatMessage(peer,pair,undefined,'after-clear','nova mensagem');
+ assert.deepEqual((await readTribeChat(actor,pair,session.token)).messages.map(row=>row.text),['nova mensagem']);
+ assert.equal((await adminDb.collection(base+'/messages').get()).size,4);
+ await lockReservedTribe(actor);
+ await assert.rejects(readTribeChat(actor,pair,session.token),/TRIBE_ACCESS_DENIED/);
+ const next=await unlockReservedTribe(actor,'synthetic!code');assert.ok(next.ok);
+ if(!next.ok)throw Error('SESSION_MISSING');
+ await adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor).set({targetId:actor});
+ await assert.rejects(readTribeChat(actor,pair,next.token),/TRIBE_ACCESS_DENIED/);
+ await adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor).delete();
+ await setReservedTribeContact(actor,next.token,peer,false);
+ await assertSucceeds(getDoc(doc(owner,base+'/messages/old')));
+ assert.equal((await readTribeChat(actor,pair)).messages.length,1);
+ const ordinaryPair=id(actor,other);
+ await assertSucceeds(setDoc(doc(owner,'social_chats/'+ordinaryPair+'/messages/ordinary'),{senderId:actor,receiverId:other,text:'normal',createdAt:serverTimestamp()}));
 });

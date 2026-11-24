@@ -142,7 +142,13 @@ export async function authorizeTribeRelationship(tx:FirebaseFirestore.Transactio
  const reference=adminDb.doc('connections/'+connectionId);
  const relation=relationship(await tx.get(reference),actor);
  if(!relation||relation.status!=='accepted')throw Error('TRIBE_ACCESS_DENIED');
- const marker=await tx.get(root.collection('contacts').doc(peerOf(actor,relation)));
+ const peer=peerOf(actor,relation);
+ const [marker,ownBlock,otherBlock]=await Promise.all([
+  tx.get(root.collection('contacts').doc(peer)),
+  tx.get(adminDb.doc('social_contact_blocks/'+actor+'/blocked/'+peer)),
+  tx.get(adminDb.doc('social_contact_blocks/'+peer+'/blocked/'+actor))
+ ]);
+ if(ownBlock.exists||otherBlock.exists)throw Error('TRIBE_ACCESS_DENIED');
  if(marker.exists)requireSession(await tx.get(root),token);
  return relation;
 }
