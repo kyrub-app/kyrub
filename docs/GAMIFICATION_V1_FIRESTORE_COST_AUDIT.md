@@ -209,3 +209,35 @@ Sem afirmar região, edição, plano, preços contratados ou consumo do Firebase
 principal. Próxima ação necessária: inventário autorizado de escritores e
 levantamento real de uso do projeto principal; não abrir nova frente de
 otimização sem identificar gargalo medido. Sem alteração em produção.
+
+
+## Conferência pré-lançamento — 24/11/2026
+Revisões 6c3f755 e 2604f0a: 4/4 workflows aprovados.
+Revisão 94e034f: Chromium aprovado; Application build 45529044050,
+job 138919482032, artefato 14982674838 inspecionado. Prebuild executou
+2527 testes, 2526 passaram, 1 falhou no contrato textual de
+personal-center-wallet.test.ts, que exige mode = 'all'. A correção
+9da914d restaura a assinatura pública original, sem modificar ou suprimir
+o teste. Novo CI pendente. O mesmo log npm ci reporta 10 vulnerabilidades
+(1 baixa, 7 moderadas, 2 altas); não identifica aqui explorabilidade.
+Antes da liberação, revisar o relatório npm audit de dependências
+de produção, sem aplicar npm audit fix --force automaticamente.
+Revisão instrumentada f5e896b ainda sem confirmação integral.
+Não afirmar conclusão de homologação.
+
+### Handoff mínimo de infraestrutura
+Não há ação de consulta direta ao Google Cloud/Firebase nesta sessão.
+Executar G1 de GAMIFICATION_V1_SAFE_CUTOVER.md no projeto principal
+kyrub-b8d0e, banco (default), via sessão autorizada do Work.
+Além do inventário de escritores, registrar edição e localização do banco,
+plano de cobrança, uso diário de leituras/gravações/exclusões nos últimos
+7 e 30 dias (quando disponível), armazenamento e consumo de outros módulos.
+Distinguir ausência de serviço comprovada, acesso negado, API desabilitada
+e consulta incompleta. Verificar a revisão Vercel vinculada aos domínios
+www.kyrub.com e admin.kyrub.com. Não copiar segredos, dados de usuários,
+habilitar APIs, alterar IAM, Blaze, regras, flags, dados ou fazer deploy.
+Não definir writersVerified. O relatório deve listar bloqueios remanescentes
+e evidências com data, projeto e fonte. Projeto kyrub-tags e PR #1274 fora
+do escopo. A autoridade econômica comercial ainda exige implementação
+e aceite separados: o piloto atual permanece exclusivo de emuladores.
+Não ampliar as otimizações até a evidência de consumo e cobertura.
