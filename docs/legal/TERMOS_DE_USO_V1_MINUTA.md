@@ -1,0 +1,65 @@
+# Termos de Uso do Kyrub
+**Minuta 0.1 — 25/11/2026 — NÃO PUBLICADA / NÃO VIGENTE**
+Documento proposto para revisão jurídica e validação operacional. Campos entre colchetes exigem confirmação; cláusulas de funcionalidades condicionais devem corresponder à versão realmente liberada. Não apresentar esta minuta aos usuários como contrato vigente.
+
+## 1. Identificação e objeto
+O Kyrub é uma plataforma digital de organização pessoal, relacionamento social e gestão de negócios, operada pelo empresário individual inscrito no CNPJ 41.101.531/0001-58, com sede cadastrada em Cachoeira Paulista, SP, Brasil, sob a marca Kyrub.
+Identificação completa do fornecedor: [nome empresarial exato e endereço cadastral/comercial legalmente aplicável, a inserir a partir do comprovante cadastral em ambiente controlado]. Atendimento: [canal eletrônico funcional e demais contatos exigidos]. A identificação da marca não constitui alteração do nome empresarial registrado.
+Estes Termos disciplinam o acesso aos serviços efetivamente disponibilizados pelo Kyrub. A Política de Privacidade explica o tratamento de dados pessoais. Condições específicas de produtos, lojas, planos e entregas complementam estes Termos quando aplicáveis, sem limitar direitos obrigatórios.
+
+## 2. Acesso, elegibilidade e conta
+O visitante pode acessar áreas públicas conforme disponibilizadas. Operações que exigem identificação dependem de autenticação. O usuário, denominado Kairubido, deve fornecer informações necessárias e corretas, respeitar os direitos de terceiros e proteger seu acesso. Deve informar suspeita de comprometimento pelo canal de atendimento.
+[Definir público elegível e regras de idade com avaliação do ECA Digital. Proposta para avaliação: cadastro comercial inicialmente restrito a adultos, sem presumir que essa restrição dispensa proteção de menores ou aferição etária quando exigida.] A plataforma não deve solicitar documentos ou biometria mediante interfaces meramente demonstrativas.
+O uso de login de terceiros pode depender das condições desse fornecedor. A conta não autoriza acesso a dados privados de outros usuários ou empresas. A perda de acesso será tratada pelo procedimento de recuperação efetivamente oferecido.
+
+## 3. Central Pessoal, perfil e funcionalidades
+A Central Pessoal reúne áreas pessoais, conforme o serviço habilitado. O perfil pode ter visibilidade pública ou restrita conforme as opções efetivas. A exposição pública de conteúdo decorre da finalidade e das configurações de publicação aplicáveis, e não torna automaticamente públicos dados da Central Pessoal, mensagens ou registros privados.
+Recursos de organização, carteira, notas, tarefas e dispositivos não constituem, por si sós, serviços bancários, de investimento, de emergência ou garantia de disponibilidade. Saldos demonstrativos, financeiros e pontos de gamificação não devem ser apresentados como equivalentes.
+Recursos experimentais ou ainda não liberados devem ser identificados como tais. Estes Termos não prometem funções futuras.
+
+## 4. Publicações, Taba, comunidades e conexões
+O usuário pode publicar conteúdo permitido nas áreas disponíveis, respeitando a visibilidade escolhida, regras da comunidade e direitos de terceiros. A distribuição de uma publicação na Taba, quando habilitada, tem janela de 24 horas; a expiração da distribuição não implica exclusão do conteúdo na origem. Encaminhamentos e comentários seguem as permissões e regras efetivamente disponíveis.
+Comunidades e tribos reservadas possuem regras próprias e restrições de participação. Nenhum administrador comunitário adquire autorização geral para acessar dados pessoais privados de participantes.
+O autor conserva os direitos que detém sobre seu conteúdo. Ao disponibilizá-lo, concede ao Kyrub autorização não exclusiva e limitada às operações necessárias para armazenar, adaptar tecnicamente, exibir e distribuir esse conteúdo conforme sua finalidade e visibilidade. Essa autorização não permite exploração desvinculada do serviço. Após retirada do conteúdo, cessará sua distribuição pela plataforma, ressalvadas cópias de terceiros fora de seu controle, preservação legal e ciclos técnicos de descarte devidamente informados.
+
+## 5. Conduta e moderação
+São proibidos fraude, impersonação, invasão de contas, spam, exploração de vulnerabilidades, manipulação de recompensas ou avaliações, violações autorais, divulgação ilícita de dados, ameaças, assédio, discriminação ilícita, exploração sexual, conteúdo ilegal e condutas que coloquem crianças e adolescentes em risco.
+Denúncias podem ser encaminhadas pelos mecanismos efetivamente disponibilizados e pelo canal permanente [confirmar canal]. A plataforma avaliará os fatos e poderá restringir acesso ou distribuição, remover conteúdo ou suspender contas de maneira proporcional, conforme a lei e as regras aplicáveis. Quando cabível, informará fundamentos e oferecerá contestação. Medidas urgentes poderão anteceder comunicação, para proteger pessoas, cumprir obrigações ou evitar agravamento do dano. A preservação e comunicação de evidências observarão as hipóteses legais e a privacidade.
+A responsabilidade por conteúdo de terceiros será apreciada conforme a legislação e jurisprudência aplicáveis. Não se estabelece imunidade geral da plataforma nem exigência universal de ordem judicial prévia para agir.
+
+## 6. Lojas, ERP e relações comerciais
+O Kyrub disponibiliza ferramentas de comércio e gestão, conforme o plano e os recursos contratados. O lojista deve manter sua identificação e informações de oferta corretas, observar obrigações fiscais, trabalhistas, sanitárias, consumeristas e de proteção de dados que lhe sejam aplicáveis, e cumprir as condições de venda.
+A identificação do vendedor, o preço total, eventuais encargos, condições de entrega, pagamento e cancelamento devem ser exibidos antes da contratação. A relação comercial será determinada pelo papel efetivo de cada participante: o Kyrub responde por seus próprios serviços e obrigações; a responsabilidade de vendedores, prestadores, intermediários e entregadores segue a operação realizada e a lei, sem exclusões genéricas ou renúncia a direitos do consumidor.
+A loja oficial comercializa os planos próprios do Kyrub quando disponíveis. Acesso ao ERP e publicação da loja são condições distintas. A validade dos planos pagos começa após confirmação do pagamento, conforme a oferta; não há renovação automática na modalidade atualmente definida. Preços, vigência, funcionalidades e limites devem constar da oferta vigente, não de promessas permanentes nestes Termos.
+A confirmação de pagamento depende do provedor e da conciliação aplicável. O uso de integrações de terceiros depende da habilitação real e dos seus termos; não se promete split, repasse automático ou Pix operacional sem homologação. Nenhum registro de demonstração constitui pagamento real.
+
+## 7. Cancelamento, reembolso, atendimento e entregas
+O consumidor poderá exercer seus direitos legais, inclusive arrependimento nas contratações a distância quando aplicável (observado o prazo legal de sete dias), cancelamento, restituição e demais garantias. O procedimento deverá ser acessível pelo meio da contratação e pelo canal oficial de atendimento, com confirmação do recebimento das solicitações. Crédito ou cupom não substitui unilateralmente restituição devida.
+Em entregas, quando disponíveis, serão informados os responsáveis, condições, preço e procedimentos para ocorrências. Remuneração do entregador pelo trabalho efetivamente realizado, atribuição dos custos e restituição ao comprador são questões distintas; controvérsias serão analisadas conforme os fatos e a legislação, sem desconto automático indevido ao consumidor.
+[Validar fluxos reais e prazos, atendimento eletrônico, comprovantes, identificação de vendedor, direito de arrependimento, reembolso e emissão fiscal antes de liberar contratação.]
+
+## 8. Pitangas, XP, desafios e recompensas
+Quando o programa estiver efetivamente habilitado, as Pitangas e o XP terão natureza e regras definidas no regulamento vigente do programa, apresentado antes da participação. Não são moeda de curso legal, saldo bancário, investimento ou direito de conversão em dinheiro sem previsão expressa, autorização aplicável e funcionalidade efetiva. O XP representa evolução dentro do programa.
+Regras de elegibilidade, limites, campanhas, conversões internas, expiração quando prevista, prevenção de fraude e contestação devem ser informadas previamente. Não haverá alteração retroativa arbitrária de direitos adquiridos. A comunidade não adquire pontos pela atividade de seus membros apenas por sediar publicações. Benefícios não homologados não são ofertados por esta minuta.
+[Inserir regulamento econômico aprovado e versão efetivamente liberada antes de abrir programa ao público.]
+
+## 9. Dispositivos Kyrub Tag
+Caso comercializado e habilitado, o dispositivo permite vinculação de conteúdo digital conforme o produto. A ativação, confirmação de titularidade, recuperação, edição, bloqueio e exposição pública seguirão as condições específicas fornecidas ao comprador. A leitura por aproximação pode depender do aparelho e de conectividade; o titular deve evitar publicar dados cuja divulgação não deseja.
+Não se garante transmissão de SOS, socorro, localização, comunicação offline ou compatibilidade universal sem serviço realmente disponibilizado, testado e descrito. Garantias e direitos relativos ao produto físico permanecem aplicáveis.
+[Validar titularidade, eventual transferência legal de direitos, garantia, perda, revenda e descarte antes de comercializar dispositivos.]
+
+## 10. Propriedade intelectual e segurança
+A marca, interface e software são protegidos pelos direitos aplicáveis, ressalvados direitos de terceiros e licenças de componentes. O usuário recebe permissão de uso do serviço nos limites da contratação, sem transferência de propriedade intelectual. São vedados usos ilícitos e acessos não autorizados; não se impede o exercício de direitos legais.
+O Kyrub adotará medidas de segurança compatíveis com seus riscos. O usuário deverá comunicar incidentes e não utilizar vulnerabilidades para acessar dados de terceiros. Nenhuma cláusula afasta deveres legais de segurança ou responsabilidade.
+
+## 11. Alterações e continuidade
+Os serviços podem evoluir, receber manutenção ou sofrer interrupções. O Kyrub deverá informar alterações materiais, especialmente quando afetarem serviços contratados, respeitar os direitos já constituídos e obter novo aceite quando juridicamente necessário. Alterações não autorizam unilateralmente cobranças ou supressão de direitos legais.
+Quando houver encerramento de conta ou serviço, serão observados os direitos de acesso, exportação e exclusão nas hipóteses legais, os vínculos comerciais pendentes e as obrigações de retenção. A desativação de conta não implica destruição imediata de todos os registros.
+
+## 12. Privacidade e contato
+A Política de Privacidade integra as informações disponibilizadas aos titulares, sem converter sua leitura ou aceite contratual em consentimento genérico para tratamento de dados. Consentimentos específicos, quando necessários, serão solicitados separadamente e poderão ser revogados.
+Atendimento geral: [confirmar]. Privacidade e dados pessoais: [confirmar]. Denúncias e contestação: [confirmar]. O usuário pode recorrer aos órgãos competentes e exercer os direitos assegurados pela legislação.
+
+## 13. Legislação, vigência e versão
+Aplica-se a legislação brasileira, preservado o foro legalmente competente e os direitos do consumidor, inclusive seu domicílio quando cabível. O documento deverá identificar versão e data de vigência após aprovação humana, com acesso ao histórico e registro confiável do aceite quando necessário.
+Versão proposta: 0.1. Vigência: não iniciada. Nenhum aceite é solicitado nesta fase.
