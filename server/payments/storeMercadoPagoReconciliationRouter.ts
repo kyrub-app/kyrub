@@ -277,7 +277,7 @@ const saveReconciliation = async (
   });
 };
 
-const reconcileMercadoPagoPayment = async (
+export const reconcileMercadoPagoPayment = async (
   storeId: string,
   paymentId: string
 ): Promise<StoreProviderPaymentReconciliation> => {
@@ -308,8 +308,8 @@ const reconcileMercadoPagoPayment = async (
   );
   const collectorId = clean(providerPayment.collector_id);
   if (
-    (collectorId && collectorId !== secret.externalAccountId)
-    || (!binding && !collectorId)
+    !collectorId || collectorId !== secret.externalAccountId
+    || (binding?.recipientAccountId && collectorId !== binding.recipientAccountId)
   ) {
     throw new Error('STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH');
   }
