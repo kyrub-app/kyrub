@@ -43,6 +43,12 @@ export async function requireCurrentIngressLegalReceiptInTransaction(tx:Transact
  return receiptId;
 }
 
+/** Match the adult-only ingress UI at the server boundary. Public legal text remains separate. */
+async function requireVerifiedIngressAge(tx:Transaction,uid:string){
+ const record=await tx.get(adminDb.collection('age_eligibility_private').doc(uid));
+ if(record.get('uid')!==uid||record.get('status')!=='verified_adult')throw Error('LEGAL_AGE_REQUIRED');
+}
+
 /** Candidate only: no legal publication authority and no production endpoint. */
 export async function recordIngressLegalReceipt(authorization:string,input:unknown){
  const uid=await authenticateLegalPreview(authorization);
@@ -50,6 +56,7 @@ export async function recordIngressLegalReceipt(authorization:string,input:unkno
  const decision=input as Decision;
  if(!validReference(decision.terms,'accepted')||!validReference(decision.privacy,'acknowledged'))throw Error('LEGAL_DECISION_INVALID');
  return adminDb.runTransaction(async tx=>{
+  await requireVerifiedIngressAge(tx,uid);
   const {terms,privacy}=await currentIngressDocuments(tx);
   if(!matches(decision.terms,terms)||!matches(decision.privacy,privacy))throw Error('LEGAL_VERSION_CHANGED');
   const {receiptId,ref}=receiptReference(uid,terms,privacy);
@@ -77,6 +84,7 @@ async function authenticateLegalPreview(authorization:string){
 export async function readOwnIngressLegalReceipt(authorization:string){
  const uid=await authenticateLegalPreview(authorization);
  return adminDb.runTransaction(async tx=>{
+  await requireVerifiedIngressAge(tx,uid);
   const {terms,privacy}=await currentIngressDocuments(tx);
   const {receiptId,ref}=receiptReference(uid,terms,privacy);
   const saved=await tx.get(ref);
