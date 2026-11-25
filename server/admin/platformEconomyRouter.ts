@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
@@ -25,14 +25,15 @@ const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
 export const authorizePlatformEconomy = async (
-  authorization: string
+  authorization: string,
+  deps: {db:Pick<Firestore,'doc'>;verify:(token:string)=>Promise<{uid:string;emailVerified?:boolean}>} = {db:adminDb,verify:verifyFirebaseIdToken},
 ): Promise<AuthorizedFinanceAdmin> => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
-  const decoded = await verifyFirebaseIdToken(token);
+  const decoded = await deps.verify(token);
   if (decoded.emailVerified !== true) throw new Error('EMAIL_NOT_VERIFIED');
 
-  const profileSnapshot = await adminDb
+  const profileSnapshot = await deps.db
     .doc(`kyrub_admin/control_plane/admins/${decoded.uid}`)
     .get();
   const profile = profileSnapshot.data() as Record<string, unknown> | undefined;

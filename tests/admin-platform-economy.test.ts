@@ -382,3 +382,13 @@ test('restricted infrastructure projection excludes all company finance metrics 
   assert.deepEqual(result,{period,infrastructureCosts:{status:'complete',confirmedMinor:120000,estimatedMinor:null},mau:10000,infrastructureCostPerActiveUserMinor:12});
   assert.equal(projectPlatformInfrastructure(period,[],[],users).infrastructureCostPerActiveUserMinor,null);
 });
+
+test('official infrastructure fixture reader cannot be invoked through an HTTP route or mutate ERP',()=>{
+  const reader=readFileSync('server/admin/officialInfrastructureFixtureReader.ts','utf8');
+  const router=readFileSync('server/admin/platformEconomyRouter.ts','utf8');
+  assert.match(reader,/await authorizePlatformEconomy\(authorization/);
+  assert.match(reader,/kyrub_admin\/official_store/);
+  assert.match(reader,/\{readOnly:true\}/);
+  assert.doesNotMatch(reader,/\btx\.(set|create|update|delete)\(|recoverAllMissingCanonicalPaidCaptures/);
+  assert.doesNotMatch(router,/readOfficialInfrastructureFixture/);
+});
