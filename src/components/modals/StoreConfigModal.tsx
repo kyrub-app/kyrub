@@ -1,3 +1,4 @@
+import { notifyRewardRefresh } from '../../utils/rewardRefresh';
 import { useEffect, useMemo, useState } from 'react';
 import type React from 'react';
 import { createPortal } from 'react-dom';
@@ -498,6 +499,8 @@ export const StoreConfigModal: React.FC<StoreConfigModalProps> = props => {
             (!targetPublished && (!('hidden' in publicationResult) || publicationResult.hidden !== true))) {
           throw Error('FIRST_STORE_PUBLICATION_INVALID_RESPONSE');
         }
+        if(auth.currentUser!==user)throw Error('FIRST_STORE_PUBLICATION_SESSION_CHANGED');
+        if(targetPublished)notifyRewardRefresh(user,'publication');
         // Do not invoke client publication fallback after the trusted write.
         }
       } else {
