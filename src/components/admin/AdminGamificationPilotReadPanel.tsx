@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import AdminGamificationPilotCaseActions from './AdminGamificationPilotCaseActions';
 import {requestGamificationPilot,type PilotQuery,type PilotSession,type SuspicionStatus} from '../../utils/gamificationAdminPilotClient';
 
 type RecordData=Record<string,unknown>;
@@ -17,8 +18,8 @@ function findings(value:unknown){
 
 /** Read-only local integration. Explicit refresh, no polling, no storage,
  * no fallback to real data. Remounts on session/area changes. */
-export default function AdminGamificationPilotReadPanel({session,isCurrent,area}:{
- session:PilotSession;isCurrent:()=>boolean;area:'pitangas'|'semeadura'|'suspeitas';
+export default function AdminGamificationPilotReadPanel({session,isCurrent,area,caseWrites=false}:{
+ caseWrites?:boolean;session:PilotSession;isCurrent:()=>boolean;area:'pitangas'|'semeadura'|'suspeitas';
 }){
  const [status,setStatus]=useState<SuspicionStatus>('all');
  const [cursor,setCursor]=useState<string|undefined>();
@@ -46,7 +47,7 @@ export default function AdminGamificationPilotReadPanel({session,isCurrent,area}
  const metrics=data&&area!=='suspeitas'?(area==='pitangas'?data.reconciledEconomySubtotal:data.authorProjectionSubtotal):null;
  const values=metrics&&typeof metrics==='object'?metrics as RecordData:null;
  return <div className="mt-4 rounded-xl border border-slate-700 p-3 text-sm text-slate-300">
-  <p>Homologação isolada · leitura somente · sem dados de produção.</p>
+  <p>Homologação isolada · {caseWrites?'triagem experimental':'leitura somente'} · sem dados de produção.</p>
   <div className="mt-2 flex flex-wrap gap-2">
    <button type="button" className="rounded border border-slate-600 px-3 py-2" onClick={()=>setRevision(v=>v+1)}>Atualizar consulta</button>
    {area==='suspeitas'&&<><label className="sr-only" htmlFor="pilot-case-filter">Situação</label><select id="pilot-case-filter" className="rounded border border-slate-600 bg-slate-900 px-2" value={status} onChange={e=>{setStatus(e.target.value as SuspicionStatus);setCursor(undefined);setCaseId(undefined);}}>
@@ -70,5 +71,6 @@ export default function AdminGamificationPilotReadPanel({session,isCurrent,area}
     {next&&<button type="button" className="mt-2 rounded border border-slate-600 px-3 py-2" onClick={()=>setCursor(next)}>Próxima página</button>}
     <p className="mt-2 text-slate-400">Ordenação por identificador. Indício não é confirmação de fraude.</p>
    </div>}
+  {caseWrites&&area==='suspeitas'&&data&&(!caseId||data.status==='open')&&<AdminGamificationPilotCaseActions key={caseId??'new'} session={session} isCurrent={isCurrent} openCaseId={caseId} onSaved={id=>{setCaseId(id);setRevision(v=>v+1);}}/>}
  </div>;
 }
