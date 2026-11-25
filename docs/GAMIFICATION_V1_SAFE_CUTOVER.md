@@ -309,3 +309,47 @@ CI da ampliação ainda pendente. Nenhuma consulta ou escrita no Firebase
 principal, nenhum deploy/merge/alteração de cobrança. Próximo: confirmar
 aceite do navegador; fechar evidências e concentrar esforço na configuração
 comercial e inventário externo, sem novos módulos especulativos.
+
+
+## G3.9 — Homologação administrativa confirmada e transporte público
+SHA d5ab676c7e417b0b0327c2451b236bdf45aefae9: cinco workflows aprovados.
+Chromium 45558183256, job 139015212844, artefato 14997230988: 1/1 roteiro
+aprovado, incluindo pausa, crédito único após retomada e duas revisões
+auditadas. A revisão 391ef9b também obteve 5/5.
+Consulta Vercel somente leitura em 25/11/2026: www.kyrub.com e
+admin.kyrub.com permanecem READY, produção dpl_9P1QiBsF6XJmucEgFM8h6hvYVQgS,
+SHA 5106d53fa1e5f7450e7597d6523ae40d1c03cdae. Não comprova estado de regras,
+flags, credenciais, serviços externos nem cobertura de escritores.
+fd7dc0a separa dependências do handler HTTP sem alterar a verificação de
+assinatura RS256 na entrada de produção. O adaptador de teste exige
+KYRUB_SEMEADURA_HTTP_EMULATOR_TEST, guardas econômicas de emulador e Auth
+do projeto demo-kyrub-welcome; não é montado em produção.
+3cc4355 e 965f69f conectam somente o harness local do Chromium: o marco
+econômico passa agora por HTTP, com token real do Auth Emulator, validação
+de actor, corpo, flag geral, flag isolada, resposta 503 durante pausa,
+dois pedidos concorrentes após retomada, status de recibo e jornada do
+autor. CI pendente. Este teste não valida assinatura real Google,
+deployment Vercel nem montagem produtiva. Nenhum novo endpoint público
+foi adicionado à aplicação.
+
+## Quadro consolidado de encerramento — 25/11/2026
+| Evidência | Estado |
+|---|---|
+| Contratos da jornada e regras econômicas | Aprovados no piloto |
+| Conversão, extrato, desafios e sincronização | Aprovados no piloto |
+| Pausa/retomada administrativa Chromium | Aprovada no piloto |
+| HTTP público autenticado isolado | Ampliação implementada, CI pendente |
+| Inventário de dependências | Zero altos/críticos na última correção validada; remanescentes moderados/baixo ainda em revisão |
+| Inventário externo e IAM | Pendente de auditoria independente |
+| Firestore real: edição, região, plano, utilização 7/30 dias, regras e ausência de estado inesperado | Pendente |
+| Autoridade comercial com identidade e epoch próprios; campanha imutável | Ainda não implementada/autorizada |
+| Release gate comercial | Bloqueado deliberadamente |
+| Implantação/ativação | Não autorizadas |
+
+Reutilizar a solicitação de Work já pendente para inventário do projeto
+principal e custo, sem terceiro comando duplicado. Não confundir com a
+homologação independente de kyrub-tags. Antes de propor lançamento, exigir
+o relatório externo, revisar os bloqueios reais, fixar SHA comercial e data
+da campanha aprovada, validar autoridade e transporte comercial sem
+reutilizar flags de emulador. Não confundir CI verde de piloto com V1
+comercial pronta. Nenhum merge, deploy, escrita real ou cobrança.
