@@ -43,13 +43,14 @@ const findLabel = (
   ) ?? null;
 
 export function ProfilePublishingDestinationsCloudBridge() {
-  const { activeCommunities } = useCommunityDirectory();
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [shareToSquare, setShareToSquare] = useState(false);
   const [publishMenuOpen, setPublishMenuOpen] = useState(false);
   const [communityPanelOpen, setCommunityPanelOpen] = useState(false);
   const [selectionPanelOpen, setSelectionPanelOpen] = useState(false);
   const [selectedCommunityId, setSelectedCommunityId] = useState('');
+  const directoryEnabled = Boolean(host && ((publishMenuOpen && communityPanelOpen) || selectedCommunityId));
+  const { activeCommunities, loading: directoryLoading, error: directoryError, user: directoryUser } = useCommunityDirectory(directoryEnabled);
   const [selectionDraft, setSelectionDraft] = useState('');
   const [selectionName, setSelectionName] = useState('');
   const [communityMessage, setCommunityMessage] = useState('');
@@ -83,12 +84,27 @@ export function ProfilePublishingDestinationsCloudBridge() {
 
   useEffect(() => {
     if (
-      selectedCommunityId &&
+      selectedCommunityId && directoryEnabled && !directoryLoading && !directoryError &&
       !activeCommunities.some(community => community.id === selectedCommunityId)
     ) {
       setSelectedCommunityId('');
     }
-  }, [activeCommunities, selectedCommunityId]);
+  }, [activeCommunities, selectedCommunityId, directoryEnabled, directoryLoading, directoryError]);
+
+  useEffect(() => {
+    setSelectedCommunityId('');
+    selectedCommunityIdRef.current = '';
+    setCommunityPanelOpen(false);
+  }, [directoryUser]);
+
+  useEffect(() => {
+    if (!host) {
+      setSelectedCommunityId('');
+      selectedCommunityIdRef.current = '';
+      setCommunityPanelOpen(false);
+      setPublishMenuOpen(false);
+    }
+  }, [host]);
 
   useEffect(() => {
     let frame = 0;
@@ -312,7 +328,9 @@ export function ProfilePublishingDestinationsCloudBridge() {
                     {selectedCommunityId === community.id && <Check className="h-4 w-4 text-sky-300" />}
                   </button>
                 ))}
-                {activeCommunities.length === 0 && (
+                {directoryLoading && <p className="px-2 py-3 text-center text-sm text-slate-400">Carregando comunidades…</p>}
+                {!directoryLoading && directoryError && <p className="px-2 py-3 text-center text-sm text-amber-200">Não foi possível carregar todas as comunidades agora.</p>}
+                {!directoryLoading && !directoryError && activeCommunities.length === 0 && (
                   <p className="px-2 py-3 text-center text-[8px] text-slate-500">
                     Você ainda não participa de uma comunidade.
                   </p>

@@ -1305,3 +1305,18 @@ test('active Firestore inspection reads only fixed release and ruleset and rejec
   const drift=await inspect([release,{...ruleset,source:{files:[{name:'firestore.rules',content:baseline+'\n// drift'}]}},release]);
   assert.equal(drift.status,'blocked_active_drift');
 });
+
+test('publication destination directory loads only while selecting or retaining a community destination',()=>{
+  const ui=read('src/components/ProfilePublishingDestinationsCloudBridge.tsx');
+  const hook=read('src/hooks/useCommunityDirectory.ts');
+  assert.match(ui,/Boolean\(host && \(\(publishMenuOpen && communityPanelOpen\) \|\| selectedCommunityId\)\)/);
+  assert.match(ui,/useCommunityDirectory\(directoryEnabled\)/);
+  assert.match(ui,/selectedCommunityId && directoryEnabled && !directoryLoading && !directoryError/);
+  assert.match(hook,/export function useCommunityDirectory\(enabled = true\)/);
+  assert.match(hook,/if \(!user \|\| !enabled\)/);
+  assert.match(hook,/active && auth.currentUser === user/);
+  assert.match(hook,/active = false;\s*unsubscribeDiscoverable\(\)/);
+  assert.match(hook,/document.visibilityState === 'hidden'/);
+  assert.match(hook,/document.removeEventListener\('visibilitychange', onVisible\)/);
+  assert.match(ui,/Carregando comunidades…/);
+});
