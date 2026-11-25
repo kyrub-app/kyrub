@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { inspectActiveFirestoreRules } from '../scripts/inspect-active-firestore-rules.mjs';
 import { compareFirestoreReleaseSources } from '../scripts/compare-firestore-release-sources.mjs';
 import { createSessionFeedRegistry } from '../src/utils/sessionFeedRegistry';
 import { createDetailSubscriptionRegistry } from '../src/utils/squareDetailSubscriptionRegistry';
@@ -1281,4 +1282,26 @@ test('offline Firestore release comparison blocks unknown active drift without t
   assert.equal(compareFirestoreReleaseSources({baseline,active:baseline,candidate:baseline}).status,'blocked_no_change');
   assert.equal(compareFirestoreReleaseSources({baseline,active:'',candidate}).status,'blocked_invalid_source');
   assert.equal(compareFirestoreReleaseSources({baseline,active:'{}',candidate}).status,'blocked_invalid_source');
+});
+
+test('active Firestore inspection reads only fixed release and ruleset and rejects drift or foreign resources',async()=>{
+  const baseline="rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { allow read, write: if false; } }";
+  const candidate=baseline+'\n// candidate';
+  const name='projects/kyrub-b8d0e/releases/cloud.firestore';
+  const rulesetName='projects/kyrub-b8d0e/rulesets/abc-123';
+  const release={name,rulesetName,updateTime:'2026-11-25T00:00:00Z'};
+  const ruleset={name:rulesetName,source:{files:[{name:'firestore.rules',content:baseline}]}};
+  const calls:string[]=[];
+  const inspect=(responses:unknown[])=>inspectActiveFirestoreRules({baseline,candidate,getJson:async (path:string)=>{calls.push(path);return responses.shift();}});
+  const result=await inspect([release,ruleset,release]);
+  assert.deepEqual(calls,[name,rulesetName,name]);
+  assert.equal(result.status,'source_match_review_required');
+  assert.equal(result.rulesetName,rulesetName);
+  assert.equal(JSON.stringify(result).includes(baseline),false);
+  await assert.rejects(inspect([{...release,rulesetName:'projects/other/rulesets/abc'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,{...ruleset,name:'projects/other/rulesets/abc'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,ruleset,{...release,updateTime:'2026-11-25T00:00:01Z'}]),/ACTIVE_RULES_READ_BLOCKED/);
+  await assert.rejects(inspect([release,{...ruleset,source:{files:[...ruleset.source.files,...ruleset.source.files]}}]),/ACTIVE_RULES_READ_BLOCKED/);
+  const drift=await inspect([release,{...ruleset,source:{files:[{name:'firestore.rules',content:baseline+'\n// drift'}]}},release]);
+  assert.equal(drift.status,'blocked_active_drift');
 });
