@@ -3,7 +3,7 @@ import {parseHiringTerms,termsFromVacancy,type FreelanceHiringTerms} from '../..
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
-export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed' };
+export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed'; terms?:FreelanceHiringTerms };
 
 export function freelanceCloudPreviewEnabled():boolean{
  return import.meta.env.DEV===true && import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'
@@ -22,15 +22,15 @@ const validId=(id:string)=>/^[A-Za-z0-9_-]{1,128}$/.test(id);
 const checkSession=(actor:string)=>{if(auth.currentUser?.uid!==actor)throw Error('Sessão alterada. Entre novamente.');};
 type NotifiedHiringAction='apply'|'accept'|'reject'|'withdraw'|'request_completion'|'request_review'|'complete';
 const pendingHiringOperations=new Map<string,string>();
-async function notifiedHiringAction(applicationId:string,action:NotifiedHiringAction):Promise<boolean>{
- const actor=uid(),key=actor+':'+applicationId+':'+action;
+async function notifiedHiringAction(applicationId:string,action:NotifiedHiringAction,expectedTerms?:FreelanceHiringTerms):Promise<boolean>{
+ const actor=uid(),key=actor+':'+applicationId+':'+action+':'+JSON.stringify(expectedTerms??null);
  const operationId=pendingHiringOperations.get(key)??crypto.randomUUID();
  pendingHiringOperations.set(key,operationId);
  const user=auth.currentUser;
  if(!user||user.uid!==actor)throw Error('Sessão alterada.');
  const token=await user.getIdToken();
  checkSession(actor);
- const response=await fetch('/api/notifications/freelance-applications/action',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,operationId,action})});
+ const response=await fetch('/api/notifications/freelance-applications/action',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,operationId,action,expectedTerms})});
  checkSession(actor);
  if(!response.ok){
   if([400,403,409].includes(response.status))pendingHiringOperations.delete(key);
@@ -62,10 +62,14 @@ export async function publishHiringVacancy(input:{title:string;description:strin
  checkSession(actor);
  return ref.id;
 }
-export async function applyToHiringVacancy(vagaId:string):Promise<'created'|'existing'>{
+export async function applyToHiringVacancy(vagaId:string,expectedVacancy?:HiringVacancy):Promise<'created'|'existing'>{
  const actor=uid();
  if(!/^[A-Za-z0-9]{20}$/.test(vagaId))throw Error('Vaga sem identificador válido para contratação.');
- if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true')return await notifiedHiringAction(vagaId+'__'+actor,'apply')?'created':'existing';
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){
+  const terms=termsFromVacancy(expectedVacancy);
+  if(!terms||expectedVacancy?.id!==vagaId)throw Error('Revise as condições da vaga.');
+  return await notifiedHiringAction(vagaId+'__'+actor,'apply',terms)?'created':'existing';
+ }
  const vacancy=doc(db,'vagas',vagaId),application=doc(db,'candidaturas',vagaId+'__'+actor);
  const result=await runTransaction(db,async tx=>{
    checkSession(actor);
@@ -89,14 +93,14 @@ export async function listHiringApplications(asRequester:boolean):Promise<Hiring
  return snapshot.docs.flatMap(d=>{
    const x=d.data();
    if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))return [];
-   return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status']}];
+   return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined}];
  });
 }
-export async function decideHiringApplication(id:string,status:'accepted'|'rejected'|'withdrawn'):Promise<void>{
+export async function decideHiringApplication(id:string,status:'accepted'|'rejected'|'withdrawn',expectedTerms?:FreelanceHiringTerms):Promise<void>{
  const actor=uid();
  if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(id))throw Error('Candidatura inválida.');
  const ref=doc(db,'candidaturas',id);
- if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){await notifiedHiringAction(id,status==='accepted'?'accept':status==='rejected'?'reject':'withdraw');return;}
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){if(status==='accepted'&&!expectedTerms)throw Error('Condições não registradas.');await notifiedHiringAction(id,status==='accepted'?'accept':status==='rejected'?'reject':'withdraw',expectedTerms);return;}
  const current=await getDocFromServer(ref);
  checkSession(actor);
  if(!current.exists()||current.get('status')!=='pending'||(status==='withdrawn'?current.get('userId')!==actor:current.get('ownerId')!==actor))throw Error('Candidatura indisponível.');
@@ -192,5 +196,5 @@ export async function readHiringApplication(applicationId:string):Promise<Hiring
  checkSession(actor);
  const x=snapshot.data();
  if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
- return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status']};
+ return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined};
 }
