@@ -1,6 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { confirmTransportMonthlyPresence, resolveMonthlyPresenceEmulatorConfig, isQualifyingMonthlyPresenceEvent } from '../server/observability/monthlyPresenceTransport';
+import { createMonthlyPresenceSession } from '../src/observability/monthlyPresenceSession';
+import { confirmMonthlyPresence, monthlyPresencePath, presenceMonth, type MonthlyPresenceStore, type MonthlyPresenceInput } from '../server/observability/monthlyPresence';
+import { createActivitySessionQueue } from '../src/observability/activitySessionQueue';
 import { authorityForKyrubActivitySource } from '../shared/kyrubActivityEvents';
 import { resolveKyrubiaTrustedReadRuntime } from '../src/ai/trustedReadRuntime';
 import {
@@ -297,4 +301,155 @@ test('trusted read wiring refreshes official truth and clears session authority 
   assert.match(browser, /recordUserActivityEvent/);
   assert.match(observer, /clearAuthoritativeActivityRuntimeEvents/);
   assert.match(objective, /resolveKyrubiaTrustedReadRuntime/);
+});
+
+test('remote activity queue never sends an event belonging to another account', () => {
+  const a = {uid:'a'}, b = {uid:'b'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(80);
+  assert.equal(queue.enqueue(a, {id:'old', actorUid:'a'}), true);
+  assert.equal(queue.enqueue(b, {id:'old', actorUid:'a'}), false);
+  assert.equal(queue.size(), 0);
+  assert.equal(queue.begin(b, 20), null);
+  assert.equal(queue.enqueue(b, {id:'new', actorUid:'b'}), true);
+  const batch = queue.begin(b, 20)!;
+  assert.deepEqual(batch.events, [{id:'new', actorUid:'b'}]);
+  assert.equal(queue.finish(b, batch, true), true);
+  assert.equal(queue.size(), 0);
+});
+
+test('logout and fresh login invalidate pending requests and stale acknowledgements', () => {
+  const a = {uid:'a'}, fresh = {uid:'a'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(80);
+  queue.enqueue(a, {id:'same', actorUid:'a'});
+  const old = queue.begin(a, 20)!;
+  queue.synchronize(null);
+  assert.equal(old.controller.signal.aborted, true);
+  queue.enqueue(fresh, {id:'same', actorUid:'a'});
+  const next = queue.begin(fresh, 20)!;
+  assert.equal(queue.isCurrent(fresh, old), false);
+  assert.equal(queue.finish(fresh, old, true), false);
+  assert.equal(queue.isCurrent(fresh, next), true);
+  assert.equal(queue.size(), 1);
+  queue.finish(fresh, next, true);
+  assert.equal(queue.size(), 0);
+});
+
+test('remote activity queue retries within one session only and caps pending events', () => {
+  const a = {uid:'a'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(2);
+  for (const id of ['1','2','3']) queue.enqueue(a,{id,actorUid:'a'});
+  const batch = queue.begin(a, 1)!;
+  assert.equal(batch.events[0].id, '2');
+  assert.equal(queue.begin(a, 1), null);
+  assert.equal(queue.enqueue(a,{id:'2',actorUid:'a'}), false);
+  assert.equal(queue.finish(a,batch,false), true);
+  const retry = queue.begin(a,2)!;
+  assert.deepEqual(retry.events.map(x=>x.id),['2','3']);
+  queue.finish(a,retry,true);
+  assert.equal(queue.size(),0);
+});
+
+test('activity transport is session guarded before sending and abortable on auth change', () => {
+  const remote = readFileSync(new URL('../src/observability/kyrubActivityRemote.ts', import.meta.url), 'utf8');
+  const observer = readFileSync(new URL('../src/observability/KyrubActivityObserverBridge.tsx', import.meta.url), 'utf8');
+  assert.match(remote, /if \(!queue\.isCurrent\(auth\.currentUser, batch\)\) return;/);
+  assert.match(remote, /signal: batch\.controller\.signal/);
+  assert.match(observer, /synchronizeActivityRemoteSession\(\)/);
+});
+
+test('monthly presence uses Sao Paulo month boundary and a project/month/account scoped opaque key', () => {
+  const secret = new Uint8Array(32).fill(42);
+  const input: MonthlyPresenceInput = {authenticatedUid:'fixture-a', projectId:'demo-kyrub', qualifiedActivity:true, receivedAt:new Date('2026-12-01T02:59:59Z')};
+  assert.equal(presenceMonth(input.receivedAt),'2026-11');
+  assert.equal(presenceMonth(new Date('2026-12-01T03:00:00Z')),'2026-12');
+  const path = monthlyPresencePath(input,secret);
+  assert.equal(path,monthlyPresencePath({...input,receivedAt:new Date('2026-11-15T12:00:00Z')},secret));
+  assert.match(path,/^kyrub_finops_mau_months\/2026-11\/markers\/[a-f0-9]{64}$/);
+  assert.doesNotMatch(path,/fixture-a/);
+  assert.notEqual(path,monthlyPresencePath({...input,authenticatedUid:'fixture-b'},secret));
+  assert.notEqual(path,monthlyPresencePath({...input,projectId:'demo-other'},secret));
+  assert.notEqual(path,monthlyPresencePath({...input,receivedAt:new Date('2026-12-01T03:00:00Z')},secret));
+  assert.throws(()=>monthlyPresencePath(input,new Uint8Array(16)),/MAU_INVALID/);
+  assert.throws(()=>presenceMonth(new Date(NaN)),/MAU_INVALID_CLOCK/);
+});
+test('monthly presence creates once under concurrent devices, retries and lost acknowledgement', async () => {
+  const secret = new Uint8Array(32).fill(42);
+  const input: MonthlyPresenceInput = {authenticatedUid:'fixture-a',projectId:'demo-kyrub',qualifiedActivity:true,receivedAt:new Date('2026-11-25T12:00:00Z')};
+  const records = new Map<string,unknown>();
+  const store: MonthlyPresenceStore = {create:async(path, marker)=>{
+    if(records.has(path)) throw Object.assign(Error('exists'),{code:6});
+    records.set(path,marker);
+  }};
+  const result = await Promise.all(Array.from({length:20},()=>confirmMonthlyPresence(input,secret,store)));
+  assert.equal(result.filter(x=>x.status==='created').length,1);
+  assert.equal(result.filter(x=>x.status==='already_counted').length,19);
+  assert.equal(records.size,1);
+  assert.deepEqual([...records.values()],[{schemaVersion:1,month:'2026-11'}]);
+  assert.equal((await confirmMonthlyPresence({...input,qualifiedActivity:false},secret,store)).status,'not_qualified');
+  const b = {...input,authenticatedUid:'fixture-b'};
+  await assert.rejects(confirmMonthlyPresence(b,secret,{create:async(path,marker)=>{
+    await store.create(path,marker);
+    throw Object.assign(Error('response lost'),{code:14});
+  }}),/response lost/);
+  assert.equal((await confirmMonthlyPresence(b,secret,store)).status,'already_counted');
+  assert.equal(records.size,2);
+  await assert.rejects(confirmMonthlyPresence({...input,authenticatedUid:'fixture-c'},secret,
+    {create:async()=>{throw Object.assign(Error('denied'),{code:7});}}),/denied/);
+});
+test('monthly presence transport remains opt-in and the primitive has no ambient DB', () => {
+  const transport = readFileSync(new URL('../server/observability/kyrubActivityTransport.ts',import.meta.url),'utf8');
+  const source = readFileSync(new URL('../server/observability/monthlyPresence.ts',import.meta.url),'utf8');
+  assert.match(transport,/identity\.uid, payload\?\.monthlyPresenceRequested === true, qualified, receivedAt/);
+  assert.match(source,/db\.doc\(path\)\.create\(marker\)/);
+  assert.doesNotMatch(source,/adminDb|initializeApp|process\.env/);
+});
+
+test('monthly presence transport fails closed unless every isolated emulator gate matches', async () => {
+  const env = {KYRUB_FINOPS_MAU_EMULATOR_ENABLED:'true', FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',
+    FIREBASE_PROJECT_ID:'kyrub-security-test', KYRUB_FINOPS_MAU_EMULATOR_KEY:'ab'.repeat(32)};
+  assert.ok(resolveMonthlyPresenceEmulatorConfig(env));
+  for (const change of [{VERCEL_ENV:'production'},{NODE_ENV:'production'},
+      {FIRESTORE_EMULATOR_HOST:'localhost:8088'},{FIREBASE_PROJECT_ID:'kyrub-b8d0e'},
+      {KYRUB_FINOPS_MAU_EMULATOR_ENABLED:'false'},{KYRUB_FINOPS_MAU_EMULATOR_KEY:'short'},
+      {FIREBASE_SERVICE_ACCOUNT_JSON:'fixture'}]) {
+    assert.equal(resolveMonthlyPresenceEmulatorConfig({...env,...change}),null);
+  }
+  let writes=0;
+  const dependencies={env, currentProject:()=> 'kyrub-security-test', store:()=>({create:async()=>{writes++;}})};
+  const now=new Date('2026-12-01T02:59:59Z');
+  assert.equal(await confirmTransportMonthlyPresence('a',false,true,now,dependencies),undefined);
+  assert.deepEqual(await confirmTransportMonthlyPresence('a',true,false,now,dependencies),{status:'not_qualified'});
+  assert.deepEqual(await confirmTransportMonthlyPresence('a',true,true,now,{...dependencies,currentProject:()=> 'other'}),{status:'disabled'});
+  assert.deepEqual(await confirmTransportMonthlyPresence('a',true,true,now,{...dependencies,env:{}}),{status:'disabled'});
+  assert.equal(writes,0);
+  assert.deepEqual(await confirmTransportMonthlyPresence('a',true,true,now,dependencies),{status:'confirmed',month:'2026-11'});
+  assert.equal(writes,1);
+  assert.deepEqual(await confirmTransportMonthlyPresence('a',true,true,now,{...dependencies,store:()=>({create:async()=>{throw Error('offline');}})}),{status:'unavailable'});
+});
+test('monthly presence qualifies only bounded observed navigation, not technical or generative activity', () => {
+  const event={type:'navigation.screen_viewed',domain:'app',source:'client_observation',authority:'context_only',screenId:'home:renda'};
+  assert.equal(isQualifyingMonthlyPresenceEvent(event),true);
+  assert.equal(isQualifyingMonthlyPresenceEvent({...event,domain:'kyrubia'}),false);
+  assert.equal(isQualifyingMonthlyPresenceEvent({...event,type:'result.action_succeeded'}),false);
+  assert.equal(isQualifyingMonthlyPresenceEvent({...event,authority:'confirmed_result'}),false);
+  assert.equal(isQualifyingMonthlyPresenceEvent({...event,screenId:undefined}),false);
+});
+test('monthly presence client suppresses duplicate attempts, retries with backoff and ignores stale session ACK', () => {
+  const a={}, b={};
+  const now=Date.parse('2026-12-01T02:58:00Z');
+  const s=createMonthlyPresenceSession<object>();
+  assert.equal(s.shouldRequest(a,now),true);
+  s.attempted(a,now);
+  assert.equal(s.shouldRequest(a,now+1000),false);
+  assert.equal(s.shouldRequest(a,now+60000),true);
+  s.acknowledge(a,{status:'confirmed',month:'2026-11'});
+  assert.equal(s.shouldRequest(a,now+60000),false);
+  assert.equal(s.shouldRequest(a,now+120000),true);
+  s.synchronize(b);
+  s.acknowledge(a,{status:'confirmed',month:'2026-12'});
+  assert.equal(s.shouldRequest(b,now+120000),true);
+  s.acknowledge(b,{status:'disabled'});
+  assert.equal(s.shouldRequest(b,now+180000),false);
+  s.synchronize(null);
+  assert.equal(s.shouldRequest(b,now+180000),true);
 });

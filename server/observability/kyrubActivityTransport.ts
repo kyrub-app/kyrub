@@ -6,6 +6,7 @@ import type {
   KyrubActivityEventType,
 } from '../../shared/kyrubActivityEvents.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import { confirmTransportMonthlyPresence, isQualifyingMonthlyPresenceEvent, type PresenceReply } from './monthlyPresenceTransport.js';
 
 const ALLOWED_TYPES = new Set<KyrubActivityEventType>([
   'navigation.screen_viewed',
@@ -52,7 +53,8 @@ const actorReference = (uid: string): string =>
 export const receiveAuthorizedKyrubActivityEvents = async (
   authorization: string,
   body: unknown
-): Promise<{ accepted: number }> => {
+): Promise<{ accepted: number; monthlyPresence?: PresenceReply }> => {
+  const receivedAt = new Date();
   const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
   if (!match?.[1]) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(match[1].trim());
@@ -62,6 +64,7 @@ export const receiveAuthorizedKyrubActivityEvents = async (
     : [];
 
   let accepted = 0;
+  let qualified = false;
   for (const candidate of candidates) {
     const event = asRecord(candidate);
     if (!event) continue;
@@ -97,9 +100,13 @@ export const receiveAuthorizedKyrubActivityEvents = async (
       entityId: cleanIdentifier(event.entityId),
     };
 
+    if (isQualifyingMonthlyPresenceEvent(safeEvent)) qualified = true;
     console.info('[activity]', JSON.stringify(safeEvent));
     accepted += 1;
   }
 
-  return { accepted };
+  const monthlyPresence = await confirmTransportMonthlyPresence(
+    identity.uid, payload?.monthlyPresenceRequested === true, qualified, receivedAt,
+  );
+  return { accepted, ...(monthlyPresence ? {monthlyPresence} : {}) };
 };

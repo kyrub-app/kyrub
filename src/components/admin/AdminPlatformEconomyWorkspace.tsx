@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { onAuthStateChanged, type User } from 'firebase/auth';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import type { User } from 'firebase/auth';
 import {
   ArrowDownLeft,
   ArrowUpRight,
@@ -17,10 +17,10 @@ import type {
 import { auth } from '../../utils/firebase';
 import {
   hasAdminPermission,
-  subscribeToAdminProfile,
   type AdminProfile,
 } from '../../utils/adminControlPlane';
 import { loadAdminPlatformEconomy } from '../../utils/adminPlatformEconomy';
+import { presentMonthlyActivity } from '../../utils/adminMonthlyActivityPresentation';
 import { AdminPaidWaitingFundingResponsibilityCard } from './AdminPaidWaitingFundingResponsibilityCard';
 
 const money = (minor: number): string =>
@@ -54,68 +54,52 @@ const eventPresentation = (
   }
 };
 
-export default function AdminPlatformEconomyWorkspace() {
-  const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<AdminProfile | null>(null);
+export default function AdminPlatformEconomyWorkspace({ user, profile }: { user: User; profile: AdminProfile }) {
   const [snapshot, setSnapshot] = useState<AdminPlatformEconomySnapshot | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-
-  useEffect(() => {
-    let unsubscribeProfile = () => undefined;
-    const unsubscribeAuth = onAuthStateChanged(auth, nextUser => {
-      unsubscribeProfile();
-      unsubscribeProfile = () => undefined;
-      setUser(nextUser);
-      setProfile(null);
-      setSnapshot(null);
-      setError('');
-      if (!nextUser) return;
-      unsubscribeProfile = subscribeToAdminProfile(
-        nextUser,
-        setProfile,
-        () => setError('Não foi possível validar o perfil administrativo.')
-      );
-    });
-    return () => {
-      unsubscribeProfile();
-      unsubscribeAuth();
-    };
-  }, []);
-
-  const authorized = Boolean(
-    user && profile && hasAdminPermission(profile, 'read_finance')
-  );
+  const request = useRef<AbortController | null>(null);
+  const authorized = user.uid === profile.uid && profile.status === 'active' &&
+    hasAdminPermission(profile, 'read_finance') && auth.currentUser === user;
 
   const refresh = useCallback(async () => {
-    if (!user || !authorized) return;
+    if (!authorized || auth.currentUser !== user || request.current) return;
+    const controller = new AbortController();
+    request.current = controller;
+    const current = () => !controller.signal.aborted &&
+      request.current === controller && auth.currentUser === user;
     setLoading(true);
     setError('');
+    setSnapshot(null);
     try {
-      setSnapshot(await loadAdminPlatformEconomy(user));
+      const next = await loadAdminPlatformEconomy(user, controller.signal);
+      if (current()) setSnapshot(next);
     } catch (caught) {
-      setError(
-        caught instanceof Error
-          ? caught.message
-          : 'Não foi possível consultar a economia da plataforma.'
-      );
+      if (current()) setError(caught instanceof Error
+        ? caught.message : 'Não foi possível consultar a economia da plataforma.');
     } finally {
-      setLoading(false);
+      if (current()) setLoading(false);
+      if (request.current === controller) request.current = null;
     }
   }, [authorized, user]);
 
   useEffect(() => {
     if (!authorized) return;
     void refresh();
+    return () => {
+      request.current?.abort();
+      request.current = null;
+    };
   }, [authorized, refresh]);
 
-  if (!authorized || !user || !profile) return null;
+  if (!authorized) return null;
+  const monthlyActivity = presentMonthlyActivity(snapshot?.monthlyActivity);
 
   return (
-    <section className="bg-slate-950 px-4 pb-10 text-slate-100 sm:px-6">
+    <section className="text-slate-100">
       <div
         id="admin-platform-economy-workspace"
-        className="mx-auto max-w-7xl rounded-[2rem] border border-slate-800 bg-slate-900/65 p-5 sm:p-6"
+        className="rounded-2xl border border-slate-800 bg-slate-950/40 p-4 sm:p-5"
         aria-labelledby="admin-platform-economy-title"
       >
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -125,13 +109,13 @@ export default function AdminPlatformEconomyWorkspace() {
             </div>
             <div>
               <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">
-                Platform Economy
+                Movimentação do ecossistema
               </span>
               <h2 id="admin-platform-economy-title" className="mt-1 text-lg font-black text-white">
                 Economia canônica da plataforma
               </h2>
               <p className="mt-1 max-w-3xl text-[10px] leading-relaxed text-slate-500">
-                Capturas, refunds e chargebacks são fatos econômicos distintos. Esta visão não representa saldo disponível, custódia, imposto calculado ou settlement financeiro.
+                Capturas, estornos e chargebacks são fatos econômicos distintos. Os totais incluem movimentações das lojas e não equivalem a receita própria, lucro, saldo disponível, custódia, imposto calculado ou settlement financeiro.
               </p>
             </div>
           </div>
@@ -146,6 +130,27 @@ export default function AdminPlatformEconomyWorkspace() {
           </button>
         </div>
 
+        <div className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Cobertura dos indicadores financeiros próprios">
+          {[
+            ['Custos operacionais próprios', 'Faturas de infraestrutura, fornecedores e operação ainda não consolidadas.'],
+            ['Receitas próprias Kyrub', 'Planos, publicidade, Tags e taxas próprias: fontes e conciliação ainda não integradas a esta visão.'],
+            ['Resultado e custo por usuário ativo', 'Não calculados sem custos, receitas e denominador do mesmo período.'],
+          ].map(([label, detail]) => <article key={label} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
+            <h3 className="text-xs font-bold text-white">{label}</h3>
+            <p className="mt-2 text-sm font-medium text-slate-300">Não consolidado</p>
+            <p className="mt-1 text-xs text-slate-400">{detail}</p>
+          </article>)}
+        </div>
+        <article className="mt-3 rounded-xl border border-slate-800 bg-slate-950/55 p-3" aria-label="Usuários ativos mensais">
+          <h3 className="text-xs font-bold text-white">Usuários ativos mensais (MAU)</h3>
+          <p className="mt-2 text-sm font-medium text-slate-300">MAU real indisponível</p>
+          <p className="mt-1 text-xs text-slate-400">Coleta real e cobertura ainda não homologadas. Não utilizado no cálculo do custo por usuário.</p>
+          {monthlyActivity.fixtureCount !== null && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
+            <p className="text-xs font-bold text-amber-300">Registros de teste — emulador</p>
+            <p className="mt-1 text-sm text-slate-200">{monthlyActivity.fixtureCount.toLocaleString('pt-BR')} · {monthlyActivity.month}</p>
+            <p className="mt-1 text-xs text-slate-400">Diagnóstico experimental. Não representa usuários reais.</p>
+          </div>}
+        </article>
         {error && (
           <div className="mt-4 flex gap-3 rounded-2xl border border-red-500/25 bg-red-500/10 p-3 text-xs text-red-200" role="alert">
             <CircleAlert className="mt-0.5 h-4 w-4 shrink-0" />
@@ -161,7 +166,8 @@ export default function AdminPlatformEconomyWorkspace() {
           </div>
         ) : snapshot ? (
           <>
-            <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
+            <p className="mt-5 text-xs text-slate-400">Totais acumulados do ledger, sem recorte mensal. Consulta em {when(snapshot.generatedAt)}. Não são faturamento próprio.</p>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
               <article className="rounded-2xl border border-emerald-500/15 bg-emerald-500/5 p-4">
                 <ArrowUpRight className="h-4 w-4 text-emerald-400" />
                 <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Capturado bruto</span>
@@ -182,7 +188,7 @@ export default function AdminPlatformEconomyWorkspace() {
               </article>
               <article className="rounded-2xl border border-cyan-500/15 bg-cyan-500/5 p-4">
                 <Landmark className="h-4 w-4 text-cyan-400" />
-                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Econômico líquido</span>
+                <span className="mt-3 block text-[9px] font-black uppercase tracking-wider text-slate-500">Movimentação líquida</span>
                 <strong className="mt-1 block text-xl text-white">{money(snapshot.totals.economicNetMinor)}</strong>
                 <span className="text-[9px] text-slate-600">capturas − refunds − chargebacks + reversões</span>
               </article>
@@ -213,7 +219,7 @@ export default function AdminPlatformEconomyWorkspace() {
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio da loja</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.storeSubsidyMinor)}</strong></div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Incentivo Kyrub</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.kyrubIncentiveMinor)}</strong></div>
                 <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Subsídio parceiro</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.partnerSubsidyMinor)}</strong></div>
-                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos observados</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.observedCostsMinor)}</strong></div>
+                <div className="rounded-xl border border-slate-800 bg-slate-950/55 p-3"><span className="text-[8px] font-black uppercase tracking-wider text-slate-600">Custos da alocação recente</span><strong className="mt-1 block text-sm text-white">{money(snapshot.recentWindow.allocation.observedCostsMinor)}</strong></div>
               </div>
             </div>
 
