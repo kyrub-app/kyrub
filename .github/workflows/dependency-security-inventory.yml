@@ -63,3 +63,55 @@ jobs:
             ${{ matrix.scope == 'root' && '.' || 'functions' }}/production-audit.json
             ${{ matrix.scope == 'root' && '.' || 'functions' }}/full-audit.json
           retention-days: 7
+
+
+  routing-remediation-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Generate scoped patch on disposable runner only
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync('package.json','utf8'));
+          if(p.devDependencies?.['@vercel/routing-utils']!=='6.6.1')throw Error('ROUTING_VERSION_CHANGED');
+          p.overrides??={};
+          if(p.overrides['@vercel/routing-utils'])throw Error('ROUTING_OVERRIDE_ALREADY_EXISTS');
+          p.overrides['@vercel/routing-utils']={'path-to-regexp':'6.3.0'};
+          writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
+          JS
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --stat -- package.json package-lock.json
+          git diff -- package.json package-lock.json > routing-remediation.patch
+      - name: Install candidate and validate route compatibility
+        run: |
+          npm ci --ignore-scripts
+          node --test --import tsx tests/app-routes.test.ts tests/public-destination-routes.test.ts tests/public-storefront-routing.test.ts tests/production-health.test.ts
+          npm run lint
+      - name: Verify targeted high severity advisory no longer reported
+        run: |
+          npm audit --json > candidate-audit.json || true
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          const a=JSON.parse(readFileSync('candidate-audit.json','utf8'));
+          if(a.error||!a.metadata?.vulnerabilities||!a.vulnerabilities)throw Error('AUDIT_INCOMPLETE');
+          console.log(JSON.stringify(a.metadata.vulnerabilities));
+          for(const name of ['@vercel/routing-utils','path-to-regexp']){
+            if(['high','critical'].includes(a.vulnerabilities[name]?.severity))throw Error('TARGET_ADVISORY_REMAINS: '+name);
+          }
+          JS
+      - name: Upload proposal for review, never commit or deploy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-remediation-candidate
+          path: |
+            routing-remediation.patch
+            candidate-audit.json
+          if-no-files-found: warn
+          retention-days: 7
