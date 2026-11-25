@@ -822,7 +822,9 @@ export const subscribeToPreferredStoreCustomerOrders = (
   let canonicalState: 'waiting' | 'available' | 'unavailable' = 'waiting';
   let canonicalStoreId = '';
   let canonicalEnabled = false;
+  let canonicalGeneration=0;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
+  const legacyParsed=new Map<string,CustomerOrder|null>();
 
   const publish = (): void => {
     const equivalent =
@@ -844,6 +846,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
   };
 
   const restartCanonical = (): void => {
+    canonicalGeneration++;
     unsubscribeCanonical();
     unsubscribeCanonical = () => undefined;
     canonicalOrders = [];
@@ -853,22 +856,27 @@ export const subscribeToPreferredStoreCustomerOrders = (
       return;
     }
     publish();
+    const generation=++canonicalGeneration;
+    const canonicalParsed=new Map<string,CustomerOrder|null>();
     unsubscribeCanonical = onSnapshot(
       collection(db, getCanonicalOrdersCollectionPath(canonicalStoreId)),
       snapshot => {
+        if(generation!==canonicalGeneration)return;
+        for(const change of snapshot.docChanges()){
+          if(change.type==='removed')canonicalParsed.delete(change.doc.id);
+          else canonicalParsed.set(change.doc.id,mapCanonicalOrderToLegacyStore(parseCustomerOrder(change.doc.data()),normalizedStoreId));
+        }
         canonicalOrders = snapshot.docs
           .flatMap(document => {
-            const parsed = mapCanonicalOrderToLegacyStore(
-              parseCustomerOrder(document.data()),
-              normalizedStoreId
-            );
-            return parsed ? [parsed] : [];
+            const parsed=canonicalParsed.get(document.id);
+            return parsed?[parsed]:[];
           })
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
         canonicalState = 'available';
         publish();
       },
       error => {
+        if(generation!==canonicalGeneration)return;
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -879,9 +887,12 @@ export const subscribeToPreferredStoreCustomerOrders = (
   const unsubscribeLegacy = onSnapshot(
     collection(db, getCustomerOrdersCollectionPath(normalizedStoreId)),
     snapshot => {
+      for(const change of snapshot.docChanges()){
+        if(change.type==='removed')legacyParsed.delete(change.doc.id);
+        else legacyParsed.set(change.doc.id,parseCustomerOrder(change.doc.data()));
+      }
       legacyOrders = snapshot.docs
-        .map(orderDocument => parseCustomerOrder(orderDocument.data()))
-        .filter((order): order is CustomerOrder => order !== null)
+        .flatMap(document=>{const order=legacyParsed.get(document.id);return order?[order]:[];})
         .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
       legacyState = 'available';
       publish();
@@ -918,6 +929,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
   );
 
   return () => {
+    canonicalGeneration++;
     unsubscribeLegacy();
     unsubscribeConfig();
     unsubscribeCanonical();

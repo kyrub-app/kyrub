@@ -687,6 +687,8 @@ export const subscribeToPreferredPublicProducts = (
     }
 
     publish();
+    // Reuse parsed unchanged documents only within this listener generation.
+    const parsedById=new Map<string,PublicProduct|null>();
     unsubscribeCanonical = onSnapshot(
       options.includeUnpublished
         ? collection(db, `stores/${canonicalStoreId}/products`)
@@ -696,13 +698,13 @@ export const subscribeToPreferredPublicProducts = (
           ),
       snapshot => {
         if (generation !== canonicalSubscriptionGeneration) return;
+        for(const change of snapshot.docChanges()){
+          if(change.type==='removed')parsedById.delete(change.doc.id);
+          else parsedById.set(change.doc.id,parseCanonicalPublicProduct(change.doc,normalizedStoreId,options.includeUnpublished===true));
+        }
         canonicalProducts = snapshot.docs.flatMap(document => {
-          const parsed = parseCanonicalPublicProduct(
-            document,
-            normalizedStoreId,
-            options.includeUnpublished === true
-          );
-          return parsed ? [parsed] : [];
+          const parsed=parsedById.get(document.id);
+          return parsed?[parsed]:[];
         });
         canonicalState = 'available';
         publish();
