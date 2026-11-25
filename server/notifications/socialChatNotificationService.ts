@@ -1,3 +1,4 @@
+import {requireSocialAgeInTransaction} from '../identity/socialAgeAuthorization.js';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
@@ -59,6 +60,7 @@ export async function sendNotifiedSocialMessage(input: {
       return { messageId, created: false };
     }
     if (noticeSnap.exists) throw new Error('SOCIAL_CHAT_NOTIFICATION_CONFLICT');
+    await requireSocialAgeInTransaction(transaction,[senderId,receiverId],'messages','SOCIAL_CHAT_FORBIDDEN');
     transaction.create(messageRef, {
       senderId, receiverId, text: content, createdAt: FieldValue.serverTimestamp(),
     });
