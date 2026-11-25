@@ -9,6 +9,8 @@ test('verified emulator session screens once and keeps the private record minima
   assert.ok(ageScreeningEmulatorsReady(process.env));
   const app = express();
   app.use('/age', createAgeScreeningRouter());
+  const {createIngressLegalPreviewRouter}=await import('../server/governance/ingressLegalPreviewRouter.js');
+  app.use('/legal',createIngressLegalPreviewRouter());
   const server = app.listen(0, '127.0.0.1');
   await once(server,'listening');
   try {
@@ -73,12 +75,23 @@ test('verified emulator session screens once and keeps the private record minima
     const hash=createHash('sha256').update(content).digest('hex');
     const decision={terms:{id:'terms-test',version:'1',hash,accepted:true},privacy:{id:'privacy-test',version:'1',hash,acknowledged:true}};
     await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_RECEIPT_UNAVAILABLE/);
+    const legalUrl='http://127.0.0.1:'+address.port+'/legal';
+    const readLegal=()=>fetch(legalUrl,{headers:{Authorization:authHeader}});
+    const writeLegal=(body:unknown)=>fetch(legalUrl,{method:'POST',headers:{Authorization:authHeader,'Content-Type':'application/json'},body:JSON.stringify(body)});
+    assert.equal((await readLegal()).status,404);
     process.env.KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED='true';
     try{
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);
       for(const [id,type] of [['terms-test','terms'],['privacy-test','privacy']]){
         await adminDb.doc('governanceDocuments/'+id).set({id,type,version:'1',hash,content,status:'published',ownerUserId:'test-legal',createdAt:'2026-01-01T00:00:00Z',approvedAt:'2026-01-02T00:00:00Z',publishedAt:'2026-01-03T00:00:00Z'});
       }
+      assert.equal((await fetch(legalUrl)).status,401);
+      const legal=await readLegal();
+      assert.equal(legal.status,200);
+      assert.equal(legal.headers.get('cache-control'),'no-store');
+      const shown=await legal.json();
+      assert.equal(shown.accepted,false);assert.equal(shown.terms.content,content);assert.equal(shown.privacy.hash,hash);
+      assert.equal((await writeLegal({...decision,uid:'other'})).status,400);
       await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,uid:'other'}),/LEGAL_DECISION_INVALID/);
       await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,privacy:{...decision.privacy,acknowledged:false}}),/LEGAL_DECISION_INVALID/);
       const requireReceipt=(uid:string)=>adminDb.runTransaction(tx=>requireCurrentIngressLegalReceiptInTransaction(tx,uid));
@@ -92,6 +105,8 @@ test('verified emulator session screens once and keeps the private record minima
       assert.equal(record.get('privacy.acknowledged'),true);
       assert.ok(record.get('recordedAt'));
       assert.equal(await requireReceipt(user.uid),receipts[0].receiptId);
+      assert.equal((await (await readLegal()).json()).accepted,true);
+      assert.deepEqual(await (await writeLegal(decision)).json(),{receiptId:receipts[0].receiptId,replay:true});
       await assert.rejects(requireReceipt('unrelated-user'),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
       // Explicit promotion of a synthetic minimal identity, in emulators only.
       const {promoteTagIdentityToKyrub}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
@@ -118,6 +133,9 @@ test('verified emulator session screens once and keeps the private record minima
       }finally{delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;}
 
       await assert.rejects(requireReceipt(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
+      const revised=await (await readLegal()).json();
+      assert.equal(revised.accepted,false);assert.equal(revised.terms.version,'2');
+      assert.equal((await writeLegal(decision)).status,409);
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_VERSION_CHANGED/);
       await adminDb.doc('governanceDocuments/terms-test').update({content:'modified'});
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);
