@@ -1,3 +1,4 @@
+import {FreelanceEmulatorEntry} from './components/FreelanceEmulatorEntry';
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { doc, onSnapshot } from 'firebase/firestore';
@@ -332,6 +333,8 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
 
 export default function App() {
   useFontSizeAccessibility();
+
+  if(import.meta.env.DEV && import.meta.env.VITE_KYRUB_FREELANCE_BROWSER_EMULATOR==='true') return <FreelanceEmulatorEntry />;
 
   // Dedicated emulator mode never mounts the legacy workspace or Control Plane.
   if (import.meta.env.DEV && import.meta.env.VITE_KYRUB_ONBOARDING_EMULATOR === 'true') return <OnboardingEmulatorEntry />;
