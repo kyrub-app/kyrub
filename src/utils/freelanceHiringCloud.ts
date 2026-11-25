@@ -2,7 +2,7 @@ import { auth, db } from './firebase';
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
-export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn' };
+export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed' };
 
 export function freelanceCloudPreviewEnabled():boolean{
  return import.meta.env.DEV===true && import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'
@@ -64,7 +64,7 @@ export async function listHiringApplications(asRequester:boolean):Promise<Hiring
  checkSession(actor);
  return snapshot.docs.flatMap(d=>{
    const x=d.data();
-   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn'].includes(x.status))return [];
+   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))return [];
    return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status']}];
  });
 }
@@ -76,5 +76,22 @@ export async function decideHiringApplication(id:string,status:'accepted'|'rejec
  checkSession(actor);
  if(!current.exists()||current.get('status')!=='pending'||(status==='withdrawn'?current.get('userId')!==actor:current.get('ownerId')!==actor))throw Error('Candidatura indisponível.');
  await updateDoc(ref,{status,updatedAt:serverTimestamp()});
+ checkSession(actor);
+}
+
+export async function transitionHiringCompletion(id:string,status:'completion_requested'|'completed'|'accepted'):Promise<void>{
+ const actor=uid();
+ if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(id))throw Error('Candidatura inválida.');
+ const ref=doc(db,'candidaturas',id);
+ await runTransaction(db,async tx=>{
+   checkSession(actor);
+   const current=await tx.get(ref);
+   if(!current.exists())throw Error('Contratação indisponível.');
+   const allowed=status==='completion_requested'
+     ? current.get('userId')===actor&&current.get('status')==='accepted'
+     : current.get('ownerId')===actor&&current.get('status')==='completion_requested';
+   if(!allowed)throw Error('Transição indisponível.');
+   tx.update(ref,{status,updatedAt:serverTimestamp()});
+ });
  checkSession(actor);
 }
