@@ -714,7 +714,7 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
 
 
 test('authenticated suspicion inspection requires active admin and reports evidence without sanctions',async()=>{
- const {readIsolatedGamificationSuspicionEvidence,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {readIsolatedGamificationSuspicionEvidence,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase,listIsolatedGamificationSuspicionCases,readIsolatedGamificationSuspicionCase}=await import('../server/gamification/semeaduraAdminSupervision.js');
  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
  const {createHash}=await import('node:crypto');
  const admin=await googleSignIn('suspicion-inspector-admin');
@@ -763,6 +763,17 @@ test('authenticated suspicion inspection requires active admin and reports evide
   const caseId=cases.docs[0].id;
   assert.equal((await open(caseId)).replayed,true);
   assert.equal((await root.collection('active').get()).size,1);
+  const list=(status:'all'|'open'|'closed',limit=20,afterCaseId?:string)=>listIsolatedGamificationSuspicionCases(db,auth,bearer,{status,limit,afterCaseId});
+  const detail=(id:string)=>readIsolatedGamificationSuspicionCase(db,auth,bearer,id);
+  await assert.rejects(list('all',21),/SUSPICION_CASE_LIST_INPUT_INVALID/);
+  await assert.rejects(listIsolatedGamificationSuspicionCases(db,auth,'Bearer '+author.idToken,{status:'all',limit:1}),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  assert.deepEqual((await list('open')).cases.map(row=>row.caseId),[caseId]);
+  assert.equal((await list('closed')).cases.length,0);
+  const opened=await detail(caseId);
+  assert.equal(opened.status,'open');
+  assert.equal(opened.closing,null);
+  assert.deepEqual(opened.openingEvidence.findings,['COUNTER_RECEIPT_MISMATCH']);
+  await assert.rejects(detail('missing-case'),/SUSPICION_CASE_UNAVAILABLE/);
   assert.deepEqual(cases.docs[0].get('openingEvidence').findings,['COUNTER_RECEIPT_MISMATCH']);
   await assert.rejects(close(caseId,'resolved'),/SUSPICION_CASE_NOT_RESOLVED/);
   await stats.update({acceptedSeeds:1});
@@ -776,10 +787,30 @@ test('authenticated suspicion inspection requires active admin and reports evide
   assert.equal((await open(newId)).status,'open');
   await close(newId,'referred_for_review');
   assert.equal((await root.collection('closures').get()).size,2);
+  assert.equal((await list('open')).cases.length,0);
+  const first=await list('closed',1);
+  assert.equal(first.cases.length,1);
+  assert.ok(first.nextAfterCaseId);
+  const secondPage=await list('closed',1,first.nextAfterCaseId!);
+  assert.equal(secondPage.cases.length,1);
+  assert.notEqual(first.cases[0].caseId,secondPage.cases[0].caseId);
+  assert.equal(secondPage.nextAfterCaseId,null);
+  assert.equal(first.consistentAcrossPages,false);
+  const history=await detail(caseId);
+  assert.equal(history.outcome,'resolved');
+  assert.deepEqual(history.openingEvidence.findings,['COUNTER_RECEIPT_MISMATCH']);
+  assert.deepEqual(history.closing?.evidence.findings,[]);
+  assert.equal(history.automaticSanction,false);
+  const closureRef=root.collection('closures').doc(caseId);
+  await closureRef.update({outcome:'inconclusive'});
+  await assert.rejects(detail(caseId),/SUSPICION_CASE_STATE_INVALID/);
+  await closureRef.update({outcome:'resolved'});
   assert.equal((await hold.get()).exists,false);
   assert.equal((await balance(author.localId).get()).get('availableKCoins'),100);
   await profile.update({status:'suspended'});
   await assert.rejects(open('suspended-case'),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await assert.rejects(list('all'),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await assert.rejects(detail(caseId),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
   await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
  }finally{
   await stats.set({kind:'personal',postId,authorId:author.localId,communityId:'',acceptedSeeds:1,closed:false});
