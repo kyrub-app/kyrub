@@ -174,7 +174,7 @@ test('staged Renda age gate requires civil identity AND verified adulthood for d
   const vacancy=doc(requester,'vagas','AgeVacancy0000000001');
   const application=doc(freelancer,'candidaturas','AgeVacancy0000000001__freelancer-age');
   const vacancyPayload={ownerId:requesterId,title:'Vaga de homologacao',status:'open'};
-  const applicationPayload={userId:freelancerId,vagaId:'AgeVacancy0000000001',ownerId:requesterId,status:'pending'};
+  const applicationPayload={userId:freelancerId,vagaId:'AgeVacancy0000000001',ownerId:requesterId,status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
   const age=async(uid:string,status:string,recordUid=uid)=>{
     await environment.withSecurityRulesDisabled(async context=>{
       await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
@@ -235,10 +235,11 @@ test('freelance vacancy and application ownership cannot be forged or used acros
   await assertFails(deleteDoc(vacancy(other)));
   await assertFails(updateDoc(vacancy(owner),{ownerId:otherId}));
   const application=(db:any)=>doc(db,'candidaturas','OwnedVacancy00000001__hiring-worker');
-  const payload={ownerId,userId:workerId,vagaId:'OwnedVacancy00000001',status:'pending'};
+  const payload={ownerId,userId:workerId,vagaId:'OwnedVacancy00000001',status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()};
   await assertFails(setDoc(application(worker),{...payload,ownerId:otherId}));
   await assertFails(setDoc(application(worker),{...payload,vagaId:'missing'}));
   await assertFails(setDoc(application(worker),{...payload,status:'accepted'}));
+  await assertFails(setDoc(application(worker),{...payload,paymentStatus:'paid'}));
   await assertFails(getDoc(application(other)));
   await assertSucceeds(getDoc(application(worker))); // own absent deterministic receipt
   await assertFails(setDoc(doc(worker,'candidaturas','duplicate-key'),payload));
