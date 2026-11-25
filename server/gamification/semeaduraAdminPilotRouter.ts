@@ -4,7 +4,8 @@ import type { Firestore } from 'firebase-admin/firestore';
 import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
 import {
  listIsolatedGamificationSuspicionCases, readIsolatedGamificationSuspicionCase,
- readIsolatedGamificationIncrementalSnapshot,
+ readIsolatedGamificationIncrementalSnapshot, openIsolatedGamificationSuspicionCase,
+ closeIsolatedGamificationSuspicionCase,
 } from './semeaduraAdminSupervision.js';
 
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
@@ -12,7 +13,7 @@ const loopback=(v:string|undefined)=>v==='127.0.0.1'||v==='::1'||v==='::ffff:127
 
 /** Test/local harness only. Not mounted in the application or Vercel.
  * Never accept forwarded IP, origin, user identity or role as authority.
- * Reads only; a real deployment needs a separate ingress/rate-limit review. */
+ * Optional case lifecycle writes under an additional fixture flag; no economic writes. */
 export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
  const router=express.Router();
  router.use((req,res,next)=>{
@@ -23,8 +24,9 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
      process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT!=='true'||!loopback(req.socket.remoteAddress)){
    res.status(404).json({code:'NOT_AVAILABLE'});return;
   }
-  if(req.method!=='GET'){
-   res.setHeader('Allow','GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;
+  const caseWrites=process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT==='true';
+  if(req.method!=='GET'&&!(req.method==='POST'&&caseWrites)){
+   res.setHeader('Allow',caseWrites?'GET, POST':'GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;
   }
   // Do not support cross-origin calls; only same-origin browser requests or
   // local test clients without an Origin header. No CORS headers are granted.
@@ -33,6 +35,10 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
   }
   if(req.originalUrl.length>2048){
    res.status(414).json({code:'INPUT_INVALID'});return;
+  }
+  if(req.method==='POST'&&(!req.headers.origin||!/^127\.0\.0\.1:\d+$/.test(req.headers.host??'')||
+     !req.is('application/json')||Object.keys(req.query).length!==0)){
+   res.status(400).json({code:'INPUT_INVALID'});return;
   }
   next();
  });
@@ -64,6 +70,40 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
    // No raw errors, credentials, document paths or internal diagnostics.
    res.status(503).json({code:'SUPERVISION_UNAVAILABLE'});
   }
+ });
+ router.post('/',express.json({limit:'2kb',strict:true}),async(req,res)=>{
+  const body=req.body;
+  if(!body||typeof body!=='object'||Array.isArray(body)||body.confirmed!==true||!safeId(body.caseId)){
+   res.status(400).json({code:'INPUT_INVALID'});return;
+  }
+  const allowed=(keys:string[])=>Object.keys(body).every(k=>keys.includes(k));
+  const authorization=typeof req.headers.authorization==='string'?req.headers.authorization:'';
+  try{
+   if(body.operation==='open'&&allowed(['operation','caseId','kind','postId','confirmed'])&&
+      (body.kind==='personal'||body.kind==='community')&&typeof body.postId==='string'&&
+      /^[A-Za-z0-9_-]{1,500}$/.test(body.postId)){
+    res.json(await openIsolatedGamificationSuspicionCase(db,auth,authorization,
+      {caseId:body.caseId,kind:body.kind,postId:body.postId}));return;
+   }
+   if(body.operation==='close'&&allowed(['operation','caseId','outcome','confirmed'])&&
+      ['resolved','inconclusive','referred_for_review'].includes(body.outcome)){
+    res.json(await closeIsolatedGamificationSuspicionCase(db,auth,authorization,
+      {caseId:body.caseId,outcome:body.outcome}));return;
+   }
+   res.status(400).json({code:'INPUT_INVALID'});
+  }catch(error){
+   const message=error instanceof Error?error.message:'';
+   if(message==='GAMIFICATION_SUPERVISION_AUTH_REQUIRED'){res.status(401).json({code:'AUTH_REQUIRED'});return;}
+   if(message==='GAMIFICATION_SUPERVISION_FORBIDDEN'){res.status(403).json({code:'FORBIDDEN'});return;}
+   if(message==='GAMIFICATION_SUPERVISION_DISABLED'||message==='SUSPICION_CASE_UNAVAILABLE'){res.status(404).json({code:'NOT_AVAILABLE'});return;}
+   if(['SUSPICION_CASE_NO_INDICATORS','SUSPICION_CASE_NOT_RESOLVED','SUSPICION_CASE_ALREADY_OPEN','SUSPICION_CASE_ID_CONFLICT','SUSPICION_CASE_CLOSE_CONFLICT'].includes(message)){
+    res.status(409).json({code:message});return;
+   }
+   res.status(503).json({code:'SUPERVISION_UNAVAILABLE'});
+  }
+ });
+ router.use((error:unknown,_req:express.Request,res:express.Response,_next:express.NextFunction)=>{
+  void error;res.status(400).json({code:'INPUT_INVALID'});
  });
  router.use((_req,res)=>{res.status(404).json({code:'NOT_AVAILABLE'});});
  return router;
