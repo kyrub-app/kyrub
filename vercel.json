@@ -7,6 +7,7 @@
       "fix/gamification-activation-delivery": false,
       "test/gamification-integrated-rewards-v1": false,
       "test-gamification-transversal-browser": false,
+      "test-semeadura-economic-pilot": false,
       "main": true,
       "preview-*": true,
       "feat/profile-react-rebuild": true,

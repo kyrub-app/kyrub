@@ -1,4 +1,5 @@
 import type { Firestore } from 'firebase-admin/firestore';
+import { recordIsolatedNonGoogleRegistration } from './semeaduraNoWelcomeAuthority.js';
 import { isWelcomeCampaignEligible } from './firstLoginWelcome.js';
 import { recordWelcomeRegistrationFromTrustedAuthTrigger } from './welcomeTrustedAuthRegistration.js';
 import { grantWelcomeFromTrustedRegistrationReceipt, type WelcomeAuth } from './signedSessionWelcomeService.js';
@@ -16,8 +17,11 @@ export async function handleWelcomeAuthCreated(
 ): Promise<{ skipped: true } | { balance: number; replay: boolean }> {
   // Preserve the existing Google-registration eligibility and OFF-by-default gate.
   if (process.env.KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED !== 'true') return { skipped: true };
-  if (!user.providerData.some(provider => provider.providerId === 'google.com') ||
-      user.disabled || !isWelcomeCampaignEligible(
+  if (!user.disabled && !user.providerData.some(provider => provider.providerId === 'google.com')) {
+    await recordIsolatedNonGoogleRegistration(db,auth,user,context);
+    return { skipped:true };
+  }
+  if (user.disabled || !isWelcomeCampaignEligible(
         user.metadata.creationTime, process.env.KYRUB_WELCOME_BONUS_EFFECTIVE_AT,
       )) return { skipped: true };
   if (auth.app.options.projectId !== context.projectId) throw Error('WELCOME_AUTH_TRIGGER_PROJECT_MISMATCH');

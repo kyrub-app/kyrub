@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Trophy, Users } from 'lucide-react';
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
@@ -13,6 +13,19 @@ import AdminKyrubTagPilot from './AdminKyrubTagPilot';
 import AdminWorkspaceRecoveryBoundary from './AdminWorkspaceRecoveryBoundary';
 
 const GlobalChallenges = lazy(() => import('./AdminGlobalChallengesWorkspace'));
+const GamificationSupervision = lazy(() => import('./AdminGamificationSupervisionWorkspace'));
+const localGamificationSupervision = import.meta.env.DEV && import.meta.env.VITE_GAMIFICATION_SUPERVISION_PROTOTYPE === 'true' &&
+  typeof window !== 'undefined' && ['localhost','127.0.0.1','admin.localhost'].includes(window.location.hostname);
+
+const localGamificationReadPilot = () => localGamificationSupervision &&
+  import.meta.env.VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT === 'true' &&
+  ['localhost','127.0.0.1'].includes(window.location.hostname) && window.location.protocol==='http:' &&
+  auth.app.options.projectId==='demo-kyrub-welcome' &&
+  auth.emulatorConfig?.host==='127.0.0.1' && auth.emulatorConfig?.port===9099;
+
+const localGamificationCaseWrites = () => localGamificationReadPilot() && import.meta.env.VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR === 'true' && import.meta.env.VITE_GAMIFICATION_SUPERVISION_CASE_WRITE_PILOT === 'true';
+const localGamificationReleaseControls = () => localGamificationReadPilot() && import.meta.env.VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR === 'true' && import.meta.env.VITE_GAMIFICATION_SUPERVISION_RELEASE_WRITE_PILOT === 'true';
+const localGamificationReferralWrites = () => localGamificationCaseWrites() && import.meta.env.VITE_GAMIFICATION_SUPERVISION_REFERRAL_WRITE_PILOT === 'true';
 
 const OfficialPlanGovernance = lazy(() => import('../store/OfficialStoreCommercialWorkspace'));
 
@@ -27,6 +40,8 @@ const MetricSkeleton = () => <article className="animate-pulse rounded-2xl borde
 
 export default function AdminControlPlaneApp() {
   const [authResolved, setAuthResolved] = useState(false); const [user, setUser] = useState<User | null>(null); const [profile, setProfile] = useState<AdminProfile | null | undefined>(undefined); const [metrics, setMetrics] = useState<AdminDashboardMetric[]>([]); const [metricsLoading, setMetricsLoading] = useState(false); const [metricsError, setMetricsError] = useState(''); const [loginBusy, setLoginBusy] = useState(false); const [error, setError] = useState('');
+  const pilotSessionCurrent=useCallback(()=>Boolean(localGamificationReadPilot()&&user&&auth.currentUser===user&&
+    profile?.uid===user.uid&&profile.role==='super_admin'&&profile.status==='active'),[user,profile]);
   useEffect(() => { let unsubscribeProfile = () => undefined; const unsubscribeAuth = onAuthStateChanged(auth, nextUser => { unsubscribeProfile(); unsubscribeProfile = () => undefined; setUser(nextUser); setMetrics([]); setMetricsError(''); setError(''); if (!nextUser) { setProfile(null); setAuthResolved(true); return; } setProfile(undefined); unsubscribeProfile = subscribeToAdminProfile(nextUser, nextProfile => { setProfile(nextProfile); setAuthResolved(true); }, () => { setProfile(null); setAuthResolved(true); setError('Não foi possível validar a autorização administrativa.'); }); }); return () => { unsubscribeProfile(); unsubscribeAuth(); }; }, []);
   useEffect(() => { if (!user || !profile || profile.status !== 'active') return; const auditKey = `kyrub_admin_session_logged_${user.uid}`; try { if (sessionStorage.getItem(auditKey) === '1') return; sessionStorage.setItem(auditKey, '1'); } catch {} void recordAdminSessionAccess(user, profile).catch(() => { try { sessionStorage.removeItem(auditKey); } catch {} }); }, [profile, user]);
   useEffect(() => { if (!profile || profile.status !== 'active') return; let cancelled = false; setMetricsLoading(true); setMetricsError(''); void loadAdminDashboardMetrics(profile).then(next => { if (!cancelled) setMetrics(next); }).catch(() => { if (!cancelled) setMetricsError('Não foi possível atualizar os indicadores básicos.'); }).finally(() => { if (!cancelled) setMetricsLoading(false); }); return () => { cancelled = true; }; }, [profile]);
@@ -34,7 +49,7 @@ export default function AdminControlPlaneApp() {
   const handleLogout = () => void signOut(auth);
   if (!authResolved || (user && profile === undefined)) return <main className="flex min-h-screen items-center justify-center bg-slate-950 text-slate-400"><div className="text-center"><ShieldCheck className="mx-auto h-8 w-8 animate-pulse text-cyan-400" /><p className="mt-3 text-xs font-black uppercase tracking-[0.2em]">Validando acesso</p></div></main>;
   if (!user) return <LoginScreen busy={loginBusy} error={error} onLogin={handleLogin} />;
-  if (!profile || profile.status !== 'active') return <AccessDeniedScreen user={user} profile={profile ?? null} onLogout={handleLogout} />;
+  if (!profile || profile.uid!==user.uid || profile.status !== 'active') return <AccessDeniedScreen user={user} profile={profile ?? null} onLogout={handleLogout} />;
   const permissions = getAdminPermissions(profile.role); const canReadDirectory = hasAdminPermission(profile, 'read_users');
   return <div className="min-h-screen bg-slate-950 text-slate-100">
     <header className="sticky top-0 z-20 border-b border-slate-800 bg-slate-950/95 px-4 py-4 backdrop-blur sm:px-6"><div className="mx-auto flex max-w-7xl items-center justify-between gap-4"><div className="flex min-w-0 items-center gap-3"><div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 text-cyan-300"><ShieldCheck className="h-5 w-5" /></div><div className="min-w-0"><span className="block text-[9px] font-black uppercase tracking-[0.22em] text-cyan-400">admin.kyrub.com</span><strong className="block truncate text-sm text-white">Kyrub Control Plane</strong></div></div><div className="flex items-center gap-3"><div className="hidden text-right sm:block"><span className="block text-xs font-bold text-white">{profile.displayName || user.displayName || profile.email}</span><span className="text-[10px] uppercase tracking-wider text-slate-500">{ROLE_LABELS[profile.role]}</span></div><button type="button" onClick={handleLogout} title="Sair" aria-label="Sair do Control Plane" className="rounded-xl border border-slate-800 bg-slate-900 p-2.5 text-slate-400 hover:bg-slate-800 hover:text-white"><LogOut className="h-4 w-4" /></button></div></div></header>
@@ -49,7 +64,7 @@ export default function AdminControlPlaneApp() {
       {canReadDirectory && <AdminAccordionSection id="admin-platform-directory" title="Plataforma & Tenants" description="Usuários, lojas, vínculos e infraestrutura administrativa dos tenants." icon={Users} badge="Control Plane"><AdminDirectoryWorkspace authenticatedUser={user} profile={profile}/></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-firebase-preflight" title="Diagnóstico Firebase" description="Verificação manual e somente leitura da credencial Firebase da plataforma." icon={ShieldCheck} badge="Super Admin"><AdminFirebasePreflight key={user.uid} user={user} profile={profile} /></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-kyrub-tag-pilot" title="Kyrub Tag — lote experimental" description="Emissão controlada e gravação da unidade 001." icon={ShieldCheck} badge="Super Admin"><AdminKyrubTagPilot key={user.uid} user={user}/></AdminAccordionSection>}
-      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges" title="Desafios globais" description="Consulte desafios do Kyrub, crie rascunhos e publique com confirmação." icon={Trophy} badge="Super Admin"><Suspense fallback={<p role="status">Carregando desafios…</p>}><AdminWorkspaceRecoveryBoundary section="Desafios globais"><GlobalChallenges key={user.uid} user={user} profile={profile} /></AdminWorkspaceRecoveryBoundary></Suspense></AdminAccordionSection>}
+      {profile.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges" title={localGamificationSupervision ? "Gamificação" : "Desafios globais"} description={localGamificationSupervision ? "Desafios globais e protótipo local de supervisão." : "Consulte desafios do Kyrub, crie rascunhos e publique com confirmação."} icon={Trophy} badge="Super Admin"><Suspense fallback={<p role="status">Carregando desafios…</p>}><AdminWorkspaceRecoveryBoundary section="Desafios globais"><GlobalChallenges key={user.uid} user={user} profile={profile} /></AdminWorkspaceRecoveryBoundary>{localGamificationSupervision && profile.uid === user.uid && <AdminWorkspaceRecoveryBoundary section="Supervisão da gamificação"><GamificationSupervision key={user.uid} pilotSession={pilotSessionCurrent()?user:undefined} isCurrent={pilotSessionCurrent} caseWrites={pilotSessionCurrent()&&localGamificationCaseWrites()} referralWrites={pilotSessionCurrent()&&localGamificationReferralWrites()} releaseControls={pilotSessionCurrent()&&localGamificationReleaseControls()}/></AdminWorkspaceRecoveryBoundary>}</Suspense></AdminAccordionSection>}
       <AdminModulesWorkspace profile={profile} compactRoot />
     </div><section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"/><p className="text-[10px] leading-relaxed text-slate-500">O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Kyrub são executadas na Loja Oficial sem enfraquecer os gates server-side.</p></div></section></main>
   </div>;

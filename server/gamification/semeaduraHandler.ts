@@ -1,6 +1,10 @@
+import type { Auth } from 'firebase-admin/auth';
+import type { Firestore } from 'firebase-admin/firestore';
+import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
-import { adminDb } from '../firebaseAdmin.js';
-import { readCommunitySemeaduraJourney, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
+import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
+import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
+import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedEconomicallyAdmittedPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -18,7 +22,36 @@ const header = (value: string | string[] | undefined) =>
  * Fail-closed. No production side effects without a separate deployment gate.
  * This transport uses the existing Vercel action handler (no extra function).
  */
+type TransportDependencies={
+ adminDb:Firestore;adminAuth:Auth;
+ verify:(token:string)=>Promise<{uid:string}>;
+ actualProject:()=>string;expectedProject:string;
+};
+
 export async function handleSemeadura(request: RequestLike, response: ResponseLike): Promise<void> {
+ return handleSemeaduraWithAuthority(request,response,{
+  adminDb,adminAuth,verify:verifyFirebaseIdToken,actualProject:getFirebaseAdminProjectId,
+  expectedProject:process.env.FIREBASE_PROJECT_ID?.trim()||'kyrub-b8d0e',
+ });
+}
+
+/** Only for an explicitly mounted disposable loopback HTTP harness.
+ * Emulator tokens are never accepted by the production export above. */
+export function createIsolatedSemeaduraHandler(db:Firestore,auth:Auth){
+ return async(request:RequestLike,response:ResponseLike):Promise<void>=>{
+  if(process.env.KYRUB_SEMEADURA_HTTP_EMULATOR_TEST!=='true'||!semeaduraEconomicPilotEnabled(db)||
+    auth.app.options.projectId!=='demo-kyrub-welcome'){
+   response.status(404).json({error:'SEMEADURA_NOT_ENABLED'});return;
+  }
+  return handleSemeaduraWithAuthority(request,response,{
+   adminDb:db,adminAuth:auth,verify:token=>auth.verifyIdToken(token,true),
+   actualProject:()=>auth.app.options.projectId??'',expectedProject:'demo-kyrub-welcome',
+  });
+ };
+}
+
+async function handleSemeaduraWithAuthority(request:RequestLike,response:ResponseLike,
+ {adminDb,adminAuth,verify,actualProject,expectedProject}:TransportDependencies):Promise<void>{
   if (request.method?.toUpperCase() !== 'POST') {
     response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     return;
@@ -34,52 +67,53 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     return;
   }
 
+  // Exact discriminated request: no coercion, undo, toggle or caller UID.
+  const body = parseSemeaduraRequest(request.body);
+  if(!body){
+    response.status(400).json({error:'SEMEADURA_INVALID_INPUT'});
+    return;
+  }
   let actor = '';
   try {
-    actor = (await verifyFirebaseIdToken(token)).uid;
+    actor=body.action==='semear'
+      ? await authorizeSemeaduraMutation(token,{
+          verify,
+          getUser:uid=>adminAuth.getUser(uid),
+          actualProject,
+          expectedProject,
+          now:Date.now,
+        })
+      : (await verify(token)).uid;
     if (!actor) throw Error('INVALID_FIREBASE_IDENTITY');
   } catch {
     response.status(401).json({ error: 'AUTH_INVALID' });
     return;
   }
 
-  const body = request.body && typeof request.body === 'object' && !Array.isArray(request.body)
-    ? request.body as Record<string, unknown> : null;
-  const isJourney = body?.action === 'journey' && Object.keys(body).length === 1;
-  const isCommunityJourney = body?.action === 'community-journey' &&
-    typeof body.communityId === 'string' &&
-    Object.keys(body).length === 2;
-  const isPostAction = body && ['semear', 'status'].includes(String(body.action)) &&
-    (body.kind === 'personal' || body.kind === 'community') &&
-    typeof body.postId === 'string' &&
-    Object.keys(body).every(k => ['action','kind','postId'].includes(k));
-  if (!isJourney && !isCommunityJourney && !isPostAction) {
-    response.status(400).json({ error: 'SEMEADURA_INVALID_INPUT' });
-    return;
-  }
   try {
-    if (isJourney) {
+    if (body.action==='journey') {
       response.status(200).json({
         journey: await readPersonalSemeaduraJourney(adminDb, actor),
       });
       return;
     }
-    if (isCommunityJourney) {
-      response.status(200).json({
-        journey: await readCommunitySemeaduraJourney(adminDb, actor, body!.communityId as string),
-      });
+    if(body.action==='status_batch'){
+      response.status(200).json(await readVerifiedPostSemeaduraBatch(adminDb,actor,body.targets));
       return;
     }
-    const target = { authenticatedUserId: actor, kind: body!.kind as 'personal' | 'community',
-      postId: body!.postId as string };
-    const result = body!.action === 'status'
+    const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
+    const result = body.action === 'status'
       ? await readVerifiedPostSemeadura(adminDb, target)
-      : await seedVerifiedPost(adminDb, target);
+      : await seedEconomicallyAdmittedPost(adminDb, target, adminAuth);
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
     if (code === 'SEMEADURA_INVALID_INPUT') {
       response.status(400).json({ error: code });
+    } else if (error instanceof SemeaduraDailyLimitError) {
+      response.status(429).json({error:code,dailyDay:error.day,dailyRemaining:0});
+    } else if (code === 'SEMEADURA_RELEASE_UNAVAILABLE') {
+      response.status(503).json({error:code});
     } else if (code.startsWith('SEMEADURA_')) {
       response.status(409).json({ error: code });
     } else {

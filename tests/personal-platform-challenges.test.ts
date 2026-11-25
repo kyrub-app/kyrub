@@ -96,3 +96,19 @@ test('institutional post consults the exact canonical challenge without a claim 
  assert.match(hook,/auth\.currentUser\?\.uid!==uid/);
  assert.match(hook,/result\.uid===expectedViewerId/);
 });
+
+
+test('confirmed publication refreshes canonical rewards and challenge catalog without granting from UI',()=>{
+ const modal=read('src/components/modals/StoreConfigModal.tsx');
+ const account=read('src/components/tabs/PitangaAccount.tsx');
+ const hook=read('src/hooks/usePlatformChallenges.ts');
+ const journey=read('src/components/SemeaduraJourneyPanel.tsx');
+ assert.match(modal,/if \(!response\.ok\) throw Error\(\x60FIRST_STORE_PUBLICATION_HTTP_[\s\S]*?FIRST_STORE_PUBLICATION_INVALID_RESPONSE[\s\S]*?if\(auth\.currentUser!==user\)throw Error\('FIRST_STORE_PUBLICATION_SESSION_CHANGED'\);\s*if\(targetPublished\)notifyRewardRefresh\(user,'publication'\)/);
+ assert.match(account,/notifyRewardRefresh\(session,'conversion'\)/);
+ assert.match(account,/rewardRefreshGeneration\(session\)/);
+ assert.match(hook,/subscribeRewardRefresh\(session/);
+ assert.match(hook,/if\(reason!=='conversion'\)retry\(\)/);
+ assert.match(hook,/result\.session===auth\.currentUser/);
+ assert.match(journey,/if\(reason==='return'\)void read\(\)/);
+ assert.doesNotMatch(journey,/kyrub-semeadura-updated/);
+});

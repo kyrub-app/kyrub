@@ -1,3 +1,4 @@
+import { personalCenterEmulatorsReady, createPersonalCenterEmulatorRouter } from './server/gamification/personalCenterEmulatorRouter.js';
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
@@ -271,6 +272,8 @@ app.use(
   integrationRateLimiter,
   createStoreCustomerChatRouter()
 );
+
+if (personalCenterEmulatorsReady(process.env)) app.use('/api', createPersonalCenterEmulatorRouter());
 
 app.use(
   "/api/notifications",

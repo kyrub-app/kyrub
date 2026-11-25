@@ -1,0 +1,200 @@
+name: Dependency security inventory
+
+on:
+  pull_request:
+    branches: [main, test-gamification-transversal-browser]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'functions/package.json'
+      - 'functions/package-lock.json'
+      - '.github/workflows/dependency-security-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [root, functions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inventory locked dependencies without installing or changing packages
+        working-directory: ${{ matrix.scope == 'root' && '.' || 'functions' }}
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > production-audit.json
+          production_status=$?
+          npm audit --json > full-audit.json
+          full_status=$?
+          set -e
+          echo "Audit exit statuses: production=$production_status full=$full_status"
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          for(const path of ['production-audit.json','full-audit.json']){
+            const report=JSON.parse(readFileSync(path,'utf8'));
+            if(report.error||!report.metadata?.vulnerabilities||!report.vulnerabilities){
+              console.error(path+': audit unavailable or incomplete');
+              process.exitCode=1;continue;
+            }
+            console.log(path,JSON.stringify(report.metadata.vulnerabilities));
+            for(const [name,v] of Object.entries(report.vulnerabilities)){
+              console.log(JSON.stringify({name,severity:v.severity,isDirect:v.isDirect,range:v.range,nodes:v.nodes,
+                via:v.via.map(x=>typeof x==='string'?x:{name:x.name,title:x.title,url:x.url,severity:x.severity,range:x.range}),
+                fixAvailable:v.fixAvailable}));
+            }
+          }
+          JS
+      - name: Upload dependency advisory inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-security-${{ matrix.scope }}
+          path: |
+            ${{ matrix.scope == 'root' && '.' || 'functions' }}/production-audit.json
+            ${{ matrix.scope == 'root' && '.' || 'functions' }}/full-audit.json
+          retention-days: 7
+
+
+  routing-remediation-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Generate scoped patch on disposable runner only
+        run: |
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const p=JSON.parse(readFileSync('package.json','utf8'));
+          if(p.devDependencies?.['@vercel/routing-utils']!=='6.6.1')throw Error('ROUTING_VERSION_CHANGED');
+          p.overrides??={};
+          if(p.overrides['@vercel/routing-utils']&&JSON.stringify(p.overrides['@vercel/routing-utils'])!==JSON.stringify({'path-to-regexp':'6.3.0'}))throw Error('ROUTING_OVERRIDE_CONFLICT');
+          p.overrides['@vercel/routing-utils']={'path-to-regexp':'6.3.0'};
+          writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
+          JS
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund
+          git diff --stat -- package.json package-lock.json
+          git diff -- package.json package-lock.json > routing-remediation.patch
+      - name: Install candidate and validate route compatibility
+        run: |
+          npm ci --ignore-scripts
+          node --test --import tsx tests/app-routes.test.ts tests/public-destination-routes.test.ts tests/public-storefront-routing.test.ts tests/production-health.test.ts
+          npm run lint
+      - name: Verify targeted high severity advisory no longer reported
+        run: |
+          npm audit --json > candidate-audit.json || true
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          const a=JSON.parse(readFileSync('candidate-audit.json','utf8'));
+          if(a.error||!a.metadata?.vulnerabilities||!a.vulnerabilities)throw Error('AUDIT_INCOMPLETE');
+          console.log(JSON.stringify(a.metadata.vulnerabilities));
+          for(const name of ['@vercel/routing-utils','path-to-regexp']){
+            if(['high','critical'].includes(a.vulnerabilities[name]?.severity))throw Error('TARGET_ADVISORY_REMAINS: '+name);
+          }
+          JS
+      - name: Upload proposal for review, never commit or deploy
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: routing-remediation-candidate
+          path: |
+            routing-remediation.patch
+            candidate-audit.json
+          if-no-files-found: warn
+          retention-days: 7
+
+
+  compatible-remediation-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Evaluate only compatible npm remediations on disposable runner
+        shell: bash
+        run: |
+          npm audit --omit=dev --json > before-production.json || true
+          npm audit --json > before-full.json || true
+          set +e
+          npm audit fix --package-lock-only --ignore-scripts --no-fund > compatible-remediation.log 2>&1
+          result=$?
+          set -e
+          echo "npm audit fix exit status: $result"
+          # Remaining advisories may give exit 1. Validate the actual reports
+          # below, never silently assume the proposed fix succeeded.
+          git diff --exit-code -- package.json functions/package.json functions/package-lock.json
+          git diff --stat -- package-lock.json
+          git diff -- package-lock.json > compatible-remediation.patch
+          npm audit --omit=dev --json > after-production.json || true
+          npm audit --json > after-full.json || true
+          node --input-type=module <<'JS'
+          import {readFileSync,writeFileSync} from 'node:fs';
+          import {execFileSync} from 'node:child_process';
+          const read=p=>JSON.parse(readFileSync(p,'utf8'));
+          const reports={};
+          for(const scope of ['production','full']){
+            const before=read('before-'+scope+'.json'),after=read('after-'+scope+'.json');
+            for(const report of [before,after]){
+              if(report.error||!report.metadata?.vulnerabilities||!report.vulnerabilities)throw Error('AUDIT_INCOMPLETE');
+            }
+            const b=before.metadata.vulnerabilities,a=after.metadata.vulnerabilities;
+            if(a.high||a.critical||a.total>b.total)throw Error('SECURITY_REGRESSION');
+            const newlyFlagged=Object.keys(after.vulnerabilities).filter(name=>!before.vulnerabilities[name]);
+            if(newlyFlagged.length)throw Error('NEW_ADVISORIES: '+newlyFlagged.join(','));
+            reports[scope]={before:b,after:a,remaining:Object.keys(after.vulnerabilities)};
+          }
+          const original=JSON.parse(execFileSync('git',['show','HEAD:package-lock.json'],{encoding:'utf8'})).packages;
+          const next=read('package-lock.json').packages;
+          const changed=Object.keys({...original,...next}).filter(k=>original[k]?.version!==next[k]?.version)
+            .map(path=>({path,before:original[path]?.version??null,after:next[path]?.version??null}));
+          const direct=read('package.json');
+          for(const name of Object.keys({...direct.dependencies,...direct.devDependencies})){
+            const path='node_modules/'+name;
+            const a=original[path]?.version,b=next[path]?.version;
+            if(!a||!b||a.split('.')[0]!==b.split('.')[0])throw Error('DIRECT_MAJOR_CHANGE: '+name);
+            if(name==='@vercel/queue'&&a!==b)throw Error('QUEUE_VERSION_CHANGED');
+          }
+          console.log(JSON.stringify({reports,changed},null,2));
+          writeFileSync('compatible-remediation-summary.json',JSON.stringify({reports,changed},null,2)+'\n');
+          JS
+      - name: Verify candidate with full application prebuild and bundle
+        run: |
+          npm ci --ignore-scripts
+          npm run prebuild > candidate-prebuild.log 2>&1
+          npm --ignore-scripts run build >> candidate-prebuild.log 2>&1
+          node scripts/normalize-serverless-esm-imports.mjs >> candidate-prebuild.log 2>&1
+          npm run lint >> candidate-prebuild.log 2>&1
+      - name: Upload exact candidate for review (no commit or deployment)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: compatible-remediation-candidate
+          path: |
+            package.json
+            package-lock.json
+            compatible-remediation.patch
+            compatible-remediation.log
+            compatible-remediation-summary.json
+            before-production.json
+            before-full.json
+            after-production.json
+            after-full.json
+            candidate-prebuild.log
+          if-no-files-found: warn
+          retention-days: 7
