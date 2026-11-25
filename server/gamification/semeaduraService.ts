@@ -1,3 +1,4 @@
+import type { WelcomeAuth } from './signedSessionWelcomeService.js';
 import { createHash } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
@@ -23,6 +24,7 @@ const seedPostTransaction = async (
   db: Firestore,
   input: SeedInput,
   releaseControlled: boolean,
+  authorAuth?: WelcomeAuth,
 ): Promise<{
   status: 'accepted' | 'already_seeded' | 'closed';
   count: number;
@@ -137,7 +139,7 @@ const seedPostTransaction = async (
     const used = readSemeaduraDailyCount(quota.data(),actor,day);
     if(used>=SEMEADURA_DAILY_LIMIT)throw new SemeaduraDailyLimitError(day);
     await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key,
-      zeroStartRequired:releaseControlled&&process.env.KYRUB_SEMEADURA_ZERO_START_PILOT==='true'});
+      authorAuth,zeroStartRequired:releaseControlled&&process.env.KYRUB_SEMEADURA_ZERO_START_PILOT==='true'});
     const quotaData={schemaVersion:1,actorId:actor,day,count:used+1,updatedAt:occurredAt};
     if(quota.exists)tx.update(quotaRef,quotaData);
     else tx.create(quotaRef,quotaData);
@@ -172,7 +174,7 @@ const seedPostTransaction = async (
 /** Internal foundation retained for trusted test fixtures. Public transport
  * must use the release-controlled entry, never this unguarded adapter. */
 export const seedVerifiedPost=(db:Firestore,input:SeedInput)=>seedPostTransaction(db,input,false);
-export const seedReleaseControlledPost=(db:Firestore,input:SeedInput)=>seedPostTransaction(db,input,true);
+export const seedReleaseControlledPost=(db:Firestore,input:SeedInput,authorAuth?:WelcomeAuth)=>seedPostTransaction(db,input,true,authorAuth);
 
 /**
  * Authenticated, read-only view of a post's seed progress and the caller's
