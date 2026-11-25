@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedCommit": "b24de6e7717d202c7d57319fb0aec25e7edd2e44",
+  "reviewedCommit": "cd84e452ebdb8360add3673e215fbf67b46b1077",
   "scope": "Static call-site observations only. No deployment or external coverage, no authorization or proof of complete call graph.",
   "entries": [
     {
@@ -53,11 +53,11 @@
     },
     {
       "path": "server/gamification/semeaduraService.ts",
-      "blobSha": "a488d647d0bc01932bfcbbc300ef95c23d0f3a61",
+      "blobSha": "974b2f3177173cb98c7026517ef053dbddcf361b",
       "primitive": "settleAcceptedSeedInTransaction",
-      "line": 144,
+      "line": 151,
       "classification": "emulator-only-seed-settlement",
-      "observation": "Accepted seed calls isolated settlement before writes. Controlled transport checks release gate and passes trusted Auth adapter; optional zero-start enrollment remains emulator-only. No deployed writer attestation."
+      "observation": "Strict public mutation adapter requires isolated release gate, zero-start and no-welcome policies, and trusted Auth project before accepted receipt; settlement precedes writes. Fixture-only adapters remain. No deployed writer attestation."
     }
   ]
 }
