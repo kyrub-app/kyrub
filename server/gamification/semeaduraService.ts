@@ -4,6 +4,7 @@ import { SEMEADURA_STATUS_BATCH_LIMIT, type SemeaduraStatusTarget } from './seme
 import type { Firestore, DocumentSnapshot } from 'firebase-admin/firestore';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import { assertSemeaduraReleaseOpenInTransaction } from './semeaduraReleaseControl.js';
+import { noWelcomePilotEnabled } from './semeaduraNoWelcomeAuthority.js';
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
 import { markIsolatedGamificationAuthorDirty } from './semeaduraAdminSupervision.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
@@ -26,6 +27,7 @@ const seedPostTransaction = async (
   input: SeedInput,
   releaseControlled: boolean,
   authorAuth?: WelcomeAuth,
+  requireEconomicAdmission = false,
 ): Promise<{
   status: 'accepted' | 'already_seeded' | 'closed';
   count: number;
@@ -135,6 +137,11 @@ const seedPostTransaction = async (
     // keys avoid carrying unused allowance or resetting lifetime receipts.
     const now = new Date();
     if(releaseControlled)await assertSemeaduraReleaseOpenInTransaction(db,tx,now);
+    // Public acceptance must never fall back to a visual-only seed. The
+    // isolated admission policy remains mandatory for every new receipt.
+    if(requireEconomicAdmission&&(!authorAuth||authorAuth.app.options.projectId!=='demo-kyrub-welcome'||
+      process.env.KYRUB_SEMEADURA_ZERO_START_PILOT!=='true'||!noWelcomePilotEnabled(db)))
+      throw Error('SEMEADURA_RELEASE_UNAVAILABLE');
     const occurredAt = now.toISOString();
     const day = semeaduraDay(now);
     const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
@@ -142,7 +149,7 @@ const seedPostTransaction = async (
     const used = readSemeaduraDailyCount(quota.data(),actor,day);
     if(used>=SEMEADURA_DAILY_LIMIT)throw new SemeaduraDailyLimitError(day);
     await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key,
-      authorAuth,zeroStartRequired:releaseControlled&&process.env.KYRUB_SEMEADURA_ZERO_START_PILOT==='true'});
+      authorAuth,strictCurrencyAuthority:requireEconomicAdmission,zeroStartRequired:requireEconomicAdmission||(releaseControlled&&process.env.KYRUB_SEMEADURA_ZERO_START_PILOT==='true')});
     const quotaData={schemaVersion:1,actorId:actor,day,count:used+1,updatedAt:occurredAt};
     if(quota.exists)tx.update(quotaRef,quotaData);
     else tx.create(quotaRef,quotaData);
@@ -176,9 +183,13 @@ const seedPostTransaction = async (
 };
 
 /** Internal foundation retained for trusted test fixtures. Public transport
- * must use the release-controlled entry, never this unguarded adapter. */
+ * must use the economic-admission entry, never these fixture adapters. */
 export const seedVerifiedPost=(db:Firestore,input:SeedInput)=>seedPostTransaction(db,input,false);
 export const seedReleaseControlledPost=(db:Firestore,input:SeedInput,authorAuth?:WelcomeAuth)=>seedPostTransaction(db,input,true,authorAuth);
+
+/** Only public mutation adapter. Still emulator-only; commercial authority
+ * must be separately reviewed, never enabled by copying these flags. */
+export const seedEconomicallyAdmittedPost=(db:Firestore,input:SeedInput,authorAuth:WelcomeAuth)=>seedPostTransaction(db,input,true,authorAuth,true);
 
 /**
  * Authenticated, read-only view of a post's seed progress and the caller's
