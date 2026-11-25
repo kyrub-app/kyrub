@@ -24,12 +24,17 @@ before(async()=>{
     export * from './server/payments/paymentWebhookProcessor.ts';
     export * from './server/inventory/orderInventoryService.ts';
     export {cancelOrderItemsWithRefund} from './server/payments/orderItemCancellationService.ts';
-    export {requestCanonicalOrderRefund} from './server/payments/paymentRefundService.ts';`,resolveDir:process.cwd(),loader:'ts'},
+    export {requestCanonicalOrderRefund} from './server/payments/paymentRefundService.ts';
+    export {reconcileMercadoPagoPayment} from './server/payments/storeMercadoPagoReconciliationRouter.ts';
+    export {saveMercadoPagoPaymentProviderBinding} from './server/payments/paymentProviderBindingService.ts';
+    export {listStoreEconomicLedgerEntries} from './server/payments/storeEconomicLedgerService.ts';
+    export {storeProviderPaymentReconciliationPath} from './shared/storeProviderPaymentReconciliation.ts';`,resolveDir:process.cwd(),loader:'ts'},
     bundle:true,platform:'node',format:'cjs',packages:'external',write:false,plugins:[{name:'emulator-only-db',setup(plugin){
       plugin.onResolve({filter:/firebaseAdmin\.js$/},()=>({path:'db',namespace:'emulator-only-db'}));
       plugin.onLoad({filter:/.*/,namespace:'emulator-only-db'},()=>({contents:'export const adminDb=globalThis.__orderReleaseEmulatorDb;',loader:'js'}));
     const boundaries:Record<string,string>={
       'consultantAuth.js':'export const verifyFirebaseIdToken=async()=>({uid:"buyer"});',
+      'mercadoPagoStoreOauthService.js':'export const getValidMercadoPagoStoreAccessToken=async(id)=>{if(id!=="seller")throw Error("WRONG_MERCHANT");return {externalAccountId:"collector"};}; export const mercadoPagoStoreRequest=async(id,path)=>{if(id!=="seller"||path!=="/v1/payments/psp-joined-commercial")throw Error("UNEXPECTED_PROVIDER_REQUEST");return globalThis.__joinedDirectPixProviderEvidence;};',
       'mercadoPagoCheckoutBridge.js':'export const attachMercadoPagoPixToExistingIntent=async()=>{throw Error("PSP_NOT_ALLOWED_IN_TEST");};',
       'mercadoPagoWebhook.js':'export const mapMercadoPagoWebhookError=()=>({}); export const processMercadoPagoWebhook=async()=>{throw Error("PSP_NOT_ALLOWED_IN_TEST");};',
       'storePromotionService.js':'export const listPublicStorePromotions=async()=>[]; export const resolveStorePromotionForCheckout=async()=>{throw Error("COUPON_NOT_USED_IN_TEST");};',
@@ -417,6 +422,39 @@ test('commercial candidate: actual Free provisioning and first publication join 
   assert.equal(payment.get('status'),'paid');
   assert.equal(intent.get('amount'),order.get('total'));
   assert.equal(intent.get('status'),'paid');
+  // Actual webhook ledger and provider reconciliation, with no real PSP call
+  // and no handoff, split, transfer or courier payout prerequisite.
+  const ledger=await service.listStoreEconomicLedgerEntries({storeId:'seller',limit:100});
+  const matched=ledger.filter((entry:any)=>entry.paymentId===paymentId&&entry.kind==='payment_capture');
+  assert.equal(matched.length,1);
+  assert.equal(matched[0].orderId,orderId);
+  assert.equal(matched[0].amountMinor,2000);
+  const obligations=await db.collection('stores/seller/economicObligations').where('orderId','==',orderId).get();
+  assert.equal(obligations.size,1);
+  assert.equal(obligations.docs[0].get('sourceEconomicEntryId'),matched[0].id);
+  assert.equal(obligations.docs[0].get('amountMinor'),2000);
+  await service.saveMercadoPagoPaymentProviderBinding({provider:'mercado-pago',providerPaymentId:'psp-joined-commercial',canonicalStoreId:'seller',legacyStoreId:'seller',paymentId,paymentIntentId,recipientAccountId:'collector'});
+  const providerEvidence={id:'psp-joined-commercial',collector_id:'collector',status:'approved',currency_id:'BRL',transaction_amount:20,transaction_amount_refunded:0,payment_method_id:'pix',fee_details:[{type:'mercadopago_fee',fee_payer:'collector',amount:0.2}],transaction_details:{net_received_amount:19.8,total_paid_amount:20},money_release_status:'released',money_release_date:now,date_last_updated:now};
+  const globalStateForProvider=globalThis as any;
+  const previousEvidence=globalStateForProvider.__joinedDirectPixProviderEvidence;
+  const reconciliationRef=db.doc(service.storeProviderPaymentReconciliationPath('seller','mercado-pago','psp-joined-commercial'));
+  try{
+    for(const collector_id of ['', 'other-merchant']){
+      globalStateForProvider.__joinedDirectPixProviderEvidence={...providerEvidence,collector_id};
+      await assert.rejects(service.reconcileMercadoPagoPayment('seller',paymentId),/STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH/);
+      assert.equal((await reconciliationRef.get()).exists,false);
+    }
+    globalStateForProvider.__joinedDirectPixProviderEvidence=providerEvidence;
+    const reconciled=await Promise.all([1,2].map(()=>service.reconcileMercadoPagoPayment('seller',paymentId)));
+    assert.deepEqual(reconciled[0],reconciled[1]);
+    assert.equal(reconciled[0].grossMinor,matched[0].amountMinor);
+    assert.equal(reconciled[0].providerFeeMinor,20);
+    assert.equal(reconciled[0].netReceivedMinor,1980);
+    assert.equal(reconciled[0].refundedMinor,0);
+    assert.equal((await reconciliationRef.collection('observations').get()).size,1);
+    assert.equal((await orderRef.get()).get('status'),'preparing');
+    assert.equal((await db.collection('stores/seller/economicSettlements').get()).size,0);
+  }finally{globalStateForProvider.__joinedDirectPixProviderEvidence=previousEvidence;}
   assert.equal((await db.collection('users/seller/xpLedger').get()).size,1);
   assert.equal((await db.collection('users/seller/rewardLedger').get()).size,0);
   assert.equal((await inventoryRef.get()).get('catalog')[0].currentQuantity,875);
