@@ -4,7 +4,15 @@ import { collection, doc, getDocFromServer, getDocsFromServer, query, where, lim
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
 export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn' };
 
+export function freelanceCloudPreviewEnabled():boolean{
+ return import.meta.env.DEV===true && import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'
+  && import.meta.env.VITE_KYRUB_FREELANCE_CLOUD_PREVIEW==='true'
+  && typeof window!=='undefined' && window.location.hostname==='127.0.0.1'
+  && window.location.protocol==='http:' && auth.app.options.projectId==='kyrub-security-test'
+  && db.app.options.projectId==='kyrub-security-test';
+}
 const uid=()=>{
+ if(!freelanceCloudPreviewEnabled())throw Error('FREELANCE_CLOUD_PREVIEW_UNAVAILABLE');
  const user=auth.currentUser;
  if(!user)throw Error('Entre no Kyrub para continuar.');
  return user.uid;
