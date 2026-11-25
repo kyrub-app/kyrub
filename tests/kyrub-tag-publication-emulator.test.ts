@@ -31,6 +31,9 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
   const presentation={name:'Cartão teste',occupation:'',about:'',emergencyContacts:[]};
   const acceptance={accepted:true,version:TAG_PUBLICATION_TERMS_VERSION};
   const ageRef=adminDb.doc('age_eligibility_private/'+winner.uid);
+  const {promoteTagIdentityToKyrub,getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+  assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
+  await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/TAG_PROMOTION_AGE_REQUIRED/);
   await assert.rejects(service.configurePromotionalKyrubTag(other.uid,id,presentation),/TAG_FORBIDDEN/);
   assert.equal((await service.configurePromotionalKyrubTag(winner.uid,id,presentation)).enabled,false);
   assert.equal(await service.resolveKyrubTag(id),null);
@@ -39,6 +42,10 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
   await assert.rejects(service.configurePromotionalKyrubTag(winner.uid,id,presentation,acceptance),/TAG_PUBLICATION_AGE_REQUIRED/);
   // Synthetic server evidence for this test only; not an actual age verification.
   await ageRef.set({uid:winner.uid,status:'verified_adult'});
+  // Separate account-promotion gate remains disabled even for a synthetic adult.
+  assert.notEqual(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED,'true');
+  await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/TAG_PROMOTION_AGE_REQUIRED/);
+  assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
   await assert.rejects(service.configurePromotionalKyrubTag(winner.uid,id,presentation,{...acceptance,version:'old'}),/TAG_PUBLICATION_TERMS_REQUIRED/);
   assert.equal((await service.configurePromotionalKyrubTag(winner.uid,id,presentation,acceptance)).enabled,true);
   assert.equal((await service.resolveKyrubTag(id))?.presentation?.name,presentation.name);

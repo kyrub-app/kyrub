@@ -37,12 +37,12 @@ export function KyrubTagOnlyEntry({user,onPromoted,onRetry,unavailable=false}:{
     headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
     body:JSON.stringify({action:'promote-tag-identity'})
    });
-   if(!res.ok)throw Error('TAG_IDENTITY_PROMOTION_FAILED');
+   if(!res.ok){const error=await res.json().catch(()=>({}));throw Error(error.error??'TAG_IDENTITY_PROMOTION_FAILED');}
    const result=await res.json() as {mode:string};
    if(result.mode!=='full'||auth.currentUser?.uid!==user.uid)throw Error('TAG_IDENTITY_PROMOTION_FAILED');
    onPromoted();
-  }catch{
-   setNotice('Não foi possível concluir o cadastro completo agora. Sua Kyrub Tag permanece protegida.');
+  }catch(error){
+   setNotice(error instanceof Error&&error.message==='TAG_PROMOTION_AGE_REQUIRED'?'A conta completa depende da confirmação de maioridade e da liberação do ingresso. Sua Kyrub Tag permanece protegida.':'Não foi possível concluir o cadastro completo agora. Sua Kyrub Tag permanece protegida.');
   }finally{setBusy(false);}
  }
  return <main className="flex min-h-[100dvh] items-center justify-center bg-[#121A17] p-5 text-white">
