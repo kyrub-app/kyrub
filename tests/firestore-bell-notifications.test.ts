@@ -151,3 +151,48 @@ test('Freela negotiation message and private bell receipt are atomic and idempot
    if(oldControl.exists)await control.set(oldControl.data()!);else await control.delete();
   }
 });
+
+
+test('Freela lifecycle writes one immutable event and one recipient alert per accepted action',async()=>{
+ const {performNotifiedHiringAction}=await import('../server/notifications/freelanceNotificationService.js');
+ const ownerId='lifecycle_owner',workerId='lifecycle_worker',vagaId='Lifecycle00000000001',applicationId=vagaId+'__'+workerId;
+ const control=adminDb.doc('renda_age_release_private/current');
+ const original=await control.get();
+ const oldFlag=process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW,oldAuth=process.env.FIREBASE_AUTH_EMULATOR_HOST;
+ process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW='true';
+ process.env.FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099';
+ const receipt=adminDb.doc('candidaturas/'+applicationId);
+ const action=(actorId:string,action:string,operationId:string)=>performNotifiedHiringAction({actorId,actorRole:actorId===ownerId?'owner':undefined,action,operationId,applicationId});
+ try{
+  await control.set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server'});
+  await adminDb.doc('vagas/'+vagaId).set({ownerId,status:'open'});
+  for(const [uid,profile] of [[ownerId,'requester'],[workerId,'freelancer']]){
+   await adminDb.doc('age_eligibility_private/'+uid).set({uid,status:'verified_adult'});
+   await adminDb.doc('identity_verifications/'+uid).set({uid,status:'approved',approvedProfiles:[profile]});
+  }
+  const initial=await Promise.all([action(workerId,'apply','apply-1'),action(workerId,'apply','apply-1')]);
+  assert.deepEqual(new Set(initial.map(r=>r.created)),new Set([true,false]));
+  await assert.rejects(action(workerId,'apply','apply-2'),/FREELANCE_CONFLICT/);
+  await assert.rejects(action(workerId,'accept','forged-accept'),/FREELANCE_FORBIDDEN/);
+  await assert.rejects(action(ownerId,'complete','early-complete'),/FREELANCE_CONFLICT/);
+  await action(ownerId,'accept','accept-1');
+  await action(workerId,'request_completion','request-1');
+  await action(ownerId,'request_review','review-1');
+  await action(workerId,'request_completion','request-2');
+  await action(ownerId,'complete','complete-1');
+  assert.equal((await action(workerId,'request_completion','request-1')).created,false);
+  assert.equal((await receipt.get()).get('status'),'completed');
+  assert.equal((await receipt.get()).get('paymentStatus'),undefined);
+  assert.equal((await receipt.collection('operations_private').get()).size,6);
+  const owner=await listUserNotifications({recipientUserId:ownerId});
+  const worker=await listUserNotifications({recipientUserId:workerId});
+  assert.equal(owner.notifications.length,3);
+  assert.equal(worker.notifications.length,3);
+  assert.equal(owner.notifications.filter(n=>n.eventType==='request_completion').length,2);
+  assert.ok([...owner.notifications,...worker.notifications].every(n=>n.category==='freelance'&&n.target.hiringApplicationId===applicationId));
+ }finally{
+  if(oldFlag===undefined)delete process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW;else process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW=oldFlag;
+  if(oldAuth===undefined)delete process.env.FIREBASE_AUTH_EMULATOR_HOST;else process.env.FIREBASE_AUTH_EMULATOR_HOST=oldAuth;
+  if(original.exists)await control.set(original.data()!);else await control.delete();
+ }
+});
