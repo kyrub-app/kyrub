@@ -1,3 +1,4 @@
+import { createAgeScreeningRouter } from './server/identity/ageScreeningRouter.js';
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
@@ -54,6 +55,9 @@ const app = express();
 const PORT = Number(process.env.PORT || 3000);
 
 app.set("trust proxy", 1);
+if (process.env.KYRUB_AGE_SCREENING_EMULATOR === 'true' && process.env.NODE_ENV === 'test') {
+  app.use('/api/onboarding/age', createAgeScreeningRouter());
+}
 app.use('/api/admin/global-challenges', createGlobalChallengeAdminRouter());
 app.use(
   express.json({
