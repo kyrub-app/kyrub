@@ -1,7 +1,7 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
-import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from './semeaduraService.js';
+import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedReleaseControlledPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -68,7 +68,7 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
     const result = body.action === 'status'
       ? await readVerifiedPostSemeadura(adminDb, target)
-      : await seedVerifiedPost(adminDb, target);
+      : await seedReleaseControlledPost(adminDb, target);
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
@@ -76,6 +76,8 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
       response.status(400).json({ error: code });
     } else if (error instanceof SemeaduraDailyLimitError) {
       response.status(429).json({error:code,dailyDay:error.day,dailyRemaining:0});
+    } else if (code === 'SEMEADURA_RELEASE_UNAVAILABLE') {
+      response.status(503).json({error:code});
     } else if (code.startsWith('SEMEADURA_')) {
       response.status(409).json({ error: code });
     } else {
