@@ -53,6 +53,7 @@
 
       allow update: if storeSecOwner(storeId)
         && canWriteErpWithAge()
+        && (!incoming().diff(existing()).affectedKeys().hasAny(['paymentStatus']) || canWriteFinancialWithMfa())
         && storeSecImmutableOrderIdentity()
         && incoming().legacyStoreId == existing().legacyStoreId
         && incoming().legacyCreatedAt == existing().legacyCreatedAt
@@ -72,6 +73,7 @@
 
     match /stores/{storeId}/payments/{paymentId} {
       allow create: if operationalMirrorMetadataIsValid(storeId)
+        && canWriteFinancialWithMfa()
         && incoming().id == paymentId
         && incoming().storeId == storeId
         && incoming().actorUserId == request.auth.uid
