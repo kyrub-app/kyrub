@@ -1,4 +1,5 @@
-import { FieldValue } from 'firebase-admin/firestore';
+import { evaluateStoredCapabilityAgeAccess } from '../../shared/ageEligibility.js';
+import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 
@@ -6,6 +7,20 @@ import { createHash } from 'node:crypto';
 
 const ROOT = 'kyrub_admin/control_plane';
 const validUid = (value: string) => /^[a-zA-Z0-9_-]{1,128}$/.test(value);
+
+/** Staged independently of social rollout. Never mutate commercial records
+ * when an enabled or malformed eligibility control denies the actor.
+ */
+async function requireStoreCreationEligibility(tx:Transaction,uid:string){
+  const control=await tx.get(adminDb.doc('erp_age_release_private/current'));
+  if(!control.exists)return; // Compatibility until an approved cutover.
+  if(control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only')
+    throw Error('FREE_STORE_AGE_REQUIRED');
+  const age=await tx.get(adminDb.doc('age_eligibility_private/'+uid));
+  if(!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:age.data(),capability:'store_erp',policy:'verified_adult_only'}))
+    throw Error('FREE_STORE_AGE_REQUIRED');
+}
+
 
 /**
  * Idempotent initial Free eligibility for the authenticated "Criar minha loja"
@@ -26,6 +41,7 @@ export async function ensureFreePlanForStoreCreation(authorization: string): Pro
   const entitlementRef = adminDb.doc(`${ROOT}/store_entitlements/${uid}`);
   const subscriptionRef = adminDb.doc(`${ROOT}/store_subscriptions/${uid}`);
   const provisioned = await adminDb.runTransaction(async tx => {
+    await requireStoreCreationEligibility(tx,uid);
     const [privateDoc, entitlementDoc, subscriptionDoc] = await Promise.all([
       tx.get(privateRef), tx.get(entitlementRef), tx.get(subscriptionRef),
     ]);
@@ -106,6 +122,7 @@ async function activateStoreAfterProvisioning(uid: string, plan: 'free' | 'pro' 
   // concurrent first click can otherwise publish the private link between
   // separate reads, yielding a false conflict despite a valid canonical store.
   return adminDb.runTransaction(async tx => {
+    await requireStoreCreationEligibility(tx,uid);
     const [ownerStores, personal, firstStoreEvent] = await Promise.all([
       tx.get(ownerQuery), tx.get(privateRef), tx.get(firstStoreEventRef),
     ]);
