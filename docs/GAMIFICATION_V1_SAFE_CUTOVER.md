@@ -253,3 +253,32 @@ execução na consulta. Nenhuma alteração de autoridade de escrita real,
 regras, cobrança, deployment ou projeto kyrub-tags. Próximo portão:
 validar resultado e preparar configuração comercial imutável e controles
 de abertura/pausa, sem ativação enquanto inventário externo não concluir.
+
+
+## G3.7 — Controle administrativo de pausa/retomada isolado
+CI d2bb55f: 5/5 workflows aprovados. CI da sincronização d5613f0 ainda
+pendente na conferência inicial.
+Autoridade d79d9d5 permite somente mudar open/paused de um registro de
+campanha já configurado, com revisão esperada, motivo de 10–500 caracteres,
+evento imutável e identidade do revisor autenticado. Exige super_admin
+ativo, revisor fixtureOnly e flag administrativa específica. Transação
+atômica atualiza somente estado e evento. Replay do mesmo comando retorna
+estado vigente e revisão aplicada; ID conflitante/revisão velha são
+rejeitados. Retomada exige fence, políticas econômicas completas e data
+de abertura já alcançada. Não cria campanha nem altera sua data.
+Teste de emulador 0de031a cobre autorização, flag desligada, competição,
+replay, ausência de escrita de sementes durante pausa, retomada bloqueada
+sem política de início zero e retomada com registro válido.
+Router b4ee807 continua somente loopback, não montado na aplicação/Vercel.
+GET release e POST release_change separados das flags de casos/referrals.
+UI no setor Semeadura, opt-in local DEV/emulador, exige motivo e confirmação,
+mantém ID de solicitação em caso de resposta ambígua, permite consultar
+estado. Nenhum crédito/débito por esse comando. Flag de UI
+VITE_GAMIFICATION_SUPERVISION_RELEASE_WRITE_PILOT e flag de servidor
+KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT não habilitam produção.
+Ainda falta teste HTTP/Chromium do novo painel com flags e fixture de
+campanha, confirmar CI e revisar concorrência com aceites no marco
+econômico via autoridade administrativa. O status exibido é o estado
+registrado, não uma atestação de disponibilidade de todos os serviços.
+A data comercial, implantação, cobertura de escritores e abertura inicial
+continuam dependentes de auditoria externa e autorização própria.
