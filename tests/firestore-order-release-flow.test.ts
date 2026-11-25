@@ -77,6 +77,32 @@ test('real Firestore transaction: approve → full verified payment → prepare;
   await service.transitionOrderStatusWithInventory('seller','order','preparing');
   assert.equal((await read()).status,'preparing');
 });
+test('human order status transaction rejects ineligible operators and on-demand delivery during standby',async()=>{
+  const actor={uid:'seller',permission:'orders.transfer'};
+  const control=db.doc('erp_age_release_private/current');
+  const age=db.doc('age_eligibility_private/seller');
+  await control.set({schemaVersion:1,mode:'verified_adult_only'});
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{},actor),/STORE_ERP_AGE_REQUIRED/);
+  await age.set({uid:'other',status:'verified_adult'});
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{},actor),/STORE_ERP_AGE_REQUIRED/);
+  assert.equal((await read()).status,'pending');
+  await age.set({uid:'seller',status:'verified_adult'});
+  await db.doc(path).update({fulfillmentType:'delivery'});
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'kyrub'},actor),/DELIVERY_V1_STANDBY/);
+  assert.equal((await read()).status,'pending');
+  await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'},actor);
+  assert.equal((await read()).deliveryProvider,'merchant');
+  assert.equal((await read()).status,'accepted');
+  const chosenAt=(await read()).deliveryProviderChosenAt;
+  await service.transitionOrderStatusWithInventory('seller','order','accepted',{deliveryProvider:'merchant'},actor);
+  assert.equal((await read()).deliveryProviderChosenAt,chosenAt);
+  await age.update({status:'suspended'});
+  await assert.rejects(service.transitionOrderStatusWithInventory('seller','order','cancelled',{reason:'Teste'},{uid:'seller',permission:'orders.cancel'}),/STORE_ERP_AGE_REQUIRED/);
+  assert.equal((await read()).status,'accepted');
+  // Verified provider evidence is independent of the operator's age gate.
+  await service.processVerifiedPaymentWebhook({storeId:'seller',paymentId:'payment',event:paidEvent});
+  assert.equal((await db.doc(paymentPath).get()).get('status'),'paid');
+});
 test('real Firestore transaction: partial payment cannot release or prepare',async()=>{
   await service.transitionOrderStatusWithInventory('seller','order','accepted');
   await assert.rejects(service.processVerifiedPaymentWebhook({storeId:'seller',paymentId:'payment',event:{...paidEvent,amount:10}}),/AMOUNT_MISMATCH/);
