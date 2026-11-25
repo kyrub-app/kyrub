@@ -44,17 +44,40 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     }
 
     match /vagas/{vagaId} {
+      function vacancyLockPolicy() {
+        let control = /databases/$(database)/documents/renda_age_release_private/current;
+        return exists(control) && get(control).data.get('vacancyPolicy','legacy') != 'legacy';
+      }
+      function validVacancyTerms(data) {
+        return data.title is string && data.title.size() >= 1 && data.title.size() <= 120
+          && data.description is string && data.description.size() >= 1 && data.description.size() <= 2000
+          && data.payment is number && data.payment >= 0.01 && data.payment <= 1000000
+          && data.employer is string && data.employer.size() >= 1 && data.employer.size() <= 160;
+      }
       allow read: if isSignedIn();
       allow create: if canWriteRendaWithAge()
         && ownsRendaVacancy(incoming())
-        && hasRendaRequesterAuthority();
+        && hasRendaRequesterAuthority()
+        && (!vacancyLockPolicy() || (
+          vagaId.matches('^[A-Za-z0-9]{20}$')
+          && incoming().keys().hasOnly(['ownerId','title','description','payment','employer','status','createdAt','updatedAt','termsLocked','hasAccepted'])
+          && incoming().termsLocked == false && incoming().hasAccepted == false
+          && incoming().status == 'open' && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time && validVacancyTerms(incoming())
+        ));
       allow update: if canWriteRendaWithAge()
         && ownsRendaVacancy(existing())
         && incoming().ownerId == existing().ownerId
-        && hasRendaRequesterAuthority();
-      // Owners may remove their own vacancy even after suspension.
-      // An unclassified historical record is not claimable by another account.
-      allow delete: if ownsRendaVacancy(existing()) || isAdmin();
+        && hasRendaRequesterAuthority()
+        && (!vacancyLockPolicy() || (
+          existing().termsLocked == false && existing().hasAccepted == false
+          && existing().status == 'open'
+          && incoming().diff(existing()).affectedKeys().hasOnly(['title','description','payment','updatedAt'])
+          && incoming().updatedAt == request.time && validVacancyTerms(incoming())
+        ));
+      // Staged policy forbids hard deletion, including privileged client claims.
+      // Retire through the server so applications and negotiations are preserved.
+      allow delete: if !vacancyLockPolicy() && (ownsRendaVacancy(existing()) || isAdmin());
     }
 
     // Candidatures are private to the applicant and the verified vacancy owner.
