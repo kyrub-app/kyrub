@@ -26,6 +26,7 @@ before(async()=>{
     export {cancelOrderItemsWithRefund} from './server/payments/orderItemCancellationService.ts';
     export {requestCanonicalOrderRefund} from './server/payments/paymentRefundService.ts';
     export {reconcileMercadoPagoPayment} from './server/payments/storeMercadoPagoReconciliationRouter.ts';
+    export {recoverMissingCanonicalPaidCaptures} from './server/payments/storeFinanceRouter.ts';
     export {saveMercadoPagoPaymentProviderBinding} from './server/payments/paymentProviderBindingService.ts';
     export {listStoreEconomicLedgerEntries} from './server/payments/storeEconomicLedgerService.ts';
     export {storeProviderPaymentReconciliationPath} from './shared/storeProviderPaymentReconciliation.ts';`,resolveDir:process.cwd(),loader:'ts'},
@@ -473,6 +474,27 @@ test('commercial candidate: actual Free provisioning and first publication join 
     assert.equal(reconciled[0].netReceivedMinor,1980);
     assert.equal(reconciled[0].refundedMinor,0);
     assert.equal((await reconciliationRef.collection('observations').get()).size,1);
+    // Human authorization is checked again at persistence, including
+    // when an otherwise idempotent provider observation already exists.
+    await assert.rejects(service.reconcileMercadoPagoPayment('seller',paymentId,{ownerId:'other',authorization:'Bearer synthetic'}),/STORE_REPRESENTATION_FORBIDDEN/);
+    const financialControl=db.doc('financial_mfa_release_private/current');
+    await financialControl.set({schemaVersion:1,mode:'recent_totp_required'});
+    try{
+      // Fixture intentionally denies all token verification, so this cannot
+      // serve as positive MFA evidence.
+      await assert.rejects(service.reconcileMercadoPagoPayment('seller',paymentId,{ownerId:'seller',authorization:'Bearer synthetic'}),/AUTH_NOT_ALLOWED_IN_ORDER_RELEASE_FIXTURE/);
+      assert.equal((await reconciliationRef.collection('observations').get()).size,1);
+    }finally{await financialControl.delete();}
+    globalStateForProvider.__joinedDirectPixProviderEvidence={...providerEvidence,date_last_updated:'2026-11-05T12:00:00.000Z',money_release_status:'pending'};
+    const retained=await service.reconcileMercadoPagoPayment('seller',paymentId);
+    assert.deepEqual(retained,reconciled[0]);
+    assert.equal((await reconciliationRef.get()).get('moneyReleaseStatus'),'released');
+    assert.equal((await reconciliationRef.collection('observations').get()).size,2);
+    // Recovery must not downgrade a provider-backed capture.
+    const recovered=await Promise.all([1,2].map(()=>service.recoverMissingCanonicalPaidCaptures('seller','Bearer synthetic','seller')));
+    assert.ok(recovered.every(n=>n===0));
+    const afterRecovery=await service.listStoreEconomicLedgerEntries({storeId:'seller',limit:100});
+    assert.deepEqual(afterRecovery.find((entry:any)=>entry.id===matched[0].id),matched[0]);
     assert.equal((await orderRef.get()).get('status'),'preparing');
     assert.equal((await db.collection('stores/seller/economicSettlements').get()).size,0);
   }finally{globalStateForProvider.__joinedDirectPixProviderEvidence=previousEvidence;}
