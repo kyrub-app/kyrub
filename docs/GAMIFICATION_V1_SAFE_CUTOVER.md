@@ -226,3 +226,30 @@ ou edição de dados reais. A promoção precisa de política de projeto
 e epoch próprios, evidência de todos os escritores, configuração de
 campanha imutável e revisão da autoridade econômica e controles de
 ativação; não remover guardas experimentais para simular conclusão.
+
+
+## G3.6 — Atualização de recompensas na interface
+Eventos de interface não concedem crédito. Após conversão confirmada ou
+publicação verificada, um aviso local vinculado ao objeto Auth da sessão
+solicita nova consulta canônica. A geração da sessão separa leituras
+anteriores à confirmação das novas leituras. Painéis de saldo simultâneos
+compartilham a mesma leitura em andamento, sem cache persistente.
+O catálogo de desafios consulta novamente após publicação confirmada,
+não por ocultação da loja, abertura de desafio ou conversão de moeda.
+Não se altera o marco canônico de primeira publicação (2 XP, zero Pitangas).
+A jornada pessoal deixa de consultar a própria progressão a cada semente
+enviada: uma semente enviada não pertence ao semeador. Para atividade
+recebida de outros dispositivos/usuários, painel de saldo, jornada e
+catálogo revalidam ao recuperar foco/visibilidade, limitados a uma consulta
+por 30 segundos por consumidor. Não há polling, push ou promessa de
+atualização instantânea entre dispositivos. Atualização manual de saldo
+e desafios e leitura ao montar continuam disponíveis.
+Testes DOM verificam dois painéis simultâneos, uma leitura pós-conversão,
+isolamento por sessão, limite de frequência e remoção de listeners.
+Testes de contrato verificam publicação confirmada e ausência de consulta
+a cada semeadura enviada. CI novo pendente; não declarar E2E desta revisão.
+CI 0f4b1a8 aprovado 5/5; d2bb55f build e Chromium aprovados, demais em
+execução na consulta. Nenhuma alteração de autoridade de escrita real,
+regras, cobrança, deployment ou projeto kyrub-tags. Próximo portão:
+validar resultado e preparar configuração comercial imutável e controles
+de abertura/pausa, sem ativação enquanto inventário externo não concluir.
