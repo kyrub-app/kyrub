@@ -895,3 +895,64 @@ test('authenticated suspicion inspection requires active admin and reports evide
   if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
  }
 });
+
+
+test('isolated release control denies new writes by default, pauses atomically and preserves accepted receipts',async()=>{
+ const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
+ const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
+ const {createHash}=await import('node:crypto');
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const author='release-control-author';
+ const postId='release-control-post';
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const post=db.doc('social_posts/'+postId);
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const control=db.doc(SEMEADURA_RELEASE_CONTROL_PATH);
+ const progress=db.doc('users/'+author+'/semeaduraProgress/summary');
+ const first='release-control-first',second='release-control-second';
+ const quota=(uid:string)=>db.doc('users/'+uid+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+ const receipt=(uid:string)=>stats.collection('receipts').doc(uid);
+ const seed=(uid:string)=>seedReleaseControlledPost(db,{authenticatedUserId:uid,kind:'personal',postId});
+ const oldPilot=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const oldGate=process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;
+ const denied=async(uid:string)=>{
+  await assert.rejects(seed(uid),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  assert.equal((await receipt(uid).get()).exists,false);
+  assert.equal((await quota(uid).get()).exists,false);
+ };
+ const record={schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'open',revision:1,opensAt:new Date(Date.now()-60000).toISOString()};
+ try{
+  await post.set({postId,authorId:author,visibility:'public',publicationType:'feed'});
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  delete process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;
+  await control.set(record);
+  await denied(first);
+  process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT='true';
+  await control.delete();
+  await denied(first);
+  await control.set({...record,projectId:'wrong-project'});
+  await denied(first);
+  await control.set({...record,opensAt:new Date(Date.now()+60000).toISOString()});
+  await denied(first);
+  assert.equal((await stats.get()).exists,false);
+  assert.equal((await progress.get()).exists,false);
+  await control.set(record);
+  assert.equal((await seed(first)).status,'accepted');
+  const original=(await receipt(first).get()).data();
+  await control.update({status:'paused',revision:2});
+  await denied(second);
+  assert.equal((await seed(first)).status,'already_seeded');
+  assert.deepEqual((await receipt(first).get()).data(),original);
+  assert.equal((await quota(first).get()).get('count'),1);
+  assert.equal((await stats.get()).get('acceptedSeeds'),1);
+  assert.equal((await progress.get()).get('acceptedSeeds'),1);
+  await control.update({status:'open',revision:3});
+  assert.equal((await seed(second)).status,'accepted');
+  assert.equal((await stats.get()).get('acceptedSeeds'),2);
+  assert.equal((await ledger(author).get()).size,0);
+ }finally{
+  await Promise.all([control.delete(),post.delete(),stats.delete(),progress.delete(),receipt(first).delete(),receipt(second).delete(),quota(first).delete(),quota(second).delete()]);
+  if(oldPilot===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=oldPilot;
+  if(oldGate===undefined)delete process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;else process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT=oldGate;
+ }
+});
