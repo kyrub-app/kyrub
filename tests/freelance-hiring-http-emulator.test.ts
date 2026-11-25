@@ -111,6 +111,30 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   assert.equal((await inbox(owner.token)).notifications.length,4);
   assert.equal((await inbox(worker.token)).notifications.length,3);
   await assert.rejects(deleteDoc(receipt(worker.db)));
+  // Race: either the edit wins and the old quoted terms are rejected, or
+  // the application wins and the same document rejects the edit.
+  const racing=doc(collection(owner.db,'vagas'));
+  await setDoc(racing,{ownerId:owner.uid,title:terms.title,description:terms.description,payment:100,employer:'Contratante de teste',status:'open',termsLocked:false,hasAccepted:false,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  const racingId=racing.id+'__'+worker.uid;
+  const [editResult,applyResult]=await Promise.all([
+   updateDoc(racing,{payment:200,updatedAt:serverTimestamp()}).then(()=>true,()=>false),
+   call(worker.token,'/api/notifications/freelance-applications/action',{applicationId:racingId,operationId:'race-apply',action:'apply',expectedTerms:terms}),
+  ]);
+  const raceDoc=await getDocFromServer(racing);
+  if(editResult){
+   assert.equal(applyResult.status,409);
+   assert.equal(raceDoc.get('payment'),200);
+   assert.equal(raceDoc.get('termsLocked'),false);
+   assert.equal((await adminDb.doc('candidaturas/'+racingId).get()).exists,false);
+  }else{
+   assert.equal(applyResult.status,200);
+   assert.equal(raceDoc.get('payment'),100);
+   assert.equal(raceDoc.get('termsLocked'),true);
+   assert.deepEqual((await adminDb.doc('candidaturas/'+racingId).get()).get('terms'),terms);
+   await ok(await call(worker.token,'/api/notifications/freelance-applications/action',{applicationId:racingId,operationId:'race-withdraw',action:'withdraw'}));
+   assert.equal((await getDocFromServer(racing)).get('termsLocked'),true);
+   await assert.rejects(updateDoc(racing,{payment:200,updatedAt:serverTimestamp()}));
+  }
   await adminAuth.updateUser(worker.uid,{disabled:true});
   assert.equal((await call(worker.token,'/api/notifications')).status,401);
   assert.equal((await action(worker.token,'apply','apply-1')).status,401);
