@@ -31,7 +31,7 @@ before(async()=>{
     export {storeProviderPaymentReconciliationPath} from './shared/storeProviderPaymentReconciliation.ts';`,resolveDir:process.cwd(),loader:'ts'},
     bundle:true,platform:'node',format:'cjs',packages:'external',write:false,plugins:[{name:'emulator-only-db',setup(plugin){
       plugin.onResolve({filter:/firebaseAdmin\.js$/},()=>({path:'db',namespace:'emulator-only-db'}));
-      plugin.onLoad({filter:/.*/,namespace:'emulator-only-db'},()=>({contents:'export const adminDb=globalThis.__orderReleaseEmulatorDb;',loader:'js'}));
+      plugin.onLoad({filter:/.*/,namespace:'emulator-only-db'},()=>({contents:'export const adminDb=globalThis.__orderReleaseEmulatorDb; export const getFirebaseAdminProjectId=()=>"demo-kyrub-order-release"; export const adminAuth={verifyIdToken:async()=>{throw Error("AUTH_NOT_ALLOWED_IN_ORDER_RELEASE_FIXTURE");}};',loader:'js'}));
     const boundaries:Record<string,string>={
       'consultantAuth.js':'export const verifyFirebaseIdToken=async()=>({uid:"buyer"});',
       'mercadoPagoStoreOauthService.js':'export const getValidMercadoPagoStoreAccessToken=async(id)=>{if(id!=="seller")throw Error("WRONG_MERCHANT");return {externalAccountId:"collector"};}; export const mercadoPagoStoreRequest=async(id,path)=>{if(id!=="seller"||path!=="/v1/payments/psp-joined-commercial")throw Error("UNEXPECTED_PROVIDER_REQUEST");return globalThis.__joinedDirectPixProviderEvidence;};',
