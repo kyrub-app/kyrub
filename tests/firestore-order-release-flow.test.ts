@@ -362,6 +362,10 @@ test('cross-domain retail: paid pending order partial cancellation blocks full r
   try{
     const cancellation={storeId:'seller',orderId,operationId:'retail_partial_operation_01',
       reason:'Item indisponível em checkout já pago',selections:[{lineId:paidOrder.items[0].lineId,quantity:1}]};
+    const authority={ownerId:'other',authorization:'Bearer synthetic'};
+    await assert.rejects(service.cancelOrderItemsWithRefund({...cancellation,authority}),/STORE_REPRESENTATION_FORBIDDEN/);
+    assert.equal((await orderRef.get()).get('total'),40);
+    assert.equal((await db.collection('stores/seller/paymentPartialRefunds').get()).empty,true);
     const partial=await service.cancelOrderItemsWithRefund(cancellation);
     assert.equal(partial.refundRequired,true);
     assert.equal(partial.cancelledAmount,20);
