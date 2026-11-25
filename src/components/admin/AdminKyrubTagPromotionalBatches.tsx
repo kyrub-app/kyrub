@@ -5,10 +5,11 @@ import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 import AdminKyrubTagNfcWizard from './AdminKyrubTagNfcWizard';
 
 type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'|'readback_stale'};
-type Batch={id:string;model:'adesivo';count:number;units:Unit[]};
+type Batch={id:string;model:'adesivo';urlMode?:'pilot'|'permanent';count:number;units:Unit[]};
 type Readiness={
  isolation:'emulator'|'isolated-project'|'unsafe';
  productionDataProtected:boolean;
+ permanentStockEnabled?:boolean;
  clientProjectMatchesServer:boolean;
  previewHost:string|null;
  issuanceEnabled:boolean;
@@ -63,7 +64,6 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   return res.json() as Promise<{batches?:unknown[];batch?:unknown;replay?:boolean;readiness?:Readiness}>;
  }
  useEffect(()=>{
-  if(productionPanel)return;
   const ctrl=new AbortController();setReady(false);setBatches([]);setNotice('');
   void request('GET',undefined,ctrl.signal).then(result=>{
    if(ctrl.signal.aborted)return;
@@ -72,7 +72,7 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
   return()=>{ctrl.abort();writer.current?.abort();};
  },[user.uid,productionPanel]);
  async function issue(){
-  if(!ready||!readiness?.canIssue||busy||writing||!confirm)return;
+  if(!ready||!(readiness?.canIssue||readiness?.permanentStockEnabled)||busy||writing||!confirm)return;
   setBusy(true);setNotice('');
   const id=requestId.current??nonce();
   requestId.current=id;
@@ -113,8 +113,18 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
    if(writer.current===controller){writer.current=null;setWriting(false);}
   }
  }
- if(productionPanel)return <a className="inline-flex min-h-11 items-center rounded-xl bg-[#F47825] px-4 py-2 font-bold text-[#121A17]" href="https://kyrub-git-feat-kyrub-tag-promoti-ebbdb4-kyrubapp-6434s-projects.vercel.app/?kyrub_admin_preview=1#admin-kyrub-tag-promotional">Abrir gravador de teste</a>;
+ if(productionPanel&&ready&&!readiness?.permanentStockEnabled)return <a className="inline-flex min-h-11 items-center rounded-xl bg-[#F47825] px-4 py-2 font-bold text-[#121A17]" href="https://kyrub-git-feat-kyrub-tag-promoti-ebbdb4-kyrubapp-6434s-projects.vercel.app/?kyrub_admin_preview=1#admin-kyrub-tag-promotional">Abrir gravador de teste</a>;
  if(!ready)return <p role="status">{notice||'Abrindo o gravador…'}</p>;
+ if(productionPanel&&readiness?.permanentStockEnabled)return <section className="space-y-4 text-sm">
+  <h5 className="font-bold text-base">Lotes definitivos · Kyrub Tag</h5>
+  <p>Os endereços permanentes são reservados no inventário oficial. As unidades não poderão ser ativadas pelo público enquanto estiverem retidas. Não distribua antes da liberação.</p>
+  <label className="block">Quantidade por lote (1–10)<input type="number" min={1} max={10} value={count} disabled={busy} onChange={e=>{setCount(Number(e.target.value));setConfirm(false);requestId.current=null;}} className="block min-h-11 w-28 rounded-xl border border-slate-600 bg-slate-900 p-3"/></label>
+  <label className="flex gap-2"><input type="checkbox" checked={confirm} disabled={busy} onChange={e=>setConfirm(e.target.checked)}/>Reservar identificadores definitivos para adesivos vazios.</label>
+  <button type="button" className={btn} disabled={busy||!confirm||!Number.isInteger(count)||count<1||count>10} onClick={()=>void issue()}>{busy?'Emitindo…':'Emitir lote definitivo'}</button>
+  {notice&&<p role="status">{notice}</p>}
+  <AdminKyrubTagNfcWizard key={user.uid} user={user} readiness={readiness} batches={batches.filter(b=>b.urlMode==='permanent')} onBatch={batch=>setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)])}/>
+  <p>Inventário carregado: {batches.length} lote(s). {batches.reduce((n,b)=>n+b.units.filter(u=>u.physicalStatus==='readback_confirmed').length,0)} unidades com endereço conferido. Consulta limitada aos primeiros 100 lotes; não emita além desse limite até disponibilizar paginação.</p>
+ </section>;
  return <section className="space-y-4 text-sm text-slate-200">
   <AdminKyrubTagNfcWizard user={user} readiness={readiness} batches={batches}
    onBatch={batch=>{
