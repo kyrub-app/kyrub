@@ -1,7 +1,7 @@
 // Local-only client for the separately mounted HTTP test harness.
 export type SuspicionStatus='all'|'open'|'closed';
 export type PilotSession={uid:string;getIdToken:()=>Promise<string>};
-export type PilotQuery={operation:'snapshot'}|{operation:'cases';status:SuspicionStatus;limit:number;afterCaseId?:string}|{operation:'case';caseId:string}|{operation:'referrals';limit:number;afterCaseId?:string}|{operation:'referral';caseId:string};
+export type PilotQuery={operation:'release'}|{operation:'snapshot'}|{operation:'cases';status:SuspicionStatus;limit:number;afterCaseId?:string}|{operation:'case';caseId:string}|{operation:'referrals';limit:number;afterCaseId?:string}|{operation:'referral';caseId:string};
 export async function requestGamificationPilot(
  query:PilotQuery,session:PilotSession,isCurrent:()=>boolean,signal:AbortSignal,
 ):Promise<unknown>{
@@ -41,5 +41,25 @@ export async function submitGamificationPilotCase(command:PilotCaseCommand,sessi
   throw Error('SUPERVISION_UNAVAILABLE');
  }
  if(data?.caseId!==command.caseId||!(command.operation==='accept_referral'||command.operation==='decide_referral'?['pending','decided']:['open','closed']).includes(data.status))throw Error('INVALID_PILOT_RESPONSE');
+ return data;
+}
+
+
+export type PilotReleaseCommand={operation:'release_change';confirmed:true;eventId:string;expectedRevision:number;status:'open'|'paused';reason:string};
+export async function submitGamificationPilotRelease(command:PilotReleaseCommand,session:PilotSession,isCurrent:()=>boolean,signal:AbortSignal){
+ if(!isCurrent()||signal.aborted)throw Error('SESSION_CHANGED');
+ const token=await session.getIdToken();
+ if(!isCurrent()||signal.aborted)throw Error('SESSION_CHANGED');
+ const response=await fetch('/api/admin/gamification-pilot',{
+  method:'POST',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},
+  body:JSON.stringify(command),cache:'no-store',credentials:'omit',redirect:'error',signal,
+ });
+ if(!isCurrent()||signal.aborted)throw Error('SESSION_CHANGED');
+ if(!response.ok||!response.headers.get('content-type')?.includes('application/json'))throw Error('RELEASE_CONFIRMATION_UNAVAILABLE');
+ const data=await response.json();
+ if(!isCurrent()||signal.aborted)throw Error('SESSION_CHANGED');
+ if(!data||!['open','paused'].includes(data.status)||!Number.isSafeInteger(data.revision)||
+  data.revision<command.expectedRevision+1||data.appliedRevision!==command.expectedRevision+1||
+  typeof data.opensAt!=='string'||typeof data.replayed!=='boolean')throw Error('INVALID_RELEASE_RESPONSE');
  return data;
 }
