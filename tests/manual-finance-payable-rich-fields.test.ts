@@ -1,3 +1,4 @@
+import { emptyFinanceTaxonomy, mutateFinanceTaxonomy, resolveCustomFinanceRef } from '../shared/storeFinanceTaxonomy.js';
 import { financeMonthRange, financeMonthAt, parseFinancePeriodTimeZone } from '../shared/storeFinanceCalendar.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -121,12 +122,13 @@ test('fixed cost centers are identical for every store and independent of expens
   assert.throws(()=>normalizeStoreFinancePayable({...payable,costCenter:{id:'cc_infrastructure',name:'Comercial'}}),/COST_CENTER_INVALID/);
   assert.equal(normalizeStoreFinancePayable({...payable,costCenter:{id:'cc_old',name:'Centro antigo'}}).costCenter?.id,'cc_old');
 });
-test('fixed center is validated server-side; no custom registry or mutation',()=>{
+test('fixed centers are validated server-side, and custom taxonomy uses the same owner boundary',()=>{
   const router=readFileSync('server/payments/storeFinanceRouter.ts','utf8');
   const ui=readFileSync('src/components/store/StorePayablesWorkspace.tsx','utf8');
   assert.match(router,/requireOwner\(request.get\('authorization'\) \?\? '', storeId\);[\s\S]*?selectStoreCostCenter\(body.costCenterId\)/);
   assert.match(router,/tx.create\(adminDb.doc\(storeFinancePayablePath\(storeId, next.id\)\),next\)/);
   assert.doesNotMatch(router,/create_cost_center|archive_cost_center|costCentersRef/);
+  assert.match(router,/mutateFinanceTaxonomy\(current,kind,operation,id,body.name\)/);
   assert.match(ui,/FIXED_STORE_COST_CENTERS.map/);
   assert.doesNotMatch(ui,/create_cost_center|archive_cost_center/);
 });
@@ -174,4 +176,22 @@ test('finance calendars preserve legacy UTC and align Sao Paulo with local month
   assert.throws(()=>parseFinancePeriodTimeZone(['UTC']),/PERIOD_INVALID/);
   assert.throws(()=>financeMonthRange('2026-13'),/PERIOD_INVALID/);
   assert.equal(createStoreCostCenterPeriodAccumulator('America/Sao_Paulo').finish({paidMinor:0,paidCount:0,openDueMinor:0,openDueCount:0}).timeZone,'America/Sao_Paulo');
+});
+
+test('custom centers and categories can be renamed and removed without rewriting historical accounts',()=>{
+  let t=mutateFinanceTaxonomy(emptyFinanceTaxonomy(),'centers','create','cc_custom_a','Manutenção');
+  t=mutateFinanceTaxonomy(t,'categories','create','cat_custom_a','Licenças');
+  assert.throws(()=>mutateFinanceTaxonomy(t,'centers','rename','cc_infrastructure','X'),/TAXONOMY_INVALID/);
+  assert.throws(()=>mutateFinanceTaxonomy(t,'centers','create','cc_custom_b','infraestrutura'),/TAXONOMY_INVALID/);
+  assert.throws(()=>mutateFinanceTaxonomy(t,'categories','create','cat_custom_b','aluguel'),/TAXONOMY_INVALID/);
+  const p=buildManualStoreFinancePayable({id:'p',storeId:'s',description:'Conta',amountMinor:100,category:'other',dueDate:'2026-11-30',recurrence:'none',createdByUserId:'o',now,costCenter:resolveCustomFinanceRef(t,'centers','cc_custom_a'),customCategory:resolveCustomFinanceRef(t,'categories','cat_custom_a')});
+  t=mutateFinanceTaxonomy(t,'centers','rename','cc_custom_a','Manutenção predial');
+  t=mutateFinanceTaxonomy(t,'categories','remove','cat_custom_a',undefined);
+  assert.throws(()=>resolveCustomFinanceRef(t,'categories','cat_custom_a'),/TAXONOMY_INVALID/);
+  assert.equal(normalizeStoreFinancePayable(p).costCenter?.name,'Manutenção');
+  assert.equal(normalizeStoreFinancePayable(p).customCategory?.name,'Licenças');
+  assert.throws(()=>normalizeStoreFinancePayable({...p,category:'payroll'}),/TAXONOMY_INVALID/);
+  const a=createStoreCostCenterPeriodAccumulator();
+  a.add(p.costCenter,100,'paid');a.add(resolveCustomFinanceRef(t,'centers','cc_custom_a'),200,'paid');
+  assert.equal(a.finish({paidMinor:300,paidCount:2,openDueMinor:0,openDueCount:0}).status,'observed');
 });

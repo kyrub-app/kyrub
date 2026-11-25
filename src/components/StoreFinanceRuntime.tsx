@@ -1,3 +1,4 @@
+import type { FinanceTaxonomy } from '../../shared/storeFinanceTaxonomy';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
@@ -87,6 +88,7 @@ type StoreFinancePayload = {
   receivables?: StoreReceivable[];
   payableSummary?: StorePayableSummary;
   payables?: StorePayable[];
+  taxonomy?: FinanceTaxonomy;
   cash?: StoreCashFinanceProjection;
   error?: string;
 };
@@ -279,6 +281,7 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
         key={storeId}
         storeId={storeId}
         payables={payload?.storeId === storeId ? payables : []}
+        taxonomy={payload?.storeId === storeId ? payload.taxonomy : undefined}
         summary={payableSummary}
         onReload={() => load(true)}
       />

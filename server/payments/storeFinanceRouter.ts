@@ -1,3 +1,4 @@
+import { emptyFinanceTaxonomy, normalizeFinanceTaxonomy, mutateFinanceTaxonomy, resolveCustomFinanceRef } from '../../shared/storeFinanceTaxonomy.js';
 import { randomUUID } from 'node:crypto';
 import { selectStoreCostCenter } from '../../shared/storeFinanceCostCenters.js';
 import { Router } from 'express';
@@ -359,6 +360,9 @@ const payableBillingDocumentType = (
   throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_TYPE_INVALID');
 };
 
+const financeTaxonomyRef=(storeId:string)=>adminDb.doc('stores/'+storeId+'/financeConfig/taxonomy');
+const decodeFinanceTaxonomy=(data:FirebaseFirestore.DocumentData|undefined)=>data===undefined?emptyFinanceTaxonomy():data.schemaVersion===1?normalizeFinanceTaxonomy(data.taxonomy):(()=>{throw Error('STORE_FINANCE_PAYABLE_TAXONOMY_INVALID');})();
+
 const transitionPayable = async (input: {
   storeId: string;
   payableId: string;
@@ -401,11 +405,12 @@ export const createStoreFinanceRouter = (): Router => {
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
       const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
-      const [entries, receivables, payables, cash] = await Promise.all([
+      const [entries, receivables, payables, cash, taxonomySnapshot] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),
         listStorePayables(storeId),
         listStoreCashFinanceProjection({ financeStoreId: storeId, ownerId }),
+        financeTaxonomyRef(storeId).get(),
       ]);
       const summary = deriveStoreEconomicLedgerSummary(entries);
 
@@ -418,6 +423,7 @@ export const createStoreFinanceRouter = (): Router => {
         receivables: receivables.items,
         payableSummary: payables.summary,
         payables: payables.items,
+        taxonomy: decodeFinanceTaxonomy(taxonomySnapshot.data()),
         cash,
       });
     } catch (error) {
@@ -436,14 +442,35 @@ export const createStoreFinanceRouter = (): Router => {
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
       const action = clean(body.action);
 
+      if(action==='mutate_taxonomy'){
+        const kind=body.kind, operation=body.operation;
+        if(kind!=='centers'&&kind!=='categories')throw Error('STORE_FINANCE_PAYABLE_TAXONOMY_INVALID');
+        const id=operation==='create'?(kind==='centers'?'cc_custom_':'cat_custom_')+randomUUID():body.id;
+        const ref=financeTaxonomyRef(storeId);
+        const taxonomy=await adminDb.runTransaction(async tx=>{
+          const current=decodeFinanceTaxonomy((await tx.get(ref)).data());
+          const next=mutateFinanceTaxonomy(current,kind,operation,id,body.name);
+          tx.set(ref,{schemaVersion:1,taxonomy:next});
+          return next;
+        });
+        response.status(200).json({taxonomy,id});
+        return;
+      }
+
       if (action === 'create_payable') {
         const billingDocumentType = payableBillingDocumentType(body.billingDocumentType);
         const id = 'payable_'+randomUUID();
         const payable = await adminDb.runTransaction(async tx => {
-          const center = selectStoreCostCenter(body.costCenterId);
+          const customCenter=typeof body.costCenterId==='string'&&body.costCenterId.startsWith('cc_custom_');
+          const customCategoryRequested=body.customCategoryId!==undefined&&body.customCategoryId!=='';
+          const taxonomy=customCenter||customCategoryRequested?decodeFinanceTaxonomy((await tx.get(financeTaxonomyRef(storeId))).data()):emptyFinanceTaxonomy();
+          const center=customCenter?resolveCustomFinanceRef(taxonomy,'centers',body.costCenterId):selectStoreCostCenter(body.costCenterId);
+          const customCategory=customCategoryRequested?resolveCustomFinanceRef(taxonomy,'categories',body.customCategoryId):undefined;
+          if(customCategory&&body.category!=='other')throw Error('STORE_FINANCE_PAYABLE_TAXONOMY_INVALID');
           const next = buildManualStoreFinancePayable({
           id,
           costCenter: center,
+          customCategory,
           storeId,
           amountMinor: Number(body.amountMinor),
           description: clean(body.description),

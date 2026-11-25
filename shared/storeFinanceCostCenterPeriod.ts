@@ -35,12 +35,13 @@ export function createStoreCostCenterPeriodAccumulator(timeZone:FinancePeriodTim
       try {
         if(!Number.isSafeInteger(amountMinor)||amountMinor<=0) throw Error('COST_CENTER_AMOUNT_INVALID');
         const id=center?.id??null, name=center?.name??'Sem classificação';
-        const row=rows.get(id)??{id,name,paidMinor:0,paidCount:0,openDueMinor:0,openDueCount:0};
+        const key=id?.startsWith('cc_custom_')?JSON.stringify([id,name]):id;
+        const row=rows.get(key)??{id,name,paidMinor:0,paidCount:0,openDueMinor:0,openDueCount:0};
         if(row.name!==name) throw Error('COST_CENTER_HISTORY_CONFLICT');
         const next=kind==='paid'
           ? {...row,paidMinor:add(row.paidMinor,amountMinor),paidCount:add(row.paidCount,1)}
           : {...row,openDueMinor:add(row.openDueMinor,amountMinor),openDueCount:add(row.openDueCount,1)};
-        rows.set(id,next);
+        rows.set(key,next);
       } catch {inconsistent=true;}
     },
     finish(expected:Totals):StoreCostCenterPeriodReport {
