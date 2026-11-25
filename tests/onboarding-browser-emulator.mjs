@@ -98,8 +98,12 @@ try {
   await adminDb.doc('age_eligibility_private/'+personal.uid).set({uid:personal.uid,status:'inconclusive'});
   await page.getByLabel('E-mail',{exact:true}).fill(personalEmail);
   await page.getByLabel('Senha',{exact:true}).fill(password);
+  const initialNotes=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/onboarding/personal/notes'&&r.request().method()==='GET');
   await page.getByRole('button',{name:'Entrar',exact:true}).click();
   await page.getByRole('heading',{name:'Modo pessoal restrito'}).waitFor();
+  const initialResponse=await initialNotes;
+  assert.equal(initialResponse.status(),200,'Private notes GET must succeed before rendering the form');
+  assert.deepEqual(await initialResponse.json(),{items:[]});
   await page.getByLabel('Nota',{exact:true}).fill('Nota privada teste');
   await page.getByRole('button',{name:'Adicionar nota'}).click();
   await page.getByText('Nota privada teste',{exact:true}).waitFor();

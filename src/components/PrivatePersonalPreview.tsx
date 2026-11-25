@@ -50,7 +50,7 @@ export function PrivatePersonalPreview({user}:{user:User}){
   {notice&&<p role="alert">{notice}</p>}
   {ready&&<>
    <form className="space-y-2" onSubmit={e=>{e.preventDefault();const item=items.find(x=>x.id===editing);void mutate(item?{action:'update',id:item.id,text:draft,done:item.done}:{action:'create',text:draft});}}>
-    <label className="block text-sm">{label}<textarea className="block w-full rounded-lg border border-slate-600 bg-slate-900 p-2" maxLength={1000} value={draft} onChange={e=>setDraft(e.target.value)} disabled={busy}/></label>
+    <label htmlFor="private-personal-draft" className="block text-sm">{label}</label><textarea id="private-personal-draft" className="block w-full rounded-lg border border-slate-600 bg-slate-900 p-2" maxLength={1000} value={draft} onChange={e=>setDraft(e.target.value)} disabled={busy}/>
     <button type="submit" disabled={busy||!draft.trim()}>{editing?'Salvar edição':'Adicionar '+label.toLowerCase()}</button>
     {editing&&<button type="button" disabled={busy} onClick={()=>{setEditing(null);setDraft('');}}>Cancelar edição</button>}
    </form>
