@@ -105,6 +105,16 @@ test('clicking the bell opens the already authorized note or person conversation
   assert.match(notificationRouter, /requireIdentity/);
 });
 
+test('notification counting uses aggregation and hidden polling is bounded without delaying permitted browser alerts',()=>{
+  assert.match(notificationService,/\.count\(\)\.get\(\)/);
+  assert.match(bell,/document\.hidden&&!browserAlerts\?60000:15000/);
+  assert.match(bell,/visibilitychange/);
+  assert.match(bell,/generation!==refreshGeneration\.current/);
+  const readAll=bell.slice(bell.indexOf('const readAll = async'),bell.indexOf('if (!user || !host'));
+  assert.match(readAll,/await refresh\(\)/);
+  assert.doesNotMatch(readAll,/setUnreadCount\(0\)/);
+});
+
 test('bell never disguises a failed silent poll as an empty inbox or leaks an old account response', () => {
   assert.match(bell, /currentUserIdRef\.current !== requestedUserId/);
   assert.match(bell, /auth\.currentUser\?\.uid !== requestedUserId/);

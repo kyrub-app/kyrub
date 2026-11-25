@@ -145,6 +145,9 @@ export function UserNotificationCenterBridge() {
   const [resolvedInvites, setResolvedInvites] = useState<Record<string, 'accepted' | 'declined'>>({});
   const [errorMessage, setErrorMessage] = useState('');
   const notificationBaselineRef = useRef<Set<string> | null>(null);
+  const refreshGeneration=useRef(0);
+  const refreshInFlight=useRef<{uid:string;generation:number}|null>(null);
+  const lastPoll=useRef(0);
   const currentUserIdRef = useRef(auth.currentUser?.uid ?? '');
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
@@ -172,6 +175,9 @@ export function UserNotificationCenterBridge() {
   useEffect(() => {
     currentUserIdRef.current = user?.uid ?? '';
     notificationBaselineRef.current = null;
+    refreshGeneration.current++;
+    refreshInFlight.current=null;
+    lastPoll.current=0;
     setResolvedInvites({});
     setPendingInviteResponse(null);
     setNotifications([]);
@@ -235,10 +241,14 @@ export function UserNotificationCenterBridge() {
       return;
     }
     const requestedUserId = user.uid;
+    if(silent&&refreshInFlight.current?.uid===requestedUserId)return;
+    const generation=++refreshGeneration.current;
+    refreshInFlight.current={uid:requestedUserId,generation};
+    lastPoll.current=Date.now();
     if (!silent) setLoading(true);
     try {
       const inbox = await loadUserNotificationInbox(60);
-      if (currentUserIdRef.current !== requestedUserId || auth.currentUser?.uid !== requestedUserId) return;
+      if (currentUserIdRef.current !== requestedUserId || auth.currentUser?.uid !== requestedUserId || generation!==refreshGeneration.current) return;
       const nextIds = new Set(inbox.notifications.map(item => item.id));
       const baseline = notificationBaselineRef.current;
       const currentPreferences = preferencesRef.current;
@@ -261,7 +271,7 @@ export function UserNotificationCenterBridge() {
       setUnreadCount(inbox.unreadCount);
       setErrorMessage('');
     } catch (error) {
-      if (currentUserIdRef.current === requestedUserId) {
+      if (currentUserIdRef.current === requestedUserId && generation===refreshGeneration.current) {
         // A silent poll must not silently claim that every notification is read.
         setErrorMessage(
           error instanceof Error
@@ -270,15 +280,26 @@ export function UserNotificationCenterBridge() {
         );
       }
     } finally {
-      if (!silent && currentUserIdRef.current === requestedUserId) setLoading(false);
+      if(refreshInFlight.current?.generation===generation)refreshInFlight.current=null;
+      if (currentUserIdRef.current === requestedUserId&&generation===refreshGeneration.current) setLoading(false);
     }
   }, [user]);
 
   useEffect(() => {
     if (!user) return;
     void refresh(true);
-    const timer = window.setInterval(() => void refresh(true), 15000);
-    return () => window.clearInterval(timer);
+    const tick=()=>{
+      // Keep the foreground cadence and browser-alert delivery. Reduce hidden
+      // polling only when browser notifications cannot be delivered.
+      const browserAlerts=typeof Notification!=='undefined'&&Notification.permission==='granted';
+      const interval=document.hidden&&!browserAlerts?60000:15000;
+      if(Date.now()-lastPoll.current>=interval)void refresh(true);
+    };
+    const resume=()=>{if(!document.hidden&&Date.now()-lastPoll.current>=15000)void refresh(true);};
+    const timer=window.setInterval(tick,15000);
+    document.addEventListener('visibilitychange',resume);
+    window.addEventListener('focus',resume);
+    return ()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',resume);window.removeEventListener('focus',resume);};
   }, [refresh, user]);
 
   useEffect(() => {
@@ -350,13 +371,13 @@ export function UserNotificationCenterBridge() {
 
   const readAll = async (): Promise<void> => {
     try {
+      const uid=user?.uid;
+      if(!uid||auth.currentUser?.uid!==uid)return;
       await markAllUserNotificationsRead();
-      const readAt = new Date().toISOString();
-      setNotifications(current =>
-        current.map(item => (item.readAt ? item : { ...item, readAt }))
-      );
-      setUnreadCount(0);
-      setErrorMessage('');
+      if(auth.currentUser?.uid!==uid)return;
+      // The server intentionally bounds each mutation to 200 records. Refresh
+      // authoritative state rather than claiming the entire inbox is read.
+      await refresh();
     } catch (error) {
       setErrorMessage(
         error instanceof Error ? error.message : 'Não foi possível marcar todas como lidas.'

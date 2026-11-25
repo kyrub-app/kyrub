@@ -255,3 +255,23 @@ test('staged social age policy governs Admin SDK messages and tribe invitations 
   if(oldControl.exists)await control.set(oldControl.data()!);else await control.delete();
  }
 });
+
+
+test('aggregated unread count includes older notices and bounded mark-all preserves remainder',async()=>{
+ const {buildUserNotification}=await import('../shared/userNotifications.js');
+ const {markAllUserNotificationsRead}=await import('../server/notifications/userNotificationService.js');
+ const uid='notif_bounded_unread_fixture';
+ const batch=adminDb.batch();
+ for(let i=0;i<205;i++){
+  const notice=buildUserNotification({recipientUserId:uid,category:'system',eventType:'fixture',sourceId:'notice_'+i,actorPrincipalId:'fixture',title:'Aviso',body:'Teste',createdAt:new Date(Date.UTC(2026,10,25,0,0,i)).toISOString()});
+  batch.set(adminDb.doc('users/'+uid+'/notifications/'+notice.id),notice);
+ }
+ await batch.commit();
+ const before=await listUserNotifications({recipientUserId:uid,limit:60});
+ assert.equal(before.notifications.length,60);
+ assert.equal(before.unreadCount,205);
+ assert.equal(await markAllUserNotificationsRead({recipientUserId:uid}),200);
+ assert.equal((await listUserNotifications({recipientUserId:uid})).unreadCount,5);
+ assert.equal(await markAllUserNotificationsRead({recipientUserId:uid}),5);
+ assert.equal((await listUserNotifications({recipientUserId:uid})).unreadCount,0);
+});
