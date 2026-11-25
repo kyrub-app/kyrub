@@ -2,6 +2,7 @@ import type { Auth } from 'firebase-admin/auth';
 import { FieldPath, type Firestore, type Transaction, type DocumentData, type Query } from 'firebase-admin/firestore';
 import { kyrubKCoinBalance, type KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { calculatePitangueiraJourney } from '../../shared/pitangueiraJourney.js';
+import { noWelcomePilotEnabled } from './semeaduraNoWelcomeAuthority.js';
 import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
 import { readIsolatedSemeaduraEvidenceInTransaction } from './semeaduraReviewEvidence.js';
 
@@ -701,4 +702,72 @@ export async function listIsolatedGamificationEconomicReferrals(
    nextAfterCaseId:page.size>input.limit?rows[rows.length-1].caseId:null,
    consistentAcrossPages:false};
  },{readOnly:true});
+}
+
+
+/** Administrative interruption authority in the disposable pilot only.
+ * The initial campaign record must already exist. No initialization, date
+ * change, writer attestation, balance mutation or production activation. */
+const releasePath='systemControl/semeaduraReleasePilot';
+type ReleaseStatus='open'|'paused';
+type ReleaseCommand={eventId:string;expectedRevision:number;status:ReleaseStatus;reason:string};
+function requireReleaseAdminPilot(db:Firestore){
+ if(!semeaduraEconomicPilotEnabled(db)||process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT!=='true')
+  throw Error('GAMIFICATION_SUPERVISION_DISABLED');
+}
+function validateReleaseRecord(data:DocumentData|undefined){
+ if(!data||data.schemaVersion!==1||data.projectId!=='demo-kyrub-welcome'||data.epoch!=='welcome-emulator-only'||
+ data.mode!=='isolated-pilot'||!['open','paused'].includes(data.status)||
+ !Number.isSafeInteger(data.revision)||data.revision<1||
+ typeof data.opensAt!=='string'||!Number.isFinite(Date.parse(data.opensAt)))
+  throw Error('RELEASE_CONTROL_INVALID');
+ return {status:data.status as ReleaseStatus,revision:data.revision as number,opensAt:data.opensAt as string};
+}
+export async function readIsolatedGamificationRelease(db:Firestore,auth:Auth,authorization:string){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const snap=await tx.get(db.doc(releasePath));
+  if(!snap.exists)return {environment:'isolated-emulator' as const,configured:false as const};
+  const value=validateReleaseRecord(snap.data());
+  return {environment:'isolated-emulator' as const,configured:true as const,...value};
+ },{readOnly:true});
+}
+export async function changeIsolatedGamificationRelease(db:Firestore,auth:Auth,authorization:string,command:ReleaseCommand){
+ requireReleaseAdminPilot(db);
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!command||!uid(command.eventId)||!Number.isSafeInteger(command.expectedRevision)||command.expectedRevision<1||
+ !Number.isSafeInteger(command.expectedRevision+1)||!['open','paused'].includes(command.status)||
+ typeof command.reason!=='string'||command.reason.trim().length<10||command.reason.length>500)
+  throw Error('RELEASE_CONTROL_INPUT_INVALID');
+ const reason=command.reason.trim();
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const ref=db.doc(releasePath),eventRef=ref.collection('events').doc(command.eventId);
+  const [snapshot,event]=await Promise.all([tx.get(ref),tx.get(eventRef)]);
+  const value=validateReleaseRecord(snapshot.data());
+  if(event.exists){
+   const e=event.data()!;
+   if(e.schemaVersion!==1||e.eventId!==command.eventId||e.reviewerId!==reviewerId||
+    e.expectedRevision!==command.expectedRevision||e.revision!==command.expectedRevision+1||
+    e.status!==command.status||e.reason!==reason||e.opensAt!==value.opensAt||value.revision<e.revision)
+    throw Error('RELEASE_CONTROL_EVENT_CONFLICT');
+   return {...value,replayed:true,appliedRevision:e.revision};
+  }
+  if(value.revision!==command.expectedRevision)throw Error('RELEASE_CONTROL_REVISION_CONFLICT');
+  if(value.status===command.status)throw Error('RELEASE_CONTROL_TRANSITION_INVALID');
+  if(command.status==='open'){
+   const fence=await tx.get(db.doc('systemControl/pitangaLegacyWriterFence'));
+   if(fence.get('status')!=='fenced'||fence.get('writersVerified')!==true||fence.get('epoch')!=='welcome-emulator-only'||
+      process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT!=='true'||
+      process.env.KYRUB_SEMEADURA_ZERO_START_PILOT!=='true'||
+      !noWelcomePilotEnabled(db)||Date.parse(value.opensAt)>Date.now())
+    throw Error('RELEASE_CONTROL_RESUME_BLOCKED');
+  }
+  const revision=value.revision+1,updatedAt=new Date().toISOString();
+  tx.create(eventRef,{schemaVersion:1,eventId:command.eventId,reviewerId,reason,
+    expectedRevision:value.revision,previousStatus:value.status,status:command.status,revision,opensAt:value.opensAt,updatedAt});
+  tx.update(ref,{status:command.status,revision,updatedAt,lastEventId:command.eventId});
+  return {status:command.status,revision,opensAt:value.opensAt,replayed:false,appliedRevision:revision};
+ });
 }
