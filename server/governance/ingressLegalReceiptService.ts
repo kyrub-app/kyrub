@@ -1,3 +1,4 @@
+import {evaluateStoredCapabilityAgeAccess} from '../../shared/ageEligibility.js';
 import {createHash} from 'node:crypto';
 import {FieldValue,type Transaction} from 'firebase-admin/firestore';
 import {adminAuth,adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
@@ -46,7 +47,7 @@ export async function requireCurrentIngressLegalReceiptInTransaction(tx:Transact
 /** Match the adult-only ingress UI at the server boundary. Public legal text remains separate. */
 async function requireVerifiedIngressAge(tx:Transaction,uid:string){
  const record=await tx.get(adminDb.collection('age_eligibility_private').doc(uid));
- if(record.get('uid')!==uid||record.get('status')!=='verified_adult')throw Error('LEGAL_AGE_REQUIRED');
+ if(!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:record.data(),capability:'account_ingress',policy:'verified_adult_only'}))throw Error('LEGAL_AGE_REQUIRED');
 }
 
 /** Candidate only: no legal publication authority and no production endpoint. */
