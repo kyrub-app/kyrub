@@ -115,7 +115,14 @@ try {
   await page.getByLabel('Tarefa',{exact:true}).fill('Tarefa privada teste');
   await page.getByRole('button',{name:'Adicionar tarefa'}).click();
   await page.getByText('Tarefa privada teste',{exact:true}).waitFor();
-  await page.getByLabel('Concluída',{exact:true}).check();
+  // The controlled checkbox intentionally remains unchanged until the server
+  // confirms the mutation; Playwright.check() expects an immediate change.
+  const completionResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/onboarding/personal/tasks'&&r.request().method()==='POST');
+  await page.getByLabel('Concluída',{exact:true}).click();
+  const completion=await completionResponse;
+  assert.equal(completion.status(),200);
+  const completed=await completion.json();
+  assert.equal(completed.items.find(item=>item.text==='Tarefa privada teste')?.done,true);
   await page.waitForFunction(()=>document.querySelector('input[type=checkbox]')?.checked===true&&!document.querySelector('input[type=checkbox]')?.disabled);
   await page.reload();
   await page.getByText('Nota privada editada',{exact:true}).waitFor();
