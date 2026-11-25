@@ -25,6 +25,7 @@ import {
   uploadBytes,
 } from 'firebase/storage';
 import { auth, db, liteDb, storage } from './firebase';
+import { optimizeCommunityWallImage } from './communityWallImageOptimization';
 
 export type CommunityVisibility = 'public' | 'moderated' | 'private';
 export type CommunityMembershipStatus = 'active' | 'pending';
@@ -874,10 +875,12 @@ export const uploadCommunityPostMedia = async (
   if (!extension || file.size === 0 || file.size > maxSize * 1024 * 1024) {
     throw new Error('Use imagem JPG/PNG/WebP de até 8 MB ou vídeo MP4/WebM de até 20 MB.');
   }
+  const uploadFile = await optimizeCommunityWallImage(file);
+  if (auth.currentUser?.uid !== user.uid) throw new Error('Faça login novamente antes de enviar o anexo.');
   const kind = file.type.startsWith('video/') ? 'video' : 'image';
   const path = `community-post-media/${communityId}/${user.uid}/${kind}-${crypto.randomUUID()}.${extension}`;
   const destination = ref(storage, path);
-  await uploadBytes(destination, file, {
+  await uploadBytes(destination, uploadFile, {
     contentType: file.type,
     customMetadata: { communityId, ownerId: user.uid, purpose: 'community-wall' },
   });
