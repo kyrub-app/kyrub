@@ -50,13 +50,15 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   const applicationId=vacancy.id+'__'+worker.uid;
   const receipt=(db:typeof owner.db)=>doc(db,'candidaturas',applicationId);
   const call=(token:string,path:string,body?:unknown,method=body===undefined?'GET':'POST')=>fetch(base+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
-  const action=(token:string,action:string,operationId:string)=>call(token,'/api/notifications/freelance-applications/action',{applicationId,action,operationId});
+  const terms={schemaVersion:1,title:'Vaga fictícia',description:'Trabalho sintético',paymentCents:10000,currency:'BRL'};
+  const action=(token:string,action:string,operationId:string,expectedTerms=terms)=>call(token,'/api/notifications/freelance-applications/action',{applicationId,action,operationId,expectedTerms});
   const send=(token:string,messageId:string,text:string)=>call(token,'/api/notifications/freelance-messages/send',{applicationId,messageId,text});
   const inbox=async(token:string)=>{const res=await call(token,'/api/notifications');assert.equal(res.status,200);return res.json();};
   const ok=async(response:Response)=>{const payload=await response.json();assert.equal(response.status,200,JSON.stringify(payload));return payload;};
   assert.equal((await call('forged','/api/notifications')).status,401);
   await assert.rejects(setDoc(receipt(worker.db),{vagaId:vacancy.id,ownerId:owner.uid,userId:worker.uid,status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
   assert.equal((await action(outsider.token,'apply','forged')).status,403);
+  assert.equal((await action(worker.token,'apply','stale',{...terms,paymentCents:9000})).status,409);
   assert.equal((await ok(await action(worker.token,'apply','apply-1'))).created,true);
   assert.equal((await ok(await action(worker.token,'apply','apply-1'))).created,false);
   assert.equal((await inbox(owner.token)).unreadCount,1);
@@ -84,7 +86,11 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   assert.equal((await inbox(outsider.token)).unreadCount,0);
   const preferences=await ok(await call(owner.token,'/api/communication-preferences'));
   assert.equal(preferences.browser.categories.freelance,false);
+  await updateDoc(vacancy,{payment:200,description:'Condições futuras',updatedAt:serverTimestamp()});
+  assert.equal((await action(owner.token,'accept','wrong-terms',{...terms,paymentCents:20000})).status,409);
   await ok(await action(owner.token,'accept','accept-1'));
+  assert.deepEqual((await getDocFromServer(receipt(worker.db))).get('terms'),terms);
+  await assert.rejects(updateDoc(receipt(owner.db),{'terms.paymentCents':1}));
   await ok(await action(worker.token,'request_completion','completion-1'));
   await ok(await action(owner.token,'request_review','review-1'));
   await ok(await action(worker.token,'request_completion','completion-2'));
@@ -92,6 +98,8 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   const final=await getDocFromServer(receipt(worker.db));
   assert.equal(final.get('status'),'completed');
   assert.equal(final.get('paymentStatus'),undefined);
+  assert.deepEqual(final.get('terms'),terms);
+  assert.ok(final.get('acceptedAt'));
   assert.equal((await getDocsFromServer(query(collection(worker.db,'candidaturas',applicationId,'messages'),limit(50)))).size,1);
   assert.equal((await send(worker.token,'late','tardia')).status,403);
   assert.equal((await inbox(owner.token)).notifications.length,4);
