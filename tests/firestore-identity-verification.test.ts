@@ -163,3 +163,51 @@ test('compliance can review a bounded list and approve requested profiles', asyn
     })
   );
 });
+
+
+test('staged Renda age gate requires civil identity AND verified adulthood for direct hiring', async()=>{
+  const requesterId='requester-age',freelancerId='freelancer-age';
+  const requester=environment.authenticatedContext(requesterId,{role:'owner'}).firestore();
+  const freelancer=environment.authenticatedContext(freelancerId).firestore();
+  const vacancy=doc(requester,'vagas','age-vacancy');
+  const application=doc(freelancer,'candidaturas','age-application');
+  const vacancyPayload={ownerId:requesterId,title:'Vaga de homologacao'};
+  const applicationPayload={userId:freelancerId,vagaId:'age-vacancy'};
+  const age=async(uid:string,status:string,recordUid=uid)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
+    });
+  };
+  const approve=async(uid:string,profile:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await approve(requesterId,'requester');
+  await approve(freelancerId,'freelancer');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await assertFails(setDoc(application,applicationPayload));
+  await age(requesterId,'declared_adult');
+  await age(freelancerId,'inconclusive');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await assertFails(setDoc(application,applicationPayload));
+  await age(requesterId,'verified_adult',freelancerId);
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await age(requesterId,'verified_adult');
+  await age(freelancerId,'verified_adult');
+  await approve(requesterId,'freelancer');
+  await assertFails(setDoc(vacancy,vacancyPayload));
+  await approve(requesterId,'requester');
+  await assertSucceeds(setDoc(vacancy,vacancyPayload));
+  await approve(freelancerId,'requester');
+  await assertFails(setDoc(application,applicationPayload));
+  await approve(freelancerId,'freelancer');
+  await assertFails(setDoc(application,{...applicationPayload,userId:requesterId}));
+  await assertSucceeds(setDoc(application,applicationPayload));
+  await age(freelancerId,'suspended');
+  await assertFails(setDoc(doc(freelancer,'candidaturas','age-application-2'),applicationPayload));
+  await assertFails(setDoc(doc(requester,'renda_age_release_private','current'),{mode:'disabled'}));
+});
