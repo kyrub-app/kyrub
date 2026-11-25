@@ -1,0 +1,65 @@
+name: Dependency security inventory
+
+on:
+  pull_request:
+    branches: [main, test-gamification-transversal-browser]
+    paths:
+      - 'package.json'
+      - 'package-lock.json'
+      - 'functions/package.json'
+      - 'functions/package-lock.json'
+      - '.github/workflows/dependency-security-inventory.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [root, functions]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Inventory locked dependencies without installing or changing packages
+        working-directory: ${{ matrix.scope == 'root' && '.' || 'functions' }}
+        shell: bash
+        run: |
+          set +e
+          npm audit --omit=dev --json > production-audit.json
+          production_status=$?
+          npm audit --json > full-audit.json
+          full_status=$?
+          set -e
+          echo "Audit exit statuses: production=$production_status full=$full_status"
+          node --input-type=module <<'JS'
+          import {readFileSync} from 'node:fs';
+          for(const path of ['production-audit.json','full-audit.json']){
+            const report=JSON.parse(readFileSync(path,'utf8'));
+            if(report.error||!report.metadata?.vulnerabilities||!report.vulnerabilities){
+              console.error(path+': audit unavailable or incomplete');
+              process.exitCode=1;continue;
+            }
+            console.log(path,JSON.stringify(report.metadata.vulnerabilities));
+            for(const [name,v] of Object.entries(report.vulnerabilities)){
+              console.log(JSON.stringify({name,severity:v.severity,isDirect:v.isDirect,range:v.range,nodes:v.nodes,
+                via:v.via.map(x=>typeof x==='string'?x:{name:x.name,title:x.title,url:x.url,severity:x.severity,range:x.range}),
+                fixAvailable:v.fixAvailable}));
+            }
+          }
+          JS
+      - name: Upload dependency advisory inventory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-security-${{ matrix.scope }}
+          path: |
+            ${{ matrix.scope == 'root' && '.' || 'functions' }}/production-audit.json
+            ${{ matrix.scope == 'root' && '.' || 'functions' }}/full-audit.json
+          retention-days: 7
