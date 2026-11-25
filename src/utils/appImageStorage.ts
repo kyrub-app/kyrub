@@ -1,5 +1,6 @@
 import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import { auth, storage } from './firebase';
+import {optimizeCommunityWallImage} from './communityWallImageOptimization';
 
 export const APP_IMAGE_MAX_SIZE_BYTES = 10 * 1024 * 1024;
 export const APP_IMAGE_ACCEPT = 'image/jpeg,image/png,image/webp';
@@ -19,7 +20,9 @@ export interface FirebaseImageSelection {
   url: string;
 }
 
-const contentHash = async (file: File): Promise<string> => {
+const pendingUploads=new Map<string,Promise<string>>();
+
+const contentHash = async (file: Blob): Promise<string> => {
   const bytes = await file.arrayBuffer();
   const digest = await crypto.subtle.digest('SHA-256', bytes);
   return Array.from(new Uint8Array(digest))
@@ -48,25 +51,35 @@ export const uploadCurrentUserImage = async (
   }
 
   validateImage(file);
-  const hash = await contentHash(file);
+  // Only large JPEGs are eligible; the existing conservative codec retains
+  // originals on unsupported browsers or when the size gain is insufficient.
+  const payload=await optimizeCommunityWallImage(file);
+  const hash = await contentHash(payload);
+  if(auth.currentUser?.uid!==user.uid)throw Error('A sessão mudou. Tente novamente.');
   const path = `app-images/${user.uid}/${hash}`;
   const imageReference = ref(storage, path);
-
-  await uploadBytes(imageReference, file, {
-    contentType: file.type,
-    customMetadata: {
-      ownerId: user.uid,
-      contentHash: hash,
-      originalName: file.name.slice(0, 160),
-    },
-  });
+  let pending=pendingUploads.get(path);
+  if(!pending){
+    const task=(async()=>{
+      await uploadBytes(imageReference, payload, {
+        contentType: payload.type,
+        customMetadata: {ownerId:user.uid,contentHash:hash,originalName:file.name.slice(0,160)},
+      });
+      if(auth.currentUser?.uid!==user.uid)throw Error('A sessão mudou. Tente novamente.');
+      return getDownloadURL(imageReference);
+    })().finally(()=>{if(pendingUploads.get(path)===task)pendingUploads.delete(path);});
+    pendingUploads.set(path,task);
+    pending=task;
+  }
+  const url=await pending;
+  if(auth.currentUser?.uid!==user.uid)throw Error('A sessão mudou. Tente novamente.');
 
   return {
     provider: 'firebase_storage',
     fileId: path,
     fileName: file.name || 'Imagem enviada',
-    mimeType: file.type,
-    sizeBytes: file.size,
-    url: await getDownloadURL(imageReference),
+    mimeType: payload.type,
+    sizeBytes: payload.size,
+    url,
   };
 };
