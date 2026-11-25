@@ -100,3 +100,58 @@ test('invalid group shapes and unauthenticated access are rejected', async () =>
   );
   await assertFails(getDoc(doc(visitor, GROUP_PATH)));
 });
+
+
+test('staged social eligibility protects connections and direct messages while preserving disconnection', async () => {
+  const a=OWNER_ID,b='connected-user-1',id=a+'_'+b;
+  const sender=environment.authenticatedContext(a).firestore();
+  const receiver=environment.authenticatedContext(b).firestore();
+  const age=async(uid:string,status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const connection=doc(sender,'connections',id);
+  const payload=()=>({senderId:a,receiverId:b,participantIds:[a,b],status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  await assertFails(setDoc(connection,payload()));
+  await age(a,'verified_adult');
+  await assertFails(setDoc(connection,payload()));
+  await age(b,'verified_adult');
+  await assertSucceeds(setDoc(connection,payload()));
+  const accept=()=>updateDoc(doc(receiver,'connections',id),{status:'accepted',acceptedAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  await age(a,'suspended');
+  await assertFails(accept());
+  await age(a,'verified_adult');
+  await assertSucceeds(accept());
+  const send=(key:string)=>setDoc(doc(sender,'social_chats',id,'messages',key),{senderId:a,receiverId:b,text:'Mensagem de teste',createdAt:serverTimestamp()});
+  await age(b,'inconclusive');
+  await assertFails(send('message-1'));
+  await age(b,'verified_adult');
+  await assertSucceeds(send('message-1'));
+  await age(a,'suspended');
+  await assertFails(send('message-2'));
+  await assertSucceeds(getDoc(doc(sender,'social_chats',id,'messages','message-1')));
+  await assertSucceeds(deleteDoc(connection));
+});
+
+test('staged contact group restriction preserves private access and deletion', async()=>{
+  const owner=environment.authenticatedContext(OWNER_ID).firestore();
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const group=doc(owner,GROUP_PATH);
+  await assertFails(setDoc(group,groupPayload()));
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'age_eligibility_private',OWNER_ID),{uid:OWNER_ID,status:'verified_adult'});
+  });
+  await assertSucceeds(setDoc(group,groupPayload()));
+  await environment.withSecurityRulesDisabled(async context=>{
+    await updateDoc(doc(context.firestore(),'age_eligibility_private',OWNER_ID),{status:'suspended'});
+  });
+  await assertFails(updateDoc(group,{name:'Novo nome',updatedAt:serverTimestamp()}));
+  await assertSucceeds(getDoc(group));
+  await assertSucceeds(deleteDoc(group));
+});
