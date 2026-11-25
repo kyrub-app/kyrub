@@ -336,3 +336,14 @@ test('Central do Staff management entry is available only to owner and manager a
   assert.match(cards, /<StoreStaffNoticeManager storeId=\{storeId\}/);
   assert.doesNotMatch(cards, /<details|<summary/);
 });
+
+
+test('staff clock updates only its own visible component and store lookup ignores stale async results',()=>{
+ const directory=readFileSync(new URL('../src/utils/storeDirectory.ts',import.meta.url),'utf8');
+ assert.match(legacyRetailerPanel,/function StaffVisibleClock\(\)/);
+ assert.match(legacyRetailerPanel,/<StaffVisibleClock \/>/);
+ assert.match(legacyRetailerPanel,/if\(!document\.hidden\)setCurrentTime/);
+ assert.match(directory,/pendingStoreReads\.get\(storeId\)/);
+ assert.match(directory,/generation!==accessGeneration/);
+ assert.match(directory,/memberSnapshot\.ref\.parent\.parent\?\.id===parsed\.storeId/);
+});

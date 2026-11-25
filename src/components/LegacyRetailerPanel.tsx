@@ -15,6 +15,21 @@ import { StoreStaffPopInbox } from './store/StoreStaffPopInbox';
 import { StoreStaffTasksInbox } from './store/StoreStaffTasksInbox';
 import { StoreStaffShiftInbox } from './store/StoreStaffShiftInbox';
 
+// Only the visible clock updates each second, not the entire ERP workspace.
+function StaffVisibleClock(){
+  const [currentTime,setCurrentTime]=useState(()=>new Date());
+  useEffect(()=>{
+    const tick=()=>{if(!document.hidden)setCurrentTime(new Date());};
+    const timer=window.setInterval(tick,1000);
+    document.addEventListener('visibilitychange',tick);
+    return()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',tick);};
+  },[]);
+  return <div className="bg-slate-950 border border-slate-850/80 p-5 rounded-2xl font-mono">
+    <span className="text-3xl font-black text-white tracking-tight">{currentTime.toLocaleTimeString()}</span>
+    <span className="text-[11px] text-slate-400 block mt-1">{currentTime.toLocaleDateString('pt-BR',{weekday:'long',year:'numeric',month:'long',day:'numeric'})}</span>
+  </div>;
+}
+
 // ==========================================
 // RETAILER PANEL MAIN COMPONENT
 // ==========================================
@@ -55,12 +70,6 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
   // Navigation State
   const [activeGerencialModule, setActiveGerencialModule] = useState<string | null>(null);
 
-  // Dynamic Clock for Ponto
-  const [currentTime, setCurrentTime] = useState(new Date());
-  useEffect(() => {
-    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
-    return () => clearInterval(timer);
-  }, []);
 
   // 1. CLIENTS / ATTENDANCE
   // Canonical customer/table service is mounted by RetailerPanel.tsx.
@@ -511,14 +520,7 @@ export const RetailerPanel: React.FC<RetailerPanelProps> = ({
                   <p className="text-[10px] text-slate-400">Registro vinculado à sua identidade Kyrub</p>
                 </div>
 
-                <div className="bg-slate-950 border border-slate-850/80 p-5 rounded-2xl font-mono">
-                  <span className="text-3xl font-black text-white tracking-tight">
-                    {currentTime.toLocaleTimeString()}
-                  </span>
-                  <span className="text-[11px] text-slate-400 block mt-1">
-                    {currentTime.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                  </span>
-                </div>
+                <StaffVisibleClock />
 
                 <button
                   onClick={() => void handleTimeClockAction(hasOpenTimeClockEntry ? 'clock-out' : 'clock-in')}
