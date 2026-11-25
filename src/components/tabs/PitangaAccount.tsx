@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createSemeaduraReadCoalescer } from '../../utils/semeaduraReadCoalescer';
-import { notifyRewardRefresh, subscribeRewardRefresh } from '../../utils/rewardRefresh';
+import { notifyRewardRefresh, rewardRefreshGeneration, subscribeRewardRefresh } from '../../utils/rewardRefresh';
 import { auth } from '../../utils/firebase';
 import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
 
@@ -31,8 +31,9 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
       const current=()=>!controller.signal.aborted&&auth.currentUser===session&&attempt===revision;
       try {
         if(!session||!current())throw Error();
-        if(force)accountReads.invalidate(session,'account');
-        const data=await accountReads.read(session,'account',async signal=>{
+        const key='account:'+rewardRefreshGeneration(session);
+        if(force)accountReads.invalidate(session,key);
+        const data=await accountReads.read(session,key,async signal=>{
           if(auth.currentUser!==session||signal.aborted)throw Error();
           const token=await session.getIdToken();
           if(!token||auth.currentUser!==session||signal.aborted)throw Error();
@@ -59,7 +60,7 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
     // Preserve the key after an ambiguous network failure; retry cannot debit twice.
     requestId.current ??= crypto.randomUUID();
     try {
-      accountReads.invalidate(session,'account');
+      accountReads.invalidate(session,'account:'+rewardRefreshGeneration(session));
       const token=await session.getIdToken();
       if(!token||auth.currentUser!==session)throw Error();
       const response = await fetch('/api/pitangas', { method: 'POST',
@@ -73,7 +74,7 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
         return;
       }
       requestId.current = null;
-      accountReads.invalidate(session,'account');
+      accountReads.invalidate(session,'account:'+rewardRefreshGeneration(session));
       notifyRewardRefresh(session,'conversion');
       await reload.current(false);
       if(auth.currentUser===session)setMessage('Conversão confirmada: 1.000 Pitangas por 1 XP.');
