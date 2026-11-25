@@ -85,6 +85,43 @@ test('verified emulator session screens once and keeps the private record minima
       await adminRoleRef.delete();
     }
 
+    // NFC readback is bound to the original pilot host; an old report is never
+    // silently re-attested or counted as verified in another preview.
+    const {randomBytes}=await import('node:crypto');
+    const readbackNonce=randomBytes(16).toString('hex');
+    const oldHost=process.env.VERCEL_URL;
+    const oldIssuance=process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+    process.env.VERCEL_URL='nfc-first-test.vercel.app';
+    process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED='true';
+    await adminRoleRef.set({uid:user.uid,role:'super_admin',status:'active'});
+    try {
+      const issued=await handlePromotionalBatch(authHeader,'POST',{action:'issue',count:1,requestId:readbackNonce});
+      assert.equal(issued.status,201);
+      const unit=(issued.body as {batch:{units:{id:string;physicalStatus:string}[]}}).batch.units[0];
+      assert.equal(unit.physicalStatus,'not_verified');
+      const report=(host:string)=>({action:'confirm-readback',batchId:readbackNonce,tagId:unit.id,readUrl:'https://'+host+'/tag/'+unit.id});
+      const first=await handlePromotionalBatch(authHeader,'POST',report('nfc-first-test.vercel.app'));
+      assert.equal(first.status,200);
+      assert.equal((first.body as {batch:{units:{physicalStatus:string}[]};replay:boolean}).batch.units[0].physicalStatus,'readback_confirmed');
+      const repeat=await handlePromotionalBatch(authHeader,'POST',report('nfc-first-test.vercel.app'));
+      assert.equal(repeat.status,200);
+      assert.equal((repeat.body as {replay:boolean}).replay,true);
+      const batchRef=adminDb.doc('kyrub_tag_promotional_batches/'+readbackNonce);
+      const original=(await batchRef.get()).data()!.readbackReports[unit.id];
+      process.env.VERCEL_URL='nfc-second-test.vercel.app';
+      const inventory=await handlePromotionalBatch(authHeader,'GET',undefined);
+      assert.equal(inventory.status,200);
+      const stale=(inventory.body as {batches:{id:string;units:{physicalStatus:string}[]}[]}).batches.find(b=>b.id===readbackNonce);
+      assert.equal(stale?.units[0].physicalStatus,'readback_stale');
+      assert.deepEqual(await handlePromotionalBatch(authHeader,'POST',report('nfc-first-test.vercel.app')),{status:409,body:{error:'TAG_READBACK_MISMATCH'}});
+      assert.deepEqual(await handlePromotionalBatch(authHeader,'POST',report('nfc-second-test.vercel.app')),{status:409,body:{error:'TAG_READBACK_MISMATCH'}});
+      assert.deepEqual((await batchRef.get()).data()!.readbackReports[unit.id],original);
+    }finally{
+      if(oldHost===undefined)delete process.env.VERCEL_URL;else process.env.VERCEL_URL=oldHost;
+      if(oldIssuance===undefined)delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;else process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED=oldIssuance;
+      await adminRoleRef.delete();
+    }
+
     await assert.rejects(privatePersonalWorkspace(authHeader,'notes'),/PERSONAL_UNAVAILABLE/);
     process.env.KYRUB_PERSONAL_PREVIEW_ENABLED='true';
     try{
