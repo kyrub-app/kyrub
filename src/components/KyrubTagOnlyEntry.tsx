@@ -42,7 +42,11 @@ export function KyrubTagOnlyEntry({user,onPromoted,onRetry,unavailable=false}:{
    if(result.mode!=='full'||auth.currentUser?.uid!==user.uid)throw Error('TAG_IDENTITY_PROMOTION_FAILED');
    onPromoted();
   }catch(error){
-   setNotice(error instanceof Error&&error.message==='TAG_PROMOTION_AGE_REQUIRED'?'A conta completa depende da confirmação de maioridade e da liberação do ingresso. Sua Kyrub Tag permanece protegida.':'Não foi possível concluir o cadastro completo agora. Sua Kyrub Tag permanece protegida.');
+   const reason=error instanceof Error?error.message:'';
+   setNotice(reason==='TAG_PROMOTION_AGE_REQUIRED'?'A conta completa depende da confirmação de maioridade e da liberação do ingresso. Sua Kyrub Tag permanece protegida.':
+    reason==='LEGAL_CURRENT_RECEIPT_REQUIRED'?'Para criar a conta completa, é necessário registrar o aceite dos Termos de Uso e a ciência da Política de Privacidade vigentes. Sua Kyrub Tag permanece protegida.':
+    reason==='LEGAL_DOCUMENTS_UNAVAILABLE'||reason==='LEGAL_RECEIPT_INVALID'?'O ingresso jurídico ainda não está disponível. Sua Kyrub Tag permanece protegida.':
+    'Não foi possível concluir o cadastro completo agora. Sua Kyrub Tag permanece protegida.');
   }finally{setBusy(false);}
  }
  return <main className="flex min-h-[100dvh] items-center justify-center bg-[#121A17] p-5 text-white">
