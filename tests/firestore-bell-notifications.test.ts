@@ -162,20 +162,26 @@ test('Freela lifecycle writes one immutable event and one recipient alert per ac
  process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW='true';
  process.env.FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099';
  const receipt=adminDb.doc('candidaturas/'+applicationId);
- const action=(actorId:string,action:string,operationId:string)=>performNotifiedHiringAction({actorId,actorRole:actorId===ownerId?'owner':undefined,action,operationId,applicationId});
+ const terms={schemaVersion:1,title:'Vaga fictícia',description:'Turno de teste',paymentCents:10000,currency:'BRL'};
+ const action=(actorId:string,action:string,operationId:string,expectedTerms=terms)=>performNotifiedHiringAction({actorId,actorRole:actorId===ownerId?'owner':undefined,action,operationId,applicationId,expectedTerms});
  try{
   await control.set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server'});
-  await adminDb.doc('vagas/'+vagaId).set({ownerId,status:'open'});
+  await adminDb.doc('vagas/'+vagaId).set({ownerId,status:'open',title:terms.title,description:terms.description,payment:100});
   for(const [uid,profile] of [[ownerId,'requester'],[workerId,'freelancer']]){
    await adminDb.doc('age_eligibility_private/'+uid).set({uid,status:'verified_adult'});
    await adminDb.doc('identity_verifications/'+uid).set({uid,status:'approved',approvedProfiles:[profile]});
   }
+  await assert.rejects(action(workerId,'apply','stale-apply',{...terms,paymentCents:9000}),/FREELANCE_CONFLICT/);
   const initial=await Promise.all([action(workerId,'apply','apply-1'),action(workerId,'apply','apply-1')]);
   assert.deepEqual(new Set(initial.map(r=>r.created)),new Set([true,false]));
   await assert.rejects(action(workerId,'apply','apply-2'),/FREELANCE_CONFLICT/);
   await assert.rejects(action(workerId,'accept','forged-accept'),/FREELANCE_FORBIDDEN/);
   await assert.rejects(action(ownerId,'complete','early-complete'),/FREELANCE_CONFLICT/);
+  await adminDb.doc('vagas/'+vagaId).update({payment:200,description:'Alterada depois da candidatura'});
+  await assert.rejects(action(ownerId,'accept','wrong-terms',{...terms,paymentCents:20000}),/FREELANCE_CONFLICT/);
   await action(ownerId,'accept','accept-1');
+  await assert.rejects(action(ownerId,'accept','accept-1',{...terms,paymentCents:20000}),/FREELANCE_CONFLICT/);
+  assert.deepEqual((await receipt.get()).get('terms'),terms);
   await action(workerId,'request_completion','request-1');
   await action(ownerId,'request_review','review-1');
   await action(workerId,'request_completion','request-2');
@@ -183,6 +189,8 @@ test('Freela lifecycle writes one immutable event and one recipient alert per ac
   assert.equal((await action(workerId,'request_completion','request-1')).created,false);
   assert.equal((await receipt.get()).get('status'),'completed');
   assert.equal((await receipt.get()).get('paymentStatus'),undefined);
+  assert.deepEqual((await receipt.get()).get('terms'),terms);
+  assert.ok((await receipt.get()).get('acceptedAt'));
   assert.equal((await receipt.collection('operations_private').get()).size,6);
   const owner=await listUserNotifications({recipientUserId:ownerId});
   const worker=await listUserNotifications({recipientUserId:workerId});
