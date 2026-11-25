@@ -145,6 +145,42 @@ try {
   await page.getByRole('button',{name:'Sair',exact:true}).click();
   await page.getByRole('button',{name:'Enviar link de acesso',exact:true}).waitFor();
   assert.equal((await fetch(origin+'/api/onboarding/personal/notes')).status,401);
+  // Synthetic legal documents and adult evidence in the dedicated emulator.
+  const {createHash}=await import('node:crypto');
+  const legalEmail='legal-browser-'+Date.now()+'@example.invalid';
+  const legalUser=await adminAuth.createUser({email:legalEmail,password,emailVerified:true});
+  await adminDb.doc('age_eligibility_private/'+legalUser.uid).set({uid:legalUser.uid,status:'verified_adult'});
+  for(const [id,type] of [['browser-terms','terms'],['browser-privacy','privacy']]){
+    const content='Documento de teste '+type;
+    await adminDb.doc('governanceDocuments/'+id).set({id,type,version:'1',hash:createHash('sha256').update(content).digest('hex'),content,status:'published',ownerUserId:'test-legal',createdAt:'2026-01-01T00:00:00Z',approvedAt:'2026-01-02T00:00:00Z',publishedAt:'2026-01-03T00:00:00Z'});
+  }
+  await page.getByLabel('E-mail',{exact:true}).fill(legalEmail);
+  await page.getByLabel('Senha',{exact:true}).fill(password);
+  await page.getByRole('button',{name:'Entrar',exact:true}).click();
+  const terms=page.getByRole('checkbox',{name:'Aceito os Termos de Uso.',exact:true});
+  const privacy=page.getByRole('checkbox',{name:'Estou ciente da Política de Privacidade.',exact:true});
+  const submit=page.getByRole('button',{name:'Registrar aceite',exact:true});
+  await terms.waitFor();
+  assert.equal(await terms.isChecked(),false);
+  assert.equal(await privacy.isChecked(),false);
+  assert.equal(await submit.isDisabled(),true);
+  await terms.check();
+  assert.equal(await submit.isDisabled(),true);
+  await privacy.check();
+  await submit.click();
+  await page.getByText('Aceite das versões vigentes registrado.',{exact:true}).waitFor();
+  await page.reload();
+  await page.getByText('Aceite das versões vigentes registrado.',{exact:true}).waitFor();
+  await adminDb.doc('governanceDocuments/browser-terms').update({version:'2'});
+  await page.reload();
+  await terms.waitFor();
+  assert.equal(await terms.isChecked(),false);
+  assert.equal(await privacy.isChecked(),false);
+  assert.equal(await submit.isDisabled(),true);
+  assert.equal((await adminDb.doc('users/'+legalUser.uid).get()).exists,false);
+  await page.getByRole('button',{name:'Sair',exact:true}).click();
+  await page.getByRole('button',{name:'Enviar link de acesso',exact:true}).waitFor();
+  assert.equal((await fetch(origin+'/api/onboarding/legal')).status,401);
   assert.equal((await fetch(origin+'/api/notifications')).status,404);
   assert.equal((await fetch(origin+'/api/onboarding/age')).status,401);
   console.log('PASS: isolated onboarding registration, verification, age screening, reload, login and sign-out.');

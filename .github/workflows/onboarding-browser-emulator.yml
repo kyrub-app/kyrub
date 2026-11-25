@@ -30,6 +30,8 @@ jobs:
       VITE_KYRUB_ONBOARDING_EMULATOR: 'true'
       KYRUB_PERSONAL_PREVIEW_ENABLED: 'true'
       VITE_KYRUB_PERSONAL_PREVIEW: 'true'
+      KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED: 'true'
+      VITE_KYRUB_LEGAL_RECEIPT_PREVIEW: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
