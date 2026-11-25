@@ -3,6 +3,7 @@ import { authorizePlatformEconomy } from './platformEconomyRouter.js';
 import { financeMonthRange } from '../../shared/storeFinanceCalendar.js';
 import { normalizeStoreFinancePayable } from '../../shared/storeFinancePayables.js';
 import { TECHNOLOGY_COST_CATEGORIES } from '../../shared/platformFinops.js';
+import { INFRASTRUCTURE_COST_CENTER_ID } from '../../shared/storeFinanceCostCenters.js';
 
 type Category = typeof TECHNOLOGY_COST_CATEGORIES[number];
 export type InfrastructureFixtureReference = {
@@ -10,7 +11,7 @@ export type InfrastructureFixtureReference = {
   reconciliationRef:string;
 };
 type Dependencies = {
-  db:Pick<Firestore,'doc'|'runTransaction'>;
+  db:Pick<Firestore,'doc'|'collection'|'runTransaction'>;
   projectId:string;
   verify:(token:string)=>Promise<{uid:string;emailVerified?:boolean}>;
 };
@@ -65,7 +66,7 @@ export async function readOfficialInfrastructureFixture(
         const snap=snapshots[i], ref=references[i], raw=snap.data();
         if(!snap.exists||raw?.id!==ref.payableId||raw.storeId!==storeId)return unavailable;
         const p=normalizeStoreFinancePayable(raw);
-        if(p.status!=='paid'||p.sourceAuthority!=='store_owner_manual'||!canonicalIso(p.paidAt)||
+        if(p.costCenter?.id!==INFRASTRUCTURE_COST_CENTER_ID||p.status!=='paid'||p.sourceAuthority!=='store_owner_manual'||!canonicalIso(p.paidAt)||
           p.paidAt<range.startIso||p.paidAt>=range.endExclusiveIso||
           p.billingDocumentType==='none'||p.billingDocumentReference!==ref.billingDocumentReference)
           return unavailable;
@@ -75,4 +76,47 @@ export async function readOfficialInfrastructureFixture(
       return {...unavailable,status:'fixture_partial' as const,registeredPaidMinor:total,matchedCount:snapshots.length};
     },{readOnly:true});
   } catch {return unavailable;}
+}
+
+// Automatic classification diagnostic. No externally supplied list of payable IDs,
+// no new registry, no additional financial record. A bounded paidAt query uses
+// the existing single-field index; never claims complete actual costs.
+export async function readOfficialRegisteredInfrastructureFixture(
+  authorization:string,month:string,deps:Dependencies,
+):Promise<OfficialInfrastructureFixtureDiagnostic>{
+  if(process.env.FIRESTORE_EMULATOR_HOST!=='127.0.0.1:8088'||
+      process.env.NODE_ENV==='production'||process.env.VERCEL_ENV==='production'||
+      deps.projectId!=='kyrub-security-test')throw Error('INFRASTRUCTURE_EMULATOR_ONLY');
+  const range=financeMonthRange(month,'America/Sao_Paulo');
+  await authorizePlatformEconomy(authorization,{db:deps.db,verify:deps.verify});
+  const unavailable:OfficialInfrastructureFixtureDiagnostic={month,timeZone:'America/Sao_Paulo',basis:'cash',
+    scope:'emulator_only',status:'unavailable',registeredPaidMinor:null,matchedCount:null,
+    actualInfrastructureCostMinor:null,realMau:null};
+  try{
+    return await deps.db.runTransaction(async tx=>{
+      const designation=await tx.get(deps.db.doc('kyrub_admin/official_store'));
+      const d=designation.data();
+      if(!designation.exists||d?.schemaVersion!==1||d.kind!=='official_cairobi_store'||
+        !safeId(d.canonicalStoreId)||!safeId(d.ownerUserId)||d.legacyStoreId!==d.ownerUserId||
+        !safeId(d.designatedBy))return unavailable;
+      const storeId=d.canonicalStoreId;
+      const store=await tx.get(deps.db.doc('stores/'+storeId));
+      if(!store.exists||store.get('id')!==storeId||store.get('ownerId')!==d.ownerUserId||
+        store.get('legacyTenantId')!==d.legacyStoreId)return unavailable;
+      const result=await tx.get(deps.db.collection('stores/'+storeId+'/financePayables')
+        .where('paidAt','>=',range.startIso).where('paidAt','<',range.endExclusiveIso).limit(501));
+      if(result.size>500)return unavailable;
+      let total=0,count=0;
+      for(const snap of result.docs){
+        const raw=snap.data();
+        if(raw.costCenter?.id!==INFRASTRUCTURE_COST_CENTER_ID)continue;
+        if(raw.id!==snap.id||raw.storeId!==storeId)return unavailable;
+        const p=normalizeStoreFinancePayable(raw);
+        if(p.status!=='paid'||!canonicalIso(p.paidAt)||p.paidAt<range.startIso||p.paidAt>=range.endExclusiveIso)return unavailable;
+        total+=p.amountMinor;count++;
+        if(!Number.isSafeInteger(total))return unavailable;
+      }
+      return count?{...unavailable,status:'fixture_partial' as const,registeredPaidMinor:total,matchedCount:count}:unavailable;
+    },{readOnly:true});
+  }catch{return unavailable;}
 }

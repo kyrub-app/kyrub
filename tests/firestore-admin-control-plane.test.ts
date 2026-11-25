@@ -1,4 +1,4 @@
-import { readOfficialInfrastructureFixture, type InfrastructureFixtureReference } from '../server/admin/officialInfrastructureFixtureReader';
+import { readOfficialInfrastructureFixture, readOfficialRegisteredInfrastructureFixture, type InfrastructureFixtureReference } from '../server/admin/officialInfrastructureFixtureReader';
 import { buildManualStoreFinancePayable } from '../shared/storeFinancePayables';
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
@@ -394,6 +394,7 @@ test('protected official ERP fixture reads only referenced paid accounts without
     await db.doc('kyrub_admin/official_store').set({schemaVersion:1,kind:'official_cairobi_store',canonicalStoreId:storeId,legacyStoreId:owner,ownerUserId:owner,designatedBy:'super_admin_a'});
     const make=(id:string,amountMinor:number,paidAt:string,ref:string)=>({...buildManualStoreFinancePayable({
       id,storeId,amountMinor,description:'Fixture invoice',category:'service',dueDate:'2026-11-30',recurrence:'monthly',
+      costCenter:{id:ref==='fixture-marketing'?'cc_commercial':'cc_infrastructure',name:ref==='fixture-marketing'?'Comercial':'Infraestrutura'},
       billingDocumentType:'invoice',billingDocumentReference:ref,createdByUserId:owner,now:'2026-11-01T04:00:00.000Z'
     }),status:'paid',paidAt,updatedAt:paidAt});
     const rows=[make('payable_a',120000,'2026-12-01T02:59:59.999Z','fixture-invoice-a'),
@@ -409,6 +410,9 @@ test('protected official ERP fixture reads only referenced paid accounts without
     assert.deepEqual(output,{month:'2026-11',timeZone:'America/Sao_Paulo',basis:'cash',scope:'emulator_only',
       status:'fixture_partial',registeredPaidMinor:120000,matchedCount:1,actualInfrastructureCostMinor:null,realMau:null});
     assert.deepEqual(await read([reference],'super_admin_a'),output);
+    assert.deepEqual(await readOfficialRegisteredInfrastructureFixture('Bearer finance_a','2026-11',deps),output);
+    await assert.rejects(readOfficialRegisteredInfrastructureFixture('Bearer support_a','2026-11',deps),/FORBIDDEN/);
+    assert.equal((await read([{...reference,payableId:'payable_c',billingDocumentReference:'fixture-marketing'}])).status,'unavailable');
     for(const actor of ['regular_a','support_a','operations_a','suspended_a'])await assert.rejects(read([reference],actor),/FORBIDDEN/);
     await assert.rejects(readOfficialInfrastructureFixture('','2026-11',[reference],deps),/AUTH_REQUIRED/);
     await assert.rejects(readOfficialInfrastructureFixture('Bearer finance_a','2026-11',[reference],{...deps,verify:async()=>({uid:'finance_a',emailVerified:false})}),/EMAIL_NOT_VERIFIED/);

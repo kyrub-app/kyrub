@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { normalizeCostCenters, createStoreCostCenter, archiveStoreCostCenter, selectStoreCostCenter } from '../../shared/storeFinanceCostCenters.js';
+import { selectStoreCostCenter } from '../../shared/storeFinanceCostCenters.js';
 import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
@@ -359,13 +359,6 @@ const payableBillingDocumentType = (
   throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_TYPE_INVALID');
 };
 
-// Owner-authorized callers only. One bounded registry per store; no browser writes.
-const costCentersRef = (storeId:string) => adminDb.doc('stores/'+storeId+'/financeConfig/costCenters');
-const decodeCostCenters = (data: FirebaseFirestore.DocumentData|undefined) => {
-  if (data === undefined) return [];
-  if(data.schemaVersion!==1) throw Error('STORE_FINANCE_PAYABLE_COST_CENTER_INVALID');
-  return normalizeCostCenters(data.centers);
-};
 const transitionPayable = async (input: {
   storeId: string;
   payableId: string;
@@ -408,12 +401,11 @@ export const createStoreFinanceRouter = (): Router => {
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
       const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
-      const [entries, receivables, payables, cash, costCenterSnapshot] = await Promise.all([
+      const [entries, receivables, payables, cash] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),
         listStorePayables(storeId),
         listStoreCashFinanceProjection({ financeStoreId: storeId, ownerId }),
-        costCentersRef(storeId).get(),
       ]);
       const summary = deriveStoreEconomicLedgerSummary(entries);
 
@@ -426,7 +418,6 @@ export const createStoreFinanceRouter = (): Router => {
         receivables: receivables.items,
         payableSummary: payables.summary,
         payables: payables.items,
-        costCenters: decodeCostCenters(costCenterSnapshot.data()),
         cash,
       });
     } catch (error) {
@@ -445,27 +436,11 @@ export const createStoreFinanceRouter = (): Router => {
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
       const action = clean(body.action);
 
-      if (action === 'create_cost_center' || action === 'archive_cost_center') {
-        const ref=costCentersRef(storeId);
-        const id='cc_'+randomUUID();
-        const centers=await adminDb.runTransaction(async tx=>{
-          const existing=decodeCostCenters((await tx.get(ref)).data());
-          const next=action==='create_cost_center'
-            ? createStoreCostCenter(existing,id,body.name)
-            : archiveStoreCostCenter(existing,body.costCenterId);
-          tx.set(ref,{schemaVersion:1,centers:next});
-          return next;
-        });
-        response.status(200).json({costCenters:centers});
-        return;
-      }
-
       if (action === 'create_payable') {
         const billingDocumentType = payableBillingDocumentType(body.billingDocumentType);
         const id = 'payable_'+randomUUID();
         const payable = await adminDb.runTransaction(async tx => {
-          const center = body.costCenterId === undefined || body.costCenterId === '' ? undefined :
-            selectStoreCostCenter(decodeCostCenters((await tx.get(costCentersRef(storeId))).data()),body.costCenterId);
+          const center = selectStoreCostCenter(body.costCenterId);
           const next = buildManualStoreFinancePayable({
           id,
           costCenter: center,
