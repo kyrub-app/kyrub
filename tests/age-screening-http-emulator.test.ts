@@ -66,6 +66,34 @@ test('verified emulator session screens once and keeps the private record minima
       assert.equal((await adminDb.collection('stores/'+user.uid+'/financePayables').get()).size,0);
     }finally{delete process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED;await ownerStore.delete();}
 
+    // The staged server policy must remain consistent with Firestore rules.
+    const {requireStagedFinancialOwnerAccess}=await import('../server/identity/stagedFinancialAuthorization.js');
+    const erpControl=adminDb.doc('erp_age_release_private/current');
+    const mfaControl=adminDb.doc('financial_mfa_release_private/current');
+    const ageRecord=adminDb.doc('age_eligibility_private/'+user.uid);
+    const [previousErp,previousMfa,previousAge]=await Promise.all([erpControl.get(),mfaControl.get(),ageRecord.get()]);
+    try{
+      await erpControl.set({schemaVersion:1,mode:'verified_adult_only'});
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,user.uid),/STORE_FINANCE_AGE_REQUIRED/);
+      await ageRecord.set({uid:user.uid,status:'verified_adult'});
+      await requireStagedFinancialOwnerAccess(authHeader,user.uid);
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,'another-store'),/STORE_REPRESENTATION_FORBIDDEN/);
+      await mfaControl.set({schemaVersion:1,mode:'recent_totp_required'});
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,user.uid),/second_factor_required/);
+      await mfaControl.delete();
+      await ageRecord.set({uid:'another-store',status:'verified_adult'});
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,user.uid),/STORE_FINANCE_AGE_REQUIRED/);
+      await ageRecord.set({uid:user.uid,status:'suspended'});
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,user.uid),/STORE_FINANCE_AGE_REQUIRED/);
+      await ageRecord.set({uid:user.uid,status:'verified_adult'});
+      await erpControl.set({schemaVersion:2,mode:'verified_adult_only'});
+      await assert.rejects(requireStagedFinancialOwnerAccess(authHeader,user.uid),/STORE_FINANCE_AGE_REQUIRED/);
+    }finally{
+      for(const [ref,old] of [[erpControl,previousErp],[mfaControl,previousMfa],[ageRecord,previousAge]] as const){
+        if(old.exists)await ref.set(old.data()!);else await ref.delete();
+      }
+    }
+
     // Isolated administrative write boundary: the role alone does not satisfy MFA.
     const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
     const adminRoleRef=adminDb.doc('kyrub_admin/control_plane/admins/'+user.uid);
