@@ -54,10 +54,7 @@ Não declarar writersVerified=true. Relatório sem credenciais e sem dados de us
   quota apenas no primeiro dia completo da nova versão, sem permitir escritores
   antigos em paralelo. Se não for possível provar a cessação, bloquear lançamento.
   Qualquer reconstrução de quota necessita procedimento próprio, auditado.
-- Enrolamento econômico: o piloto só aceita estado coerente com seu ledger; contas
-  com progresso visual anterior e marcos sem créditos exigem uma política de
-  baseline explícita e testes antes de enrolamento real. Não fabricar créditos,
-  recibos nem cursor, não transformar marcos históricos em saldo automaticamente.
+- Decisão do proprietário em 24/11/2026: a Jornada Pitangueira ainda não possui progresso anterior de usuários reais. Portanto, retirar migração, baseline retrospectivo e reconstrução de histórico do escopo da V1. Início do progresso a partir de zero. Não executar limpeza de registros de teste no ambiente real por suposição. Caso a conferência pré-ativação revele estado inesperado, parar e comunicar; não criar migração preventiva nem conceder crédito retroativo. Preservar testes de compatibilidade já feitos como regressão, sem nova frente de desenvolvimento.
 - Preservar os contratos de 100 Pitangas por primeiro cadastro Google elegível,
   2 XP conforme autoridade canônica existente, conversão voluntária 1000:1.
   Validar o corte temporal de campanha e a identidade do projeto; sem prêmio por
@@ -77,7 +74,7 @@ ativação protegida de nova versão e verificação de flags/fence. Registrar r
 anterior e plano de parada. Não reativar escritores antigos após lançamento de
 recibos/quotas novos, nem efetuar rollback de saldo ou apagar histórico.
 Interromper novas operações por kill switch aprovado se houver inconsistência.
-Qualquer ativação econômica e eventual migração precisam de autorização própria.
+Qualquer ativação econômica precisa de autorização própria. Migração histórica da Jornada Pitangueira fora do escopo, conforme decisão do proprietário.
 
 Este roteiro não pressupõe que algum serviço esteja ativo ou ausente, não prova
 estado atual de flags e não autoriza deploy, merge, billing ou alteração de dados.
