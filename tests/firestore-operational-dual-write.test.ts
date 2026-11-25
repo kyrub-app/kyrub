@@ -192,3 +192,27 @@ test('owner mirrors a legacy table payment and outsiders remain blocked', async 
     )
   );
 });
+
+
+test('staged ERP eligibility protects order mirrors and staff status without blocking buyer cancellation',async()=>{
+  const owner=environment.authenticatedContext('owner-a').firestore();
+  const buyer=environment.authenticatedContext('buyer-a').firestore();
+  const ref=doc(owner,'stores',STORE_ID,'orders','customer-order-a');
+  const age=async(status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private','owner-a'),{uid:'owner-a',status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'erp_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertFails(setDoc(ref,mirroredCustomerOrder()));
+  await age('verified_adult');
+  await assertSucceeds(setDoc(ref,mirroredCustomerOrder()));
+  await age('suspended');
+  await assertFails(updateDoc(ref,{status:'accepted',updatedAt:serverTimestamp()}));
+  await assertFails(updateDoc(ref,{status:'accepted',legacyUpdatedAt:'2026-07-22T10:05:00.000Z',updatedAt:serverTimestamp()}));
+  const buyerRef=doc(buyer,'stores',STORE_ID,'orders','customer-order-a');
+  await assertSucceeds(getDoc(buyerRef));
+  await assertSucceeds(updateDoc(buyerRef,{status:'cancelled',updatedAt:serverTimestamp()}));
+});
