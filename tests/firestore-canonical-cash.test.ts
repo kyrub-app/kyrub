@@ -310,3 +310,36 @@ test('financial reads are limited to owner, manager and cashier', async () => {
   await assertFails(getDoc(doc(seller, 'stores', STORE_ID, 'cashSessions', SESSION_ID)));
   await assertFails(getDoc(doc(production, 'stores', STORE_ID, 'cashSessions', SESSION_ID)));
 });
+
+
+test('staged financial MFA requires recent TOTP independently of role and age', async()=>{
+  const cashierId='cashier-a';
+  const control='financial_mfa_release_private';
+  await environment.withSecurityRulesDisabled(async ctx=>{
+    const db=ctx.firestore();
+    await setDoc(doc(db,control,'current'),{schemaVersion:1,mode:'recent_totp_required'});
+    await setDoc(doc(db,'erp_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+    await setDoc(doc(db,'age_eligibility_private',cashierId),{uid:cashierId,status:'verified_adult'});
+  });
+  const ordinary=environment.authenticatedContext(cashierId).firestore();
+  const session=(db:any)=>doc(db,'stores',STORE_ID,'cashSessions',SESSION_ID);
+  const now=Math.floor(Date.now()/1000);
+  // Synthetic signed-rule fixtures only, not actual TOTP enrollment.
+  const withFactor=(factor:string,authTime:number,uid=cashierId)=>environment.authenticatedContext(uid,{
+    auth_time:authTime,firebase:{sign_in_provider:'password',sign_in_second_factor:factor}
+  } as any).firestore();
+  await assertFails(setDoc(session(ordinary),openSession(cashierId,'cashier','Caixa')));
+  for(const db of [withFactor('phone',now),withFactor('totp',now-600),withFactor('totp',now+600)]){
+    await assertFails(setDoc(session(db),openSession(cashierId,'cashier','Caixa')));
+  }
+  const verified=withFactor('totp',now);
+  await assertSucceeds(setDoc(session(verified),openSession(cashierId,'cashier','Caixa')));
+  const movementRef=(db:any)=>doc(db,'stores',STORE_ID,'cashSessions',SESSION_ID,'movements','cash-movement-a');
+  await assertFails(setDoc(movementRef(ordinary),movement()));
+  await assertSucceeds(setDoc(movementRef(verified),movement()));
+  await environment.withSecurityRulesDisabled(async ctx=>{
+    await updateDoc(doc(ctx.firestore(),'age_eligibility_private',cashierId),{status:'suspended'});
+  });
+  await assertFails(setDoc(doc(verified,'stores',STORE_ID,'cashSessions',SESSION_ID,'movements','cash-movement-b'),movement(cashierId,'cashier',{id:'cash-movement-b'})));
+  await assertFails(setDoc(doc(ordinary,control,'current'),{schemaVersion:1,mode:'disabled'}));
+});
