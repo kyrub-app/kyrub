@@ -6,6 +6,7 @@ import type {
 } from '../../shared/kyrubActivityEvents';
 import { auth } from '../utils/firebase';
 import { recordCurrentUserActivityEvent } from './kyrubActivityBrowser';
+import { synchronizeActivityRemoteSession } from './kyrubActivityRemote';
 import { clearAuthoritativeActivityRuntimeEvents } from './kyrubAuthoritativeActivityRuntime';
 import {
   enteredSemanticScreens,
@@ -58,6 +59,7 @@ export function KyrubActivityObserverBridge() {
 
   useEffect(() =>
     onAuthStateChanged(auth, user => {
+      synchronizeActivityRemoteSession();
       const previousUid = actorUidRef.current;
       const nextUid = user?.uid ?? '';
       if (previousUid && previousUid !== nextUid) {
@@ -66,7 +68,7 @@ export function KyrubActivityObserverBridge() {
 
       actorUidRef.current = nextUid;
       authenticatedRef.current = Boolean(user);
-      if (!user) {
+      if (!user || previousUid !== nextUid) {
         presenceRef.current.clear();
         selectionRef.current.clear();
       }

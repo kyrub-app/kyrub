@@ -2,7 +2,8 @@ import type { User } from 'firebase/auth';
 import type { AdminPlatformEconomySnapshot } from '../../shared/adminPlatformEconomy';
 
 export const loadAdminPlatformEconomy = async (
-  user: Pick<User, 'getIdToken'>
+  user: Pick<User, 'getIdToken'>,
+  signal?: AbortSignal,
 ): Promise<AdminPlatformEconomySnapshot> => {
   const token = await user.getIdToken();
   const response = await fetch('/api/admin/platform-economy', {
@@ -11,6 +12,7 @@ export const loadAdminPlatformEconomy = async (
       authorization: `Bearer ${token}`,
     },
     cache: 'no-store',
+    signal,
   });
   const payload = await response.json() as
     | AdminPlatformEconomySnapshot

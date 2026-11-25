@@ -1,9 +1,11 @@
 import { randomUUID } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
-import { FieldValue } from 'firebase-admin/firestore';
+import { FieldValue, type Firestore } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
+import { loadMonthlyActivityDiagnostic } from './monthlyActivityDiagnostic.js';
+import { loadInfrastructureDiagnostic } from './infrastructureDiagnostic.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
 
@@ -24,14 +26,15 @@ const clean = (value: unknown): string =>
   typeof value === 'string' ? value.trim() : '';
 
 export const authorizePlatformEconomy = async (
-  authorization: string
+  authorization: string,
+  deps: {db:Pick<Firestore,'doc'>;verify:(token:string)=>Promise<{uid:string;emailVerified?:boolean}>} = {db:adminDb,verify:verifyFirebaseIdToken},
 ): Promise<AuthorizedFinanceAdmin> => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
-  const decoded = await verifyFirebaseIdToken(token);
+  const decoded = await deps.verify(token);
   if (decoded.emailVerified !== true) throw new Error('EMAIL_NOT_VERIFIED');
 
-  const profileSnapshot = await adminDb
+  const profileSnapshot = await deps.db
     .doc(`kyrub_admin/control_plane/admins/${decoded.uid}`)
     .get();
   const profile = profileSnapshot.data() as Record<string, unknown> | undefined;
@@ -143,8 +146,10 @@ export const loadAuthorizedPlatformEconomySnapshot = async (
 ) => {
   const admin = await authorizePlatformEconomy(authorization);
   const snapshot = await loadAdminPlatformEconomySnapshot();
+  const monthlyActivity = await loadMonthlyActivityDiagnostic();
+  const infrastructureDiagnostic = await loadInfrastructureDiagnostic(authorization,monthlyActivity.month);
   await recordPlatformEconomyAudit(admin);
-  return snapshot;
+  return { ...snapshot, monthlyActivity, infrastructureDiagnostic };
 };
 
 export const createPlatformEconomyRouter = (): Router => {
