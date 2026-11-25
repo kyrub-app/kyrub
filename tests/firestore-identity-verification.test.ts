@@ -18,6 +18,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  where,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
@@ -238,7 +239,14 @@ test('freelance vacancy and application ownership cannot be forged or used acros
   await assertFails(setDoc(application(worker),{...payload,ownerId:otherId}));
   await assertFails(setDoc(application(worker),{...payload,vagaId:'missing'}));
   await assertFails(setDoc(application(worker),{...payload,status:'accepted'}));
+  await assertFails(getDoc(application(other)));
+  await assertSucceeds(getDoc(application(worker))); // own absent deterministic receipt
+  await assertFails(setDoc(doc(worker,'candidaturas','duplicate-key'),payload));
   await assertSucceeds(setDoc(application(worker),payload));
+  await assertFails(setDoc(application(worker),payload)); // cannot overwrite receipt
+  await assertSucceeds(getDocs(query(collection(worker,'candidaturas'),where('userId','==',workerId),limit(50))));
+  await assertSucceeds(getDocs(query(collection(owner,'candidaturas'),where('ownerId','==',ownerId),limit(50))));
+  await assertFails(getDocs(query(collection(other,'candidaturas'),where('ownerId','==',ownerId),limit(50))));
   await assertFails(updateDoc(application(worker),{status:'accepted'}));
   await assertFails(getDoc(application(other)));
   await assertSucceeds(getDoc(application(owner)));
