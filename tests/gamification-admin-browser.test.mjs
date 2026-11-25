@@ -139,6 +139,23 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await page.screenshot({path:'gamification-admin-isolated-case-closure.png',fullPage:true});
   assert.equal((await db.doc('systemControl/semeaduraEconomicReview/holds/post_'+postKey).get()).exists,false);
   assert.equal((await balance.get()).get('availableKCoins'),100);
+  await openIsolatedGamificationSuspicionCase(db,auth,bearer,{caseId:'browser-referral',kind:'personal',postId});
+  await closeIsolatedGamificationSuspicionCase(db,auth,bearer,{caseId:'browser-referral',outcome:'referred_for_review'});
+  await page.getByRole('button',{name:'Revisões econômicas',exact:true}).click();
+  await page.getByRole('button',{name:'browser-referral · Aguardando aceite'}).click();
+  await page.getByRole('heading',{name:'Evidência inicial'}).waitFor();
+  assert.equal(await page.getByRole('button',{name:'Aceitar encaminhamento'}).isDisabled(),true);
+  await page.getByLabel('Confirmo esta decisão de revisão.').check();
+  await page.getByRole('button',{name:'Aceitar encaminhamento'}).click();
+  await page.getByLabel('Decisão econômica').selectOption('no_action');
+  await page.getByLabel('Justificativa').fill('Indício técnico sem fundamento para medida econômica.');
+  await page.getByLabel('Confirmo esta decisão de revisão.').check();
+  await page.getByRole('button',{name:'Registrar decisão'}).click();
+  await page.getByText('Decisão: Sem intervenção').waitFor();
+  await page.getByText('Justificativa: Indício técnico sem fundamento para medida econômica.').waitFor();
+  await page.screenshot({path:'gamification-admin-isolated-economic-review.png',fullPage:true});
+  assert.equal((await db.doc('systemControl/semeaduraEconomicReview/holds/post_'+postKey).get()).exists,false);
+  assert.equal((await balance.get()).get('availableKCoins'),100);
   await stats.update({acceptedSeeds:1});
 
   await page.getByRole('button',{name:'Sair da fixture'}).click();
