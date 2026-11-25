@@ -130,17 +130,17 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
           </button>
         </div>
 
-        <div className="mt-4 grid gap-3 sm:grid-cols-3" aria-label="Cobertura dos indicadores financeiros próprios">
+        <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Cobertura dos indicadores de sustentabilidade da plataforma">
           {[
-            ['Custos operacionais próprios', 'Faturas de infraestrutura, fornecedores e operação ainda não consolidadas.'],
-            ['Receitas próprias Kyrub', 'Planos, publicidade, Tags e taxas próprias: fontes e conciliação ainda não integradas a esta visão.'],
-            ['Resultado e custo por usuário ativo', 'Não calculados sem custos, receitas e denominador do mesmo período.'],
+            ['Custos de operação da plataforma', 'Despesas efetivas devem ser registradas no Financeiro do ERP da Loja Oficial. Consulta classificada e conciliada ainda não integrada.'],
+            ['Custo por usuário ativo', 'Indisponível até conciliar custos da plataforma e MAU no mesmo período e escopo.'],
           ].map(([label, detail]) => <article key={label} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
             <h3 className="text-xs font-bold text-white">{label}</h3>
             <p className="mt-2 text-sm font-medium text-slate-300">Não consolidado</p>
             <p className="mt-1 text-xs text-slate-400">{detail}</p>
           </article>)}
         </div>
+        <p className="mt-3 text-xs text-slate-400">Gestão empresarial (receitas próprias, despesas, fluxo de caixa, resultados, margens e assinaturas): ERP da Loja Oficial Kyrub. Este painel não mantém cadastro financeiro paralelo.</p>
         <article className="mt-3 rounded-xl border border-slate-800 bg-slate-950/55 p-3" aria-label="Usuários ativos mensais">
           <h3 className="text-xs font-bold text-white">Usuários ativos mensais (MAU)</h3>
           <p className="mt-2 text-sm font-medium text-slate-300">MAU real indisponível</p>
