@@ -120,6 +120,7 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         && incoming().vagaId == existing().vagaId
         && incoming().ownerId == existing().ownerId
         && incoming().updatedAt == request.time
+        && existing().get('cancellation', {}).get('state','') != 'requested'
         && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
         && (
           // Withdrawal remains possible without age or professional eligibility.
@@ -141,6 +142,9 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       // Any lawful erasure is a separate authorized server process.
       allow delete: if false;
 
+      match /cancellation_private/{eventId} {
+        allow read, write: if false;
+      }
       match /retirement_private/{eventId} {
         allow read, write: if false;
       }
