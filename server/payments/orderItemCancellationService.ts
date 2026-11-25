@@ -548,6 +548,24 @@ const mutateOrderItems = async (input: {
       if(!full.empty)throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
       const payments=await transaction.get(adminDb.collection(`stores/${input.storeId}/payments`).where('orderId','==',input.orderId).limit(10));
       if(payments.size>=10||payments.docs.some(d=>['refund_requested','refund_processing','refund_failed','refunded'].includes(clean(d.get('status')))))throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
+      // A second paid cancellation may not create a new obligation while
+      // the previous provider result is unresolved. Exact replay is handled above.
+      const prior=await transaction.get(adminDb.collection(`stores/${input.storeId}/paymentPartialRefunds`).where('orderId','==',input.orderId).limit(51));
+      if(prior.size>50||prior.docs.some(d=>d.get('status')!=='refunded'))throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+      const paid=payments.docs.filter(d=>d.get('status')==='paid');
+      if(paid.length>1)throw Error('PAYMENT_REFUND_MULTIPLE_PAYMENTS_UNSUPPORTED');
+      if(prior.size>0&&paid.length!==1)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+      if(paid.length===1){
+        const payment=paid[0],amount=payment.get('amount');
+        if(typeof amount!=='number'||!Number.isFinite(amount)||amount<=0)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+        const seen=new Set<string>();let already=0;
+        for(const doc of prior.docs){
+          const id=clean(doc.get('providerRefundId')),value=doc.get('amount');
+          if(!id||seen.has(id)||doc.get('paymentId')!==payment.id||!clean(payment.get('providerPaymentId'))||clean(doc.get('providerPaymentId'))!==clean(payment.get('providerPaymentId'))||typeof value!=='number'||!Number.isFinite(value)||value<=0)throw Error('PAYMENT_REFUND_PARTIAL_HISTORY_REVIEW_REQUIRED');
+          seen.add(id);already+=brlToMinor(value);
+        }
+        if(!Number.isSafeInteger(already)||already+brlToMinor(cancelledAmount)>brlToMinor(amount))throw Error('ORDER_ITEM_CANCELLATION_AMOUNT_INVALID');
+      }
     }
     const updatedAt = new Date().toISOString();
     const cancellationRecord = {
