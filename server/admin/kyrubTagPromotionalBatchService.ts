@@ -13,6 +13,7 @@ const auditCollection=()=>adminDb.collection('kyrub_admin/control_plane/audit_lo
 const enabled=()=>process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED==='true';
 const batchIdValid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const unitId=()=>randomBytes(16).toString('hex');
+const expectedReadbackHost=()=>currentTagPilotIsolation()==='emulator'?process.env.VERCEL_URL?.trim().toLowerCase()||null:stableTagPilotHost();
 const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
  const tagIds=data.tagIds;
  if(!batchIdValid(id)||data.mode!=='promotional'||data.model!=='adesivo'||
@@ -22,7 +23,8 @@ const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
  return {id,model:'adesivo' as const,count:tagIds.length,units:tagIds.map(tagId=>({
   id:tagId,url:tagUrl(tagId),
   physicalStatus:data.readbackReports?.[tagId]?.status==='browser_readback_confirmed'
-    ? 'readback_confirmed' as const:'not_verified' as const
+    ? (expectedReadbackHost()&&data.readbackReports[tagId].previewHost===expectedReadbackHost()?'readback_confirmed' as const:'readback_stale' as const)
+    :'not_verified' as const
  }))};
 };
 function assertRole(uid:string,role:FirebaseFirestore.DocumentData|undefined){
@@ -102,7 +104,7 @@ export async function confirmPromotionalTagReadback(
  if(!batchIdValid(batchId)||!batchIdValid(tagId)||
     typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
  const isolation=currentTagPilotIsolation();
- const expectedHost=isolation==='emulator'?process.env.VERCEL_URL?.trim().toLowerCase():stableTagPilotHost();
+ const expectedHost=expectedReadbackHost();
  if(!['isolated-project','emulator'].includes(isolation)||!expectedHost||!expectedHost.endsWith('.vercel.app'))
   throw Error('TAG_PILOT_PROJECT_UNSAFE');
  let url:URL;
@@ -139,7 +141,7 @@ export async function confirmPromotionalTagReadback(
    createdAt:FieldValue.serverTimestamp()
   });
   const next={...bd,readbackReports:{...(bd.readbackReports??{}),
-   [tagId]:{status:'browser_readback_confirmed'}}};
+   [tagId]:{status:'browser_readback_confirmed',previewHost:expectedHost}}};
   return {batch:projectBatch(batchId,next),replay:false};
  });
 }

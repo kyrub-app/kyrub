@@ -4,7 +4,7 @@ import {auth} from '../../utils/firebase';
 import {readOneNdefUrl} from '../../utils/kyrubTagNfcReadback';
 import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 
-type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'};
+type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'|'readback_stale'};
 export type PilotBatch={id:string;model:'adesivo';count:number;units:Unit[]};
 type Readiness={isolation:'emulator'|'isolated-project'|'unsafe';canIssue:boolean;previewHost?:string|null};
 type Active={batchId:string;unit:Unit};
@@ -26,7 +26,7 @@ const checkBatch=(batch:PilotBatch)=>{
   batch.count<1||batch.count>10||batch.units?.length!==batch.count||
   new Set(batch.units.map(u=>u.id)).size!==batch.count||
   batch.units.some(u=>!isTagId(u.id)||u.url!==tagUrl(u.id)||
-    !['not_verified','readback_confirmed'].includes(u.physicalStatus)))throw Error('TAG_BATCH_INVALID');
+    !['not_verified','readback_confirmed','readback_stale'].includes(u.physicalStatus)))throw Error('TAG_BATCH_INVALID');
  return batch;
 };
 function makePilotUrl(id:string,readiness:Readiness|null){
@@ -142,7 +142,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
   });
  }
  async function writeCurrent(){
-  if(!active||!canPilot||working||reading.current||writing.current)return;
+  if(!active||active.unit.physicalStatus!=='not_verified'||!canPilot||working||reading.current||writing.current)return;
   const Ctor=(window as Window&{NDEFReader?:NFCConstructor}).NDEFReader;
   if(!Ctor){setNotice('Chrome no Android com NFC ativo é necessário para gravação.');return;}
   const url=makePilotUrl(active.unit.id,readiness);
@@ -168,7 +168,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
   setNotice('Operação NFC interrompida. A unidade não foi confirmada nem excluída.');
  }
  function resume(batch:PilotBatch,unit:Unit){
-  if(working)return;
+  if(working||unit.physicalStatus==='readback_stale')return;
   requestNonce.current=null;reading.current?.abort();writing.current?.abort();
   setActive({batchId:batch.id,unit});
   setPhase(unit.physicalStatus==='readback_confirmed'?'confirmed':'prepared');
@@ -177,6 +177,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
     'Unidade pendente recuperada do inventário. Regrave somente em uma etiqueta vazia ou confira um adesivo que já tenha essa URL.');
  }
  const pending=batches.flatMap(batch=>batch.units.filter(unit=>unit.physicalStatus==='not_verified').map(unit=>({batch,unit})));
+ const stale=batches.reduce((n,b)=>n+b.units.filter(x=>x.physicalStatus==='readback_stale').length,0);
  const allVerified=batches.reduce((n,b)=>n+b.units.filter(x=>x.physicalStatus==='readback_confirmed').length,0);
  return <section className="space-y-4 rounded-xl border border-[#34443B] bg-[#18231E] p-4">
   <div>
@@ -212,6 +213,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
       disabled={!canPilot||working} onClick={()=>resume(batch,unit)}>Retomar unidade {unit.id.slice(-8)}</button>)}
    </div>
   </details>}
+  {stale>0&&<p role="status" className="text-amber-200">{stale} unidade(s) com leitura de outro endereço de homologação. Não contam como conferidas neste ambiente. Preserve-as e utilize unidades novas para o teste.</p>}
   <details><summary className="cursor-pointer">Resumo da sessão</summary><p>{sessionPrepared} preparados · {sessionVerified} conferidos · {allVerified} conferidos no inventário visível.</p></details>
  </section>;
 }
