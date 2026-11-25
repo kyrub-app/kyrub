@@ -1,4 +1,5 @@
 import { auth, db } from './firebase';
+import {parseHiringTerms,termsFromVacancy,type FreelanceHiringTerms} from '../../shared/freelanceHiringTerms';
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
