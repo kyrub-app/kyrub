@@ -31,8 +31,9 @@ export function createSemeaduraReadCoalescer<T>(){
     if(done)return false;
     done=true;signal?.removeEventListener('abort',abort);
     current.subscribers--;
-    if(current.subscribers===0&&map.get(key)===current){
-     map.delete(key);current.controller.abort();
+    if(current.subscribers===0){
+     if(map.get(key)===current)map.delete(key);
+     current.controller.abort();
     }
     return true;
    };
