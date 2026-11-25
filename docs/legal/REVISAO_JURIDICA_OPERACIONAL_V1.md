@@ -24,3 +24,6 @@ Status: rascunhos 0.1, 25/11/2026. Não publicar nem solicitar aceite até aprov
 - ECA Digital: https://www.gov.br/anpd/pt-br/assuntos/eca-digital
 - Decreto 12.880/2026: https://www.planalto.gov.br/ccivil_03/_ato2023-2026/2026/decreto/d12880.htm
 Consultar versões e atos vigentes no momento da aprovação. Este checklist não substitui parecer profissional.
+
+## Complemento de escopo (25/11/2026)
+Cotação e integração comercial de aferição etária adiadas; desenvolver triagem e arquitetura independente agora. Antes da abertura pública, parecer deve delimitar quais funções podem operar com os controles disponíveis e quais exigem comprovação confiável. Não considerar autodeclaração como verificação; alternativa documental existente exige avaliação específica. Bloquear módulos sem controle suficiente. Nenhum adiamento substitui obrigação legal.
