@@ -81,7 +81,7 @@ test('Semeadura remains irrevocable and excludes community reward accumulation',
 });
 
 
-test('gamification supervision scaffold stays local, super-admin only and has no data transport',()=>{
+test('gamification supervision scaffold stays local and super-admin only with isolated optional transport',()=>{
  const app=read('src/components/admin/AdminControlPlaneApp.tsx');
  const panel=read('src/components/admin/AdminGamificationSupervisionWorkspace.tsx');
  assert.match(app,/localGamificationSupervision = import\.meta\.env\.DEV && import\.meta\.env\.VITE_GAMIFICATION_SUPERVISION_PROTOTYPE === 'true'/);
@@ -99,4 +99,25 @@ test('gamification supervision scaffold stays local, super-admin only and has no
  assert.match(panel,/Não há detector de fraude conectado/);
  assert.match(panel,/id:'revisao', label:'Revisões econômicas'/);
  assert.doesNotMatch(panel,/from ['"].*firebase|fetch\(|axios|setDoc\(|runTransaction\(|localStorage|sessionStorage/);
+});
+
+
+test('gamification read panel is opt-in, same-origin, session-bound and never exposes mutations',()=>{
+ const app=read('src/components/admin/AdminControlPlaneApp.tsx');
+ const panel=read('src/components/admin/AdminGamificationPilotReadPanel.tsx');
+ const client=read('src/utils/gamificationAdminPilotClient.ts');
+ assert.match(app,/VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT === 'true'/);
+ assert.match(app,/auth\.app\.options\.projectId==='demo-kyrub-welcome'/);
+ assert.match(app,/auth\.emulatorConfig\?\.host==='127\.0\.0\.1'/);
+ assert.match(app,/auth\.currentUser===user/);
+ assert.match(client,/fetch\('\/api\/admin\/gamification-pilot\?/);
+ assert.match(client,/method:'GET'/);
+ assert.match(client,/cache:'no-store',credentials:'omit',redirect:'error'/);
+ assert.match(client,/!isCurrent\(\)\|\|signal\.aborted/);
+ assert.match(panel,/controller\.abort\(\)/);
+ assert.match(panel,/Cobertura global não verificada/);
+ assert.match(panel,/Créditos brutos/);
+ assert.match(panel,/Bosques pessoais/);
+ assert.match(panel,/Nenhum caso nesta página/);
+ assert.doesNotMatch(panel,/localStorage|sessionStorage|setDoc\(|runTransaction\(/);
 });
