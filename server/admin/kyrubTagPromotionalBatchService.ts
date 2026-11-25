@@ -4,7 +4,7 @@ import {adminDb} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
-import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer} from '../identity/kyrubTagPilotIsolation.js';
+import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer,stableTagPilotHost} from '../identity/kyrubTagPilotIsolation.js';
 
 const batchDocs=()=>adminDb.collection('kyrub_tag_promotional_batches');
 const adminRole=(uid:string)=>adminDb.doc('kyrub_admin/control_plane/admins/'+uid);
@@ -40,9 +40,8 @@ function pilotReadiness(){
   emailLinkProvider:'manual-verification-required' as const,
   storageRulesPublished:'manual-verification-required' as const,
   physicalNfcVerified:false,
-  previewHost:isolation==='isolated-project'&&process.env.VERCEL_URL?.endsWith('.vercel.app')
-   ?process.env.VERCEL_URL:null,
-  canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()
+  previewHost:isolation==='isolated-project'?stableTagPilotHost():null,
+  canIssue:isolation!=='unsafe'&&tagPilotClientMatchesServer()&&enabled()&&(isolation==='emulator'||!!stableTagPilotHost())
  };
 }
 
@@ -60,6 +59,7 @@ export async function listPromotionalBatches(uid:string){
 export async function issuePromotionalBatch(uid:string,count:unknown,requestId:unknown){
  assertTagPilotWriteIsolated();
  if(!enabled())throw Error('TAG_BATCH_DISABLED');
+ if(currentTagPilotIsolation()==='isolated-project'&&!stableTagPilotHost())throw Error('TAG_PILOT_PROJECT_UNSAFE');
  if(!Number.isInteger(count)||typeof count!=='number'||count<1||count>10||!batchIdValid(requestId))throw Error('TAG_BATCH_INVALID');
  const ids=Array.from({length:count},unitId),auditId=unitId(),ref=batchDocs().doc(requestId);
  return adminDb.runTransaction(async tx=>{
@@ -100,8 +100,8 @@ export async function confirmPromotionalTagReadback(
  assertTagPilotWriteIsolated();
  if(!batchIdValid(batchId)||!batchIdValid(tagId)||
     typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
- const expectedHost=process.env.VERCEL_URL?.trim().toLowerCase();
  const isolation=currentTagPilotIsolation();
+ const expectedHost=isolation==='emulator'?process.env.VERCEL_URL?.trim().toLowerCase():stableTagPilotHost();
  if(!['isolated-project','emulator'].includes(isolation)||!expectedHost||!expectedHost.endsWith('.vercel.app'))
   throw Error('TAG_PILOT_PROJECT_UNSAFE');
  let url:URL;
@@ -121,8 +121,10 @@ export async function confirmPromotionalTagReadback(
     td.distribution!=='promotional'||td.promotionalBatchId!==batchId||
     td.ownerId!==null||td.enabled!==false||td.blocked===true)
    throw Error('TAG_BATCH_CONFLICT');
-  if(bd.readbackReports?.[tagId]?.status==='browser_readback_confirmed')
+  if(bd.readbackReports?.[tagId]?.status==='browser_readback_confirmed'){
+   if(bd.readbackReports[tagId].previewHost!==expectedHost)throw Error('TAG_READBACK_MISMATCH');
    return {batch:projectBatch(batchId,bd),replay:true};
+  }
   const verifiedAt=new Date().toISOString();
   tx.update(batch,{['readbackReports.'+tagId]:{
    status:'browser_readback_confirmed',verifiedAt,verifiedBy:uid,
