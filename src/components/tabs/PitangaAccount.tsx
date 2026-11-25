@@ -8,9 +8,9 @@ type Account = { pitangas: number; xp: number; initialized: boolean; entries: { 
 const accountReads=createSemeaduraReadCoalescer<Account>();
 const STATEMENT_PAGE_SIZE=20;
 export function PitangaAccount({mode='all'}:{mode?:'all'|'pitangas'|'xp'}) {
-  const [session,setSession]=useState(auth.currentUser);
-  useEffect(()=>auth.onAuthStateChanged(setSession),[]);
-  return <ScopedPitangaAccount key={session?.uid??''} session={session} mode={mode}/>;
+  const [identity,setIdentity]=useState(()=>({session:auth.currentUser,generation:0}));
+  useEffect(()=>auth.onAuthStateChanged(session=>setIdentity(previous=>previous.session===session?previous:{session,generation:previous.generation+1})),[]);
+  return <ScopedPitangaAccount key={identity.generation} session={identity.session} mode={mode}/>;
 }
 function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session:typeof auth.currentUser}) {
   const [account, setAccount] = useState<Account | null>(null);
