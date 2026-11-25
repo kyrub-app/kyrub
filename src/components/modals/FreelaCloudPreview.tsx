@@ -1,7 +1,7 @@
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-import {applyToHiringVacancy,decideHiringApplication,listHiringApplications,listHiringVacancies,publishHiringVacancy,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
+import {applyToHiringVacancy,decideHiringApplication,listHiringApplications,listHiringVacancies,publishHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
 
 export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';onClose:()=>void}){
  const employer=mode==='employer';
@@ -41,8 +41,13 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
     </article>)}
     <h4 className="font-bold">{employer?'Candidaturas recebidas':'Minhas candidaturas'}</h4>
     {applications.map(a=><article key={a.id} className="border border-slate-700 rounded-xl p-3 space-y-2">
-      <p>Vaga: {vacancies.find(v=>v.id===a.vagaId)?.title||a.vagaId}</p><p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada'})[a.status]}</p>
+      <p>Vaga: {vacancies.find(v=>v.id===a.vagaId)?.title||a.vagaId}</p><p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada',completion_requested:'Aguardando confirmação de conclusão',completed:'Concluído — pagamento não verificado pelo Kyrub'})[a.status]}</p>
       {a.status==='pending'&&(employer?(['accepted','rejected'] as const):(['withdrawn'] as const)).map(status=><button key={status} disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await decideHiringApplication(a.id,status);return 'Situação atualizada no servidor.';})}>{({accepted:'Aceitar',rejected:'Recusar',withdrawn:'Retirar'})[status]}</button>)}
+      {!employer&&a.status==='accepted'&&<button disabled={busy} className="border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completion_requested');return 'Conclusão informada. Aguarde a confirmação do contratante.';})}>Informar conclusão</button>}
+      {employer&&a.status==='completion_requested'&&<>
+        <button disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completed');return 'Serviço concluído pelas partes. Nenhum pagamento confirmado.';})}>Confirmar conclusão</button>
+        <button disabled={busy} className="border border-slate-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'accepted');return 'Serviço devolvido para revisão.';})}>Solicitar revisão</button>
+      </>}
     </article>)}
     <button disabled={busy} className="border border-slate-700 rounded-lg p-2" onClick={()=>void perform(async()=> 'Consulta atualizada.')}>Atualizar</button>
     <p role="status">{notice}</p>
