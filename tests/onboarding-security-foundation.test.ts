@@ -84,3 +84,18 @@ test('legacy governance writes cannot approve or overwrite ingress documents',as
  assert.match(source,/assertLegalDraftWrite\(document, prior.data\(\)\)/);
  assert.match(source,/if \(isIngressLegalType\(current.type\)\) throw Error\('LEGAL_PUBLICATION_AUTHORITY_REQUIRED'\)/);
 });
+
+test('TOTP client adapter accepts six digit codes and provider-selected TOTP factors only',async()=>{
+ const {validateKyrubTotpCode,isKyrubMfaChallenge,listTotpFactors}=await import('../src/utils/kyrubTotpAccess.js');
+ assert.equal(validateKyrubTotpCode('012345'),'012345');
+ for(const input of ['',123456,'12345','1234567','12a456',' 123456','123456 '])assert.throws(()=>validateKyrubTotpCode(input),/MFA_CODE_INVALID/);
+ assert.equal(isKyrubMfaChallenge({code:'auth/multi-factor-auth-required'}),true);
+ assert.equal(isKyrubMfaChallenge({code:'auth/wrong-password'}),false);
+ assert.equal(isKyrubMfaChallenge(null),false);
+ const hints=[{uid:'totp-1',factorId:'totp',displayName:'Autenticador',enrollmentTime:'test'},{uid:'sms-1',factorId:'phone',displayName:'SMS',enrollmentTime:'test'}];
+ assert.deepEqual(listTotpFactors({hints}),[{id:'totp-1',label:'Autenticador'}]);
+ const {readFileSync}=await import('node:fs');
+ const source=readFileSync('src/utils/kyrubTotpAccess.ts','utf8');
+ assert.doesNotMatch(source,/localStorage\.|sessionStorage\.|console\./);
+ assert.match(source,/resolver\.resolveSignIn\(assertion\)/);
+});
