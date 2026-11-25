@@ -48,6 +48,7 @@ const parsePreferences = (
         social_chat: categories.social_chat !== false,
         note_invitation: categories.note_invitation !== false,
         user_forward: categories.user_forward !== false,
+        freelance: categories.freelance === true,
       },
     },
   };
