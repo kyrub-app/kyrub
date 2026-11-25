@@ -84,6 +84,9 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         && hasApplicationVacancy()
         && get(rendaVacancyPath(incoming().vagaId)).data.status == 'open'
         && incoming().status == 'pending'
+        && incoming().keys().hasOnly(['vagaId', 'ownerId', 'userId', 'status', 'createdAt', 'updatedAt'])
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
         && hasApprovedIdentityProfile('freelancer');
       allow update: if isSignedIn()
         && incoming().userId == existing().userId
