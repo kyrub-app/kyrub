@@ -39,6 +39,33 @@ test('verified emulator session screens once and keeps the private record minima
     assert.deepEqual(await (await write(token,{birthDate:'2020-01-01',declaredAdult:false})).json(),{status:'declared_adult'});
     const stored = await adminDb.doc('age_eligibility_private/'+user.uid).get();
     assert.deepEqual(Object.keys(stored.data()!).sort(),['uid','method','recordedAt','policyVersion','status'].sort());
+    // Prototype is available only inside this isolated test and never mounts legacy APIs.
+    const {privatePersonalWorkspace}=await import('../server/identity/privatePersonalWorkspace.js');
+    const {requireKyrubSessionMfa}=await import('../server/identity/kyrubMfaAuthorization.js');
+    const authHeader='Bearer '+token;
+    await assert.rejects(requireKyrubSessionMfa(authHeader,'financial',300),/second_factor_required/);
+    await requireKyrubSessionMfa(authHeader,'ordinary',300);
+    await assert.rejects(privatePersonalWorkspace(authHeader,'notes'),/PERSONAL_UNAVAILABLE/);
+    process.env.KYRUB_PERSONAL_PREVIEW_ENABLED='true';
+    try{
+      await assert.rejects(privatePersonalWorkspace(authHeader,'notes'),/PERSONAL_FORBIDDEN/);
+      await adminDb.doc('age_eligibility_private/'+user.uid).update({status:'inconclusive'});
+      const note=await privatePersonalWorkspace(authHeader,'notes',{action:'create',text:'Nota privada de teste'});
+      const task=await privatePersonalWorkspace(authHeader,'tasks',{action:'create',text:'Tarefa privada de teste'});
+      assert.equal(note.items.length,1);assert.equal(task.items.length,1);
+      await assert.rejects(privatePersonalWorkspace(authHeader,'notes',{action:'create',text:'Compartilhar',sharedWith:['other']}),/PERSONAL_INVALID/);
+      const second=await adminAuth.createUser({email:'second-'+email,password,emailVerified:true});
+      await adminDb.doc('age_eligibility_private/'+second.uid).set({uid:second.uid,status:'inconclusive'});
+      const secondLogin=await fetch(endpoint,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({email:second.email,password,returnSecureToken:true})});
+      assert.equal(secondLogin.status,200);
+      const secondHeader='Bearer '+(await secondLogin.json()).idToken;
+      assert.deepEqual(await privatePersonalWorkspace(secondHeader,'notes'),{items:[]});
+      await assert.rejects(privatePersonalWorkspace(secondHeader,'notes',{action:'delete',id:note.items[0].id}),/PERSONAL_INVALID/);
+      assert.equal((await privatePersonalWorkspace(authHeader,'tasks',{action:'update',id:task.items[0].id,text:'Concluída',done:true})).items[0].done,true);
+      assert.equal((await privatePersonalWorkspace(authHeader,'notes',{action:'delete',id:note.items[0].id})).items.length,0);
+      await adminDb.doc('age_eligibility_private/'+user.uid).update({status:'suspended'});
+      await assert.rejects(privatePersonalWorkspace(authHeader,'tasks'),/PERSONAL_FORBIDDEN/);
+    }finally{delete process.env.KYRUB_PERSONAL_PREVIEW_ENABLED;}
     await adminAuth.updateUser(user.uid,{disabled:true});
     assert.equal((await read(token)).status,401);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
