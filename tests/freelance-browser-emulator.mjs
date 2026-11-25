@@ -115,7 +115,7 @@ try{
  const offer=op.locator('article').filter({has:op.getByText('Oferta para retirada',{exact:true})});
  await offer.getByRole('button',{name:'Retirar oferta',exact:true}).click();
  await offer.getByRole('button',{name:'Confirmar retirada',exact:true}).click();
- await waitText(op,'Oferta retirada.');
+ await op.getByRole('status').filter({hasText:/^Oferta retirada\.$/}).waitFor();
  await click(wp,'Atualizar');
  await waitText(wp,'Status: Oferta retirada pelo contratante');
  assert.equal(await wp.getByText('Oferta para retirada',{exact:true}).count(),0);
