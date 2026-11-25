@@ -3,6 +3,7 @@ import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { kyrubKCoinBalance, type KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { calculatePitangueiraJourney } from '../../shared/pitangueiraJourney.js';
 import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
+import { readIsolatedSemeaduraEvidenceInTransaction } from './semeaduraReviewEvidence.js';
 
 const uid = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(v);
 const LIMIT = 200;
@@ -330,4 +331,19 @@ export async function runIsolatedGamificationQueueCycle(
  return {scope:'isolated-queue-cycle' as const,processed,batches,moreObserved,
    stopReason:moreObserved?'batch-budget-reached' as const:'no-more-in-last-snapshot' as const,
    globalCoverageVerified:false,schedulerInstalled:false};
+}
+
+
+/** Authenticated technical suspicion inspection; no automatic case or sanction.
+ * Administrative authorization and evidence share one read-only snapshot. */
+export async function readIsolatedGamificationSuspicionEvidence(
+ db:Firestore,auth:Auth,authorization:string,input:{kind:'personal'|'community';postId:string},
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const evidence=await readIsolatedSemeaduraEvidenceInTransaction(db,tx,input);
+  return {...evidence,classification:'technical-indicator-not-fraud-verdict' as const,
+    automaticSanction:false,caseCreated:false};
+ },{readOnly:true});
 }
