@@ -204,3 +204,15 @@ test('status batcher groups distinct requests and rejects missing or cross-sessi
  await assert.rejects(batch(session,{kind:'personal',postId:'p3'},signal,async()=>({results:[{kind:'personal',postId:'wrong',status:{count:7}}]})),/SEMEADURA_BATCH_INVALID/);
  await assert.rejects(batch(session,{kind:'personal',postId:'p4'},signal,async()=>({results:[{kind:'personal',postId:'p4',status:null}]})),/SEMEADURA_STATUS_UNAVAILABLE/);
 });
+
+
+test('public mutation uses mandatory economic admission, never the visual-only fixture adapters',()=>{
+ const handler=read('server/gamification/semeaduraHandler.ts');
+ const service=read('server/gamification/semeaduraService.ts');
+ const settlement=read('server/gamification/semeaduraEconomicPilot.ts');
+ assert.match(handler,/await seedEconomicallyAdmittedPost\(adminDb, target, adminAuth\)/);
+ assert.doesNotMatch(handler,/seedVerifiedPost|seedReleaseControlledPost/);
+ assert.match(service,/seedEconomicallyAdmittedPost=.*seedPostTransaction\(db,input,true,authorAuth,true\)/);
+ assert.match(service,/zeroStartRequired:requireEconomicAdmission\|\|/);
+ assert.match(settlement,/strictCurrencyAuthority&&state\.currencyAuthority!=='welcome'&&state\.currencyAuthority!=='zero-history'/);
+});
