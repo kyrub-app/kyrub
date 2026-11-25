@@ -6,6 +6,7 @@ import { getAuth } from 'firebase-admin/auth';
 import { getFirestore } from 'firebase-admin/firestore';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
+import tailwindcss from '@tailwindcss/vite';
 import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
 import { createIsolatedGamificationAdminRouter } from '../server/gamification/semeaduraAdminPilotRouter.ts';
@@ -64,7 +65,7 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await closeIsolatedGamificationSuspicionCase(db,auth,bearer,{caseId:'browser-case',outcome:'resolved'});
   const local=express();
   local.use('/api/admin/gamification-pilot',createIsolatedGamificationAdminRouter(db,auth));
-  vite=await createViteServer({configFile:false,appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
+  vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
   local.get('/',async(_req,res)=>{res.type('html').send(await vite.transformIndexHtml('/','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/gamification-admin-browser.tsx"></script></body></html>'));});
   local.use(vite.middlewares);
   server=local.listen(0,'127.0.0.1');
