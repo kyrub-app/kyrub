@@ -292,6 +292,7 @@
             || (
               storeSecOperationalStaff(storeId)
               && canWriteErpWithAge()
+              && (!incoming().diff(existing()).affectedKeys().hasAny(['paymentStatus']) || canWriteFinancialWithMfa())
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
                 'status',
@@ -326,7 +327,7 @@
           );
 
         allow create: if storeSecPaymentStaff(storeId)
-          && canWriteErpWithAge()
+          && canWriteFinancialWithMfa()
           && incoming().id == paymentId
           && incoming().storeId == storeId
           && incoming().actorUserId == request.auth.uid
