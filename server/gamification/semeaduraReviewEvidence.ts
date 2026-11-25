@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
 import { SEEDS_PER_BOSQUE, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 import { semeaduraDay } from '../../shared/semeaduraDailyLimit.js';
 import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
@@ -24,14 +24,27 @@ export async function inspectIsolatedSemeaduraEvidence(
   if (!uid(reviewerId) || !input || !['personal','community'].includes(input.kind) ||
       typeof input.postId !== 'string' || !/^[A-Za-z0-9_-]{1,500}$/.test(input.postId))
     throw Error('SEMEADURA_REVIEW_INPUT_INVALID');
-  const {kind,postId}=input;
-  const key=createHash('sha256').update(kind+'\0'+postId).digest('hex');
-  const statsRef=db.doc('semeadura_post_stats/'+key);
   return db.runTransaction(async tx=>{
     const reviewer=await tx.get(db.doc(root+'/reviewers/'+reviewerId));
     if(reviewer.get('schemaVersion')!==1||reviewer.get('reviewerId')!==reviewerId||
        reviewer.get('active')!==true||reviewer.get('fixtureOnly')!==true)
       throw Error('SEMEADURA_REVIEW_NOT_AUTHORIZED');
+    return readIsolatedSemeaduraEvidenceInTransaction(db,tx,input);
+  },{readOnly:true});
+}
+
+/** Internal transaction reader; callers must authorize before invoking it.
+ * Still fail closed outside the exact local pilot. */
+export async function readIsolatedSemeaduraEvidenceInTransaction(
+ db:Firestore,tx:Transaction,input:{kind:SemeaduraPostKind;postId:string},
+){
+  if (!semeaduraEconomicPilotEnabled(db)) throw Error('SEMEADURA_REVIEW_PILOT_DISABLED');
+  if (!input || !['personal','community'].includes(input.kind) ||
+      typeof input.postId !== 'string' || !/^[A-Za-z0-9_-]{1,500}$/.test(input.postId))
+    throw Error('SEMEADURA_REVIEW_INPUT_INVALID');
+  const {kind,postId}=input;
+  const key=createHash('sha256').update(kind+'\0'+postId).digest('hex');
+  const statsRef=db.doc('semeadura_post_stats/'+key);
     const [stats,receipts]=await Promise.all([
       tx.get(statsRef),tx.get(statsRef.collection('receipts').limit(SAMPLE_LIMIT+1)),
     ]);
@@ -69,5 +82,4 @@ export async function inspectIsolatedSemeaduraEvidence(
       findings:[...findings].sort(),
       // This is a data-integrity signal, never an attribution of misconduct.
       requiresTechnicalReview:findings.size>0};
-  },{readOnly:true});
 }
