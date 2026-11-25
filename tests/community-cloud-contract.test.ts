@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createDetailSubscriptionRegistry } from '../src/utils/squareDetailSubscriptionRegistry';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -486,7 +487,7 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(index, /community.visibility !== 'public'/);
   assert.match(index, /onSnapshot\(doc\(db, 'communities', pointer\.communityId\)/);
   assert.match(index, /onSnapshot\(doc\(db, 'community_posts', pointer\.postId\)/);
-  assert.match(index, /window\.setInterval\(publish, 60_000\)/);
+  assert.match(index, /window\.setInterval\(\(\) => rebuild\(\), 60_000\)/);
   assert.match(index, /withinCommunitySquareWindow/);
   assert.match(index, /post\.communityId !== pointer\.communityId/);
   assert.doesNotMatch(index, /authorId: user\.uid,\s*createdAt/); // Public pointer stores no author ID.
@@ -917,4 +918,68 @@ test('340px community catalog keeps Conhecer and Participar labels complete', ()
   // Membership/fallback actions are also allowed to wrap, not clip.
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 bg-slate-900\/90 px-2 text-center/);
+});
+
+test('incremental square listeners retain unchanged keys, close removed keys and reject stale callbacks', () => {
+  const starts: string[] = [], stops: string[] = [], clears: string[] = [];
+  const callbacks = new Map<string, {isCurrent: () => boolean; fail: () => void}>();
+  const registry = createDetailSubscriptionRegistry<string>((value, isCurrent, fail) => {
+    starts.push(value);
+    callbacks.set(value, {isCurrent, fail});
+    return () => stops.push(value);
+  }, value => clears.push(value));
+  registry.reconcile(new Map([['a','a'],['b','b']]));
+  const old = callbacks.get('a')!;
+  registry.reconcile(new Map([['a','a'],['b','b']]));
+  assert.deepEqual(starts, ['a','b']);
+  registry.reconcile(new Map([['b','b'],['c','c']]));
+  assert.deepEqual(starts, ['a','b','c']);
+  assert.deepEqual(stops, ['a']);
+  assert.deepEqual(clears, ['a']);
+  assert.equal(old.isCurrent(), false);
+  old.fail();
+  assert.deepEqual(clears, ['a']);
+  registry.reconcile(new Map([['a','a'],['b','b'],['c','c']]));
+  assert.equal(old.isCurrent(), false);
+  assert.equal(callbacks.get('a')!.isCurrent(), true);
+  registry.close();
+  assert.equal(callbacks.get('b')!.isCurrent(), false);
+  assert.equal(callbacks.get('c')!.isCurrent(), false);
+  registry.reconcile(new Map([['d','d']]));
+  assert.deepEqual(starts, ['a','b','c','a']);
+});
+
+test('incremental square listener failures clear cached data and retry only on upstream refresh', () => {
+  let starts = 0, clears = 0;
+  let current: (() => boolean) | undefined;
+  let fail: (() => void) | undefined;
+  const registry = createDetailSubscriptionRegistry<string>((_value, isCurrent, onFailure) => {
+    starts++;
+    current = isCurrent;
+    fail = onFailure;
+    return () => {};
+  }, () => clears++);
+  const desired = new Map([['a','a']]);
+  registry.reconcile(desired);
+  const old = current!;
+  fail!();
+  assert.equal(clears, 1);
+  assert.equal(old(), false);
+  registry.reconcile(desired);
+  assert.equal(starts, 1);
+  registry.reconcile(desired, true);
+  assert.equal(starts, 2);
+  assert.equal(old(), false);
+  assert.equal(current!(), true);
+  registry.close();
+});
+
+test('square feed preserves authoritative community checks and reconciles live detail subscriptions', () => {
+  const feed = read('src/utils/communitySquareFeed.ts');
+  assert.match(feed, /postDetails\.reconcile\(desiredPosts, retryFailed\)/);
+  assert.match(feed, /communityDetails\.reconcile\(desiredCommunities, retryFailed\)/);
+  assert.match(feed, /JSON\.stringify\(\[pointer\.postId, pointer\.communityId\]\)/);
+  assert.match(feed, /community\.visibility !== 'public'/);
+  assert.match(feed, /auth\.currentUser\?\.uid !== viewerId/);
+  assert.doesNotMatch(feed, /stopDetails/);
 });
