@@ -714,7 +714,7 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
 
 
 test('authenticated suspicion inspection requires active admin and reports evidence without sanctions',async()=>{
- const {readIsolatedGamificationSuspicionEvidence,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase,listIsolatedGamificationSuspicionCases,readIsolatedGamificationSuspicionCase}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {readIsolatedGamificationSuspicionEvidence,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase,listIsolatedGamificationSuspicionCases,readIsolatedGamificationSuspicionCase,acceptIsolatedGamificationEconomicReferral,decideIsolatedGamificationEconomicReferral,readIsolatedGamificationEconomicReferral}=await import('../server/gamification/semeaduraAdminSupervision.js');
  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
  const {createHash}=await import('node:crypto');
  const admin=await googleSignIn('suspicion-inspector-admin');
@@ -786,6 +786,42 @@ test('authenticated suspicion inspection requires active admin and reports evide
   const newId='suspicion-case-new';
   assert.equal((await open(newId)).status,'open');
   await close(newId,'referred_for_review');
+  const reviewRoot=db.doc('systemControl/semeaduraEconomicReview');
+  const referral=reviewRoot.collection('referrals').doc(newId);
+  const decisionRef=reviewRoot.collection('referralDecisions').doc(newId);
+  const accept=(id:string)=>acceptIsolatedGamificationEconomicReferral(db,auth,bearer,id);
+  const readReview=()=>readIsolatedGamificationEconomicReferral(db,auth,bearer,newId);
+  const command={caseId:newId,decision:'requires_separate_corrective_review' as const,reason:'Divergência técnica exige avaliação independente.'};
+  const decide=()=>decideIsolatedGamificationEconomicReferral(db,auth,bearer,command);
+  // Closing with a referral classification is not an automatic intake.
+  assert.equal((await referral.get()).exists,false);
+  await assert.rejects(accept(caseId),/ECONOMIC_REFERRAL_SOURCE_INVALID/);
+  await assert.rejects(accept('missing-case'),/ECONOMIC_REFERRAL_SOURCE_UNAVAILABLE/);
+  await assert.rejects(acceptIsolatedGamificationEconomicReferral(db,auth,'Bearer '+author.idToken,newId),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  const intake=await Promise.all([accept(newId),accept(newId)]);
+  assert.equal(intake.filter(r=>!r.replayed).length,1);
+  assert.equal((await readReview()).status,'pending');
+  assert.equal((await readReview()).decision,null);
+  await assert.rejects(decideIsolatedGamificationEconomicReferral(db,auth,bearer,{...command,reason:'curto'}),/ECONOMIC_REFERRAL_INPUT_INVALID/);
+  const decisions=await Promise.all([decide(),decide()]);
+  assert.equal(decisions.filter(r=>!r.replayed).length,1);
+  const review=await readReview();
+  assert.equal(review.status,'decided');
+  assert.equal(review.decision?.outcome,command.decision);
+  assert.equal(review.decision?.reason,command.reason);
+  assert.equal(review.economicMutationApplied,false);
+  assert.equal(review.fraudVerdict,false);
+  assert.deepEqual(review.openingEvidence.findings,['COUNTER_RECEIPT_MISMATCH']);
+  assert.deepEqual(review.closingEvidence.findings,['COUNTER_RECEIPT_MISMATCH']);
+  await assert.rejects(decideIsolatedGamificationEconomicReferral(db,auth,bearer,{...command,decision:'no_action'}),/ECONOMIC_REFERRAL_DECISION_CONFLICT/);
+  assert.equal((await accept(newId)).status,'decided');
+  await decisionRef.update({decision:'no_action'});
+  await assert.rejects(readReview(),/ECONOMIC_REFERRAL_STATE_INVALID/);
+  await decisionRef.update({decision:command.decision});
+  assert.equal((await hold.get()).exists,false);
+  assert.equal((await balance(author.localId).get()).get('availableKCoins'),100);
+  assert.equal((await detail(newId)).outcome,'referred_for_review');
+
   assert.equal((await root.collection('closures').get()).size,2);
   assert.equal((await list('open')).cases.length,0);
   const first=await list('closed',1);
@@ -851,6 +887,8 @@ test('authenticated suspicion inspection requires active admin and reports evide
   await assert.rejects(open('suspended-case'),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
   await assert.rejects(list('all'),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
   await assert.rejects(detail(caseId),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await assert.rejects(readReview(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await assert.rejects(decide(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
   await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
  }finally{
   await stats.set({kind:'personal',postId,authorId:author.localId,communityId:'',acceptedSeeds:1,closed:false});
