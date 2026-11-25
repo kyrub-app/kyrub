@@ -139,7 +139,7 @@
           || hasCommunityMembership(communityId)
         );
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().ownerId == request.auth.uid
         && incoming().memberCount == 1
         && incoming().lastMembershipChangeId
@@ -358,7 +358,7 @@
           )
         );
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().userId == request.auth.uid
         && incoming().joinedAt == request.time
         && incoming().updatedAt == request.time
@@ -415,6 +415,8 @@
         && hasValidCommunityMembershipShape(incoming(), membershipId);
 
       allow update: if isCommunityOwner(existing().communityId)
+        && canWriteSocialWithAge()
+        && canParticipateInSocialWithAge(existing().userId)
         && existing().role == 'member'
         && existing().status == 'pending'
         && incoming().membershipId == existing().membershipId
