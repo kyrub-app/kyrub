@@ -381,3 +381,44 @@ Não criar configuração efetiva, promover piloto ou liberar writersVerified.
 Após relatório externo, definir a autoridade runtime e autorização da
 campanha com SHA aprovado, controles de abertura e pausa próprios,
 validar regras/cobertura e nova candidata. Sem deploy, merge ou custo novo.
+
+
+## G3.11 — Fechamento da rodada de homologação e handoff externo
+Base de código homologada: 2d081d22d1055a338f1b4f41b3809e5dae698f6d.
+Revisões 0959f9e e 2d081d2: cinco workflows concluídos com sucesso em cada.
+Workflow 45559795916: contratos 139020497954, Auth/Firestore 139020497910,
+inventário 139020497536 aprovados; release gate 139020499400 skipped.
+Artefatos efetivamente inspecionados: 14997815219 (inventário de 1.174
+arquivos, 57 candidatos) e 14997027701 (sete chamadas primitivas revisadas,
+zero não revisadas, zero entradas obsoletas, sete pendências de prova de
+deploy/fence; deployedWritersVerified=false, externalWritersVerified=false).
+O scan não é prova de completude do grafo nem classificação de cada um dos
+57 candidatos. A configuração comercial offline está testada, não ligada
+a operações reais. 6a6be34 amplia os gatilhos do CI para alterações de
+política, configuração, manifesto de revisão e componentes associados.
+CI da alteração de gatilho/documentação ainda pendente.
+
+### Ordem de encerramento, sem ampliar escopo
+1. Manter PR #1277 em rascunho e referência de homologação fixa; não
+   acumular funcionalidades ou simular aprovação com novos fixtures.
+2. Reutilizar a solicitação de auditoria Work do Firebase principal já
+   pendente. Relatório de cobertura de escritores reais, identidades,
+   revisões e regras, plano/região/uso, sem credenciais ou dados pessoais.
+   Distinguir desconhecido, negado, desabilitado e vazio confirmado.
+3. A partir da evidência externa, resolver incompatibilidades reais e
+   implementar/revisar a autoridade comercial efetiva e o modo de
+   configuração da campanha. Não copiar flags ou epoch de emulador.
+   Preservar saldos/XP existentes e início zero da Jornada; nenhuma
+   migração preventiva ou bônus retroativo. Não escolher datas antes da
+   aprovação. Revisar também o custo e a exposição das dependências
+   moderadas/baixa remanescentes conforme o relatório.
+4. Fixar SHA da candidata comercial (distinto da base do piloto se houver
+   mudanças), hashes de regras/evidências e aprovação independente da
+   configuração; executar validação completa. Pedir autorização própria
+   para implantação e, separadamente, ativação. Não liberar o gate com
+   base em relatório incompleto, sucesso da coleta ou ausência de logs.
+
+Não há autorização para merge, deployment, escrita em Firebase, billing
+ou ativação. O trabalho de homologação de kyrub-tags/PR #1274 continua
+independente. Este ponto encerra a expansão do piloto; a próxima decisão
+material de lançamento deve ser fundamentada no inventário externo.
