@@ -1,5 +1,7 @@
 import type { KyrubActivityEvent } from '../../shared/kyrubActivityEvents';
+import type { User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
+import { createActivitySessionQueue } from './activitySessionQueue';
 
 const REMOTE_ACTIVITY_ENDPOINT = '/api/health?transport=activity-events';
 const MAX_BATCH_SIZE = 20;
@@ -7,9 +9,15 @@ const MAX_QUEUE_SIZE = 80;
 const FLUSH_DELAY_MS = 1200;
 const RETRY_DELAY_MS = 5000;
 
-let queue: KyrubActivityEvent[] = [];
+const queue = createActivitySessionQueue<User, KyrubActivityEvent>(MAX_QUEUE_SIZE);
 let flushTimer = 0;
-let flushing = false;
+
+export const synchronizeActivityRemoteSession = (): void => {
+  if (queue.synchronize(auth.currentUser) && flushTimer) {
+    window.clearTimeout(flushTimer);
+    flushTimer = 0;
+  }
+};
 
 const remoteEvent = (event: KyrubActivityEvent) => ({
   id: event.id,
@@ -34,40 +42,40 @@ const scheduleFlush = (delay = FLUSH_DELAY_MS): void => {
 
 export const enqueueKyrubActivityEvent = (event: KyrubActivityEvent): void => {
   if (typeof window === 'undefined') return;
-  if (queue.some(candidate => candidate.id === event.id)) return;
-  queue = [...queue, event].slice(-MAX_QUEUE_SIZE);
-  scheduleFlush(queue.length >= MAX_BATCH_SIZE ? 0 : FLUSH_DELAY_MS);
+  synchronizeActivityRemoteSession();
+  if (!queue.enqueue(auth.currentUser, event)) return;
+  scheduleFlush(queue.size() >= MAX_BATCH_SIZE ? 0 : FLUSH_DELAY_MS);
 };
 
 export const flushKyrubActivityEvents = async (): Promise<void> => {
-  if (flushing || queue.length === 0) return;
+  if (typeof window === 'undefined') return;
+  synchronizeActivityRemoteSession();
   const user = auth.currentUser;
-  if (!user) {
-    scheduleFlush(RETRY_DELAY_MS);
-    return;
-  }
-
-  flushing = true;
-  const batch = queue.slice(0, MAX_BATCH_SIZE);
+  const batch = queue.begin(user, MAX_BATCH_SIZE);
+  if (!batch || !user) return;
+  let acknowledged = false;
   try {
     const token = await user.getIdToken();
+    if (!queue.isCurrent(auth.currentUser, batch)) return;
     const response = await fetch(REMOTE_ACTIVITY_ENDPOINT, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${token}`,
         'content-type': 'application/json',
       },
-      body: JSON.stringify({ events: batch.map(remoteEvent) }),
+      body: JSON.stringify({ events: batch.events.map(remoteEvent) }),
       cache: 'no-store',
       credentials: 'same-origin',
+      signal: batch.controller.signal,
     });
     if (!response.ok) throw new Error(`activity transport HTTP ${response.status}`);
-    const sentIds = new Set(batch.map(event => event.id));
-    queue = queue.filter(event => !sentIds.has(event.id));
+    acknowledged = true;
   } catch (error) {
-    console.warn('[ActivityRemote] envio adiado.', error);
+    if (queue.isCurrent(auth.currentUser, batch)) console.warn('[ActivityRemote] envio adiado.', error);
   } finally {
-    flushing = false;
-    if (queue.length > 0) scheduleFlush(queue.length >= MAX_BATCH_SIZE ? 0 : RETRY_DELAY_MS);
+    synchronizeActivityRemoteSession();
+    if (queue.finish(auth.currentUser, batch, acknowledged) && queue.size() > 0) {
+      scheduleFlush(queue.size() >= MAX_BATCH_SIZE && acknowledged ? 0 : RETRY_DELAY_MS);
+    }
   }
 };
