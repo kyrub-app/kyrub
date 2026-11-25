@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged, reload, signOut, isSignInWithEmailLink, type User } from 'firebase/auth';
+import { onAuthStateChanged, reload, signOut, isSignInWithEmailLink, type User, type MultiFactorResolver } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import { enterWithPassword, registerWithPassword, requestOwnEmailConfirmation, requestPasswordRecovery, requestKyrubEmailLink, completeKyrubEmailLink } from '../utils/kyrubEmailAccess';
 import type { AgeStatus } from '../../shared/ageEligibility';
 import {IngressLegalPreview} from './IngressLegalPreview';
 import {PrivatePersonalPreview} from './PrivatePersonalPreview';
+import {KyrubTotpChallenge} from './KyrubTotpChallenge';
+import {isKyrubMfaChallenge,resolveKyrubTotpChallenge} from '../utils/kyrubTotpAccess';
+const totpPreview=import.meta.env.DEV&&import.meta.env.VITE_KYRUB_ONBOARDING_EMULATOR==='true'&&import.meta.env.VITE_KYRUB_TOTP_PREVIEW==='true';
 
 const statuses = new Set<AgeStatus>(['pending','declared_adult','declared_underage','verified_adult','verified_underage','inconclusive','suspended']);
 const labels: Record<AgeStatus,string> = {
@@ -44,12 +47,14 @@ export function OnboardingEmulatorEntry() {
   const [status,setStatus] = useState<AgeStatus|null>(null);
   const [notice,setNotice] = useState('');
   const [busy,setBusy] = useState(false);
+  const [mfa,setMfa]=useState<MultiFactorResolver|null>(null);
   const [revision,setRevision] = useState(0);
   const running = useRef(false);
   const request = useRef<AbortController|null>(null);
   useEffect(() => onAuthStateChanged(auth, next => {
     request.current?.abort();
     setUser(next);setVerified(next?.emailVerified===true);setReady(true);
+    if(next)setMfa(null);
     setStatus(null);setBirthDate('');setDeclaredAdult(false);setPassword('');setNotice('');
   }), []);
   useEffect(() => {
@@ -64,7 +69,12 @@ export function OnboardingEmulatorEntry() {
 
   const operate = async (action:()=>Promise<void>) => {
     if(running.current)return;running.current=true;setBusy(true);setNotice('');
-    try{await action();}catch{setNotice('Não foi possível concluir a operação. Confira os dados e tente novamente.');}
+    try{await action();}catch(error){
+      if(totpPreview&&!auth.currentUser&&isKyrubMfaChallenge(error)){
+        try{setMfa(resolveKyrubTotpChallenge(auth,error));setPassword('');}
+        catch{setNotice('Este método de autenticação em dois fatores ainda não está disponível.');}
+      }else setNotice('Não foi possível concluir a operação. Confira os dados e tente novamente.');
+    }
     finally{running.current=false;setBusy(false);}
   };
   const field = 'block w-full rounded-xl border border-slate-700 bg-slate-900 p-3 text-sm text-white';
@@ -74,7 +84,7 @@ export function OnboardingEmulatorEntry() {
     <section className="mx-auto max-w-md space-y-4 rounded-2xl border border-slate-700 p-4">
       <h1 className="text-base font-bold">Ingresso Kyrub</h1>
       <p className="text-xs text-slate-400">Homologação isolada. Não utilize dados reais.</p>
-      {!user ? <>
+      {!user ? mfa&&totpPreview?<KyrubTotpChallenge auth={auth} resolver={mfa} onComplete={()=>{setMfa(null);setEmailLinkPending(false);window.history.replaceState({},'','/');}} onCancel={()=>{setMfa(null);setPassword('');setEmailLinkPending(false);window.history.replaceState({},'','/');}}/>:<>
         <label className="block text-sm">E-mail<input className={field} type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} disabled={busy}/></label>
         {emailLinkPending ? <>
           <p className="text-sm">Informe o mesmo e-mail que recebeu o link de acesso.</p>
