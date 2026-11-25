@@ -114,8 +114,9 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
    try{
     const configured=await request('configure-promotional',{presentation:draft}) as OwnedKyrubTag;
     if(configured.id===identifier&&configured.distribution==='promotional')record=configured;
-    sessionStorage.removeItem('kyrub.tag.draft.'+identifier);
-   }catch{setNotice('A unidade já pertence a você. Confira sua apresentação e toque em Salvar para publicá-la.');}
+    try{sessionStorage.removeItem('kyrub.tag.draft.'+identifier);}catch{}
+    setNotice('Sua unidade foi vinculada. A apresentação está privada até a publicação autorizada.');
+   }catch{setNotice('A unidade já pertence a você. Confira sua apresentação e salve-a de forma privada.');}
    setOwnerRecord(record);setOwner(true);
   }catch{setNotice('Não foi possível ativar. Esta unidade pode ter sido ativada por outra pessoa ou a campanha ainda não foi liberada.');}
   finally{lock.current=false;setBusy(false);}
@@ -188,7 +189,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     <label className="block text-sm">Sobre você (opcional)
      <textarea className="mt-1 w-full rounded-xl border border-[#34443B] bg-[#1D2924] p-3" value={draft.about} rows={3} maxLength={320} placeholder="Sua breve apresentação" onChange={e=>setPresentation('about',e.target.value)}/>
     </label>
-    <p className="text-sm text-slate-300">A apresentação pública incluirá um botão SOS com números oficiais. Não são publicados e-mail ou dados médicos.</p>
+    <p className="text-sm text-slate-300">A ativação vincula o adesivo ao seu e-mail. A apresentação fica privada até a publicação autorizada. O cartão público inclui SOS com números oficiais.</p>
     {data.activation==='setup'?<p role="status" className="rounded-xl border border-amber-500/50 p-3 text-sm">A ativação promocional ainda não foi liberada para esta campanha.</p>:user?.emailVerified?
       <div className="space-y-3"><p className="text-sm text-slate-300">Identidade verificada: {user.email}</p>
        <button type="button" className="min-h-12 w-full rounded-xl bg-[#F47825] px-4 font-bold text-[#121A17] disabled:opacity-50" disabled={busy} onClick={()=>void claimPromotional()}>{busy?'Ativando…':'Confirmar e salvar minha Kyrub Tag'}</button></div>:

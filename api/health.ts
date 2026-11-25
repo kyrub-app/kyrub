@@ -198,11 +198,11 @@ export default async function handler(
         }
         response.status(200).json(await service.recoverPromotionalKyrubTag(actor,id,identity.email,data.recoveryCode));return;
       }
-      if(data.action==='configure-promotional'&&Object.keys(data).length===2){
+      if((data.action==='configure-promotional'&&Object.keys(data).length===2)||(data.action==='publish-promotional'&&Object.keys(data).length===3&&Object.hasOwn(data,'acceptance'))){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
         const identity=await adminAuth.getUser(actor);
         if(identity.disabled||identity.emailVerified!==true||!identity.email)throw Error('TAG_FORBIDDEN');
-        response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation));return;
+        response.status(200).json(await service.configurePromotionalKyrubTag(actor,id,data.presentation,data.action==='publish-promotional'?(data.acceptance??null):undefined));return;
       }
       if((data.action==='block-promotional'||data.action==='unblock-promotional')&&Object.keys(data).length===1){
         const {adminAuth}=await import('../server/firebaseAdmin.js');
@@ -216,6 +216,7 @@ export default async function handler(
       if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
       else if(code==='TAG_PROMO_DISABLED'||code==='TAG_PILOT_PROJECT_UNSAFE')response.status(409).json({error:code});
       else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
+      else if(code==='TAG_PUBLICATION_TERMS_REQUIRED'||code==='TAG_PUBLICATION_AGE_REQUIRED')response.status(403).json({error:code});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});

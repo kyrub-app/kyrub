@@ -2,6 +2,7 @@ import {randomBytes,createHash,timingSafeEqual} from 'node:crypto';
 import {adminDb} from '../firebaseAdmin.js';
 import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION,isOpenPromotionalTag,normalizePromotionalPresentation,publicPromotionalPresentation,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional.js';
+import {createTagPublicationReceipt,canReadPublishedPromotionalTag} from './kyrubTagPublicationPolicy.js';
 import {validatePromotionalMediaReferences} from './kyrubTagMediaService.js';
 import {isTagId,isTagModel,tagUrl,normalizeTagRecipientEmail,parseTagExternalUrl,type TagExternalLink,type TagDestinationCatalog,type TagDestinationOption,type KyrubTagModel,type OwnedKyrubTag} from '../../shared/kyrubTagContract.js';
 import {parseCardTargets,isBoundTarget,cardLink,CARD_LIMIT,type CardLink} from './publicCardPolicy.js';
@@ -143,17 +144,22 @@ export async function rotatePromotionalRecoveryCode(actor:string,id:string){
  });
 }
 
-export async function configurePromotionalKyrubTag(actor:string,id:string,input:unknown){
+export async function configurePromotionalKyrubTag(actor:string,id:string,input:unknown,acceptance?:unknown){
  assertTagPilotWriteIsolated();
  validActor(actor);
  if(!isTagId(id))throw Error('TAG_INVALID');
  const presentation=normalizePromotionalPresentation(input);
  await validatePromotionalMediaReferences(actor,id,presentation);
  return adminDb.runTransaction(async tx=>{
-  const ref=tags().doc(id),snap=await tx.get(ref),data=snap.data();
+  const ref=tags().doc(id);
+  const [snap,age]=await Promise.all([tx.get(ref),tx.get(adminDb.doc('age_eligibility_private/'+actor))]);
+  const data=snap.data();
   if(data?.distribution!=='promotional'||data.ownerId!==actor||data.blocked===true)throw Error('TAG_FORBIDDEN');
-  tx.update(ref,{presentation,enabled:true,updatedAt:new Date().toISOString()});
-  return owned(id,{...data,presentation,enabled:true});
+  const enabled=acceptance!==undefined;
+  const now=new Date().toISOString();
+  const publicationReceipt=enabled?createTagPublicationReceipt(actor,id,presentation,acceptance,age.data(),process.env.KYRUB_TAG_PUBLICATION_ENABLED==='true',now):null;
+  tx.update(ref,{presentation,enabled,publicationReceipt,updatedAt:now});
+  return owned(id,{...data,presentation,enabled});
  });
 }
 
@@ -291,9 +297,11 @@ export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubT
   return {id,model:data.model,status:'unclaimed',activation:typeof data.reservedEmailHash==='string'?'account':'code',links:[]};
  }
  if(data.enabled!==true||data.blocked===true||typeof data.ownerId!=='string'||!Array.isArray(data.targets)||data.targets.length+externalLinks(data.externalUrls).length>CARD_LIMIT)return null;
+ if(data.distribution==='promotional'&&!canReadPublishedPromotionalTag(id,data,(await adminDb.doc('age_eligibility_private/'+data.ownerId).get()).data(),process.env.KYRUB_TAG_PUBLICATION_ENABLED==='true'))return null;
  const targets=data.targets.filter(isBoundTarget);
  const links=(await Promise.all(targets.map(t=>resolveTarget(data.ownerId,t,t.bindingId)))).flatMap(t=>t?[t.link]:[]);
  const current=await ref.get();
  if(!snapshot.updateTime||!current.updateTime||!current.updateTime.isEqual(snapshot.updateTime)||current.data()?.enabled!==true)return null;
+ if(data.distribution==='promotional'&&!canReadPublishedPromotionalTag(id,data,(await adminDb.doc('age_eligibility_private/'+data.ownerId).get()).data(),process.env.KYRUB_TAG_PUBLICATION_ENABLED==='true'))return null;
  return {id,model:data.model,status:'active',links:[...links,...externalLinks(data.externalUrls)],...(data.distribution==='promotional'?{presentation:publicPromotionalPresentation(normalizePromotionalPresentation(data.presentation??EMPTY_PROMOTIONAL_PRESENTATION))}:{})};
 }

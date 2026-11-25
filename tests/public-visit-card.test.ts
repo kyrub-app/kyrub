@@ -91,7 +91,7 @@ test('promo tag uses verified e-mail and transactional claim; public card carrie
  assert.match(api,/claimPromotionalKyrubTag\(actor,id,identity\.email\)/);
  assert.match(api,/recoverPromotionalKyrubTag\(actor,id,identity\.email,data\.recoveryCode\)/);
  assert.match(api,/rotatePromotionalRecoveryCode\(actor,id\)/);
- assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation\)/);
+ assert.match(api,/configurePromotionalKyrubTag\(actor,id,data\.presentation,/);
  assert.match(page,/claim-promotional/);
  assert.match(page,/recover-promotional/);
  assert.match(page,/SOS · Informações de emergência/);
