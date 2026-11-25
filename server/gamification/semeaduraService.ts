@@ -30,6 +30,8 @@ const seedPostTransaction = async (
   count: number;
   closed: boolean;
   authorId: string;
+  dailyDay?:string;
+  dailyRemaining?:number;
 }> => {
   const { authenticatedUserId: actor, kind, postId } = input;
   if (!safeUid(actor) || !safePostId(postId) ||
@@ -167,7 +169,8 @@ const seedPostTransaction = async (
     else tx.create(authorProgressRef, { ...authorData, createdAt: occurredAt });
     if (plan.count > SEEDS_PER_BOSQUE) throw Error('SEMEADURA_CAP_BROKEN');
     markIsolatedGamificationAuthorDirty(db,tx,authorId,occurredAt);
-    return { status: 'accepted' as const, count: plan.count, closed: plan.nowClosed, authorId };
+    return { status: 'accepted' as const, count: plan.count, closed: plan.nowClosed, authorId,
+      ...(releaseControlled?{dailyDay:day,dailyRemaining:SEMEADURA_DAILY_LIMIT-used-1}:{}) };
   });
 };
 
