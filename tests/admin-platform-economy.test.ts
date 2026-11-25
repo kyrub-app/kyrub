@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { evaluateMonthlyMarkerRetention, type MonthlyRetentionEvidence } from '../server/observability/monthlyPresenceRetention';
 import { loadMonthlyActivityDiagnostic } from '../server/admin/monthlyActivityDiagnostic';
 import { presentMonthlyActivity } from '../src/utils/adminMonthlyActivityPresentation';
 import { projectPlatformFinops, FINOPS_CATEGORIES, type FinopsFact, type FinopsPeriod, type FinopsCoverage } from '../shared/platformFinops';
@@ -280,4 +281,49 @@ test('finance presentation never promotes fixture counts or missing data to real
   assert.match(workspace,/Registros de teste — emulador/);
   assert.match(workspace,/presentMonthlyActivity\(snapshot\?\.monthlyActivity\)/);
   assert.doesNotMatch(workspace,/projectPlatformFinops\(/);
+});
+
+describe('monthly activity retention planning', () => {
+  const e: MonthlyRetentionEvidence = {
+    projectId:'kyrub-security-test',scope:'emulator',month:'2026-11',
+    governance:{policyApproved:true,legalHold:false,pendingRightsRequest:false,evidenceRef:'policy-fixture'},
+    writerFence:{projectId:'kyrub-security-test',month:'2026-11',evidenceRef:'seal-fixture',sealedAtMs:Date.parse('2026-12-01T04:00:00Z')},
+    summary:{projectId:'kyrub-security-test',scope:'emulator',month:'2026-11',coverage:'complete',
+      observedMarkers:1000,evidenceRef:'summary-fixture',fenceRef:'seal-fixture',persistedAtMs:Date.parse('2026-12-02T04:00:00Z')},
+    verifiedCount:{projectId:'kyrub-security-test',month:'2026-11',count:1000,fenceRef:'seal-fixture',observedAtMs:Date.parse('2027-03-01T03:00:00Z')},
+  };
+  const now=new Date('2027-03-01T03:00:01Z');
+  const plan=(x:MonthlyRetentionEvidence)=>evaluateMonthlyMarkerRetention(x,'kyrub-security-test','emulator',now);
+  test('retains the activity month plus three full Sao Paulo calendar months',()=>{
+    assert.deepEqual(evaluateMonthlyMarkerRetention(e,'kyrub-security-test','emulator',new Date('2027-03-01T02:59:59Z')),
+      {status:'retain',reason:'GRACE_WINDOW',month:'2026-11',earliestReviewMonth:'2027-03'});
+    assert.equal(plan(e).status,'review_candidate');
+    assert.equal(plan({...e,month:'2027-03'}).status,'retain');
+    assert.equal(plan({...e,month:'2026-13'}).status,'blocked');
+  });
+  test('fails closed on missing governance, hold, request, seal, summary or count mismatch',()=>{
+    for(const changed of [
+      {...e,governance:undefined},
+      {...e,governance:{...e.governance!,policyApproved:false}},
+      {...e,governance:{...e.governance!,legalHold:true}},
+      {...e,governance:{...e.governance!,pendingRightsRequest:true}},
+      {...e,writerFence:undefined},
+      {...e,writerFence:{...e.writerFence!,sealedAtMs:Date.parse('2026-11-30T22:00:00Z')}},
+      {...e,summary:undefined},
+      {...e,summary:{...e.summary!,coverage:'partial' as const}},
+      {...e,summary:{...e.summary!,scope:'production' as const}},
+      {...e,summary:{...e.summary!,fenceRef:'other'}},
+      {...e,verifiedCount:undefined},
+      {...e,verifiedCount:{...e.verifiedCount!,count:999}},
+      {...e,verifiedCount:{...e.verifiedCount!,observedAtMs:0}},
+      {...e,verifiedCount:{...e.verifiedCount!,observedAtMs:now.getTime()+1}},
+      {...e,projectId:'other'},
+    ]) assert.equal(plan(changed).status,'blocked');
+  });
+  test('only an explicit reconciled zero can qualify; no deletion runtime exists',()=>{
+    const zero={...e,summary:{...e.summary!,observedMarkers:0},verifiedCount:{...e.verifiedCount!,count:0}};
+    assert.equal(plan(zero).status,'review_candidate');
+    const code=readFileSync('server/observability/monthlyPresenceRetention.ts','utf8');
+    assert.doesNotMatch(code,/adminDb|\.delete\(|\.set\(|\.update\(|process\.env/);
+  });
 });
