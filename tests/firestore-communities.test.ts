@@ -1217,3 +1217,55 @@ test('staged community age gate protects wall, square and comments without repla
   await assertSucceeds(deleteDoc(doc(member,'community_post_comments',commentId)));
   await assertSucceeds(deleteDoc(doc(member,'community_posts',postId)));
 });
+
+
+test('staged eligibility governs community creation and admission without blocking departure', async()=>{
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const member=environment.authenticatedContext(MEMBER).firestore();
+  const id='age_admission',moderated='age_moderated';
+  const age=async(uid:string,status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertFails(createCommunity(owner,id,'public'));
+  await age(OWNER,'verified_adult');
+  await assertSucceeds(createCommunity(owner,id,'public'));
+  await assertFails(joinPublic(member,id,MEMBER));
+  await age(MEMBER,'verified_adult');
+  await assertSucceeds(joinPublic(member,id,MEMBER));
+  await assertSucceeds(createCommunity(owner,moderated,'moderated'));
+  const pending=doc(member,'community_members',memberId(moderated,MEMBER));
+  await assertSucceeds(setDoc(pending,membershipData(moderated,MEMBER,'pending')));
+  const approve=()=>{
+    const batch=writeBatch(owner);
+    batch.update(doc(owner,'community_members',memberId(moderated,MEMBER)),{
+      status:'active',updatedAtIso:'2026-11-25T12:01:00Z',updatedAt:serverTimestamp()
+    });
+    batch.update(doc(owner,'communities',moderated),{
+      memberCount:2,lastMembershipChangeId:memberId(moderated,MEMBER),
+      updatedAtIso:'2026-11-25T12:01:00Z',updatedAt:serverTimestamp(),
+      activityAtIso:'2026-11-25T12:01:00Z',activityAt:serverTimestamp()
+    });
+    return batch.commit();
+  };
+  await age(MEMBER,'suspended');
+  await assertFails(approve());
+  await age(MEMBER,'verified_adult');
+  await age(OWNER,'suspended');
+  await assertFails(approve());
+  await age(OWNER,'verified_adult');
+  await assertSucceeds(approve());
+  await age(MEMBER,'suspended');
+  const departure=writeBatch(member);
+  departure.delete(doc(member,'community_members',memberId(id,MEMBER)));
+  departure.update(doc(member,'communities',id),{
+    memberCount:1,lastMembershipChangeId:memberId(id,MEMBER),
+    updatedAtIso:'2026-11-25T12:02:00Z',updatedAt:serverTimestamp(),
+    activityAtIso:'2026-11-25T12:02:00Z',activityAt:serverTimestamp()
+  });
+  await assertSucceeds(departure.commit());
+});
