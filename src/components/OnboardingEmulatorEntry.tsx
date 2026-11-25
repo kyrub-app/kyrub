@@ -3,6 +3,7 @@ import { onAuthStateChanged, reload, signOut, isSignInWithEmailLink, type User }
 import { auth } from '../utils/firebase';
 import { enterWithPassword, registerWithPassword, requestOwnEmailConfirmation, requestPasswordRecovery, requestKyrubEmailLink, completeKyrubEmailLink } from '../utils/kyrubEmailAccess';
 import type { AgeStatus } from '../../shared/ageEligibility';
+import {IngressLegalPreview} from './IngressLegalPreview';
 import {PrivatePersonalPreview} from './PrivatePersonalPreview';
 
 const statuses = new Set<AgeStatus>(['pending','declared_adult','declared_underage','verified_adult','verified_underage','inconclusive','suspended']);
@@ -103,6 +104,7 @@ export function OnboardingEmulatorEntry() {
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={declaredAdult} onChange={e=>setDeclaredAdult(e.target.checked)} disabled={busy}/>Declaro ter 18 anos ou mais.</label>
             <button className={button} type="submit" disabled={busy||!birthDate}>Enviar triagem</button>
           </form>}
+          {status==='verified_adult'&&import.meta.env.DEV&&import.meta.env.VITE_KYRUB_LEGAL_RECEIPT_PREVIEW==='true'&&<IngressLegalPreview key={user.uid} user={user}/>}
           {(status==='inconclusive'||status==='verified_adult')&&import.meta.env.DEV&&import.meta.env.VITE_KYRUB_PERSONAL_PREVIEW==='true'&&<PrivatePersonalPreview key={user.uid} user={user}/>}
           <p className="text-xs text-slate-400">A triagem não comprova maioridade nem libera o acesso às funcionalidades do Kyrub.</p>
         </>}
