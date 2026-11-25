@@ -28,29 +28,66 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     // A composição preserva o marcador acima para permanecer idempotente.
     // As autorizações abaixo substituem os antigos claims amplos por perfis
     // de identidade analisados e aprovados no Control Plane.
+    function rendaVacancyPath(vagaId) {
+      return /databases/$(database)/documents/vagas/$(vagaId);
+    }
+
+    function ownsRendaVacancy(data) {
+      return isSignedIn() && data.get('ownerId', '') == request.auth.uid;
+    }
+
+    function hasRendaRequesterAuthority() {
+      return isAdmin() || (
+        hasRole(['owner', 'manager', 'staff'])
+        && hasApprovedIdentityProfile('requester')
+      );
+    }
+
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
       allow create: if canWriteRendaWithAge()
-        && (isAdmin() || (
-          hasRole(['owner', 'manager', 'staff'])
-          && hasApprovedIdentityProfile('requester')
-        ));
-      allow update, delete: if isAdmin()
-        || hasRole(['owner', 'manager', 'staff']);
+        && ownsRendaVacancy(incoming())
+        && hasRendaRequesterAuthority();
+      allow update: if canWriteRendaWithAge()
+        && ownsRendaVacancy(existing())
+        && incoming().ownerId == existing().ownerId
+        && hasRendaRequesterAuthority();
+      // Owners may remove their own vacancy even after suspension.
+      // An unclassified historical record is not claimable by another account.
+      allow delete: if ownsRendaVacancy(existing()) || isAdmin();
     }
 
-    // --- Candidaturas (Prestar o serviço de Freela) ---
+    // Candidatures are private to the applicant and the verified vacancy owner.
     match /candidaturas/{candiId} {
-      allow read: if isSignedIn();
+      function hasApplicationVacancy() {
+        let vacancy = rendaVacancyPath(incoming().vagaId);
+        return exists(vacancy)
+          && get(vacancy).data.ownerId == incoming().ownerId
+          && incoming().ownerId != request.auth.uid;
+      }
+      function isApplicationOwner(data) {
+        return isSignedIn() && data.get('userId', '') == request.auth.uid;
+      }
+      function isApplicationRequester(data) {
+        return isSignedIn() && data.get('ownerId', '') == request.auth.uid;
+      }
+      allow read: if isApplicationOwner(existing()) || isApplicationRequester(existing()) || isAdmin();
       allow create: if canWriteRendaWithAge()
         && incoming().userId == request.auth.uid
+        && incoming().vagaId is string
+        && isValidId(incoming().vagaId)
+        && hasApplicationVacancy()
         && hasApprovedIdentityProfile('freelancer');
-      allow update: if isAdmin()
-        || hasRole(['owner', 'manager', 'staff'])
-        || (isSignedIn() && existing().userId == request.auth.uid);
-      allow delete: if isAdmin()
-        || hasRole(['owner', 'manager', 'staff'])
-        || (isSignedIn() && existing().userId == request.auth.uid);
+      allow update: if canWriteRendaWithAge()
+        && incoming().userId == existing().userId
+        && incoming().vagaId == existing().vagaId
+        && incoming().ownerId == existing().ownerId
+        && (
+          (isApplicationOwner(existing()) && hasApprovedIdentityProfile('freelancer'))
+          || (isApplicationRequester(existing()) && hasRendaRequesterAuthority()
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+        );
+      allow delete: if isApplicationOwner(existing()) || isAdmin();
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
