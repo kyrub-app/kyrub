@@ -21,7 +21,7 @@ function Fixture(){
  // server's denial. This is not the production Control Plane role gate.
  return <main><h1>Gamificação · fixture isolada</h1>{user?
   <><button type="button" onClick={()=>void signOut(auth)}>Sair da fixture</button>
-  <AdminGamificationSupervisionWorkspace key={user.uid} pilotSession={user} caseWrites isCurrent={()=>auth.currentUser===user}/></>:
+  <AdminGamificationSupervisionWorkspace key={user.uid} pilotSession={user} caseWrites referralWrites isCurrent={()=>auth.currentUser===user}/></>:
   <form onSubmit={e=>{e.preventDefault();setError('');void signInWithEmailAndPassword(auth,email,password).catch(()=>setError('Login falhou'));}}>
    <label>Email de teste<input type="email" value={email} onChange={e=>setEmail(e.target.value)}/></label>
    <label>Senha de teste<input type="password" value={password} onChange={e=>setPassword(e.target.value)}/></label>
