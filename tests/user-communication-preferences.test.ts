@@ -57,8 +57,11 @@ describe('user communication preferences', () => {
       system: true,
       community_group_invite: true,
       user_forward: true,
+      freelance: false,
     });
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'store_chat'), true);
+    assert.equal(shouldReceiveUserNotificationInApp(defaults, 'freelance'), true);
+    assert.equal(shouldDeliverUserNotificationToBrowser(defaults,{recipientUserId:'user-1',category:'freelance'}),false);
     assert.equal(shouldReceiveUserNotificationInApp(defaults, 'marketing'), false);
     assert.equal(shouldDeliverUserNotificationToBrowser(defaults, notification), false);
     assert.equal(
