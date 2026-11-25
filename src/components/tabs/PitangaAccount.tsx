@@ -7,7 +7,7 @@ type Account = { pitangas: number; xp: number; initialized: boolean; entries: { 
 
 const accountReads=createSemeaduraReadCoalescer<Account>();
 const STATEMENT_PAGE_SIZE=20;
-export function PitangaAccount({mode='all'}:{mode?:'all'|'pitangas'|'xp'}) {
+export function PitangaAccount({ mode = 'all' }: { mode?: 'all' | 'pitangas' | 'xp' }) {
   const [identity,setIdentity]=useState(()=>({session:auth.currentUser,generation:0}));
   useEffect(()=>auth.onAuthStateChanged(session=>setIdentity(previous=>previous.session===session?previous:{session,generation:previous.generation+1})),[]);
   return <ScopedPitangaAccount key={identity.generation} session={identity.session} mode={mode}/>;
