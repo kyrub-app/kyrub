@@ -99,7 +99,7 @@ export const executeAuthorizedOrderStatusTransition = async (
       }
       reservationAction = await reserveMarketplaceOrderInventoryOnAcceptance(
         actorUid,
-        orderId
+        orderId,actorUid
       );
     } catch (error) {
       return reservationErrorResult(error);
