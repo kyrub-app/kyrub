@@ -8,7 +8,7 @@ import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } fro
 import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import {
   readPersonalSemeaduraJourney,
-  readVerifiedPostSemeadura, seedVerifiedPost,
+  readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedVerifiedPost,
 } from '../server/gamification/semeaduraService';
 
 const projectId = 'kyrub-security-test';
@@ -220,4 +220,64 @@ test('cutover preserves a pre-quota legacy receipt and community history without
  assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
  assert.equal((await db.collection('users/member-author/xpLedger').get()).size,0);
  assert.equal((await db.doc('users/member-author/pitangaBalance/balance').get()).exists,false);
+});
+
+
+test('instrumented emulator status batches preserve results and reduce document get calls',async()=>{
+ // Delegate every read to the real Admin SDK and disposable Firestore emulator.
+ // Expose no writer or transaction in the counting adapter: these paths are read-only.
+ // Counts are logical SDK get calls, not a Cloud Billing measurement.
+ const reads:string[]=[];
+ const ref=(path:string):unknown=>({
+  get:async()=>{reads.push(path);return db.doc(path).get();},
+  collection:(name:string)=>({doc:(id:string)=>ref(path+'/'+name+'/'+id)}),
+ });
+ const countingDb={doc:ref,collection:(path:string)=>({doc:(id:string)=>ref(path+'/'+id)})} as unknown as Firestore;
+ const actor='voter';
+ const compare=async(targets:Array<{kind:'personal'|'community';postId:string}>,singleCount:number,batchCount:number)=>{
+  reads.length=0;
+  const individual=await Promise.all(targets.map(target=>readVerifiedPostSemeadura(countingDb,{...target,authenticatedUserId:actor})));
+  assert.equal(reads.length,singleCount);
+  reads.length=0;
+  const batch=await readVerifiedPostSemeaduraBatch(countingDb,actor,targets);
+  assert.deepEqual(batch.results.map(row=>row.status),individual);
+  assert.equal(reads.length,batchCount);
+  assert.equal(new Set(reads).size,batchCount);
+  assert.equal(reads.filter(path=>path.startsWith('users/'+actor+'/semeaduraDailyUsage/')).length,1);
+  console.info('[semeadura-read-budget]',targets[0].kind,singleCount,'->',batchCount);
+  return batch;
+ };
+ const personals=Array.from({length:10},(_,i)=>({kind:'personal' as const,postId:'budget-personal-'+i}));
+ const same=Array.from({length:10},(_,i)=>({kind:'community' as const,postId:'budget-same-'+i}));
+ const distinct=Array.from({length:10},(_,i)=>({kind:'community' as const,postId:'budget-distinct-'+i}));
+ await Promise.all(personals.map(t=>personal(t.postId)));
+ await community(same[0].postId);
+ await Promise.all(same.slice(1).map(t=>db.doc('community_posts/'+t.postId).set({postId:t.postId,authorId:'member-author',communityId:'rock'})));
+ await Promise.all(distinct.map(async(t,i)=>{
+  const group='budget-group-'+i;
+  await Promise.all([
+   db.doc('community_posts/'+t.postId).set({postId:t.postId,authorId:'member-author',communityId:group}),
+   db.doc('communities/'+group).set({communityId:group,ownerId:'community-owner',visibility:'public'}),
+   db.doc('community_members/'+group+'__'+actor).set({communityId:group,userId:actor,status:'active'}),
+  ]);
+ }));
+ await semear('personal',personals[0].postId,actor);
+ await semear('community',same[0].postId,actor);
+ const before=await readPersonalSemeaduraJourney(db,'member-author');
+ const personalResult=await compare(personals,40,31);
+ assert.equal(personalResult.results[0].status?.seeded,true);
+ assert.equal(personalResult.results[1].status?.dailyRemaining,98);
+ const sameResult=await compare(same,60,33);
+ assert.equal(sameResult.results[0].status?.seeded,true);
+ await compare(distinct,60,51);
+ await db.doc('communities/rock').update({visibility:'private'});
+ const forbidden=await readVerifiedPostSemeaduraBatch(countingDb,'outsider',[same[0],personals[1]]);
+ assert.equal(forbidden.results[0].status,null);
+ assert.equal(forbidden.results[1].status?.canSemear,true);
+ await db.doc('community_members/rock__voter').update({status:'inactive'});
+ const revoked=await readVerifiedPostSemeaduraBatch(countingDb,actor,same);
+ assert.ok(revoked.results.every(row=>row.status===null));
+ assert.deepEqual(await readPersonalSemeaduraJourney(db,'member-author'),before);
+ assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
+ assert.equal((await db.collection('users/author/rewardLedger').get()).size,0);
 });
