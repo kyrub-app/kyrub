@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeDollarSign, FileText, RefreshCw } from 'lucide-react';
 import { auth } from '../../utils/firebase';
+import type { StorePurchase } from '../../../shared/storePurchases';
 import type { ProcurementOverview } from './StoreProcurementWorkspace';
 import {
   nextStorePurchasePayableKey,
@@ -10,8 +11,6 @@ import {
 
 type CostNature = 'unspecified' | 'fixed' | 'variable';
 type BillingDocumentType = 'none' | 'boleto' | 'invoice' | 'other';
-
-type PurchaseView = ProcurementOverview['purchases'][number];
 
 type LinkedPayable = {
   id: string;
