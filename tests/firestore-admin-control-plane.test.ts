@@ -375,7 +375,10 @@ test('signed fixture authentication, activity receiver and monthly aggregate int
       assert.equal((await post(other,mutation)).status,403);
       const duplicates=await Promise.all([post(owner,mutation),post(owner,{...mutation,name:'manutencao'})]);
       assert.deepEqual(duplicates.map(x=>x.status).sort(),[200,400]);
-      const custom=duplicates.find(x=>x.status===200)!.body.id;
+      const winner=duplicates.find(x=>x.status===200)!.body;
+      const custom=winner.id;
+      const winningName=winner.taxonomy.centers.find((x:{id:string;name:string})=>x.id===custom).name;
+      assert.ok(['Manutenção','manutencao'].includes(winningName));
       const category=await post(owner,{...mutation,kind:'categories',name:'Licenças'});
       assert.equal(category.status,200);
       const customCategory=category.body.id;
@@ -384,13 +387,13 @@ test('signed fixture authentication, activity receiver and monthly aggregate int
       assert.equal((await post(other,{...account,storeId:other})).status,400);
       const created=await post(owner,account);
       assert.equal(created.status,201);
-      assert.equal(created.body.payable.costCenter.name,'Manutenção');
+      assert.equal(created.body.payable.costCenter.name,winningName);
       assert.equal(created.body.payable.customCategory.name,'Licenças');
       assert.equal((await post(owner,{...mutation,operation:'rename',id:custom,name:'Manutenção predial'})).status,200);
       assert.equal((await post(owner,{...mutation,kind:'categories',operation:'remove',id:customCategory})).status,200);
       assert.equal((await post(owner,account)).status,400);
       const old=(await database.doc('stores/'+owner+'/financePayables/'+created.body.payable.id).get()).data();
-      assert.equal(old?.costCenter.name,'Manutenção');
+      assert.equal(old?.costCenter.name,winningName);
       assert.equal(old?.customCategory.name,'Licenças');
       const infra=await post(owner,{...account,costCenterId:'cc_infrastructure',customCategoryId:'',category:'service',billingDocumentType:'invoice',billingDocumentReference:'fixture-vercel'});
       assert.equal(infra.status,201);

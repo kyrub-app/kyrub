@@ -195,3 +195,14 @@ test('custom centers and categories can be renamed and removed without rewriting
   a.add(p.costCenter,100,'paid');a.add(resolveCustomFinanceRef(t,'centers','cc_custom_a'),200,'paid');
   assert.equal(a.finish({paidMinor:300,paidCount:2,openDueMinor:0,openDueCount:0}).status,'observed');
 });
+
+test('finance runtime discards old store and session responses and refreshes taxonomy without stale override',()=>{
+  const runtime=readFileSync('src/components/StoreFinanceRuntime.tsx','utf8');
+  const ui=readFileSync('src/components/store/StorePayablesWorkspace.tsx','utf8');
+  assert.match(runtime,/onAuthStateChanged\(auth/);
+  assert.match(runtime,/key=\{storeId\+':'\+session\.epoch\}/);
+  assert.match(runtime,/payload.storeId!==storeId\|\|auth.currentUser!==user/);
+  assert.match(runtime,/request.current\?\.abort\(\)/);
+  assert.match(ui,/taxonomyOverride\?\.base===taxonomyProp/);
+  assert.match(ui,/if\(auth.currentUser!==user\)throw Error/);
+});

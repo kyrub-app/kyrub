@@ -155,7 +155,9 @@ async function mutateStoreFinance(
 ): Promise<MutationPayload> {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
+  if(user.uid!==storeId)throw Error('Sessão ou loja alterada.');
   const token = await user.getIdToken();
+  if(auth.currentUser!==user)throw Error('Sessão alterada.');
   const response = await fetch('/api/store-finance', {
     method: 'POST',
     headers: {
@@ -169,6 +171,7 @@ async function mutateStoreFinance(
     throw new Error('O Financeiro respondeu em um formato inesperado.');
   }
   const payload = await response.json() as MutationPayload;
+  if(auth.currentUser!==user)throw Error('Sessão alterada.');
   if (!response.ok) throw new Error(payload.error || 'Não foi possível atualizar a conta.');
   return payload;
 }
@@ -185,8 +188,8 @@ export default function StorePayablesWorkspace({
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState<string>('supplier');
-  const [taxonomyOverride,setTaxonomyOverride]=useState<FinanceTaxonomy|null>(null);
-  const taxonomy=taxonomyOverride??taxonomyProp??emptyFinanceTaxonomy();
+  const [taxonomyOverride,setTaxonomyOverride]=useState<{base:FinanceTaxonomy|undefined;value:FinanceTaxonomy}|null>(null);
+  const taxonomy=(taxonomyOverride?.base===taxonomyProp?taxonomyOverride?.value:undefined)??taxonomyProp??emptyFinanceTaxonomy();
   const [manager,setManager]=useState<FinanceTaxonomyKind|null>(null);
   const [editing,setEditing]=useState('');
   const [customName,setCustomName]=useState('');
@@ -206,6 +209,7 @@ export default function StorePayablesWorkspace({
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const createPayable = async () => {
+    if(saving||taxonomyBusy)return;
     const amountMinor = amountToMinor(amount);
     if (!description.trim() || !dueDate || amountMinor === null || !costCenterId) {
       setFeedbackError(true);
@@ -267,7 +271,7 @@ export default function StorePayablesWorkspace({
     try{
       const result=await mutateStoreFinance(storeId,{action:'mutate_taxonomy',kind:manager,operation,id,name:customName});
       if(!result.taxonomy)throw Error('Cadastro não confirmado.');
-      setTaxonomyOverride(result.taxonomy);
+      setTaxonomyOverride({base:taxonomyProp,value:result.taxonomy});
       if(operation==='create'&&result.id){if(manager==='centers')setCostCenterId(result.id);else setCategory(result.id);}
       if(operation==='remove'){if(costCenterId===id)setCostCenterId('');if(category===id)setCategory('supplier');}
       setEditing('');setCustomName('');setFeedback('Cadastro atualizado; histórico preservado.');
