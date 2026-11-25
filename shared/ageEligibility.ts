@@ -81,3 +81,38 @@ export interface AgeEvidence {
   checkedAt: string;
   reference: string;
 }
+
+
+/**
+ * Explicit capability allowlist. Inconclusive does not mean adult. A reviewed
+ * personal-only release permits only the enumerated private/educational
+ * capabilities. No new capability inherits that exception automatically.
+ */
+export type AgeCapability =
+  | 'private_notes' | 'private_tasks' | 'appropriate_courses' | 'private_tag_management'
+  | 'tag_publication' | 'social_publication' | 'social_comment' | 'sowing'
+  | 'connections' | 'messages' | 'communities' | 'tribes'
+  | 'store_erp' | 'freelance' | 'delivery' | 'financial_operations' | 'rewards';
+
+export type CapabilityAgePolicy = 'blocked' | 'verified_adult_only' | 'reviewed_personal_only';
+const PERSONAL_ONLY: ReadonlySet<AgeCapability> = new Set([
+  'private_notes', 'private_tasks', 'appropriate_courses', 'private_tag_management',
+]);
+const KNOWN_CAPABILITIES: ReadonlySet<AgeCapability> = new Set([
+  ...PERSONAL_ONLY, 'tag_publication', 'social_publication', 'social_comment', 'sowing',
+  'connections', 'messages', 'communities', 'tribes', 'store_erp', 'freelance',
+  'delivery', 'financial_operations', 'rewards',
+]);
+
+/** Server-resolved policy only; not a substitute for ownership or role checks. */
+export function evaluateCapabilityAgeAccess(input: {
+  capability: AgeCapability;
+  status: AgeStatus;
+  authenticated: boolean;
+  policy?: CapabilityAgePolicy;
+}): boolean {
+  if (input.authenticated !== true || !KNOWN_CAPABILITIES.has(input.capability)) return false;
+  if (input.policy === 'verified_adult_only') return input.status === 'verified_adult';
+  if (input.policy !== 'reviewed_personal_only' || !PERSONAL_ONLY.has(input.capability)) return false;
+  return input.status === 'verified_adult' || input.status === 'inconclusive';
+}
