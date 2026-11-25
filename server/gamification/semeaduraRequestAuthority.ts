@@ -1,7 +1,10 @@
 import type { SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
 
+export const SEMEADURA_STATUS_BATCH_LIMIT=10;
+export type SemeaduraStatusTarget={kind:SemeaduraPostKind;postId:string};
 export type SemeaduraRequest =
  | {action:'journey'}
+ | {action:'status_batch';targets:SemeaduraStatusTarget[]}
  | {action:'status'|'semear';kind:SemeaduraPostKind;postId:string};
 
 /** Never coerce a request's action. A status query is strictly read-only. */
@@ -10,6 +13,22 @@ export function parseSemeaduraRequest(value:unknown):SemeaduraRequest|null {
  const body=value as Record<string,unknown>;
  const keys=Object.keys(body);
  if(body.action==='journey'&&keys.length===1&&keys[0]==='action')return {action:'journey'};
+ if(body.action==='status_batch'){
+  if(keys.length!==2||keys.some(k=>!['action','targets'].includes(k))||
+   !Array.isArray(body.targets)||body.targets.length<1||body.targets.length>SEMEADURA_STATUS_BATCH_LIMIT)return null;
+  const targets:SemeaduraStatusTarget[]=[];
+  const seen=new Set<string>();
+  for(const item of body.targets){
+   if(!item||typeof item!=='object'||Array.isArray(item)||Object.keys(item).length!==2||
+    Object.keys(item).some(k=>!['kind','postId'].includes(k))||
+    (item.kind!=='personal'&&item.kind!=='community')||typeof item.postId!=='string'||
+    !/^[A-Za-z0-9_-]{1,500}$/.test(item.postId))return null;
+   const key=JSON.stringify([item.kind,item.postId]);
+   if(seen.has(key))return null;
+   seen.add(key);targets.push({kind:item.kind,postId:item.postId});
+  }
+  return {action:'status_batch',targets};
+ }
  if(keys.length!==3||keys.some(k=>!['action','kind','postId'].includes(k))||
     (body.action!=='status'&&body.action!=='semear')||
     (body.kind!=='personal'&&body.kind!=='community')||
