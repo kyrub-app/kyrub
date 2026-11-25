@@ -141,6 +141,9 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       // Any lawful erasure is a separate authorized server process.
       allow delete: if false;
 
+      match /retirement_private/{eventId} {
+        allow read, write: if false;
+      }
       match /operations_private/{operationId} {
         allow read, write: if false;
       }
