@@ -167,6 +167,16 @@ test('verified emulator session screens once and keeps the private record minima
     assert.equal((await readLegal()).status,404);
     process.env.KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED='true';
     try{
+      // A verified email does not prove age; direct receipt calls follow the same gate as the UI.
+      const ageRef=adminDb.doc('age_eligibility_private/'+user.uid);
+      for(const status of ['pending','declared_adult','declared_underage','verified_underage','inconclusive','suspended']){
+        await ageRef.update({status});
+        assert.equal((await readLegal()).status,403);
+        assert.equal((await writeLegal(decision)).status,403);
+        await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_AGE_REQUIRED/);
+      }
+      assert.equal((await adminDb.collection('ingress_legal_receipts_private').get()).size,0);
+      await ageRef.update({status:'verified_adult'});
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);
       for(const [id,type] of [['terms-test','terms'],['privacy-test','privacy']]){
         await adminDb.doc('governanceDocuments/'+id).set({id,type,version:'1',hash,content,status:'published',ownerUserId:'test-legal',createdAt:'2026-01-01T00:00:00Z',approvedAt:'2026-01-02T00:00:00Z',publishedAt:'2026-01-03T00:00:00Z'});
@@ -219,6 +229,9 @@ test('verified emulator session screens once and keeps the private record minima
       }finally{delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;}
 
       await assert.rejects(requireReceipt(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
+      assert.equal((await readLegal()).status,403);
+      assert.equal((await writeLegal(decision)).status,403);
+      await ageRef.update({status:'verified_adult'});
       const revised=await (await readLegal()).json();
       assert.equal(revised.accepted,false);assert.equal(revised.terms.version,'2');
       assert.equal((await writeLegal(decision)).status,409);
