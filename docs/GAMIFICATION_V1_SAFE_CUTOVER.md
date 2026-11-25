@@ -199,3 +199,30 @@ um débito de 1.000, um XP, saldo zero e histórico da jornada intacto.
 Não é uma nova fonte de recompensa. CI dessa ampliação e da autoridade
 sem boas-vindas pendente. Próximo portão: confirmar os testes e concluir
 auditoria de custo e cobertura de escritores, sem aumentar escopo.
+
+
+## G3.5 — Admissão econômica obrigatória no transporte
+Revisão do fluxo identificou que o adaptador release-controlled anterior
+podia aceitar nova semente sem inscrição econômica se ZERO_START_PILOT
+estivesse desligado. Não utilizar esse adaptador como entrada pública.
+A rota semear agora chama seedEconomicallyAdmittedPost exclusivamente
+(6a1d110), que exige gate de abertura, fence, política de início zero,
+política de contas sem welcome e Auth do projeto de emulador confiável
+antes de escrever nova quota, recibo, projeção ou crédito. A inscrição
+econômica é obrigatória mesmo se uma configuração falhar; ausência de
+flags rejeita a operação. O cursor econômico estrito rejeita autoridade
+de moeda desconhecida. Replay de recibo validado permanece possível,
+sem nova quota, após pausa; não cria crédito retrospectivo.
+Adaptadores antigos permanecem apenas para regressões isoladas.
+Testes cd84e45 e 8038974 exercitam a entrada pública nos fluxos de
+cadastro elegível e não-Google, ausência das flags, preservação de
+estado e contrato do handler. CI pendente. Manifesto de fonte revisado
+em 6066ca5, sem declarar cobertura externa.
+Esta é a fronteira de admissão necessária para a futura autoridade
+comercial, NÃO autorização comercial: projeto, epoch, flags e guardas
+continuam exclusivos de emulador. Nenhuma migração de jornada,
+concessão retroativa, alteração de regras, serviços pagos, deployment
+ou edição de dados reais. A promoção precisa de política de projeto
+e epoch próprios, evidência de todos os escritores, configuração de
+campanha imutável e revisão da autoridade econômica e controles de
+ativação; não remover guardas experimentais para simular conclusão.
