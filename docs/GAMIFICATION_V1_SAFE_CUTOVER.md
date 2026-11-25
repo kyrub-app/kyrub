@@ -100,3 +100,34 @@ flag experimental não é configuração comercial. Nenhuma escrita real,
 nenhuma API administrativa de ativação, alteração de IAM, regras ou cobrança.
 Próximo aceite: confirmar CI e estender teste ao marco econômico antes de
 considerar desenho da autoridade de lançamento definitiva.
+
+
+## G3.2 — Aceitação no marco econômico
+Teste adicional no Auth/Firestore Emulator usa cadastro Google fictício com
+100 Pitangas reais do gatilho emulado e fixture sintética de 999 sementes
+(não representa recibos ou progresso de usuários reais). Pausa e desativação
+da flag econômica devem recusar a milésima semeadura sem alterar contador,
+projeção, cursor, quota, recibo, ledger ou saldo. Retomada com duas chamadas
+simultâneas do mesmo ator deve aceitar uma, reproduzir a outra, registrar uma
+Pitanga (saldo 101), quota 1 e XP 0. Pausa após confirmação preserva histórico
+e replay. Teste implementado em a42aa04, execução CI pendente.
+Não constitui prova de cobertura de escritores, produção, interface de pausa
+ou atomicidade de outros processos econômicos.
+
+## Pendências mínimas de encerramento V1
+1. Confirmar CI do Control Plane real e do gate de semeadura, sem substituir
+   testes de navegador por contratos estáticos.
+2. Completar inventário autorizado de escritores efetivos e identidades no
+   projeto principal, com evidência de regras/guardas e revisão implantada.
+3. Elaborar a autoridade comercial definitiva para créditos de semeadura a
+   partir de zero, sem migração de jornada anterior. O piloto atual não pode
+   ser liberado apenas trocando flags: sua política de projeto é exclusiva
+   de emulador, e a inscrição e o ledger ainda precisam de desenho comercial.
+4. Validar custos e limites de leitura/escrita, montagem do transporte real
+   com autenticação e controle de frequência, e aceite do app completo.
+5. Só então solicitar autorização específica para implantação e ativação
+   controladas, com plano de parada e reversão sem perda de histórico.
+
+Não acrescentar migração histórica, punições automáticas, classificadores de
+fraude ou novas áreas de produto à V1. O inventário da PR #1274 de Tags é uma
+frente independente e não comprova o estado do Firebase principal.
