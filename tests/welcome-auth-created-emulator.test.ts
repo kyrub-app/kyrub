@@ -1083,6 +1083,29 @@ test('isolated zero-start path enrolls verified author once and never silently a
    assert.deepEqual(await readPitangaAccount(db,uid),before);
    process.env[flag]='true';
   }
+  // Preview age enforcement must deny both an ineligible actor and an
+  // ineligible beneficiary before any quota, receipt or balance mutation.
+  const actorAge=db.doc('age_eligibility_private/'+actor);
+  const authorAge=db.doc('age_eligibility_private/'+uid);
+  const oldAgeFlag=process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED;
+  process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED='true';
+  try{
+   await assert.rejects(seed(),/SEMEADURA_AGE_REQUIRED/);
+   await actorAge.set({uid:actor,status:'verified_adult'});
+   await authorAge.set({uid,status:'inconclusive'});
+   await assert.rejects(seed(),/SEMEADURA_AGE_REQUIRED/);
+   await authorAge.set({uid,status:'verified_adult'});
+   for(const status of ['declared_adult','declared_underage','verified_underage','inconclusive','suspended']){
+    await actorAge.set({uid:actor,status});
+    await assert.rejects(seed(),/SEMEADURA_AGE_REQUIRED/);
+   }
+   for(const ref of [receipt,stats,cursor,progress,quota])assert.equal((await ref.get()).exists,false);
+   assert.deepEqual(await readPitangaAccount(db,uid),before);
+  }finally{
+   if(oldAgeFlag===undefined)delete process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED;
+   else process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED=oldAgeFlag;
+   await Promise.all([actorAge.delete(),authorAge.delete()]);
+  }
   // Unexpected existing progress is a blocker, not an instruction to migrate.
   await progress.set({authorId:uid,acceptedSeeds:1,pitangueiras:0});
   await assert.rejects(seed(),/SEMEADURA_ECONOMIC_ZERO_START_REQUIRED/);
