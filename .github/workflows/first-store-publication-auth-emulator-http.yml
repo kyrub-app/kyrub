@@ -10,6 +10,10 @@ on:
       - 'shared/ageEligibility.ts'
       - 'tests/age-screening-http-emulator.test.ts'
       - 'tests/age-screening-isolation.test.ts'
+      - 'tests/kyrub-tag-publication-emulator.test.ts'
+      - 'server/identity/kyrubTagService.ts'
+      - 'server/identity/kyrubTagPublicationPolicy.ts'
+      - 'shared/kyrubTagPublicationTerms.ts'
       - '.github/workflows/first-store-publication-auth-emulator-http.yml'
   workflow_dispatch:
 permissions:
@@ -53,3 +57,14 @@ jobs:
           KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'false'
           KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'false'
         run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore "node --test --import tsx tests/age-screening-http-emulator.test.ts"
+
+      - name: Verify promotional Tag lifecycle with synthetic age evidence
+        env:
+          FIREBASE_PROJECT_ID: demo-kyrub-onboarding
+          GCLOUD_PROJECT: demo-kyrub-onboarding
+          GOOGLE_CLOUD_PROJECT: demo-kyrub-onboarding
+          KYRUB_TAG_PROMO_FIRST_CLAIM_ENABLED: 'true'
+          KYRUB_TAG_PUBLICATION_ENABLED: 'true'
+          KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'false'
+          KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'false'
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore "node --test --import tsx tests/kyrub-tag-publication-emulator.test.ts"
