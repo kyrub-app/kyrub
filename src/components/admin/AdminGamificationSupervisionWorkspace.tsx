@@ -45,7 +45,7 @@ export default function AdminGamificationSupervisionWorkspace({pilotSession,isCu
             <dd className="mt-2 text-sm font-medium text-slate-400">Indisponível</dd>
           </div>)}
         </dl>}
-        {pilotSession&&isCurrent&&selected!=='revisao'&&<AdminGamificationPilotReadPanel key={pilotSession.uid+':'+selected} session={pilotSession} isCurrent={isCurrent} area={selected} caseWrites={caseWrites}/>}
+        {pilotSession&&isCurrent&&selected!=='revisao'&&<AdminGamificationPilotReadPanel key={pilotSession.uid+':'+(selected==='suspeitas'?'suspeitas':'snapshot')} session={pilotSession} isCurrent={isCurrent} area={selected} caseWrites={caseWrites}/>}
         {pilotSession&&isCurrent&&selected==='revisao'&&<AdminGamificationPilotEconomicPanel key={pilotSession.uid} session={pilotSession} isCurrent={isCurrent} referralWrites={referralWrites}/>}
         {selected==='suspeitas'&&<p className="mt-3 text-sm text-slate-400">Não há detector de fraude conectado. Nenhum indício gera punição ou bloqueio automático. {!connected?' A lista de casos ainda está indisponível.':''}</p>}
         {selected==='revisao'&&<p className="mt-3 text-sm text-slate-400">Ações de bloquear, liberar ou alterar saldos não estão disponíveis neste protótipo.</p>}
