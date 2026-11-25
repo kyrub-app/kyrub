@@ -143,3 +143,25 @@ Urgência de captação registrada como prioridade de ordem de execução, sem r
 - Control Plane (8772a30, b3b7b87): indicadores técnicos consolidados na área de eficiência existente. ERP da Loja Oficial permanece fonte para registro e conciliação de despesas; MAU real e custo por usuário indisponíveis até cobertura completa do mesmo período, calendário, moeda e usuários únicos. Fixtures e estimativas não são evidência real. Sem criação de telemetria faturável, contratação, mudança de flags, regras ou deploy produtivo.
 - Evidência de CI nesta revisão: 55b81d6 com seis workflows concluídos com sucesso e Store security rules em execução; 86746ef com preflight aprovado e seis workflows não concluídos; bee01d4 ainda não concluído. Os estados pertencem aos SHAs indicados, não comprovam os commits posteriores. Testes estáticos de contrato não substituem homologação em emulador, funcional e em operação assistida.
 - Próximos passos: consolidar resultados dos workflows no HEAD, corrigir falhas comprovadas, reconciliar pendências do checkpoint e preservar os gates definidos. Não reabrir validações expressamente adiadas; NFC, GPS físico, produção, Kairubia e cobrança real permanecem nas condições já registradas.
+
+
+## Fechamento técnico e matriz atual de lançamento
+
+Evidência atualizada: HEAD 734719fb6e2cfc24a0385c374de637ef7672f765, sete workflows concluídos com sucesso: build 45723661442, Rules 45723661287, Chromium ingresso 45723661251, Chromium Freelas 45723661458, HTTP 45723661358, Playwright 45723661440, preflight 45723661354. cc133f6 e 55b81d6 também 7/7. 86746ef, bee01d4 e ec3ae66 haviam falhado apenas no workflow de build; o contrato antigo de UI exigia duas requisições de rentabilidade. 734719f atualiza o contrato para uma requisição autorizada, preservando isolamento e compatibilidade; a suíte completa passou. Não transferir evidência automaticamente para novo SHA. PR #1317 aberta, draft, mergeable, não merged; base eb1c59ab preservada. Nenhuma promoção.
+
+| Frente | Evidência disponível | Condição restante / tratamento |
+| --- | --- | --- |
+| ERP, primeira loja Free, publicação, pedido, estoque e conciliação | CI integrada e jornada sintética dos serviços, conforme evidências anteriores | Conferir regras/configuração real em leitura e jornada operacional autorizada; sem simular aceite do PSP. |
+| Eficiência operacional e Control Plane | CI 7/7 no SHA acima | Medição real somente após cobertura de custos e MAU; não é bloqueio técnico de eficiência. |
+| Ingresso e elegibilidade 18+ | Shell e HTTP isolados, gates privados | Integração definitiva no app, aferição confiável, canal real de e-mail e autorização transversal; não contornar os gates. |
+| Jurídico e privacidade | Aceites versionados sintéticos, páginas públicas com gate | Aprovação jurídica humana, documentos vigentes, publicação autorizada e canal de direitos; não publicar minutas. |
+| MFA e recuperação | Adaptador/UI e negativas em emulador | Prova TOTP real, recuperação segura e compatibilidade/custos autorizados; não habilitar Identity Platform sem decisão. |
+| Pix direto ao lojista | Conciliação sintética com recebedor validado e idempotência | Preflight do beneficiário e piloto real autorizado; preservar gate de cobrança; split/payout em standby. |
+| Freelas | Jornadas isoladas de candidatura, negociação, cancelamento e encerramento | Revisar writers, índices, dados legados, autorização positiva de suporte e rollout antes de oferecer como serviço disponível. |
+| Entregas | Retirada/entregador próprio; despacho remunerado em standby | Auditoria residual de rotas e regras; GPS físico pendente, sem reabrir despacho intermediado. |
+| Gamificação | Deltas integrados e contratos de teste | Verificar execução específica Semear, autoridade de escritores, limites e flags; não emitir valor real sem gate. |
+| Kyrub Tag | Ciclo isolado e proteção de titularidade/readback | Prévia Firebase exclusiva, e-mail real, unidade física; campanha/publicação não homologadas. |
+| Validações adiadas pelo proprietário | Decisão expressa | Fechamento simultâneo em dispositivos e limites por função na operação assistida; não bloquear exclusivamente por esses testes. |
+| Fora do escopo | Decisões comerciais registradas | Kairubia offline, repasses/split e despacho remunerado em standby; não ampliar escopo. |
+
+A autorização de deployment continua condicionada ao fechamento comprovado. Este quadro não libera flags, cobrança, mudança de Firebase, contratação ou produção, não substitui parecer jurídico e não converte evidência emulada em confirmação real. Priorizar agora as lacunas que podem ser verificadas sem acesso a segredos e sem mudanças de infraestrutura: auditoria de rotas alternativas e flags, evidência específica de gamificação, compatibilidade de regras e matriz de disponibilidade por funcionalidade. Dependências externas ficam expressamente identificadas.
