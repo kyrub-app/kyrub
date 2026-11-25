@@ -1,7 +1,7 @@
-import {requireStagedFinancialOwnerAccess} from '../identity/stagedFinancialAuthorization.js';
+import {requireStagedFinancialOwnerAccess,requireFinancialPolicyInTransaction} from '../identity/stagedFinancialAuthorization.js';
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
-import { FieldPath } from 'firebase-admin/firestore';
+import { FieldPath,type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
@@ -242,8 +242,19 @@ const buildReconciliation = (input: {
   });
 };
 
+type HumanReconciliationAuthority={authorization:string;ownerId:string};
+
+async function requireHumanReconciliationWrite(tx:Transaction,storeId:string,authority:HumanReconciliationAuthority){
+  if(storeId!==authority.ownerId||!/^[A-Za-z0-9_-]{1,128}$/.test(storeId))throw Error('STORE_REPRESENTATION_FORBIDDEN');
+  const store=await tx.get(adminDb.doc('users/'+storeId+'/stores/'+storeId));
+  if(!store.exists||store.get('id')!==storeId||store.get('ownerId')!==authority.ownerId)throw Error('STORE_REPRESENTATION_FORBIDDEN');
+  await requireFinancialPolicyInTransaction(tx,authority.authorization,authority.ownerId);
+}
+
 const saveReconciliation = async (
-  reconciliation: StoreProviderPaymentReconciliation
+  reconciliation: StoreProviderPaymentReconciliation,
+  expectedPayment:CanonicalPayment,
+  authority?:HumanReconciliationAuthority
 ): Promise<StoreProviderPaymentReconciliation> => {
   const reference = adminDb.doc(storeProviderPaymentReconciliationPath(
     reconciliation.storeId,
@@ -252,7 +263,12 @@ const saveReconciliation = async (
   ));
   const observation = reference.collection('observations').doc(reconciliation.evidenceFingerprint);
   return adminDb.runTransaction(async transaction => {
+    if(authority)await requireHumanReconciliationWrite(transaction,reconciliation.storeId,authority);
+    const paymentSnapshot=await transaction.get(adminDb.doc('stores/'+reconciliation.storeId+'/payments/'+reconciliation.paymentId));
+    const data=paymentSnapshot.data();
+    if(!data||data.storeId!==expectedPayment.storeId||data.id!==expectedPayment.id||data.providerPaymentId!==expectedPayment.providerPaymentId||data.provider!==expectedPayment.provider||data.orderId!==expectedPayment.orderId||data.amount!==expectedPayment.amount)throw Error('STORE_PROVIDER_RECONCILIATION_PAYMENT_CHANGED');
     const current = await transaction.get(reference);
+    let retained:StoreProviderPaymentReconciliation|undefined;
     if (current.exists) {
       let existing: StoreProviderPaymentReconciliation;
       try {
@@ -270,20 +286,23 @@ const saveReconciliation = async (
       if (existing.evidenceFingerprint === reconciliation.evidenceFingerprint) {
         return existing;
       }
+      // A delayed provider response must not regress a newer dated snapshot.
+      if(existing.providerUpdatedAt&&(!reconciliation.providerUpdatedAt||Date.parse(reconciliation.providerUpdatedAt)<=Date.parse(existing.providerUpdatedAt)))retained=existing;
     }
 
     const existingObservation = await transaction.get(observation);
-    transaction.set(reference, reconciliation);
+    if(!retained)transaction.set(reference, reconciliation);
     if (!existingObservation.exists) {
       transaction.create(observation, reconciliation);
     }
-    return reconciliation;
+    return retained??reconciliation;
   });
 };
 
 export const reconcileMercadoPagoPayment = async (
   storeId: string,
-  paymentId: string
+  paymentId: string,
+  authority?:HumanReconciliationAuthority
 ): Promise<StoreProviderPaymentReconciliation> => {
   const payment = await loadCanonicalPayment(storeId, paymentId);
   if (!isMercadoPagoProvider(payment.provider) || !clean(payment.providerPaymentId)) {
@@ -319,7 +338,7 @@ export const reconcileMercadoPagoPayment = async (
   }
 
   const reconciliation = buildReconciliation({ storeId, payment, providerPayment });
-  return saveReconciliation(reconciliation);
+  return saveReconciliation(reconciliation,payment,authority);
 };
 
 const loadReconciliation = async (
@@ -383,6 +402,7 @@ const backfillMercadoPagoReconciliations = async (input: {
   storeId: string;
   cursor?: unknown;
   limit?: unknown;
+  authority:HumanReconciliationAuthority;
 }) => {
   const cursor = decodeBackfillCursor(input.storeId, input.cursor);
   const requestedLimit = parseBackfillLimit(input.limit);
@@ -417,7 +437,7 @@ const backfillMercadoPagoReconciliations = async (input: {
     if (!isMercadoPagoProvider(payment.provider) || !clean(payment.providerPaymentId)) continue;
     eligiblePaymentCount += 1;
     try {
-      await reconcileMercadoPagoPayment(input.storeId, payment.id);
+      await reconcileMercadoPagoPayment(input.storeId, payment.id,input.authority);
       reconciledPaymentCount += 1;
     } catch (error) {
       errors.push({
@@ -472,7 +492,8 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
     return { status: 400, message: 'Este pagamento ou página histórica não pode ser reconciliado com o Mercado Pago.', code };
   }
   if (
-    code === 'STORE_PROVIDER_RECONCILIATION_BINDING_MISMATCH'
+    code === 'STORE_PROVIDER_RECONCILIATION_PAYMENT_CHANGED'
+    || code === 'STORE_PROVIDER_RECONCILIATION_BINDING_MISMATCH'
     || code === 'STORE_PROVIDER_RECONCILIATION_ACCOUNT_MISMATCH'
     || code === 'STORE_PROVIDER_RECONCILIATION_PROVIDER_FACT_MISMATCH'
     || code === 'STORE_PROVIDER_RECONCILIATION_STORE_SCOPE_INVALID'
@@ -517,8 +538,9 @@ export const createStoreMercadoPagoReconciliationRouter = (): Router => {
       const storeId = clean(request.query.storeId);
       const paymentId = clean(request.query.paymentId);
       if (!storeId || !paymentId) throw new Error('STORE_PROVIDER_RECONCILIATION_PAYMENT_INVALID');
-      await requireOwner(clean(request.headers.authorization), storeId);
-      const reconciliation = await reconcileMercadoPagoPayment(storeId, paymentId);
+      const authorization=clean(request.headers.authorization);
+      const ownerId=await requireOwner(authorization,storeId);
+      const reconciliation = await reconcileMercadoPagoPayment(storeId, paymentId,{authorization,ownerId});
       response.status(200).json({ reconciliation });
     } catch (error) {
       const mapped = mapError(error);
@@ -530,9 +552,10 @@ export const createStoreMercadoPagoReconciliationRouter = (): Router => {
     try {
       const storeId = clean(request.query.storeId);
       if (!storeId) throw new Error('STORE_PROVIDER_RECONCILIATION_PAYMENT_INVALID');
-      await requireOwner(clean(request.headers.authorization), storeId);
+      const authorization=clean(request.headers.authorization);
+      const ownerId=await requireOwner(authorization,storeId);
       const result = await backfillMercadoPagoReconciliations({
-        storeId,
+        storeId,authority:{authorization,ownerId},
         cursor: request.body?.cursor,
         limit: request.body?.limit,
       });
