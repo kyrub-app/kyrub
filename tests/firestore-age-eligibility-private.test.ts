@@ -64,3 +64,16 @@ test('restricted personal preview is not accessible directly through Firestore c
     await assertFails(setDoc(doc(db,collectionId,'forged_notes'),{uid:ownerId,kind:'notes',items:[]}));
   }
 });
+
+test('legal receipt cannot be forged, read or deleted by a direct client', async ()=>{
+ const name='ingress_legal_receipts_private',id='receipt-test';
+ await environment.withSecurityRulesDisabled(async context=>{
+  await setDoc(doc(context.firestore(),name,id),{uid:'age_test_owner',terms:{accepted:true},privacy:{acknowledged:true}});
+ });
+ for(const context of [environment.unauthenticatedContext(),environment.authenticatedContext('age_test_owner'),environment.authenticatedContext('age_test_other'),environment.authenticatedContext('age_test_admin',{role:'admin'})]){
+  const db=context.firestore(),ref=doc(db,name,id);
+  await assertFails(getDoc(ref));await assertFails(getDocs(collection(db,name)));
+  await assertFails(updateDoc(ref,{uid:'other'}));await assertFails(deleteDoc(ref));
+  await assertFails(setDoc(doc(db,name,'forged'),{uid:'age_test_owner'}));
+ }
+});
