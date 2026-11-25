@@ -204,3 +204,54 @@ test('Freela lifecycle writes one immutable event and one recipient alert per ac
   if(original.exists)await control.set(original.data()!);else await control.delete();
  }
 });
+
+
+test('staged social age policy governs Admin SDK messages and tribe invitations atomically',async()=>{
+ const {issueCommunityGroupInvitation}=await import('../server/notifications/communityGroupInvitationIssueService.js');
+ const {respondToCommunityGroupInvitation}=await import('../server/notifications/communityGroupInvitationResponseService.js');
+ const senderId='age_social_sender',receiverId='age_social_receiver',thirdId='age_social_third';
+ const connectionId='age_social_connection',communityId='age_social_community',groupId='age_social_tribe';
+ const control=adminDb.doc('social_age_release_private/current');
+ const oldControl=await control.get();
+ const age=(uid:string)=>adminDb.doc('age_eligibility_private/'+uid);
+ const group=adminDb.doc('community_groups/'+groupId);
+ const invite=group.collection('invitations').doc(receiverId);
+ const message=adminDb.doc('social_chats/'+connectionId+'/messages/age_message');
+ const input={senderId,receiverId,connectionId,messageId:'age_message',text:'Mensagem sintética'};
+ const invitation={groupId,inviterUserId:senderId,inviteeUserId:receiverId};
+ try{
+  await control.set({schemaVersion:1,mode:'verified_adult_only'});
+  await age(senderId).set({uid:senderId,status:'verified_adult'});
+  await age(receiverId).set({uid:receiverId,status:'inconclusive'});
+  await age(thirdId).set({uid:thirdId,status:'verified_adult'});
+  await adminDb.doc('connections/'+connectionId).set({senderId,receiverId,participantIds:[senderId,receiverId],status:'accepted'});
+  await group.set({creatorId:senderId,communityId,memberIds:[senderId],name:'Tribo de teste'});
+  for(const uid of [senderId,receiverId,thirdId])await adminDb.doc('community_members/'+communityId+'__'+uid).set({communityId,userId:uid,status:'active'});
+  await assert.rejects(sendNotifiedSocialMessage(input),/SOCIAL_CHAT_FORBIDDEN/);
+  await assert.rejects(issueCommunityGroupInvitation(invitation),/COMMUNITY_GROUP_INVITATION_FORBIDDEN/);
+  assert.equal((await message.get()).exists,false);
+  assert.equal((await invite.get()).exists,false);
+  assert.equal((await listUserNotifications({recipientUserId:receiverId})).notifications.length,0);
+  await age(receiverId).set({uid:thirdId,status:'verified_adult'});
+  await assert.rejects(sendNotifiedSocialMessage(input),/SOCIAL_CHAT_FORBIDDEN/);
+  await age(receiverId).set({uid:receiverId,status:'verified_adult'});
+  await control.set({schemaVersion:2,mode:'verified_adult_only'});
+  await assert.rejects(issueCommunityGroupInvitation(invitation),/COMMUNITY_GROUP_INVITATION_FORBIDDEN/);
+  await assert.rejects(sendNotifiedSocialMessage(input),/SOCIAL_CHAT_FORBIDDEN/);
+  await control.set({schemaVersion:1,mode:'verified_adult_only'});
+  assert.equal((await sendNotifiedSocialMessage(input)).created,true);
+  assert.equal((await issueCommunityGroupInvitation(invitation)).created,true);
+  await age(receiverId).update({status:'suspended'});
+  await assert.rejects(respondToCommunityGroupInvitation({groupId,recipientUserId:receiverId,decision:'accepted'}),/COMMUNITY_GROUP_INVITATION_FORBIDDEN/);
+  assert.equal((await invite.get()).get('status'),'pending');
+  assert.deepEqual((await group.get()).get('memberIds'),[senderId]);
+  assert.equal((await sendNotifiedSocialMessage(input)).created,false);
+  await assert.rejects(sendNotifiedSocialMessage({...input,messageId:'age_message_new'}),/SOCIAL_CHAT_FORBIDDEN/);
+  assert.deepEqual(await respondToCommunityGroupInvitation({groupId,recipientUserId:receiverId,decision:'declined'}),{status:'declined'});
+  await issueCommunityGroupInvitation({...invitation,inviteeUserId:thirdId});
+  assert.deepEqual(await respondToCommunityGroupInvitation({groupId,recipientUserId:thirdId,decision:'accepted'}),{status:'accepted'});
+  assert.deepEqual((await group.get()).get('memberIds'),[senderId,thirdId]);
+ }finally{
+  if(oldControl.exists)await control.set(oldControl.data()!);else await control.delete();
+ }
+});
