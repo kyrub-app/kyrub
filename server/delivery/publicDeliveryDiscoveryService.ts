@@ -1,3 +1,4 @@
+import {COMMERCIAL_V1_SCOPE} from '../../shared/commercialV1Scope.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { projectPublicDeliveryOpportunity } from '../../shared/publicDeliveryDiscovery.js';
 
@@ -8,6 +9,7 @@ import { projectPublicDeliveryOpportunity } from '../../shared/publicDeliveryDis
  * unchanged. This endpoint cannot reserve or accept a job.
  */
 export const listPublicDeliveryOpportunities = async () => {
+  if(!COMMERCIAL_V1_SCOPE.onDemandDelivery)return {opportunities:[]};
   const snapshot = await adminDb
     .collection('hub/renda/deliveries')
     .where('status', '==', 'available')

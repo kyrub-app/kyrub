@@ -159,3 +159,15 @@ test('delivery transport stays closed until explicitly released; Kyrub orders ca
   assert.match(modal,/source === 'kyrub-order'\) return Boolean\(currentUser && owner === currentUser.uid\)/);
   assert.match(modal,/Aguardando confirmação do cliente/);
 });
+
+
+test('commercial V1 keeps new on-demand work and split in standby without disabling direct hiring',async()=>{
+ const {COMMERCIAL_V1_SCOPE,assertNewOnDemandDeliveryAllowed}=await import('../shared/commercialV1Scope.js');
+ assert.equal(COMMERCIAL_V1_SCOPE.onDemandDelivery,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.marketplaceSplit,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.automaticCourierPayout,false);
+ assert.equal(COMMERCIAL_V1_SCOPE.merchantDirectPix,true);
+ assert.equal(COMMERCIAL_V1_SCOPE.ownDelivery,true);
+ assert.equal(COMMERCIAL_V1_SCOPE.directFreelanceHiring,true);
+ assert.throws(assertNewOnDemandDeliveryAllowed,/DELIVERY_V1_STANDBY/);
+});

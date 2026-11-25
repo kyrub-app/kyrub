@@ -1,3 +1,4 @@
+import {assertNewOnDemandDeliveryAllowed} from '../../shared/commercialV1Scope.js';
 import { createHash } from 'node:crypto';
 import { Router, type Request, type Response } from 'express';
 import { FieldValue, Timestamp } from 'firebase-admin/firestore';
@@ -114,6 +115,7 @@ const errorResponse = (response: Response, error: unknown): void => {
     response.status(401).json({ error: 'Faça login novamente.' });
     return;
   }
+  if(message==='DELIVERY_V1_STANDBY'){response.status(503).json({error:'Kyrub Entregas sob demanda está temporariamente indisponível. Utilize entregador próprio ou contratação direta nos Freelas.',code:message});return;}
   if (message === 'DELIVERY_PICKUP_FORBIDDEN') {
     response.status(403).json({ error: 'Somente a loja desta entrega pode consultar o código de coleta.' });
     return;
@@ -147,6 +149,7 @@ export const publishKyrubDeliveryOpportunity = async (
   tenantId: string,
   orderId: string
 ): Promise<Record<string, unknown>> => {
+  assertNewOnDemandDeliveryAllowed();
   const orderSnapshot = await adminDb.doc(orderPath(tenantId, orderId)).get();
   const order = orderSnapshot.data() as Record<string, unknown> | undefined;
   if (!orderSnapshot.exists || !order) throw new Error('Pedido não encontrado.');
@@ -312,6 +315,7 @@ export const updateKyrubDeliveryStatus = async (
         if (courierId === actor.uid) return;
         throw new Error('Outro entregador já aceitou esta oportunidade.');
       }
+      assertNewOnDemandDeliveryAllowed();
       if (currentStatus !== 'available') {
         throw new Error('Esta entrega já foi aceita.');
       }
