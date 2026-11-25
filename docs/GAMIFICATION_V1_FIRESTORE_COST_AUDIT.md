@@ -296,3 +296,25 @@ Nova execução integral pendente. Ainda não é correção implantada.
 Não confundir ausência de apontamentos altos no npm audit com prova
 de segurança completa. Permanecem as ocorrências moderadas/baixa e
 a verificação do artefato implantado, sem expansão do escopo.
+
+
+## Confirmação do pacote corrigido e remediações compatíveis
+Na revisão 9389713, workflow 45530582159, job 138924574555, o inventário
+do lockfile efetivamente registrado confirma root completo: 0 críticas,
+0 altas, 7 moderadas, 1 baixa; root produção: 0 críticas, 0 altas,
+6 moderadas, 1 baixa. Workflow de inventário aprovado; os quatro workflows
+gerais ainda em execução na consulta. O código não foi implantado.
+Commit 840816c acrescenta uma avaliação descartável de npm audit fix
+--package-lock-only --ignore-scripts --no-fund, sem --force. A proposta
+não pode alterar package.json, dependências de Functions, versão de
+@vercel/queue ou versão principal das dependências diretas. Exige auditorias
+válidas antes/depois, ausência de novas ocorrências e de altas/críticas,
+e prebuild completo, bundle, normalização e lint. Exporta arquivos exatos,
+diff, versões alteradas, relatórios e logs para revisão. Não confundir
+uma proposta aprovada com atualização aplicada. O resultado ainda está
+pendente; manter o lockfile vigente até examinar o diff.
+O npm sugere downgrade de @vercel/queue 0.5.1 para 0.1.1 devido à cadeia
+minimatch. Não aceitar automaticamente: preservar contratos da integração.
+Caso remanesça, analisar atualização específica compatível e uso real
+de padrões glob, sem alterar o contrato da fila por conveniência.
+Não habilitar infraestrutura nem estender o escopo comercial por este CI.
