@@ -308,3 +308,37 @@ test('status batch parser rejects injected identity, duplicate targets and overs
   {action:'status_batch',targets:Array.from({length:11},(_,i)=>({...target,postId:'p'+i}))},
  ])assert.equal(parseSemeaduraRequest(invalid),null);
 });
+
+
+test('commercial configuration fingerprints dates, reviewed revisions and fixed economic policy without granting authority',async()=>{
+ const {COMMERCIAL_GAMIFICATION_POLICY,commercialCampaignFingerprint,assertCommercialCampaignUnchanged}=await import('../server/gamification/commercialCampaignConfiguration.js');
+ // Synthetic values for this pure contract; not approved dates or actual evidence.
+ const config={schemaVersion:1,projectId:'kyrub-b8d0e',databaseId:'(default)',
+  campaignId:'campaign-v1',fenceEpoch:'commercial-v1',welcomeEffectiveAt:'2030-01-01T03:00:00.000Z',
+  semeaduraEffectiveAt:'2030-01-02T03:00:00.000Z',candidateCommit:'a'.repeat(40),
+  writerEvidenceSha256:'b'.repeat(64),rulesSha256:'c'.repeat(64),policy:{...COMMERCIAL_GAMIFICATION_POLICY}};
+ const digest=commercialCampaignFingerprint(config);
+ assert.match(digest,/^[a-f0-9]{64}$/);
+ assert.equal(commercialCampaignFingerprint(Object.fromEntries(Object.entries(config).reverse())),digest);
+ assert.equal(commercialCampaignFingerprint({...config,policy:Object.fromEntries(Object.entries(config.policy).reverse())}),digest);
+ assert.doesNotThrow(()=>assertCommercialCampaignUnchanged(config,digest));
+ for(const changed of [
+  {...config,welcomeEffectiveAt:'2030-01-02T03:00:00.000Z'},
+  {...config,semeaduraEffectiveAt:'2030-01-03T03:00:00.000Z'},
+  {...config,candidateCommit:'d'.repeat(40)},
+  {...config,rulesSha256:'e'.repeat(64)},
+  {...config,writerEvidenceSha256:'f'.repeat(64)},
+  {...config,fenceEpoch:'commercial-v2'},
+ ])assert.throws(()=>assertCommercialCampaignUnchanged(changed,digest),/COMMERCIAL_CAMPAIGN_CONFIGURATION_CHANGED/);
+ for(const invalid of [
+  {...config,projectId:'kyrub-tags'},{...config,projectId:'demo-kyrub-welcome'},
+  {...config,fenceEpoch:'welcome-emulator-only'},{...config,databaseId:'other'},
+  {...config,welcomeEffectiveAt:''},{...config,semeaduraEffectiveAt:'2030-01-02'},
+  {...config,writerEvidenceSha256:'0'.repeat(64)},{...config,writersVerified:true},
+  {...config,policy:{...config.policy,welcomeRetroactive:true}},
+  {...config,policy:{...config.policy,dailySeedLimit:101}},
+  {...config,policy:{...config.policy,communityRewards:true}},
+  {...config,policy:{...config.policy,journeyStartsAtZero:false}},
+ ])assert.throws(()=>commercialCampaignFingerprint(invalid),/COMMERCIAL_CAMPAIGN_CONFIGURATION_INVALID/);
+ assert.throws(()=>assertCommercialCampaignUnchanged(config,'0'.repeat(64)),/COMMERCIAL_CAMPAIGN_CONFIGURATION_CHANGED/);
+});
