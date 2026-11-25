@@ -90,7 +90,7 @@ describe('admin platform economy', () => {
   test('finance endpoint is server-authorized and audited', () => {
     const router = readFileSync('server/admin/platformEconomyRouter.ts', 'utf8');
     assert.match(router, /new Set\(\['super_admin', 'finance'\]\)/);
-    assert.match(router, /verifyFirebaseIdToken\(token\)/);
+    assert.match(router, /verify:verifyFirebaseIdToken/);
     assert.match(router, /decoded\.emailVerified !== true/);
     assert.match(router, /clean\(profile\?\.status\) !== 'active'/);
     assert.match(router, /admin\.platform_economy\.viewed/);
@@ -389,6 +389,8 @@ test('official infrastructure fixture reader cannot be invoked through an HTTP r
   assert.match(reader,/await authorizePlatformEconomy\(authorization/);
   assert.match(reader,/kyrub_admin\/official_store/);
   assert.match(reader,/\{readOnly:true\}/);
+  assert.match(reader,/raw.costCenter\?\.id!==INFRASTRUCTURE_COST_CENTER_ID/);
+  assert.match(reader,/readOfficialRegisteredInfrastructureFixture/);
   assert.doesNotMatch(reader,/\btx\.(set|create|update|delete)\(|recoverAllMissingCanonicalPaidCaptures/);
   assert.doesNotMatch(router,/readOfficialInfrastructureFixture/);
 });

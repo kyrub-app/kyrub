@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import type { StoreCostCenter, StoreCostCenterRef } from '../../../shared/storeFinanceCostCenters';
+import { FIXED_STORE_COST_CENTERS, type StoreCostCenterRef } from '../../../shared/storeFinanceCostCenters';
 import { auth } from '../../utils/firebase';
 
 export type StorePayableStatus = 'open' | 'paid' | 'cancelled';
@@ -64,7 +64,6 @@ type MutationPayload = {
 type Props = {
   storeId: string;
   payables: StorePayable[];
-  costCenters?: StoreCostCenter[];
   summary?: StorePayableSummary;
   onReload: () => Promise<void> | void;
 };
@@ -172,14 +171,11 @@ async function mutateStoreFinance(
 export default function StorePayablesWorkspace({
   storeId,
   payables,
-  costCenters = [],
   summary,
   onReload,
 }: Props) {
   const [description, setDescription] = useState('');
   const [costCenterId,setCostCenterId]=useState('');
-  const [centerName,setCenterName]=useState('');
-  const [centerBusy,setCenterBusy]=useState(false);
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [category, setCategory] = useState<ManualStorePayableCategory>('supplier');
@@ -199,9 +195,9 @@ export default function StorePayablesWorkspace({
 
   const createPayable = async () => {
     const amountMinor = amountToMinor(amount);
-    if (!description.trim() || !dueDate || amountMinor === null) {
+    if (!description.trim() || !dueDate || amountMinor === null || !costCenterId) {
       setFeedbackError(true);
-      setFeedback('Informe descrição, valor válido e vencimento.');
+      setFeedback('Informe descrição, valor válido, vencimento e centro de custo.');
       return;
     }
 
@@ -249,19 +245,6 @@ export default function StorePayablesWorkspace({
     } finally {
       setSaving(false);
     }
-  };
-
-  const changeCenter = async (action:'create_cost_center'|'archive_cost_center',id?:string) => {
-    if(centerBusy || saving) return;
-    setCenterBusy(true);setFeedback('');setFeedbackError(false);
-    try {
-      await mutateStoreFinance(storeId,{action,name:centerName,costCenterId:id});
-      if(action==='create_cost_center') setCenterName('');
-      if(id===costCenterId) setCostCenterId('');
-      setFeedback(action==='create_cost_center'?'Centro cadastrado.':'Centro arquivado; histórico preservado.');
-      await onReload();
-    } catch(error) {setFeedbackError(true);setFeedback(error instanceof Error?error.message:'Não foi possível atualizar o centro.');}
-    finally {setCenterBusy(false);}
   };
 
   const changePayable = async (
@@ -320,19 +303,6 @@ export default function StorePayablesWorkspace({
         </article>
       </div>
 
-      <section className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-4" aria-label="Centros de custo">
-        <h5 className="text-xs font-bold text-slate-200">Centros de custo</h5>
-        <p className="mt-1 text-xs text-slate-400">Organize as despesas por área da empresa. Arquivar não altera os lançamentos anteriores.</p>
-        <form className="mt-3 flex flex-wrap gap-2" onSubmit={e=>{e.preventDefault();void changeCenter('create_cost_center');}}>
-          <input aria-label="Nome do centro de custo" value={centerName} onChange={e=>setCenterName(e.target.value)} maxLength={80} required className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-3 py-2 text-xs" placeholder="Ex.: Infraestrutura" />
-          <button type="submit" disabled={centerBusy||saving||!centerName.trim()} className="rounded-xl border border-slate-700 px-3 py-2 text-xs">Cadastrar</button>
-        </form>
-        <div className="mt-3 space-y-2">{costCenters.map(center=><div key={center.id} className="flex flex-wrap items-center justify-between gap-2 text-xs">
-          <span className="break-words">{center.name}{center.archived?' (arquivado)':''}</span>
-          {!center.archived&&<button type="button" disabled={centerBusy||saving} onClick={()=>{if(window.confirm('Arquivar este centro de custo? O histórico será preservado.'))void changeCenter('archive_cost_center',center.id);}} className="rounded-lg border border-slate-700 px-2 py-1">Arquivar</button>}
-        </div>)}</div>
-      </section>
-
       <form
         className="mt-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4"
         onSubmit={event => {
@@ -382,9 +352,9 @@ export default function StorePayablesWorkspace({
 
           <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
             Centro de custo
-            <select value={costCenterId} onChange={e=>setCostCenterId(e.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs text-white">
-              <option value="">Sem classificação</option>
-              {costCenters.filter(c=>!c.archived).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            <select required value={costCenterId} onChange={e=>setCostCenterId(e.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs text-white">
+              <option value="">Selecione o centro de custo</option>
+              {FIXED_STORE_COST_CENTERS.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
           </label>
           <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
