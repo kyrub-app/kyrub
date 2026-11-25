@@ -292,6 +292,7 @@ export async function resolveKyrubTag(id:string):Promise<{id:string;model:KyrubT
  if(!isTagId(id))return null;
  const ref=tags().doc(id),snapshot=await ref.get(),data=snapshot.data();
  if(!data||!isTagModel(data.model))return null;
+ if(data.manufacturingState!==undefined&&data.manufacturingState!=='released')return {id,model:data.model,status:'unclaimed',activation:'setup',links:[]};
  if(data.ownerId===null){
   if(isOpenPromotionalTag(data))return {id,model:data.model,status:'unclaimed',activation:promotionalEnabled()?'email':'setup',links:[]};
   return {id,model:data.model,status:'unclaimed',activation:typeof data.reservedEmailHash==='string'?'account':'code',links:[]};
