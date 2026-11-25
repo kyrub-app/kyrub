@@ -4,6 +4,7 @@ import { Router } from 'express';
 import { adminDb } from '../firebaseAdmin.js';
 import type { DocumentData, QueryDocumentSnapshot, Transaction } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
+import {requireErpAgeInTransaction} from '../identity/erpOperationAuthorization.js';
 import {
   normalizeCanonicalPaymentIntent,
   type CanonicalPaymentIntent,
@@ -454,6 +455,7 @@ export const mapMarketplaceCheckoutError = (
   if (message === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(message)) {
     return { status: 401, body: { error: 'Faça login novamente.' } };
   }
+  if(message==='STORE_ERP_AGE_REQUIRED')return {status:403,body:{error:'A maioridade precisa estar verificada para realizar novas compras.'}};
   if (message === 'CHECKOUT_STORE_NOT_AVAILABLE') {
     return { status: 404, body: { error: 'A loja não está disponível para checkout.' } };
   }
@@ -552,6 +554,7 @@ export const createMarketplacePaymentIntent = async (
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
+  await adminDb.runTransaction(tx=>requireErpAgeInTransaction(tx,identity.uid));
   const candidate = body && typeof body === 'object' && !Array.isArray(body)
     ? body as Record<string, unknown>
     : {};
@@ -669,6 +672,7 @@ export const createMarketplacePaymentIntent = async (
   const paymentRef = adminDb.doc(`stores/${input.storeId}/payments/${paymentId}`);
   const orderRef = adminDb.doc(operationalOrderPath(input.storeId, orderId));
   const result = await adminDb.runTransaction(async transaction => {
+    await requireErpAgeInTransaction(transaction,identity.uid);
     const [existingIntent, existingPayment, existingOrder] = await Promise.all([
       transaction.get(intentRef),
       transaction.get(paymentRef),
