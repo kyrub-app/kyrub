@@ -92,7 +92,7 @@ test('TOTP client adapter accepts six digit codes and provider-selected TOTP fac
  assert.equal(isKyrubMfaChallenge({code:'auth/multi-factor-auth-required'}),true);
  assert.equal(isKyrubMfaChallenge({code:'auth/wrong-password'}),false);
  assert.equal(isKyrubMfaChallenge(null),false);
- const hints=[{uid:'totp-1',factorId:'totp',displayName:'Autenticador',enrollmentTime:'test'},{uid:'sms-1',factorId:'phone',displayName:'SMS',enrollmentTime:'test'}];
+ const hints=[{uid:'totp-1',factorId:'totp' as const,displayName:'Autenticador',enrollmentTime:'test'},{uid:'sms-1',factorId:'phone' as const,displayName:'SMS',enrollmentTime:'test'}];
  assert.deepEqual(listTotpFactors({hints}),[{id:'totp-1',label:'Autenticador'}]);
  const {readFileSync}=await import('node:fs');
  const source=readFileSync('src/utils/kyrubTotpAccess.ts','utf8');
