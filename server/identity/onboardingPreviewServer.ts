@@ -9,6 +9,10 @@ if(process.env.KYRUB_PERSONAL_PREVIEW_ENABLED==='true'){
  const {createPrivatePersonalPreviewRouter}=await import('./privatePersonalPreviewRouter.js');
  app.use('/api/onboarding/personal',createPrivatePersonalPreviewRouter());
 }
+if(process.env.KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED==='true'){
+ const {createIngressLegalPreviewRouter}=await import('../governance/ingressLegalPreviewRouter.js');
+ app.use('/api/onboarding/legal',createIngressLegalPreviewRouter());
+}
 // Do not mount any legacy application backend in this harness.
 app.use('/api',(_req,res)=>res.sendStatus(404));
 const vite = await createServer({server:{middlewareMode:true},appType:'spa'});
