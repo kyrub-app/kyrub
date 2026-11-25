@@ -26,6 +26,7 @@ export const userNotificationOrigin = (category: UserNotificationCategory): Excl
     case 'note_invitation':
     case 'user_forward':
       return 'people';
+    case 'freelance':
     case 'system':
       return 'platform';
   }
