@@ -131,3 +131,24 @@ ou atomicidade de outros processos econômicos.
 Não acrescentar migração histórica, punições automáticas, classificadores de
 fraude ou novas áreas de produto à V1. O inventário da PR #1274 de Tags é uma
 frente independente e não comprova o estado do Firebase principal.
+
+
+## G3.3 — Início zero sem inscrição manual (piloto)
+A opção KYRUB_SEMEADURA_ZERO_START_PILOT somente na entrada release-controlled,
+com todos os guards de projeto e emulador preservados, exige autoridade econômica
+desde a primeira semente. Para autor sem cursor e projeção zero, verifica
+recibo de primeiro login, saldo canônico existente e ledger conciliado sem
+créditos anteriores de semeadura. Cria cursor com uma semente na mesma
+transação do primeiro recibo/quota/projeção; não cria saldo, crédito ou bônus
+novo. Progresso prévio inesperado, saldo divergente ou ausência de evidência
+bloqueiam a transação. Sem fallback silencioso para visual-only neste modo.
+Mantém a entrada anterior de fixture para regressões.
+Teste 9fe76df verifica rejeição de progresso inesperado/saldo divergente e
+duas chamadas concorrentes criando uma inscrição, um recibo e uma quota,
+sem alteração do saldo. CI pendente. O requisito comercial ainda não está
+completo: a verificação atual exige baseline welcome validada; usuários
+preexistentes ou sem bônus Google precisam de autoridade própria, não de
+migração da Jornada Pitangueira. Não limitar elegibilidade comercial ao bônus
+por acidente. A entrada e a configuração seguem proibidas em produção,
+nenhum cadastro real inscrito. Novo blob do serviço exige revisão do
+inventário estático. Sem modificações de dados, flags, cobrança ou PR #1274.
