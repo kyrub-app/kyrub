@@ -157,11 +157,9 @@ async function loadProfitability(storeId: string,user:NonNullable<typeof auth.cu
   const token=await user.getIdToken();
   if(signal.aborted||auth.currentUser!==user)throw new Error('Sessão alterada.');
   const query = `storeId=${encodeURIComponent(storeId)}`;
-  const [orders, products] = await Promise.all([
-    authorizedJson<OrderOverview>(`/api/store-finance/profitability?${query}`,storeId,user,token,signal),
-    authorizedJson<ProductOverview>(`/api/store-finance/profitability/products?${query}`,storeId,user,token,signal),
-  ]);
-  return { orders, products };
+  const result = await authorizedJson<{storeId:string;orders:OrderOverview;products:ProductOverview;error?:string}>(`/api/store-finance/profitability?${query}&includeProducts=true`,storeId,user,token,signal);
+  if(result.orders?.storeId!==storeId||result.products?.storeId!==storeId)throw new Error('Apuração de rentabilidade incompleta ou de outra loja.');
+  return {orders:result.orders,products:result.products};
 }
 
 export default function StoreResultsMarginsWorkspace({ storeId }: { storeId: string }) {
