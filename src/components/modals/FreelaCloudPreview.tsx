@@ -2,7 +2,7 @@ import {FreelaNegotiationPreview} from './FreelaNegotiationPreview';
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,retireHiringVacancy,submitHiringCancellation,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
+import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,openHiringSupportCase,publishHiringVacancy,retireHiringVacancy,submitHiringCancellation,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
 
 export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';onClose:()=>void}){
  const employer=mode==='employer';
@@ -70,6 +70,7 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
       {a.cancellation&&<div className="border border-slate-600 rounded-lg p-2 space-y-2">
         <strong>{({requested:'Cancelamento solicitado',confirmed:'Cancelamento confirmado',declined:'Cancelamento não acordado',retracted:'Solicitação retirada'})[a.cancellation.state]}</strong>
         <p className="whitespace-pre-wrap break-words">{a.cancellation.reason}</p>
+        {['accepted','completion_requested'].includes(a.status)&&['requested','declined'].includes(a.cancellation.state)&&<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>void perform(async()=>{if(!a.cancellation)throw Error('Solicitação indisponível.');const result=await openHiringSupportCase(a.id,a.cancellation.requestId);return (result.created?'Ocorrência registrada.':'Ocorrência já registrada.')+' Protocolo: '+result.caseId;})}>Solicitar atendimento</button>}
         {a.cancellation.state==='requested'&&<><p className="text-xs text-slate-300">Nenhuma multa, pagamento ou estorno é automático. Em caso de desacordo, procure atendimento; a solicitação não obriga ninguém a continuar trabalhando.</p>
          {a.cancellation.requestedBy===actor?<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>void perform(async()=>{await submitHiringCancellation(a.id,'retract',a.cancellation?.requestId);return 'Solicitação retirada.';})}>Retirar solicitação</button>:<>
           <button type="button" disabled={busy} className="border border-amber-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await submitHiringCancellation(a.id,'confirm',a.cancellation?.requestId);return 'Cancelamento confirmado pelas partes.';})}>Concordar com cancelamento</button>
