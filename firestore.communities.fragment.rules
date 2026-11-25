@@ -560,7 +560,7 @@
       allow get: if isSignedIn() && isWallReceiptPostId(postId)
         && (resource == null || existing().authorId == request.auth.uid);
       allow list: if false;
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && isWallReceiptPostId(postId)
         && incoming().keys().hasAll(['postId', 'communityId', 'authorId', 'requestHash', 'createdAt'])
         && incoming().keys().hasOnly(['postId', 'communityId', 'authorId', 'requestHash', 'createdAt'])
@@ -576,7 +576,7 @@
     match /community_posts/{postId} {
       allow read: if canReadCommunity(existing().communityId);
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().authorId == request.auth.uid
         && isActiveCommunityMember(incoming().communityId)
         && incoming().createdAt == request.time
@@ -585,7 +585,7 @@
         && hasValidCommunityPostShape(incoming(), postId)
         && (!isWallReceiptPostId(postId) || hasNewWallPublishReceipt(postId));
 
-      allow update: if isSignedIn()
+      allow update: if canWriteSocialWithAge()
         && existing().authorId == request.auth.uid
         && incoming().postId == existing().postId
         && incoming().communityId == existing().communityId
@@ -630,7 +630,7 @@
     match /community_square_posts/{postId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll(['postId', 'communityId', 'createdAt'])
         && incoming().keys().hasOnly(['postId', 'communityId', 'createdAt'])
         && incoming().postId == postId
@@ -655,7 +655,7 @@
     match /community_square_forwards/{forwardId} {
       allow read: if isSignedIn();
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'postId', 'communityId', 'actorId', 'actorName', 'forwardedAt'
         ])
@@ -677,7 +677,7 @@
         && get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.visibility
           == 'public';
 
-      allow update: if isSignedIn()
+      allow update: if canWriteSocialWithAge()
         && existing().actorId == request.auth.uid
         && incoming().diff(existing()).affectedKeys().hasOnly(['forwardedAt'])
         && incoming().forwardedAt == request.time
@@ -729,7 +729,7 @@
           || (resource != null && existing().actorId == request.auth.uid));
       allow list: if false;
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'postId', 'communityId', 'actorId', 'receiverId', 'connectionId', 'messageId', 'forwardedAt'
         ])
@@ -739,7 +739,7 @@
         && incoming().forwardedAt == request.time
         && validForwardDestination(incoming());
 
-      allow update: if isSignedIn()
+      allow update: if canWriteSocialWithAge()
         && existing().actorId == request.auth.uid
         && incoming().diff(existing()).affectedKeys().hasOnly(['messageId', 'forwardedAt'])
         && incoming().messageId != existing().messageId
@@ -769,7 +769,7 @@
     // Clients may only register their own completed actions. Authors (and the
     // actor) can read receipts; unrelated users cannot inspect engagement data.
     match /community_post_engagements/{engagementId} {
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'engagementId', 'communityId', 'postId', 'postAuthorId',
           'actorId', 'type', 'createdAt'
@@ -820,7 +820,7 @@
     match /community_post_likes/{likeId} {
       allow read: if canReadCommunity(existing().communityId);
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll(['postId','communityId','userId','createdAt'])
         && incoming().keys().hasOnly(['postId','communityId','userId','createdAt'])
         && incoming().userId == request.auth.uid
@@ -836,7 +836,7 @@
     match /community_post_comments/{commentId} {
       allow read: if canReadCommunity(existing().communityId);
 
-      allow create: if isSignedIn()
+      allow create: if canWriteSocialWithAge()
         && incoming().keys().hasAll([
           'commentId','communityId','postId','authorId','authorName',
           'authorAvatar','text','createdAtIso','createdAt'
