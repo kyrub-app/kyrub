@@ -320,7 +320,7 @@ const aggregateLedgerPeriod = async (storeId: string, period: PeriodRange) => {
 
 const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => {
   let lastDocumentId = '', paidPayablesMinor = 0, openDueMinor = 0, paidPayableCount = 0, openDueCount = 0;
-  const categoryTotals = new Map<StoreFinancePayableCategory, number>();
+  const categoryTotals = new Map<string,{category:StoreFinancePayableCategory;customCategory?:{id:string;name:string};amountMinor:number}>();
   const costCenters = createStoreCostCenterPeriodAccumulator(period.timeZone);
   while (true) {
     let query = adminDb.collection(`stores/${storeId}/financePayables`).orderBy(FieldPath.documentId()).limit(PERIOD_SCAN_BATCH);
@@ -331,7 +331,9 @@ const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => 
       try {
         const payable = normalizeStoreFinancePayable({ ...(document.data() as StoreFinancePayable), id: document.id, storeId });
         if (payable.status === 'paid' && payable.paidAt >= period.startIso && payable.paidAt < period.endExclusiveIso) {
-          paidPayablesMinor += payable.amountMinor; paidPayableCount += 1; categoryTotals.set(payable.category, (categoryTotals.get(payable.category) ?? 0) + payable.amountMinor);
+          paidPayablesMinor += payable.amountMinor; paidPayableCount += 1;
+          const categoryKey=payable.customCategory?JSON.stringify([payable.customCategory.id,payable.customCategory.name]):payable.category;
+          categoryTotals.set(categoryKey,{category:payable.category,...(payable.customCategory?{customCategory:payable.customCategory}:{}),amountMinor:(categoryTotals.get(categoryKey)?.amountMinor??0)+payable.amountMinor});
           costCenters.add(payable.costCenter, payable.amountMinor, 'paid');
         }
         if (payable.status === 'open' && payable.dueDate.startsWith(period.period)) { openDueMinor += payable.amountMinor; openDueCount += 1; costCenters.add(payable.costCenter, payable.amountMinor, 'open_due'); }
@@ -342,7 +344,7 @@ const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => 
   }
   return { paidPayablesMinor, openDueMinor, paidPayableCount, openDueCount,
     costCenterReport:costCenters.finish({paidMinor:paidPayablesMinor,paidCount:paidPayableCount,openDueMinor,openDueCount}),
-    categories: Array.from(categoryTotals.entries()).map(([category, amountMinor]) => ({ category, amountMinor })).sort((a, b) => b.amountMinor - a.amountMinor) };
+    categories: Array.from(categoryTotals.values()).sort((a, b) => b.amountMinor - a.amountMinor) };
 };
 
 const isEconomicObligationStatus = (value: unknown): value is EconomicObligationStatus => value === 'pending' || value === 'eligible' || value === 'settled' || value === 'reversed';
