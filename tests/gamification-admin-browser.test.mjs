@@ -11,7 +11,8 @@ import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
 import { createIsolatedGamificationAdminRouter } from '../server/gamification/semeaduraAdminPilotRouter.ts';
 import { refreshIsolatedGamificationIncrementalAccount,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase } from '../server/gamification/semeaduraAdminSupervision.ts';
-import { seedVerifiedPost,seedEconomicallyAdmittedPost } from '../server/gamification/semeaduraService.ts';
+import { createIsolatedSemeaduraHandler } from '../server/gamification/semeaduraHandler.ts';
+import { seedVerifiedPost } from '../server/gamification/semeaduraService.ts';
 import { semeaduraEconomicPilotEnabled } from '../server/gamification/semeaduraEconomicPilot.ts';
 
 const projectId='demo-kyrub-welcome';
@@ -66,6 +67,15 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await closeIsolatedGamificationSuspicionCase(db,auth,bearer,{caseId:'browser-case',outcome:'resolved'});
   const local=express();
   local.use('/api/admin/gamification-pilot',createIsolatedGamificationAdminRouter(db,auth));
+  const semeaduraHttp=createIsolatedSemeaduraHandler(db,auth);
+  local.post('/api/action-execute',express.json({limit:'4kb',strict:true}),async(req,res)=>{
+   if(req.socket.remoteAddress!=='127.0.0.1'||req.query.transport!=='semeadura'||Object.keys(req.query).length!==1){
+    res.status(404).json({error:'NOT_AVAILABLE'});return;
+   }
+   res.setHeader('Cache-Control','no-store');
+   await semeaduraHttp(req,res);
+  });
+
   vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
   local.get('/',async(_req,res)=>{res.type('html').send(await vite.transformIndexHtml('/','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/gamification-admin-browser.tsx"></script></body></html>'));});
   local.get('/admin',async(_req,res)=>{res.type('html').send(await vite.transformIndexHtml('/admin','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/gamification-control-plane-browser.tsx"></script></body></html>'));});
@@ -207,7 +217,7 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
 
   // Dedicated author and synthetic milestone boundary: no claim that 999
   // historical receipts exist. Actual accepted seed and credit use the
-  // strict public settlement adapter, while the admin changes use HTTP.
+  // strict public handler using real emulator ID tokens and local HTTP.
   const milestoneClaims={sub:'browser-release-milestone',email:'browser-release-milestone@example.invalid',email_verified:true};
   const milestoneCredential=Buffer.from('{"alg":"none"}').toString('base64url')+'.'+Buffer.from(JSON.stringify(milestoneClaims)).toString('base64url')+'.';
   const milestoneLogin=await fetch(base+'/accounts:signInWithIdp?key=fake-emulator-key',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestUri:'http://localhost',postBody:new URLSearchParams({id_token:milestoneCredential,providerId:'google.com'}).toString(),returnSecureToken:true})});
@@ -230,7 +240,25 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await db.doc('social_posts/'+milestonePostId).set({postId:milestonePostId,authorId:milestoneAuthor,visibility:'public',publicationType:'feed'});
   await milestoneProgress.set({authorId:milestoneAuthor,acceptedSeeds:999,pitangueiras:0});
   await milestoneCursor.set({schemaVersion:1,authorId:milestoneAuthor,epoch:'welcome-emulator-only',acceptedSeeds:999,creditedPitangas:0,currencyAuthority:'welcome'});
-  const seed=()=>seedEconomicallyAdmittedPost(db,{authenticatedUserId:admin.uid,kind:'personal',postId:milestonePostId},auth);
+
+  const seedBody={action:'semear',kind:'personal',postId:milestonePostId};
+  const requestSeed=(body=seedBody,token=session.idToken)=>fetch(origin+'/api/action-execute?transport=semeadura',{
+   method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json'},body:JSON.stringify(body),
+  });
+  const seed=async()=>{
+   const response=await requestSeed();
+   assert.equal(response.status,200);
+   return response.json();
+  };
+  assert.equal((await requestSeed(seedBody,'invalid-token')).status,401);
+  assert.equal((await requestSeed({...seedBody,authenticatedUserId:ordinary.uid})).status,400);
+  delete process.env.KYRUB_SEMEADURA_HTTP_EMULATOR_TEST;
+  try{assert.equal((await requestSeed()).status,404);}
+  finally{process.env.KYRUB_SEMEADURA_HTTP_EMULATOR_TEST='true';}
+  delete process.env.KYRUB_SEMEADURA_SERVER_ENABLED;
+  try{assert.equal((await requestSeed()).status,503);}
+  finally{process.env.KYRUB_SEMEADURA_SERVER_ENABLED='true';}
+
   await page.getByRole('button',{name:'Semeadura',exact:true}).click();
   const releasePanel=page.getByRole('region',{name:'Controle de semeadura'});
   await releasePanel.getByText('Estado registrado: Aberto · revisão 1').waitFor();
@@ -241,7 +269,9 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await releasePanel.getByRole('button',{name:'Confirmar pausa'}).click();
   await releasePanel.getByText('Estado registrado: Pausado · revisão 2').waitFor();
   await page.screenshot({path:'gamification-admin-isolated-release-paused.png',fullPage:true});
-  await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  const pausedResponse=await requestSeed();
+  assert.equal(pausedResponse.status,503);
+  assert.deepEqual(await pausedResponse.json(),{error:'SEMEADURA_RELEASE_UNAVAILABLE'});
   assert.equal((await milestoneBalance.get()).get('availableKCoins'),100);
   assert.equal((await milestoneProgress.get()).get('acceptedSeeds'),999);
   assert.equal((await milestoneCursor.get()).get('acceptedSeeds'),999);
@@ -261,6 +291,18 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   assert.equal((await milestoneLedger.get()).size,2);
   assert.equal((await milestoneLedger.doc('earn_semeadura_1').get()).get('deltaKCoins'),1);
   assert.equal((await milestoneRoot.collection('xpLedger').get()).size,0);
+  const readStatus=await requestSeed({action:'status',kind:'personal',postId:milestonePostId});
+  assert.equal(readStatus.status,200);
+  const status=await readStatus.json();
+  assert.equal(status.seeded,true);
+  assert.equal(status.dailyRemaining,99);
+  const journeyResponse=await requestSeed({action:'journey'},(await (async()=>{
+   const r=await fetch(base+'/accounts:signInWithIdp?key=fake-emulator-key',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestUri:'http://localhost',postBody:new URLSearchParams({id_token:milestoneCredential,providerId:'google.com'}).toString(),returnSecureToken:true})});
+   assert.equal(r.status,200);return r.json();
+  })()).idToken);
+  assert.equal(journeyResponse.status,200);
+  assert.equal((await journeyResponse.json()).journey.totalSeeds,1000);
+
   const events=await releaseRef.collection('events').get();
   assert.equal(events.size,2);
   assert.deepEqual(events.docs.map(d=>d.get('revision')).sort(),[2,3]);
