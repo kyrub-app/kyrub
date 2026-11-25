@@ -360,6 +360,14 @@ export default async function handler(
     return;
   }
 
+  if (transport === 'kyrub-delivery-work') {
+    const { handleDeliveryWorkServerless } = await import(
+      '../server/delivery/deliveryServerlessTransport.js'
+    );
+    await handleDeliveryWorkServerless(request, response, queryValue(request.query?.path));
+    return;
+  }
+
   if (transport === 'public-delivery-discovery') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {

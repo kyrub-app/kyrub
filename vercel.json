@@ -51,6 +51,10 @@
       "destination": "/api/health?transport=public-delivery-discovery"
     },
     {
+      "source": "/api/delivery-opportunities/:path*",
+      "destination": "/api/health?transport=kyrub-delivery-work&path=:path*"
+    },
+    {
       "source": "/api/pitangas",
       "destination": "/api/health?transport=pitanga-account"
     },
