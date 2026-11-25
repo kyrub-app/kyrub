@@ -327,3 +327,19 @@ describe('monthly activity retention planning', () => {
     assert.doesNotMatch(code,/adminDb|\.delete\(|\.set\(|\.update\(|process\.env/);
   });
 });
+
+test('control plane keeps ecosystem economics and sustainability, not a duplicate company finance', () => {
+  const workspace=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+  const modules=readFileSync('src/components/admin/AdminModulesWorkspace.tsx','utf8');
+  const erp=readFileSync('src/components/StoreFinanceCompositeRuntime.tsx','utf8');
+  const subscriptions=readFileSync('src/components/store/StoreSubscriptionsWorkspace.tsx','utf8');
+  assert.match(workspace,/Custos de operação da plataforma/);
+  assert.match(workspace,/Custo por usuário ativo/);
+  assert.match(workspace,/Gestão empresarial .*ERP da Loja Oficial Kyrub/);
+  assert.doesNotMatch(workspace,/\['Receitas próprias Kyrub'|\['Resultado e custo por usuário ativo'/);
+  assert.match(modules,/Gestão empresarial e lançamentos financeiros pertencem ao ERP da Loja Oficial/);
+  assert.match(erp,/<StoreFinancePeriodRuntime/);
+  assert.match(erp,/<StoreResultsMarginsWorkspace/);
+  assert.match(erp,/<StoreFinanceRuntime/);
+  assert.match(subscriptions,/activeSubscriberCount/);
+});
