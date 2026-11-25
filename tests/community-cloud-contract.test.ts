@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { classifyCommunityMediaInventory, parseCommunityMediaReference, summarizeCommunityMediaInventory, type InventoryEvidence, type MediaObject } from '../server/communities/communityMediaOrphanInventory';
 import { selectWallDraft, resolveWallUploads } from '../src/utils/communityWallUploadRetry';
 import { optimizeCommunityWallImage, readWallJpegSize, type WallJpegCodec } from '../src/utils/communityWallImageOptimization';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
@@ -1061,4 +1062,65 @@ test('wall publication transaction uses immutable receipt before writing source 
   assert.match(branch, /data\.requestHash !== requestHash/);
   assert.match(rules, /match \/community_wall_publish_receipts\/\{postId\}/);
   assert.match(rules, /!isWallReceiptPostId\(postId\) \|\| hasNewWallPublishReceipt\(postId\)/);
+});
+
+test('offline media inventory normalizes tokens and rejects other buckets or malformed paths', () => {
+  const bucket = 'demo-kyrub.example';
+  const name = 'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789abc.jpg';
+  const url = 'https://firebasestorage.googleapis.com/v0/b/' + bucket + '/o/' + encodeURIComponent(name);
+  assert.deepEqual(parseCommunityMediaReference(url + '?alt=media&token=one', bucket), {bucket, name});
+  assert.deepEqual(parseCommunityMediaReference(url + '?alt=media&token=two', bucket), {bucket, name});
+  assert.equal(parseCommunityMediaReference(url, 'different'), null);
+  assert.equal(parseCommunityMediaReference(url.replace('googleapis.com', 'googleapis.com.example'), bucket), null);
+  assert.equal(parseCommunityMediaReference(url + '%2Fnested', bucket), null);
+  assert.equal(parseCommunityMediaReference(url.replace(encodeURIComponent(name), '%ZZ'), bucket), null);
+});
+
+test('orphan inventory fails closed with incomplete evidence and protects live, pending and recent media', () => {
+  const bucket = 'demo-kyrub.example', now = 2_000_000_000_000;
+  const make = (index: number, age: number): MediaObject => ({
+    bucket, name: 'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789ab' + index + '.jpg',
+    generation: '123', sizeBytes: 100, createdAtMs: now - age * 86400000,
+  });
+  const objects = [make(1, 30), make(2, 30), make(3, 1), make(4, 30)];
+  const evidence: InventoryEvidence = {
+    bucket, observedAtMs: now, objectsComplete: true, referencesComplete: true, writersQuiesced: true,
+    references: [objects[0]], pending: [objects[1]],
+  };
+  const classify = (e: InventoryEvidence) => classifyCommunityMediaInventory(objects, e).map(x => x.status);
+  assert.deepEqual(classify(evidence), ['referenced','pending','recent','review_candidate']);
+  for (const flag of ['objectsComplete','referencesComplete','writersQuiesced'] as const)
+    assert.deepEqual(classify({...evidence, [flag]: false}), ['referenced','pending','recent','unknown']);
+  const summary = summarizeCommunityMediaInventory(classifyCommunityMediaInventory(objects, evidence));
+  assert.deepEqual(summary.review_candidate, {count:1, bytes:100});
+  assert.equal(classifyCommunityMediaInventory([objects[3],objects[3]], evidence)[0].status, 'unknown');
+  assert.equal(classifyCommunityMediaInventory([{...objects[3], generation:''}], evidence)[0].status, 'unknown');
+  assert.equal(classifyCommunityMediaInventory([{...objects[3], bucket:'other'}], evidence)[0].status, 'unknown');
+});
+
+test('orphan review is disabled by malformed completeness evidence and inconsistent inventory', () => {
+  const bucket = 'demo-kyrub.example', now = 2_000_000_000_000;
+  const make = (index:number):MediaObject => ({
+    bucket, name:'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789ab'+index+'.jpg',
+    generation:'123', sizeBytes:100, createdAtMs:now-30*86400000,
+  });
+  const [live, unused, bad] = [make(1),make(2),make(3)];
+  const evidence:InventoryEvidence={bucket,observedAtMs:now,objectsComplete:true,referencesComplete:true,writersQuiesced:true,references:[live],pending:[]};
+  assert.deepEqual(classifyCommunityMediaInventory([live,unused],evidence).map(x=>x.status),['referenced','review_candidate']);
+  const invalidEvidence = [
+    {...evidence,objectsComplete:'true' as unknown as boolean},
+    {...evidence,references:[live,{bucket,name:'invalid'}]},
+    {...evidence,pending:[{...bad,bucket:'other'}]},
+    {...evidence,pending:undefined as unknown as InventoryEvidence['pending']},
+  ];
+  for(const input of invalidEvidence)assert.deepEqual(classifyCommunityMediaInventory([live,unused],input).map(x=>x.status),['referenced','unknown']);
+  for(const inventory of [[live,unused,{...bad,generation:'0'}],[live,unused,{...bad,createdAtMs:now+1}],[live,unused,bad,bad]]) {
+    const result=classifyCommunityMediaInventory(inventory,evidence);
+    assert.equal(result[0].status,'referenced');
+    assert.equal(result[1].status,'unknown');
+    assert.ok(result.every(x=>x.status!=='review_candidate'));
+  }
+  const huge=[{...unused,sizeBytes:Number.MAX_SAFE_INTEGER},{...bad,sizeBytes:1}];
+  assert.deepEqual(summarizeCommunityMediaInventory(classifyCommunityMediaInventory(huge,evidence)).review_candidate,{count:2,bytes:null});
+  assert.equal(summarizeCommunityMediaInventory(classifyCommunityMediaInventory([{...bad,sizeBytes:-1}],evidence)).unknown.bytes,null);
 });
