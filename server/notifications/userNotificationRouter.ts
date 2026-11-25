@@ -23,6 +23,10 @@ const bearerToken = (authorization: string): string =>
 const requireIdentity = async (authorization: string) => {
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
+  if(process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){
+    if(!freelanceNotificationPreviewEnabled())throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+    try{return await adminAuth.verifyIdToken(token,true);}catch{throw Error('AUTH_REQUIRED');}
+  }
   return verifyFirebaseIdToken(token);
 };
 
