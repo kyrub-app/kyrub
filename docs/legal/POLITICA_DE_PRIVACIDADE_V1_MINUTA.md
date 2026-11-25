@@ -63,7 +63,7 @@ Solicitações serão recebidas pelo canal [confirmar endereço e funcionamento]
 
 ## 10. Crianças e adolescentes
 A proteção de menores observará seu melhor interesse, a LGPD, o ECA Digital e a regulamentação aplicável. A decisão de negócio para a V1 restringe ingresso autenticado e ativação/titularidade de Kyrub Tags a pessoas com 18 anos completos ou mais. O acesso provável de menores a páginas públicas, a aferição, exposição pública, mensagens, denúncias, publicidade e demais controles ainda precisam de avaliação e implementação antes da abertura correspondente. Simples declaração de idade não substitui controles legalmente exigidos. Não haverá coleta de biometria ou documentos apenas para simular proteção.
-[Definir fornecedor, aferição proporcional, controles, retenção, atendimento e avaliação jurídica. Permitir contestação de erros e não bloquear direitos do titular por pendência de verificação.]
+[Fornecedor externo adiado; definir triagem preliminar separada de comprovação, necessidade e retenção dos dados, aferição proporcional, controles, atendimento e avaliação jurídica. Permitir contestação de erros e não bloquear direitos do titular por pendência de verificação.]
 
 ## 11. Decisões automatizadas, gamificação e recursos futuros
 Regras automatizadas de segurança, acesso, campanhas e recompensas, se efetivamente habilitadas, devem ser transparentes quanto a seus efeitos e permitir contestação nos casos aplicáveis. O titular poderá solicitar informações sobre critérios de decisões exclusivamente automatizadas que afetem seus interesses, respeitados segredos comercial e industrial nos limites legais.
