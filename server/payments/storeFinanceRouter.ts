@@ -106,57 +106,36 @@ const canRecoverPaidCapture = (payment: CanonicalPayment): boolean =>
  * was wired can be recovered from their canonical paid snapshot. The entry id is
  * deterministic, so reopening Financeiro cannot duplicate revenue.
  */
-const recoverMissingCanonicalPaidCaptures = async (storeId: string): Promise<number> => {
-  const paymentSnapshot = await adminDb
-    .collection(`stores/${storeId}/payments`)
-    .where('status', '==', 'paid')
-    .limit(100)
-    .get();
-
-  const candidates = paymentSnapshot.docs.flatMap(document => {
-    try {
-      const payment = normalizeCanonicalPayment({
-        ...(document.data() as CanonicalPayment),
-        id: document.id,
-        storeId,
-      });
-      return canRecoverPaidCapture(payment) ? [payment] : [];
-    } catch (error) {
-      console.warn('[Store finance] Invalid historical payment skipped.', {
-        storeId,
-        paymentId: document.id,
-        error: error instanceof Error ? error.message : 'unknown',
-      });
-      return [];
-    }
-  });
-
-  if (candidates.length === 0) return 0;
-
-  const refs = candidates.map(payment =>
-    adminDb.doc(
-      storeEconomicLedgerEntryPath(
-        storeId,
-        buildPaymentCaptureEconomicEntryId(payment.id)
-      )
-    )
-  );
-  const existing = await adminDb.getAll(...refs);
-  const batch = adminDb.batch();
-  let recoveredCount = 0;
-
-  candidates.forEach((payment, index) => {
-    if (existing[index]?.exists) return;
-    const entry = buildRecoveredPaymentCaptureEconomicEntry({
-      payment,
-      paymentIntentId: payment.paymentIntentId ?? '',
+/** Recovery is human-initiated historical repair, not a new payment.
+ * Read sources and existing captures inside the same transaction; never
+ * overwrite a capture created by the provider webhook. */
+export const recoverMissingCanonicalPaidCaptures = async (storeId: string,authorization:string,ownerId:string): Promise<number> => {
+  return adminDb.runTransaction(async tx=>{
+    if(storeId!==ownerId||!/^[A-Za-z0-9_-]{1,128}$/.test(storeId))throw Error('STORE_REPRESENTATION_FORBIDDEN');
+    const owner=await tx.get(adminDb.doc('users/'+storeId+'/stores/'+storeId));
+    if(!owner.exists||owner.get('id')!==storeId||owner.get('ownerId')!==ownerId)throw Error('STORE_REPRESENTATION_FORBIDDEN');
+    await requireFinancialPolicyInTransaction(tx,authorization,ownerId);
+    const snapshot=await tx.get(adminDb.collection(`stores/${storeId}/payments`).where('status','==','paid').limit(100));
+    const candidates=snapshot.docs.flatMap(document=>{
+      try{
+        const raw=document.data() as CanonicalPayment;
+        if(raw.id!==document.id||raw.storeId!==storeId||raw.currency!=='BRL')return [];
+        const payment=normalizeCanonicalPayment(raw);
+        return canRecoverPaidCapture(payment)?[payment]:[];
+      }catch{return [];}
     });
-    batch.set(refs[index], entry);
-    recoveredCount += 1;
+    if(!candidates.length)return 0;
+    const refs=candidates.map(payment=>adminDb.doc(storeEconomicLedgerEntryPath(storeId,buildPaymentCaptureEconomicEntryId(payment.id))));
+    const existing=await tx.getAll(...refs);
+    let recoveredCount=0;
+    for(const [index,payment] of candidates.entries()){
+      if(existing[index].exists)continue;
+      const entry=buildRecoveredPaymentCaptureEconomicEntry({payment,paymentIntentId:payment.paymentIntentId??''});
+      tx.create(refs[index],entry);
+      recoveredCount++;
+    }
+    return recoveredCount;
   });
-
-  if (recoveredCount > 0) await batch.commit();
-  return recoveredCount;
 };
 
 type StoreReceivableView = Pick<
@@ -439,7 +418,7 @@ export const createStoreFinanceRouter = (): Router => {
         response.status(200).json({storeId,section,cash});
         return;
       }
-      const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
+      const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId,request.get('authorization')??'',ownerId);
       if(section==='overview'||section==='movements'){
         const entries=await listStoreEconomicLedgerEntries({storeId,limit:100});
         response.status(200).json({storeId,section,summary:deriveStoreEconomicLedgerSummary(entries),entries,recoveredCount});
