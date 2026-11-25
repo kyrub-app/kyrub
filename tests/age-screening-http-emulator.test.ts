@@ -205,7 +205,7 @@ test('verified emulator session screens once and keeps the private record minima
       assert.deepEqual(await (await writeLegal(decision)).json(),{receiptId:receipts[0].receiptId,replay:true});
       await assert.rejects(requireReceipt('unrelated-user'),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
       // Explicit promotion of a synthetic minimal identity, in emulators only.
-      const {promoteTagIdentityToKyrub}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+      const {promoteTagIdentityToKyrub,getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
       const marker=adminDb.doc('kyrub_tag_minimal_identities/'+user.uid);
       await marker.set({uid:user.uid,mode:'tag_only',source:'kyrub_tag_promo'});
       await adminDb.doc('age_eligibility_private/'+user.uid).update({status:'verified_adult'});
@@ -213,6 +213,7 @@ test('verified emulator session screens once and keeps the private record minima
       await assert.rejects(promoteTagIdentityToKyrub(user.uid),/TAG_PROMOTION_AGE_REQUIRED/);
       process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED='true';
       try{
+        assert.deepEqual(await getTagIdentityMode(user.uid),{mode:'tag_only'});
         const outcomes=await Promise.all([promoteTagIdentityToKyrub(user.uid),promoteTagIdentityToKyrub(user.uid)]);
         assert.equal(outcomes.filter(r=>!r.replay).length,1);
         assert.equal(outcomes.every(r=>r.mode==='full'),true);
@@ -220,12 +221,15 @@ test('verified emulator session screens once and keeps the private record minima
         assert.equal(promoted.get('ingressReceiptId'),receipts[0].receiptId);
         const firstPromotion=promoted.get('promotedAt').toMillis();
         assert.ok(firstPromotion);
+        assert.deepEqual(await getTagIdentityMode(user.uid),{mode:'full'});
         assert.equal((await adminDb.doc('users/'+user.uid).get()).exists,false);
         await adminDb.doc('governanceDocuments/terms-test').update({version:'2'});
+        assert.deepEqual(await getTagIdentityMode(user.uid),{mode:'tag_only'});
         await assert.rejects(promoteTagIdentityToKyrub(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
         assert.equal((await marker.get()).get('promotedAt').toMillis(),firstPromotion);
         await adminDb.doc('age_eligibility_private/'+user.uid).update({status:'suspended'});
         await assert.rejects(promoteTagIdentityToKyrub(user.uid),/TAG_PROMOTION_AGE_REQUIRED/);
+        assert.deepEqual(await getTagIdentityMode(user.uid),{mode:'tag_only'});
       }finally{delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;}
 
       await assert.rejects(requireReceipt(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
