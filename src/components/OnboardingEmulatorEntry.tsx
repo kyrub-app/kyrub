@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { onAuthStateChanged, reload, signOut, type User } from 'firebase/auth';
+import { onAuthStateChanged, reload, signOut, isSignInWithEmailLink, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
-import { enterWithPassword, registerWithPassword, requestOwnEmailConfirmation, requestPasswordRecovery } from '../utils/kyrubEmailAccess';
+import { enterWithPassword, registerWithPassword, requestOwnEmailConfirmation, requestPasswordRecovery, requestKyrubEmailLink, completeKyrubEmailLink } from '../utils/kyrubEmailAccess';
 import type { AgeStatus } from '../../shared/ageEligibility';
 
 const statuses = new Set<AgeStatus>(['pending','declared_adult','declared_underage','verified_adult','verified_underage','inconclusive','suspended']);
@@ -33,6 +33,7 @@ async function ageRequest(user: User, signal: AbortSignal, input?: {birthDate:st
 export function OnboardingEmulatorEntry() {
   const [user,setUser] = useState<User|null>(null);
   const [ready,setReady] = useState(false);
+  const [emailLinkPending,setEmailLinkPending] = useState(()=>new URL(window.location.href).searchParams.get('entry')==='email-access' && isSignInWithEmailLink(auth,window.location.href));
   const [verified,setVerified] = useState(false);
   const [email,setEmail] = useState('');
   const [password,setPassword] = useState('');
@@ -73,10 +74,17 @@ export function OnboardingEmulatorEntry() {
       <p className="text-xs text-slate-400">Homologação isolada. Não utilize dados reais.</p>
       {!user ? <>
         <label className="block text-sm">E-mail<input className={field} type="email" autoComplete="email" value={email} onChange={e=>setEmail(e.target.value)} disabled={busy}/></label>
+        {emailLinkPending ? <>
+          <p className="text-sm">Informe o mesmo e-mail que recebeu o link de acesso.</p>
+          <button className={button} disabled={busy} onClick={()=>void operate(async()=>{await completeKyrubEmailLink(auth,email);setEmailLinkPending(false);})}>Confirmar acesso por e-mail</button>
+          <button className={button} disabled={busy} onClick={()=>{window.history.replaceState({},'','/');setEmailLinkPending(false);}}>Cancelar link</button>
+        </> : <>
         <label className="block text-sm">Senha<input className={field} type="password" autoComplete="current-password" value={password} onChange={e=>setPassword(e.target.value)} disabled={busy}/></label>
         <button className={button} disabled={busy} onClick={()=>void operate(async()=>{await enterWithPassword(auth,email,password);})}>Entrar</button>
         <button className={button} disabled={busy} onClick={()=>void operate(async()=>{const created=await registerWithPassword(auth,email,password);await requestOwnEmailConfirmation(auth,created);setNotice('Confira seu e-mail de confirmação.');})}>Criar conta</button>
         <button className={button} disabled={busy} onClick={()=>void operate(async()=>{await requestPasswordRecovery(auth,email).catch(()=>undefined);setNotice('Se o endereço estiver cadastrado, as instruções serão enviadas.');})}>Recuperar senha</button>
+        <button className={button} disabled={busy} onClick={()=>void operate(async()=>{await requestKyrubEmailLink(auth,email);setNotice('Confira o link de acesso enviado ao seu e-mail.');})}>Enviar link de acesso</button>
+        </>}
       </> : <>
         {!verified ? <>
           <p role="status">Confirme seu e-mail para continuar.</p>
