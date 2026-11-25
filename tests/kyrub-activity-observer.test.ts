@@ -453,3 +453,11 @@ test('monthly presence client suppresses duplicate attempts, retries with backof
   s.synchronize(null);
   assert.equal(s.shouldRequest(b,now+180000),true);
 });
+
+test('production HTTP receiver always composes the real verifier and server clock', () => {
+  const transport = readFileSync(new URL('../server/observability/kyrubActivityTransport.ts',import.meta.url),'utf8');
+  const api = readFileSync(new URL('../api/health.ts',import.meta.url),'utf8');
+  assert.match(transport,/receiveAuthorizedKyrubActivityEvents = createAuthorizedKyrubActivityReceiver\(\{[\s\S]*?verify: verifyFirebaseIdToken,[\s\S]*?now: \(\) => new Date\(\),[\s\S]*?confirm: confirmTransportMonthlyPresence/);
+  assert.match(api,/activity\.receiveAuthorizedKyrubActivityEvents\(/);
+  assert.doesNotMatch(api,/createAuthorizedKyrubActivityReceiver/);
+});

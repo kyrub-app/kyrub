@@ -50,14 +50,22 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 const actorReference = (uid: string): string =>
   createHash('sha256').update(uid).digest('hex').slice(0, 16);
 
-export const receiveAuthorizedKyrubActivityEvents = async (
+type ActivityTransportDependencies = {
+  verify: (token: string) => Promise<{uid:string}>;
+  now: () => Date;
+  confirm: (uid: string, requested: boolean, qualified: boolean, receivedAt: Date) => Promise<PresenceReply | undefined>;
+  log: (event: unknown) => void;
+};
+
+// Testable server composition; callers of the HTTP route cannot supply dependencies.
+export const createAuthorizedKyrubActivityReceiver = (deps: ActivityTransportDependencies) => async (
   authorization: string,
   body: unknown
 ): Promise<{ accepted: number; monthlyPresence?: PresenceReply }> => {
-  const receivedAt = new Date();
+  const receivedAt = deps.now();
   const match = /^Bearer\s+(.+)$/i.exec(authorization.trim());
   if (!match?.[1]) throw new Error('AUTH_REQUIRED');
-  const identity = await verifyFirebaseIdToken(match[1].trim());
+  const identity = await deps.verify(match[1].trim());
   const payload = asRecord(body);
   const candidates = Array.isArray(payload?.events)
     ? payload.events.slice(0, MAX_EVENTS)
@@ -101,12 +109,19 @@ export const receiveAuthorizedKyrubActivityEvents = async (
     };
 
     if (isQualifyingMonthlyPresenceEvent(safeEvent)) qualified = true;
-    console.info('[activity]', JSON.stringify(safeEvent));
+    deps.log(safeEvent);
     accepted += 1;
   }
 
-  const monthlyPresence = await confirmTransportMonthlyPresence(
+  const monthlyPresence = await deps.confirm(
     identity.uid, payload?.monthlyPresenceRequested === true, qualified, receivedAt,
   );
   return { accepted, ...(monthlyPresence ? {monthlyPresence} : {}) };
 };
+
+export const receiveAuthorizedKyrubActivityEvents = createAuthorizedKyrubActivityReceiver({
+  verify: verifyFirebaseIdToken,
+  now: () => new Date(),
+  confirm: confirmTransportMonthlyPresence,
+  log: event => console.info('[activity]', JSON.stringify(event)),
+});
