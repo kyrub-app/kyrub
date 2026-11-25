@@ -183,3 +183,19 @@ test('stock workspace resets drafts by store and fences outdated stock reads', (
   assert.match(timeline,/if\(!isCurrent\(\)\)return;\s*setMovements\(Array\.isArray/);
   assert.match(timeline,/return \(\)=>\{pendingRead\.current\?\.abort\(\);pendingRead\.current=null;\};/);
 });
+
+
+test('procurement and payable bridge cancel obsolete reads but preserve confirmed server writes', () => {
+  const procurement=readFileSync('src/components/store/StoreProcurementWorkspace.tsx','utf8');
+  const payables=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  for(const source of [procurement,payables]){
+    assert.match(source,/scope\.current===context&&pendingRead\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser\?\.uid===uid/);
+    assert.match(source,/scope\.current=null;pendingRead\.current\?\.abort\(\);pendingRead\.current=null;/);
+    assert.match(source,/scope\.current===context&&auth\.currentUser\?\.uid===uid/);
+    assert.match(source,/signal:controller\.signal/);
+  }
+  assert.match(procurement,/if\(next\.storeId!==storeId\)throw new Error/);
+  assert.match(procurement,/await work\(\);\s*if\(!isCurrent\(\)\)return;\s*setNotice\(successMessage\)/);
+  assert.match(payables,/if\(!isCurrent\(\)\)return;\s*setFeedback\(result\.status/);
+  assert.match(payables,/setPurchases\(\[\]\);\s*setSuppliers\(\[\]\);\s*setPayables\(\[\]\);/);
+});
