@@ -2,7 +2,7 @@ import {FreelaNegotiationPreview} from './FreelaNegotiationPreview';
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
+import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,retireHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
 
 export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';onClose:()=>void}){
  const employer=mode==='employer';
@@ -13,7 +13,8 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const [openNegotiation,setOpenNegotiation]=useState('');
  const [editingId,setEditingId]=useState('');
- useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setEditingId('');setTitle('');setDescription('');setPayment('');}),[]);
+ const [retiringId,setRetiringId]=useState('');
+ useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setRetiringId('');setEditingId('');setTitle('');setDescription('');setPayment('');}),[]);
  const refresh=useCallback(async()=>{
    if(!actor)return;
    const [v,a]=await Promise.all([listHiringVacancies(employer),listHiringApplications(employer)]);
@@ -48,12 +49,17 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
     {vacancies.filter(v=>employer||v.ownerId!==actor).map(v=><article key={v.id} className="border border-slate-700 rounded-xl p-3 space-y-2">
       <strong>{v.title}</strong><p>{v.description}</p><p>R$ {v.payment.toFixed(2)} · {v.employer}</p>
       {employer&&v.status==='open'&&(v.termsLocked===false&&v.hasAccepted===false?<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setEditingId(v.id);setTitle(v.title);setDescription(v.description);setPayment(String(v.payment));}}>Editar oferta</button>:<p className="text-xs text-slate-300">Condições bloqueadas para edição.</p>)}
+      {employer&&v.status==='open'&&v.hasAccepted===false&&<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>setRetiringId(v.id)}>Retirar oferta</button>}
+      {employer&&retiringId===v.id&&v.status==='open'&&<div className="border border-amber-500/40 rounded-lg p-2 space-y-2"><p>A oferta sairá do catálogo. Candidaturas pendentes serão encerradas e os interessados avisados. O histórico será preservado.</p><button type="button" disabled={busy} className="border border-amber-500 rounded-lg p-2" onClick={()=>void perform(async()=>{const result=await retireHiringVacancy(v.id);if(auth.currentUser?.uid===actor){setRetiringId('');if(editingId===v.id){setEditingId('');setTitle('');setDescription('');setPayment('');}}return result.complete?'Oferta retirada.':'Oferta retirada do catálogo; avisos pendentes de processamento.';})}>Confirmar retirada</button><button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>setRetiringId('')}>Cancelar retirada</button></div>}
+      {employer&&v.status==='closed'&&<p className="text-xs text-slate-300">Oferta retirada.</p>}
+      {employer&&v.retirementPending&&<button type="button" disabled={busy} className="border border-amber-500 rounded-lg p-2" onClick={()=>void perform(async()=> (await retireHiringVacancy(v.id)).complete?'Encerramento concluído.':'Ainda há avisos pendentes. Continue o encerramento.')}>Continuar encerramento</button>}
+      {employer&&v.status==='closed'&&!v.retirementPending&&<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setEditingId('');setTitle(v.title);setDescription(v.description);setPayment(String(v.payment));}}>Criar nova oferta</button>}
       {!employer&&<button disabled={busy||applications.some(a=>a.vagaId===v.id)} className="bg-teal-500 text-slate-950 rounded-lg p-2" onClick={()=>void perform(async()=>await applyToHiringVacancy(v.id,v)==='created'?'Candidatura registrada.':'Candidatura já registrada.')}>Candidatar-se</button>}
     </article>)}
     <h4 className="font-bold">{employer?'Candidaturas recebidas':'Minhas candidaturas'}</h4>
     {applications.map(a=><article key={a.id} className="border border-slate-700 rounded-xl p-3 space-y-2">
       <p>Vaga: {a.terms?.title||vacancies.find(v=>v.id===a.vagaId)?.title||a.vagaId}</p>
-      {a.terms&&<div className="rounded-lg border border-slate-600 p-2 space-y-1"><strong>Condições registradas na candidatura</strong><p>{a.terms.description}</p><p>Valor informado: R$ {(a.terms.paymentCents/100).toFixed(2)}</p><p className="text-xs text-slate-300">O aceite se refere a estas condições. Mensagens não alteram este registro.</p></div>}<p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada',completion_requested:'Aguardando confirmação de conclusão',completed:'Concluído — pagamento não verificado pelo Kyrub'})[a.status]}</p>
+      {a.terms&&<div className="rounded-lg border border-slate-600 p-2 space-y-1"><strong>Condições registradas na candidatura</strong><p>{a.terms.description}</p><p>Valor informado: R$ {(a.terms.paymentCents/100).toFixed(2)}</p><p className="text-xs text-slate-300">O aceite se refere a estas condições. Mensagens não alteram este registro.</p></div>}<p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada',offer_withdrawn:'Oferta retirada pelo contratante',completion_requested:'Aguardando confirmação de conclusão',completed:'Concluído — pagamento não verificado pelo Kyrub'})[a.status]}</p>
       {a.status==='pending'&&(employer?(['accepted','rejected'] as const):(['withdrawn'] as const)).map(status=><button key={status} disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await decideHiringApplication(a.id,status,a.terms);return 'Situação atualizada no servidor.';})}>{({accepted:'Aceitar',rejected:'Recusar',withdrawn:'Retirar'})[status]}</button>)}
       {!employer&&a.status==='accepted'&&<button disabled={busy} className="border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completion_requested');return 'Conclusão informada. Aguarde a confirmação do contratante.';})}>Informar conclusão</button>}
       {employer&&a.status==='completion_requested'&&<>
