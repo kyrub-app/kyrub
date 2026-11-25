@@ -27,10 +27,11 @@ export default function AdminGamificationPilotReadPanel({session,isCurrent,area,
  const [revision,setRevision]=useState(0);
  const [result,setResult]=useState<{key:string;data:RecordData}|null>(null);
  const [failed,setFailed]=useState('');
- const key=JSON.stringify([session.uid,area,status,cursor,caseId,revision]);
+ const queryArea=area==='suspeitas'?'cases':'snapshot';
+ const key=JSON.stringify([session.uid,queryArea,status,cursor,caseId,revision]);
  useEffect(()=>{
   const controller=new AbortController();
-  const query:PilotQuery=area!=='suspeitas'?{operation:'snapshot'}:caseId?
+  const query:PilotQuery=queryArea==='snapshot'?{operation:'snapshot'}:caseId?
    {operation:'case',caseId}:{operation:'cases',status,limit:20,afterCaseId:cursor};
   void requestGamificationPilot(query,session,isCurrent,controller.signal).then(value=>{
    if(controller.signal.aborted||!isCurrent())return;
@@ -40,7 +41,7 @@ export default function AdminGamificationPilotReadPanel({session,isCurrent,area,
    setResult({key,data});
   }).catch(()=>{if(!controller.signal.aborted)setFailed(key);});
   return ()=>controller.abort();
- },[key,session,isCurrent,area,status,cursor,caseId]);
+ },[key,session,isCurrent,queryArea,status,cursor,caseId]);
  const data=result?.key===key&&isCurrent()?result.data:null;
  const next=data&&typeof data.nextAfterCaseId==='string'?data.nextAfterCaseId:undefined;
  const rows=data&&Array.isArray(data.cases)?data.cases.filter(v=>v&&typeof v==='object') as RecordData[]:[];
