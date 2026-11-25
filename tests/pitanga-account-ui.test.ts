@@ -11,7 +11,7 @@ test('account UI preserves conversion key on network failure and refreshes balan
     format: 'esm', platform: 'node', jsx: 'automatic', external: ['react', 'react/jsx-runtime'],
     plugins: [{ name: 'auth-fixture', setup(b) {
       b.onResolve({ filter: /utils\/firebase$/ }, () => ({ path: 'auth', namespace: 'fixture' }));
-      b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const auth = { currentUser: { getIdToken: async () => "signed" } };' }));
+      b.onLoad({ filter: /.*/, namespace: 'fixture' }, () => ({ contents: 'export const auth = { currentUser: { uid:"fixture-user", getIdToken: async () => "signed" }, onAuthStateChanged: cb => { cb(auth.currentUser); return ()=>{}; } };' }));
     } }],
   });
   const output = new URL('./.pitanga-ui.fixture.mjs', import.meta.url);
@@ -21,6 +21,7 @@ test('account UI preserves conversion key on network failure and refreshes balan
   (globalThis as any).window = dom.window;
   (globalThis as any).IS_REACT_ACT_ENVIRONMENT = true;
   let converted = false;
+  let reads=0;
   const requests: { requestId: string; requestedXp: number }[] = [];
   globalThis.fetch = (async (_url: unknown, options: RequestInit) => {
     if (options.method === 'POST') {
@@ -29,14 +30,17 @@ test('account UI preserves conversion key on network failure and refreshes balan
       converted = true;
       return { ok: true, json: async () => ({ replay: true }) };
     }
+    reads++;
     return { ok: true, json: async () => ({ pitangas: converted ? 100 : 1100, xp: converted ? 3 : 2, initialized: true,
-      entries: converted ? [{ id: 'conversion_test', unit: 'xp', delta: 1, occurredAt: '2026-11-15T12:00:00Z' }] : [] }) };
+      entries: converted ? [{ id: 'conversion_test', unit: 'xp', delta: 1, occurredAt: '2026-11-15T12:00:00Z' }, ...Array.from({length:25},(_,i)=>({id:'fixture-'+i,unit:'pitanga',delta:1,occurredAt:'2026-11-14T12:00:00Z'}))] : [] }) };
   }) as typeof fetch;
   const root = createRoot(dom.window.document.getElementById('root')!);
   try {
     await writeFile(output, bundle.outputFiles[0].text);
     const { PitangaAccount } = await import(output.href);
-    await act(async () => { root.render(React.createElement(PitangaAccount)); });
+    await act(async () => { root.render(React.createElement(React.Fragment,null,React.createElement(PitangaAccount),React.createElement(PitangaAccount,{mode:'pitangas'}))); });
+    assert.equal(reads,1);
+    await act(async () => { root.render(React.createElement(React.Fragment,null,React.createElement(PitangaAccount))); });
     assert.match(dom.window.document.body.textContent!, /1.100 Pitangas/);
     const buttons = () => [...dom.window.document.querySelectorAll('button')];
     await act(async () => { buttons().find(b => b.textContent!.startsWith('Converter'))!.click(); });
