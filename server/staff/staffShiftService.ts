@@ -9,7 +9,7 @@ import {
   validateStaffShiftCancellation, validateStaffShiftCreation,
   type StaffShift, type StaffShiftDaySlot,
 } from '../../shared/staffShifts.js';
-import { resolveStaffActor } from './staffNoticeService.js';
+import { resolveStaffActor,recheckStaffActor } from './staffNoticeService.js';
 import { listAuthorizedStaffTaskAssignees } from './staffTaskService.js';
 
 type Actor = Awaited<ReturnType<typeof resolveStaffActor>>;
@@ -23,6 +23,7 @@ const requireManager = (actor: Actor): void => {
 };
 
 const recheckActor = async (actor: Actor, tx: FirebaseFirestore.Transaction): Promise<void> => {
+  await recheckStaffActor(actor,tx,'STAFF_SHIFT_FORBIDDEN');
   const store = await tx.get(adminDb.doc('stores/' + actor.canonicalStoreId));
   if (!store.exists || clean(store.get('ownerId')) !== actor.legacyStoreId) {
     throw Error('STAFF_SHIFT_FORBIDDEN');
@@ -133,7 +134,7 @@ export const publishAuthorizedStaffShift = async (input: {
       const member = parseStoreMember(memberDoc.data());
       if (!member || member.userId !== valid.assignedTo ||
           member.storeId !== actor.canonicalStoreId ||
-          member.status !== 'active') throw Error('STAFF_SHIFT_ASSIGNEE_INVALID');
+          member.status !== 'active'||member.role==='owner') throw Error('STAFF_SHIFT_ASSIGNEE_INVALID');
       assignedRole = member.role;
     }
     // Per-assignee/day index documents form transactional locks. They prevent

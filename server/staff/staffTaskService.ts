@@ -8,7 +8,7 @@ import {
   validateStaffTaskCreation,
   type StaffChecklistTask, type StaffTaskAssignee,
 } from '../../shared/staffTasks.js';
-import { resolveStaffActor } from './staffNoticeService.js';
+import { resolveStaffActor,recheckStaffActor } from './staffNoticeService.js';
 
 type Actor = Awaited<ReturnType<typeof resolveStaffActor>>;
 const clean = (value: unknown): string => typeof value === 'string' ? value.trim() : '';
@@ -20,6 +20,7 @@ const managerOnly = (actor: Actor): void => {
 const recheckActor = async (
   actor: Actor, tx: FirebaseFirestore.Transaction
 ): Promise<void> => {
+  await recheckStaffActor(actor,tx,'STAFF_TASK_FORBIDDEN');
   const store = await tx.get(adminDb.doc('stores/' + actor.canonicalStoreId));
   if (!store.exists || clean(store.get('ownerId')) !== actor.legacyStoreId) {
     throw Error('STAFF_TASK_FORBIDDEN');
@@ -45,7 +46,7 @@ export const listAuthorizedStaffTaskAssignees = async (input: {
   const members = snap.docs.flatMap(doc => {
     const member = parseStoreMember(doc.data());
     if (!member || member.userId !== doc.id ||
-        member.storeId !== actor.canonicalStoreId || member.status !== 'active') return [];
+        member.storeId !== actor.canonicalStoreId || member.status !== 'active'||member.role==='owner') return [];
     return [{
       userId: doc.id, role: member.role,
       label: STORE_ROLE_LABELS[member.role] + ' · ' + doc.id.slice(0, 8),
@@ -110,7 +111,7 @@ export const createAuthorizedStaffTask = async (input: {
       const member = parseStoreMember(membership.data());
       if (!member || member.userId !== data.assignedTo ||
           member.storeId !== actor.canonicalStoreId ||
-          member.status !== 'active') throw Error('STAFF_TASK_ASSIGNEE_INVALID');
+          member.status !== 'active'||member.role==='owner') throw Error('STAFF_TASK_ASSIGNEE_INVALID');
       role = member.role;
     }
     const task: StaffChecklistTask = {

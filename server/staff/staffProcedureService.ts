@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { adminDb, adminStorage, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import { parseStoreMember } from '../../src/utils/storeSecurity.js';
 import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
-import { resolveStaffActor } from './staffNoticeService.js';
+import { resolveStaffActor,recheckStaffActor } from './staffNoticeService.js';
 import {
   STAFF_POP_MAX_ATTACHMENT_BYTES,
   STAFF_POP_MAX_RESULTS,
@@ -30,6 +30,7 @@ const ensureActorStillActive = async (
   actor: Actor,
   tx: FirebaseFirestore.Transaction
 ): Promise<void> => {
+  await recheckStaffActor(actor,tx,'STAFF_POP_FORBIDDEN');
   if (actor.role === 'owner') return;
   const snap = await tx.get(adminDb.doc(
     'stores/' + actor.canonicalStoreId + '/members/' + actor.uid

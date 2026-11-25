@@ -11,12 +11,15 @@ const bearerToken = (authorization: string): string =>
   /^Bearer\s+(.+)$/i.exec(authorization)?.[1]?.trim() ?? '';
 
 const resolveActor = async (authorization: string, legacyStoreId: string) => {
+  if(!/^[A-Za-z0-9_-]{1,128}$/.test(legacyStoreId))throw Error('TIME_CLOCK_STORE_NOT_FOUND');
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
   const tenant = await adminDb.doc(`tenants/${legacyStoreId}`).get();
   const canonicalStoreId = clean(tenant.data()?.canonicalStoreId);
-  if (!canonicalStoreId) throw new Error('TIME_CLOCK_STORE_NOT_FOUND');
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(canonicalStoreId)) throw new Error('TIME_CLOCK_STORE_NOT_FOUND');
+  const store=await adminDb.doc('stores/'+canonicalStoreId).get();
+  if(!store.exists||store.get('ownerId')!==legacyStoreId||(tenant.get('ownerId')!==undefined&&tenant.get('ownerId')!==legacyStoreId)||(store.get('id')!==undefined&&store.get('id')!==canonicalStoreId)||(store.get('legacyTenantId')!==undefined&&store.get('legacyTenantId')!==legacyStoreId))throw Error('TIME_CLOCK_FORBIDDEN');
 
   if (identity.uid === legacyStoreId) {
     return { userId: identity.uid, canonicalStoreId, role: 'owner' as const };
@@ -26,7 +29,7 @@ const resolveActor = async (authorization: string, legacyStoreId: string) => {
     .doc(`stores/${canonicalStoreId}/members/${identity.uid}`)
     .get();
   const member = parseStoreMember(memberSnapshot.data());
-  if (!member || member.status !== 'active') throw new Error('TIME_CLOCK_FORBIDDEN');
+  if (!member || member.status !== 'active'||member.userId!==identity.uid||member.storeId!==canonicalStoreId||member.role==='owner') throw new Error('TIME_CLOCK_FORBIDDEN');
   return { userId: identity.uid, canonicalStoreId, role: member.role };
 };
 
