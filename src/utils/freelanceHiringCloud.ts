@@ -262,3 +262,18 @@ export async function submitHiringCancellation(applicationId:string,action:'requ
  if(result.applicationId!==applicationId||result.operationId!==operationId||typeof result.created!=='boolean')throw Error('Recibo inválido.');
  pendingHiringOperations.delete(key);
 }
+
+
+export async function openHiringSupportCase(applicationId:string,requestId:string):Promise<{caseId:string;created:boolean}>{
+ const actor=uid();
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW!=='true'||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId)||!validId(requestId))throw Error('Atendimento indisponível.');
+ const user=auth.currentUser;
+ if(!user||user.uid!==actor)throw Error('Sessão alterada.');
+ const token=await user.getIdToken();checkSession(actor);
+ const response=await fetch('/api/notifications/freelance-support/open',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,requestId})});
+ checkSession(actor);
+ if(!response.ok)throw Error('Ocorrência não confirmada.');
+ const result=await response.json();
+ if(!/^[a-f0-9]{64}$/.test(result.caseId)||typeof result.created!=='boolean')throw Error('Recibo inválido.');
+ return {caseId:result.caseId,created:result.created};
+}
