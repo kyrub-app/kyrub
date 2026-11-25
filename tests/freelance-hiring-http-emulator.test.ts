@@ -190,6 +190,15 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   await adminDb.doc('kyrub_admin/control_plane/admins/'+owner.uid).set({uid:owner.uid,status:'active',role:'super_admin'});
   // Active role by itself must never bypass MFA.
   assert.equal((await call(owner.token,queue)).status,403);
+  const resolution={caseId:supportCase.caseId,operationId:'support-resolution-1',outcome:'guidance_provided',note:'Registro sintético'};
+  const resolvePath='/api/notifications/freelance-support/resolve';
+  assert.equal((await call(owner.token,resolvePath,resolution)).status,403);
+  assert.equal((await call(worker.token,resolvePath,resolution)).status,403);
+  assert.equal((await fetch(base+resolvePath,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(resolution)})).status,401);
+  await assert.rejects(updateDoc(doc(owner.db,'freelance_support_cases_private',supportCase.caseId),{status:'closed'}));
+  assert.equal((await adminDb.doc('freelance_support_cases_private/'+supportCase.caseId).get()).get('status'),'open');
+  assert.equal((await getDocFromServer(cancelRef)).get('status'),'accepted');
+  assert.equal((await getDocFromServer(cancelRef)).get('paymentStatus'),undefined);
   assert.equal((await fetch(base+queue)).status,401);
   await ok(await cancel(owner.token,'decline','decline-1','cancel-1'));
   assert.equal((await getDocFromServer(cancelRef)).get('status'),'accepted');
