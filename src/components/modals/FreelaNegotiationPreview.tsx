@@ -1,6 +1,6 @@
 import {useEffect,useState} from 'react';
 import {auth} from '../../utils/firebase';
-import {listHiringMessages,sendHiringMessage,type HiringApplication,type HiringMessage} from '../../utils/freelanceHiringCloud';
+import {listHiringMessages,sendHiringMessage,type HiringApplication,type HiringMessage,type HiringMessageCursor} from '../../utils/freelanceHiringCloud';
 
 export function FreelaNegotiationPreview({application,actor}:{application:HiringApplication;actor:string}){
  const [messages,setMessages]=useState<HiringMessage[]>([]);
@@ -8,18 +8,31 @@ export function FreelaNegotiationPreview({application,actor}:{application:Hiring
  const [busy,setBusy]=useState(false);
  const [notice,setNotice]=useState('');
  const [loaded,setLoaded]=useState(false);
+ const [cursor,setCursor]=useState<HiringMessageCursor|null>(null);
  const active=['pending','accepted','completion_requested'].includes(application.status);
  const current=()=>auth.currentUser?.uid===actor;
  useEffect(()=>{
   let cancelled=false;
-  void listHiringMessages(application.id).then(items=>{
-   if(!cancelled&&current()){setMessages(items);setLoaded(true);}
+  void listHiringMessages(application.id).then(page=>{
+   if(!cancelled&&current()){setMessages(page.items);setCursor(page.nextCursor);setLoaded(true);}
   }).catch(()=>{if(!cancelled&&current())setNotice('Não foi possível consultar a negociação.');});
   return ()=>{cancelled=true;};
  },[application.id,actor]);
  const refresh=async()=>{
-  const items=await listHiringMessages(application.id);
-  if(current()){setMessages(items);setLoaded(true);}
+  const page=await listHiringMessages(application.id);
+  if(current()){setMessages(page.items);setCursor(page.nextCursor);setLoaded(true);}
+ };
+ const loadOlder=async()=>{
+  if(busy||!cursor||!current())return;
+  setBusy(true);setNotice('');
+  try{
+   const page=await listHiringMessages(application.id,cursor);
+   if(current()){
+    setMessages(existing=>{const ids=new Set(existing.map(m=>m.id));return [...page.items.filter(m=>!ids.has(m.id)),...existing];});
+    setCursor(page.nextCursor);
+   }
+  }catch{if(current())setNotice('Não foi possível carregar mensagens anteriores.');}
+  finally{setBusy(false);}
  };
  const send=async()=>{
   if(busy||!active||!current()||!draft.trim())return;
@@ -37,7 +50,8 @@ export function FreelaNegotiationPreview({application,actor}:{application:Hiring
  return <section className="space-y-3 border border-slate-700 rounded-xl p-3">
    <h5 className="font-bold">Negociação privada</h5>
    <p className="text-xs text-slate-300">Mensagens enviadas não podem ser editadas nem apagadas. Envie uma nova mensagem para corrigir uma informação.</p>
-   <p className="text-xs text-slate-300">{active?'Conversa vinculada à candidatura.':'Negociação encerrada. Histórico somente para consulta.'} Exibindo até 100 mensagens recentes.</p>
+   <p className="text-xs text-slate-300">{active?'Conversa vinculada à candidatura.':'Negociação encerrada. Histórico somente para consulta.'} {loaded?`${messages.length} mensagens carregadas.`:'Carregando histórico…'}</p>
+   {cursor&&<button type="button" disabled={busy} onClick={()=>void loadOlder()} className="border border-slate-600 rounded-lg p-2">Carregar mensagens anteriores</button>}
    <div className="space-y-2 max-h-64 overflow-y-auto" aria-label="Mensagens da negociação">
     {loaded&&messages.length===0&&<p className="text-slate-400">Nenhuma mensagem registrada.</p>}
     {messages.map(m=><article key={m.id} className="rounded-lg border border-slate-700 p-2">
@@ -49,7 +63,7 @@ export function FreelaNegotiationPreview({application,actor}:{application:Hiring
     <label className="block">Mensagem<textarea className="block w-full bg-slate-950 rounded-lg p-2" maxLength={4000} required value={draft} disabled={busy} onChange={e=>setDraft(e.target.value)}/></label>
     <button type="submit" disabled={busy||!draft.trim()} className="bg-teal-500 text-slate-950 rounded-lg p-2 font-bold">Enviar mensagem</button>
    </form>}
-   <button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setNotice('');void refresh().catch(()=>{if(current())setNotice('Não foi possível atualizar a negociação.');});}}>Atualizar conversa</button>
+   <button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{if(busy)return;setBusy(true);setNotice('');void refresh().catch(()=>{if(current())setNotice('Não foi possível atualizar a negociação.');}).finally(()=>setBusy(false));}}>Atualizar mensagens recentes</button>
    <p role="status">{notice}</p>
  </section>;
 }
