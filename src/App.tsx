@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { onAuthStateChanged } from 'firebase/auth';
-import { doc, getDocFromServer, onSnapshot } from 'firebase/firestore';
+import { doc, onSnapshot } from 'firebase/firestore';
 import LegacyApp from './LegacyApp';
 import AdminControlPlaneRoot from './components/admin/AdminControlPlaneRoot';
 import { AppModalLayoutBridge } from './components/AppModalLayoutBridge';
@@ -311,16 +311,10 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
           setIdentityMode(isGoogleIdentity?'full':'unavailable');
         }
       }).catch(()=>{
-        // If the tag identity service is unavailable, preserve existing Kyrub
-        // members with a server-confirmed profile, but never bootstrap an
-        // unclassified e-mail-only identity from a cache or an error.
+        // With the pilot gate enabled, a profile alone cannot prove that a
+        // previously promoted Tag identity remains eligible. Fail closed.
         if(!active||ctrl.signal.aborted||auth.currentUser?.uid!==user.uid)return;
-        void getDocFromServer(doc(db,'users',user.uid)).then(snapshot=>{
-          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)
-           setIdentityMode(snapshot.exists()?'full':'unavailable');
-        }).catch(()=>{
-          if(active&&!ctrl.signal.aborted&&auth.currentUser?.uid===user.uid)setIdentityMode('unavailable');
-        });
+        setIdentityMode('unavailable');
       });
     });
     return()=>{active=false;controller?.abort();unsub();};
@@ -330,7 +324,7 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
   if(currentUser&&(identityMode==='tag_only'||identityMode==='unavailable'))
    return <KyrubTagOnlyEntry user={currentUser}
       unavailable={identityMode==='unavailable'}
-      onPromoted={()=>setIdentityMode('full')}
+      onPromoted={()=>{setIdentityMode('checking');setRetry(v=>v+1);}}
       onRetry={()=>setRetry(v=>v+1)}/>;
   if(operational)return <AuthenticatedKyrubApp operational />;
   return currentUser ? <AuthenticatedKyrubApp operational={false} /> : <KyrubGuestWorkspace />;
