@@ -15,6 +15,7 @@ export interface UserCommunicationCategoryPreferences {
   system: boolean;
   community_group_invite?: boolean;
   user_forward?: boolean;
+  freelance?: boolean;
 }
 
 export interface UserCommunicationPreferences {
@@ -61,6 +62,7 @@ export const buildDefaultUserCommunicationPreferences = (
         system: true,
         community_group_invite: true,
         user_forward: true,
+        freelance: false,
       },
     },
     updatedAt: '',
@@ -98,6 +100,7 @@ export const buildUserCommunicationPreferences = (input: {
         system: input.categories.system === true,
         community_group_invite: input.categories.community_group_invite !== false,
         user_forward: input.categories.user_forward !== false,
+        freelance: input.categories.freelance === true,
       },
     },
     updatedAt,
