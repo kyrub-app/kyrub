@@ -173,3 +173,39 @@ Próximo portão: medir transporte agrupado no emulador e concluir inventário
 externo dos escritores, região e consumo antes de decidir otimizações
 adicionais. CI 2604f0a em execução na consulta; CI desta revisão pendente.
 Nenhuma alteração no Firebase real, faturamento, deployment ou PR #1274.
+
+
+## Aceitação instrumentada e orçamento consolidado
+Commit 9318b92 adiciona cenário real de Firestore Emulator kyrub-security-test:
+o adaptador de contagem delega cada get à SDK Admin real, sem expor escritores.
+Compara status individuais e lotes em 10 posts pessoais, 10 da mesma comunidade
+e 10 de comunidades diferentes. Exige respectivamente 40→31, 60→33, 60→51,
+uma quota por lote, equivalência de respostas, recibos e quota 98 preservados,
+negativa após revogação de vínculo e nenhum crédito adicional. CI pendente.
+Isto mede chamadas lógicas da SDK, não faturamento, retries de rede ou índices.
+Não é teste de carga nem prova de desempenho do transporte HTTP em produção.
+
+### Cenário de orçamento corrigido para 100 sementes diárias
+Para cada um dos 1.000 usuários esgotar a quota, considerar ao menos 100
+publicações elegíveis distintas consultadas por dia, em vez de 40. Hipótese:
+100 status iniciais, 100 aceites, 50% pessoal/50% comunitário, autores já
+inscritos, sem fila incremental, sem holds existentes, lotes completos
+quando aplicáveis, sem retries, marcos econômicos ou outras telas.
+Mantém as taxas ilustrativas de Iowa e cota integral atribuída à gamificação
+(50 mil reads, 20 mil writes/dia); mês uniforme de 30 dias.
+| Cenário | Leituras/dia | Gravações/dia | USD/mês |
+|---|---:|---:|---:|
+| Individual + leitura pós-aceite | 2300000 | 500000 | 33.21 |
+| Sem leitura pós-aceite, sem lotes | 1800000 | 500000 | 28.71 |
+| Lotes de 10, 50% pessoal e 50% comunitário na mesma comunidade | 1620000 | 500000 | 27.09 |
+| Lotes de 10, 50% pessoal e 50% comunitário em comunidades distintas | 1710000 | 500000 | 27.90 |
+A economia condicional de leituras dos lotes completos no cenário concentrado
+é 680 mil/dia versus a primeira linha; não somar outras economias não medidas.
+As 40 novas postagens por pessoa/dia, se ocorrerem, totalizam 1,2 milhão
+de publicações/mês; criação, mídia, comentários, entregas e ERP permanecem
+fora desta simulação. O cenário anterior de 40 consultas independentes
+não deve ser interpretado como 40 publicações criadas.
+Sem afirmar região, edição, plano, preços contratados ou consumo do Firebase
+principal. Próxima ação necessária: inventário autorizado de escritores e
+levantamento real de uso do projeto principal; não abrir nova frente de
+otimização sem identificar gargalo medido. Sem alteração em produção.
