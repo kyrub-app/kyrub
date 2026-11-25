@@ -329,14 +329,41 @@ test('cross-domain retail: paid pending order partial cancellation blocks full r
   }
 });
 
-test('commercial candidate: trusted first publication joins checkout, KDS, stock and internal payment records',async()=>{
-  // This test uses the existing dedicated emulator, a seeded Free store and
-  // synthetic provider evidence. It cannot attest physical PSP settlement.
+test('commercial candidate: actual Free provisioning and first publication join checkout, KDS, stock and internal payment records',async()=>{
+  // Actual server provisioning with the existing isolated identity/PSP fixture.
+  // Product configuration and owner membership are test fixtures, not UI proof.
   const {publishFirstStoreAndAwardXp}=await import('../server/gamification/firstStorePublicationAuthority.js');
-  await verifiedFirstStoreFixture();
-  const storeRef=db.doc('stores/store-first');
-  await storeRef.update({plan:'free',publicationStatus:'paused'});
-  await db.doc('marketplace_listings/s_6_seller').delete();
+  const {loadOfficialPlanPixFixture}=await import('./helpers/officialPlanPixFixture.js');
+  await db.doc('stores/canonical').delete(); // Baseline fixture in the dedicated emulator only.
+  assert.equal((await db.doc('users/seller/stores/seller').get()).exists,false);
+  const originalToken=process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN;
+  const originalSecret=process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET;
+  const globalState=globalThis as any;
+  const originalFixture=globalState.__officialPix;
+  let fixture:Awaited<ReturnType<typeof loadOfficialPlanPixFixture>>|undefined;
+  let canonicalStoreId:string;
+  try{
+    globalState.__officialPix={db,auth:async()=>({uid:'seller',email:'seller@example.invalid',emailVerified:true}),request:async()=>{throw Error('PSP_NOT_ALLOWED_IN_TEST');}};
+    fixture=await loadOfficialPlanPixFixture();
+    const initial=await fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller');
+    const retry=await fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller');
+    assert.equal(initial.created,true);
+    assert.equal(initial.plan,'free');
+    assert.equal(retry.created,false);
+    assert.equal(retry.canonicalStoreId,initial.canonicalStoreId);
+    canonicalStoreId=initial.canonicalStoreId;
+  }finally{
+    fixture?.restoreFixture();
+    globalState.__officialPix=originalFixture;
+    if(originalToken===undefined)delete process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN;else process.env.KYRUB_BILLING_MERCADO_PAGO_ACCESS_TOKEN=originalToken;
+    if(originalSecret===undefined)delete process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET;else process.env.KYRUB_BILLING_MERCADO_PAGO_WEBHOOK_SECRET=originalSecret;
+  }
+  const storeRef=db.doc('stores/'+canonicalStoreId);
+  assert.equal((await storeRef.get()).get('publicationStatus'),'paused');
+  assert.equal((await storeRef.get()).get('firstStoreCreationVerified'),true);
+  assert.equal((await db.doc('users/seller/verifiedStoreEvents/first_store_created').get()).get('storeId'),canonicalStoreId);
+  assert.equal((await db.collection('users/seller/xpLedger').get()).size,0);
+  await storeRef.collection('products').doc('product').set({id:'product',storeId:canonicalStoreId,name:'Produto',category:'Produtos',price:20,stock:10,publicationStatus:'published',isService:false});
   await db.doc('users/seller/stores/seller').update({name:'Loja de homologação',slug:'loja-homologacao',plan:'free'});
   await db.doc('global_challenges/first_store_published').set({
     id:'first_store_published',title:'Primeira publicação',description:'Publique a loja',
@@ -349,10 +376,10 @@ test('commercial candidate: trusted first publication joins checkout, KDS, stock
     compositions:{product:{kind:'recipe',yieldQuantity:1,lines:[{inventoryItemId:'flour',quantity:125}],updatedAt:now}},
     consumptionTrigger:'preparing',
   });
-  await db.doc('stores/store-first/members/seller').set({userId:'seller',role:'owner',status:'active'});
-  await db.doc('tenants/seller').set({id:'seller',ownerId:'seller',canonicalStoreId:'store-first',publicationStatus:'paused'});
+  await storeRef.collection('members').doc('seller').set({userId:'seller',role:'owner',status:'active'});
+  await db.doc('tenants/seller').set({id:'seller',ownerId:'seller',canonicalStoreId,publicationStatus:'paused'});
   await assert.rejects(service.createMarketplacePaymentIntent('Bearer isolated-test',{...checkoutBody,idempotencyKey:'joined-before-publication'}),/CHECKOUT_STORE_NOT_AVAILABLE/);
-  const published=await publishFirstStoreAndAwardXp(db,{authenticatedUserId:'seller',canonicalStoreId:'store-first'});
+  const published=await publishFirstStoreAndAwardXp(db,{authenticatedUserId:'seller',canonicalStoreId});
   assert.deepEqual(published,{replay:false,pitangas:0,xp:2});
   assert.equal((await storeRef.get()).get('plan'),'free');
   const input={...checkoutBody,idempotencyKey:'joined-commercial-order'};
@@ -361,7 +388,7 @@ test('commercial candidate: trusted first publication joins checkout, KDS, stock
   assert.equal(created.body.providerReady,false);
   const {orderId,paymentId,paymentIntentId}=created.body;
   const orderRef=db.doc('artifacts/seller/public/data/customerOrders/'+orderId);
-  const mirrorRef=db.doc('stores/store-first/orders/'+orderId);
+  const mirrorRef=storeRef.collection('orders').doc(orderId);
   const paymentRef=db.doc('stores/seller/payments/'+paymentId);
   const intentRef=db.doc('stores/seller/paymentIntents/'+paymentIntentId);
   assert.equal((await mirrorRef.get()).get('status'),'pending');
