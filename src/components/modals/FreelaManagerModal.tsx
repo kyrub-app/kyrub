@@ -1,3 +1,5 @@
+import {FreelaCloudPreview} from './FreelaCloudPreview';
+import {freelanceCloudPreviewEnabled} from '../../utils/freelanceHiringCloud';
 import React, { useState, useEffect } from 'react';
 import { Briefcase } from 'lucide-react';
 import { FreelanceJob } from '../../types';
@@ -44,6 +46,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
   }, [isOpen, mode]);
 
   if (!isOpen) return null;
+  if (freelanceCloudPreviewEnabled()) return <FreelaCloudPreview mode={mode} onClose={onClose}/>;
 
   // Handler for creating/updating a freela
   const handleCreateFreela = (e: React.FormEvent) => {
