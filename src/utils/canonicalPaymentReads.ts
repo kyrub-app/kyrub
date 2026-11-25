@@ -178,6 +178,7 @@ export const subscribeToPreferredTablePayments = (
       publish();
     },
     error => {
+      if(stopped)return;
       legacyState = 'unavailable';
       publish();
       onError?.(error);
@@ -187,6 +188,7 @@ export const subscribeToPreferredTablePayments = (
   const unsubscribeConfig = onSnapshot(
     doc(db, 'tenants', normalizedStoreId),
     snapshot => {
+      if(stopped)return;
       const previousStoreId = canonicalStoreId;
       const previousEnabled = canonicalEnabled;
       const config = parseCanonicalReadConfig(snapshot.data());
@@ -202,8 +204,9 @@ export const subscribeToPreferredTablePayments = (
       }
     },
     error => {
+      if(stopped)return;
       canonicalEnabled = false;
-      publish();
+      restartCanonical();
       onError?.(error);
     }
   );
