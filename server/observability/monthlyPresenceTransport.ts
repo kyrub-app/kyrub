@@ -1,4 +1,4 @@
-import { confirmMonthlyPresence, firestoreMonthlyPresenceStore, presenceMonth, type MonthlyPresenceStore } from './monthlyPresence.js';
+import { confirmMonthlyPresence, firestoreMonthlyPresenceStore, type MonthlyPresenceStore } from './monthlyPresence.js';
 import { adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 
 export type PresenceReply = { status: 'confirmed' | 'not_qualified' | 'disabled' | 'unavailable'; month?: string };

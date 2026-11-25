@@ -12,7 +12,7 @@ const RETRY_DELAY_MS = 5000;
 
 const queue = createActivitySessionQueue<User, KyrubActivityEvent>(MAX_QUEUE_SIZE);
 const monthlyPresence = createMonthlyPresenceSession<User>();
-const MONTHLY_PRESENCE_EMULATOR = import.meta.env.VITE_KYRUB_FINOPS_MAU_EMULATOR === 'true';
+const MONTHLY_PRESENCE_EMULATOR = import.meta.env?.VITE_KYRUB_FINOPS_MAU_EMULATOR === 'true';
 let flushTimer = 0;
 
 export const synchronizeActivityRemoteSession = (): void => {
