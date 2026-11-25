@@ -29,6 +29,7 @@ import { ProfilePostInteractionsBridge } from './components/ProfilePostInteracti
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
+import { OnboardingEmulatorEntry } from './components/OnboardingEmulatorEntry';
 import { PublicLegalDocumentRoute } from './components/PublishedLegalDocumentPage';
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
@@ -337,6 +338,9 @@ function KyrubMainEntry({operational=false}:{operational?:boolean}={}) {
 
 export default function App() {
   useFontSizeAccessibility();
+
+  // Dedicated emulator mode never mounts the legacy workspace or Control Plane.
+  if (import.meta.env.DEV && import.meta.env.VITE_KYRUB_ONBOARDING_EMULATOR === 'true') return <OnboardingEmulatorEntry />;
 
   const adminControlPlane = isAdminControlPlaneLocation(
     window.location.hostname,

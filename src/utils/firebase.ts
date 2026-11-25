@@ -22,13 +22,15 @@ const firebaseConfig = {
   appId: '1:636039448089:web:85a6c6620341bc5bcb8c88',
 };
 
+const isolatedOnboarding = import.meta.env?.DEV === true && import.meta.env?.VITE_KYRUB_ONBOARDING_EMULATOR === 'true';
+if (isolatedOnboarding && (typeof window === 'undefined' || window.location.hostname !== '127.0.0.1' || window.location.protocol !== 'http:' || import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true' || import.meta.env?.VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR === 'true')) throw Error('ONBOARDING_EMULATOR_REQUIRES_ISOLATION');
 const isolatedGamificationAdmin = import.meta.env?.DEV === true &&
   import.meta.env?.VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR === 'true';
 const isolatedE2E = import.meta.env?.DEV === true &&
-  (import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true' || isolatedGamificationAdmin);
+  (import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true' || isolatedGamificationAdmin || isolatedOnboarding);
 if (isolatedGamificationAdmin && import.meta.env?.VITE_KYRUB_FIREBASE_EMULATOR_E2E === 'true') throw Error('FIREBASE_E2E_MODE_CONFLICT');
 if (isolatedGamificationAdmin && (typeof window === 'undefined' || window.location.hostname !== '127.0.0.1' || window.location.protocol !== 'http:')) throw Error('GAMIFICATION_ADMIN_EMULATOR_REQUIRES_LOOPBACK');
-const isolatedProject = isolatedGamificationAdmin ? 'demo-kyrub-welcome' : 'kyrub-security-test';
+const isolatedProject = isolatedOnboarding ? 'demo-kyrub-onboarding' : isolatedGamificationAdmin ? 'demo-kyrub-welcome' : 'kyrub-security-test';
 if (isolatedE2E && (typeof window === 'undefined' ||
   !['localhost', '127.0.0.1'].includes(window.location.hostname))) {
   throw Error('FIREBASE_E2E_REQUIRES_LOCALHOST');
@@ -64,6 +66,7 @@ const selectedConfig = isolatedE2E
 const app = getApps().length === 0
   ? initializeApp(selectedConfig)
   : getApp();
+if (isolatedOnboarding && app.options.projectId !== isolatedProject) throw Error('ONBOARDING_EMULATOR_PROJECT_MISMATCH');
 if (isolatedGamificationAdmin && app.options.projectId !== isolatedProject) throw Error('GAMIFICATION_ADMIN_EMULATOR_PROJECT_MISMATCH');
 
 // A pre-initialized Firebase app must never bypass the pilot's isolated
@@ -95,7 +98,7 @@ const initializeOfflineFirstFirestore = () => {
   }
 };
 
-export const db = isolatedGamificationAdmin ? getFirestore(app) : initializeOfflineFirstFirestore();
+export const db = (isolatedGamificationAdmin || isolatedOnboarding) ? getFirestore(app) : initializeOfflineFirstFirestore();
 if (isolatedE2E) connectFirestoreEmulator(db, '127.0.0.1', 8088);
 
 // Firestore Lite uses its own service instance and does not inherit the

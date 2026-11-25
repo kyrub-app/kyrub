@@ -1,0 +1,56 @@
+name: Onboarding isolated Chromium
+on:
+  pull_request:
+    paths:
+      - 'src/App.tsx'
+      - 'src/utils/firebase.ts'
+      - 'src/utils/kyrubEmailAccess.ts'
+      - 'src/components/OnboardingEmulatorEntry.tsx'
+      - 'server/identity/**'
+      - 'shared/ageEligibility.ts'
+      - 'tests/onboarding-browser-emulator.mjs'
+      - '.github/workflows/onboarding-browser-emulator.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-onboarding:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      CI: 'true'
+      NODE_ENV: test
+      PORT: '3000'
+      FIREBASE_PROJECT_ID: demo-kyrub-onboarding
+      GCLOUD_PROJECT: demo-kyrub-onboarding
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-onboarding
+      FIREBASE_AUTH_EMULATOR_HOST: 127.0.0.1:9099
+      FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
+      KYRUB_AGE_SCREENING_EMULATOR: 'true'
+      VITE_KYRUB_ONBOARDING_EMULATOR: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false playwright
+      - run: npx playwright install --with-deps chromium
+      - run: npm run firestore:compose
+      - name: Run isolated onboarding browser journey
+        run: |
+          npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore 'bash -euo pipefail -c '\''node --import tsx server/identity/onboardingPreviewServer.ts > /tmp/kyrub-onboarding.log 2>&1 & server_pid=$!; trap "kill $server_pid 2>/dev/null || true" EXIT; for i in $(seq 1 60); do if curl -fsS http://127.0.0.1:3000/ > /dev/null; then break; fi; sleep 2; done; curl -fsS http://127.0.0.1:3000/ > /dev/null; node --import tsx tests/onboarding-browser-emulator.mjs'\'''
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: onboarding-isolated-failure
+          path: |
+            /tmp/kyrub-onboarding.log
+            onboarding-emulator-failure.png
+          if-no-files-found: ignore
+          retention-days: 3
