@@ -40,3 +40,14 @@ test('activation saves privately, public media and card share the policy',()=>{
  assert.match(media,/canReadPublishedPromotionalTag/);
  assert.match(media,/verifiedObject\(path,id,slot,data.ownerId\)/);
 });
+
+test('NFC physical issuance uses stable preview branch URL, not a disposable deployment address',()=>{
+ const source=readFileSync('server/identity/kyrubTagPilotIsolation.ts','utf8');
+ const batch=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ assert.match(source,/env\.VERCEL_BRANCH_URL/);
+ assert.match(source,/env\.VERCEL_ENV!=='preview'/);
+ assert.match(source,/host===env\.VERCEL_URL/);
+ assert.match(batch,/previewHost:isolation==='isolated-project'\?stableTagPilotHost\(\):null/);
+ assert.match(batch,/currentTagPilotIsolation\(\)==='isolated-project'&&!stableTagPilotHost\(\)/);
+ assert.match(batch,/previewHost!==expectedHost/);
+});
