@@ -28,6 +28,8 @@ jobs:
       FIRESTORE_EMULATOR_HOST: 127.0.0.1:8088
       KYRUB_AGE_SCREENING_EMULATOR: 'true'
       VITE_KYRUB_ONBOARDING_EMULATOR: 'true'
+      KYRUB_PERSONAL_PREVIEW_ENABLED: 'true'
+      VITE_KYRUB_PERSONAL_PREVIEW: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

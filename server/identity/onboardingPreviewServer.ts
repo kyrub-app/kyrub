@@ -4,7 +4,12 @@ import { ageScreeningEmulatorsReady, createAgeScreeningRouter } from './ageScree
 if (!ageScreeningEmulatorsReady(process.env) || process.env.VITE_KYRUB_ONBOARDING_EMULATOR !== 'true') throw Error('ONBOARDING_PREVIEW_REQUIRES_EMULATORS');
 const app = express();
 app.use('/api/onboarding/age',createAgeScreeningRouter());
-// Do not mount ANY other API or legacy application backend in this harness.
+// Only the explicitly isolated personal workspace may be mounted here.
+if(process.env.KYRUB_PERSONAL_PREVIEW_ENABLED==='true'){
+ const {createPrivatePersonalPreviewRouter}=await import('./privatePersonalPreviewRouter.js');
+ app.use('/api/onboarding/personal',createPrivatePersonalPreviewRouter());
+}
+// Do not mount any legacy application backend in this harness.
 app.use('/api',(_req,res)=>res.sendStatus(404));
 const vite = await createServer({server:{middlewareMode:true},appType:'spa'});
 app.use(vite.middlewares);
