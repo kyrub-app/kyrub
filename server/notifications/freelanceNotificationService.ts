@@ -36,6 +36,10 @@ export async function sendNotifiedHiringMessage(input:{actorId:string;actorRole:
    return {messageId,created:false};
   }
   if(noticeSnap.exists)throw Error('FREELANCE_CONFLICT');
+  if(control.get('vacancyPolicy')==='lock_on_application'&&data.status==='pending'){
+   const vacancy=await tx.get(adminDb.doc('vagas/'+data.vagaId));
+   if(!vacancy.exists||vacancy.get('status')!=='open'||vacancy.get('ownerId')!==data.ownerId)throw Error('FREELANCE_FORBIDDEN');
+  }
   // For the isolated server path require both authoritative checks explicitly.
   if(!control.exists||control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only'||control.get('messageAuthority')!=='server'||age.get('uid')!==actorId||age.get('status')!=='verified_adult'||identity.get('uid')!==actorId||identity.get('status')!=='approved'||!Array.isArray(identity.get('approvedProfiles'))||!identity.get('approvedProfiles').includes(actorId===data.ownerId?'requester':'freelancer')||!['pending','accepted','completion_requested'].includes(data.status))throw Error('FREELANCE_FORBIDDEN');
   tx.create(message,{senderId:actorId,receiverId,text,createdAt:FieldValue.serverTimestamp()});
@@ -97,6 +101,7 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
    tx.create(receipt,{vagaId,ownerId,userId:workerId,status:'pending',terms,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   }else{
    if(!app.exists||app.get('status')!==event.from)throw Error('FREELANCE_CONFLICT');
+   if(lockPolicy&&event.from==='pending'&&action!=='withdraw'&&(!vacancy.exists||vacancy.get('status')!=='open'))throw Error('FREELANCE_CONFLICT');
    if(action==='accept'&&!sameHiringTerms(parseHiringTerms(app.get('terms')),expectedTerms))throw Error('FREELANCE_CONFLICT');
    if(action==='accept'&&lockPolicy){
     if(!vacancy.exists||vacancy.get('ownerId')!==ownerId||vacancy.get('status')!=='open'||vacancy.get('termsLocked')!==true||typeof vacancy.get('hasAccepted')!=='boolean'||!sameHiringTerms(termsFromVacancy(vacancy.data()),expectedTerms))throw Error('FREELANCE_CONFLICT');
@@ -107,5 +112,40 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
   tx.create(operation,{actorId,action,status:event.to,...((action==='apply'||action==='accept')?{terms:expectedTerms}:{}),createdAt:FieldValue.serverTimestamp()});
   tx.create(noticeRef,notice);
   return {applicationId,operationId,status:event.to,created:true};
+ });
+}
+
+
+/** Close first, then atomically retire bounded pages with their recipient alerts.
+ * The same endpoint resumes after interruption. Never reopens an offer. */
+export async function retireHiringVacancy(input:{actorId:string;vacancyId:string}){
+ if(!freelanceNotificationPreviewEnabled())throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+ const {actorId,vacancyId}=input;
+ if(!uidValid(actorId)||!/^[A-Za-z0-9]{20}$/.test(vacancyId))throw Error('FREELANCE_INVALID');
+ const ref=adminDb.doc('vagas/'+vacancyId);
+ const pageSize=40;
+ return adminDb.runTransaction(async tx=>{
+  const [vacancy,control]=await tx.getAll(ref,adminDb.doc('renda_age_release_private/current'));
+  if(!control.exists||control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only'||control.get('applicationAuthority')!=='server'||control.get('vacancyPolicy')!=='lock_on_application')throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+  if(!vacancy.exists||vacancy.get('ownerId')!==actorId)throw Error('FREELANCE_FORBIDDEN');
+  if(vacancy.get('hasAccepted')!==false||typeof vacancy.get('termsLocked')!=='boolean'||!['open','closed'].includes(vacancy.get('status')))throw Error('FREELANCE_CONFLICT');
+  if(vacancy.get('status')==='closed'&&vacancy.get('retirementPending')===false)return {vacancyId,complete:true,processed:0};
+  if(vacancy.get('status')==='closed'&&vacancy.get('retirementPending')!==true)throw Error('FREELANCE_CONFLICT');
+  // Guard against inconsistent historical data independently of the latch.
+  const accepted=await tx.get(adminDb.collection('candidaturas').where('vagaId','==',vacancyId).where('status','in',['accepted','completion_requested','completed']).limit(1));
+  if(!accepted.empty)throw Error('FREELANCE_CONFLICT');
+  const pending=await tx.get(adminDb.collection('candidaturas').where('vagaId','==',vacancyId).where('status','==','pending').limit(pageSize+1));
+  const complete=pending.size<=pageSize;
+  for(const app of pending.docs.slice(0,pageSize)){
+   const workerId=app.get('userId');
+   if(!uidValid(workerId)||workerId===actorId||app.id!==vacancyId+'__'+workerId||app.get('ownerId')!==actorId)throw Error('FREELANCE_CONFLICT');
+   const sourceId=createHash('sha256').update(app.id+'\nwithdrawn_offer').digest('hex');
+   const notice=buildUserNotification({recipientUserId:workerId,category:'freelance',eventType:'offer_withdrawn',sourceId,actorPrincipalId:actorId,title:'Oferta de Freela retirada',body:'O contratante retirou a oferta. Sua candidatura foi encerrada; o histórico permanece disponível.',target:{kind:'freelance',hiringApplicationId:app.id},createdAt:new Date().toISOString()});
+   tx.update(app.ref,{status:'offer_withdrawn',updatedAt:FieldValue.serverTimestamp()});
+   tx.create(app.ref.collection('retirement_private').doc('withdrawal'),{actorId,status:'offer_withdrawn',createdAt:FieldValue.serverTimestamp()});
+   tx.create(adminDb.doc(userNotificationPath(workerId,notice.id)),notice);
+  }
+  tx.update(ref,{status:'closed',retirementPending:!complete,updatedAt:FieldValue.serverTimestamp(),...(vacancy.get('status')==='open'?{retiredAt:FieldValue.serverTimestamp()}: {})});
+  return {vacancyId,complete,processed:Math.min(pending.size,pageSize)};
  });
 }
