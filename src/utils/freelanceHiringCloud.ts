@@ -1,5 +1,5 @@
 import { auth, db } from './firebase';
-import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
 export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed' };
@@ -92,6 +92,40 @@ export async function transitionHiringCompletion(id:string,status:'completion_re
      : current.get('ownerId')===actor&&current.get('status')==='completion_requested';
    if(!allowed)throw Error('Transição indisponível.');
    tx.update(ref,{status,updatedAt:serverTimestamp()});
+ });
+ checkSession(actor);
+}
+
+
+// Same four-field private DM contract, isolated from personal connections.
+export type HiringMessage = {id:string;senderId:string;receiverId:string;text:string;createdAtMs:number};
+const hiringMessages=(applicationId:string)=>{
+ if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))throw Error('Candidatura inválida.');
+ return collection(db,'candidaturas',applicationId,'messages');
+};
+export async function listHiringMessages(applicationId:string):Promise<HiringMessage[]>{
+ const actor=uid();
+ const snapshot=await getDocsFromServer(query(hiringMessages(applicationId),orderBy('createdAt','desc'),limit(100)));
+ checkSession(actor);
+ return snapshot.docs.flatMap(d=>{
+  const data=d.data();
+  if(typeof data.senderId!=='string'||typeof data.receiverId!=='string'||typeof data.text!=='string'||typeof data.createdAt?.toMillis!=='function'||![data.senderId,data.receiverId].includes(actor))return [];
+  return [{id:d.id,senderId:data.senderId,receiverId:data.receiverId,text:data.text,createdAtMs:data.createdAt.toMillis()}];
+ }).reverse();
+}
+export async function sendHiringMessage(applicationId:string,text:string):Promise<void>{
+ const actor=uid(),message=text.trim();
+ if(!message||message.length>4000)throw Error('Revise o texto da mensagem.');
+ const messages=hiringMessages(applicationId);
+ const receipt=doc(db,'candidaturas',applicationId);
+ const messageRef=doc(messages);
+ await runTransaction(db,async tx=>{
+   checkSession(actor);
+   const current=await tx.get(receipt);
+   if(!current.exists()||!['pending','accepted','completion_requested'].includes(current.get('status')))throw Error('Negociação encerrada.');
+   const receiverId=current.get('ownerId')===actor?current.get('userId'):current.get('userId')===actor?current.get('ownerId'):null;
+   if(typeof receiverId!=='string'||!validId(receiverId)||receiverId===actor)throw Error('Negociação indisponível.');
+   tx.set(messageRef,{senderId:actor,receiverId,text:message,createdAt:serverTimestamp()});
  });
  checkSession(actor);
 }
