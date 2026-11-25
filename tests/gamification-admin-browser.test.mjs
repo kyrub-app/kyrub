@@ -21,6 +21,7 @@ assert.equal(process.env.KYRUB_PITANGA_WELCOME_PROJECT_ID,projectId);
 assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
 assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
 assert.equal(process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT,'true');
+assert.equal(process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT,'true');
 assert.equal(process.env.NODE_ENV,'test');
 assert.ok(!process.env.VERCEL&&!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS);
 
@@ -101,6 +102,31 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await page.getByText('Evidência inicial: Divergência entre contador e recibos').waitFor();
   await page.getByText('Desfecho: Resolvido').waitFor();
   await page.screenshot({path:'gamification-admin-isolated-history.png',fullPage:true});
+  // A new observation can be triaged without changing the author's balance.
+  await page.getByRole('button',{name:'Voltar à lista inicial'}).click();
+  await page.getByLabel('Situação').selectOption('all');
+  await page.getByRole('heading',{name:'Abrir investigação'}).waitFor();
+  await page.getByLabel('Identificador da publicação').fill(postId);
+  assert.equal(await page.getByRole('button',{name:'Confirmar abertura'}).isDisabled(),true);
+  await page.getByLabel('Confirmo esta decisão de triagem.').check();
+  await page.getByRole('button',{name:'Confirmar abertura'}).click();
+  await page.getByText('Nenhum indício técnico permite abrir o caso.').waitFor();
+  await stats.update({acceptedSeeds:2});
+  await page.getByRole('button',{name:'Confirmar abertura'}).click();
+  await page.getByRole('heading',{name:'Encerrar investigação'}).waitFor();
+  await page.getByLabel('Desfecho').selectOption('resolved');
+  await page.getByLabel('Confirmo esta decisão de triagem.').check();
+  await page.getByRole('button',{name:'Confirmar encerramento'}).click();
+  await page.getByText('Ainda há indícios ou a cobertura é incompleta.').waitFor();
+  await page.getByLabel('Desfecho').selectOption('inconclusive');
+  await page.getByLabel('Confirmo esta decisão de triagem.').check();
+  await page.getByRole('button',{name:'Confirmar encerramento'}).click();
+  await page.getByText('Desfecho: Inconclusivo').waitFor();
+  await page.screenshot({path:'gamification-admin-isolated-case-closure.png',fullPage:true});
+  assert.equal((await db.doc('systemControl/semeaduraEconomicReview/holds/post_'+postKey).get()).exists,false);
+  assert.equal((await balance.get()).get('availableKCoins'),100);
+  await stats.update({acceptedSeeds:1});
+
   await page.getByRole('button',{name:'Sair da fixture'}).click();
   await login(ordinaryEmail);
   await page.getByText('Consulta indisponível. Nenhum valor inferido.').waitFor();
