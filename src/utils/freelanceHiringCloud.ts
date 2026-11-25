@@ -19,6 +19,28 @@ const uid=()=>{
 };
 const validId=(id:string)=>/^[A-Za-z0-9_-]{1,128}$/.test(id);
 const checkSession=(actor:string)=>{if(auth.currentUser?.uid!==actor)throw Error('Sessão alterada. Entre novamente.');};
+type NotifiedHiringAction='apply'|'accept'|'reject'|'withdraw'|'request_completion'|'request_review'|'complete';
+const pendingHiringOperations=new Map<string,string>();
+async function notifiedHiringAction(applicationId:string,action:NotifiedHiringAction):Promise<boolean>{
+ const actor=uid(),key=actor+':'+applicationId+':'+action;
+ const operationId=pendingHiringOperations.get(key)??crypto.randomUUID();
+ pendingHiringOperations.set(key,operationId);
+ const user=auth.currentUser;
+ if(!user||user.uid!==actor)throw Error('Sessão alterada.');
+ const token=await user.getIdToken();
+ checkSession(actor);
+ const response=await fetch('/api/notifications/freelance-applications/action',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,operationId,action})});
+ checkSession(actor);
+ if(!response.ok){
+  if([400,403,409].includes(response.status))pendingHiringOperations.delete(key);
+  throw Error('Operação não confirmada.');
+ }
+ const result=await response.json();
+ if(result.applicationId!==applicationId||result.operationId!==operationId||typeof result.created!=='boolean')throw Error('Recibo inválido.');
+ pendingHiringOperations.delete(key);
+ return result.created;
+}
+
 const parseVacancy=(id:string,data:Record<string,unknown>):HiringVacancy|null=>{
  if(!validId(id)||typeof data.ownerId!=='string'||!validId(data.ownerId)||typeof data.title!=='string'||typeof data.description!=='string'||typeof data.employer!=='string'||typeof data.payment!=='number'||!Number.isFinite(data.payment)||data.payment<=0||(data.status!=='open'&&data.status!=='closed'))return null;
  return {id,ownerId:data.ownerId,title:data.title,description:data.description,employer:data.employer,payment:data.payment,status:data.status};
@@ -42,6 +64,7 @@ export async function publishHiringVacancy(input:{title:string;description:strin
 export async function applyToHiringVacancy(vagaId:string):Promise<'created'|'existing'>{
  const actor=uid();
  if(!/^[A-Za-z0-9]{20}$/.test(vagaId))throw Error('Vaga sem identificador válido para contratação.');
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true')return await notifiedHiringAction(vagaId+'__'+actor,'apply')?'created':'existing';
  const vacancy=doc(db,'vagas',vagaId),application=doc(db,'candidaturas',vagaId+'__'+actor);
  const result=await runTransaction(db,async tx=>{
    checkSession(actor);
@@ -72,6 +95,7 @@ export async function decideHiringApplication(id:string,status:'accepted'|'rejec
  const actor=uid();
  if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(id))throw Error('Candidatura inválida.');
  const ref=doc(db,'candidaturas',id);
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){await notifiedHiringAction(id,status==='accepted'?'accept':status==='rejected'?'reject':'withdraw');return;}
  const current=await getDocFromServer(ref);
  checkSession(actor);
  if(!current.exists()||current.get('status')!=='pending'||(status==='withdrawn'?current.get('userId')!==actor:current.get('ownerId')!==actor))throw Error('Candidatura indisponível.');
@@ -82,6 +106,7 @@ export async function decideHiringApplication(id:string,status:'accepted'|'rejec
 export async function transitionHiringCompletion(id:string,status:'completion_requested'|'completed'|'accepted'):Promise<void>{
  const actor=uid();
  if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(id))throw Error('Candidatura inválida.');
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){await notifiedHiringAction(id,status==='completion_requested'?'request_completion':status==='completed'?'complete':'request_review');return;}
  const ref=doc(db,'candidaturas',id);
  await runTransaction(db,async tx=>{
    checkSession(actor);
