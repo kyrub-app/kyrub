@@ -8,6 +8,7 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
@@ -172,7 +173,7 @@ test('staged Renda age gate requires civil identity AND verified adulthood for d
   const vacancy=doc(requester,'vagas','age-vacancy');
   const application=doc(freelancer,'candidaturas','age-application');
   const vacancyPayload={ownerId:requesterId,title:'Vaga de homologacao'};
-  const applicationPayload={userId:freelancerId,vagaId:'age-vacancy'};
+  const applicationPayload={userId:freelancerId,vagaId:'age-vacancy',ownerId:requesterId};
   const age=async(uid:string,status:string,recordUid=uid)=>{
     await environment.withSecurityRulesDisabled(async context=>{
       await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
@@ -210,4 +211,41 @@ test('staged Renda age gate requires civil identity AND verified adulthood for d
   await age(freelancerId,'suspended');
   await assertFails(setDoc(doc(freelancer,'candidaturas','age-application-2'),applicationPayload));
   await assertFails(setDoc(doc(requester,'renda_age_release_private','current'),{mode:'disabled'}));
+});
+
+
+test('freelance vacancy and application ownership cannot be forged or used across contractors',async()=>{
+  const ownerId='hiring-owner',otherId='hiring-other',workerId='hiring-worker';
+  const owner=environment.authenticatedContext(ownerId,{role:'owner'}).firestore();
+  const other=environment.authenticatedContext(otherId,{role:'owner'}).firestore();
+  const worker=environment.authenticatedContext(workerId).firestore();
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const [uid,profile] of [[ownerId,'requester'],[otherId,'requester'],[workerId,'freelancer']]){
+      await setDoc(doc(db,'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+      await setDoc(doc(db,'age_eligibility_private',uid),{uid,status:'verified_adult'});
+    }
+    await setDoc(doc(db,'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const vacancy=(db:any)=>doc(db,'vagas','owned-vacancy');
+  await assertFails(setDoc(vacancy(other),{ownerId,title:'Impersonacao'}));
+  await assertSucceeds(setDoc(vacancy(owner),{ownerId,title:'Vaga real'}));
+  await assertFails(updateDoc(vacancy(other),{title:'Alteracao indevida'}));
+  await assertFails(deleteDoc(vacancy(other)));
+  await assertFails(updateDoc(vacancy(owner),{ownerId:otherId}));
+  const application=(db:any)=>doc(db,'candidaturas','owned-application');
+  const payload={ownerId,userId:workerId,vagaId:'owned-vacancy',status:'pending'};
+  await assertFails(setDoc(application(worker),{...payload,ownerId:otherId}));
+  await assertFails(setDoc(application(worker),{...payload,vagaId:'missing'}));
+  await assertSucceeds(setDoc(application(worker),payload));
+  await assertFails(getDoc(application(other)));
+  await assertSucceeds(getDoc(application(owner)));
+  await assertSucceeds(getDoc(application(worker)));
+  await assertFails(updateDoc(application(other),{status:'accepted'}));
+  await assertFails(updateDoc(application(worker),{ownerId:otherId}));
+  await assertFails(updateDoc(application(worker),{vagaId:'missing'}));
+  await assertFails(deleteDoc(application(other)));
+  await assertSucceeds(updateDoc(application(owner),{status:'accepted'}));
+  await assertSucceeds(deleteDoc(application(worker)));
+  await assertSucceeds(deleteDoc(vacancy(owner)));
 });
