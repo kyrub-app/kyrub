@@ -22,6 +22,7 @@ export function createIngressLegalPreviewRouter(){
  const handle:ErrorRequestHandler=(err,_req,res,_next)=>{
   const reason=err instanceof Error?err.message:'';
   if(reason==='LEGAL_AUTH_REQUIRED'||String(err?.code||'').startsWith('auth/'))res.sendStatus(401);
+  else if(reason==='LEGAL_AGE_REQUIRED')res.status(403).json({error:reason});
   else if(reason==='LEGAL_DECISION_INVALID'||err?.type==='entity.parse.failed')res.sendStatus(400);
   else if(err?.type==='entity.too.large')res.sendStatus(413);
   else if(reason==='LEGAL_VERSION_CHANGED')res.status(409).json({error:reason});
