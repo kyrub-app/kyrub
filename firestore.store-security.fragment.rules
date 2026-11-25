@@ -151,6 +151,7 @@
         && incoming().createdByRole == storeSecCurrentRole(storeId)
         && incoming().status in ['pending', 'accepted', 'preparing', 'ready']
         && incoming().paymentStatus in ['unpaid', 'partial', 'paid']
+        && (incoming().paymentStatus == 'unpaid' || canWriteFinancialWithMfa())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
     }
