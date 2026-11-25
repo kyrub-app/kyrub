@@ -59,6 +59,7 @@ import {
   type CommunityVisibility,
 } from '../utils/communityCloud';
 import { auth, db } from '../utils/firebase';
+import { selectWallDraft, resolveWallUploads, type WallDraft } from '../utils/communityWallUploadRetry';
 import { probePublicCommunityRead, type PublicCommunityReadProbe } from '../utils/communityReadDiagnostic';
 import { subscribeCommunityPostInteractions, toggleCommunityPostLike, addCommunityPostComment, deleteCommunityPostComment, setCommunityPostPinnedComment, submitCommunityPostReport, removeOwnCommunityPost, type CommunityPostLike, type CommunityPostComment } from '../utils/communityPostInteractions';
 import { subscribeCommunityPostConnections, type CommunityPostConnection } from '../utils/communityPostConnections';
@@ -316,17 +317,34 @@ export function ProfileCommunitiesCloudBridge() {
   const [wallToolsOpen, setWallToolsOpen] = useState(false);
   const [wallMedia, setWallMedia] = useState<Array<{ file: File; preview: string }>>([]);
   const wallMediaRef = useRef<Array<{ file: File; preview: string }>>([]);
+  const wallUploadDraft = useRef<WallDraft<File> | null>(null);
+  const wallSubmitLock = useRef(false);
+  const wallDraftGeneration = useRef(0);
   useEffect(() => () => {
+    wallDraftGeneration.current++;
+    wallUploadDraft.current = null;
     wallMediaRef.current.forEach(item => URL.revokeObjectURL(item.preview));
     wallMediaRef.current = [];
   }, []);
 
   const clearWallMedia = () => {
+    wallDraftGeneration.current++;
+    wallUploadDraft.current = null;
     wallMediaRef.current.forEach(item => URL.revokeObjectURL(item.preview));
     wallMediaRef.current = [];
     setWallMedia([]);
     setWallToolsOpen(false);
   };
+
+  useEffect(() => {
+    // Do not carry staged references across account switches.
+    wallDraftGeneration.current++;
+    wallUploadDraft.current = null;
+    wallMediaRef.current.forEach(item => URL.revokeObjectURL(item.preview));
+    wallMediaRef.current = [];
+    setWallMedia([]);
+    setWallDraft('');
+  }, [user?.uid]);
 
   const selectWallMedia = (event: ChangeEvent<HTMLInputElement>) => {
     const selected = Array.from(event.target.files ?? []);
@@ -1000,7 +1018,10 @@ export function ProfileCommunitiesCloudBridge() {
   };
 
   const submitWallPost = async () => {
-    if (!selectedCommunity || actionBusy === 'wall-post') return;
+    if (!selectedCommunity || actionBusy === 'wall-post' || wallSubmitLock.current) return;
+    const owner = auth.currentUser;
+    if (!owner || owner.uid !== user?.uid) { setMessage('Faça login novamente para publicar.'); return; }
+    const generation = wallDraftGeneration.current;
     const communityId = selectedCommunity.id;
     const content = wallDraft.trim();
     const attachments = [...wallMediaRef.current];
@@ -1008,20 +1029,35 @@ export function ProfileCommunitiesCloudBridge() {
       setMessage('Escreva algo ou adicione uma foto ou vídeo.');
       return;
     }
-    await runAction('wall-post', async () => {
-      const mediaUrls: string[] = [];
-      for (const item of attachments) {
-        mediaUrls.push(await uploadCommunityPostMedia(communityId, item.file));
-      }
-      await createCommunityPost({ communityId, content, mediaUrls, shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments });
-      if (selectedCommunityId === communityId) {
+    const shareToSquare = selectedCommunity.visibility === 'public' && shareWallToSquare;
+    const fingerprint = JSON.stringify([content, shareToSquare, wallAllowComments]);
+    const draft = selectWallDraft(wallUploadDraft.current, owner, communityId,
+      fingerprint, attachments.map(item => item.file), () => crypto.randomUUID());
+    wallUploadDraft.current = draft;
+    const assertCurrent = () => {
+      if (auth.currentUser !== owner || wallDraftGeneration.current !== generation ||
+          wallUploadDraft.current !== draft) throw new Error('A sessão ou o rascunho mudou. Revise a publicação.');
+    };
+    wallSubmitLock.current = true;
+    try {
+      await runAction('wall-post', async () => {
+        const mediaUrls = await resolveWallUploads(draft, assertCurrent,
+          (file, attempt) => uploadCommunityPostMedia(communityId, file, attempt));
+        assertCurrent();
+        // Once a Firestore commit is attempted, never reuse these objects in a
+        // new post: the previous response may have been lost after commit.
+        draft.commitStarted = true;
+        await createCommunityPost({ communityId, content, mediaUrls, shareToSquare, allowComments: wallAllowComments });
+        assertCurrent();
         setWallDraft('');
         setWallAllowComments(true);
         setShareWallToSquare(true);
         clearWallMedia();
-      }
-      setMessage('Publicação adicionada ao mural.');
-    });
+        setMessage('Publicação adicionada ao mural.');
+      });
+    } finally {
+      wallSubmitLock.current = false;
+    }
   };
 
   const renderCard = (community: (typeof communities)[number], layout: 'rail' | 'catalog' = 'rail') => {
@@ -1620,7 +1656,8 @@ export function ProfileCommunitiesCloudBridge() {
                           ++communitySubscriptionVersion.current;
                           closeGroupsModal();
                           setMembersModalOpen(false);
-                                                setSelectedCommunityId('');
+                          clearWallMedia();
+                          setSelectedCommunityId('');
                         }}
                         className="absolute left-3 top-3 flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-slate-950/80 text-white backdrop-blur"
                         aria-label={catalogOpen ? "Voltar para o catálogo de comunidades" : "Voltar para a Praça"}
