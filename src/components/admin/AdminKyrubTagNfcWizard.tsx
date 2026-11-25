@@ -5,8 +5,8 @@ import {readOneNdefUrl} from '../../utils/kyrubTagNfcReadback';
 import {isTagId,tagUrl} from '../../../shared/kyrubTagContract';
 
 type Unit={id:string;url:string;physicalStatus:'not_verified'|'readback_confirmed'|'readback_stale'};
-export type PilotBatch={id:string;model:'adesivo';count:number;units:Unit[]};
-type Readiness={isolation:'emulator'|'isolated-project'|'unsafe';canIssue:boolean;previewHost?:string|null};
+export type PilotBatch={id:string;model:'adesivo';urlMode?:'pilot'|'permanent';count:number;units:Unit[]};
+type Readiness={isolation:'emulator'|'isolated-project'|'unsafe';canIssue:boolean;permanentStockEnabled?:boolean;previewHost?:string|null};
 type Active={batchId:string;unit:Unit};
 type Phase='idle'|'preparing'|'prepared'|'writing'|'awaiting_readback'|'reading'|'reporting'|'confirmed';
 type NFCReader={
@@ -30,6 +30,7 @@ const checkBatch=(batch:PilotBatch)=>{
  return batch;
 };
 function makePilotUrl(id:string,readiness:Readiness|null){
+ if(readiness?.permanentStockEnabled&&window.location.hostname==='admin.kyrub.com'&&window.location.protocol==='https:')return tagUrl(id)??'';
  const host=readiness?.previewHost;
  return readiness?.isolation==='isolated-project'&&
   typeof host==='string'&&/^[a-z0-9-]+(?:\.[a-z0-9-]+)*\.vercel\.app$/.test(host)
@@ -52,9 +53,10 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
   mounted.current=false;writing.current?.abort();reading.current?.abort();
  };},[]);
  const working=['preparing','writing','reading','reporting'].includes(phase);
- const canPilot=readiness?.isolation==='isolated-project'&&readiness.canIssue&&
+ const permanent=readiness?.permanentStockEnabled===true&&window.location.hostname==='admin.kyrub.com'&&window.location.protocol==='https:';
+ const canPilot=permanent||(readiness?.isolation==='isolated-project'&&readiness.canIssue&&
   window.location.hostname.endsWith('.vercel.app')&&window.location.protocol==='https:'&&
-  !!readiness?.previewHost;
+  !!readiness?.previewHost);
  async function endpointRequest(body:Record<string,unknown>):Promise<{batch:PilotBatch;replay:boolean}>{
   if(auth.currentUser?.uid!==user.uid)throw Error('AUTH_REQUIRED');
   const token=await user.getIdToken();
@@ -69,6 +71,11 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
  async function prepareNext(){
   if(!canPilot||working||active&&phase!=='confirmed')return;
   reading.current?.abort();
+  if(permanent){
+   const next=batches.filter(b=>b.urlMode==='permanent').flatMap(batch=>batch.units.filter(unit=>unit.physicalStatus==='not_verified').map(unit=>({batch,unit})))[0];
+   if(next){resume(next.batch,next.unit);setSessionPrepared(n=>n+1);}else setNotice('Todos os adesivos deste inventário foram conferidos. Emita outro lote para continuar.');
+   return;
+  }
   setPhase('preparing');setNotice('');
   const requestId=requestNonce.current??makeNonce();
   requestNonce.current=requestId;
@@ -168,7 +175,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
   setNotice('Operação NFC interrompida. A unidade não foi confirmada nem excluída.');
  }
  function resume(batch:PilotBatch,unit:Unit){
-  if(working||unit.physicalStatus==='readback_stale')return;
+  if(working||unit.physicalStatus==='readback_stale'||(permanent&&batch.urlMode!=='permanent'))return;
   requestNonce.current=null;reading.current?.abort();writing.current?.abort();
   setActive({batchId:batch.id,unit});
   setPhase(unit.physicalStatus==='readback_confirmed'?'confirmed':'prepared');
@@ -182,15 +189,15 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
  return <section className="space-y-4 rounded-xl border border-[#34443B] bg-[#18231E] p-4">
   <div>
    <h5 className="text-base font-bold">Gravação sequencial · Um adesivo por vez</h5>
-   <p className="mt-1 text-slate-300">Separe um adesivo vazio para o teste.</p>
+   <p className="mt-1 text-slate-300">{permanent?'Grave os adesivos definitivos já registrados no lote. Separe um por vez.':'Separe um adesivo vazio para o teste.'}</p>
   </div>
   {!canPilot&&<p role="status" className="rounded-lg border border-amber-400/30 p-3 text-amber-100">
    A gravação sequencial está bloqueada até a prévia usar um Firebase de homologação isolado e o Super Admin habilitar o piloto. Nenhuma tag real será cadastrada neste estado.
   </p>}
   {active&&<div className="space-y-2 rounded-lg border border-[#34443B] p-3">
    <p className="font-semibold">Unidade atual · {active.unit.id.slice(-8)}</p>
-   <p className="break-all text-xs text-slate-400">URL de teste: {makePilotUrl(active.unit.id,readiness)||'indisponível'}</p>
-   <p className="text-xs text-amber-200">Não é a URL definitiva de distribuição. Não bloqueie a gravação do chip.</p>
+   <p className="break-all text-xs text-slate-400">{permanent?'URL definitiva:':'URL de teste:'} {makePilotUrl(active.unit.id,readiness)||'indisponível'}</p>
+   <p className="text-xs text-amber-200">{permanent?'Endereço definitivo. A ativação pública ainda está bloqueada.':'Não é a URL definitiva de distribuição.'} Não bloqueie a gravação do chip.</p>
   </div>}
   <div className="flex flex-wrap gap-2">
    {!active&&<button className={control} type="button" disabled={!canPilot||working} onClick={()=>void prepareNext()}>Iniciar gravação</button>}
