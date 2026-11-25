@@ -312,10 +312,11 @@ match /connections/{connectionId} {
       || isAdmin()
     );
 
-  allow create: if isSignedIn()
+  allow create: if canWriteSocialWithAge()
     && hasValidConnectionId()
     && hasValidParticipants(incoming())
     && incoming().senderId == request.auth.uid
+    && canParticipateInSocialWithAge(incoming().receiverId)
     && incoming().status == 'pending'
     && incoming().createdAt == request.time
     && incoming().updatedAt == request.time
@@ -344,8 +345,9 @@ match /connections/{connectionId} {
       'updatedAt'
     ]);
 
-  allow update: if isSignedIn()
+  allow update: if canWriteSocialWithAge()
     && request.auth.uid == existing().receiverId
+    && canParticipateInSocialWithAge(existing().senderId)
     && existing().status == 'pending'
     && incoming().status == 'accepted'
     && hasImmutableParticipants()
@@ -433,6 +435,7 @@ match /connections/{connectionId} {
           && request.query.limit <= 100;
 
         allow create: if canAccessMessages()
+          && canWriteSocialWithAge()
           && isValidId(messageId)
           && incoming().keys().hasAll([
             'senderId',
@@ -450,6 +453,7 @@ match /connections/{connectionId} {
           && isValidId(incoming().senderId)
           && isValidId(incoming().receiverId)
           && hasValidReceiver()
+          && canParticipateInSocialWithAge(incoming().receiverId)
           && incoming().text is string
           && incoming().text.size() >= 1
           && incoming().text.size() <= 4000
