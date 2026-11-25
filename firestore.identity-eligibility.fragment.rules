@@ -62,3 +62,22 @@
     function canWriteErpWithAge() {
       return isSignedIn() && canParticipateInErpWithAge(request.auth.uid);
     }
+
+    // Direct hiring has its own rollout, independent of on-demand delivery.
+    match /renda_age_release_private/{documentId} {
+      allow read, write: if false;
+    }
+    function canWriteRendaWithAge() {
+      let control = /databases/$(database)/documents/renda_age_release_private/current;
+      let age = /databases/$(database)/documents/age_eligibility_private/$(request.auth.uid);
+      return isSignedIn() && (
+        !exists(control)
+        || (
+          get(control).data.schemaVersion == 1
+          && get(control).data.mode == 'verified_adult_only'
+          && exists(age)
+          && get(age).data.uid == request.auth.uid
+          && get(age).data.status == 'verified_adult'
+        )
+      );
+    }
