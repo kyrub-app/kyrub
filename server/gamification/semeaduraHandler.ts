@@ -1,3 +1,6 @@
+import type { Auth } from 'firebase-admin/auth';
+import type { Firestore } from 'firebase-admin/firestore';
+import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
@@ -19,7 +22,36 @@ const header = (value: string | string[] | undefined) =>
  * Fail-closed. No production side effects without a separate deployment gate.
  * This transport uses the existing Vercel action handler (no extra function).
  */
+type TransportDependencies={
+ adminDb:Firestore;adminAuth:Auth;
+ verify:(token:string)=>Promise<{uid:string}>;
+ actualProject:()=>string;expectedProject:string;
+};
+
 export async function handleSemeadura(request: RequestLike, response: ResponseLike): Promise<void> {
+ return handleSemeaduraWithAuthority(request,response,{
+  adminDb,adminAuth,verify:verifyFirebaseIdToken,actualProject:getFirebaseAdminProjectId,
+  expectedProject:process.env.FIREBASE_PROJECT_ID?.trim()||'kyrub-b8d0e',
+ });
+}
+
+/** Only for an explicitly mounted disposable loopback HTTP harness.
+ * Emulator tokens are never accepted by the production export above. */
+export function createIsolatedSemeaduraHandler(db:Firestore,auth:Auth){
+ return async(request:RequestLike,response:ResponseLike):Promise<void>=>{
+  if(process.env.KYRUB_SEMEADURA_HTTP_EMULATOR_TEST!=='true'||!semeaduraEconomicPilotEnabled(db)||
+    auth.app.options.projectId!=='demo-kyrub-welcome'){
+   response.status(404).json({error:'SEMEADURA_NOT_ENABLED'});return;
+  }
+  return handleSemeaduraWithAuthority(request,response,{
+   adminDb:db,adminAuth:auth,verify:token=>auth.verifyIdToken(token,true),
+   actualProject:()=>auth.app.options.projectId??'',expectedProject:'demo-kyrub-welcome',
+  });
+ };
+}
+
+async function handleSemeaduraWithAuthority(request:RequestLike,response:ResponseLike,
+ {adminDb,adminAuth,verify,actualProject,expectedProject}:TransportDependencies):Promise<void>{
   if (request.method?.toUpperCase() !== 'POST') {
     response.status(405).json({ error: 'METHOD_NOT_ALLOWED' });
     return;
@@ -45,13 +77,13 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
   try {
     actor=body.action==='semear'
       ? await authorizeSemeaduraMutation(token,{
-          verify:verifyFirebaseIdToken,
+          verify,
           getUser:uid=>adminAuth.getUser(uid),
-          actualProject:getFirebaseAdminProjectId,
-          expectedProject:process.env.FIREBASE_PROJECT_ID?.trim()||'kyrub-b8d0e',
+          actualProject,
+          expectedProject,
           now:Date.now,
         })
-      : (await verifyFirebaseIdToken(token)).uid;
+      : (await verify(token)).uid;
     if (!actor) throw Error('INVALID_FIREBASE_IDENTITY');
   } catch {
     response.status(401).json({ error: 'AUTH_INVALID' });
