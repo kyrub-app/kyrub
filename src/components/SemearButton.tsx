@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createSemeaduraStatusBatcher } from '../utils/semeaduraStatusBatcher';
 import { createSemeaduraReadCoalescer } from '../utils/semeaduraReadCoalescer';
 import { auth } from '../utils/firebase';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, mergeSemeaduraDailyAllowance, type SemeaduraDailyAllowance } from '../../shared/semeaduraDailyLimit';
@@ -22,6 +23,7 @@ class SemeaduraQuotaReached extends Error {
   constructor(readonly dailyDay:string){super('SEMEADURA_DAILY_LIMIT_REACHED');}
 }
 const sharedReads=createSemeaduraReadCoalescer<Record<string, unknown>>();
+const batchStatus=createSemeaduraStatusBatcher();
 export async function requestSemeadura(
   action: 'status' | 'semear' | 'journey',
   target?: {kind:SemeaduraPostKind;postId:string},signal?:AbortSignal,expectedUid?:string,
@@ -36,14 +38,18 @@ export async function requestSemeadura(
   }
   const result=await sharedReads.read(session,key,sharedSignal=>{
     if(auth.currentUser!==session)throw Error('SEMEADURA_SESSION_CHANGED');
+    if(action==='status'&&target)return batchStatus(session,target,sharedSignal,targets=>{
+      if(auth.currentUser!==session)throw Error('SEMEADURA_SESSION_CHANGED');
+      return requestSemeaduraTransport('status_batch',{targets},undefined,session.uid);
+    });
     return requestSemeaduraTransport(action,target,sharedSignal,session.uid);
   },signal);
   if(auth.currentUser!==session||signal?.aborted)throw Error('SEMEADURA_SESSION_CHANGED');
   return result;
 }
 async function requestSemeaduraTransport(
-  action: 'status' | 'semear' | 'journey',
-  target?: { kind: SemeaduraPostKind; postId: string },
+  action: 'status' | 'semear' | 'journey' | 'status_batch',
+  target?: { kind: SemeaduraPostKind; postId: string }|{targets:{kind:SemeaduraPostKind;postId:string}[]},
   signal?: AbortSignal,
   expectedUid?: string,
 ): Promise<Record<string, unknown>> {
