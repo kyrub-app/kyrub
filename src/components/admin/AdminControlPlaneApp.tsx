@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
-import { BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Trophy, Users } from 'lucide-react';
+import { Banknote, BadgeCheck, CircleAlert, LayoutDashboard, LockKeyhole, LogOut, ShieldCheck, Trophy, Users } from 'lucide-react';
 import { GoogleAuthProvider, onAuthStateChanged, signInWithPopup, signOut, type User } from 'firebase/auth';
 import { auth } from '../../utils/firebase';
 import { getAdminPermissions, hasAdminPermission, loadAdminDashboardMetrics, recordAdminSessionAccess, subscribeToAdminProfile, type AdminDashboardMetric, type AdminProfile, type AdminRole } from '../../utils/adminControlPlane';
@@ -12,6 +12,7 @@ import AdminFirebasePreflight from './AdminFirebasePreflight';
 import AdminKyrubTagPilot from './AdminKyrubTagPilot';
 import AdminKyrubTagPromotionalBatches from './AdminKyrubTagPromotionalBatches';
 import AdminWorkspaceRecoveryBoundary from './AdminWorkspaceRecoveryBoundary';
+const PlatformEconomy = lazy(() => import('./AdminPlatformEconomyWorkspace'));
 
 const GlobalChallenges = lazy(() => import('./AdminGlobalChallengesWorkspace'));
 
@@ -52,6 +53,7 @@ export default function AdminControlPlaneApp() {
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-firebase-preflight" title="Diagnóstico Firebase" description="Verificação manual e somente leitura da credencial Firebase da plataforma." icon={ShieldCheck} badge="Super Admin"><AdminFirebasePreflight key={user.uid} user={user} profile={profile} /></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-kyrub-tag-pilot" title="Kyrub Tag — lote experimental" description="Emissão controlada e gravação da unidade 001." icon={ShieldCheck} badge="Super Admin"><AdminKyrubTagPilot key={user.uid} user={user}/></AdminAccordionSection>}
       {profile.role === 'super_admin' && <AdminAccordionSection id="admin-global-challenges" title="Desafios globais" description="Consulte desafios do Kyrub, crie rascunhos e publique com confirmação." icon={Trophy} badge="Super Admin"><Suspense fallback={<p role="status">Carregando desafios…</p>}><AdminWorkspaceRecoveryBoundary section="Desafios globais"><GlobalChallenges key={user.uid} user={user} profile={profile} /></AdminWorkspaceRecoveryBoundary></Suspense></AdminAccordionSection>}
+      {hasAdminPermission(profile, 'read_finance') && <AdminAccordionSection key={user.uid + ':' + profile.role} id="admin-platform-economy" title="Financeiro da Plataforma" description="Movimentações do ecossistema, conciliação sistêmica e eficiência da infraestrutura. Gestão empresarial no ERP da Loja Oficial." icon={Banknote} badge="Control Plane"><AdminWorkspaceRecoveryBoundary section="Economia da Plataforma"><Suspense fallback={<p role="status">Carregando financeiro…</p>}><PlatformEconomy user={user} profile={profile}/></Suspense></AdminWorkspaceRecoveryBoundary></AdminAccordionSection>}
       <AdminModulesWorkspace profile={profile} compactRoot />
     </div><section className="mt-4 rounded-2xl border border-slate-800 bg-slate-900/40 px-4 py-3"><div className="flex items-start gap-3"><ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-slate-500"/><p className="text-[10px] leading-relaxed text-slate-500">O Control Plane preserva autoridade, auditoria e políticas sistêmicas. Operações comerciais da própria Kyrub são executadas na Loja Oficial sem enfraquecer os gates server-side.</p></div></section></main>
   </div>;
