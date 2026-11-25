@@ -796,6 +796,46 @@ test('authenticated suspicion inspection requires active admin and reports evide
   assert.notEqual(first.cases[0].caseId,secondPage.cases[0].caseId);
   assert.equal(secondPage.nextAfterCaseId,null);
   assert.equal(first.consistentAcrossPages,false);
+  // Exercise the actual HTTP adapter on a disposable loopback port.
+  const {createIsolatedGamificationAdminRouter}=await import('../server/gamification/semeaduraAdminPilotRouter.js');
+  const express=(await import('express')).default;
+  const local=express();
+  local.use('/api/admin/gamification-pilot',createIsolatedGamificationAdminRouter(db,auth));
+  const server=local.listen(0,'127.0.0.1');
+  const previousHttp=process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT;
+  try{
+   if(!server.listening)await new Promise<void>((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
+   const address=server.address();
+   assert.ok(address&&typeof address!=='string');
+   const url='http://127.0.0.1:'+address.port+'/api/admin/gamification-pilot';
+   const headers={authorization:'Bearer '+admin.idToken};
+   delete process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT;
+   assert.equal((await fetch(url+'?operation=snapshot',{headers})).status,404);
+   process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT='true';
+   assert.equal((await fetch(url+'?operation=snapshot')).status,401);
+   assert.equal((await fetch(url+'?operation=snapshot',{headers:{authorization:'Bearer '+author.idToken}})).status,403);
+   assert.equal((await fetch(url+'?operation=snapshot',{method:'POST',headers})).status,405);
+   assert.equal((await fetch(url+'?operation=snapshot&uid=spoof',{headers})).status,400);
+   assert.equal((await fetch(url+'?operation=snapshot',{headers:{...headers,origin:'https://external.invalid'}})).status,403);
+   assert.equal((await fetch(url+'?operation=cases&status=all&limit=21',{headers})).status,400);
+   const response=await fetch(url+'?operation=cases&status=closed&limit=1',{headers});
+   assert.equal(response.status,200);
+   assert.equal(response.headers.get('cache-control'),'no-store');
+   const page=await response.json() as {cases:{caseId:string}[];nextAfterCaseId:string};
+   assert.equal(page.cases.length,1);
+   assert.ok(page.nextAfterCaseId);
+   const caseResponse=await fetch(url+'?operation=case&caseId='+caseId,{headers});
+   assert.equal(caseResponse.status,200);
+   const record=await caseResponse.json() as {status:string;automaticSanction:boolean};
+   assert.equal(record.status,'closed');
+   assert.equal(record.automaticSanction,false);
+   assert.equal((await fetch(url+'?operation=snapshot',{headers})).status,200);
+   assert.equal((await fetch(url+'?operation=case&caseId=missing',{headers})).status,404);
+  }finally{
+   server.closeAllConnections();
+   await new Promise<void>(resolve=>server.close(()=>resolve()));
+   if(previousHttp===undefined)delete process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT;else process.env.KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT=previousHttp;
+  }
   const history=await detail(caseId);
   assert.equal(history.outcome,'resolved');
   assert.deepEqual(history.openingEvidence.findings,['COUNTER_RECEIPT_MISMATCH']);
