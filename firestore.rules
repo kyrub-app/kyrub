@@ -197,6 +197,7 @@ service cloud.firestore {
         allow list: if false;
 
         allow create: if isUserStoreOwner(userId, storeId)
+          && canWriteErpWithAge()
           && hasValidUserStoreKeys(request.resource.data)
           && hasValidUserStoreTypes(request.resource.data)
           && request.resource.data.id == userId
@@ -255,7 +256,7 @@ service cloud.firestore {
     // --- Tenants (Store Directory) ---
     match /tenants/{tenantId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn() && incoming().ownerId == request.auth.uid;
+      allow create: if canWriteErpWithAge() && incoming().ownerId == request.auth.uid;
       allow update, delete: if isSignedIn() && (existing().ownerId == request.auth.uid || isAdmin());
     }
 
