@@ -31,7 +31,7 @@ export type CommercialCampaignConfiguration={
  policy:typeof policy;
 };
 const keys=['schemaVersion','projectId','databaseId','campaignId','fenceEpoch','welcomeEffectiveAt','semeaduraEffectiveAt','candidateCommit','writerEvidenceSha256','rulesSha256','policy'];
-const exact=(o:Record<string,unknown>,expected:string[])=>Object.keys(o).length===expected.length&&expected.every(k=>Object.hasOwn(o,k));
+const exact=(o:Record<string,unknown>,expected:string[])=>Object.keys(o).length===expected.length&&expected.every(k=>Object.prototype.hasOwnProperty.call(o,k));
 const object=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[a-zA-Z0-9_-]{1,128}$/.test(v)&&!/(demo|emulator|fixture|pilot|test)/i.test(v);
 const sha=(v:unknown,n:number)=>typeof v==='string'&&v.length===n&&/^[a-f0-9]+$/.test(v)&&!/^0+$/.test(v);
