@@ -353,3 +353,31 @@ o relatório externo, revisar os bloqueios reais, fixar SHA comercial e data
 da campanha aprovada, validar autoridade e transporte comercial sem
 reutilizar flags de emulador. Não confundir CI verde de piloto com V1
 comercial pronta. Nenhum merge, deploy, escrita real ou cobrança.
+
+
+## G3.10 — Transporte HTTP confirmado e configuração comercial imutável
+Revisão 0959f9e: Chromium 45559362232, job 139019061467, 1/1 aprovado,
+artefato 14997720780. O roteiro ampliado usa HTTP local e token real do
+Auth Emulator, nega identidade injetada, token inválido, flags desligadas
+e semeadura durante pausa; confirma recibo/quota, crédito único e jornada.
+Build aprovado; demais workflows ainda em execução na consulta. Não é
+prova de assinatura real Google ou de versão implantada.
+432a5dd acrescenta contrato offline commercialCampaignConfiguration:
+projeto kyrub-b8d0e, banco (default), identidade e epoch comerciais
+distintos dos fixtures, datas UTC canônicas de início do welcome e
+semeadura (separadas, nenhuma data padrão), SHA da candidata, SHA-256
+das regras e da evidência externa, política econômica fixa. Fingerprint
+canônico detecta alterações de conteúdo independentemente da ordem das
+chaves. Testes fab3b63 usam datas e hashes sintéticos, rejeitam projeto
+Tags, emulador, campos extras, mudanças de datas/política e digest
+divergente. CI novo pendente.
+Decisão de desenho: separar datas de boas-vindas e semeadura para permitir
+aprovação explícita da sequência de lançamento, sem decidir nenhuma data.
+Fingerprint é verificação de integridade, não assinatura, comprovação
+de inventário, autorização ou controle transacional implantado. A referência
+aprovada precisa ser retida independentemente, não aceita do mesmo registro.
+O contrato não está ligado a handlers, Firestore ou flags comerciais.
+Não criar configuração efetiva, promover piloto ou liberar writersVerified.
+Após relatório externo, definir a autoridade runtime e autorização da
+campanha com SHA aprovado, controles de abertura e pausa próprios,
+validar regras/cobertura e nova candidata. Sem deploy, merge ou custo novo.
