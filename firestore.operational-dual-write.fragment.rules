@@ -1,6 +1,7 @@
     // --- Operational Orders and Payments Dual Write ---
     function operationalMirrorMetadataIsValid(storeId) {
       return storeSecOwner(storeId)
+        && canWriteErpWithAge()
         && incoming().migration.mode == 'dual_write'
         && incoming().migration.migratedByUserId == request.auth.uid
         && incoming().migration.migratedByRole == 'owner'
@@ -51,6 +52,7 @@
         && incoming().updatedAt == request.time;
 
       allow update: if storeSecOwner(storeId)
+        && canWriteErpWithAge()
         && storeSecImmutableOrderIdentity()
         && incoming().legacyStoreId == existing().legacyStoreId
         && incoming().legacyCreatedAt == existing().legacyCreatedAt
