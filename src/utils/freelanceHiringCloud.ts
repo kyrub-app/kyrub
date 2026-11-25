@@ -2,8 +2,8 @@ import { auth, db } from './firebase';
 import {parseHiringTerms,termsFromVacancy,type FreelanceHiringTerms} from '../../shared/freelanceHiringTerms';
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
-export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed'; termsLocked?:boolean; hasAccepted?:boolean };
-export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed'; terms?:FreelanceHiringTerms };
+export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed'; termsLocked?:boolean; hasAccepted?:boolean; retirementPending?:boolean };
+export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'offer_withdrawn'|'completion_requested'|'completed'; terms?:FreelanceHiringTerms };
 
 export function freelanceCloudPreviewEnabled():boolean{
  return import.meta.env.DEV===true && import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'
@@ -44,7 +44,7 @@ async function notifiedHiringAction(applicationId:string,action:NotifiedHiringAc
 
 const parseVacancy=(id:string,data:Record<string,unknown>):HiringVacancy|null=>{
  if(!validId(id)||typeof data.ownerId!=='string'||!validId(data.ownerId)||typeof data.title!=='string'||typeof data.description!=='string'||typeof data.employer!=='string'||typeof data.payment!=='number'||!Number.isFinite(data.payment)||data.payment<=0||(data.status!=='open'&&data.status!=='closed'))return null;
- return {id,ownerId:data.ownerId,title:data.title,description:data.description,employer:data.employer,payment:data.payment,status:data.status,termsLocked:data.termsLocked===false?false:true,hasAccepted:data.hasAccepted===false?false:true};
+ return {id,ownerId:data.ownerId,title:data.title,description:data.description,employer:data.employer,payment:data.payment,status:data.status,termsLocked:data.termsLocked===false?false:true,hasAccepted:data.hasAccepted===false?false:true,retirementPending:data.retirementPending===true};
 };
 export async function listHiringVacancies(ownOnly=false):Promise<HiringVacancy[]>{
  const actor=uid();
@@ -92,7 +92,7 @@ export async function listHiringApplications(asRequester:boolean):Promise<Hiring
  checkSession(actor);
  return snapshot.docs.flatMap(d=>{
    const x=d.data();
-   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))return [];
+   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed'].includes(x.status))return [];
    return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined}];
  });
 }
@@ -195,7 +195,7 @@ export async function readHiringApplication(applicationId:string):Promise<Hiring
  const snapshot=await getDocFromServer(doc(db,'candidaturas',applicationId));
  checkSession(actor);
  const x=snapshot.data();
- if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
+ if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
  return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined};
 }
 
@@ -213,4 +213,24 @@ export async function editHiringVacancy(id:string,input:{title:string;descriptio
   tx.update(ref,{title,description,payment,updatedAt:serverTimestamp()});
  });
  checkSession(actor);
+}
+
+
+export async function retireHiringVacancy(id:string):Promise<{complete:boolean}>{
+ const actor=uid();
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW!=='true'||!/^[A-Za-z0-9]{20}$/.test(id))throw Error('Retirada indisponível.');
+ const user=auth.currentUser;
+ if(!user||user.uid!==actor)throw Error('Sessão alterada.');
+ // Bounded client work; an interrupted or large withdrawal is resumable
+ // from the closed offer, with no new candidates or acceptances allowed.
+ for(let page=0;page<5;page++){
+  const token=await user.getIdToken();checkSession(actor);
+  const response=await fetch('/api/notifications/freelance-vacancies/retire',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({vacancyId:id})});
+  checkSession(actor);
+  if(!response.ok)throw Error('Retirada não confirmada.');
+  const result=await response.json();
+  if(result.vacancyId!==id||typeof result.complete!=='boolean')throw Error('Recibo inválido.');
+  if(result.complete)return {complete:true};
+ }
+ return {complete:false};
 }
