@@ -7,6 +7,7 @@ import {
  readIsolatedGamificationIncrementalSnapshot, openIsolatedGamificationSuspicionCase,
  closeIsolatedGamificationSuspicionCase, listIsolatedGamificationEconomicReferrals,
  readIsolatedGamificationEconomicReferral, acceptIsolatedGamificationEconomicReferral, decideIsolatedGamificationEconomicReferral,
+ readIsolatedGamificationRelease, changeIsolatedGamificationRelease,
 } from './semeaduraAdminSupervision.js';
 
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
@@ -26,8 +27,9 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
    res.status(404).json({code:'NOT_AVAILABLE'});return;
   }
   const caseWrites=process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT==='true';
-  if(req.method!=='GET'&&!(req.method==='POST'&&caseWrites)){
-   res.setHeader('Allow',caseWrites?'GET, POST':'GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;
+  const releaseWrites=process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT==='true';
+  if(req.method!=='GET'&&!(req.method==='POST'&&(caseWrites||releaseWrites))){
+   res.setHeader('Allow',caseWrites||releaseWrites?'GET, POST':'GET');res.status(405).json({code:'METHOD_NOT_ALLOWED'});return;
   }
   // Do not support cross-origin calls; only same-origin browser requests or
   // local test clients without an Origin header. No CORS headers are granted.
@@ -48,6 +50,9 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
   const allowed=(keys:string[])=>Object.keys(q).every(k=>keys.includes(k));
   const authHeader=typeof req.headers.authorization==='string'?req.headers.authorization:'';
   try{
+   if(q.operation==='release'&&allowed(['operation'])){
+    res.json(await readIsolatedGamificationRelease(db,auth,authHeader));return;
+   }
    if(q.operation==='snapshot'&&allowed(['operation'])){
     res.json(await readIsolatedGamificationIncrementalSnapshot(db,auth,authHeader));return;
    }
@@ -82,12 +87,23 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
  });
  router.post('/',express.json({limit:'2kb',strict:true}),async(req,res)=>{
   const body=req.body;
-  if(!body||typeof body!=='object'||Array.isArray(body)||body.confirmed!==true||!safeId(body.caseId)){
+  if(!body||typeof body!=='object'||Array.isArray(body)||body.confirmed!==true){
    res.status(400).json({code:'INPUT_INVALID'});return;
   }
   const allowed=(keys:string[])=>Object.keys(body).every(k=>keys.includes(k));
   const authorization=typeof req.headers.authorization==='string'?req.headers.authorization:'';
   try{
+   if(body.operation==='release_change'){
+    if(process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT!=='true'){res.status(404).json({code:'NOT_AVAILABLE'});return;}
+    if(!allowed(['operation','confirmed','eventId','expectedRevision','status','reason'])||!safeId(body.eventId)||
+      !Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<1||
+      !['open','paused'].includes(body.status)||typeof body.reason!=='string'||body.reason.trim().length<10||body.reason.length>500){
+     res.status(400).json({code:'INPUT_INVALID'});return;
+    }
+    res.json(await changeIsolatedGamificationRelease(db,auth,authorization,{eventId:body.eventId,expectedRevision:body.expectedRevision,status:body.status,reason:body.reason}));return;
+   }
+   if(process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT!=='true'){res.status(404).json({code:'NOT_AVAILABLE'});return;}
+   if(!safeId(body.caseId)){res.status(400).json({code:'INPUT_INVALID'});return;}
    if(body.operation==='accept_referral'||body.operation==='decide_referral'){
     if(process.env.KYRUB_GAMIFICATION_ADMIN_REFERRAL_WRITE_PILOT!=='true'){
      res.status(404).json({code:'NOT_AVAILABLE'});return;
@@ -119,6 +135,8 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
    if(message==='GAMIFICATION_SUPERVISION_AUTH_REQUIRED'){res.status(401).json({code:'AUTH_REQUIRED'});return;}
    if(message==='GAMIFICATION_SUPERVISION_FORBIDDEN'){res.status(403).json({code:'FORBIDDEN'});return;}
    if(message==='GAMIFICATION_SUPERVISION_DISABLED'||message==='SUSPICION_CASE_UNAVAILABLE'){res.status(404).json({code:'NOT_AVAILABLE'});return;}
+   if(message==='RELEASE_CONTROL_INPUT_INVALID'){res.status(400).json({code:'INPUT_INVALID'});return;}
+   if(['RELEASE_CONTROL_INVALID','RELEASE_CONTROL_EVENT_CONFLICT','RELEASE_CONTROL_REVISION_CONFLICT','RELEASE_CONTROL_TRANSITION_INVALID','RELEASE_CONTROL_RESUME_BLOCKED'].includes(message)){res.status(409).json({code:message});return;}
    if(['SUSPICION_CASE_NO_INDICATORS','SUSPICION_CASE_NOT_RESOLVED','SUSPICION_CASE_ALREADY_OPEN','SUSPICION_CASE_ID_CONFLICT','SUSPICION_CASE_CLOSE_CONFLICT','ECONOMIC_REFERRAL_DECISION_CONFLICT','ECONOMIC_REFERRAL_SOURCE_INVALID'].includes(message)){
     res.status(409).json({code:message});return;
    }
