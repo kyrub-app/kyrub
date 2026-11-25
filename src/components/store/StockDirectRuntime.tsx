@@ -72,8 +72,10 @@ export function StockDirectRuntime({ storeId }: StockDirectRuntimeProps) {
             section={section}
             replenishmentDraft={replenishmentDraft}
             onReplenishmentDraftConsumed={() => setReplenishmentDraft([])}
+            renderPurchaseFinance={(overview, procurementLoading, refreshProcurement) => (
+              <StorePurchasePayableBridge storeId={storeId} {...{overview,procurementLoading,refreshProcurement}} />
+            )}
           />
-          {section === 'purchases' && <StorePurchasePayableBridge storeId={storeId} />}
         </>
       )}
 
