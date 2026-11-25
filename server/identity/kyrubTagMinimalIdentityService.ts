@@ -53,7 +53,7 @@ export async function prepareTagMinimalIdentity(uid:string,id:string){
    tx.get(tags().doc(id)),tx.get(users().doc(uid)),tx.get(marker)
   ]);
   const data=tag.data();
-  if(data?.distribution!=='promotional'||!(data.ownerId===null||data.ownerId===uid))
+  if(data?.distribution!=='promotional'||(data.manufacturingState!==undefined&&data.manufacturingState!=='released')||!(data.ownerId===null||data.ownerId===uid))
    throw Error('TAG_FORBIDDEN');
   const resolved=await resolveTagIdentityMode(tx,uid,account,current);
   if(resolved.mode!=='unclassified')return resolved;
