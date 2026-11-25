@@ -29,6 +29,7 @@ import { ProfilePostInteractionsBridge } from './components/ProfilePostInteracti
 import { ProfileRecoveredActionsBridge } from './components/ProfileRecoveredActionsBridge';
 import { ProfileSocialHubNative } from './components/ProfileSocialHubNative';
 import { ProfileVerificationBridge } from './components/ProfileVerificationBridge';
+import { PublicLegalDocumentRoute } from './components/PublishedLegalDocumentPage';
 import { PublicKyrubTagPage } from './components/PublicKyrubTagPage';
 import { PublicVisitCardPage } from './components/PublicVisitCardPage';
 import { PublicSocialDestinationPage } from './components/PublicSocialDestinationPage';
@@ -351,6 +352,8 @@ export default function App() {
   if (planCenter) return <PlanCenterApp />;
 
   const route = resolveKyrubAppRoute(window.location.pathname);
+
+  if (route.kind === 'public-legal') return <PublicLegalDocumentRoute key={route.documentType} type={route.documentType} />;
 
   if (route.kind === 'public-storefront') {
     return <PublicStorefrontApp slug={route.slug} />;

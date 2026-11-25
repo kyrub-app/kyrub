@@ -282,6 +282,18 @@
       "destination": "/index.html"
     },
     {
+      "source": "/termos-de-uso",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/politica-de-privacidade",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/api/legal-documents/:type",
+      "destination": "/api/health?transport=public-legal-document&type=:type"
+    },
+    {
       "source": "/app",
       "destination": "/index.html"
     },

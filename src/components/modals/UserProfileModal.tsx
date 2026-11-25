@@ -355,6 +355,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = props => {
                 </div>
               )}
             </section>
+            <footer id="personal-center-legal-footer" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 px-4 py-2 text-xs text-slate-400" aria-label="Documentos jurídicos">
+              <a href="/termos-de-uso" className="inline-flex min-h-10 items-center underline underline-offset-2 hover:text-orange-300 focus-visible:outline focus-visible:outline-orange-400">Termos de Uso</a>
+              <span aria-hidden="true">·</span>
+              <a href="/politica-de-privacidade" className="inline-flex min-h-10 items-center underline underline-offset-2 hover:text-orange-300 focus-visible:outline focus-visible:outline-orange-400">Política de Privacidade</a>
+            </footer>
 
               </>
             )}

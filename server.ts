@@ -445,6 +445,16 @@ app.all('/api/pitangas', async (req, res) => {
   await handlePitangaAccountRequest(req, res);
 });
 
+app.get('/api/legal-documents/:type', async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, max-age=0');
+  const type = req.params.type;
+  if (type !== 'terms' && type !== 'privacy') { res.status(404).json({error:'LEGAL_DOCUMENT_NOT_FOUND'}); return; }
+  try {
+    const { readPublicLegalDocument } = await import('./server/governance/publicLegalDocumentService.js');
+    res.json({document: await readPublicLegalDocument(type)});
+  } catch { res.status(503).json({error:'LEGAL_DOCUMENT_UNAVAILABLE'}); }
+});
+
 app.get("/api/health", (_req, res) => {
   res.json({ status: "ok", app: "Kyrub", version: "1.5.0" });
 });
