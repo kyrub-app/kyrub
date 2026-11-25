@@ -11,12 +11,12 @@ import AdminSocialModerationWorkspace from './AdminSocialModerationWorkspace';
 interface AdminModuleDefinition { superAdminOnly?: boolean; label: string; description: string; permission: AdminPermission; icon: typeof Users; status: 'available' | 'planned'; anchor?: string; folder: 'people' | 'platform_finance' | 'operations' | 'governance'; }
 const FOLDERS = [
   { id: 'people' as const, label: 'Pessoas & Tenants', description: 'Usuários, lojas, identidade e vínculos administrativos.', icon: Users },
-  { id: 'platform_finance' as const, label: 'Financeiro da Plataforma', description: 'BaaS, taxas da plataforma, splits, settlement e conciliação sistêmica.', icon: Banknote },
+  { id: 'platform_finance' as const, label: 'Financeiro da Plataforma', description: 'Movimentação econômica, custos próprios, receitas e conciliação sistêmica.', icon: Banknote },
 ] as const;
 const MODULES: AdminModuleDefinition[] = [
   { label: 'Usuários', description: 'Busca exata, situação cadastral e vínculos conhecidos.', permission: 'read_users', icon: Users, status: 'available', anchor: 'admin-directory', folder: 'people' },
   { label: 'Lojas', description: 'Lojas canônicas, equipes, migração e tenants legados.', permission: 'read_stores', icon: Building2, status: 'available', anchor: 'admin-directory', folder: 'people' },
-  { label: 'Financeiro da Plataforma & BaaS', description: 'Taxas, splits, settlement, conciliação e infraestrutura financeira. Não inclui venda dos planos Kyrub.', permission: 'read_finance', icon: Banknote, status: 'planned', folder: 'platform_finance' },
+  { label: 'Financeiro da Plataforma & BaaS', description: 'Economia canônica disponível; consolidação de custos e receitas próprias em preparação. Venda dos planos permanece na Loja Oficial.', permission: 'read_finance', icon: Banknote, status: 'available', anchor: 'admin-platform-economy', folder: 'platform_finance' },
   { label: 'Saúde do sistema', description: 'Filas, integrações e situação da operação logística.', permission: 'read_system_health', icon: Activity, status: 'available', anchor: 'admin-system-health', folder: 'operations' },
   { label: 'Feature flags e capacidades', description: 'Ativações graduais e enforcement técnico por ambiente, entitlement e conta.', permission: 'manage_features', icon: Flag, status: 'planned', folder: 'governance' },
   { label: 'Auditoria', description: 'Ações administrativas, receipts e eventos críticos.', permission: 'read_audit', icon: FileCheck2, status: 'planned', folder: 'governance' },

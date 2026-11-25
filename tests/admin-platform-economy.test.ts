@@ -129,11 +129,28 @@ describe('admin platform economy', () => {
     assert.doesNotMatch(workspace, /onClick=.*(settlement|transfer)/i);
   });
 
-  test('control plane root mounts economy workspace without changing main admin app', () => {
+  test('existing finance workspace is mounted once inside the authorized accordion', () => {
     const root = readFileSync('src/components/admin/AdminControlPlaneRoot.tsx', 'utf8');
-    assert.match(root, /<AdminPlatformEconomyWorkspace \/>/);
-    assert.match(root, /id="admin-platform-economy"/);
+    const app = readFileSync('src/components/admin/AdminControlPlaneApp.tsx', 'utf8');
+    const accordion = readFileSync('src/components/admin/AdminAccordionSection.tsx', 'utf8');
+    assert.doesNotMatch(root, /AdminPlatformEconomyWorkspace/);
     assert.match(root, /<AdminControlPlaneApp \/>/);
+    assert.match(app, /hasAdminPermission\(profile, 'read_finance'\) && <AdminAccordionSection[^>]+id="admin-platform-economy"/);
+    assert.match(app, /<PlatformEconomy user=\{user\} profile=\{profile\}\/>/);
+    assert.match(accordion, /\{open &&/);
+  });
+
+  test('finance workspace separates ecosystem movement from unmeasured own economics and cancels stale requests', () => {
+    const workspace = readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx', 'utf8');
+    const client = readFileSync('src/utils/adminPlatformEconomy.ts', 'utf8');
+    assert.match(workspace, /Não consolidado/);
+    assert.match(workspace, /não equivalem a receita própria, lucro/);
+    assert.match(workspace, /sem recorte mensal/);
+    assert.match(workspace, /auth\.currentUser === user/);
+    assert.match(workspace, /request\.current\?\.abort\(\)/);
+    assert.match(workspace, /if \(current\(\)\) setSnapshot\(next\)/);
+    assert.match(client, /signal,/);
+    assert.doesNotMatch(workspace, /onAuthStateChanged|subscribeToAdminProfile/);
   });
 
   test('economic collection-group indexes are explicit', () => {
