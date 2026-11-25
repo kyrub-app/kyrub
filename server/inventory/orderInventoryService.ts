@@ -498,7 +498,6 @@ export const transitionOrderStatusWithInventory = async (
     const isDeliveryOrder = clean(rawOrder.fulfillmentType) === 'delivery';
     const requestedProvider = decision.deliveryProvider;
     const persistedProvider = clean(rawOrder.deliveryProvider);
-    if(requestedProvider==='kyrub'&&!(persistedProvider==='kyrub'&&order.status==='accepted'))assertNewOnDemandDeliveryAllowed();
     if (requestedProvider && (nextStatus !== 'accepted' || !isDeliveryOrder)) {
       throw new Error('A escolha de entregador só é permitida ao aceitar um pedido de entrega.');
     }
@@ -510,6 +509,7 @@ export const transitionOrderStatusWithInventory = async (
         throw new Error('A modalidade de entrega já foi definida para este pedido.');
       }
     }
+    if(requestedProvider==='kyrub'&&!(persistedProvider==='kyrub'&&order.status==='accepted'))assertNewOnDemandDeliveryAllowed();
     // The canonical order mirror is an ERP projection; inventory authority
     // stays on its existing independently verified tenant/member path.
     const inventoryCanonicalStoreId = clean(tenantSnapshot.get('canonicalStoreId'));
