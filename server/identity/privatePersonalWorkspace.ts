@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { adminAuth, adminDb } from '../firebaseAdmin.js';
-import { evaluateCapabilityAgeAccess, type AgeStatus } from '../../shared/ageEligibility.js';
+import { evaluateStoredCapabilityAgeAccess } from '../../shared/ageEligibility.js';
 import { ageScreeningEmulatorsReady } from './ageScreeningRouter.js';
 type Item = { id:string; text:string; done:boolean };
 type Kind = 'notes'|'tasks';
@@ -18,7 +18,7 @@ export async function privatePersonalWorkspace(authorization:string, kind:Kind, 
  const ageRef=adminDb.doc('age_eligibility_private/'+uid);
  return adminDb.runTransaction(async tx=>{
   const [age,record]=await Promise.all([tx.get(ageRef),tx.get(ref)]);
-  if(age.get('uid')!==uid||!evaluateCapabilityAgeAccess({capability:kind==='notes'?'private_notes':'private_tasks',status:age.get('status') as AgeStatus,authenticated:true,policy:'reviewed_personal_only'}))throw Error('PERSONAL_FORBIDDEN');
+  if(!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:age.data(),capability:kind==='notes'?'private_notes':'private_tasks',policy:'reviewed_personal_only'}))throw Error('PERSONAL_FORBIDDEN');
   if(record.exists&&record.get('uid')!==uid)throw Error('PERSONAL_FORBIDDEN');
   const items=(record.get('items')??[]) as Item[];
   if(!Array.isArray(items)||items.length>50)throw Error('PERSONAL_INVALID');
