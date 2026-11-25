@@ -369,6 +369,8 @@ test('cross-domain retail: paid pending order partial cancellation blocks full r
     const marker=db.doc('stores/seller/paymentPartialRefunds/retail_partial_operation_01');
     assert.equal((await marker.get()).get('orderId'),orderId);
     assert.equal((await service.cancelOrderItemsWithRefund(cancellation)).duplicate,true);
+    await assert.rejects(service.cancelOrderItemsWithRefund({...cancellation,reason:'Outro motivo'}),/ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT/);
+    await assert.rejects(service.cancelOrderItemsWithRefund({...cancellation,selections:[{lineId:'different-line',quantity:1}]}),/ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT/);
     assert.equal((await db.collection('stores/seller/paymentPartialRefunds').where('orderId','==',orderId).get()).size,1);
     await service.transitionOrderStatusWithInventory('seller',orderId,'cancelled',{
       reason:'Pedido encerrado após cancelamento parcial pendente',
