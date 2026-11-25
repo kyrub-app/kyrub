@@ -85,20 +85,31 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         && get(rendaVacancyPath(incoming().vagaId)).data.status == 'open'
         && incoming().status == 'pending'
         && hasApprovedIdentityProfile('freelancer');
-      allow update: if canWriteRendaWithAge()
+      allow update: if isSignedIn()
         && incoming().userId == existing().userId
         && incoming().vagaId == existing().vagaId
         && incoming().ownerId == existing().ownerId
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt'])
         && (
+          // Withdrawal remains possible without age or professional eligibility.
           (isApplicationOwner(existing()) && existing().status == 'pending'
-            && incoming().status == 'withdrawn'
-            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
-          || (isApplicationRequester(existing()) && hasRendaRequesterAuthority()
-            && existing().status == 'pending'
-            && incoming().status in ['accepted', 'rejected']
-            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
+            && incoming().status == 'withdrawn')
+          || (canWriteRendaWithAge() && (
+            (isApplicationRequester(existing()) && hasRendaRequesterAuthority()
+              && existing().status == 'pending'
+              && incoming().status in ['accepted', 'rejected'])
+            || (isApplicationOwner(existing()) && hasApprovedIdentityProfile('freelancer')
+              && existing().status == 'accepted'
+              && incoming().status == 'completion_requested')
+            || (isApplicationRequester(existing()) && hasRendaRequesterAuthority()
+              && existing().status == 'completion_requested'
+              && incoming().status in ['completed', 'accepted'])
+          ))
         );
-      allow delete: if isApplicationOwner(existing()) || isAdmin();
+      // Preserve the deterministic receipt and bilateral history.
+      // Any lawful erasure is a separate authorized server process.
+      allow delete: if false;
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
