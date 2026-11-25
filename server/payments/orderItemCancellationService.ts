@@ -220,10 +220,15 @@ const recordPartialRefundEconomicEntry = async (input: {
   );
 
   await adminDb.runTransaction(async transaction => {
-    const [refundSnapshot, captureSnapshot] = await Promise.all([
+    const requestRef=adminDb.doc(partialRefundPath(input.payment.storeId,input.operationId));
+    const [refundSnapshot, captureSnapshot,request] = await Promise.all([
       transaction.get(refundEntryRef),
-      transaction.get(captureEntryRef),
+      transaction.get(captureEntryRef),transaction.get(requestRef),
     ]);
+    if(!request.exists||request.get('orderId')!==input.payment.orderId||request.get('amount')!==input.amount||request.get('paymentId')!==input.payment.id)throw Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
+    const priorId=clean(request.get('providerRefundId'));
+    if(priorId&&priorId!==input.providerRefundId)throw Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
+    transaction.update(requestRef,{status:'refunded',providerRefundId:input.providerRefundId,refundedAt:input.occurredAt,updatedAt:new Date().toISOString()});
     if (refundSnapshot.exists) return;
 
     if (!captureSnapshot.exists) {
@@ -266,6 +271,16 @@ const recordPartialRefundEconomicEntry = async (input: {
   });
 };
 
+// A late request or failure must not overwrite a concurrently confirmed refund.
+async function updateUnconfirmedPartialRefund(ref:FirebaseFirestore.DocumentReference,patch:Record<string,unknown>){
+ return adminDb.runTransaction(async tx=>{
+  const current=await tx.get(ref);
+  if(current.get('status')==='refunded')return {status:'refunded' as const,providerRefundId:clean(current.get('providerRefundId'))};
+  tx.set(ref,patch,{merge:true});
+  return null;
+ });
+}
+
 const attemptPartialRefund = async (input: {
   storeId: string;
   orderId: string;
@@ -287,7 +302,7 @@ const attemptPartialRefund = async (input: {
     payment = await loadPaidMercadoPagoPayment(input.storeId, input.orderId);
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    await requestRef.set({
+    const retained=await updateUnconfirmedPartialRefund(requestRef,{
       storeId: input.storeId,
       orderId: input.orderId,
       operationId: input.operationId,
@@ -296,8 +311,8 @@ const attemptPartialRefund = async (input: {
       status: 'required',
       failureCode: code,
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
-    return { status: 'required', providerRefundId: '' };
+    });
+    return retained??{ status: 'required', providerRefundId: '' };
   }
 
   const idempotencyKey = partialRefundIdempotencyKey({
@@ -307,7 +322,7 @@ const attemptPartialRefund = async (input: {
     amount: input.amount,
   });
   const now = new Date().toISOString();
-  await requestRef.set({
+  const retained=await updateUnconfirmedPartialRefund(requestRef,{
     storeId: input.storeId,
     orderId: input.orderId,
     operationId: input.operationId,
@@ -321,7 +336,8 @@ const attemptPartialRefund = async (input: {
     idempotencyKey,
     requestedAt: existing.data()?.requestedAt ?? now,
     updatedAt: now,
-  }, { merge: true });
+  });
+  if(retained)return retained;
 
   try {
     const refund = await providerRequest<MercadoPagoRefundResponse>(
@@ -348,13 +364,6 @@ const attemptPartialRefund = async (input: {
       providerStatus === 'refunded' ||
       providerStatus === 'completed';
     const occurredAt = clean(refund.date_created) || new Date().toISOString();
-    await requestRef.set({
-      status: refunded ? 'refunded' : 'processing',
-      providerRefundId,
-      providerRefundStatus: providerStatus,
-      refundedAt: refunded ? occurredAt : '',
-      updatedAt: new Date().toISOString(),
-    }, { merge: true });
     if (refunded) {
       await recordPartialRefundEconomicEntry({
         payment,
@@ -363,6 +372,9 @@ const attemptPartialRefund = async (input: {
         providerRefundId,
         occurredAt,
       });
+    }else{
+      const retained=await updateUnconfirmedPartialRefund(requestRef,{status:'processing',providerRefundId,providerRefundStatus:providerStatus,updatedAt:new Date().toISOString()});
+      if(retained)return retained;
     }
     return {
       status: refunded ? 'refunded' : 'processing',
@@ -370,12 +382,12 @@ const attemptPartialRefund = async (input: {
     };
   } catch (error) {
     const code = error instanceof Error ? error.message : String(error);
-    await requestRef.set({
+    const retained=await updateUnconfirmedPartialRefund(requestRef,{
       status: 'failed',
       failureCode: code.slice(0, 180),
       updatedAt: new Date().toISOString(),
-    }, { merge: true });
-    return { status: 'failed', providerRefundId: '' };
+    });
+    return retained??{ status: 'failed', providerRefundId: '' };
   }
 };
 
