@@ -178,6 +178,7 @@ const loadPaidMercadoPagoPayment = async (
     .where('orderId', '==', orderId)
     .limit(10)
     .get();
+  if(snapshot.size>=10)throw Error('PAYMENT_PARTIAL_REFUND_PAYMENT_HISTORY_REVIEW_REQUIRED');
   const eligible = snapshot.docs.flatMap(document => {
     try {
       const payment = normalizeCanonicalPayment({
@@ -338,13 +339,12 @@ const attemptPartialRefund = async (input: {
     const providerStatus = clean(refund.status).toLowerCase();
     if (
       !providerRefundId ||
-      (providerPaymentId && providerPaymentId !== payment.providerPaymentId) ||
-      (Number.isFinite(providerAmount) && money(providerAmount) !== money(input.amount))
+      providerPaymentId !== payment.providerPaymentId ||
+      !Number.isFinite(providerAmount) || money(providerAmount) !== money(input.amount)
     ) {
       throw new Error('PAYMENT_PARTIAL_REFUND_PROVIDER_STATE_MISMATCH');
     }
-    const refunded = !providerStatus ||
-      providerStatus === 'approved' ||
+    const refunded = providerStatus === 'approved' ||
       providerStatus === 'refunded' ||
       providerStatus === 'completed';
     const occurredAt = clean(refund.date_created) || new Date().toISOString();
@@ -403,7 +403,9 @@ const mutateOrderItems = async (input: {
     ]);
     if (existingCancellation.exists) {
       const data = existingCancellation.data() as Record<string, unknown>;
-      if (clean(data.orderId) !== input.orderId) {
+      const priorItems=Array.isArray(data.items)?data.items:[];
+      const sameSelection=priorItems.length===input.selections.length&&input.selections.every(selection=>priorItems.some(item=>item&&typeof item==='object'&&clean(item.lineId)===selection.lineId&&item.quantity===selection.quantity));
+      if (clean(data.orderId) !== input.orderId ||clean(data.reason)!==input.reason||clean(data.alternative)!==input.alternative||!sameSelection) {
         throw new Error('ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT');
       }
       return {
@@ -509,13 +511,22 @@ const mutateOrderItems = async (input: {
     }
 
     const previousTotal = nonNegativeMoney(order.total);
-    const remainingTotal = money(Math.max(0, previousTotal - cancelledAmount));
+    if(cancelledAmount>previousTotal)throw Error('ORDER_ITEM_CANCELLATION_AMOUNT_INVALID');
+    const remainingTotal = money(previousTotal - cancelledAmount);
     const remainingSubtotal = money(nextItems.reduce((sum, candidate) => {
       const item = candidate as Record<string, unknown>;
       return sum + nonNegativeMoney(item.price) * integer(item.quantity);
     }, 0));
     const paymentStatus = clean(order.paymentStatus);
     const refundRequired = paymentStatus === 'paid';
+    if(refundRequired){
+      // Read full-refund state and the same paid payment collection before
+      // writing the partial obligation. A concurrent full refund conflicts.
+      const full=await transaction.get(adminDb.collection(`stores/${input.storeId}/paymentRefunds`).where('orderId','==',input.orderId).limit(1));
+      if(!full.empty)throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
+      const payments=await transaction.get(adminDb.collection(`stores/${input.storeId}/payments`).where('orderId','==',input.orderId).limit(10));
+      if(payments.size>=10||payments.docs.some(d=>['refund_requested','refund_processing','refund_failed','refunded'].includes(clean(d.get('status')))))throw Error('PAYMENT_REFUND_FULL_HISTORY_REVIEW_REQUIRED');
+    }
     const updatedAt = new Date().toISOString();
     const cancellationRecord = {
       storeId: input.storeId,
@@ -604,11 +615,13 @@ const syncCancellationRefundState = async (input: {
   status: OrderItemCancellationRefundStatus;
   providerRefundId: string;
 }): Promise<void> => {
-  await adminDb.doc(cancellationPath(input.storeId, input.operationId)).set({
-    refundStatus: input.status,
-    providerRefundId: input.providerRefundId,
-    updatedAt: new Date().toISOString(),
-  }, { merge: true });
+  const ref=adminDb.doc(cancellationPath(input.storeId,input.operationId));
+  await adminDb.runTransaction(async tx=>{
+    const prior=await tx.get(ref);
+    if(!prior.exists)throw Error('ORDER_ITEM_CANCELLATION_OPERATION_CONFLICT');
+    if(prior.get('refundStatus')==='refunded')return;
+    tx.update(ref,{refundStatus:input.status,providerRefundId:input.providerRefundId,updatedAt:new Date().toISOString()});
+  });
 };
 
 export const cancelOrderItemsWithRefund = async (input: {
