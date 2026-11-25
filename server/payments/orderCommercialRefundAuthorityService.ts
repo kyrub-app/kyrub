@@ -1,3 +1,4 @@
+import type {Transaction} from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
 import { orderCommercialSnapshotPath } from './orderCommercialSnapshotService.js';
 
@@ -49,9 +50,10 @@ export interface CommercialRefundAuthority {
  */
 export const loadCommercialRefundAuthority = async (
   storeId: string,
-  orderId: string
+  orderId: string,transaction?:Transaction
 ): Promise<CommercialRefundAuthority | null> => {
-  const snapshot = await adminDb.doc(orderCommercialSnapshotPath(storeId, orderId)).get();
+  const ref=adminDb.doc(orderCommercialSnapshotPath(storeId, orderId));
+  const snapshot = transaction?await transaction.get(ref):await ref.get();
   if (!snapshot.exists) return null;
 
   const frozen = snapshot.data() as Record<string, unknown>;

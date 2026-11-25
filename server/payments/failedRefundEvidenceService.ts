@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import {requireRefundOwnerInTransaction,type RefundOwnerAuthority} from '../identity/refundOwnerAuthorization.js';
 import { diagnoseMercadoPagoRefundReadOnly } from './providerRefundReadOnlyDiagnosisService.js';
 import { assessFailedPartialRefundObservation } from '../../shared/orderRefundReconciliationEvidence.js';
 import { normalizeCanonicalPayment, type CanonicalPayment } from '../../src/utils/canonicalPayment.js';
@@ -35,6 +36,7 @@ export const recordFailedRefundEvidence = async (input: {
   storeId: string;
   orderId: string;
   ownerId: string;
+  authority?:RefundOwnerAuthority;
 }): Promise<FailedRefundEvidenceReceipt> => {
   const { storeId, orderId, ownerId } = input;
   if (![storeId, orderId, ownerId].every(validId)) {
@@ -99,6 +101,7 @@ export const recordFailedRefundEvidence = async (input: {
   const evidenceRef = adminDb.doc('stores/' + storeId + '/orderRefundReconciliationEvidence/' + orderId);
   const at = new Date().toISOString();
   return adminDb.runTransaction(async transaction => {
+    if(input.authority)await requireRefundOwnerInTransaction(transaction,storeId,input.authority);
     const [orderSnapshot, paymentSnapshot, attemptSnapshot, fullRefundSnapshot, evidenceSnapshot] =
       await Promise.all([
         transaction.get(orderRef),

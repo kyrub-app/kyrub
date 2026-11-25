@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireRefundOwnerInTransaction,requireRefundOwnerAccess,type RefundOwnerAuthority} from '../identity/refundOwnerAuthorization.js';
 import { resolveMercadoPagoAccessToken } from '../integrations/providerCredentialResolver.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 import {
@@ -209,7 +210,7 @@ const loadRefundablePayment = async (
 
 const preparePaymentForRefund = async (
   payment: CanonicalPayment,
-  reason: string
+  reason: string,authority?:RefundOwnerAuthority
 ): Promise<CanonicalPayment> => {
   const ref = adminDb.doc(paymentPath(payment.storeId, payment.id));
   const requestRef = adminDb.doc(refundRequestPath(payment.storeId, payment.id));
@@ -217,6 +218,9 @@ const preparePaymentForRefund = async (
   const requestedAt = new Date().toISOString();
 
   await adminDb.runTransaction(async transaction => {
+    if(authority)await requireRefundOwnerInTransaction(transaction,payment.storeId,authority);
+    const order=await transaction.get(adminDb.doc('artifacts/'+payment.storeId+'/public/data/customerOrders/'+payment.orderId));
+    if(!order.exists||order.get('storeId')!==payment.storeId||order.get('id')!==payment.orderId||!['rejected','cancelled'].includes(order.get('status'))||order.get('paymentStatus')!=='paid')throw Error('PAYMENT_REFUND_ORDER_NOT_TERMINAL');
     await assertFullRefundHasNoConfirmedPartialHistory({storeId:payment.storeId,orderId:payment.orderId},transaction);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new Error('PAYMENT_REFUND_PAYMENT_NOT_FOUND');
@@ -225,6 +229,7 @@ const preparePaymentForRefund = async (
       id: payment.id,
       storeId: payment.storeId,
     });
+    if(current.orderId!==payment.orderId||current.providerPaymentId!==payment.providerPaymentId||current.provider!==payment.provider||current.amount!==payment.amount)throw Error('PAYMENT_REFUND_PAYMENT_CHANGED');
     if (current.status === 'refunded' || current.status === 'refund_processing') return;
     if (current.status === 'paid' || current.status === 'refund_failed') {
       assertPaymentStatusTransition(current.status, 'refund_requested');
@@ -353,6 +358,7 @@ export const requestCanonicalOrderRefund = async (input: {
   storeId: string;
   orderId: string;
   reason: string;
+  authority?:RefundOwnerAuthority;
 }): Promise<CanonicalOrderRefundResult> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
@@ -404,7 +410,7 @@ export const requestCanonicalOrderRefund = async (input: {
   // operation is confirmed, in flight, uncertain, or too large to reconcile.
   await assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId });
 
-  const payment = await preparePaymentForRefund(initialPayment, reason);
+  const payment = await preparePaymentForRefund(initialPayment, reason,input.authority);
   await writeOperationalOrderRefundState({
     storeId,
     orderId,
@@ -418,6 +424,7 @@ export const requestCanonicalOrderRefund = async (input: {
   const alreadyRefunded = await reconcileRefund(payment, reason).catch(() => null);
   if (alreadyRefunded) return alreadyRefunded;
 
+  if(input.authority)await requireRefundOwnerAccess(storeId,input.authority);
   const idempotencyKey = refundIdempotencyKey(storeId, payment.id);
   try {
     const refund = await providerRequest<MercadoPagoRefundResponse>(

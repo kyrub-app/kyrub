@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireRefundOwnerInTransaction,requireRefundOwnerAccess,type RefundOwnerAuthority} from '../identity/refundOwnerAuthorization.js';
+import {loadCommercialRefundAuthority,calculateAuthoritativeCancellationAmount} from './orderCommercialRefundAuthorityService.js';
 import { resolveMercadoPagoAccessToken } from '../integrations/providerCredentialResolver.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
@@ -398,6 +400,7 @@ const mutateOrderItems = async (input: {
   reason: string;
   alternative: string;
   selections: NormalizedCancellationSelection[];
+  authority?:RefundOwnerAuthority;
 }): Promise<CancellationMutationResult> => {
   const orderRef = adminDb.doc(
     `artifacts/${input.storeId}/public/data/customerOrders/${input.orderId}`
@@ -408,6 +411,7 @@ const mutateOrderItems = async (input: {
   );
 
   return adminDb.runTransaction(async transaction => {
+    if(input.authority)await requireRefundOwnerInTransaction(transaction,input.storeId,input.authority);
     const [existingCancellation, orderSnapshot, tenantSnapshot] = await Promise.all([
       transaction.get(cancellationRef),
       transaction.get(orderRef),
@@ -443,6 +447,7 @@ const mutateOrderItems = async (input: {
       throw new Error('ORDER_ITEM_CANCELLATION_ORDER_EMPTY');
     }
 
+    const frozen=await loadCommercialRefundAuthority(input.storeId,input.orderId,transaction);
     const selections = new Map(
       input.selections.map(selection => [selection.lineId, selection.quantity])
     );
@@ -489,6 +494,11 @@ const mutateOrderItems = async (input: {
         ? remainingSettledAmount
         : money(Math.max(0, remainingQuantity * price - remainingDiscountAmount));
       const lineCancelledAmount = money(currentNetAmount - remainingNetAmount);
+      if(frozen){
+        const frozenLine=frozen.lines.get(lineId);
+        if(!frozenLine||frozenLine.productId!==clean(item.productId)||currentQuantity>frozenLine.quantity)throw Error('ORDER_COMMERCIAL_REFUND_LINE_IDENTITY_MISMATCH');
+        if(calculateAuthoritativeCancellationAmount({authority:frozen,lineId,cancelQuantity})!==lineCancelledAmount)throw Error('ORDER_COMMERCIAL_REFUND_AMOUNT_MISMATCH');
+      }
       cancelledAmount = money(cancelledAmount + lineCancelledAmount);
 
       cancelledSnapshots.push({
@@ -643,6 +653,7 @@ export const cancelOrderItemsWithRefund = async (input: {
   reason: string;
   alternative?: string;
   selections: unknown;
+  authority?:RefundOwnerAuthority;
 }): Promise<OrderItemCancellationResult> => {
   const storeId = clean(input.storeId);
   const orderId = clean(input.orderId);
@@ -663,7 +674,7 @@ export const cancelOrderItemsWithRefund = async (input: {
     operationId,
     reason,
     alternative,
-    selections,
+    selections,authority:input.authority,
   });
 
   if (mutation.paymentStatus !== 'paid') {
@@ -679,6 +690,7 @@ export const cancelOrderItemsWithRefund = async (input: {
     };
   }
 
+  if(input.authority)await requireRefundOwnerAccess(storeId,input.authority);
   const refund = await attemptPartialRefund({
     storeId,
     orderId,

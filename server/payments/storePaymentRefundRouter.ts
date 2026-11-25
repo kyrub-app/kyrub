@@ -1,4 +1,5 @@
 import { Router } from 'express';
+import {requireRefundOwnerAccess} from '../identity/refundOwnerAuthorization.js';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { loadOwnerStoreInstitutionalRepresentation } from '../store/storeInstitutionalIdentityService.js';
 import { cancelOrderItemsWithAuthoritativeRefund } from './authoritativeOrderItemCancellationService.js';
@@ -23,6 +24,7 @@ const mapRefundError = (error: unknown): {
   if (code === 'AUTH_REQUIRED' || /id-token|expired|revoked/i.test(code)) {
     return { status: 401, error: 'Faça login novamente.', code: 'AUTH_REQUIRED' };
   }
+  if(['STORE_FINANCE_AGE_REQUIRED','second_factor_required','reauthentication_required'].includes(code))return {status:403,error:'A operação financeira exige uma sessão elegível e autorizada.',code};
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
     return { status: 403, error: 'Você não pode alterar pedidos desta loja.', code };
   }
@@ -184,8 +186,11 @@ export const createStorePaymentRefundRouter = (): Router => {
       const storeId = clean(request.body?.storeId);
       const orderId = clean(request.body?.orderId);
       if (!storeId || !orderId) throw new Error('REFUND_EVIDENCE_TARGET_INVALID');
-      const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
-      const receipt = await recordFailedRefundEvidence({ storeId, orderId, ownerId });
+      const authorization=request.get('authorization')??'';
+      const ownerId = await requireOwner(authorization, storeId);
+      const authority={authorization,ownerId};
+      await requireRefundOwnerAccess(storeId,authority);
+      const receipt = await recordFailedRefundEvidence({ storeId, orderId, ownerId,authority });
       response.setHeader('Cache-Control', 'no-store');
       response.status(200).json({receipt});
     } catch (error) {
@@ -213,7 +218,10 @@ export const createStorePaymentRefundRouter = (): Router => {
       const orderId = clean(body.orderId);
       const reason = clean(body.reason);
       if (!storeId || !orderId) throw new Error('PAYMENT_REFUND_TARGET_REQUIRED');
-      await requireOwner(request.get('authorization') ?? '', storeId);
+      const authorization=request.get('authorization')??'';
+      const ownerId=await requireOwner(authorization,storeId);
+      const authority={authorization,ownerId};
+      await requireRefundOwnerAccess(storeId,authority);
 
       if (clean(body.operation) === 'cancel-items') {
         const result = await cancelOrderItemsWithAuthoritativeRefund({
@@ -222,7 +230,7 @@ export const createStorePaymentRefundRouter = (): Router => {
           operationId: clean(body.operationId),
           reason,
           alternative: clean(body.alternative),
-          selections: body.selections,
+          selections: body.selections,authority,
         });
         response
           .status(result.refundStatus === 'processing' ? 202 : 200)
@@ -231,7 +239,7 @@ export const createStorePaymentRefundRouter = (): Router => {
       }
 
       await assertFullRefundHasNoConfirmedPartialHistory({ storeId, orderId });
-      const result = await requestCanonicalOrderRefund({ storeId, orderId, reason });
+      const result = await requestCanonicalOrderRefund({ storeId, orderId, reason,authority });
       response.status(result.status === 'refunded' ? 200 : 202).json(result);
     } catch (error) {
       const mapped = mapRefundError(error);

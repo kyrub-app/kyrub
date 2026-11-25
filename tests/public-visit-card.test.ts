@@ -134,7 +134,8 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  const mail=readFileSync('src/components/TagEmailLinkIdentity.tsx','utf8');
  assert.match(admin,/AdminKyrubTagPromotionalBatches/);
  assert.match(admin,/admin-kyrub-tag-promotional/);
- assert.match(admin,/AdminKyrubTagPilot/);
+ assert.doesNotMatch(admin,/AdminKyrubTagPilot|admin-kyrub-tag-pilot/);
+ assert.match(admin,/title="Kyrub Tag"/);
  assert.match(batches,/Gravar adesivo de teste/);
  assert.match(batches,/overwrite:false/);
  assert.match(batches,/physicalStatus:'not_verified'/);
