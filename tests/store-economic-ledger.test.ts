@@ -295,3 +295,21 @@ test('finance margins and history fence obsolete requests and preserve manual re
   assert.match(history,/if\(!context\|\|!user\|\|manualPending\.current\)return/);
   assert.match(history,/payload\.reconciliation\.paymentId!==input\.paymentId/);
 });
+
+test('combined profitability reuses the authorized order calculation without a second ledger scan',()=>{
+  const router=readFileSync('server/payments/storeOrderProfitabilityRouter.ts','utf8');
+  const products=readFileSync('server/payments/storeProductProfitabilityService.ts','utf8');
+  const client=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const transport=readFileSync('server/payments/storePromotionServerlessTransport.ts','utf8');
+  const route=router.slice(router.indexOf("router.get('/'"),router.indexOf("router.get('/products'"));
+  assert.ok(route.indexOf('await requireOwner')<route.indexOf('await reconcileStoreOrderProfitability(storeId)'));
+  assert.equal((route.match(/await reconcileStoreOrderProfitability\(storeId\)/g)??[]).length,1);
+  assert.match(route,/await reconcileStoreProductProfitability\(storeId, profitability\)/);
+  assert.match(route,/json\(\{ storeId, orders: profitability, products \}\)/);
+  assert.match(products,/sharedOrderOverview && sharedOrderOverview\.storeId !== storeId/);
+  assert.match(products,/sharedOrderOverview \?\? await reconcileStoreOrderProfitability\(storeId\)/);
+  assert.match(client,/&includeProducts=true/);
+  assert.doesNotMatch(client,/\/api\/store-finance\/profitability\/products\?/);
+  assert.match(client,/result\.orders\?\.storeId!==storeId\|\|result\.products\?\.storeId!==storeId/);
+  assert.match(transport,/params\.append\(key, value\)/);
+});
