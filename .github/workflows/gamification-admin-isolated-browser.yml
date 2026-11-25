@@ -1,0 +1,60 @@
+name: Gamification admin isolated browser
+on:
+  pull_request:
+    branches: [main, test-gamification-transversal-browser]
+    paths:
+      - 'server/gamification/semeadura*.ts'
+      - 'src/components/admin/AdminGamification*.tsx'
+      - 'src/utils/gamificationAdminPilotClient.ts'
+      - 'tests/gamification-admin-browser.test.mjs'
+      - 'tests/fixtures/gamification-admin-browser.tsx'
+      - '.github/workflows/gamification-admin-isolated-browser.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-chromium:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      NODE_ENV: test
+      GCLOUD_PROJECT: demo-kyrub-welcome
+      GOOGLE_CLOUD_PROJECT: demo-kyrub-welcome
+      KYRUB_PITANGA_WELCOME_PROJECT_ID: demo-kyrub-welcome
+      KYRUB_PITANGA_SIGNED_SESSION_WELCOME_ENABLED: 'true'
+      KYRUB_WELCOME_BONUS_EFFECTIVE_AT: '2026-11-15T00:00:00.000Z'
+      KYRUB_PITANGA_WELCOME_FENCE_EPOCH: welcome-emulator-only
+      KYRUB_SEMEADURA_ECONOMIC_PILOT: 'true'
+      KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT: 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - run: npm ci
+      - run: npm ci --prefix functions
+      - run: npx tsc --project functions/tsconfig.json
+      - run: npm run firestore:compose
+      - run: node scripts/build-welcome-functions.mjs
+      - name: Install isolated Chromium runner
+        run: |
+          npm install --no-save --package-lock=false playwright
+          npx playwright install --with-deps chromium
+      - name: Run browser only against disposable Auth, Firestore and Functions emulators
+        run: >-
+          npx --yes firebase-tools emulators:exec
+          --config firebase.welcome.json --project demo-kyrub-welcome
+          --only auth,firestore,functions
+          "node --test --import tsx tests/gamification-admin-browser.test.mjs"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: gamification-admin-isolated-browser
+          path: gamification-admin-isolated-*.png
+          if-no-files-found: ignore
+          retention-days: 3
