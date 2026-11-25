@@ -13,10 +13,24 @@ export type TagIdentityMode='full'|'tag_only'|'unclassified';
 /** A minimal tag identity is NOT a Kyrub user profile, store, or plan. */
 export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMode}>{
  if(!validUid(uid))throw Error('TAG_FORBIDDEN');
- const [account,marker]=await Promise.all([users().doc(uid).get(),markers().doc(uid).get()]);
- if(account.exists||marker.get('mode')==='full')return {mode:'full'};
- if(marker.get('mode')==='tag_only'&&marker.get('uid')===uid)return {mode:'tag_only'};
- return {mode:'unclassified'};
+ return adminDb.runTransaction<{mode:TagIdentityMode}>(async tx=>{
+  const [account,marker]=await Promise.all([tx.get(users().doc(uid)),tx.get(markers().doc(uid))]);
+  // Existing accounts without a promotional marker retain their legacy entry.
+  // A marker must never override its own UID or stale eligibility.
+  if(!marker.exists)return {mode:account.exists?'full':'unclassified'};
+  if(marker.get('uid')!==uid)throw Error('TAG_FORBIDDEN');
+  if(marker.get('mode')==='tag_only')return {mode:'tag_only'};
+  if(marker.get('mode')!=='full')throw Error('TAG_FORBIDDEN');
+  const age=await tx.get(adminDb.doc('age_eligibility_private/'+uid));
+  if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||age.get('uid')!==uid||age.get('status')!=='verified_adult')return {mode:'tag_only'};
+  try{
+   const receiptId=await requireCurrentIngressLegalReceiptInTransaction(tx,uid);
+   return {mode:marker.get('ingressReceiptId')===receiptId?'full':'tag_only'};
+  }catch(error){
+   if(error instanceof Error&&['LEGAL_CURRENT_RECEIPT_REQUIRED','LEGAL_DOCUMENTS_UNAVAILABLE','LEGAL_RECEIPT_INVALID'].includes(error.message))return {mode:'tag_only'};
+   throw error;
+  }
+ });
 }
 
 /**
