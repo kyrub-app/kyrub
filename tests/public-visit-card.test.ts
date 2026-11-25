@@ -298,3 +298,23 @@ test('isolated pilot Web Firebase config must be a matching Vercel Preview, neve
  assert.match(client,/pilotClientRequested \? isolatedPilotConfig\(\) : firebaseConfig/);
  assert.match(client,/TAG_PILOT_FIREBASE_RUNTIME_APP_MISMATCH/);
 });
+
+
+test('official NFC lot starts from one button and history contains only confirmed readbacks',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const panel=readFileSync('src/components/admin/AdminKyrubTagPromotionalBatches.tsx','utf8');
+ const wizard=readFileSync('src/components/admin/AdminKyrubTagNfcWizard.tsx','utf8');
+ const start=panel.indexOf("if(productionPanel&&readiness?.permanentStockEnabled){");
+ assert.ok(start>=0);
+ const official=panel.slice(start,panel.indexOf('\n return <section',start));
+ assert.match(official,/AdminKyrubTagNfcWizard/);
+ assert.doesNotMatch(official,/type="checkbox"|Emitir lote definitivo|onClick=\{\(\)=>void issue\(\)\}/);
+ assert.match(official,/Histórico de tags validadas/);
+ assert.match(official,/filter\(unit=>unit.physicalStatus==='readback_confirmed'\)/);
+ assert.match(wizard,/Quantidade de adesivos/);
+ assert.match(wizard,/action:'issue',count,requestId/);
+ assert.match(wizard,/pendingIssueCount.current\?\?lotCount/);
+ assert.match(wizard,/batches.find\(b=>b.id===active.batchId\)/);
+ assert.match(wizard,/void writeTarget\(target\)/);
+ assert.match(wizard,/Concluir lote/);
+});
