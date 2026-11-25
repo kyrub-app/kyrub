@@ -27,6 +27,7 @@ jobs:
       KYRUB_SEMEADURA_ECONOMIC_PILOT: 'true'
       KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT: 'true'
       KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT: 'true'
+      KYRUB_GAMIFICATION_ADMIN_REFERRAL_WRITE_PILOT: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
