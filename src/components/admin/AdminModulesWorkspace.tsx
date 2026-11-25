@@ -16,7 +16,7 @@ const FOLDERS = [
 const MODULES: AdminModuleDefinition[] = [
   { label: 'Usuários', description: 'Busca exata, situação cadastral e vínculos conhecidos.', permission: 'read_users', icon: Users, status: 'available', anchor: 'admin-directory', folder: 'people' },
   { label: 'Lojas', description: 'Lojas canônicas, equipes, migração e tenants legados.', permission: 'read_stores', icon: Building2, status: 'available', anchor: 'admin-directory', folder: 'people' },
-  { label: 'Financeiro da Plataforma & BaaS', description: 'Economia canônica, usuários ativos e sustentabilidade. Gestão empresarial e lançamentos financeiros pertencem ao ERP da Loja Oficial.', permission: 'read_finance', icon: Banknote, status: 'available', anchor: 'admin-platform-economy', folder: 'platform_finance' },
+  { label: 'Financeiro da Plataforma & BaaS', description: 'Economia canônica, usuários ativos e eficiência da infraestrutura. Gestão empresarial e lançamentos financeiros pertencem ao ERP da Loja Oficial.', permission: 'read_finance', icon: Banknote, status: 'available', anchor: 'admin-platform-economy', folder: 'platform_finance' },
   { label: 'Saúde do sistema', description: 'Filas, integrações e situação da operação logística.', permission: 'read_system_health', icon: Activity, status: 'available', anchor: 'admin-system-health', folder: 'operations' },
   { label: 'Feature flags e capacidades', description: 'Ativações graduais e enforcement técnico por ambiente, entitlement e conta.', permission: 'manage_features', icon: Flag, status: 'planned', folder: 'governance' },
   { label: 'Auditoria', description: 'Ações administrativas, receipts e eventos críticos.', permission: 'read_audit', icon: FileCheck2, status: 'planned', folder: 'governance' },

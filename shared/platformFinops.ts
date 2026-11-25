@@ -152,3 +152,21 @@ export function projectPlatformFinops(
     },
   };
 }
+
+// Deliberate restricted projection for a future authorized Control Plane adapter.
+// No revenue, business result, own total cost, category detail or fact IDs leave
+// this boundary. Input reconciliation and real MAU remain prerequisites.
+export function projectPlatformInfrastructure(
+  period: FinopsPeriod,
+  facts: readonly FinopsFact[],
+  coverage: readonly FinopsCoverage[],
+  activeUsers?: ActiveUsersEvidence,
+) {
+  const projected = projectPlatformFinops(period, facts, coverage, activeUsers);
+  return {
+    period: projected.period,
+    infrastructureCosts: projected.technologyCosts,
+    mau: projected.mau,
+    infrastructureCostPerActiveUserMinor: projected.technologyCostPerActiveUserMinor,
+  };
+}

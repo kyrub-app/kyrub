@@ -1,3 +1,4 @@
+import { projectPlatformInfrastructure } from '../shared/platformFinops';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
@@ -333,8 +334,9 @@ test('control plane keeps ecosystem economics and sustainability, not a duplicat
   const modules=readFileSync('src/components/admin/AdminModulesWorkspace.tsx','utf8');
   const erp=readFileSync('src/components/StoreFinanceCompositeRuntime.tsx','utf8');
   const subscriptions=readFileSync('src/components/store/StoreSubscriptionsWorkspace.tsx','utf8');
-  assert.match(workspace,/Custos de operação da plataforma/);
-  assert.match(workspace,/Custo por usuário ativo/);
+  assert.match(workspace,/Custo de infraestrutura/);
+  assert.match(workspace,/Custo de infraestrutura por usuário ativo/);
+  assert.doesNotMatch(workspace,/\['Custos de operação da plataforma'|\['Custo por usuário ativo'|\['Custo operacional total'/);
   assert.match(workspace,/Gestão empresarial .*ERP da Loja Oficial Kyrub/);
   assert.doesNotMatch(workspace,/\['Receitas próprias Kyrub'|\['Resultado e custo por usuário ativo'/);
   assert.match(modules,/Gestão empresarial e lançamentos financeiros pertencem ao ERP da Loja Oficial/);
@@ -369,4 +371,14 @@ test('FinOps technology cost is a subset of own operating cost, independently co
   assert.equal(withEstimate.technologyCosts.estimatedMinor,5000);
   assert.equal(withEstimate.technologyCostPerActiveUserMinor,null);
   assert.throws(()=>projectPlatformFinops(period,[...facts,{...facts[0],category:'operations'}],coverage,users),/DUPLICATE_FACT/);
+});
+
+test('restricted infrastructure projection excludes all company finance metrics and source identities',()=>{
+  const period:FinopsPeriod={month:'2026-11',timezone:'America/Sao_Paulo',basis:'cash',currency:'BRL'};
+  const coverage=FINOPS_CATEGORIES.map(category=>({period,category,status:'complete' as const,evidenceRef:'fixture-'+category}));
+  const fact=(category:FinopsFact['category'],amountMinor:number):FinopsFact=>({period,category,amountMinor,factId:'fixture-'+category,sourceRef:'erp-fixture-'+category,quality:'confirmed',originalCurrency:'BRL'});
+  const users={period,uniqueAuthenticatedUsers:10000,status:'complete' as const,evidenceRef:'mau-fixture'};
+  const result=projectPlatformInfrastructure(period,[fact('firebase_gcp',90000),fact('vercel',30000),fact('operations',280000),fact('plans',1970000)],coverage,users);
+  assert.deepEqual(result,{period,infrastructureCosts:{status:'complete',confirmedMinor:120000,estimatedMinor:null},mau:10000,infrastructureCostPerActiveUserMinor:12});
+  assert.equal(projectPlatformInfrastructure(period,[],[],users).infrastructureCostPerActiveUserMinor,null);
 });
