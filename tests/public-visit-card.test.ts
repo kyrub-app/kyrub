@@ -146,7 +146,11 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  assert.match(batchService,/if\(original\.count!==count\)throw Error\('TAG_BATCH_CONFLICT'\)/);
  assert.match(identity,/kyrub_tag_minimal_identities/);
  assert.match(identity,/source:'kyrub_tag_promo'/);
- assert.match(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.doesNotMatch(identity,/if\(account\.exists\|\|current\.get\('mode'\)==='full'\)/);
+ assert.match(identity,/return resolveTagIdentityMode\(tx,uid,account,marker\)/);
+ assert.match(identity,/const resolved=await resolveTagIdentityMode\(tx,uid,account,current\)/);
+ assert.match(identity,/if\(!marker\.exists\)return \{mode:account\.exists\?'full':'unclassified'\}/);
+ assert.match(identity,/marker\.get\('ingressReceiptId'\)===receiptId/);
  assert.match(identity,/promoteTagIdentityToKyrub/);
  assert.match(app,/VITE_KYRUB_TAG_MINIMAL_IDENTITY_GATE/);
  assert.match(app,/KyrubTagOnlyEntry/);
