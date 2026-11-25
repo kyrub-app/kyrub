@@ -388,6 +388,9 @@ test('official infrastructure fixture reader cannot be invoked through an HTTP r
   const router=readFileSync('server/admin/platformEconomyRouter.ts','utf8');
   assert.match(reader,/await authorizePlatformEconomy\(authorization/);
   assert.match(reader,/kyrub_admin\/official_store/);
+  assert.match(reader,/getPrimaryUserStoreDocumentPath\(d.legacyStoreId\)/);
+  assert.match(reader,/privateStore.get\('canonicalStoreId'\)!==d.canonicalStoreId/);
+  assert.match(reader,/return d.legacyStoreId/);
   assert.match(reader,/\{readOnly:true\}/);
   assert.match(reader,/raw.costCenter\?\.id!==INFRASTRUCTURE_COST_CENTER_ID/);
   assert.match(reader,/readOfficialRegisteredInfrastructureFixture/);

@@ -1,4 +1,5 @@
-import type { Firestore } from 'firebase-admin/firestore';
+import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import { getPrimaryUserStoreDocumentPath } from '../../src/utils/storePaths.js';
 import { authorizePlatformEconomy } from './platformEconomyRouter.js';
 import { financeMonthRange } from '../../shared/storeFinanceCalendar.js';
 import { normalizeStoreFinancePayable } from '../../shared/storeFinancePayables.js';
@@ -24,6 +25,27 @@ export type OfficialInfrastructureFixtureDiagnostic = {
 const safeId=(s:unknown):s is string=>typeof s==='string'&&/^[a-zA-Z0-9_-]{1,180}$/.test(s);
 const evidence=(s:unknown):s is string=>typeof s==='string'&&s.trim()===s&&s.length>0&&s.length<=500;
 const canonicalIso=(s:string)=>Number.isFinite(Date.parse(s))&&new Date(s).toISOString()===s;
+
+// The owner-authorized ERP uses the legacy primary store ID (UID) as its
+// finance namespace. The designated canonical storefront can have a different
+// ID. Never fall back to or sum the two namespaces.
+async function resolveOfficialErpFinanceId(tx:Transaction,db:Dependencies['db']):Promise<string|null>{
+  const designation=await tx.get(db.doc('kyrub_admin/official_store'));
+  const d=designation.data();
+  if(!designation.exists||d?.schemaVersion!==1||d.kind!=='official_cairobi_store'||
+    !safeId(d.canonicalStoreId)||!safeId(d.ownerUserId)||d.legacyStoreId!==d.ownerUserId||
+    !safeId(d.designatedBy))return null;
+  const [store,privateStore]=await Promise.all([
+    tx.get(db.doc('stores/'+d.canonicalStoreId)),
+    tx.get(db.doc(getPrimaryUserStoreDocumentPath(d.legacyStoreId))),
+  ]);
+  if(!store.exists||store.get('id')!==d.canonicalStoreId||store.get('ownerId')!==d.ownerUserId||
+    store.get('legacyTenantId')!==d.legacyStoreId||
+    !privateStore.exists||privateStore.get('id')!==d.legacyStoreId||
+    privateStore.get('ownerId')!==d.ownerUserId||
+    privateStore.get('canonicalStoreId')!==d.canonicalStoreId)return null;
+  return d.legacyStoreId;
+}
 
 // Candidate reader: explicit synthetic references, no browser request or route.
 // References carry no amount and establish no actual payment/coverage evidence.
@@ -51,15 +73,8 @@ export async function readOfficialInfrastructureFixture(
   try {
     // One read-only snapshot, with the official identity resolved inside it.
     return await deps.db.runTransaction(async tx=>{
-      const designation=await tx.get(deps.db.doc('kyrub_admin/official_store'));
-      const d=designation.data();
-      if(!designation.exists||d?.schemaVersion!==1||d.kind!=='official_cairobi_store'||
-          !safeId(d.canonicalStoreId)||!safeId(d.ownerUserId)||d.legacyStoreId!==d.ownerUserId||
-          !safeId(d.designatedBy))return unavailable;
-      const storeId=d.canonicalStoreId;
-      const store=await tx.get(deps.db.doc('stores/'+storeId));
-      if(!store.exists||store.get('id')!==storeId||store.get('ownerId')!==d.ownerUserId||
-          store.get('legacyTenantId')!==d.legacyStoreId)return unavailable;
+      const storeId=await resolveOfficialErpFinanceId(tx,deps.db);
+      if(!storeId)return unavailable;
       const snapshots=await Promise.all(references.map(ref=>tx.get(deps.db.doc('stores/'+storeId+'/financePayables/'+ref.payableId))));
       let total=0;
       for(let i=0;i<snapshots.length;i++){
@@ -94,15 +109,8 @@ export async function readOfficialRegisteredInfrastructureFixture(
     actualInfrastructureCostMinor:null,realMau:null};
   try{
     return await deps.db.runTransaction(async tx=>{
-      const designation=await tx.get(deps.db.doc('kyrub_admin/official_store'));
-      const d=designation.data();
-      if(!designation.exists||d?.schemaVersion!==1||d.kind!=='official_cairobi_store'||
-        !safeId(d.canonicalStoreId)||!safeId(d.ownerUserId)||d.legacyStoreId!==d.ownerUserId||
-        !safeId(d.designatedBy))return unavailable;
-      const storeId=d.canonicalStoreId;
-      const store=await tx.get(deps.db.doc('stores/'+storeId));
-      if(!store.exists||store.get('id')!==storeId||store.get('ownerId')!==d.ownerUserId||
-        store.get('legacyTenantId')!==d.legacyStoreId)return unavailable;
+      const storeId=await resolveOfficialErpFinanceId(tx,deps.db);
+      if(!storeId)return unavailable;
       const result=await tx.get(deps.db.collection('stores/'+storeId+'/financePayables')
         .where('paidAt','>=',range.startIso).where('paidAt','<',range.endExclusiveIso).limit(501));
       if(result.size>500)return unavailable;
