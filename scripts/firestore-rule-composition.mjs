@@ -71,12 +71,16 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       function isApplicationRequester(data) {
         return isSignedIn() && data.get('ownerId', '') == request.auth.uid;
       }
+      function directHiringApplicationsAllowed() {
+        let control = /databases/$(database)/documents/renda_age_release_private/current;
+        return !exists(control) || get(control).data.get('applicationAuthority','client') == 'client';
+      }
       // The applicant may check their own deterministic receipt before creation.
       allow get: if isSignedIn() && resource == null
         && isValidId(request.auth.uid)
         && candiId.matches('^[A-Za-z0-9]{20}__' + request.auth.uid + '$');
       allow read: if isApplicationOwner(existing()) || isApplicationRequester(existing()) || isAdmin();
-      allow create: if canWriteRendaWithAge()
+      allow create: if directHiringApplicationsAllowed() && canWriteRendaWithAge()
         && incoming().userId == request.auth.uid
         && incoming().vagaId is string
         && incoming().vagaId.matches('^[A-Za-z0-9]{20}$')
@@ -88,7 +92,7 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && hasApprovedIdentityProfile('freelancer');
-      allow update: if isSignedIn()
+      allow update: if isSignedIn() && directHiringApplicationsAllowed()
         && incoming().userId == existing().userId
         && incoming().vagaId == existing().vagaId
         && incoming().ownerId == existing().ownerId
@@ -113,6 +117,10 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       // Preserve the deterministic receipt and bilateral history.
       // Any lawful erasure is a separate authorized server process.
       allow delete: if false;
+
+      match /operations_private/{operationId} {
+        allow read, write: if false;
+      }
 
       // Reuse the private DM contract (sender, receiver, text, server time),
       // but authorize by hiring receipt rather than a personal connection.
