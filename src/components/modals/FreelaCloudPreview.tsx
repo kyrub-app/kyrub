@@ -1,3 +1,4 @@
+import {FreelaNegotiationPreview} from './FreelaNegotiationPreview';
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
@@ -10,7 +11,8 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const [applications,setApplications]=useState<HiringApplication[]>([]);
  const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[payment,setPayment]=useState('');
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
- useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');}),[]);
+ const [openNegotiation,setOpenNegotiation]=useState('');
+ useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');}),[]);
  const refresh=useCallback(async()=>{
    if(!actor)return;
    const [v,a]=await Promise.all([listHiringVacancies(employer),listHiringApplications(employer)]);
@@ -48,6 +50,8 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
         <button disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completed');return 'Serviço concluído pelas partes. Nenhum pagamento confirmado.';})}>Confirmar conclusão</button>
         <button disabled={busy} className="border border-slate-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'accepted');return 'Serviço devolvido para revisão.';})}>Solicitar revisão</button>
       </>}
+      <button type="button" className="block border border-slate-600 rounded-lg p-2" onClick={()=>setOpenNegotiation(current=>current===a.id?'':a.id)}>{openNegotiation===a.id?'Fechar conversa':'Conversar / ver negociação'}</button>
+      {openNegotiation===a.id&&actor&&<FreelaNegotiationPreview key={actor+':'+a.id} application={a} actor={actor}/>}
     </article>)}
     <button disabled={busy} className="border border-slate-700 rounded-lg p-2" onClick={()=>void perform(async()=> 'Consulta atualizada.')}>Atualizar</button>
     <p role="status">{notice}</p>
