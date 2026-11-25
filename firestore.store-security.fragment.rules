@@ -26,7 +26,10 @@
 
     function storeSecActiveMember(storeId) {
       return storeSecMemberExists(storeId)
-        && storeSecMemberData(storeId).status == 'active';
+        && storeSecMemberData(storeId).status == 'active'
+        && storeSecMemberData(storeId).storeId == storeId
+        && storeSecMemberData(storeId).userId == request.auth.uid
+        && storeSecMemberData(storeId).role != 'owner';
     }
 
     function storeSecOwner(storeId) {

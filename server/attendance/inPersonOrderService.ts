@@ -1,5 +1,6 @@
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import { buildServiceLocationSnapshot } from '../../shared/serviceLocation.js';
 import {
   parseInPersonOrderCreateInput,
@@ -356,12 +357,11 @@ export const createInPersonOrder = async (input: {
     updatedAt: FieldValue.serverTimestamp(),
   };
 
-  const batch = adminDb.batch();
-  batch.create(legacyReference, {
-    ...order,
-    buyerIdentityStatus: 'unverified_local',
+  await adminDb.runTransaction(async transaction=>{
+    const role=await requireHumanOrderOperation(transaction,context.legacyStoreId,actorUserId,'orders.create',context.canonicalStoreId);
+    if(role!==actorRole)throw Error('STORE_ACCESS_DENIED');
+    transaction.create(legacyReference, {...order,buyerIdentityStatus:'unverified_local'});
+    transaction.create(canonicalReference,canonicalOrder);
   });
-  batch.create(canonicalReference, canonicalOrder);
-  await batch.commit();
   return order;
 };

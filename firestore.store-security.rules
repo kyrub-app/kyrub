@@ -38,7 +38,10 @@ service cloud.firestore {
     }
 
     function activeMember(storeId) {
-      return memberExists(storeId) && memberData(storeId).status == 'active';
+      return memberExists(storeId) && memberData(storeId).status == 'active'
+        && memberData(storeId).storeId == storeId
+        && memberData(storeId).userId == request.auth.uid
+        && memberData(storeId).role != 'owner';
     }
 
     function owner(storeId) {

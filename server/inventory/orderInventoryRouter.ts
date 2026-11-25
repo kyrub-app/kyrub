@@ -77,7 +77,7 @@ const authorizeStoreOperation = async (
   if (!canonicalStoreId) throw new Error('STORE_ACCESS_DENIED');
   const memberSnapshot = await adminDb.doc(`stores/${canonicalStoreId}/members/${userId}`).get();
   const member = parseStoreMember(memberSnapshot.data());
-  if (!member || member.status !== 'active' || !hasStorePermission(member.role, permission)) {
+  if (!member || member.storeId!==canonicalStoreId||member.userId!==userId||member.role==='owner'||member.status !== 'active' || !hasStorePermission(member.role, permission)) {
     throw new Error('STORE_ACCESS_DENIED');
   }
 };

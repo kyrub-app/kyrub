@@ -385,3 +385,21 @@ test('finance cost center registry and payable snapshots are server-only across 
   await assertFails(getDoc(doc(guest,'stores',STORE_ID,'financeConfig','costCenters')));
   await assertFails(getDoc(doc(guest,'stores',STORE_ID,'financeConfig','taxonomy')));
 });
+
+
+test('staff cannot use malformed cross-store, wrong UID, suspended or counterfeit owner membership',async()=>{
+ await seedStore();
+ const seller=environment.authenticatedContext('seller-a').firestore();
+ const orderRef=doc(seller,'stores',STORE_ID,'orders','staff-boundary-order');
+ await environment.withSecurityRulesDisabled(async ctx=>{
+  await setDoc(doc(ctx.firestore(),'stores',STORE_ID,'orders','staff-boundary-order'),orderRecord('staff-boundary-order','buyer-a'));
+ });
+ await assertSucceeds(getDoc(orderRef));
+ for(const override of [{storeId:'another-store'},{userId:'seller-b'},{status:'suspended'},{role:'owner'}]){
+  await environment.withSecurityRulesDisabled(async ctx=>{
+   await setDoc(doc(ctx.firestore(),'stores',STORE_ID,'members','seller-a'),{...memberRecord('seller-a','seller'),...override});
+  });
+  await assertFails(getDoc(orderRef));
+ }
+ await assertSucceeds(getDoc(doc(environment.authenticatedContext('owner-a').firestore(),'stores',STORE_ID,'orders','staff-boundary-order')));
+});

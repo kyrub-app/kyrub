@@ -14,5 +14,5 @@ export const canCreateLocalStorePayment = async (input: {
     ? await input.readMember(canonicalStoreId, actorUserId)
     : await (await import('../firebaseAdmin.js')).adminDb.doc(`stores/${canonicalStoreId}/members/${actorUserId}`).get().then(snapshot => snapshot.data());
   const member = parseStoreMember(memberData);
-  return Boolean(member && member.storeId === canonicalStoreId && member.userId === actorUserId && member.status === 'active' && hasStorePermission(member.role, 'payments.create'));
+  return Boolean(member && member.storeId === canonicalStoreId && member.userId === actorUserId && member.status === 'active' && member.role!=='owner' && hasStorePermission(member.role, 'payments.create'));
 };

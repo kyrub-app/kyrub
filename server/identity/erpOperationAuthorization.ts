@@ -1,7 +1,7 @@
 import type {Transaction} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {evaluateStoredCapabilityAgeAccess} from '../../shared/ageEligibility.js';
-import {hasStorePermission,parseStoreMember,type StorePermission} from '../../src/utils/storeSecurity.js';
+import {hasStorePermission,parseStoreMember,type StorePermission,type StoreRole} from '../../src/utils/storeSecurity.js';
 
 export async function requireErpAgeInTransaction(tx:Transaction,uid:string){
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(uid))throw Error('STORE_ACCESS_DENIED');
@@ -13,18 +13,21 @@ export async function requireErpAgeInTransaction(tx:Transaction,uid:string){
 }
 
 /** Human actions only. Provider webhook processing is not a human session. */
-export async function requireHumanOrderOperation(tx:Transaction,tenantId:string,uid:string,permission:StorePermission){
+export async function requireHumanOrderOperation(tx:Transaction,tenantId:string,uid:string,permission:StorePermission,expectedCanonicalStoreId?:string):Promise<StoreRole>{
  if(!/^[A-Za-z0-9_-]{1,128}$/.test(tenantId))throw Error('STORE_ACCESS_DENIED');
  await requireErpAgeInTransaction(tx,uid);
  const tenant=await tx.get(adminDb.doc('tenants/'+tenantId));
  if(tenant.exists&&tenant.get('ownerId')!==tenantId)throw Error('STORE_ACCESS_DENIED');
  const canonical=tenant.get('canonicalStoreId');
+ if(expectedCanonicalStoreId!==undefined&&canonical!==expectedCanonicalStoreId)throw Error('STORE_ACCESS_DENIED');
  if(canonical!==undefined&&canonical!==null&&canonical!==''){
   if(typeof canonical!=='string'||!/^[A-Za-z0-9_-]{1,128}$/.test(canonical))throw Error('STORE_ACCESS_DENIED');
   const store=await tx.get(adminDb.doc('stores/'+canonical));
   if(!store.exists||store.get('ownerId')!==tenantId||store.get('id')!==canonical)throw Error('STORE_ACCESS_DENIED');
-  if(uid===tenantId)return;
+  if(uid===tenantId)return 'owner';
   const member=parseStoreMember((await tx.get(adminDb.doc('stores/'+canonical+'/members/'+uid))).data());
-  if(!member||member.storeId!==canonical||member.userId!==uid||member.status!=='active'||!hasStorePermission(member.role,permission))throw Error('STORE_ACCESS_DENIED');
+  if(!member||member.storeId!==canonical||member.userId!==uid||member.status!=='active'||member.role==='owner'||!hasStorePermission(member.role,permission))throw Error('STORE_ACCESS_DENIED');
+  return member.role;
  }else if(uid!==tenantId)throw Error('STORE_ACCESS_DENIED');
+ return 'owner';
 }

@@ -88,17 +88,17 @@ describe('authoritative in-person order creation', () => {
     assert.doesNotMatch(service, /storePointLedger|rewardRedemptions|invoice|notaFiscal|fiscalEmission|paymentIntent/i);
   });
 
-  test('canonical and legacy order documents are born together in one server batch', () => {
+  test('canonical and legacy order documents are born together in one guarded transaction', () => {
     const service = readFileSync('server/attendance/inPersonOrderService.ts', 'utf8');
     assert.match(service, /LEGACY_ORDER_ROOT/);
     assert.match(service, /stores\/\$\{context\.canonicalStoreId\}\/orders\/\$\{orderId\}/);
     assert.match(service, /migration:\s*\{[\s\S]*mode: 'canonical_first'/);
     assert.match(service, /legacyCreatedAt: timestamp/);
     assert.match(service, /legacyUpdatedAt: timestamp/);
-    assert.match(service, /const batch = adminDb\.batch\(\)/);
-    assert.match(service, /batch\.create\(legacyReference/);
-    assert.match(service, /batch\.create\(canonicalReference/);
-    assert.match(service, /await batch\.commit\(\)/);
+    assert.match(service, /requireHumanOrderOperation\(transaction,context\.legacyStoreId,actorUserId,'orders\.create',context\.canonicalStoreId\)/);
+    assert.match(service, /if\(role!==actorRole\)throw Error\('STORE_ACCESS_DENIED'\)/);
+    assert.match(service, /transaction\.create\(legacyReference/);
+    assert.match(service, /transaction\.create\(canonicalReference/);
   });
 
   test('API derives operator authority from Firebase identity and store representation', () => {
