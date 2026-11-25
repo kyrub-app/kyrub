@@ -121,3 +121,20 @@ test('gamification read panel is opt-in, same-origin, session-bound and never ex
  assert.match(panel,/Nenhum caso nesta página/);
  assert.doesNotMatch(panel,/localStorage|sessionStorage|setDoc\(|runTransaction\(/);
 });
+
+
+test('public seed and private journey requests remain bound to the initiating account',()=>{
+ const button=read('src/components/SemearButton.tsx');
+ const journey=read('src/components/SemeaduraJourneyPanel.tsx');
+ assert.match(button,/const session=auth\.currentUser;/);
+ assert.match(button,/auth\.currentUser!==session\|\|signal\?\.aborted/);
+ assert.match(button,/expectedUid!==undefined&&session\.uid!==expectedUid/);
+ assert.match(button,/const token = await session!\.getIdToken\(\);\s*requireCurrent\(\)/);
+ assert.match(button,/const result=await response\.json\(\) as Record<string, unknown>;\s*requireCurrent\(\)/);
+ assert.match(button,/credentials: 'omit',\s*redirect: 'error'/);
+ assert.match(button,/requestSemeadura\('status', \{ kind, postId \}, signal, viewerId\)/);
+ assert.match(button,/requestSemeadura\('semear', \{ kind, postId \}, undefined, viewerId\)/);
+ assert.match(journey,/<ScopedSemeaduraJourneyPanel key=\{viewerId\}/);
+ assert.match(journey,/controller\.signal,\s*viewerId,/);
+ assert.match(journey,/total===null\?'…':journey\.pitangasEquivalent/);
+});
