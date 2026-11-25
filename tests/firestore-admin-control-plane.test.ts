@@ -1,6 +1,11 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { generateKeyPairSync, sign } from 'node:crypto';
+import { verifyFirebaseIdToken } from '../server/ai/consultantAuth';
+import { createAuthorizedKyrubActivityReceiver } from '../server/observability/kyrubActivityTransport';
+import { confirmTransportMonthlyPresence } from '../server/observability/monthlyPresenceTransport';
+import { loadMonthlyActivityDiagnostic } from '../server/admin/monthlyActivityDiagnostic';
 import { countMonthlyPresenceMarkers } from '../server/admin/monthlyActivityDiagnostic';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
@@ -265,6 +270,79 @@ test('monthly presence atomic create and browser isolation in the Firestore emul
     }
     await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(),path)));
   } finally {
+    await deleteApp(app);
+  }
+});
+
+test('signed fixture authentication, activity receiver and monthly aggregate integrate on loopback Firestore', async () => {
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+  const app = initializeApp({projectId:PROJECT_ID},'finops-signed-activity-fixture');
+  const originalFetch = globalThis.fetch;
+  const {privateKey,publicKey} = generateKeyPairSync('rsa',{modulusLength:2048});
+  const {privateKey:foreignKey} = generateKeyPairSync('rsa',{modulusLength:2048});
+  const keyId = 'finops-test-key';
+  // Substitute only the public-certificate response in this test process.
+  // The real verifier still verifies RSA signatures, issuer, audience and expiry.
+  globalThis.fetch = async (input,init) => {
+    if (String(input) === 'https://www.googleapis.com/robot/v1/metadata/x509/securetoken@system.gserviceaccount.com') {
+      return new Response(JSON.stringify({[keyId]:publicKey.export({type:'spki',format:'pem'})}),
+        {status:200,headers:{'cache-control':'max-age=0','content-type':'application/json'}});
+    }
+    return originalFetch(input,init);
+  };
+  const encode = (value:unknown) => Buffer.from(JSON.stringify(value)).toString('base64url');
+  const token = (uid:string, options:{foreign?:boolean;aud?:string;expired?:boolean}={}) => {
+    const now = Math.floor(Date.now()/1000);
+    const message = encode({alg:'RS256',kid:keyId,typ:'JWT'}) + '.' + encode({
+      sub:uid, aud:options.aud ?? PROJECT_ID, iss:'https://securetoken.google.com/'+PROJECT_ID,
+      iat:now-10,auth_time:now-10,exp:options.expired ? now-3600 : now+3600,email_verified:true,
+    });
+    return message+'.'+sign('RSA-SHA256',Buffer.from(message),options.foreign ? foreignKey : privateKey).toString('base64url');
+  };
+  try {
+    const database = getFirestore(app);
+    const env = {KYRUB_FINOPS_MAU_EMULATOR_ENABLED:'true',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',
+      FIREBASE_PROJECT_ID:PROJECT_ID,KYRUB_FINOPS_MAU_EMULATOR_KEY:'2a'.repeat(32)};
+    const deps = {env,currentProject:()=>PROJECT_ID,store:()=>firestoreMonthlyPresenceStore(database)};
+    let now = new Date('2026-12-01T02:59:59Z');
+    const logs:unknown[] = [];
+    const receive = createAuthorizedKyrubActivityReceiver({
+      verify: value=>verifyFirebaseIdToken(value,PROJECT_ID),
+      now:()=>now,
+      confirm:(uid,requested,qualified,at)=>confirmTransportMonthlyPresence(uid,requested,qualified,at,deps),
+      log:event=>logs.push(event),
+    });
+    const data = {monthlyPresenceRequested:true,events:[{id:'event-1',type:'navigation.screen_viewed',
+      domain:'app',source:'client_observation',authority:'context_only',screenId:'home:renda',
+      actorUid:'spoofed-account',occurredAt:'2025-01-01T00:00:00Z'}]};
+    const read = ()=>loadMonthlyActivityDiagnostic(now,{env,currentProject:()=>PROJECT_ID,
+      count:month=>countMonthlyPresenceMarkers(database,month)});
+    await assert.rejects(receive('',data),/AUTH_REQUIRED/);
+    await assert.rejects(receive('Bearer '+token('a',{foreign:true}),data));
+    await assert.rejects(receive('Bearer '+token('a',{aud:'wrong-project'}),data));
+    await assert.rejects(receive('Bearer '+token('a',{expired:true}),data));
+    assert.equal((await read()).observedMarkers,0);
+    const first = 'Bearer '+token('a');
+    const replies = await Promise.all(Array.from({length:8},()=>receive(first,data)));
+    assert.ok(replies.every(x=>x.accepted===1 && x.monthlyPresence?.status==='confirmed' && x.monthlyPresence.month==='2026-11'));
+    assert.equal((await read()).observedMarkers,1);
+    assert.equal((await read()).realMau,null);
+    const expected = monthlyPresencePath({authenticatedUid:'a',projectId:PROJECT_ID,qualifiedActivity:true,receivedAt:now},Buffer.from(env.KYRUB_FINOPS_MAU_EMULATOR_KEY,'hex'));
+    const spoof = monthlyPresencePath({authenticatedUid:'spoofed-account',projectId:PROJECT_ID,qualifiedActivity:true,receivedAt:now},Buffer.from(env.KYRUB_FINOPS_MAU_EMULATOR_KEY,'hex'));
+    assert.equal((await database.doc(expected).get()).exists,true);
+    assert.equal((await database.doc(spoof).get()).exists,false);
+    const second = 'Bearer '+token('b');
+    assert.equal((await receive(second,{...data,events:[{...data.events[0],domain:'kyrubia'}]})).monthlyPresence?.status,'not_qualified');
+    assert.equal((await read()).observedMarkers,1);
+    await receive(second,data);
+    assert.equal((await read()).observedMarkers,2);
+    now = new Date('2026-12-01T03:00:00Z');
+    await receive(first,data);
+    assert.equal((await read()).observedMarkers,1);
+    assert.equal(await countMonthlyPresenceMarkers(database,'2026-11'),2);
+    assert.ok(logs.length>0);
+  } finally {
+    globalThis.fetch = originalFetch;
     await deleteApp(app);
   }
 });
