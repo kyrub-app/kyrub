@@ -276,3 +276,55 @@ test('freelance vacancy and application ownership cannot be forged or used acros
   await assertSucceeds(getDoc(application(owner)));
   await assertSucceeds(getDoc(application(worker)));
 });
+
+
+test('hiring negotiations are private, append-only and survive completion', async()=>{
+  const ownerId='negotiation-owner',workerId='negotiation-worker',outsiderId='negotiation-outsider';
+  const owner=environment.authenticatedContext(ownerId,{role:'owner'}).firestore();
+  const worker=environment.authenticatedContext(workerId).firestore();
+  const outsider=environment.authenticatedContext(outsiderId,{role:'owner'}).firestore();
+  const admin=environment.authenticatedContext('negotiation-admin',{role:'admin'}).firestore();
+  const vacancyId='Negotiation000000001';
+  const applicationId=vacancyId+'__'+workerId;
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const [uid,profile] of [[ownerId,'requester'],[workerId,'freelancer'],[outsiderId,'requester']]){
+      await setDoc(doc(db,'identity_verifications',uid),{uid,status:'approved',approvedProfiles:[profile]});
+      await setDoc(doc(db,'age_eligibility_private',uid),{uid,status:'verified_adult'});
+    }
+    await setDoc(doc(db,'renda_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  await assertSucceeds(setDoc(doc(owner,'vagas',vacancyId),{ownerId,title:'Teste',status:'open'}));
+  await assertSucceeds(setDoc(doc(worker,'candidaturas',applicationId),{ownerId,userId:workerId,vagaId:vacancyId,status:'pending',createdAt:serverTimestamp(),updatedAt:serverTimestamp()}));
+  const ref=(db:any,id='message-one')=>doc(db,'candidaturas',applicationId,'messages',id);
+  const payload=(senderId:string,receiverId:string,text:string)=>({senderId,receiverId,text,createdAt:serverTimestamp()});
+  await assertSucceeds(setDoc(ref(worker),payload(workerId,ownerId,'Proposta de horário')));
+  await assertSucceeds(setDoc(ref(owner,'message-two'),payload(ownerId,workerId,'Horário confirmado')));
+  await assertFails(setDoc(ref(outsider,'message-three'),payload(outsiderId,ownerId,'Intrusão')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(ownerId,workerId,'Autor falso')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,outsiderId,'Destinatário falso')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,ownerId,'')));
+  await assertFails(setDoc(ref(worker,'message-three'),payload(workerId,ownerId,'x'.repeat(4001))));
+  await assertFails(setDoc(ref(worker,'message-three'),{...payload(workerId,ownerId,'Data falsa'),createdAt:Timestamp.fromMillis(1)}));
+  for(const db of [owner,worker]){
+    await assertSucceeds(getDoc(ref(db)));
+    await assertSucceeds(getDocs(query(collection(db,'candidaturas',applicationId,'messages'),limit(100))));
+    await assertFails(updateDoc(ref(db),{text:'alterada'}));
+    await assertFails(deleteDoc(ref(db)));
+    await assertFails(setDoc(ref(db),payload(workerId,ownerId,'sobrescrita')));
+  }
+  for(const db of [outsider,admin]){
+    await assertFails(getDoc(ref(db)));
+    await assertFails(getDocs(query(collection(db,'candidaturas',applicationId,'messages'),limit(100))));
+    await assertFails(updateDoc(ref(db),{text:'alterada'}));
+    await assertFails(deleteDoc(ref(db)));
+  }
+  const transition=(db:any,status:string)=>updateDoc(doc(db,'candidaturas',applicationId),{status,updatedAt:serverTimestamp()});
+  await assertSucceeds(transition(owner,'accepted'));
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertSucceeds(transition(owner,'completed'));
+  await assertSucceeds(getDoc(ref(worker)));
+  await assertSucceeds(getDoc(ref(owner)));
+  await assertFails(setDoc(ref(owner,'message-four'),payload(ownerId,workerId,'Depois da conclusão')));
+  await assertFails(deleteDoc(ref(owner)));
+});
