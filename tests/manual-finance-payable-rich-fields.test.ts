@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createStoreCostCenterPeriodAccumulator } from '../shared/storeFinanceCostCenterPeriod.js';
 import { createStoreCostCenter, archiveStoreCostCenter, selectStoreCostCenter, normalizeCostCenters } from '../shared/storeFinanceCostCenters.js';
 import {
   STORE_FINANCE_PAYABLE_CURRENCY,
@@ -129,4 +130,34 @@ test('cost centers are bound to owner-authorized finance route and selected atom
   assert.match(router,/selectStoreCostCenter\(decodeCostCenters\(\(await tx.get\(costCentersRef\(storeId\)\)\).data\(\)\),body.costCenterId\)/);
   assert.match(router,/tx.create\(adminDb.doc\(storeFinancePayablePath\(storeId, next.id\)\),next\)/);
   assert.match(ui,/Centro de custo/);
+});
+
+test('cost center period groups paid and due separately, includes unclassified and reconciles totals',()=>{
+  const a=createStoreCostCenterPeriodAccumulator();
+  a.add({id:'cc_a',name:'Infraestrutura'},1000,'paid');
+  a.add({id:'cc_a',name:'Infraestrutura'},2000,'paid');
+  a.add({id:'cc_a',name:'Infraestrutura'},800,'open_due');
+  a.add(undefined,400,'paid');
+  a.add({id:'cc_b',name:'Comercial'},500,'open_due');
+  const expected={paidMinor:3400,paidCount:3,openDueMinor:1300,openDueCount:2};
+  const result=a.finish(expected);
+  assert.equal(result.status,'observed');
+  assert.equal(result.timeZone,'UTC');
+  assert.deepEqual(result.rows,[
+    {id:'cc_a',name:'Infraestrutura',paidMinor:3000,paidCount:2,openDueMinor:800,openDueCount:1},
+    {id:null,name:'Sem classificação',paidMinor:400,paidCount:1,openDueMinor:0,openDueCount:0},
+    {id:'cc_b',name:'Comercial',paidMinor:0,paidCount:0,openDueMinor:500,openDueCount:1},
+  ]);
+  a.invalidPayable();assert.equal(a.finish(expected).status,'partial');
+  assert.equal(a.finish({...expected,paidMinor:1}).status,'unavailable');
+  a.add({id:'cc_a',name:'Outro nome'},1,'paid');assert.equal(a.finish(expected).status,'unavailable');
+});
+test('cost center report shares the existing payable scan and monthly predicates',()=>{
+  const router=readFileSync('server/payments/storeFinanceHistoryRouter.ts','utf8');
+  const ui=readFileSync('src/components/store/StoreFinancePeriodRuntime.tsx','utf8');
+  assert.match(router,/payable\.paidAt >= period\.startIso && payable\.paidAt < period\.endExclusiveIso[\s\S]*?costCenters\.add\(payable.costCenter, payable.amountMinor, 'paid'\)/);
+  assert.match(router,/payable\.dueDate\.startsWith\(period.period\)[\s\S]*?costCenters\.add\(payable.costCenter, payable.amountMinor, 'open_due'\)/);
+  assert.match(router,/costCenterReport:costCenters\.finish/);
+  assert.match(ui,/Despesas por centro de custo/);
+  assert.match(ui,/reportState\.user===auth\.currentUser/);
 });
