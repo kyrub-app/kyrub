@@ -241,8 +241,11 @@ function ScopedSemearButton({
         if(result.status==='accepted'&&typeof result.dailyDay==='string'&&typeof result.dailyRemaining==='number'){
           const confirmed=normalizeSemeadura({...result,seeded:true,canSemear:false});
           const allowance=observeAllowance(confirmed);
-          setState(previous=>({...confirmed,...allowance,count:Math.max(previous?.count??0,confirmed.count),
-            closed:Boolean(previous?.closed||confirmed.closed),seeded:true,canSemear:false}));
+          setState(previous=>{
+            const count=Math.max(previous?.count??0,confirmed.count);
+            const closed=Boolean(previous?.closed||confirmed.closed);
+            return {...confirmed,...allowance,count,closed,bosqueCompleted:closed,pitangueiras:Math.floor(count/1000),seeded:true,canSemear:false};
+          });
           if(allowance.dailyRemaining===0)window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:allowance.dailyDay}}));
         }else await refresh();
       } catch {
