@@ -1,3 +1,4 @@
+import {evaluateStoredCapabilityAgeAccess} from '../../shared/ageEligibility.js';
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminAuth,adminDb} from '../firebaseAdmin.js';
 import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
@@ -22,7 +23,7 @@ export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMo
   if(marker.get('mode')==='tag_only')return {mode:'tag_only'};
   if(marker.get('mode')!=='full')throw Error('TAG_FORBIDDEN');
   const age=await tx.get(adminDb.doc('age_eligibility_private/'+uid));
-  if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||age.get('uid')!==uid||age.get('status')!=='verified_adult')return {mode:'tag_only'};
+  if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:age.data(),capability:'account_ingress',policy:'verified_adult_only'}))return {mode:'tag_only'};
   try{
    const receiptId=await requireCurrentIngressLegalReceiptInTransaction(tx,uid);
    return {mode:marker.get('ingressReceiptId')===receiptId?'full':'tag_only'};
@@ -69,7 +70,7 @@ export async function promoteTagIdentityToKyrub(uid:string){
  return adminDb.runTransaction(async tx=>{
   const ref=markers().doc(uid);
   const [marker,age]=await Promise.all([tx.get(ref),tx.get(adminDb.doc('age_eligibility_private/'+uid))]);
-  if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||age.get('uid')!==uid||age.get('status')!=='verified_adult')throw Error('TAG_PROMOTION_AGE_REQUIRED');
+  if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||!evaluateStoredCapabilityAgeAccess({actorUid:uid,record:age.data(),capability:'account_ingress',policy:'verified_adult_only'}))throw Error('TAG_PROMOTION_AGE_REQUIRED');
   if(!marker.exists||marker.get('uid')!==uid||!['tag_only','full'].includes(marker.get('mode')))throw Error('TAG_NOT_MINIMAL');
   const ingressReceiptId=await requireCurrentIngressLegalReceiptInTransaction(tx,uid);
   if(marker.get('mode')==='full'){
