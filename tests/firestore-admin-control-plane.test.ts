@@ -1,3 +1,5 @@
+import { readOfficialInfrastructureFixture, type InfrastructureFixtureReference } from '../server/admin/officialInfrastructureFixtureReader';
+import { buildManualStoreFinancePayable } from '../shared/storeFinancePayables';
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -381,4 +383,44 @@ test('monthly fixture closure fences concurrent late writes and preserves an imm
       await assertFails(deleteDoc(doc(browser,'kyrub_finops_mau_months/2026-11')));
     }
   } finally {await deleteApp(app);}
+});
+
+test('protected official ERP fixture reads only referenced paid accounts without writing or claiming actual costs',async()=>{
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+  const app=initializeApp({projectId:PROJECT_ID},'finops-official-infrastructure-fixture');
+  try {
+    const db=getFirestore(app);
+    const storeId='store_admin_a', owner='owner_a';
+    await db.doc('kyrub_admin/official_store').set({schemaVersion:1,kind:'official_cairobi_store',canonicalStoreId:storeId,legacyStoreId:owner,ownerUserId:owner,designatedBy:'super_admin_a'});
+    const make=(id:string,amountMinor:number,paidAt:string,ref:string)=>({...buildManualStoreFinancePayable({
+      id,storeId,amountMinor,description:'Fixture invoice',category:'service',dueDate:'2026-11-30',recurrence:'monthly',
+      billingDocumentType:'invoice',billingDocumentReference:ref,createdByUserId:owner,now:'2026-11-01T04:00:00.000Z'
+    }),status:'paid',paidAt,updatedAt:paidAt});
+    const rows=[make('payable_a',120000,'2026-12-01T02:59:59.999Z','fixture-invoice-a'),
+      make('payable_b',50000,'2026-12-01T03:00:00.000Z','fixture-invoice-b'),
+      make('payable_c',200000,'2026-11-20T03:00:00.000Z','fixture-marketing')];
+    for(const row of rows)await db.doc('stores/'+storeId+'/financePayables/'+row.id).set(row);
+    await db.doc('stores/other_store/financePayables/payable_foreign').set({...rows[0],id:'payable_foreign',storeId:'other_store'});
+    const deps={db,projectId:PROJECT_ID,verify:async(token:string)=>({uid:token,emailVerified:true})};
+    const reference:InfrastructureFixtureReference={payableId:'payable_a',category:'vercel',billingDocumentReference:'fixture-invoice-a',reconciliationRef:'fixture-review-a'};
+    const read=(refs:InfrastructureFixtureReference[],actor='finance_a')=>readOfficialInfrastructureFixture('Bearer '+actor,'2026-11',refs,deps);
+    const before=await db.doc('stores/'+storeId+'/financePayables/payable_a').get();
+    const output=await read([reference]);
+    assert.deepEqual(output,{month:'2026-11',timeZone:'America/Sao_Paulo',basis:'cash',scope:'emulator_only',
+      status:'fixture_partial',registeredPaidMinor:120000,matchedCount:1,actualInfrastructureCostMinor:null,realMau:null});
+    assert.deepEqual(await read([reference],'super_admin_a'),output);
+    for(const actor of ['regular_a','support_a','operations_a','suspended_a'])await assert.rejects(read([reference],actor),/FORBIDDEN/);
+    await assert.rejects(readOfficialInfrastructureFixture('','2026-11',[reference],deps),/AUTH_REQUIRED/);
+    await assert.rejects(readOfficialInfrastructureFixture('Bearer finance_a','2026-11',[reference],{...deps,verify:async()=>({uid:'finance_a',emailVerified:false})}),/EMAIL_NOT_VERIFIED/);
+    assert.equal((await read([])).registeredPaidMinor,null);
+    for(const refs of [[reference,reference],[{...reference,payableId:'payable_foreign'}],
+      [{...reference,payableId:'payable_b',billingDocumentReference:'fixture-invoice-b'}],
+      [{...reference,billingDocumentReference:'incorrect'}],[{...reference,payableId:'../other_store'}]])
+      assert.equal((await read(refs)).status,'unavailable');
+    const after=await db.doc('stores/'+storeId+'/financePayables/payable_a').get();
+    assert.deepEqual(after.data(),before.data());
+    assert.equal(after.updateTime?.isEqual(before.updateTime!),true);
+    await db.doc('kyrub_admin/official_store').update({ownerUserId:'other_owner',legacyStoreId:'other_owner'});
+    assert.equal((await read([reference])).status,'unavailable');
+  }finally{await deleteApp(app);}
 });
