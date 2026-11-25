@@ -1,4 +1,5 @@
 import {createHash} from 'node:crypto';
+import {parseHiringTerms,termsFromVacancy,sameHiringTerms} from '../../shared/freelanceHiringTerms.js';
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminDb,getFirebaseAdminProjectId} from '../firebaseAdmin.js';
 import {buildUserNotification,userNotificationPath} from '../../shared/userNotifications.js';
@@ -55,12 +56,14 @@ const lifecycleEvents = {
 } as const;
 type HiringAction=keyof typeof lifecycleEvents;
 
-export async function performNotifiedHiringAction(input:{actorId:string;actorRole:unknown;applicationId:string;operationId:string;action:unknown}){
+export async function performNotifiedHiringAction(input:{actorId:string;actorRole:unknown;applicationId:string;operationId:string;action:unknown;expectedTerms?:unknown}){
  if(!freelanceNotificationPreviewEnabled())throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
  const {actorId,applicationId,operationId}=input;
  if(!uidValid(actorId)||!uidValid(operationId)||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId)||typeof input.action!=='string'||!Object.prototype.hasOwnProperty.call(lifecycleEvents,input.action))throw Error('FREELANCE_INVALID');
  const action=input.action as HiringAction;
  const event=lifecycleEvents[action];
+ const expectedTerms=parseHiringTerms(input.expectedTerms);
+ if((action==='apply'||action==='accept')&&!expectedTerms)throw Error('FREELANCE_INVALID');
  const vagaId=applicationId.slice(0,20),workerId=applicationId.slice(22);
  const receipt=adminDb.doc('candidaturas/'+applicationId);
  const operation=receipt.collection('operations_private').doc(operationId);
@@ -75,7 +78,7 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
   const noticeRef=adminDb.doc(userNotificationPath(receiverId,notice.id));
   const noticeSnap=await tx.get(noticeRef);
   if(previous.exists){
-   if(previous.get('actorId')!==actorId||previous.get('action')!==action||previous.get('status')!==event.to||!noticeSnap.exists)throw Error('FREELANCE_CONFLICT');
+   if(previous.get('actorId')!==actorId||previous.get('action')!==action||previous.get('status')!==event.to||!noticeSnap.exists||((action==='apply'||action==='accept')&&!sameHiringTerms(parseHiringTerms(previous.get('terms')),expectedTerms)))throw Error('FREELANCE_CONFLICT');
    return {applicationId,operationId,status:event.to,created:false};
   }
   if(noticeSnap.exists)throw Error('FREELANCE_CONFLICT');
@@ -83,12 +86,15 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
   if(action!=='withdraw'&&(age.get('uid')!==actorId||age.get('status')!=='verified_adult'||identity.get('uid')!==actorId||identity.get('status')!=='approved'||!Array.isArray(identity.get('approvedProfiles'))||!identity.get('approvedProfiles').includes(event.side==='owner'?'requester':'freelancer')||(event.side==='owner'&&!['owner','manager','staff','admin'].includes(String(input.actorRole)))))throw Error('FREELANCE_FORBIDDEN');
   if(action==='apply'){
    if(app.exists||!vacancy.exists||vacancy.get('status')!=='open')throw Error('FREELANCE_CONFLICT');
-   tx.create(receipt,{vagaId,ownerId,userId:workerId,status:'pending',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+   const terms=termsFromVacancy(vacancy.data());
+   if(!sameHiringTerms(terms,expectedTerms))throw Error('FREELANCE_CONFLICT');
+   tx.create(receipt,{vagaId,ownerId,userId:workerId,status:'pending',terms,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   }else{
    if(!app.exists||app.get('status')!==event.from)throw Error('FREELANCE_CONFLICT');
-   tx.update(receipt,{status:event.to,updatedAt:FieldValue.serverTimestamp()});
+   if(action==='accept'&&!sameHiringTerms(parseHiringTerms(app.get('terms')),expectedTerms))throw Error('FREELANCE_CONFLICT');
+   tx.update(receipt,{status:event.to,updatedAt:FieldValue.serverTimestamp(),...(action==='accept'?{acceptedAt:FieldValue.serverTimestamp()}: {})});
   }
-  tx.create(operation,{actorId,action,status:event.to,createdAt:FieldValue.serverTimestamp()});
+  tx.create(operation,{actorId,action,status:event.to,...((action==='apply'||action==='accept')?{terms:expectedTerms}:{}),createdAt:FieldValue.serverTimestamp()});
   tx.create(noticeRef,notice);
   return {applicationId,operationId,status:event.to,created:true};
  });
