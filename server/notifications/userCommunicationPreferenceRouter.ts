@@ -37,6 +37,7 @@ const categoriesFromBody = (
       ? true : boolean(data.community_group_invite),
     user_forward: data.user_forward === undefined
       ? true : boolean(data.user_forward),
+    freelance: data.freelance === undefined ? false : boolean(data.freelance),
   };
 };
 
