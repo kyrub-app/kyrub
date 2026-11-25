@@ -1,3 +1,4 @@
+import {COMMERCIAL_V1_SCOPE} from '../../../shared/commercialV1Scope';
 import React, { useEffect, useState } from 'react';
 import { MapPin } from 'lucide-react';
 import { auth, db } from '../../utils/firebase';
@@ -49,10 +50,10 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
     if (mode === 'employer') {
-      setDeliveryModalTab('solicitar');
+      setDeliveryModalTab(COMMERCIAL_V1_SCOPE.onDemandDelivery?'solicitar':'publicados');
       setDeliveryPaymentOffer('');
     } else {
-      setFazerEntregasModalTab('solicitacoes');
+      setFazerEntregasModalTab(COMMERCIAL_V1_SCOPE.onDemandDelivery?'solicitacoes':'trajeto');
     }
   }, [isOpen, mode]);
 
@@ -63,6 +64,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
 
   const handleCreateDelivery = (e: React.FormEvent) => {
     e.preventDefault();
+    if(!COMMERCIAL_V1_SCOPE.onDemandDelivery){triggerToast('Entregas sob demanda em preparação. Utilize os Freelas para contratação direta.','info');return;}
     if (!deliveryParcelDesc.trim() || !deliveryPickupPoint.trim() || !deliveryDeliveryPoint.trim()) {
       triggerToast('Preencha descrição, origem e destino da entrega.', 'error');
       return;
@@ -104,6 +106,7 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
   };
 
   const handleAcceptDelivery = async (jobId: string): Promise<void> => {
+    if(!COMMERCIAL_V1_SCOPE.onDemandDelivery){triggerToast('Novos aceites de entregas estão temporariamente indisponíveis.','info');return;}
     if (acceptingKyrubDeliveryId) return;
     const job = deliveries.find(delivery => delivery.id === jobId);
     if (!job || job.status !== 'available') return;
@@ -223,7 +226,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
               <button type="button" onClick={() => setDeliveryModalTab('historico')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${deliveryModalTab === 'historico' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Histórico</button>
             </div>
 
-            {deliveryModalTab === 'solicitar' && (
+            {deliveryModalTab === 'solicitar' && !COMMERCIAL_V1_SCOPE.onDemandDelivery && <p role="status" className="text-sm text-slate-300">Entregas sob demanda em preparação. Utilize os Freelas para contratar diretamente por turno, diária ou período.</p>}
+            {deliveryModalTab === 'solicitar' && COMMERCIAL_V1_SCOPE.onDemandDelivery && (
               <form onSubmit={handleCreateDelivery} className="space-y-4 text-xs">
                 <div className="rounded-2xl border border-cyan-500/20 bg-cyan-500/5 p-3 text-[10px] leading-relaxed text-cyan-100">
                   Este formulário é para entregas avulsas. Pedidos feitos no Kyrub Shop entram automaticamente na logística pelo KDS quando a loja escolher “Entregador Kyrub”.
@@ -331,7 +335,8 @@ export const DeliveryManagerModal: React.FC<DeliveryManagerModalProps> = ({
               <button type="button" onClick={() => setFazerEntregasModalTab('historico')} className={`flex-1 pb-2 border-b-2 transition-all uppercase tracking-wider ${fazerEntregasModalTab === 'historico' ? 'border-orange-500 text-orange-500' : 'border-transparent text-slate-500 hover:text-slate-400'}`}>Histórico</button>
             </div>
 
-            {fazerEntregasModalTab === 'solicitacoes' && (
+            {fazerEntregasModalTab === 'solicitacoes' && !COMMERCIAL_V1_SCOPE.onDemandDelivery && <p role="status" className="text-sm text-slate-300">Novas oportunidades de entrega em preparação. Consulte os Freelas.</p>}
+            {fazerEntregasModalTab === 'solicitacoes' && COMMERCIAL_V1_SCOPE.onDemandDelivery && (
               <div className="space-y-3 text-xs">
                 {deliveries.filter(d => d.status === 'available' && d.requestedBy !== (profileName || 'Usuário')).length === 0 ? (
                   <div className="text-center py-10 text-slate-500 text-xs italic bg-slate-950 rounded-2xl border border-slate-850">Nenhuma oferta de entrega disponível no momento.</div>
