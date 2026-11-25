@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import AdminGamificationPilotEconomicPanel from './AdminGamificationPilotEconomicPanel';
 import AdminGamificationPilotReadPanel from './AdminGamificationPilotReadPanel';
 import type { PilotSession } from '../../utils/gamificationAdminPilotClient';
 import { Cherry, Sprout, ShieldCheck, ShieldAlert } from 'lucide-react';
@@ -20,7 +21,7 @@ const areas = [
 
 /** Local scaffold. The optional injected session enables an isolated read-only
  * panel; no direct SDK, financial mutation or fabricated counters. */
-export default function AdminGamificationSupervisionWorkspace({pilotSession,isCurrent,caseWrites=false}:{pilotSession?:PilotSession;isCurrent?:()=>boolean;caseWrites?:boolean}={}) {
+export default function AdminGamificationSupervisionWorkspace({pilotSession,isCurrent,caseWrites=false,referralWrites=false}:{pilotSession?:PilotSession;isCurrent?:()=>boolean;caseWrites?:boolean;referralWrites?:boolean}={}) {
   const [selected,setSelected]=useState<typeof areas[number]['id']>('pitangas');
   const area=areas.find(item=>item.id===selected) ?? areas[0];
   const connected=Boolean(pilotSession&&isCurrent);
@@ -38,13 +39,14 @@ export default function AdminGamificationSupervisionWorkspace({pilotSession,isCu
       <div className="mt-4" aria-live="polite">
         <h3 className="text-base font-semibold text-white">{area.title}</h3>
         <p className="mt-2 text-sm text-slate-400">{area.description}</p>
-        {(!connected||selected==='revisao')&&<dl className="mt-3 grid gap-2 sm:grid-cols-3">
+        {(!connected)&&<dl className="mt-3 grid gap-2 sm:grid-cols-3">
           {area.metrics.map(label=><div key={label} className="rounded-xl border border-slate-800 bg-slate-900/60 p-3">
             <dt className="text-sm text-slate-300">{label}</dt>
             <dd className="mt-2 text-sm font-medium text-slate-400">Indisponível</dd>
           </div>)}
         </dl>}
         {pilotSession&&isCurrent&&selected!=='revisao'&&<AdminGamificationPilotReadPanel key={pilotSession.uid+':'+selected} session={pilotSession} isCurrent={isCurrent} area={selected} caseWrites={caseWrites}/>}
+        {pilotSession&&isCurrent&&selected==='revisao'&&<AdminGamificationPilotEconomicPanel key={pilotSession.uid} session={pilotSession} isCurrent={isCurrent} referralWrites={referralWrites}/>}
         {selected==='suspeitas'&&<p className="mt-3 text-sm text-slate-400">Não há detector de fraude conectado. Nenhum indício gera punição ou bloqueio automático. {!connected?' A lista de casos ainda está indisponível.':''}</p>}
         {selected==='revisao'&&<p className="mt-3 text-sm text-slate-400">Ações de bloquear, liberar ou alterar saldos não estão disponíveis neste protótipo.</p>}
       </div>
