@@ -83,7 +83,7 @@ export interface AgeEvidence {
  */
 export type AgeCapability =
   | 'private_notes' | 'private_tasks' | 'appropriate_courses' | 'private_tag_management'
-  | 'tag_publication' | 'social_publication' | 'social_comment' | 'sowing'
+  | 'account_ingress' | 'tag_publication' | 'social_publication' | 'social_comment' | 'sowing'
   | 'connections' | 'messages' | 'communities' | 'tribes'
   | 'store_erp' | 'freelance' | 'delivery' | 'financial_operations' | 'rewards';
 
@@ -92,7 +92,7 @@ const PERSONAL_ONLY: ReadonlySet<AgeCapability> = new Set([
   'private_notes', 'private_tasks', 'appropriate_courses', 'private_tag_management',
 ]);
 const KNOWN_CAPABILITIES: ReadonlySet<AgeCapability> = new Set([
-  ...PERSONAL_ONLY, 'tag_publication', 'social_publication', 'social_comment', 'sowing',
+  ...PERSONAL_ONLY, 'account_ingress', 'tag_publication', 'social_publication', 'social_comment', 'sowing',
   'connections', 'messages', 'communities', 'tribes', 'store_erp', 'freelance',
   'delivery', 'financial_operations', 'rewards',
 ]);
@@ -108,4 +108,24 @@ export function evaluateCapabilityAgeAccess(input: {
   if (input.policy === 'verified_adult_only') return input.status === 'verified_adult';
   if (input.policy !== 'reviewed_personal_only' || !PERSONAL_ONLY.has(input.capability)) return false;
   return input.status === 'verified_adult' || input.status === 'inconclusive';
+}
+
+/** Server-side adapter for private records. The caller must authenticate the actor,
+ * resolve policy from trusted configuration, and read the record in the same
+ * transaction as the protected mutation. Never accept this record from a client.
+ */
+export function evaluateStoredCapabilityAgeAccess(input: {
+  actorUid: string;
+  record: Record<string, unknown> | undefined;
+  capability: AgeCapability;
+  policy?: CapabilityAgePolicy;
+}): boolean {
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(input.actorUid) ||
+      !input.record || input.record.uid !== input.actorUid) return false;
+  return evaluateCapabilityAgeAccess({
+    capability: input.capability,
+    status: input.record.status as AgeStatus,
+    authenticated: true,
+    policy: input.policy,
+  });
 }
