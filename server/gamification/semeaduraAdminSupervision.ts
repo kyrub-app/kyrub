@@ -530,3 +530,127 @@ export async function readIsolatedGamificationSuspicionCase(
     automaticSanction:false};
  },{readOnly:true});
 }
+
+
+const referralRoot='systemControl/semeaduraEconomicReview';
+const reviewDispositions=['no_action','insufficient_evidence','requires_separate_corrective_review'] as const;
+type ReviewDisposition=typeof reviewDispositions[number];
+
+/** Load the immutable technical closure and evidence in the same transaction
+ * as the economic referral operation. An explicit referral is not a hold. */
+async function readReferralSource(db:Firestore,tx:Transaction,caseId:string){
+ const [record,closure]=await Promise.all([
+  tx.get(db.doc(suspicionRoot+'/cases/'+caseId)),
+  tx.get(db.doc(suspicionRoot+'/closures/'+caseId)),
+ ]);
+ if(!record.exists)throw Error('ECONOMIC_REFERRAL_SOURCE_UNAVAILABLE');
+ const raw=record.data()!;
+ const source=projectSuspicionCase(caseId,raw);
+ const end=closure.data();
+ if(source.status!=='closed'||source.outcome!=='referred_for_review'||
+    !end||end.schemaVersion!==1||end.caseId!==caseId||end.postKey!==source.postKey||
+    end.outcome!==source.outcome||end.closedAt!==source.closedAt||!uid(end.closedBy))
+   throw Error('ECONOMIC_REFERRAL_SOURCE_INVALID');
+ const initial=projectSuspicionEvidence(raw.openingEvidence,source.postKey);
+ const final=projectSuspicionEvidence(end.closingEvidence,source.postKey);
+ if(!initial.requiresTechnicalReview)throw Error('ECONOMIC_REFERRAL_SOURCE_INVALID');
+ return {source,initial,final,referredBy:end.closedBy as string};
+}
+function validateReferral(data:DocumentData|undefined,caseId:string,source:Awaited<ReturnType<typeof readReferralSource>>){
+ if(!data||data.schemaVersion!==1||data.caseId!==caseId||data.postKey!==source.source.postKey||
+    data.sourceClosedAt!==source.source.closedAt||data.referredBy!==source.referredBy||
+    !uid(data.acceptedBy)||!validIso(data.acceptedAt)||
+    Date.parse(data.acceptedAt)<Date.parse(source.source.closedAt!)||
+    !['pending','decided'].includes(data.status))throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+ if(data.status==='pending'&&(data.decision!==undefined||data.decidedAt!==undefined))
+   throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+ if(data.status==='decided'&&(!reviewDispositions.includes(data.decision)||!validIso(data.decidedAt)||
+    Date.parse(data.decidedAt)<Date.parse(data.acceptedAt)))throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+ return data;
+}
+
+/** Separate explicit administrative intake. Stable case ID prevents duplicate
+ * reviews. No mutation of the original investigation, holds or ledger. */
+export async function acceptIsolatedGamificationEconomicReferral(
+ db:Firestore,auth:Auth,authorization:string,caseId:string,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!uid(caseId))throw Error('ECONOMIC_REFERRAL_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const ref=db.doc(referralRoot+'/referrals/'+caseId);
+  const [source,prior]=await Promise.all([readReferralSource(db,tx,caseId),tx.get(ref)]);
+  if(prior.exists){
+   const data=validateReferral(prior.data(),caseId,source);
+   return {caseId,status:data.status as 'pending'|'decided',replayed:true};
+  }
+  tx.create(ref,{schemaVersion:1,caseId,postKey:source.source.postKey,
+   sourceClosedAt:source.source.closedAt,referredBy:source.referredBy,
+   acceptedBy:reviewerId,acceptedAt:new Date().toISOString(),status:'pending'});
+  return {caseId,status:'pending' as const,replayed:false};
+ });
+}
+
+/** Human disposition of a referral, deliberately non-economic. Even
+ * requires_separate_corrective_review grants no authority to apply a hold,
+ * debit Pitangas or declare fraud. One immutable decision per referral. */
+export async function decideIsolatedGamificationEconomicReferral(
+ db:Firestore,auth:Auth,authorization:string,
+ input:{caseId:string;decision:ReviewDisposition;reason:string},
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!input||!uid(input.caseId)||!reviewDispositions.includes(input.decision)||
+    typeof input.reason!=='string'||input.reason.trim().length<10||input.reason.length>500)
+   throw Error('ECONOMIC_REFERRAL_INPUT_INVALID');
+ const reason=input.reason.trim();
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const ref=db.doc(referralRoot+'/referrals/'+input.caseId);
+  const eventRef=db.doc(referralRoot+'/referralDecisions/'+input.caseId);
+  const [source,record,event]=await Promise.all([readReferralSource(db,tx,input.caseId),tx.get(ref),tx.get(eventRef)]);
+  const data=validateReferral(record.data(),input.caseId,source);
+  if(data.status==='decided'){
+   const prior=event.data();
+   if(!prior||prior.schemaVersion!==1||prior.caseId!==input.caseId||prior.postKey!==data.postKey||
+      prior.decision!==data.decision||prior.decidedAt!==data.decidedAt||prior.decidedBy!==reviewerId||
+      prior.decision!==input.decision||prior.reason!==reason)throw Error('ECONOMIC_REFERRAL_DECISION_CONFLICT');
+   return {caseId:input.caseId,status:'decided' as const,replayed:true};
+  }
+  if(event.exists)throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+  const decidedAt=new Date().toISOString();
+  tx.create(eventRef,{schemaVersion:1,caseId:input.caseId,postKey:data.postKey,
+   decision:input.decision,reason,decidedBy:reviewerId,decidedAt});
+  tx.update(ref,{status:'decided',decision:input.decision,decidedAt});
+  return {caseId:input.caseId,status:'decided' as const,replayed:false};
+ });
+}
+
+/** Read both histories with integrity checks, without exposing raw documents. */
+export async function readIsolatedGamificationEconomicReferral(
+ db:Firestore,auth:Auth,authorization:string,caseId:string,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!uid(caseId))throw Error('ECONOMIC_REFERRAL_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const [source,record,event]=await Promise.all([readReferralSource(db,tx,caseId),
+   tx.get(db.doc(referralRoot+'/referrals/'+caseId)),
+   tx.get(db.doc(referralRoot+'/referralDecisions/'+caseId))]);
+  const data=validateReferral(record.data(),caseId,source);
+  let decision=null;
+  if(data.status==='decided'){
+   const end=event.data();
+   if(!end||end.schemaVersion!==1||end.caseId!==caseId||end.postKey!==data.postKey||
+      end.decision!==data.decision||end.decidedAt!==data.decidedAt||!uid(end.decidedBy)||
+      typeof end.reason!=='string'||end.reason.trim().length<10||end.reason.length>500)
+     throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+   decision={outcome:end.decision as ReviewDisposition,reason:end.reason as string,
+    decidedBy:end.decidedBy as string,decidedAt:end.decidedAt as string};
+  }else if(event.exists)throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+  return {scope:'isolated-economic-referral' as const,caseId,postKey:source.source.postKey,
+   sourceClosedAt:source.source.closedAt,referredBy:source.referredBy,acceptedBy:data.acceptedBy as string,
+   acceptedAt:data.acceptedAt as string,status:data.status as 'pending'|'decided',
+   openingEvidence:source.initial,closingEvidence:source.final,decision,
+   economicMutationApplied:false,fraudVerdict:false};
+ },{readOnly:true});
+}
