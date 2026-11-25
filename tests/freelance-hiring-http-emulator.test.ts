@@ -27,7 +27,7 @@ test('isolated authenticated hiring journey preserves private messages and atomi
  const base='http://127.0.0.1:'+address.port;
  const clients: {app:ReturnType<typeof initializeApp>;db:ReturnType<typeof getFirestore>}[]=[];
  try{
-  await adminDb.doc('renda_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server'});
+  await adminDb.doc('renda_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server',vacancyPolicy:'lock_on_application'});
   const account=async(name:string,profile:string,role?:string)=>{
    const uid='http_freela_'+name,email=uid+'@example.invalid',password='SyntheticOnly-Password1';
    await adminAuth.createUser({uid,email,password,emailVerified:true});
@@ -46,7 +46,9 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   const worker=await account('worker','freelancer');
   const outsider=await account('outsider','freelancer');
   const vacancy=doc(collection(owner.db,'vagas'));
-  await setDoc(vacancy,{ownerId:owner.uid,title:'Vaga fictícia',description:'Trabalho sintético',payment:100,employer:'Contratante de teste',status:'open',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  await setDoc(vacancy,{ownerId:owner.uid,title:'Vaga fictícia',description:'Trabalho sintético',payment:90,termsLocked:false,hasAccepted:false,employer:'Contratante de teste',status:'open',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  await updateDoc(vacancy,{payment:100,updatedAt:serverTimestamp()});
+  assert.equal((await getDocFromServer(vacancy)).get('payment'),100);
   const applicationId=vacancy.id+'__'+worker.uid;
   const receipt=(db:typeof owner.db)=>doc(db,'candidaturas',applicationId);
   const call=(token:string,path:string,body?:unknown,method=body===undefined?'GET':'POST')=>fetch(base+path,{method,headers:{authorization:'Bearer '+token,'content-type':'application/json'},...(body===undefined?{}:{body:JSON.stringify(body)})});
@@ -86,9 +88,13 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   assert.equal((await inbox(outsider.token)).unreadCount,0);
   const preferences=await ok(await call(owner.token,'/api/communication-preferences'));
   assert.equal(preferences.browser.categories.freelance,false);
-  await updateDoc(vacancy,{payment:200,description:'Condições futuras',updatedAt:serverTimestamp()});
+  assert.equal((await getDocFromServer(vacancy)).get('termsLocked'),true);
+  await assert.rejects(updateDoc(vacancy,{payment:200,description:'Condições futuras',updatedAt:serverTimestamp()}));
+  await assert.rejects(updateDoc(vacancy,{termsLocked:false,updatedAt:serverTimestamp()}));
+  await assert.rejects(deleteDoc(vacancy));
   assert.equal((await action(owner.token,'accept','wrong-terms',{...terms,paymentCents:20000})).status,409);
   await ok(await action(owner.token,'accept','accept-1'));
+  assert.equal((await getDocFromServer(vacancy)).get('hasAccepted'),true);
   assert.deepEqual((await getDocFromServer(receipt(worker.db))).get('terms'),terms);
   await assert.rejects(updateDoc(receipt(owner.db),{'terms.paymentCents':1}));
   await ok(await action(worker.token,'request_completion','completion-1'));
