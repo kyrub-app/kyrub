@@ -2,23 +2,24 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import type { Firestore } from 'firebase-admin/firestore';
-import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedVerifiedPost } from '../server/gamification/semeaduraService';
+import { readPersonalSemeaduraJourney, readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedVerifiedPost } from '../server/gamification/semeaduraService';
 import { handleSemeadura } from '../server/gamification/semeaduraHandler';
 
 type RecordValue = Record<string, unknown>;
 class FakeDoc {
-  constructor(readonly path: string, private readonly records: Map<string, RecordValue>) {}
-  collection(name: string) { return new FakeCollection(this.path + '/' + name, this.records); }
-  async get() { return { exists: this.records.has(this.path), data: () => this.records.get(this.path) }; }
+  constructor(readonly path: string, private readonly records: Map<string, RecordValue>, private readonly reads?:string[]) {}
+  collection(name: string) { return new FakeCollection(this.path + '/' + name, this.records,this.reads); }
+  async get() { this.reads?.push(this.path); return { exists: this.records.has(this.path), data: () => this.records.get(this.path) }; }
 }
 class FakeCollection {
-  constructor(readonly path: string, private readonly records: Map<string, RecordValue>) {}
-  doc(id: string) { return new FakeDoc(this.path + '/' + id, this.records); }
+  constructor(readonly path: string, private readonly records: Map<string, RecordValue>,private readonly reads?:string[]) {}
+  doc(id: string) { return new FakeDoc(this.path + '/' + id, this.records,this.reads); }
 }
 class FakeDb {
   readonly records = new Map<string, RecordValue>();
-  doc(path: string) { return new FakeDoc(path, this.records); }
-  collection(path: string) { return new FakeCollection(path, this.records); }
+  readonly reads:string[]=[];
+  doc(path: string) { return new FakeDoc(path, this.records,this.reads); }
+  collection(path: string) { return new FakeCollection(path, this.records,this.reads); }
   async runTransaction<T>(run: (tx: {
     get: (ref: FakeDoc) => Promise<{ exists: boolean; data: () => RecordValue | undefined }>;
     create: (ref: FakeDoc, data: RecordValue) => void;
@@ -270,4 +271,40 @@ test('stale daily allowance responses cannot reopen exhausted cards or roll back
  assert.deepEqual(mergeSemeaduraDailyAllowance(exhausted,renewed),renewed);
  assert.deepEqual(mergeSemeaduraDailyAllowance(renewed,exhausted),renewed);
  assert.deepEqual(mergeSemeaduraDailyAllowance(renewed,{dailyDay:tomorrow,dailyRemaining:99}),{dailyDay:tomorrow,dailyRemaining:99});
+});
+
+
+test('bounded batch shares quota and community reads and returns no private metadata',async()=>{
+ const db=new FakeDb();
+ const targets=Array.from({length:10},(_,i)=>({kind:'community' as const,postId:'batch-'+i}));
+ for(const target of targets)community(db,target.postId);
+ join(db,'batch-viewer');
+ const actor='batch-viewer';
+ const before=JSON.stringify([...db.records]);
+ const singles=await Promise.all(targets.map(t=>readVerifiedPostSemeadura(db.asFirestore(),{...t,authenticatedUserId:actor})));
+ assert.equal(db.reads.length,60);
+ db.reads.length=0;
+ const batch=await readVerifiedPostSemeaduraBatch(db.asFirestore(),actor,targets);
+ assert.deepEqual(batch.results.map(r=>r.status),singles);
+ assert.equal(db.reads.length,33);
+ assert.equal(JSON.stringify([...db.records]),before);
+ db.records.set('communities/community-a',{ownerId:'owner-a',visibility:'private'});
+ const blocked=await readVerifiedPostSemeaduraBatch(db.asFirestore(),'stranger',targets);
+ assert.deepEqual(blocked.results,targets.map(t=>({...t,status:null})));
+ await assert.rejects(readVerifiedPostSemeaduraBatch(db.asFirestore(),actor,[]),/SEMEADURA_INVALID_INPUT/);
+ await assert.rejects(readVerifiedPostSemeaduraBatch(db.asFirestore(),actor,[targets[0],targets[0]]),/SEMEADURA_INVALID_INPUT/);
+ await assert.rejects(readVerifiedPostSemeaduraBatch(db.asFirestore(),actor,[...targets,{kind:'personal',postId:'extra'}]),/SEMEADURA_INVALID_INPUT/);
+});
+
+test('status batch parser rejects injected identity, duplicate targets and oversized batches',async()=>{
+ const {parseSemeaduraRequest}=await import('../server/gamification/semeaduraRequestAuthority.js');
+ const target={kind:'personal',postId:'batch-a'};
+ assert.deepEqual(parseSemeaduraRequest({action:'status_batch',targets:[target]}),{action:'status_batch',targets:[target]});
+ for(const invalid of [
+  {action:'status_batch',targets:[target],uid:'other'},
+  {action:'status_batch',targets:[{...target,uid:'other'}]},
+  {action:'status_batch',targets:[target,target]},
+  {action:'status_batch',targets:[]},
+  {action:'status_batch',targets:Array.from({length:11},(_,i)=>({...target,postId:'p'+i}))},
+ ])assert.equal(parseSemeaduraRequest(invalid),null);
 });
