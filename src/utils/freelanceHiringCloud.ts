@@ -1,5 +1,5 @@
 import { auth, db } from './firebase';
-import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
+import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
 export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed' };
@@ -103,15 +103,24 @@ const hiringMessages=(applicationId:string)=>{
  if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))throw Error('Candidatura inválida.');
  return collection(db,'candidaturas',applicationId,'messages');
 };
-export async function listHiringMessages(applicationId:string):Promise<HiringMessage[]>{
+export type HiringMessageCursor = { applicationId:string; actorId:string; snapshot:QueryDocumentSnapshot<DocumentData> };
+export const HIRING_MESSAGE_PAGE_SIZE=50;
+export async function listHiringMessages(applicationId:string,cursor?:HiringMessageCursor):Promise<{items:HiringMessage[];nextCursor:HiringMessageCursor|null}>{
  const actor=uid();
- const snapshot=await getDocsFromServer(query(hiringMessages(applicationId),orderBy('createdAt','desc'),limit(100)));
+ const messages=hiringMessages(applicationId);
+ if(cursor&&(cursor.actorId!==actor||cursor.applicationId!==applicationId||cursor.snapshot.ref.parent.path!==messages.path))throw Error('Cursor inválido.');
+ const ordered=query(messages,orderBy('createdAt','desc'),orderBy(documentId(),'desc'));
+ const page=cursor?query(ordered,startAfter(cursor.snapshot),limit(HIRING_MESSAGE_PAGE_SIZE+1)):query(ordered,limit(HIRING_MESSAGE_PAGE_SIZE+1));
+ const snapshot=await getDocsFromServer(page);
  checkSession(actor);
- return snapshot.docs.flatMap(d=>{
+ const docs=snapshot.docs.slice(0,HIRING_MESSAGE_PAGE_SIZE);
+ const items=docs.map(d=>{
   const data=d.data();
-  if(typeof data.senderId!=='string'||typeof data.receiverId!=='string'||typeof data.text!=='string'||typeof data.createdAt?.toMillis!=='function'||![data.senderId,data.receiverId].includes(actor))return [];
-  return [{id:d.id,senderId:data.senderId,receiverId:data.receiverId,text:data.text,createdAtMs:data.createdAt.toMillis()}];
+  if(typeof data.senderId!=='string'||typeof data.receiverId!=='string'||typeof data.text!=='string'||typeof data.createdAt?.toMillis!=='function'||![data.senderId,data.receiverId].includes(actor))throw Error('Mensagem inválida no histórico.');
+  return {id:d.id,senderId:data.senderId,receiverId:data.receiverId,text:data.text,createdAtMs:data.createdAt.toMillis()};
  }).reverse();
+ const last=docs[docs.length-1];
+ return {items,nextCursor:snapshot.docs.length>HIRING_MESSAGE_PAGE_SIZE&&last?{applicationId,actorId:actor,snapshot:last}:null};
 }
 export async function sendHiringMessage(applicationId:string,text:string):Promise<void>{
  const actor=uid(),message=text.trim();
