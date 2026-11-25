@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createSemeaduraReadCoalescer } from '../../utils/semeaduraReadCoalescer';
+import { notifyRewardRefresh, subscribeRewardRefresh } from '../../utils/rewardRefresh';
 import { auth } from '../../utils/firebase';
 import { SemeaduraJourneyPanel } from '../SemeaduraJourneyPanel';
 
@@ -20,7 +21,7 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
   const [visibleEntries,setVisibleEntries]=useState(STATEMENT_PAGE_SIZE);
   const requestId = useRef<string | null>(null);
   const inFlight = useRef(false);
-  const reload = useRef<() => Promise<void>>(async () => {});
+  const reload = useRef<(force?:boolean) => Promise<void>>(async () => {});
 
   useEffect(() => {
     const controller=new AbortController();
@@ -46,9 +47,10 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
     };
     setAccount(null);setMessage('Consultando recompensas…');setShowStatement(false);
     requestId.current=null;
-    reload.current=()=>read(true);
+    reload.current=(force=true)=>read(force);
     void read();
-    return ()=>controller.abort();
+    const unsubscribe=session?subscribeRewardRefresh(session,()=>!controller.signal.aborted&&auth.currentUser===session,()=>{void read();}):()=>{};
+    return ()=>{controller.abort();unsubscribe();};
   }, [session]);
 
   const convert = async () => {
@@ -71,10 +73,12 @@ function ScopedPitangaAccount({mode,session}:{mode:'all'|'pitangas'|'xp';session
         return;
       }
       requestId.current = null;
-      await reload.current();
+      accountReads.invalidate(session,'account');
+      notifyRewardRefresh(session,'conversion');
+      await reload.current(false);
       if(auth.currentUser===session)setMessage('Conversão confirmada: 1.000 Pitangas por 1 XP.');
     } catch { if(auth.currentUser===session)setMessage('Não foi possível confirmar. Tente novamente para consultar a mesma conversão.'); }
-    finally { accountReads.invalidate(session,'account');inFlight.current = false; setBusy(false); }
+    finally { inFlight.current = false; setBusy(false); }
   };
 
   return <div className="space-y-3">
