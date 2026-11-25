@@ -74,12 +74,23 @@ try {
   assert.equal(linkUser.emailVerified,true);
   assert.equal((await adminDb.doc('users/'+linkUser.uid).get()).exists,false);
   await page.getByRole('button',{name:'Sair',exact:true}).click();
-  await page.goto(callback.toString());
-  await page.getByLabel('E-mail',{exact:true}).fill(linkEmail);
-  await page.getByRole('button',{name:'Confirmar acesso por e-mail'}).click();
-  await page.getByRole('alert').waitFor();
-  assert.equal(await page.getByLabel('Data de nascimento').count(),0);
-  await page.getByRole('button',{name:'Cancelar link'}).click();
+  await page.getByRole('button',{name:'Enviar link de acesso',exact:true}).waitFor();
+  // Fresh browser context proves rejection independently of local session state.
+  const replayContext=await browser.newContext({viewport:{width:360,height:800}});
+  await replayContext.route('**/*',async route=>{
+    const url=new URL(route.request().url());
+    if(url.hostname!=='127.0.0.1'||!['3000','9099','8088','9199'].includes(url.port))return route.abort();
+    await route.continue();
+  });
+  try{
+    const replay=await replayContext.newPage();
+    await replay.goto(callback.toString());
+    await replay.getByLabel('E-mail',{exact:true}).fill(linkEmail);
+    await replay.getByRole('button',{name:'Confirmar acesso por e-mail'}).click();
+    await replay.getByRole('alert').waitFor();
+    assert.equal(await replay.getByLabel('Data de nascimento').count(),0);
+    await replay.getByRole('button',{name:'Cancelar link'}).click();
+  }finally{await replayContext.close();}
   assert.equal((await fetch(origin+'/api/notifications')).status,404);
   assert.equal((await fetch(origin+'/api/onboarding/age')).status,401);
   console.log('PASS: isolated onboarding registration, verification, age screening, reload, login and sign-out.');
