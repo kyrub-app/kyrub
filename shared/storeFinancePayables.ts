@@ -1,3 +1,5 @@
+import { normalizeCustomFinanceRef } from './storeFinanceTaxonomy.js';
+import { normalizeCostCenterRef, type StoreCostCenterRef } from './storeFinanceCostCenters.js';
 export const STORE_FINANCE_PAYABLE_SCHEMA_VERSION = 1 as const;
 export const STORE_FINANCE_PAYABLE_CURRENCY = 'BRL' as const;
 
@@ -32,6 +34,8 @@ export interface StoreFinancePayable {
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   costNature: StoreFinancePayableCostNature;
+  costCenter?: StoreCostCenterRef;
+  customCategory?: StoreCostCenterRef;
   billingDocumentType: StoreFinancePayableBillingDocumentType;
   billingDocumentReference: string;
   billingDigitableLine: string;
@@ -172,6 +176,7 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     throw new Error('STORE_FINANCE_PAYABLE_BILLING_DOCUMENT_SCOPE_INVALID');
   }
 
+  if (source.customCategory !== undefined && (source.category !== 'other' || source.sourceAuthority !== 'store_owner_manual')) throw Error('STORE_FINANCE_PAYABLE_TAXONOMY_INVALID');
   if (source.sourceAuthority === 'store_owner_manual') {
     if (
       source.category === 'payroll'
@@ -236,6 +241,8 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     dueDate,
     recurrence: source.recurrence,
     costNature,
+    ...(source.costCenter === undefined ? {} : {costCenter:normalizeCostCenterRef(source.costCenter)}),
+    ...(source.customCategory === undefined ? {} : {customCategory:normalizeCustomFinanceRef('categories',source.customCategory)}),
     billingDocumentType,
     billingDocumentReference,
     billingDigitableLine,
@@ -265,6 +272,8 @@ export const buildManualStoreFinancePayable = (input: {
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   costNature?: StoreFinancePayableCostNature;
+  costCenter?: StoreCostCenterRef;
+  customCategory?: StoreCostCenterRef;
   billingDocumentType?: StoreFinancePayableBillingDocumentType;
   billingDocumentReference?: string;
   billingDigitableLine?: string;
@@ -289,6 +298,8 @@ export const buildManualStoreFinancePayable = (input: {
     dueDate: input.dueDate,
     recurrence: input.recurrence,
     costNature: input.costNature ?? 'unspecified',
+    ...(input.costCenter === undefined ? {} : {costCenter:input.costCenter}),
+    ...(input.customCategory === undefined ? {} : {customCategory:input.customCategory}),
     billingDocumentType: input.billingDocumentType ?? 'none',
     billingDocumentReference: input.billingDocumentReference ?? '',
     billingDigitableLine: input.billingDigitableLine ?? '',
