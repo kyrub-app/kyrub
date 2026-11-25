@@ -1,3 +1,4 @@
+import {requireStagedFinancialOwnerAccess} from '../identity/stagedFinancialAuthorization.js';
 import { createHash } from 'node:crypto';
 import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
@@ -89,7 +90,9 @@ const normalizeProviderIso = (value: unknown): string => {
 const requireOwner = async (authorization: string, storeId: string): Promise<string> => {
   if(process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED==='true'){
     const {requireFinancialMfaPreviewOwner}=await import('../identity/financialMfaPreview.js');
-    return requireFinancialMfaPreviewOwner(authorization,storeId);
+    const ownerId=await requireFinancialMfaPreviewOwner(authorization,storeId);
+    await requireStagedFinancialOwnerAccess(authorization,ownerId);
+    return ownerId;
   }
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
@@ -98,6 +101,7 @@ const requireOwner = async (authorization: string, storeId: string): Promise<str
     storeId,
     authenticatedUserId: identity.uid,
   });
+  await requireStagedFinancialOwnerAccess(authorization,identity.uid);
   return identity.uid;
 };
 
@@ -440,6 +444,7 @@ const backfillMercadoPagoReconciliations = async (input: {
 
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
+  if(code==='STORE_FINANCE_AGE_REQUIRED')return {status:403,message:'A elegibilidade comercial precisa estar verificada.',code};
   if(code==='second_factor_required'||code==='reauthentication_required')return {status:403,message:'Confirme sua autenticação em dois fatores para acessar o financeiro.',code};
   if(code==='authentication_required'||String((error as {code?:string})?.code??'').startsWith('auth/'))return {status:401,message:'Faça login novamente.',code:'AUTH_REQUIRED'};
   if(code==='FINANCIAL_MFA_PREVIEW_UNAVAILABLE')return {status:503,message:'Homologação financeira indisponível.',code};
