@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { projectPlatformFinops, FINOPS_CATEGORIES, type FinopsFact, type FinopsPeriod, type FinopsCoverage } from '../shared/platformFinops';
 import {
   buildRecentStoreEconomyActivity,
   deriveRecentEconomicAllocationWindow,
@@ -176,5 +177,62 @@ describe('admin platform economy', () => {
     const server = readFileSync('server.ts', 'utf8');
     assert.match(server, /"\/api\/admin\/platform-economy"/);
     assert.match(server, /createPlatformEconomyRouter\(\)/);
+  });
+});
+
+describe('platform own financial period projection', () => {
+  const period: FinopsPeriod = {month:'2026-11', timezone:'America/Sao_Paulo', basis:'cash', currency:'BRL'};
+  const fact = (overrides: Partial<FinopsFact> = {}): FinopsFact => ({
+    period, category:'vercel', factId:'invoice-line-1', sourceRef:'invoice-1',
+    amountMinor:12000, quality:'confirmed', originalCurrency:'BRL', ...overrides,
+  });
+  const complete: FinopsCoverage[] = FINOPS_CATEGORIES.map(category => ({
+    period, category, status:'complete', evidenceRef:'reconciled-' + category,
+  }));
+  const users = {period, uniqueAuthenticatedUsers:1000, status:'complete' as const, evidenceRef:'unique-active-users'};
+  test('missing data is unavailable, not zero; partial invoices do not produce a total or cost per user', () => {
+    const empty = projectPlatformFinops(period, [], []);
+    assert.equal(empty.costs.confirmedMinor, null);
+    assert.equal(empty.costs.status, 'unavailable');
+    assert.equal(empty.resultMinor, null);
+    const partial = projectPlatformFinops(period, [fact()], [], users);
+    assert.equal(partial.costs.confirmedMinor, 12000);
+    assert.equal(partial.costs.status, 'partial');
+    assert.equal(partial.costPerActiveUserMinor, null);
+    assert.equal(partial.resultMinor, null);
+  });
+  test('complete reconciled evidence supports period totals and signed reversals without counting marketplace GMV', () => {
+    const result = projectPlatformFinops(period, [
+      fact(), fact({factId:'plan-1', category:'plans', amountMinor:19700}),
+      fact({factId:'plan-refund-1', category:'plans', amountMinor:-1000}),
+    ], complete, users);
+    assert.equal(result.costs.confirmedMinor, 12000);
+    assert.equal(result.revenue.confirmedMinor, 18700);
+    assert.equal(result.resultMinor, 6700);
+    assert.equal(result.marginBps, 3583);
+    assert.equal(result.costPerActiveUserMinor, 12);
+    assert.equal(result.revenuePerActiveUserMinor, 19);
+    assert.equal(result.categories.ads.confirmedMinor, 0);
+    assert.equal(projectPlatformFinops(period, [], complete, {...users, uniqueAuthenticatedUsers:0}).costPerActiveUserMinor, null);
+    assert.equal(projectPlatformFinops(period, [], complete, {...users, status:'partial'}).costPerActiveUserMinor, null);
+  });
+  test('estimates remain separate even if coverage is marked complete', () => {
+    const result = projectPlatformFinops(period, [fact(), fact({
+      factId:'estimated-1', category:'firebase_gcp', amountMinor:5000, quality:'estimated',
+    })], complete, users);
+    assert.equal(result.costs.status, 'partial');
+    assert.equal(result.costs.confirmedMinor, 12000);
+    assert.equal(result.costs.estimatedMinor, 5000);
+    assert.equal(result.resultMinor, null);
+    assert.equal(result.costPerActiveUserMinor, null);
+  });
+  test('rejects duplicates, out-of-period facts, mixed accounting bases and unproven FX', () => {
+    assert.throws(() => projectPlatformFinops(period, [fact(), fact({category:'providers'})], []), /DUPLICATE_FACT/);
+    assert.throws(() => projectPlatformFinops(period, [fact({period:{...period, month:'2026-10'}})], []), /FACT_INVALID/);
+    assert.throws(() => projectPlatformFinops(period, [fact({period:{...period, basis:'accrual'}})], []), /FACT_INVALID/);
+    assert.throws(() => projectPlatformFinops(period, [fact({originalCurrency:'USD'})], []), /FACT_INVALID/);
+    assert.throws(() => projectPlatformFinops(period, [fact({category:'merchant_gmv' as FinopsFact['category']})], []), /FACT_INVALID/);
+    assert.throws(() => projectPlatformFinops(period, [], [complete[0], complete[0]]), /DUPLICATE_COVERAGE/);
+    assert.throws(() => projectPlatformFinops(period, [], complete, {...users, period:{...period, month:'2026-10'}}), /ACTIVE_USERS_INVALID/);
   });
 });
