@@ -1056,3 +1056,54 @@ test('pending memberships remain private to applicant and community owner', asyn
     getDocs(query(collection(visitor, 'community_members'), where('communityId', '==', communityId))),
   );
 });
+
+test('wall publication receipt is atomic, author-only, and prevents resurrection after removal', async () => {
+  const owner = environment.authenticatedContext(OWNER).firestore();
+  const outsider = environment.authenticatedContext(OUTSIDER).firestore();
+  const anonymous = environment.unauthenticatedContext().firestore();
+  const communityId = 'wall_receipt_case';
+  const postId = 'wall_12345678-1234-1234-1234-123456789abc';
+  const receiptPath = 'community_wall_publish_receipts';
+  const post = doc(owner, 'community_posts', postId);
+  const receipt = doc(owner, receiptPath, postId);
+  const pointer = doc(owner, 'community_square_posts', postId);
+  await createCommunity(owner, communityId, 'public');
+  const postData = () => ({
+    postId, communityId, authorId: OWNER, authorName: 'Criador Kyrub', authorAvatar: '',
+    content: 'Uma única publicação.', mediaUrls: [], allowComments: true, pinnedCommentId: '',
+    createdAtIso: '2026-11-25T00:00:00.000Z', createdAt: serverTimestamp(),
+    updatedAtIso: '2026-11-25T00:00:00.000Z', updatedAt: serverTimestamp(),
+  });
+  const receiptData = () => ({postId, communityId, authorId: OWNER, requestHash: 'a'.repeat(64), createdAt: serverTimestamp()});
+  const missing = await assertSucceeds(getDoc(receipt));
+  if (missing.exists()) throw Error('receipt should not exist');
+  await assertFails(getDoc(doc(anonymous, receiptPath, postId)));
+  await assertFails(setDoc(post, postData()));
+  await assertFails(setDoc(receipt, receiptData()));
+  const publish = () => runTransaction(owner, async tx => {
+    const previous = await tx.get(receipt);
+    if (previous.exists()) return 'replay';
+    tx.set(post, postData());
+    tx.set(receipt, receiptData());
+    tx.set(pointer, {postId, communityId, createdAt: serverTimestamp()});
+    return 'created';
+  });
+  const results = await Promise.all([publish(), publish()]);
+  if (results.filter(x => x === 'created').length !== 1 || results.filter(x => x === 'replay').length !== 1) throw Error('expected one commit and one replay');
+  const first = await assertSucceeds(getDoc(receipt));
+  if (!first.exists()) throw Error('missing atomic receipt');
+  await assertSucceeds(getDoc(post));
+  await assertSucceeds(getDoc(pointer));
+  await assertFails(getDoc(doc(outsider, receiptPath, postId)));
+  await assertFails(getDocs(collection(owner, receiptPath)));
+  await assertFails(updateDoc(receipt, {requestHash: 'b'.repeat(64)}));
+  await assertFails(deleteDoc(receipt));
+  await assertSucceeds(deleteDoc(pointer));
+  await assertSucceeds(deleteDoc(post));
+  if (await publish() !== 'replay') throw Error('receipt must prevent resurrection');
+  await assertFails(setDoc(post, postData()));
+  await environment.withSecurityRulesDisabled(async ctx => {
+    if ((await getDoc(doc(ctx.firestore(), 'community_posts', postId))).exists()) throw Error('post resurrected');
+    if ((await getDoc(doc(ctx.firestore(), 'community_square_posts', postId))).exists()) throw Error('pointer resurrected');
+  });
+});

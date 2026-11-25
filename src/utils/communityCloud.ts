@@ -927,6 +927,7 @@ export const createCommunityPost = async (input: {
   mediaUrls?: string[];
   shareToSquare?: boolean;
   allowComments?: boolean;
+  attempt?: { postId: string; owner: User };
 }): Promise<string> => {
   const { user, name, avatar } = currentIdentity();
   const content = input.content.trim().slice(0, 3000);
@@ -935,6 +936,61 @@ export const createCommunityPost = async (input: {
     .slice(0, 9);
   if (!content && mediaUrls.length === 0) {
     throw new Error('Escreva algo ou adicione uma imagem.');
+  }
+  const attempt = input.attempt;
+  if (attempt) {
+    if (attempt.owner !== user || !/^wall_[a-f0-9-]{36}$/.test(attempt.postId)) {
+      throw new Error('Tentativa de publicação inválida.');
+    }
+    const assertSession = () => {
+      if (auth.currentUser !== user) throw new Error('Faça login novamente para confirmar a publicação.');
+    };
+    // A fingerprint detects accidental reuse of the same ID for a different
+    // payload. It is not a trusted authorization or content signature.
+    const bytes = new TextEncoder().encode(JSON.stringify([
+      input.communityId, content, mediaUrls, input.shareToSquare !== false, input.allowComments !== false,
+    ]));
+    const requestHash = Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256', bytes)))
+      .map(value => value.toString(16).padStart(2, '0')).join('');
+    assertSession();
+    const postRef = doc(db, 'community_posts', attempt.postId);
+    const receiptRef = doc(db, 'community_wall_publish_receipts', attempt.postId);
+    return runTransaction(db, async tx => {
+      assertSession();
+      const receipt = await tx.get(receiptRef);
+      assertSession();
+      if (receipt.exists()) {
+        const data = receipt.data();
+        if (data.authorId !== user.uid || data.communityId !== input.communityId ||
+            data.postId !== attempt.postId || data.requestHash !== requestHash) {
+          throw new Error('A tentativa anterior não corresponde a esta publicação.');
+        }
+        // Receipt remains even after author/moderator removes the post.
+        // Never resurrect a removed publication, or recreate Praça discovery.
+        return attempt.postId;
+      }
+      const community = input.shareToSquare === false ? null :
+        await tx.get(doc(db, 'communities', input.communityId));
+      assertSession();
+      const nowIso = new Date().toISOString();
+      tx.set(postRef, {
+        postId: postRef.id, communityId: input.communityId, authorId: user.uid,
+        authorName: name, authorAvatar: avatar, content, mediaUrls,
+        allowComments: input.allowComments !== false, pinnedCommentId: '',
+        createdAtIso: nowIso, createdAt: serverTimestamp(),
+        updatedAtIso: nowIso, updatedAt: serverTimestamp(),
+      });
+      tx.set(receiptRef, {
+        postId: postRef.id, communityId: input.communityId, authorId: user.uid,
+        requestHash, createdAt: serverTimestamp(),
+      });
+      if (community?.exists() && community.data().visibility === 'public') {
+        tx.set(doc(db, 'community_square_posts', postRef.id), {
+          postId: postRef.id, communityId: input.communityId, createdAt: serverTimestamp(),
+        });
+      }
+      return postRef.id;
+    });
   }
   const reference = doc(collection(db, 'community_posts'));
   const nowIso = new Date().toISOString();

@@ -198,7 +198,7 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
   assert.match(ui, /uploadCommunityPostMedia\(communityId, file, attempt\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare, allowComments: wallAllowComments \}\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: requestedSquare,\s*allowComments, attempt: \{ postId: draft\.postId, owner \}/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -985,7 +985,7 @@ test('wall upload keeps original validation and uploads optimized blob with same
   assert.match(cloud, /customMetadata: \{ communityId, ownerId: user.uid, purpose: 'community-wall' \}/);
 });
 
-test('wall draft retains attachment IDs on partial failure, but never across commit or changed scope', async () => {
+test('wall draft retains attachment and post IDs on partial failure and commit retry, not across changed scope', async () => {
   const owner = {}, files = [{}, {}, {}];
   let id = 0;
   const newId = () => String(++id);
@@ -1013,10 +1013,14 @@ test('wall draft retains attachment IDs on partial failure, but never across com
   assert.notEqual(selectWallDraft(draft, owner, 'community', 'edited', files, newId), draft);
   assert.notEqual(selectWallDraft(draft, owner, 'community', 'text', [...files].reverse(), newId), draft);
   draft.commitStarted = true;
-  const fresh = selectWallDraft(draft, owner, 'community', 'text', files, newId);
-  assert.notEqual(fresh, draft);
-  assert.notEqual(fresh.uploads[0].id, draft.uploads[0].id);
-  await assert.rejects(resolveWallUploads(draft, () => {}, upload), /encaminhada/);
+  const retryCommit = selectWallDraft(draft, owner, 'community', 'text', files, newId);
+  assert.equal(retryCommit, draft);
+  assert.equal(retryCommit.postId, draft.postId);
+  assert.deepEqual(await resolveWallUploads(retryCommit, () => {}, async () => {
+    throw Error('unexpected upload after commit');
+  }), ['url-1','url-2','url-3']);
+  assert.throws(() => selectWallDraft(draft, owner, 'community', 'edited', files, newId), /anterior/);
+  assert.notEqual(selectWallDraft(draft, {}, 'community', 'text', files, newId).postId, draft.postId);
 });
 
 test('wall retry aborts when the draft scope changes mid-upload', async () => {
@@ -1034,6 +1038,18 @@ test('wall retry consults scoped metadata and only object-not-found permits a ne
   assert.match(cloud, /getMetadata\(destination\)/);
   assert.match(cloud, /storage\/object-not-found/);
   assert.match(cloud, /metadata\.customMetadata\?\.ownerId !== user\.uid/);
-  assert.match(ui, /draft\.commitStarted = true;\s*await createCommunityPost/);
+  assert.match(ui, /draft\.commitStarted = true;\s*setWallCommitPending\(true\);\s*await createCommunityPost/);
   assert.match(ui, /wallSubmitLock\.current = true/);
+});
+
+test('wall publication transaction uses immutable receipt before writing source or Praça pointer', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const rules = read('firestore.communities.fragment.rules');
+  const branch = cloud.slice(cloud.indexOf('const attempt = input.attempt;'), cloud.indexOf("const reference = doc(collection(db, 'community_posts'));", cloud.indexOf('const attempt = input.attempt;')));
+  assert.match(branch, /tx\.get\(receiptRef\)/);
+  assert.ok(branch.indexOf('return attempt.postId;') < branch.indexOf('tx.set(postRef'));
+  assert.match(branch, /tx\.set\(receiptRef/);
+  assert.match(branch, /data\.requestHash !== requestHash/);
+  assert.match(rules, /match \/community_wall_publish_receipts\/\{postId\}/);
+  assert.match(rules, /!isWallReceiptPostId\(postId\) \|\| hasNewWallPublishReceipt\(postId\)/);
 });

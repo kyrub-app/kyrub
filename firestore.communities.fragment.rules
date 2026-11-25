@@ -515,6 +515,47 @@
       && data.updatedAt is timestamp;
     }
 
+    // Reserved IDs for the wall's idempotent publication path. Receipts are
+    // immutable tombstones; they outlive author/moderator removal of a post.
+    function isWallReceiptPostId(postId) {
+      return postId.matches('wall_[a-f0-9-]{36}');
+    }
+
+    function wallPublishReceiptPath(postId) {
+      return /databases/$(database)/documents/community_wall_publish_receipts/$(postId);
+    }
+
+    function hasNewWallPublishReceipt(postId) {
+      return !exists(wallPublishReceiptPath(postId))
+        && existsAfter(wallPublishReceiptPath(postId))
+        && getAfter(wallPublishReceiptPath(postId)).data.authorId == request.auth.uid
+        && getAfter(wallPublishReceiptPath(postId)).data.communityId == incoming().communityId
+        && getAfter(wallPublishReceiptPath(postId)).data.postId == postId;
+    }
+
+    match /community_wall_publish_receipts/{postId} {
+      // Reading a missing opaque ID is required by the transaction. Existing
+      // receipts are author-only; no listing, content or media URLs.
+      allow get: if isSignedIn() && isWallReceiptPostId(postId)
+        && (resource == null || existing().authorId == request.auth.uid);
+      allow list: if false;
+      allow create: if isSignedIn()
+        && isWallReceiptPostId(postId)
+        && incoming().keys().hasAll(['postId', 'communityId', 'authorId', 'requestHash', 'createdAt'])
+        && incoming().keys().hasOnly(['postId', 'communityId', 'authorId', 'requestHash', 'createdAt'])
+        && incoming().postId == postId
+        && incoming().authorId == request.auth.uid
+        && incoming().requestHash is string
+        && incoming().requestHash.matches('[a-f0-9]{64}')
+        && incoming().createdAt == request.time
+        && !exists(/databases/$(database)/documents/community_posts/$(postId))
+        && existsAfter(/databases/$(database)/documents/community_posts/$(postId))
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == incoming().communityId
+        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.createdAt == request.time;
+      allow update, delete: if false;
+    }
+
     match /community_posts/{postId} {
       allow read: if canReadCommunity(existing().communityId);
 
@@ -524,7 +565,8 @@
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time
         && (!('pinnedCommentId' in incoming()) || incoming().pinnedCommentId == '')
-        && hasValidCommunityPostShape(incoming(), postId);
+        && hasValidCommunityPostShape(incoming(), postId)
+        && (!isWallReceiptPostId(postId) || hasNewWallPublishReceipt(postId));
 
       allow update: if isSignedIn()
         && existing().authorId == request.auth.uid
