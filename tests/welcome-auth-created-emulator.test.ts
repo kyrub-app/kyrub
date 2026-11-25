@@ -1118,7 +1118,17 @@ test('isolated zero-start path enrolls verified author once and never silently a
   assert.equal((await stats.get()).exists,false);
   assert.equal((await cursor.get()).exists,false);
   await balance(uid).update({availableKCoins:100});
-  const results=await Promise.all([seed(),seed()]);
+  // A verified actor and verified beneficiary can complete the unchanged
+  // economic transaction, including concurrent replay, with the gate active.
+  await Promise.all([actorAge.set({uid:actor,status:'verified_adult'}),authorAge.set({uid,status:'verified_adult'})]);
+  process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED='true';
+  let results:Awaited<ReturnType<typeof seed>>[];
+  try{results=await Promise.all([seed(),seed()]);}
+  finally{
+   if(oldAgeFlag===undefined)delete process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED;
+   else process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED=oldAgeFlag;
+   await Promise.all([actorAge.delete(),authorAge.delete()]);
+  }
   assert.equal(results.filter(r=>r.status==='accepted').length,1);
   assert.equal(results.filter(r=>r.status==='already_seeded').length,1);
   assert.equal((await cursor.get()).get('acceptedSeeds'),1);
