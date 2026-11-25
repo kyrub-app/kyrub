@@ -1,3 +1,4 @@
+import { createStoreCostCenterPeriodAccumulator } from '../../shared/storeFinanceCostCenterPeriod.js';
 import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
@@ -336,6 +337,7 @@ const aggregateLedgerPeriod = async (storeId: string, period: PeriodRange) => {
 const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => {
   let lastDocumentId = '', paidPayablesMinor = 0, openDueMinor = 0, paidPayableCount = 0, openDueCount = 0;
   const categoryTotals = new Map<StoreFinancePayableCategory, number>();
+  const costCenters = createStoreCostCenterPeriodAccumulator();
   while (true) {
     let query = adminDb.collection(`stores/${storeId}/financePayables`).orderBy(FieldPath.documentId()).limit(PERIOD_SCAN_BATCH);
     if (lastDocumentId) query = query.startAfter(lastDocumentId);
@@ -346,14 +348,17 @@ const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => 
         const payable = normalizeStoreFinancePayable({ ...(document.data() as StoreFinancePayable), id: document.id, storeId });
         if (payable.status === 'paid' && payable.paidAt >= period.startIso && payable.paidAt < period.endExclusiveIso) {
           paidPayablesMinor += payable.amountMinor; paidPayableCount += 1; categoryTotals.set(payable.category, (categoryTotals.get(payable.category) ?? 0) + payable.amountMinor);
+          costCenters.add(payable.costCenter, payable.amountMinor, 'paid');
         }
-        if (payable.status === 'open' && payable.dueDate.startsWith(period.period)) { openDueMinor += payable.amountMinor; openDueCount += 1; }
-      } catch { /* invalid canonical rows are excluded from accounting */ }
+        if (payable.status === 'open' && payable.dueDate.startsWith(period.period)) { openDueMinor += payable.amountMinor; openDueCount += 1; costCenters.add(payable.costCenter, payable.amountMinor, 'open_due'); }
+      } catch { costCenters.invalidPayable(); /* invalid canonical rows are excluded from accounting */ }
     }
     lastDocumentId = snapshot.docs[snapshot.docs.length - 1]?.id ?? '';
     if (snapshot.size < PERIOD_SCAN_BATCH || !lastDocumentId) break;
   }
-  return { paidPayablesMinor, openDueMinor, paidPayableCount, openDueCount, categories: Array.from(categoryTotals.entries()).map(([category, amountMinor]) => ({ category, amountMinor })).sort((a, b) => b.amountMinor - a.amountMinor) };
+  return { paidPayablesMinor, openDueMinor, paidPayableCount, openDueCount,
+    costCenterReport:costCenters.finish({paidMinor:paidPayablesMinor,paidCount:paidPayableCount,openDueMinor,openDueCount}),
+    categories: Array.from(categoryTotals.entries()).map(([category, amountMinor]) => ({ category, amountMinor })).sort((a, b) => b.amountMinor - a.amountMinor) };
 };
 
 const isEconomicObligationStatus = (value: unknown): value is EconomicObligationStatus => value === 'pending' || value === 'eligible' || value === 'settled' || value === 'reversed';
