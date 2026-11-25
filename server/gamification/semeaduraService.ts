@@ -136,7 +136,8 @@ const seedPostTransaction = async (
     const quota = await tx.get(quotaRef);
     const used = readSemeaduraDailyCount(quota.data(),actor,day);
     if(used>=SEMEADURA_DAILY_LIMIT)throw new SemeaduraDailyLimitError(day);
-    await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key});
+    await settleAcceptedSeedInTransaction(db,tx,{authorId,actorId:actor,previousSeeds:authorTotal,occurredAt,postKey:key,
+      zeroStartRequired:releaseControlled&&process.env.KYRUB_SEMEADURA_ZERO_START_PILOT==='true'});
     const quotaData={schemaVersion:1,actorId:actor,day,count:used+1,updatedAt:occurredAt};
     if(quota.exists)tx.update(quotaRef,quotaData);
     else tx.create(quotaRef,quotaData);
