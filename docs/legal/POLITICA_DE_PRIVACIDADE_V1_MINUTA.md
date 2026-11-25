@@ -9,6 +9,7 @@ Esta Política explica o tratamento de dados pessoais de visitantes, Kairubidos,
 ## 2. Quais dados são tratados e de onde vêm
 Conforme a área efetivamente utilizada, o inventário deve distinguir:
 - Conta e autenticação: identificadores, nome, e-mail, foto e informações de autenticação autorizadas; recebidos do usuário e do provedor de login.
+- Aferição etária e autenticação reforçada: prever resultado verificável de maioridade, método, data e referência mínima de auditoria; metadados de segurança e segundo fator conforme recurso efetivamente implementado. Priorizar não conservar cópias de documentos ou biometria no Kyrub. [Confirmar categorias, fornecedor, finalidade, base legal, retenção e transferência.]
 - Perfil e interação: nome de exibição, identificador público, imagem, preferências de visibilidade, conexões, comunidades, comentários, publicações, mídias e interações.
 - Áreas pessoais: notas, tarefas, preferências, itens salvos e informações inseridas voluntariamente, respeitado o escopo de acesso.
 - Comércio: dados cadastrais de loja, contatos, produtos, pedidos, endereço de entrega, registros financeiros e evidências de pagamento, cancelamento e reembolso, na extensão necessária.
@@ -61,11 +62,12 @@ A confirmação de tratamento e o acesso podem ser respondidos em formato simpli
 Solicitações serão recebidas pelo canal [confirmar endereço e funcionamento]. A área Privacidade e meus dados poderá fornecer acesso e acompanhamento quando implementada; até lá, a operação precisa manter um canal humano efetivo. O titular poderá recorrer à ANPD e, em relação de consumo, aos órgãos competentes. Não exigir fornecimento de senha ou documentos excessivos. Não tornar exercício de direitos dependente de aceite de novas condições.
 
 ## 10. Crianças e adolescentes
-A proteção de menores observará seu melhor interesse, a LGPD, o ECA Digital e a regulamentação aplicável. A elegibilidade e os controles de idade, exposição pública, mensagens, denúncias, publicidade e participação comercial devem ser definidos e implementados antes da abertura pública correspondente. A proposta de restrição a adultos ainda depende de decisão e avaliação de acesso provável por menores; simples declaração de idade não substitui controles legalmente exigidos. Não haverá coleta de biometria ou documentos apenas para simular proteção.
-[Definir público, aferição proporcional, controles, atendimento e avaliação jurídica.]
+A proteção de menores observará seu melhor interesse, a LGPD, o ECA Digital e a regulamentação aplicável. A decisão de negócio para a V1 restringe ingresso autenticado e ativação/titularidade de Kyrub Tags a pessoas com 18 anos completos ou mais. O acesso provável de menores a páginas públicas, a aferição, exposição pública, mensagens, denúncias, publicidade e demais controles ainda precisam de avaliação e implementação antes da abertura correspondente. Simples declaração de idade não substitui controles legalmente exigidos. Não haverá coleta de biometria ou documentos apenas para simular proteção.
+[Definir fornecedor, aferição proporcional, controles, retenção, atendimento e avaliação jurídica. Permitir contestação de erros e não bloquear direitos do titular por pendência de verificação.]
 
 ## 11. Decisões automatizadas, gamificação e recursos futuros
 Regras automatizadas de segurança, acesso, campanhas e recompensas, se efetivamente habilitadas, devem ser transparentes quanto a seus efeitos e permitir contestação nos casos aplicáveis. O titular poderá solicitar informações sobre critérios de decisões exclusivamente automatizadas que afetem seus interesses, respeitados segredos comercial e industrial nos limites legais.
+O perfil será preenchido progressivamente, com identificação civil somente conforme a necessidade da atividade. A vinculação da Tag e importação dos campos do perfil dependerá de escolha do titular e preservação da visibilidade; não haverá bonificação por fornecimento de dados sensíveis ou documentos. [Validar implementação e base legal por fluxo.]
 Não se atribui nesta Política tratamento por IA generativa, treinamento de modelos, reconhecimento biométrico ou análise de SOS sem confirmação de serviço em produção. A preparação da Kairubia permanece fora desta etapa. Novos tratamentos materiais devem ser avaliados e informados antes de sua ativação.
 
 ## 12. Atualizações e vigência
