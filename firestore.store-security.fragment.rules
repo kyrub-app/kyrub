@@ -181,6 +181,7 @@
         && incoming().updatedAt == request.time;
 
       allow update: if storeSecOwnerOrManager(storeId)
+        && canWriteErpWithAge()
         && storeSecImmutableStoreIdentity()
         && !incoming().diff(existing()).affectedKeys().hasAny([
           'firstStoreCreationVerified', 'firstPublishedAt'
@@ -270,8 +271,8 @@
         allow create: if isSignedIn()
           && incoming().id == orderId
           && (
-            storeSecValidCustomerOrderCreate(storeId)
-            || storeSecValidStaffOrderCreate(storeId)
+            canWriteErpWithAge() && (storeSecValidCustomerOrderCreate(storeId)
+            || storeSecValidStaffOrderCreate(storeId))
           );
 
         allow update: if isSignedIn()
@@ -290,6 +291,7 @@
             )
             || (
               storeSecOperationalStaff(storeId)
+              && canWriteErpWithAge()
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
                 'status',
@@ -301,6 +303,7 @@
             )
             || (
               storeSecActiveRole(storeId, ['production'])
+              && canWriteErpWithAge()
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'items',
                 'status',
@@ -323,6 +326,7 @@
           );
 
         allow create: if storeSecPaymentStaff(storeId)
+          && canWriteErpWithAge()
           && incoming().id == paymentId
           && incoming().storeId == storeId
           && incoming().actorUserId == request.auth.uid
