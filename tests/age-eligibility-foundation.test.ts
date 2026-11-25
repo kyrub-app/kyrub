@@ -35,9 +35,9 @@ test('restricted scope fails closed without reviewed release policy', () => {
     const input = { scope: 'restricted' as const, status, authenticated: true };
     assert.equal(evaluateAgeAccess(input), false);
     assert.equal(evaluateAgeAccess({ ...input, releasePolicy: 'blocked' }), false);
-    assert.equal(evaluateAgeAccess({ ...input, releasePolicy: 'reliable_required' }), status === 'verified_adult');
+    assert.equal(evaluateAgeAccess({ ...input, releasePolicy: 'reliable_required' }), false);
     assert.equal(evaluateAgeAccess({ ...input, releasePolicy: 'preliminary_approved' }),
-      status === 'declared_adult' || status === 'verified_adult');
+      false);
     assert.equal(evaluateAgeAccess({ ...input, authenticated: false, releasePolicy: 'reliable_required' }), false);
   }
 });

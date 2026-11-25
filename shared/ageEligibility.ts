@@ -63,15 +63,8 @@ export function evaluateAgeAccess(input: {
   if (input.scope === 'public_appropriate' || input.scope === 'support') return true;
   if (input.authenticated !== true) return false;
   if (input.scope === 'onboarding') return true; // screening/appeal only, not protected app data
-  if (input.scope !== 'restricted') return false;
-  switch (input.releasePolicy) {
-    case 'reliable_required':
-      return input.status === 'verified_adult';
-    case 'preliminary_approved':
-      return input.status === 'verified_adult' || input.status === 'declared_adult';
-    default:
-      return false;
-  }
+  // Restricted operations must name their capability and use its reviewed policy.
+  return false;
 }
 
 /** Normalized trusted provider outcome; no raw document, CPF or selfie. */
