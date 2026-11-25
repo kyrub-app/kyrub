@@ -66,6 +66,7 @@
         && incoming().deviceId.size() > 0
         && incoming().legacyStoreId is string
         && incoming().legacyStoreId != storeId
+        && incoming().legacyStoreId == storeSecStoreData(storeId).legacyTenantId
         && cashLedgerMigrationIsValid();
     }
 
@@ -129,6 +130,7 @@
         && incoming().deviceId.size() > 0
         && incoming().legacyStoreId is string
         && incoming().legacyStoreId != storeId
+        && incoming().legacyStoreId == get(cashLedgerSessionPath(storeId, sessionId)).data.legacyStoreId
         && incoming().occurredAt == request.time
         && incoming().createdAt == request.time;
     }

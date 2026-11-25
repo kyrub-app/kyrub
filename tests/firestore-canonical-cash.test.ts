@@ -14,6 +14,7 @@ import {
   setDoc,
   Timestamp,
   updateDoc,
+  writeBatch,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
@@ -342,4 +343,19 @@ test('staged financial MFA requires recent TOTP independently of role and age', 
   });
   await assertFails(setDoc(doc(verified,'stores',STORE_ID,'cashSessions',SESSION_ID,'movements','cash-movement-b'),movement(cashierId,'cashier',{id:'cash-movement-b'})));
   await assertFails(setDoc(doc(ordinary,control,'current'),{schemaVersion:1,mode:'disabled'}));
+});
+
+
+test('cash records cannot cross legacy tenant boundaries or append to a session closed in the same batch',async()=>{
+ const cashier=environment.authenticatedContext('cashier-a').firestore();
+ const session=doc(cashier,'stores',STORE_ID,'cashSessions',SESSION_ID);
+ await assertFails(setDoc(session,{...openSession('cashier-a','cashier','Caixa'),legacyStoreId:'other-owner'}));
+ await assertSucceeds(setDoc(session,openSession('cashier-a','cashier','Caixa')));
+ const movementRef=doc(cashier,'stores',STORE_ID,'cashSessions',SESSION_ID,'movements','cash-movement-a');
+ await assertFails(setDoc(movementRef,movement('cashier-a','cashier',{legacyStoreId:'other-owner'})));
+ const batch=writeBatch(cashier);
+ batch.set(movementRef,movement());
+ batch.update(session,{status:'closed',expectedAmount:100,countedAmount:100,difference:0,closedAt:serverTimestamp(),closedByUserId:'cashier-a',closedByRole:'cashier',closedByName:'Caixa',closeReason:'',updatedAt:serverTimestamp()});
+ await assertFails(batch.commit());
+ await assertSucceeds(setDoc(movementRef,movement()));
 });

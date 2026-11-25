@@ -4,6 +4,7 @@
       allow create: if cashLedgerRoleAllowed(storeId)
         && canWriteFinancialWithMfa()
         && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
+        && getAfter(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
         && cashLedgerMovementFieldsAreValid(storeId, sessionId, movementId);
 
       allow update, delete: if false;
