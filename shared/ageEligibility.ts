@@ -38,9 +38,10 @@ export function screenAge(input: {
   if (input.birthDate > input.today) {
     return { status: 'pending', reason: 'future_birth_date' };
   }
-  const birthday18 = String(Number(input.birthDate.slice(0, 4)) + 18).padStart(4, '0') +
-    input.birthDate.slice(4);
-  if (input.today < birthday18) return { status: 'declared_underage' };
+  const yearDifference = Number(input.today.slice(0, 4)) - Number(input.birthDate.slice(0, 4));
+  if (yearDifference < 18 || (yearDifference === 18 && input.today.slice(4) < input.birthDate.slice(4))) {
+    return { status: 'declared_underage' };
+  }
   if (input.declaredAdult !== true) return { status: 'pending', reason: 'declaration_required' };
   return { status: 'declared_adult' };
 }
