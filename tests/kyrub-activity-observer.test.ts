@@ -400,7 +400,7 @@ test('monthly presence transport remains opt-in and the primitive has no ambient
   const transport = readFileSync(new URL('../server/observability/kyrubActivityTransport.ts',import.meta.url),'utf8');
   const source = readFileSync(new URL('../server/observability/monthlyPresence.ts',import.meta.url),'utf8');
   assert.match(transport,/identity\.uid, payload\?\.monthlyPresenceRequested === true, qualified, receivedAt/);
-  assert.match(source,/db\.doc\(path\)\.create\(marker\)/);
+  assert.match(source,/const state = await tx\.get\(fence\);[\s\S]*?if \(state\.exists\) throw Error\('MAU_MONTH_SEALED'\);[\s\S]*?tx\.create\(target, marker\)/);
   assert.doesNotMatch(source,/adminDb|initializeApp|process\.env/);
 });
 

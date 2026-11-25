@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { closeMonthlyPresenceFixture } from '../server/observability/monthlyPresenceClosure';
 import { generateKeyPairSync, sign } from 'node:crypto';
 import { verifyFirebaseIdToken } from '../server/ai/consultantAuth';
 import { createAuthorizedKyrubActivityReceiver } from '../server/observability/kyrubActivityTransport';
@@ -345,4 +346,39 @@ test('signed fixture authentication, activity receiver and monthly aggregate int
     globalThis.fetch = originalFetch;
     await deleteApp(app);
   }
+});
+
+test('monthly fixture closure fences concurrent late writes and preserves an immutable partial summary', async () => {
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+  const app = initializeApp({projectId:PROJECT_ID},'finops-monthly-closure-fixture');
+  try {
+    const database=getFirestore(app);
+    const secret=new Uint8Array(32).fill(42);
+    const input={authenticatedUid:'first',projectId:PROJECT_ID,qualifiedActivity:true,receivedAt:new Date('2026-11-30T23:00:00Z')};
+    const store=firestoreMonthlyPresenceStore(database);
+    await confirmMonthlyPresence(input,secret,store);
+    await assert.rejects(closeMonthlyPresenceFixture(database,PROJECT_ID,'2026-11',new Date('2026-12-01T02:59:59Z')),/PERIOD_NOT_ENDED/);
+    await assert.rejects(closeMonthlyPresenceFixture(database,'other','2026-11',new Date('2026-12-01T03:00:00Z')),/EMULATOR_ONLY/);
+    const now=new Date('2026-12-01T03:00:00Z');
+    const [closed,late] = await Promise.all([
+      closeMonthlyPresenceFixture(database,PROJECT_ID,'2026-11',now),
+      Promise.allSettled(Array.from({length:4},(_,i)=>confirmMonthlyPresence({...input,authenticatedUid:'late-'+i},secret,store))),
+    ]);
+    assert.equal(closed.observedMarkers,1+late.filter(x=>x.status==='fulfilled').length);
+    assert.equal(closed.coverage,'partial');
+    assert.equal(closed.realMau,null);
+    assert.equal(await countMonthlyPresenceMarkers(database,'2026-11'),closed.observedMarkers);
+    await assert.rejects(confirmMonthlyPresence({...input,authenticatedUid:'too-late'},secret,store),/MAU_MONTH_SEALED/);
+    await assert.rejects(confirmMonthlyPresence(input,secret,store),/MAU_MONTH_SEALED/);
+    assert.deepEqual(await closeMonthlyPresenceFixture(database,PROJECT_ID,'2026-11',new Date('2026-12-02T03:00:00Z')),closed);
+    assert.equal((await confirmMonthlyPresence({...input,receivedAt:now},secret,store)).status,'created');
+    const summaryPath='kyrub_finops_mau_months/2026-11/summaries/observed';
+    assert.deepEqual((await database.doc(summaryPath).get()).data(),closed);
+    for(const actor of ['regular_a','finance_a','super_admin_a']){
+      const browser=environment.authenticatedContext(actor).firestore();
+      await assertFails(getDoc(doc(browser,summaryPath)));
+      await assertFails(setDoc(doc(browser,summaryPath),{observedMarkers:0}));
+      await assertFails(deleteDoc(doc(browser,'kyrub_finops_mau_months/2026-11')));
+    }
+  } finally {await deleteApp(app);}
 });
