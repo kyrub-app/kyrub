@@ -4,6 +4,7 @@ import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
+import { loadMonthlyActivityDiagnostic } from './monthlyActivityDiagnostic.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
 
@@ -143,8 +144,9 @@ export const loadAuthorizedPlatformEconomySnapshot = async (
 ) => {
   const admin = await authorizePlatformEconomy(authorization);
   const snapshot = await loadAdminPlatformEconomySnapshot();
+  const monthlyActivity = await loadMonthlyActivityDiagnostic();
   await recordPlatformEconomyAudit(admin);
-  return snapshot;
+  return { ...snapshot, monthlyActivity };
 };
 
 export const createPlatformEconomyRouter = (): Router => {

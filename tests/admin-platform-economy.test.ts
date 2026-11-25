@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
+import { loadMonthlyActivityDiagnostic } from '../server/admin/monthlyActivityDiagnostic';
 import {
   buildRecentStoreEconomyActivity,
   deriveRecentEconomicAllocationWindow,
@@ -160,4 +161,31 @@ describe('admin platform economy', () => {
     assert.match(server, /"\/api\/admin\/platform-economy"/);
     assert.match(server, /createPlatformEconomyRouter\(\)/);
   });
+});
+
+test('monthly activity diagnostic is unavailable without isolated emulator configuration', async () => {
+  const now = new Date('2026-12-01T02:59:59Z');
+  let calls = 0;
+  const env = {KYRUB_FINOPS_MAU_EMULATOR_ENABLED:'true', FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',
+    FIREBASE_PROJECT_ID:'kyrub-security-test', KYRUB_FINOPS_MAU_EMULATOR_KEY:'ab'.repeat(32)};
+  const deps = {env, currentProject:()=> 'kyrub-security-test', count:async(month:string)=>{
+    assert.equal(month,'2026-11'); calls++; return 2;
+  }};
+  for (const change of [{env:{}},{env:{...env,VERCEL_ENV:'production'}},{currentProject:()=> 'kyrub-b8d0e'}]) {
+    const result = await loadMonthlyActivityDiagnostic(now,{...deps,...change});
+    assert.deepEqual(result,{month:'2026-11',scope:'emulator_only',status:'unavailable',observedMarkers:null,realMau:null});
+  }
+  assert.equal(calls,0);
+  assert.deepEqual(await loadMonthlyActivityDiagnostic(now,deps),{month:'2026-11',scope:'emulator_only',status:'fixture_count',observedMarkers:2,realMau:null});
+  assert.equal(calls,1);
+  assert.equal((await loadMonthlyActivityDiagnostic(now,{...deps,count:async()=>0})).realMau,null);
+  assert.equal((await loadMonthlyActivityDiagnostic(now,{...deps,count:async()=>-1})).status,'unavailable');
+  assert.equal((await loadMonthlyActivityDiagnostic(now,{...deps,count:async()=>{throw Error('offline');}})).observedMarkers,null);
+});
+test('monthly aggregate remains behind the existing server finance authorization and audit', () => {
+  const router = readFileSync('server/admin/platformEconomyRouter.ts','utf8');
+  const diagnostic = readFileSync('server/admin/monthlyActivityDiagnostic.ts','utf8');
+  assert.match(router,/const admin = await authorizePlatformEconomy\(authorization\);[\s\S]*?loadMonthlyActivityDiagnostic\(\);[\s\S]*?await recordPlatformEconomyAudit\(admin\)/);
+  assert.match(diagnostic,/\.count\(\)\.get\(\)/);
+  assert.doesNotMatch(diagnostic,/snapshot\.docs|\.listDocuments\(/);
 });

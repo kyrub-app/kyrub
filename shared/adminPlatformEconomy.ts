@@ -61,7 +61,16 @@ export interface AdminPlatformEconomyStoreActivity {
   lastOccurredAt: string;
 }
 
+export interface AdminMonthlyActivityDiagnostic {
+  month: string;
+  scope: 'emulator_only';
+  status: 'unavailable' | 'fixture_count';
+  observedMarkers: number | null;
+  realMau: null;
+}
+
 export interface AdminPlatformEconomySnapshot {
+  monthlyActivity?: AdminMonthlyActivityDiagnostic;
   schemaVersion: typeof ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION;
   generatedAt: string;
   totals: AdminPlatformEconomyTotals;
