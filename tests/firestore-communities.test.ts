@@ -1142,3 +1142,41 @@ test('wall receipt concurrent first publication never commits more than one orig
   if(await publish()!=='replay')throw Error('retry must be idempotent');
   for(const item of [source,receipt,pointer])if(!(await assertSucceeds(getDoc(item))).exists())throw Error('atomic publication missing a document');
 });
+
+test('receipt publication preserves private and moderated visibility and public opt-out', async () => {
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const outsider=environment.authenticatedContext(OUTSIDER).firestore();
+  for(const [index,visibility] of (['private','moderated','public'] as const).entries()){
+    const communityId='wall_receipt_visibility_'+visibility;
+    const postId='wall_87654321-1234-1234-1234-123456789ab'+index;
+    await createCommunity(owner,communityId,visibility);
+    const post=doc(owner,'community_posts',postId);
+    const receipt=doc(owner,'community_wall_publish_receipts',postId);
+    const pointer=doc(owner,'community_square_posts',postId);
+    const payload=()=>({postId,communityId,authorId:OWNER,authorName:'Criador',authorAvatar:'',content:'Somente no mural',mediaUrls:[],allowComments:true,pinnedCommentId:'',createdAtIso:'2026-11-25T00:00:00.000Z',updatedAtIso:'2026-11-25T00:00:00.000Z',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    const receiptData=()=>({postId,communityId,authorId:OWNER,requestHash:'b'.repeat(64),createdAt:serverTimestamp()});
+    if(visibility!=='public'){
+      const denied=writeBatch(owner);
+      denied.set(post,payload());denied.set(receipt,receiptData());denied.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+      await assertFails(denied.commit());
+      if((await assertSucceeds(getDoc(receipt))).exists())throw Error('partial receipt on denied distribution');
+    }
+    await assertSucceeds(runTransaction(owner,async tx=>{
+      const prior=await tx.get(receipt);
+      if(prior.exists())throw Error('unexpected receipt');
+      tx.set(post,payload());tx.set(receipt,receiptData());
+    }));
+    if(!(await assertSucceeds(getDoc(post))).exists()||!(await assertSucceeds(getDoc(receipt))).exists())throw Error('missing source or receipt');
+    if((await assertSucceeds(getDoc(pointer))).exists())throw Error('opt-out or private source leaked to Praça');
+    await assertFails(getDoc(doc(outsider,'community_wall_publish_receipts',postId)));
+    if(visibility==='private')await assertFails(getDoc(doc(outsider,'community_posts',postId)));
+    else await assertSucceeds(getDoc(doc(outsider,'community_posts',postId)));
+    const source=await getDoc(post);
+    const distribution={postId,communityId,createdAt:source.data()!.createdAt};
+    if(visibility==='public'){
+      await assertSucceeds(setDoc(pointer,distribution));
+      await assertSucceeds(deleteDoc(pointer));
+      await assertSucceeds(getDoc(post));
+    }else await assertFails(setDoc(pointer,distribution));
+  }
+});

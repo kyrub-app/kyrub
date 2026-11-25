@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { compareFirestoreReleaseSources } from '../scripts/compare-firestore-release-sources.mjs';
 import { createSessionFeedRegistry } from '../src/utils/sessionFeedRegistry';
 import { createDetailSubscriptionRegistry } from '../src/utils/squareDetailSubscriptionRegistry';
 import { classifyCommunityMediaInventory, parseCommunityMediaReference, summarizeCommunityMediaInventory, type InventoryEvidence, type MediaObject } from '../server/communities/communityMediaOrphanInventory';
@@ -1270,4 +1271,14 @@ test('square consumers use the same session-scoped feed without persistent cache
   assert.match(feed, /onAuthStateChanged\(auth, \(\) => sharedSquareFeed\.invalidate\(\)\)/);
   assert.match(feed, /withinCommunitySquareWindow\(Date\.parse\(item\.distributedAt\), Date\.now\(\)\)/);
   assert.doesNotMatch(feed, /localStorage|sessionStorage|indexedDB/);
+});
+
+test('offline Firestore release comparison blocks unknown active drift without treating equality as approval',()=>{
+  const baseline="rules_version = '2'; service cloud.firestore { match /databases/{database}/documents { allow read, write: if false; } }";
+  const candidate=baseline+'\n// candidate';
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline,candidate}).status,'source_match_review_required');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline+'\n// drift',candidate}).status,'blocked_active_drift');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:baseline,candidate:baseline}).status,'blocked_no_change');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:'',candidate}).status,'blocked_invalid_source');
+  assert.equal(compareFirestoreReleaseSources({baseline,active:'{}',candidate}).status,'blocked_invalid_source');
 });
