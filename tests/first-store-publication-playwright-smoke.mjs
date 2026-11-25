@@ -116,6 +116,22 @@ try {
   });
   assert.deepEqual(browserIdentity, { uid, projectId: 'kyrub-security-test' });
   assert.deepEqual(forbiddenFirebaseRequests, [], 'Browser authentication must stay on the local emulator');
+  // These private views use the same emulator identity as the ERP session.
+  const privateViews = await page.evaluate(async () => {
+    const { auth } = await import(new URL('/src/utils/firebase.ts', location.origin).href);
+    const authorization = 'Bearer ' + await auth.currentUser.getIdToken();
+    const read = async (url, options = {}) => {
+      const response = await fetch(url, { ...options, headers: { authorization, 'content-type': 'application/json' } });
+      if (!response.ok) throw Error('Private view returned HTTP ' + response.status);
+      return response.json();
+    };
+    const [account, inbox, journey] = await Promise.all([
+      read('/api/pitangas'), read('/api/notifications?limit=10'),
+      read('/api/action-execute?transport=semeadura', {method:'POST', body:JSON.stringify({action:'journey'})}),
+    ]);
+    return [account.pitangas, account.xp, inbox.unreadCount, journey.journey.totalSeeds];
+  });
+  assert.deepEqual(privateViews, [0, 0, 0, 0]);
   // Institutional publication fixture from the exact canonical data contract.
   // The Admin disclosure transaction itself is independently tested in
   // demo-global-challenges; this browser test does not bypass its release gate.
