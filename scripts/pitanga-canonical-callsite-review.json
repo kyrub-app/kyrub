@@ -1,6 +1,6 @@
 {
   "schemaVersion": 1,
-  "reviewedCommit": "1622955612474562f6e4e002bf66909d2ee7d1ad",
+  "reviewedCommit": "b24de6e7717d202c7d57319fb0aec25e7edd2e44",
   "scope": "Static call-site observations only. No deployment or external coverage, no authorization or proof of complete call graph.",
   "entries": [
     {
@@ -53,11 +53,11 @@
     },
     {
       "path": "server/gamification/semeaduraService.ts",
-      "blobSha": "1d1d2500bdf245149afcdd1e122e86e993385073",
+      "blobSha": "a488d647d0bc01932bfcbbc300ef95c23d0f3a61",
       "primitive": "settleAcceptedSeedInTransaction",
-      "line": 135,
+      "line": 144,
       "classification": "emulator-only-seed-settlement",
-      "observation": "Call precedes accepted receipt/quota writes; callee enforces emulator-only enrollment and fence."
+      "observation": "Accepted seed calls isolated settlement before writes. Controlled transport checks release gate and passes trusted Auth adapter; optional zero-start enrollment remains emulator-only. No deployed writer attestation."
     }
   ]
 }
