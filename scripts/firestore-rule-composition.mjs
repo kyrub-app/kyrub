@@ -126,6 +126,10 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
             receipt.userId == request.auth.uid || receipt.ownerId == request.auth.uid
           );
         }
+        function directHiringMessagesAllowed() {
+          let control = /databases/$(database)/documents/renda_age_release_private/current;
+          return !exists(control) || get(control).data.get('messageAuthority','client') == 'client';
+        }
         function canSendHiringMessage() {
           let receipt = hiringReceipt();
           return isSignedIn()
@@ -143,6 +147,7 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         allow get: if canReadHiringMessages() && isValidId(messageId);
         allow list: if canReadHiringMessages() && request.query.limit <= 100;
         allow create: if canSendHiringMessage()
+          && directHiringMessagesAllowed()
           && isValidId(messageId)
           && incoming().keys().hasOnly(['senderId','receiverId','text','createdAt'])
           && incoming().senderId == request.auth.uid
