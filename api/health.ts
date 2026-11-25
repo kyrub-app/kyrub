@@ -216,7 +216,7 @@ export default async function handler(
       if(code==='TAG_INVALID'||code==='INVALID_CARD'||code==='TAG_PRESENTATION_INVALID')response.status(400).json({error:'TAG_INVALID'});
       else if(code==='TAG_PROMO_DISABLED'||code==='TAG_PILOT_PROJECT_UNSAFE')response.status(409).json({error:code});
       else if(code==='TAG_NOT_MINIMAL')response.status(409).json({error:'TAG_NOT_MINIMAL'});
-      else if(code==='TAG_PUBLICATION_TERMS_REQUIRED'||code==='TAG_PUBLICATION_AGE_REQUIRED'||code==='TAG_PROMOTION_AGE_REQUIRED')response.status(403).json({error:code});
+      else if(code==='TAG_PUBLICATION_TERMS_REQUIRED'||code==='TAG_PUBLICATION_AGE_REQUIRED'||code==='TAG_PROMOTION_AGE_REQUIRED'||code==='LEGAL_CURRENT_RECEIPT_REQUIRED'||code==='LEGAL_DOCUMENTS_UNAVAILABLE'||code==='LEGAL_RECEIPT_INVALID')response.status(403).json({error:code});
       else if(code==='TAG_FORBIDDEN')response.status(403).json({error:'TAG_FORBIDDEN'});
       else if(code==='CARD_TARGET_UNAVAILABLE'||code==='TAG_CHANGED')response.status(409).json({error:code});
       else response.status(503).json({error:'TAG_UNAVAILABLE'});

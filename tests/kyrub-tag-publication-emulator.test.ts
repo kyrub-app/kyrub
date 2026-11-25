@@ -46,6 +46,12 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
   assert.notEqual(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED,'true');
   await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/TAG_PROMOTION_AGE_REQUIRED/);
   assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
+  // Even a synthetic verified adult cannot use the isolated promotion gate without current legal receipts.
+  process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED='true';
+  try{
+   await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/LEGAL_DOCUMENTS_UNAVAILABLE|LEGAL_CURRENT_RECEIPT_REQUIRED/);
+   assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
+  }finally{delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;}
   await assert.rejects(service.configurePromotionalKyrubTag(winner.uid,id,presentation,{...acceptance,version:'old'}),/TAG_PUBLICATION_TERMS_REQUIRED/);
   assert.equal((await service.configurePromotionalKyrubTag(winner.uid,id,presentation,acceptance)).enabled,true);
   assert.equal((await service.resolveKyrubTag(id))?.presentation?.name,presentation.name);

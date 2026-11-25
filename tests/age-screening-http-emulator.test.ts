@@ -67,7 +67,7 @@ test('verified emulator session screens once and keeps the private record minima
       await assert.rejects(privatePersonalWorkspace(authHeader,'tasks'),/PERSONAL_FORBIDDEN/);
     }finally{delete process.env.KYRUB_PERSONAL_PREVIEW_ENABLED;}
     // Synthetic legal publications exercise transaction semantics, not legal approval.
-    const {recordIngressLegalReceipt}=await import('../server/governance/ingressLegalReceiptService.js');
+    const {recordIngressLegalReceipt,requireCurrentIngressLegalReceiptInTransaction}=await import('../server/governance/ingressLegalReceiptService.js');
     const {createHash}=await import('node:crypto');
     const content='Documento sintético para homologação';
     const hash=createHash('sha256').update(content).digest('hex');
@@ -81,6 +81,8 @@ test('verified emulator session screens once and keeps the private record minima
       }
       await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,uid:'other'}),/LEGAL_DECISION_INVALID/);
       await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,privacy:{...decision.privacy,acknowledged:false}}),/LEGAL_DECISION_INVALID/);
+      const requireReceipt=(uid:string)=>adminDb.runTransaction(tx=>requireCurrentIngressLegalReceiptInTransaction(tx,uid));
+      await assert.rejects(requireReceipt(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
       const receipts=await Promise.all([recordIngressLegalReceipt(authHeader,decision),recordIngressLegalReceipt(authHeader,decision)]);
       assert.equal(receipts[0].receiptId,receipts[1].receiptId);
       assert.equal(receipts.filter(r=>!r.replay).length,1);
@@ -89,7 +91,10 @@ test('verified emulator session screens once and keeps the private record minima
       assert.equal(record.get('terms.accepted'),true);
       assert.equal(record.get('privacy.acknowledged'),true);
       assert.ok(record.get('recordedAt'));
+      assert.equal(await requireReceipt(user.uid),receipts[0].receiptId);
+      await assert.rejects(requireReceipt('unrelated-user'),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
       await adminDb.doc('governanceDocuments/terms-test').update({version:'2'});
+      await assert.rejects(requireReceipt(user.uid),/LEGAL_CURRENT_RECEIPT_REQUIRED/);
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_VERSION_CHANGED/);
       await adminDb.doc('governanceDocuments/terms-test').update({content:'modified'});
       await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);

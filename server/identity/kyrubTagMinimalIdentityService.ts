@@ -1,6 +1,7 @@
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminAuth,adminDb} from '../firebaseAdmin.js';
 import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
+import {requireCurrentIngressLegalReceiptInTransaction} from '../governance/ingressLegalReceiptService.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 
 const markers=()=>adminDb.collection('kyrub_tag_minimal_identities');
@@ -56,6 +57,7 @@ export async function promoteTagIdentityToKyrub(uid:string){
   const [marker,age]=await Promise.all([tx.get(ref),tx.get(adminDb.doc('age_eligibility_private/'+uid))]);
   if(process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED!=='true'||age.get('uid')!==uid||age.get('status')!=='verified_adult')throw Error('TAG_PROMOTION_AGE_REQUIRED');
   if(!marker.exists||marker.get('uid')!==uid||!['tag_only','full'].includes(marker.get('mode')))throw Error('TAG_NOT_MINIMAL');
+  await requireCurrentIngressLegalReceiptInTransaction(tx,uid);
   if(marker.get('mode')==='full')return {mode:'full' as const,replay:true};
   tx.update(ref,{mode:'full',promotedAt:FieldValue.serverTimestamp()});
   return {mode:'full' as const,replay:false};
