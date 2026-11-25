@@ -1,3 +1,4 @@
+import {COMMERCIAL_V1_SCOPE} from '../../shared/commercialV1Scope';
 import { useEffect, useState } from 'react';
 import {
   ArrowLeft,
@@ -30,9 +31,9 @@ const incomePaths = [
   {
     icon: Bike,
     eyebrow: 'Kyrub Entregas',
-    title: 'Faça entregas e gere renda',
+    title: COMMERCIAL_V1_SCOPE.onDemandDelivery ? 'Faça entregas e gere renda' : 'Entregas sob demanda em preparação',
     description:
-      'Encontre oportunidades locais de entrega e acompanhe seus ganhos dentro do ecossistema.',
+      COMMERCIAL_V1_SCOPE.onDemandDelivery ? 'Encontre oportunidades locais de entrega e acompanhe seus ganhos dentro do ecossistema.' : 'Para trabalhar como motofretista, consulte os Freelas e combine a contratação diretamente por turno, diária ou período.',
   },
   {
     icon: BriefcaseBusiness,
