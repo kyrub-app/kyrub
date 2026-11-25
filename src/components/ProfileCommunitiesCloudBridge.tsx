@@ -318,6 +318,7 @@ export function ProfileCommunitiesCloudBridge() {
   const [wallMedia, setWallMedia] = useState<Array<{ file: File; preview: string }>>([]);
   const wallMediaRef = useRef<Array<{ file: File; preview: string }>>([]);
   const wallUploadDraft = useRef<WallDraft<File> | null>(null);
+  const [wallCommitPending, setWallCommitPending] = useState(false);
   const wallSubmitLock = useRef(false);
   const wallDraftGeneration = useRef(0);
   useEffect(() => () => {
@@ -328,6 +329,7 @@ export function ProfileCommunitiesCloudBridge() {
   }, []);
 
   const clearWallMedia = () => {
+    setWallCommitPending(false);
     wallDraftGeneration.current++;
     wallUploadDraft.current = null;
     wallMediaRef.current.forEach(item => URL.revokeObjectURL(item.preview));
@@ -338,6 +340,7 @@ export function ProfileCommunitiesCloudBridge() {
 
   useEffect(() => {
     // Do not carry staged references across account switches.
+    setWallCommitPending(false);
     wallDraftGeneration.current++;
     wallUploadDraft.current = null;
     wallMediaRef.current.forEach(item => URL.revokeObjectURL(item.preview));
@@ -347,6 +350,7 @@ export function ProfileCommunitiesCloudBridge() {
   }, [user?.uid]);
 
   const selectWallMedia = (event: ChangeEvent<HTMLInputElement>) => {
+    if (wallSubmitLock.current || wallUploadDraft.current?.commitStarted) return;
     const selected = Array.from(event.target.files ?? []);
     event.target.value = '';
     if (!selected.length) return;
@@ -368,6 +372,7 @@ export function ProfileCommunitiesCloudBridge() {
   };
 
   const removeWallMedia = (preview: string) => {
+    if (wallSubmitLock.current || wallUploadDraft.current?.commitStarted) return;
     URL.revokeObjectURL(preview);
     const next = wallMediaRef.current.filter(item => item.preview !== preview);
     wallMediaRef.current = next;
@@ -1023,16 +1028,25 @@ export function ProfileCommunitiesCloudBridge() {
     if (!owner || owner.uid !== user?.uid) { setMessage('Faça login novamente para publicar.'); return; }
     const generation = wallDraftGeneration.current;
     const communityId = selectedCommunity.id;
-    const content = wallDraft.trim();
+    const previous = wallUploadDraft.current;
+    const pending = previous?.commitStarted && previous.owner === owner && previous.communityId === communityId;
+    const [content, requestedSquare, allowComments] = pending
+      ? JSON.parse(previous.fingerprint) as [string, boolean, boolean]
+      : [wallDraft.trim(), selectedCommunity.visibility === 'public' && shareWallToSquare, wallAllowComments] as [string, boolean, boolean];
     const attachments = [...wallMediaRef.current];
     if (!content && attachments.length === 0) {
       setMessage('Escreva algo ou adicione uma foto ou vídeo.');
       return;
     }
-    const shareToSquare = selectedCommunity.visibility === 'public' && shareWallToSquare;
-    const fingerprint = JSON.stringify([content, shareToSquare, wallAllowComments]);
-    const draft = selectWallDraft(wallUploadDraft.current, owner, communityId,
-      fingerprint, attachments.map(item => item.file), () => crypto.randomUUID());
+    const fingerprint = JSON.stringify([content, requestedSquare, allowComments]);
+    let draft: WallDraft<File>;
+    try {
+      draft = selectWallDraft(previous, owner, communityId,
+        fingerprint, attachments.map(item => item.file), () => crypto.randomUUID());
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : 'Confirme a tentativa anterior.');
+      return;
+    }
     wallUploadDraft.current = draft;
     const assertCurrent = () => {
       if (auth.currentUser !== owner || wallDraftGeneration.current !== generation ||
@@ -1044,16 +1058,17 @@ export function ProfileCommunitiesCloudBridge() {
         const mediaUrls = await resolveWallUploads(draft, assertCurrent,
           (file, attempt) => uploadCommunityPostMedia(communityId, file, attempt));
         assertCurrent();
-        // Once a Firestore commit is attempted, never reuse these objects in a
-        // new post: the previous response may have been lost after commit.
+        // Freeze the exact draft and use one immutable publication receipt.
         draft.commitStarted = true;
-        await createCommunityPost({ communityId, content, mediaUrls, shareToSquare, allowComments: wallAllowComments });
+        setWallCommitPending(true);
+        await createCommunityPost({ communityId, content, mediaUrls, shareToSquare: requestedSquare,
+          allowComments, attempt: { postId: draft.postId, owner } });
         assertCurrent();
         setWallDraft('');
         setWallAllowComments(true);
         setShareWallToSquare(true);
         clearWallMedia();
-        setMessage('Publicação adicionada ao mural.');
+        setMessage('Publicação registrada. Confira o mural.');
       });
     } finally {
       wallSubmitLock.current = false;
@@ -1754,6 +1769,7 @@ export function ProfileCommunitiesCloudBridge() {
                           <section className="rounded-3xl border border-slate-800 bg-slate-900 p-3">
                             <textarea
                               value={wallDraft}
+                              disabled={actionBusy === 'wall-post' || wallCommitPending}
                               onChange={event => setWallDraft(event.target.value.slice(0, 3000))}
                               rows={3}
                               placeholder="Publique no mural da comunidade..."
@@ -1771,7 +1787,7 @@ export function ProfileCommunitiesCloudBridge() {
                                     )}
                                     <button type="button" aria-label={`Remover anexo ${file.name}`}
                                       onClick={() => removeWallMedia(preview)}
-                                      disabled={actionBusy === 'wall-post'}
+                                      disabled={actionBusy === 'wall-post' || wallCommitPending}
                                       className="absolute right-1 top-1 rounded-full bg-slate-950/90 p-2 text-white disabled:opacity-50">
                                       <X className="h-4 w-4" />
                                     </button>
@@ -1784,7 +1800,7 @@ export function ProfileCommunitiesCloudBridge() {
                                 aria-label="Adicionar foto, vídeo ou câmera ao mural"
                                 aria-expanded={wallToolsOpen}
                                 onClick={() => setWallToolsOpen(open => !open)}
-                                disabled={actionBusy === 'wall-post' || selectedCommunity.visibility === 'private'}
+                                disabled={actionBusy === 'wall-post' || wallCommitPending || selectedCommunity.visibility === 'private'}
                                 title={selectedCommunity.visibility === 'private'
                                   ? 'Anexos em comunidades privadas ainda não estão disponíveis' : 'Adicionar foto, vídeo ou câmera'}
                                 className="flex min-h-11 min-w-11 items-center justify-center rounded-full border border-slate-600 bg-slate-950 text-slate-200 disabled:opacity-40">
@@ -1796,20 +1812,21 @@ export function ProfileCommunitiesCloudBridge() {
                                 onClick={() => void submitWallPost()}
                                 className="min-h-11 rounded-xl bg-teal-500 px-4 text-xs font-black uppercase text-slate-950 disabled:opacity-40"
                               >
-                                {actionBusy === 'wall-post' ? 'Publicando…' : 'Publicar no mural'}
+                                {actionBusy === 'wall-post' ? 'Publicando…' : wallCommitPending ? 'Confirmar publicação' : 'Publicar no mural'}
                               </button>
                             </div>
+                            {wallCommitPending && <p role="status" className="mt-2 text-xs text-amber-300">Confirme a tentativa anterior antes de editar. Se sair deste rascunho, verifique o mural antes de publicar novamente.</p>}
                             <label className="mt-3 flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-700 bg-slate-950/70 p-3 text-sm text-slate-200">
                               <input type="checkbox" checked={wallAllowComments}
                                 onChange={event => setWallAllowComments(event.target.checked)}
-                                disabled={actionBusy === 'wall-post'} className="h-4 w-4 shrink-0 accent-teal-400"
+                                disabled={actionBusy === 'wall-post' || wallCommitPending} className="h-4 w-4 shrink-0 accent-teal-400"
                                 aria-label="Permitir comentários nesta publicação" />
                               <span>Permitir comentários <span className="block text-xs text-slate-400">Desmarque para impedir novos comentários e respostas nesta publicação.</span></span>
                             </label>
                             {selectedCommunity.visibility === 'public' && (
                               <label className="mt-3 flex cursor-pointer items-center gap-3 rounded-xl border border-teal-800/40 bg-teal-950/20 p-3 text-sm text-slate-200">
                                 <input type="checkbox" checked={shareWallToSquare} onChange={event => setShareWallToSquare(event.target.checked)}
-                                  disabled={actionBusy === 'wall-post'} className="h-4 w-4 accent-teal-400" />
+                                  disabled={actionBusy === 'wall-post' || wallCommitPending} className="h-4 w-4 accent-teal-400" />
                                 <span>Exibir também na Praça por 24 horas <span className="block text-xs text-slate-400">Público, gratuito e orgânico. Você pode retirar depois.</span></span>
                               </label>
                             )}
