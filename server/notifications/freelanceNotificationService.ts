@@ -101,6 +101,7 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
    tx.create(receipt,{vagaId,ownerId,userId:workerId,status:'pending',terms,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   }else{
    if(!app.exists||app.get('status')!==event.from)throw Error('FREELANCE_CONFLICT');
+   if(app.get('cancellation.state')==='requested')throw Error('FREELANCE_CONFLICT');
    if(lockPolicy&&event.from==='pending'&&action!=='withdraw'&&(!vacancy.exists||vacancy.get('status')!=='open'))throw Error('FREELANCE_CONFLICT');
    if(action==='accept'&&!sameHiringTerms(parseHiringTerms(app.get('terms')),expectedTerms))throw Error('FREELANCE_CONFLICT');
    if(action==='accept'&&lockPolicy){
@@ -147,5 +148,49 @@ export async function retireHiringVacancy(input:{actorId:string;vacancyId:string
   }
   tx.update(ref,{status:'closed',retirementPending:!complete,updatedAt:FieldValue.serverTimestamp(),...(vacancy.get('status')==='open'?{retiredAt:FieldValue.serverTimestamp()}: {})});
   return {vacancyId,complete,processed:Math.min(pending.size,pageSize)};
+ });
+}
+
+
+/** A cancellation request is not a declaration of payment or of liability.
+ * Only the other participant can confirm; disagreement leaves the original
+ * hiring status and terms intact. All decisions have immutable receipts. */
+export async function performHiringCancellation(input:{actorId:string;applicationId:string;operationId:string;action:unknown;requestId:unknown;reason?:unknown}){
+ if(!freelanceNotificationPreviewEnabled())throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+ const {actorId,applicationId,operationId}=input;
+ const action=input.action,requestId=input.requestId;
+ const reason=typeof input.reason==='string'?input.reason.trim():'';
+ if(!uidValid(actorId)||!uidValid(operationId)||!uidValid(requestId)||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId)||!['request','confirm','decline','retract'].includes(String(action))||typeof action!=='string'||(action==='request'&&(requestId!==operationId||!reason||reason.length>1000))||(action!=='request'&&reason))throw Error('FREELANCE_INVALID');
+ const ref=adminDb.doc('candidaturas/'+applicationId);
+ const operation=ref.collection('cancellation_private').doc(operationId);
+ return adminDb.runTransaction(async tx=>{
+  const [app,previous,control]=await tx.getAll(ref,operation,adminDb.doc('renda_age_release_private/current'));
+  if(!control.exists||control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only'||control.get('applicationAuthority')!=='server'||control.get('vacancyPolicy')!=='lock_on_application')throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+  const data=app.data();
+  if(!data||!uidValid(data.ownerId)||!uidValid(data.userId)||data.ownerId===data.userId||applicationId!==data.vagaId+'__'+data.userId||![data.ownerId,data.userId].includes(actorId))throw Error('FREELANCE_FORBIDDEN');
+  const receiverId=actorId===data.ownerId?data.userId:data.ownerId;
+  const sourceId=createHash('sha256').update(applicationId+'\ncancellation\n'+operationId).digest('hex');
+  const titles:Record<string,string>={request:'Cancelamento solicitado',confirm:'Cancelamento confirmado pelas partes',decline:'Cancelamento não acordado',retract:'Solicitação de cancelamento retirada'};
+  const notice=buildUserNotification({recipientUserId:receiverId,category:'freelance',eventType:'cancellation_'+action,sourceId,actorPrincipalId:actorId,title:titles[action],body:'Consulte a contratação. Nenhum pagamento, multa ou estorno foi realizado pelo Kyrub.',target:{kind:'freelance',hiringApplicationId:applicationId},createdAt:new Date().toISOString()});
+  const noticeRef=adminDb.doc(userNotificationPath(receiverId,notice.id));
+  const savedNotice=await tx.get(noticeRef);
+  if(previous.exists){
+   if(previous.get('actorId')!==actorId||previous.get('action')!==action||previous.get('requestId')!==requestId||previous.get('reason')!==reason||!savedNotice.exists)throw Error('FREELANCE_CONFLICT');
+   return {applicationId,operationId,created:false};
+  }
+  if(savedNotice.exists||!['accepted','completion_requested'].includes(data.status)||!parseHiringTerms(data.terms)||!data.acceptedAt)throw Error('FREELANCE_CONFLICT');
+  const prior=data.cancellation;
+  if(action==='request'){
+   if(prior?.state==='requested')throw Error('FREELANCE_CONFLICT');
+   tx.update(ref,{cancellation:{requestId,requestedBy:actorId,reason,state:'requested',requestedAt:FieldValue.serverTimestamp()},updatedAt:FieldValue.serverTimestamp()});
+  }else{
+   if(!prior||prior.state!=='requested'||prior.requestId!==requestId||![data.ownerId,data.userId].includes(prior.requestedBy))throw Error('FREELANCE_CONFLICT');
+   if(action==='retract'?prior.requestedBy!==actorId:prior.requestedBy===actorId)throw Error('FREELANCE_FORBIDDEN');
+   const state=action==='confirm'?'confirmed':action==='decline'?'declined':'retracted';
+   tx.update(ref,{'cancellation.state':state,'cancellation.respondedBy':actorId,'cancellation.respondedAt':FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp(),...(action==='confirm'?{status:'cancelled',cancelledAt:FieldValue.serverTimestamp()}: {})});
+  }
+  tx.create(operation,{actorId,action,requestId,reason,createdAt:FieldValue.serverTimestamp()});
+  tx.create(noticeRef,notice);
+  return {applicationId,operationId,created:true};
  });
 }
