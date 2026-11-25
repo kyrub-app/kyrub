@@ -31,7 +31,7 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
   const presentation={name:'Cartão teste',occupation:'',about:'',emergencyContacts:[]};
   const acceptance={accepted:true,version:TAG_PUBLICATION_TERMS_VERSION};
   const ageRef=adminDb.doc('age_eligibility_private/'+winner.uid);
-  const {promoteTagIdentityToKyrub,getTagIdentityMode}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+  const {promoteTagIdentityToKyrub,getTagIdentityMode,prepareTagMinimalIdentity}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
   assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
   await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/TAG_PROMOTION_AGE_REQUIRED/);
   await assert.rejects(service.configurePromotionalKyrubTag(other.uid,id,presentation),/TAG_FORBIDDEN/);
@@ -52,6 +52,30 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
    await assert.rejects(promoteTagIdentityToKyrub(winner.uid),/LEGAL_DOCUMENTS_UNAVAILABLE|LEGAL_CURRENT_RECEIPT_REQUIRED/);
    assert.equal((await getTagIdentityMode(winner.uid)).mode,'tag_only');
   }finally{delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;}
+  // Regression: an existing profile or old full marker must not bypass the
+  // same age/receipt authority used by getTagIdentityMode.
+  const marker=adminDb.doc('kyrub_tag_minimal_identities/'+winner.uid);
+  const savedMarker=(await marker.get()).data();
+  assert.ok(savedMarker);
+  const legacyAccount=adminDb.doc('users/'+winner.uid);
+  await legacyAccount.set({uid:winner.uid});
+  try{
+   assert.equal((await prepareTagMinimalIdentity(winner.uid,id)).mode,'tag_only');
+   await marker.update({mode:'full',ingressReceiptId:'stale-receipt'});
+   assert.equal((await prepareTagMinimalIdentity(winner.uid,id)).mode,'tag_only');
+   process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED='true';
+   await ageRef.update({status:'suspended'});
+   assert.equal((await prepareTagMinimalIdentity(winner.uid,id)).mode,'tag_only');
+   await ageRef.update({status:'verified_adult'});
+   assert.equal((await prepareTagMinimalIdentity(winner.uid,id)).mode,'tag_only');
+   await marker.update({uid:other.uid});
+   await assert.rejects(prepareTagMinimalIdentity(winner.uid,id),/TAG_FORBIDDEN/);
+  }finally{
+   delete process.env.KYRUB_TAG_FULL_ACCOUNT_RELEASE_ENABLED;
+   await marker.set(savedMarker!);
+   await legacyAccount.delete();
+   await ageRef.update({status:'verified_adult'});
+  }
   await assert.rejects(service.configurePromotionalKyrubTag(winner.uid,id,presentation,{...acceptance,version:'old'}),/TAG_PUBLICATION_TERMS_REQUIRED/);
   assert.equal((await service.configurePromotionalKyrubTag(winner.uid,id,presentation,acceptance)).enabled,true);
   assert.equal((await service.resolveKyrubTag(id))?.presentation?.name,presentation.name);
