@@ -25,7 +25,7 @@ export function semeaduraEconomicPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv
  * cursor is maintained in lockstep with accepted receipts; no catch-up
  * credits from old visual counters. Only the author's account is credited. */
 export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transaction,input:{
- authorId:string;actorId:string;previousSeeds:number;occurredAt:string;postKey:string;zeroStartRequired?:boolean;authorAuth?:WelcomeAuth;
+ authorId:string;actorId:string;previousSeeds:number;occurredAt:string;postKey:string;zeroStartRequired?:boolean;authorAuth?:WelcomeAuth;strictCurrencyAuthority?:boolean;
 }):Promise<void>{
  if(!semeaduraEconomicPilotEnabled(db)){
   if(input.zeroStartRequired)throw Error('SEMEADURA_ECONOMIC_RELEASE_UNAVAILABLE');
@@ -118,6 +118,7 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
   tx.create(enrollmentRef,{schemaVersion:1,authorId,epoch,acceptedSeeds:1,creditedPitangas:0,currencyAuthority:authority,createdAt:occurredAt,updatedAt:occurredAt});
   return;
  }
+ if(input.strictCurrencyAuthority&&state.currencyAuthority!=='welcome'&&state.currencyAuthority!=='zero-history')throw Error('SEMEADURA_ECONOMIC_CURRENCY_AUTHORITY_INVALID');
  if(state.currencyAuthority==='zero-history'&&!noWelcomePilotEnabled(db))throw Error('SEMEADURA_NO_WELCOME_UNVERIFIED');
  const nextSeeds=previousSeeds+1;
  const nextCredits=Math.floor(nextSeeds/SEEDS_PER_PITANGUEIRA);
