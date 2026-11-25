@@ -77,14 +77,19 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
         && incoming().vagaId is string
         && isValidId(incoming().vagaId)
         && hasApplicationVacancy()
+        && incoming().status == 'pending'
         && hasApprovedIdentityProfile('freelancer');
       allow update: if canWriteRendaWithAge()
         && incoming().userId == existing().userId
         && incoming().vagaId == existing().vagaId
         && incoming().ownerId == existing().ownerId
         && (
-          (isApplicationOwner(existing()) && hasApprovedIdentityProfile('freelancer'))
+          (isApplicationOwner(existing()) && existing().status == 'pending'
+            && incoming().status == 'withdrawn'
+            && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
           || (isApplicationRequester(existing()) && hasRendaRequesterAuthority()
+            && existing().status == 'pending'
+            && incoming().status in ['accepted', 'rejected']
             && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt']))
         );
       allow delete: if isApplicationOwner(existing()) || isAdmin();
