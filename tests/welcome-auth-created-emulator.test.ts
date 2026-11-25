@@ -1085,3 +1085,64 @@ test('isolated zero-start path enrolls verified author once and never silently a
   for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
  }
 });
+
+
+test('non-Google author starts at zero without welcome bonus and earns a single milestone Pitanga',async()=>{
+ const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
+ const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
+ const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {createHash}=await import('node:crypto');
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const user=await auth.createUser({email:'no-welcome-author@example.invalid',password:'fixture-only-password'});
+ const uid=user.uid,root=db.collection('users').doc(uid);
+ const registration=root.collection('authEvents').doc('semeadura_non_google_registration_v1');
+ const deadline=Date.now()+60000;
+ while(!(await registration.get()).exists&&Date.now()<deadline)await delay(100);
+ const evidence=(await registration.get()).data();
+ assert.equal(evidence?.source,'trusted_auth_on_create_non_google');
+ assert.equal((await balance(uid).get()).exists,false);
+ assert.equal((await ledger(uid).get()).size,0);
+ const postId='no-welcome-milestone-post',actor='no-welcome-voter';
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const post=db.doc('social_posts/'+postId),stats=db.doc('semeadura_post_stats/'+key);
+ const control=db.doc(SEMEADURA_RELEASE_CONTROL_PATH);
+ const cursor=root.collection('semeaduraEconomicPilot').doc('activation');
+ const progress=root.collection('semeaduraProgress').doc('summary');
+ const bootstrap=root.collection('pitangaMigration').doc('receipt');
+ const credit=root.collection('rewardLedger').doc('earn_semeadura_1');
+ const receipt=(v:string)=>stats.collection('receipts').doc(v);
+ const quota=(v:string)=>db.doc('users/'+v+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+ const prior=Object.fromEntries(['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT'].map(k=>[k,process.env[k]]));
+ const seed=(v:string)=>seedReleaseControlledPost(db,{authenticatedUserId:v,kind:'personal',postId},auth);
+ try{
+  for(const k of Object.keys(prior))process.env[k]='true';
+  await control.set({schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'open',revision:1,opensAt:new Date(Date.now()-60000).toISOString()});
+  await post.set({postId,authorId:uid,visibility:'public',publicationType:'feed'});
+  await registration.delete();
+  await assert.rejects(seed(actor),/SEMEADURA_NO_WELCOME_UNVERIFIED/);
+  assert.equal((await balance(uid).get()).exists,false);
+  assert.equal((await receipt(actor).get()).exists,false);
+  assert.equal((await quota(actor).get()).exists,false);
+  await registration.set(evidence!);
+  const outcomes=await Promise.all([seed(actor),seed(actor)]);
+  assert.equal(outcomes.filter(r=>r.status==='accepted').length,1);
+  assert.equal((await balance(uid).get()).get('availableKCoins'),0);
+  assert.equal((await bootstrap.get()).get('entryCount'),0);
+  assert.equal((await cursor.get()).get('currencyAuthority'),'zero-history');
+  assert.equal((await cursor.get()).get('acceptedSeeds'),1);
+  assert.equal((await ledger(uid).get()).size,0);
+  // Synthetic boundary fixture, not historical migration.
+  await Promise.all([cursor.update({acceptedSeeds:999}),progress.update({acceptedSeeds:999}),stats.update({acceptedSeeds:999})]);
+  const final=await Promise.all([seed('no-welcome-final'),seed('no-welcome-final')]);
+  assert.equal(final.filter(r=>r.status==='accepted').length,1);
+  const account=await readPitangaAccount(db,uid);
+  assert.equal(account.pitangas,1);
+  assert.equal(account.xp,0);
+  assert.equal((await credit.get()).get('deltaKCoins'),1);
+  assert.equal((await root.collection('rewardLedger').doc('earn_first_login_welcome_v1').get()).exists,false);
+  assert.equal((await cursor.get()).get('creditedPitangas'),1);
+ }finally{
+  await Promise.all([control.delete(),post.delete(),stats.delete(),cursor.delete(),progress.delete(),bootstrap.delete(),credit.delete(),balance(uid).delete(),receipt(actor).delete(),receipt('no-welcome-final').delete(),quota(actor).delete(),quota('no-welcome-final').delete()]);
+  for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
+ }
+});
