@@ -711,3 +711,50 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
   if(queuePrior===undefined)delete process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE;else process.env.KYRUB_GAMIFICATION_INCREMENTAL_QUEUE=queuePrior;
  }
 });
+
+
+test('authenticated suspicion inspection requires active admin and reports evidence without sanctions',async()=>{
+ const {readIsolatedGamificationSuspicionEvidence}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
+ const {createHash}=await import('node:crypto');
+ const admin=await googleSignIn('suspicion-inspector-admin');
+ const author=await googleSignIn('suspicion-inspector-author');
+ await Promise.all([waitForAward(admin.localId),waitForAward(author.localId)]);
+ const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.localId);
+ const reviewer=db.doc('systemControl/semeaduraEconomicReview/reviewers/'+admin.localId);
+ const postId='authenticated-suspicion-post';
+ const input={kind:'personal' as const,postId};
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const hold=db.doc('systemControl/semeaduraEconomicReview/holds/post_'+key);
+ const prior=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const read=()=>readIsolatedGamificationSuspicionEvidence(db,auth,'Bearer '+admin.idToken,input);
+ try{
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_DISABLED/);
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
+  await assert.rejects(readIsolatedGamificationSuspicionEvidence(db,auth,'Bearer '+author.idToken,input),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  await db.doc('social_posts/'+postId).set({postId,authorId:author.localId,visibility:'public',publicationType:'feed'});
+  await seedVerifiedPost(db,{...input,authenticatedUserId:'suspicion-voter'});
+  const good=await read();
+  assert.deepEqual(good.findings,[]);
+  assert.equal(good.classification,'technical-indicator-not-fraud-verdict');
+  await stats.update({acceptedSeeds:2});
+  const bad=await read();
+  assert.deepEqual(bad.findings,['COUNTER_RECEIPT_MISMATCH']);
+  assert.equal(bad.automaticSanction,false);
+  assert.equal(bad.caseCreated,false);
+  assert.equal((await hold.get()).exists,false);
+  assert.equal((await balance(author.localId).get()).get('availableKCoins'),100);
+  assert.equal((await stats.get()).get('acceptedSeeds'),2);
+  await profile.update({status:'suspended'});
+  await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+ }finally{
+  await stats.set({kind:'personal',postId,authorId:author.localId,communityId:'',acceptedSeeds:1,closed:false});
+  if(prior===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=prior;
+ }
+});
