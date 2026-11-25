@@ -132,21 +132,19 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Cobertura dos indicadores de sustentabilidade da plataforma">
           {[
-            ['Custos de operação da plataforma', 'Total dos custos próprios da empresa, incluindo tecnologia, administração, comercial e demais despesas apuradas. Fonte: ERP da Loja Oficial.'],
-            ['Custo tecnológico', 'Parte dos custos próprios atribuída à infraestrutura e aos serviços tecnológicos. Não somar novamente ao custo total.'],
-            ['Custo por usuário ativo', 'Custo total próprio dividido pelo MAU. Indisponível até conciliar o mesmo período, regime e escopo.'],
-            ['Custo tecnológico por usuário ativo', 'Custo tecnológico dividido pelo MAU. Indisponível até conciliar os dados do mesmo período.'],
+            ['Custo de infraestrutura', 'Despesas conciliadas para manter o aplicativo funcionando, registradas no ERP da Loja Oficial.'],
+            ['Custo de infraestrutura por usuário ativo', 'Custo de infraestrutura dividido pelos usuários ativos do mesmo mês. Disponível somente após homologação e conciliação.'],
           ].map(([label, detail]) => <article key={label} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
             <h3 className="text-xs font-bold text-white">{label}</h3>
             <p className="mt-2 text-sm font-medium text-slate-300">Não consolidado</p>
             <p className="mt-1 text-xs text-slate-400">{detail}</p>
           </article>)}
         </div>
-        <p className="mt-3 text-xs text-slate-400">Gestão empresarial (receitas próprias, despesas, fluxo de caixa, resultados, margens e assinaturas): ERP da Loja Oficial Kyrub. Este painel não mantém cadastro financeiro paralelo.</p>
+        <p className="mt-3 text-xs text-slate-400">Gestão empresarial e lançamentos financeiros: ERP da Loja Oficial Kyrub. Este painel acompanha o custo de funcionamento do aplicativo, sem cadastro financeiro paralelo.</p>
         <article className="mt-3 rounded-xl border border-slate-800 bg-slate-950/55 p-3" aria-label="Usuários ativos mensais">
           <h3 className="text-xs font-bold text-white">Usuários ativos mensais (MAU)</h3>
           <p className="mt-2 text-sm font-medium text-slate-300">MAU real indisponível</p>
-          <p className="mt-1 text-xs text-slate-400">Coleta real e cobertura ainda não homologadas. Não utilizado no cálculo do custo por usuário.</p>
+          <p className="mt-1 text-xs text-slate-400">Coleta real e cobertura ainda não homologadas. Não utilizado no cálculo do custo de infraestrutura por usuário.</p>
           {monthlyActivity.fixtureCount !== null && <div className="mt-3 rounded-lg border border-amber-500/25 bg-amber-500/5 p-3">
             <p className="text-xs font-bold text-amber-300">Registros de teste — emulador</p>
             <p className="mt-1 text-sm text-slate-200">{monthlyActivity.fixtureCount.toLocaleString('pt-BR')} · {monthlyActivity.month}</p>
