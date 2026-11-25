@@ -182,6 +182,7 @@ const loadRefundablePayment = async (
     .limit(10)
     .get();
 
+  if(snapshot.size>=10)throw Error('PAYMENT_REFUND_PAYMENT_HISTORY_REVIEW_REQUIRED');
   const payments = snapshot.docs.flatMap(document => {
     try {
       const payment = normalizeCanonicalPayment({
@@ -216,6 +217,7 @@ const preparePaymentForRefund = async (
   const requestedAt = new Date().toISOString();
 
   await adminDb.runTransaction(async transaction => {
+    await assertFullRefundHasNoConfirmedPartialHistory({storeId:payment.storeId,orderId:payment.orderId},transaction);
     const snapshot = await transaction.get(ref);
     if (!snapshot.exists) throw new Error('PAYMENT_REFUND_PAYMENT_NOT_FOUND');
     const current = normalizeCanonicalPayment({
@@ -280,11 +282,12 @@ const markRefundRequest = async (
   status: 'processing' | 'refunded' | 'failed',
   extra: Record<string, unknown> = {}
 ): Promise<void> => {
-  await adminDb.doc(refundRequestPath(payment.storeId, payment.id)).set({
-    status,
-    updatedAt: new Date().toISOString(),
-    ...extra,
-  }, { merge: true });
+  const ref=adminDb.doc(refundRequestPath(payment.storeId,payment.id));
+  await adminDb.runTransaction(async tx=>{
+    const current=await tx.get(ref);
+    if(current.get('status')==='refunded')return;
+    tx.set(ref,{status,updatedAt:new Date().toISOString(),...extra},{merge:true});
+  });
 };
 
 const markPaymentRefundFailed = async (
