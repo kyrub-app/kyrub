@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import {openFreelanceSupportCase,listFreelanceSupportCases} from './freelanceSupportService.js';
+import {openFreelanceSupportCase,listFreelanceSupportCases,resolveFreelanceSupportCase} from './freelanceSupportService.js';
 import {adminAuth} from '../firebaseAdmin.js';
 import {freelanceNotificationPreviewEnabled,sendNotifiedHiringMessage,performNotifiedHiringAction,retireHiringVacancy,performHiringCancellation} from './freelanceNotificationService.js';
 import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
@@ -119,8 +119,14 @@ export const createUserNotificationRouter = (): Router => {
   });
   router.get('/freelance-support/admin',async(request,response)=>{
     if(!freelanceNotificationPreviewEnabled()){response.sendStatus(503);return;}
-    try{response.json(await listFreelanceSupportCases(request.get('authorization')??''));}
+    try{response.json(await listFreelanceSupportCases(request.get('authorization')??'',clean(request.query.cursor)||undefined));}
     catch(error){const code=error instanceof Error?error.message:'';response.status(code==='FREELANCE_FORBIDDEN'||code==='second_factor_required'||code==='reauthentication_required'?403:code==='authentication_required'||(typeof (error as {code?:unknown})?.code==='string'&&String((error as {code?:unknown}).code).startsWith('auth/'))?401:503).json({error:'Acesso à fila exige autorização administrativa ativa e segundo fator recente.'});}
+  });
+
+  router.post('/freelance-support/resolve',async(request,response)=>{
+    if(!freelanceNotificationPreviewEnabled()){response.sendStatus(503);return;}
+    try{response.json(await resolveFreelanceSupportCase(request.get('authorization')??'',{caseId:clean(request.body?.caseId),operationId:clean(request.body?.operationId),outcome:request.body?.outcome,note:request.body?.note}));}
+    catch(error){const code=error instanceof Error?error.message:'';response.status(code==='FREELANCE_INVALID'?400:code==='FREELANCE_CONFLICT'?409:code==='FREELANCE_FORBIDDEN'||code==='second_factor_required'||code==='reauthentication_required'?403:code==='authentication_required'||String((error as {code?:unknown})?.code??'').startsWith('auth/')?401:503).json({error:'Não foi possível confirmar o encerramento do atendimento.'});}
   });
 
   router.post('/freelance-applications/cancellation',async(request,response)=>{
