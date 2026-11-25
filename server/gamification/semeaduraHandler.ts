@@ -1,7 +1,7 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
-import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, seedReleaseControlledPost } from './semeaduraService.js';
+import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedReleaseControlledPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -63,6 +63,10 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
       response.status(200).json({
         journey: await readPersonalSemeaduraJourney(adminDb, actor),
       });
+      return;
+    }
+    if(body.action==='status_batch'){
+      response.status(200).json(await readVerifiedPostSemeaduraBatch(adminDb,actor,body.targets));
       return;
     }
     const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
