@@ -1,10 +1,12 @@
-import {useEffect,useState} from 'react';
+import {useEffect,useRef,useState} from 'react';
 import {auth} from '../../utils/firebase';
 import {listHiringMessages,sendHiringMessage,type HiringApplication,type HiringMessage,type HiringMessageCursor} from '../../utils/freelanceHiringCloud';
 
 export function FreelaNegotiationPreview({application,actor}:{application:HiringApplication;actor:string}){
  const [messages,setMessages]=useState<HiringMessage[]>([]);
  const [draft,setDraft]=useState('');
+ const pendingSend=useRef<{id:string;text:string}|null>(null);
+ const [retryPending,setRetryPending]=useState(false);
  const [busy,setBusy]=useState(false);
  const [notice,setNotice]=useState('');
  const [loaded,setLoaded]=useState(false);
@@ -35,13 +37,15 @@ export function FreelaNegotiationPreview({application,actor}:{application:Hiring
   finally{setBusy(false);}
  };
  const send=async()=>{
-  if(busy||!active||!current()||!draft.trim())return;
-  setBusy(true);setNotice('');
+  if(busy||(!active&&!pendingSend.current)||!current()||!draft.trim())return;
+  const attempt=pendingSend.current??{id:crypto.randomUUID(),text:draft.trim()};
+  pendingSend.current=attempt;
+  setRetryPending(true);setBusy(true);setNotice('');
   try{
-   await sendHiringMessage(application.id,draft);
-   if(current()){setDraft('');setNotice('Mensagem registrada.');}
+   await sendHiringMessage(application.id,attempt.text,attempt.id);
+   if(current()){pendingSend.current=null;setRetryPending(false);setDraft('');setNotice('Mensagem registrada.');}
   }catch{
-   if(current())setNotice('Envio não confirmado. Atualize a conversa antes de tentar novamente.');
+   if(current())setNotice('Envio não confirmado. Tente confirmar novamente a mesma mensagem; ela não será duplicada.');
    setBusy(false);return;
   }
   try{await refresh();}catch{if(current())setNotice('Mensagem registrada. Atualização do histórico indisponível.');}
@@ -59,9 +63,9 @@ export function FreelaNegotiationPreview({application,actor}:{application:Hiring
      <p className="whitespace-pre-wrap break-words">{m.text}</p>
     </article>)}
    </div>
-   {active&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void send();}}>
-    <label className="block">Mensagem<textarea className="block w-full bg-slate-950 rounded-lg p-2" maxLength={4000} required value={draft} disabled={busy} onChange={e=>setDraft(e.target.value)}/></label>
-    <button type="submit" disabled={busy||!draft.trim()} className="bg-teal-500 text-slate-950 rounded-lg p-2 font-bold">Enviar mensagem</button>
+   {(active||retryPending)&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void send();}}>
+    <label className="block">Mensagem<textarea className="block w-full bg-slate-950 rounded-lg p-2" maxLength={4000} required value={draft} disabled={busy||retryPending} onChange={e=>setDraft(e.target.value)}/></label>
+    <button type="submit" disabled={busy||!draft.trim()} className="bg-teal-500 text-slate-950 rounded-lg p-2 font-bold">{retryPending?'Confirmar novamente':'Enviar mensagem'}</button>
    </form>}
    <button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{if(busy)return;setBusy(true);setNotice('');void refresh().catch(()=>{if(current())setNotice('Não foi possível atualizar a negociação.');}).finally(()=>setBusy(false));}}>Atualizar mensagens recentes</button>
    <p role="status">{notice}</p>
