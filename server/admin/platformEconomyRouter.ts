@@ -5,6 +5,7 @@ import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { loadAdminPlatformEconomySnapshot } from './platformEconomyService.js';
 import { loadMonthlyActivityDiagnostic } from './monthlyActivityDiagnostic.js';
+import { loadInfrastructureDiagnostic } from './infrastructureDiagnostic.js';
 
 const PLATFORM_ECONOMY_ROLES = new Set(['super_admin', 'finance']);
 
@@ -146,8 +147,9 @@ export const loadAuthorizedPlatformEconomySnapshot = async (
   const admin = await authorizePlatformEconomy(authorization);
   const snapshot = await loadAdminPlatformEconomySnapshot();
   const monthlyActivity = await loadMonthlyActivityDiagnostic();
+  const infrastructureDiagnostic = await loadInfrastructureDiagnostic(authorization,monthlyActivity.month);
   await recordPlatformEconomyAudit(admin);
-  return { ...snapshot, monthlyActivity };
+  return { ...snapshot, monthlyActivity, infrastructureDiagnostic };
 };
 
 export const createPlatformEconomyRouter = (): Router => {
