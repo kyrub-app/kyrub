@@ -221,8 +221,8 @@ test('staged ERP eligibility protects order mirrors and staff status without blo
 test('legacy artifacts cannot bypass staged ERP age and financial MFA gates',async()=>{
   const owner=environment.authenticatedContext('owner-a').firestore();
   const buyer=environment.authenticatedContext('buyer-a').firestore();
-  const ownerMfa=environment.authenticatedContext('owner-a',{auth_time:Math.floor(Date.now()/1000),firebase:{sign_in_second_factor:'totp'}}).firestore();
-  const staleMfa=environment.authenticatedContext('owner-a',{auth_time:Math.floor(Date.now()/1000)-600,firebase:{sign_in_second_factor:'totp'}}).firestore();
+  const ownerMfa=environment.authenticatedContext('owner-a',{auth_time:Math.floor(Date.now()/1000),firebase:{sign_in_provider:'password',sign_in_second_factor:'totp'} as any}).firestore();
+  const staleMfa=environment.authenticatedContext('owner-a',{auth_time:Math.floor(Date.now()/1000)-600,firebase:{sign_in_provider:'password',sign_in_second_factor:'totp'} as any}).firestore();
   const path='artifacts/owner-a/public/data';
   const orderPath=path+'/customerOrders/legacy-order';
   const secondPath=path+'/customerOrders/buyer-order';
