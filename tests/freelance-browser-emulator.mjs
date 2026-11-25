@@ -46,6 +46,7 @@ try{
  await waitText(wp,'Freela de homologação');
  await click(wp,'Candidatar-se');
  await waitText(wp,'Candidatura registrada.');
+ await waitText(wp,'Valor informado: R$ 100.00');
  await click(wp,'Conversar / ver negociação');
  const confidential='Condições privadas de homologação';
  await wp.getByLabel('Mensagem',{exact:true}).fill(confidential);
@@ -55,6 +56,9 @@ try{
  const vacancy=(await adminDb.collection('vagas').where('ownerId','==',owner.uid).get()).docs[0];
  const applicationId=vacancy.id+'__'+worker.uid;
  const receipt=adminDb.doc('candidaturas/'+applicationId);
+ const originalTerms=(await receipt.get()).get('terms');
+ assert.equal(originalTerms.paymentCents,10000);
+ await vacancy.ref.update({payment:200,description:'Nova condição para futuras candidaturas'});
  assert.equal((await receipt.collection('messages').get()).size,1);
  await op.locator('#canonical-notification-trigger').click();
  const notification=op.getByRole('button').filter({hasText:'Nova mensagem de Freela'});
@@ -67,6 +71,7 @@ try{
  assert.equal(await negotiation.getByRole('button',{name:/Editar|Apagar|Excluir/}).count(),0);
  await click(op,'Fechar negociação');
  await click(op,'Solicitar Freela');
+ await waitText(op,'Valor informado: R$ 100.00');
  await click(op,'Aceitar');
  await waitText(op,'Situação atualizada no servidor.');
  await click(wp,'Atualizar');
@@ -80,8 +85,10 @@ try{
  await waitText(wp,'Status: Concluído — pagamento não verificado pelo Kyrub');
  assert.equal((await receipt.get()).get('status'),'completed');
  assert.equal((await receipt.get()).get('paymentStatus'),undefined);
+ assert.deepEqual((await receipt.get()).get('terms'),originalTerms);
  await wp.reload();
  await click(wp,'Fazer Freelas');
+ await waitText(wp,'Valor informado: R$ 100.00');
  await waitText(wp,'Status: Concluído — pagamento não verificado pelo Kyrub');
  await click(wp,'Conversar / ver negociação');
  await waitText(wp,confidential);
