@@ -1,3 +1,4 @@
+import {requireSocialAgeInTransaction} from '../identity/socialAgeAuthorization.js';
 import { adminDb } from '../firebaseAdmin.js';
 
 type Decision = 'accepted' | 'declined';
@@ -54,6 +55,7 @@ export async function respondToCommunityGroupInvitation(input: {
       throw new Error('COMMUNITY_GROUP_INVITATION_NOT_PENDING');
     }
     if (decision === 'accepted') {
+      await requireSocialAgeInTransaction(transaction,[recipientUserId,group.creatorId],'tribes','COMMUNITY_GROUP_INVITATION_FORBIDDEN');
       transaction.update(groupRef, {
         memberIds: [...group.memberIds, recipientUserId],
         updatedAt: new Date(),
