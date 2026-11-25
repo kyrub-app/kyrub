@@ -3,6 +3,10 @@ on:
   pull_request:
     paths:
       - 'tests/first-store-publication-auth-emulator-http.test.ts'
+      - 'tests/freelance-hiring-http-emulator.test.ts'
+      - 'server/notifications/freelanceNotificationService.ts'
+      - 'server/notifications/userNotificationRouter.ts'
+      - 'server/notifications/userCommunicationPreferenceRouter.ts'
       - 'server/gamification/firstStorePublicationHandler.ts'
       - 'server.ts'
       - 'server/identity/ageScreeningRouter.ts'
@@ -68,3 +72,11 @@ jobs:
           KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'false'
           KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'false'
         run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore "node --test --import tsx tests/kyrub-tag-publication-emulator.test.ts"
+
+
+      - name: Verify authenticated freelance hiring and private bell notifications
+        env:
+          KYRUB_FREELANCE_NOTIFICATION_PREVIEW: 'true'
+          KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'false'
+          KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'false'
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore "node --test --import tsx tests/freelance-hiring-http-emulator.test.ts"
