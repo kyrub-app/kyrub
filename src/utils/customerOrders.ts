@@ -695,8 +695,12 @@ export const subscribeToPreferredCustomerOrder = (
   let canonicalStoreId = '';
   let canonicalEnabled = false;
   let unsubscribeCanonical: Unsubscribe = () => undefined;
+  let canonicalGeneration=0;
+
+  let stopped=false;
 
   const publish = (): void => {
+    if(stopped)return;
     const equivalent =
       legacyState === 'unavailable' ||
       (legacyState === 'available' &&
@@ -716,6 +720,7 @@ export const subscribeToPreferredCustomerOrder = (
   };
 
   const restartCanonical = (): void => {
+    const generation=++canonicalGeneration;
     unsubscribeCanonical();
     unsubscribeCanonical = () => undefined;
     canonicalOrder = null;
@@ -728,6 +733,7 @@ export const subscribeToPreferredCustomerOrder = (
     unsubscribeCanonical = onSnapshot(
       doc(db, getCanonicalOrderDocumentPath(canonicalStoreId, normalizedOrderId)),
       snapshot => {
+        if(stopped||generation!==canonicalGeneration)return;
         canonicalOrder = mapCanonicalOrderToLegacyStore(
           parseCustomerOrder(snapshot.data()),
           normalizedStoreId
@@ -736,6 +742,7 @@ export const subscribeToPreferredCustomerOrder = (
         publish();
       },
       error => {
+        if(stopped||generation!==canonicalGeneration)return;
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -746,11 +753,13 @@ export const subscribeToPreferredCustomerOrder = (
   const unsubscribeLegacy = onSnapshot(
     doc(db, getCustomerOrderDocumentPath(normalizedStoreId, normalizedOrderId)),
     snapshot => {
+      if(stopped)return;
       legacyOrder = parseCustomerOrder(snapshot.data());
       legacyState = 'available';
       publish();
     },
     error => {
+      if(stopped)return;
       legacyState = 'unavailable';
       publish();
       onError?.(error);
@@ -760,6 +769,7 @@ export const subscribeToPreferredCustomerOrder = (
   const unsubscribeConfig = onSnapshot(
     doc(db, 'tenants', normalizedStoreId),
     snapshot => {
+      if(stopped)return;
       const previousStoreId = canonicalStoreId;
       const previousEnabled = canonicalEnabled;
       const config = parseCanonicalReadConfig(snapshot.data());
@@ -775,13 +785,16 @@ export const subscribeToPreferredCustomerOrder = (
       }
     },
     error => {
+      if(stopped)return;
       canonicalEnabled = false;
-      publish();
+      restartCanonical();
       onError?.(error);
     }
   );
 
   return () => {
+    stopped=true;
+    canonicalGeneration++;
     unsubscribeLegacy();
     unsubscribeConfig();
     unsubscribeCanonical();
@@ -826,7 +839,10 @@ export const subscribeToPreferredStoreCustomerOrders = (
   let unsubscribeCanonical: Unsubscribe = () => undefined;
   const legacyParsed=new Map<string,CustomerOrder|null>();
 
+  let stopped=false;
+
   const publish = (): void => {
+    if(stopped)return;
     const equivalent =
       legacyState === 'unavailable' ||
       (legacyState === 'available' &&
@@ -861,7 +877,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
     unsubscribeCanonical = onSnapshot(
       collection(db, getCanonicalOrdersCollectionPath(canonicalStoreId)),
       snapshot => {
-        if(generation!==canonicalGeneration)return;
+        if(stopped||generation!==canonicalGeneration)return;
         for(const change of snapshot.docChanges()){
           if(change.type==='removed')canonicalParsed.delete(change.doc.id);
           else canonicalParsed.set(change.doc.id,mapCanonicalOrderToLegacyStore(parseCustomerOrder(change.doc.data()),normalizedStoreId));
@@ -876,7 +892,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
         publish();
       },
       error => {
-        if(generation!==canonicalGeneration)return;
+        if(stopped||generation!==canonicalGeneration)return;
         canonicalState = 'unavailable';
         publish();
         onError?.(error);
@@ -887,6 +903,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
   const unsubscribeLegacy = onSnapshot(
     collection(db, getCustomerOrdersCollectionPath(normalizedStoreId)),
     snapshot => {
+      if(stopped)return;
       for(const change of snapshot.docChanges()){
         if(change.type==='removed')legacyParsed.delete(change.doc.id);
         else legacyParsed.set(change.doc.id,parseCustomerOrder(change.doc.data()));
@@ -898,6 +915,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
       publish();
     },
     error => {
+      if(stopped)return;
       legacyState = 'unavailable';
       publish();
       onError?.(error);
@@ -907,6 +925,7 @@ export const subscribeToPreferredStoreCustomerOrders = (
   const unsubscribeConfig = onSnapshot(
     doc(db, 'tenants', normalizedStoreId),
     snapshot => {
+      if(stopped)return;
       const previousStoreId = canonicalStoreId;
       const previousEnabled = canonicalEnabled;
       const config = parseCanonicalReadConfig(snapshot.data());
@@ -922,13 +941,15 @@ export const subscribeToPreferredStoreCustomerOrders = (
       }
     },
     error => {
+      if(stopped)return;
       canonicalEnabled = false;
-      publish();
+      restartCanonical();
       onError?.(error);
     }
   );
 
   return () => {
+    stopped=true;
     canonicalGeneration++;
     unsubscribeLegacy();
     unsubscribeConfig();
