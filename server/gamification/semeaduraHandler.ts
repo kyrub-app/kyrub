@@ -68,7 +68,7 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
     const result = body.action === 'status'
       ? await readVerifiedPostSemeadura(adminDb, target)
-      : await seedReleaseControlledPost(adminDb, target);
+      : await seedReleaseControlledPost(adminDb, target, adminAuth);
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
