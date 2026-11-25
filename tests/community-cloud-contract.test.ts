@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createSessionFeedRegistry } from '../src/utils/sessionFeedRegistry';
 import { createDetailSubscriptionRegistry } from '../src/utils/squareDetailSubscriptionRegistry';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
@@ -982,4 +983,85 @@ test('square feed preserves authoritative community checks and reconciles live d
   assert.match(feed, /community\.visibility !== 'public'/);
   assert.match(feed, /auth\.currentUser\?\.uid !== viewerId/);
   assert.doesNotMatch(feed, /stopDetails/);
+});
+
+test('shared square feed starts once, replays a defensive snapshot and stops on last unsubscribe', () => {
+  const user = {};
+  let starts = 0, stops = 0;
+  let emit: (value: string[]) => void = () => {};
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, change) => {
+    starts++; emit = change; return () => { stops++; };
+  }, () => [], values => [...values]);
+  const first: string[][] = [], second: string[][] = [];
+  const a = registry.subscribe(v => first.push(v), () => {});
+  emit(['a']);
+  first[0].push('local');
+  const b = registry.subscribe(v => second.push(v), () => {});
+  assert.equal(starts, 1);
+  assert.deepEqual(second, [['a']]);
+  a();
+  assert.equal(stops, 0);
+  emit(['b']);
+  assert.deepEqual(second, [['a'], ['b']]);
+  b();
+  assert.equal(stops, 1);
+  const c = registry.subscribe(v => first.push(v), () => {});
+  assert.equal(starts, 2);
+  assert.equal(first.length, 1);
+  c();
+});
+
+test('shared square feed retracts old session immediately on invalidation and rejects queued callbacks', () => {
+  let user: object | null = {};
+  const old: string[][] = [], next: string[][] = [];
+  const emissions: ((value: string[]) => void)[] = [];
+  let stops = 0;
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, change) => {
+    emissions.push(change); return () => { stops++; };
+  }, () => [], v => [...v]);
+  const a = registry.subscribe(v => old.push(v), () => {});
+  emissions[0](['old']);
+  user = {}; // even a fresh session for the same account gets a new object
+  registry.invalidate();
+  assert.deepEqual(old, [['old'], []]);
+  assert.equal(stops, 1);
+  const b = registry.subscribe(v => next.push(v), () => {});
+  emissions[0](['stale']);
+  assert.deepEqual(next, []);
+  emissions[1](['new']);
+  assert.deepEqual(next, [['new']]);
+  a();
+  assert.equal(stops, 1);
+  user = null;
+  registry.invalidate();
+  assert.deepEqual(next, [['new'], []]);
+  assert.equal(stops, 2);
+  b();
+});
+
+test('shared square feed propagates errors to active consumers without keeping listeners after teardown', () => {
+  const user = {};
+  let fail: (error: Error) => void = () => {};
+  let stops = 0;
+  const registry = createSessionFeedRegistry<string[], object>(() => user, (_key, _change, error) => {
+    fail = error; return () => { stops++; };
+  }, () => [], v => [...v]);
+  const errors: string[] = [];
+  const a = registry.subscribe(() => {}, e => errors.push('a:' + e.message));
+  const b = registry.subscribe(() => {}, e => errors.push('b:' + e.message));
+  fail(Error('denied'));
+  a();
+  fail(Error('offline'));
+  b();
+  fail(Error('stale'));
+  assert.deepEqual(errors, ['a:denied','b:denied','b:offline']);
+  assert.equal(stops, 1);
+});
+
+test('square consumers use the same session-scoped feed without persistent cache', () => {
+  const feed = read('src/utils/communitySquareFeed.ts');
+  assert.match(feed, /sharedSquareFeed\.subscribe\(onChange, onError\)/);
+  assert.match(feed, /onAuthStateChanged\(auth, \(\) => sharedSquareFeed\.invalidate\(\)\)/);
+  assert.match(feed, /withinCommunitySquareWindow\(Date\.parse\(item\.distributedAt\), Date\.now\(\)\)/);
+  assert.doesNotMatch(feed, /localStorage|sessionStorage|indexedDB/);
 });
