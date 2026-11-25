@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { countMonthlyPresenceMarkers } from '../server/admin/monthlyActivityDiagnostic';
 import { initializeApp, deleteApp } from 'firebase-admin/app';
 import { getFirestore } from 'firebase-admin/firestore';
 import { confirmMonthlyPresence, firestoreMonthlyPresenceStore, monthlyPresencePath } from '../server/observability/monthlyPresence';
@@ -252,6 +253,9 @@ test('monthly presence atomic create and browser isolation in the Firestore emul
     assert.deepEqual(marker.data(),{schemaVersion:1,month:'2026-11'});
     const count = await database.collection('kyrub_finops_mau_months/2026-11/markers').count().get();
     assert.equal(count.data().count,1);
+    assert.equal(await countMonthlyPresenceMarkers(database,'2026-11'),1);
+    assert.equal(await countMonthlyPresenceMarkers(database,'2026-12'),0);
+    await assert.rejects(countMonthlyPresenceMarkers(database,'2026-13'),/MAU_INVALID_MONTH/);
     for (const actor of ['regular_a','finance_a','super_admin_a']) {
       const browser = environment.authenticatedContext(actor).firestore();
       await assertFails(getDoc(doc(browser,path)));
