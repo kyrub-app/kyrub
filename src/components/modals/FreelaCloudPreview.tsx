@@ -2,7 +2,7 @@ import {FreelaNegotiationPreview} from './FreelaNegotiationPreview';
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,retireHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
+import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,retireHiringVacancy,submitHiringCancellation,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
 
 export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';onClose:()=>void}){
  const employer=mode==='employer';
@@ -14,7 +14,8 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const [openNegotiation,setOpenNegotiation]=useState('');
  const [editingId,setEditingId]=useState('');
  const [retiringId,setRetiringId]=useState('');
- useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setRetiringId('');setEditingId('');setTitle('');setDescription('');setPayment('');}),[]);
+ const [cancelId,setCancelId]=useState(''),[cancelReason,setCancelReason]=useState('');
+ useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setCancelId('');setCancelReason('');setRetiringId('');setEditingId('');setTitle('');setDescription('');setPayment('');}),[]);
  const refresh=useCallback(async()=>{
    if(!actor)return;
    const [v,a]=await Promise.all([listHiringVacancies(employer),listHiringApplications(employer)]);
@@ -59,13 +60,29 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
     <h4 className="font-bold">{employer?'Candidaturas recebidas':'Minhas candidaturas'}</h4>
     {applications.map(a=><article key={a.id} className="border border-slate-700 rounded-xl p-3 space-y-2">
       <p>Vaga: {a.terms?.title||vacancies.find(v=>v.id===a.vagaId)?.title||a.vagaId}</p>
-      {a.terms&&<div className="rounded-lg border border-slate-600 p-2 space-y-1"><strong>Condições registradas na candidatura</strong><p>{a.terms.description}</p><p>Valor informado: R$ {(a.terms.paymentCents/100).toFixed(2)}</p><p className="text-xs text-slate-300">O aceite se refere a estas condições. Mensagens não alteram este registro.</p></div>}<p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada',offer_withdrawn:'Oferta retirada pelo contratante',completion_requested:'Aguardando confirmação de conclusão',completed:'Concluído — pagamento não verificado pelo Kyrub'})[a.status]}</p>
+      {a.terms&&<div className="rounded-lg border border-slate-600 p-2 space-y-1"><strong>Condições registradas na candidatura</strong><p>{a.terms.description}</p><p>Valor informado: R$ {(a.terms.paymentCents/100).toFixed(2)}</p><p className="text-xs text-slate-300">O aceite se refere a estas condições. Mensagens não alteram este registro.</p></div>}<p>Status: {({pending:'Pendente',accepted:'Aceita',rejected:'Recusada',withdrawn:'Retirada',offer_withdrawn:'Oferta retirada pelo contratante',completion_requested:'Aguardando confirmação de conclusão',completed:'Concluído — pagamento não verificado pelo Kyrub',cancelled:'Cancelado por acordo entre as partes'})[a.status]}</p>
       {a.status==='pending'&&(employer?(['accepted','rejected'] as const):(['withdrawn'] as const)).map(status=><button key={status} disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await decideHiringApplication(a.id,status,a.terms);return 'Situação atualizada no servidor.';})}>{({accepted:'Aceitar',rejected:'Recusar',withdrawn:'Retirar'})[status]}</button>)}
-      {!employer&&a.status==='accepted'&&<button disabled={busy} className="border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completion_requested');return 'Conclusão informada. Aguarde a confirmação do contratante.';})}>Informar conclusão</button>}
-      {employer&&a.status==='completion_requested'&&<>
+      {!employer&&a.status==='accepted'&&a.cancellation?.state!=='requested'&&<button disabled={busy} className="border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completion_requested');return 'Conclusão informada. Aguarde a confirmação do contratante.';})}>Informar conclusão</button>}
+      {employer&&a.status==='completion_requested'&&a.cancellation?.state!=='requested'&&<>
         <button disabled={busy} className="mr-2 border border-teal-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'completed');return 'Serviço concluído pelas partes. Nenhum pagamento confirmado.';})}>Confirmar conclusão</button>
         <button disabled={busy} className="border border-slate-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await transitionHiringCompletion(a.id,'accepted');return 'Serviço devolvido para revisão.';})}>Solicitar revisão</button>
       </>}
+      {a.cancellation&&<div className="border border-slate-600 rounded-lg p-2 space-y-2">
+        <strong>{({requested:'Cancelamento solicitado',confirmed:'Cancelamento confirmado',declined:'Cancelamento não acordado',retracted:'Solicitação retirada'})[a.cancellation.state]}</strong>
+        <p className="whitespace-pre-wrap break-words">{a.cancellation.reason}</p>
+        {a.cancellation.state==='requested'&&<><p className="text-xs text-slate-300">Nenhuma multa, pagamento ou estorno é automático. Em caso de desacordo, procure atendimento; a solicitação não obriga ninguém a continuar trabalhando.</p>
+         {a.cancellation.requestedBy===actor?<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>void perform(async()=>{await submitHiringCancellation(a.id,'retract',a.cancellation?.requestId);return 'Solicitação retirada.';})}>Retirar solicitação</button>:<>
+          <button type="button" disabled={busy} className="border border-amber-500 rounded-lg p-2" onClick={()=>void perform(async()=>{await submitHiringCancellation(a.id,'confirm',a.cancellation?.requestId);return 'Cancelamento confirmado pelas partes.';})}>Concordar com cancelamento</button>
+          <button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>void perform(async()=>{await submitHiringCancellation(a.id,'decline',a.cancellation?.requestId);return 'Cancelamento não acordado.';})}>Não concordo</button>
+         </>}
+        </>}
+      </div>}
+      {['accepted','completion_requested'].includes(a.status)&&a.cancellation?.state!=='requested'&&<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setCancelId(a.id);setCancelReason('');}}>Solicitar cancelamento</button>}
+      {cancelId===a.id&&['accepted','completion_requested'].includes(a.status)&&a.cancellation?.state!=='requested'&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void perform(async()=>{await submitHiringCancellation(a.id,'request',undefined,cancelReason);if(auth.currentUser?.uid===actor){setCancelId('');setCancelReason('');}return 'Cancelamento solicitado. Aguarde a resposta da outra parte.';});}}>
+        <label className="block">Motivo do cancelamento<textarea className="block w-full bg-slate-950 rounded-lg p-2" required maxLength={1000} value={cancelReason} onChange={e=>setCancelReason(e.target.value)}/></label>
+        <button type="submit" disabled={busy||!cancelReason.trim()} className="border border-amber-500 rounded-lg p-2">Enviar solicitação</button>
+        <button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setCancelId('');setCancelReason('');}}>Voltar</button>
+      </form>}
       <button type="button" className="block border border-slate-600 rounded-lg p-2" onClick={()=>setOpenNegotiation(current=>current===a.id?'':a.id)}>{openNegotiation===a.id?'Fechar conversa':'Conversar / ver negociação'}</button>
       {openNegotiation===a.id&&actor&&<FreelaNegotiationPreview key={actor+':'+a.id} application={a} actor={actor}/>}
     </article>)}
