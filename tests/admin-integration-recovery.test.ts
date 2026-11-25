@@ -71,7 +71,8 @@ test('integration/fiscal/economy workspaces have local recovery boundaries', () 
   const boundary = read('src/components/admin/AdminWorkspaceRecoveryBoundary.tsx');
   assert.match(modules, /AdminWorkspaceRecoveryBoundary section="Integrações & Infraestrutura"/);
   assert.match(modules, /AdminWorkspaceRecoveryBoundary section="Fiscal \/ Nota Fiscal"/);
-  assert.match(root, /AdminWorkspaceRecoveryBoundary section="Economia da Plataforma"/);
+  assert.doesNotMatch(root, /AdminWorkspaceRecoveryBoundary section="Economia da Plataforma"/);
+  assert.match(read('src/components/admin/AdminControlPlaneApp.tsx'), /AdminWorkspaceRecoveryBoundary section="Economia da Plataforma"/);
   assert.match(boundary, /getDerivedStateFromError/);
   assert.match(boundary, /Tentar abrir esta seção novamente/);
   assert.doesNotMatch(boundary, /\.set\(\{|createMercadoPagoPixPayment|loadMercadoPagoStoreTokenSecret/);
