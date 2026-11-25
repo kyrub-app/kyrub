@@ -70,6 +70,8 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
  return adminDb.runTransaction(async tx=>{
   const [app,previous,vacancy,control,age,identity]=await tx.getAll(receipt,operation,adminDb.doc('vagas/'+vagaId),adminDb.doc('renda_age_release_private/current'),adminDb.doc('age_eligibility_private/'+actorId),adminDb.doc('identity_verifications/'+actorId));
   if(!control.exists||control.get('schemaVersion')!==1||control.get('mode')!=='verified_adult_only'||control.get('applicationAuthority')!=='server')throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
+  const lockPolicy=control.get('vacancyPolicy')==='lock_on_application';
+  if(control.get('vacancyPolicy')!==undefined&&control.get('vacancyPolicy')!=='legacy'&&!lockPolicy)throw Error('FREELANCE_PREVIEW_UNAVAILABLE');
   const ownerId=app.exists?app.get('ownerId'):vacancy.get('ownerId');
   if(!uidValid(ownerId)||ownerId===workerId||actorId!==(event.side==='worker'?workerId:ownerId)||(app.exists&&(app.get('vagaId')!==vagaId||app.get('userId')!==workerId)))throw Error('FREELANCE_FORBIDDEN');
   const receiverId=actorId===ownerId?workerId:ownerId;
@@ -88,10 +90,18 @@ export async function performNotifiedHiringAction(input:{actorId:string;actorRol
    if(app.exists||!vacancy.exists||vacancy.get('status')!=='open')throw Error('FREELANCE_CONFLICT');
    const terms=termsFromVacancy(vacancy.data());
    if(!sameHiringTerms(terms,expectedTerms))throw Error('FREELANCE_CONFLICT');
+   if(lockPolicy){
+    if(typeof vacancy.get('termsLocked')!=='boolean'||typeof vacancy.get('hasAccepted')!=='boolean')throw Error('FREELANCE_CONFLICT');
+    if(!vacancy.get('termsLocked'))tx.update(vacancy.ref,{termsLocked:true,updatedAt:FieldValue.serverTimestamp()});
+   }
    tx.create(receipt,{vagaId,ownerId,userId:workerId,status:'pending',terms,createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   }else{
    if(!app.exists||app.get('status')!==event.from)throw Error('FREELANCE_CONFLICT');
    if(action==='accept'&&!sameHiringTerms(parseHiringTerms(app.get('terms')),expectedTerms))throw Error('FREELANCE_CONFLICT');
+   if(action==='accept'&&lockPolicy){
+    if(!vacancy.exists||vacancy.get('ownerId')!==ownerId||vacancy.get('status')!=='open'||vacancy.get('termsLocked')!==true||typeof vacancy.get('hasAccepted')!=='boolean'||!sameHiringTerms(termsFromVacancy(vacancy.data()),expectedTerms))throw Error('FREELANCE_CONFLICT');
+    if(!vacancy.get('hasAccepted'))tx.update(vacancy.ref,{hasAccepted:true,updatedAt:FieldValue.serverTimestamp()});
+   }
    tx.update(receipt,{status:event.to,updatedAt:FieldValue.serverTimestamp(),...(action==='accept'?{acceptedAt:FieldValue.serverTimestamp()}: {})});
   }
   tx.create(operation,{actorId,action,status:event.to,...((action==='apply'||action==='accept')?{terms:expectedTerms}:{}),createdAt:FieldValue.serverTimestamp()});
