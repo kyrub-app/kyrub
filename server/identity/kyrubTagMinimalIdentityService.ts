@@ -1,5 +1,5 @@
 import {evaluateStoredCapabilityAgeAccess} from '../../shared/ageEligibility.js';
-import {FieldValue} from 'firebase-admin/firestore';
+import {FieldValue,type Transaction,type DocumentSnapshot} from 'firebase-admin/firestore';
 import {adminAuth,adminDb} from '../firebaseAdmin.js';
 import {assertTagPilotWriteIsolated} from './kyrubTagPilotIsolation.js';
 import {requireCurrentIngressLegalReceiptInTransaction} from '../governance/ingressLegalReceiptService.js';
@@ -16,6 +16,12 @@ export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMo
  if(!validUid(uid))throw Error('TAG_FORBIDDEN');
  return adminDb.runTransaction<{mode:TagIdentityMode}>(async tx=>{
   const [account,marker]=await Promise.all([tx.get(users().doc(uid)),tx.get(markers().doc(uid))]);
+  return resolveTagIdentityMode(tx,uid,account,marker);
+ });
+}
+
+/** One authority for both mode lookup and first-claim preparation. */
+async function resolveTagIdentityMode(tx:Transaction,uid:string,account:DocumentSnapshot,marker:DocumentSnapshot):Promise<{mode:TagIdentityMode}>{
   // Existing accounts without a promotional marker retain their legacy entry.
   // A marker must never override its own UID or stale eligibility.
   if(!marker.exists)return {mode:account.exists?'full':'unclassified'};
@@ -31,7 +37,6 @@ export async function getTagIdentityMode(uid:string):Promise<{mode:TagIdentityMo
    if(error instanceof Error&&['LEGAL_CURRENT_RECEIPT_REQUIRED','LEGAL_DOCUMENTS_UNAVAILABLE','LEGAL_RECEIPT_INVALID'].includes(error.message))return {mode:'tag_only'};
    throw error;
   }
- });
 }
 
 /**
@@ -50,11 +55,8 @@ export async function prepareTagMinimalIdentity(uid:string,id:string){
   const data=tag.data();
   if(data?.distribution!=='promotional'||!(data.ownerId===null||data.ownerId===uid))
    throw Error('TAG_FORBIDDEN');
-  if(account.exists||current.get('mode')==='full')return {mode:'full' as const};
-  if(current.exists){
-   if(current.get('uid')!==uid||current.get('mode')!=='tag_only')throw Error('TAG_FORBIDDEN');
-   return {mode:'tag_only' as const};
-  }
+  const resolved=await resolveTagIdentityMode(tx,uid,account,current);
+  if(resolved.mode!=='unclassified')return resolved;
   tx.create(marker,{uid,mode:'tag_only',source:'kyrub_tag_promo',
    createdFromTag:id,createdAt:FieldValue.serverTimestamp()});
   return {mode:'tag_only' as const};
