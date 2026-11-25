@@ -31,16 +31,20 @@ async function account(name,profile,role){
 const click=(page,name)=>page.getByRole('button',{name,exact:true}).click();
 const waitText=(page,text)=>page.getByText(text,{exact:true}).waitFor();
 try{
- await adminDb.doc('renda_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server'});
+ await adminDb.doc('renda_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server',applicationAuthority:'server',vacancyPolicy:'lock_on_application'});
  const owner=await account('owner','requester','owner');
  const worker=await account('worker','freelancer');
  const op=owner.page,wp=worker.page;
  await click(op,'Solicitar Freela');
  await op.getByLabel('Título',{exact:true}).fill('Freela de homologação');
  await op.getByLabel('Descrição',{exact:true}).fill('Turno fictício');
- await op.getByLabel('Valor combinado (R$)',{exact:true}).fill('100');
+ await op.getByLabel('Valor combinado (R$)',{exact:true}).fill('90');
  await click(op,'Publicar vaga de teste');
  await waitText(op,'Vaga registrada no servidor de testes.');
+ await click(op,'Editar oferta');
+ await op.getByLabel('Valor combinado (R$)',{exact:true}).fill('100');
+ await click(op,'Salvar edição');
+ await waitText(op,'Oferta atualizada.');
  await click(op,'Fechar');
  await click(wp,'Fazer Freelas');
  await waitText(wp,'Freela de homologação');
@@ -58,7 +62,7 @@ try{
  const receipt=adminDb.doc('candidaturas/'+applicationId);
  const originalTerms=(await receipt.get()).get('terms');
  assert.equal(originalTerms.paymentCents,10000);
- await vacancy.ref.update({payment:200,description:'Nova condição para futuras candidaturas'});
+ assert.equal((await vacancy.ref.get()).get('termsLocked'),true);
  assert.equal((await receipt.collection('messages').get()).size,1);
  await op.locator('#canonical-notification-trigger').click();
  const notification=op.getByRole('button').filter({hasText:'Nova mensagem de Freela'});
@@ -72,6 +76,8 @@ try{
  await click(op,'Fechar negociação');
  await click(op,'Solicitar Freela');
  await waitText(op,'Valor informado: R$ 100.00');
+ await waitText(op,'Condições bloqueadas para edição.');
+ assert.equal(await op.getByRole('button',{name:'Editar oferta',exact:true}).count(),0);
  await click(op,'Aceitar');
  await waitText(op,'Situação atualizada no servidor.');
  await click(wp,'Atualizar');
