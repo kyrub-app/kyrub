@@ -122,12 +122,25 @@ export async function listHiringMessages(applicationId:string,cursor?:HiringMess
  const last=docs[docs.length-1];
  return {items,nextCursor:snapshot.docs.length>HIRING_MESSAGE_PAGE_SIZE&&last?{applicationId,actorId:actor,snapshot:last}:null};
 }
-export async function sendHiringMessage(applicationId:string,text:string):Promise<void>{
+export async function sendHiringMessage(applicationId:string,text:string,requestId?:string):Promise<void>{
  const actor=uid(),message=text.trim();
  if(!message||message.length>4000)throw Error('Revise o texto da mensagem.');
  const messages=hiringMessages(applicationId);
  const receipt=doc(db,'candidaturas',applicationId);
- const messageRef=doc(messages);
+ const messageRef=requestId?doc(messages,requestId):doc(messages);
+ if(!validId(messageRef.id))throw Error('Identificador inválido.');
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'){
+  const user=auth.currentUser;
+  if(!user||user.uid!==actor)throw Error('Sessão alterada.');
+  const token=await user.getIdToken();
+  checkSession(actor);
+  const response=await fetch('/api/notifications/freelance-messages/send',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,messageId:messageRef.id,text:message})});
+  checkSession(actor);
+  if(!response.ok)throw Error('Envio não confirmado.');
+  const result=await response.json();
+  if(result.messageId!==messageRef.id||typeof result.created!=='boolean')throw Error('Recibo inválido.');
+  return;
+ }
  await runTransaction(db,async tx=>{
    checkSession(actor);
    const current=await tx.get(receipt);
