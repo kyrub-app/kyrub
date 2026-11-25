@@ -9,6 +9,9 @@ import {
 } from '@firebase/rules-unit-testing';
 import {
   doc,
+  collection,
+  deleteDoc,
+  getDocs,
   getDoc,
   serverTimestamp,
   setDoc,
@@ -358,4 +361,27 @@ test('owner cannot forge first-store verification or first publication timestamp
   await assertSucceeds(updateDoc(doc(owner, 'stores', STORE_ID), {
     name: 'Loja atualizada', updatedAt: serverTimestamp(),
   }));
+});
+
+test('finance cost center registry and payable snapshots are server-only across stores',async()=>{
+  await seedStore();
+  await environment.withSecurityRulesDisabled(async ctx=>{
+    const db=ctx.firestore();
+    await setDoc(doc(db,'stores',STORE_ID,'financeConfig','costCenters'),{schemaVersion:1,centers:[{id:'cc_a',name:'Infraestrutura',archived:false}]});
+    await setDoc(doc(db,'stores',STORE_ID,'financeConfig','taxonomy'),{schemaVersion:1,taxonomy:{centers:[{id:'cc_custom_a',name:'Manutenção'}],categories:[{id:'cat_custom_a',name:'Licenças'}]}});
+    await setDoc(doc(db,'stores',STORE_ID,'financePayables','payable-fixture'),{costCenter:{id:'cc_a',name:'Infraestrutura'}});
+  });
+  for(const actor of ['owner-a','manager-a','seller-a','other-owner']){
+    const db=environment.authenticatedContext(actor).firestore();
+    for(const [path,id] of [['financeConfig','costCenters'],['financeConfig','taxonomy'],['financePayables','payable-fixture']]){
+      const ref=doc(db,'stores',STORE_ID,path,id);
+      await assertFails(getDoc(ref));
+      await assertFails(getDocs(collection(db,'stores',STORE_ID,path)));
+      await assertFails(setDoc(ref,{forged:true}));
+      await assertFails(deleteDoc(ref));
+    }
+  }
+  const guest=environment.unauthenticatedContext().firestore();
+  await assertFails(getDoc(doc(guest,'stores',STORE_ID,'financeConfig','costCenters')));
+  await assertFails(getDoc(doc(guest,'stores',STORE_ID,'financeConfig','taxonomy')));
 });

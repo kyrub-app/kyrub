@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import type { FinanceTaxonomy } from '../../shared/storeFinanceTaxonomy';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
 import StoreCashFinanceWorkspace, {
@@ -87,6 +89,7 @@ type StoreFinancePayload = {
   receivables?: StoreReceivable[];
   payableSummary?: StorePayableSummary;
   payables?: StorePayable[];
+  taxonomy?: FinanceTaxonomy;
   cash?: StoreCashFinanceProjection;
   error?: string;
 };
@@ -139,12 +142,12 @@ const providerFeeMinor = (entry: StoreFinanceEntry): number | null => {
   return fees.reduce((total, fee) => total + fee.amountMinor, 0);
 };
 
-async function loadStoreFinance(storeId: string): Promise<StoreFinancePayload> {
-  const user = auth.currentUser;
-  if (!user) throw new Error('Faça login novamente.');
+async function loadStoreFinance(storeId: string,user:User,signal:AbortSignal): Promise<StoreFinancePayload> {
+  if (auth.currentUser!==user||user.uid!==storeId||signal.aborted) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
+  if(auth.currentUser!==user||signal.aborted)throw Error('Sessão alterada.');
   const response = await fetch(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+    headers: { Authorization: `Bearer ${token}` },cache:'no-store',signal,
   });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('application/json')) {
@@ -152,28 +155,42 @@ async function loadStoreFinance(storeId: string): Promise<StoreFinancePayload> {
   }
   const payload = await response.json() as StoreFinancePayload;
   if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar o Financeiro.');
+  if(payload.storeId!==storeId||auth.currentUser!==user||signal.aborted)throw Error('Sessão ou loja alterada.');
   return payload;
 }
 
 export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
+  const [session,setSession]=useState(()=>({user:auth.currentUser,epoch:0}));
+  useEffect(()=>onAuthStateChanged(auth,user=>setSession(previous=>previous.user===user?previous:{user,epoch:previous.epoch+1})),[]);
+  if(!session.user||session.user!==auth.currentUser||session.user.uid!==storeId)return null;
+  return <StoreFinanceSession key={storeId+':'+session.epoch} storeId={storeId} user={session.user}/>;
+}
+
+function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
   const [payload, setPayload] = useState<StoreFinancePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [fiscalOrderId, setFiscalOrderId] = useState<string | null>(null);
+  const request=useRef<AbortController|null>(null);
 
   const load = useCallback(async (silent = false) => {
+    if(auth.currentUser!==user)return;
+    request.current?.abort();
+    const controller=new AbortController();request.current=controller;
+    const current=()=>request.current===controller&&!controller.signal.aborted&&auth.currentUser===user;
     if (!silent) setLoading(true);
     setError('');
     try {
-      setPayload(await loadStoreFinance(storeId));
+      const next=await loadStoreFinance(storeId,user,controller.signal);
+      if(current())setPayload(next);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o Financeiro.');
+      if(current()){setPayload(null);setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o Financeiro.');}
     } finally {
-      if (!silent) setLoading(false);
+      if(current()){setLoading(false);request.current=null;}
     }
-  }, [storeId]);
+  }, [storeId,user]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => { void load();return()=>{request.current?.abort();request.current=null;}; }, [load]);
 
   const entries = payload?.entries ?? [];
   const summary = payload?.summary;
@@ -276,8 +293,10 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
       <StoreCashFinanceWorkspace projection={cash} />
 
       <StorePayablesWorkspace
+        key={storeId}
         storeId={storeId}
-        payables={payables}
+        payables={payload?.storeId === storeId ? payables : []}
+        taxonomy={payload?.storeId === storeId ? payload.taxonomy : undefined}
         summary={payableSummary}
         onReload={() => load(true)}
       />

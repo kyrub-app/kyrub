@@ -1,4 +1,6 @@
+import { emptyFinanceTaxonomy, type FinanceTaxonomy, type FinanceTaxonomyKind } from '../../../shared/storeFinanceTaxonomy';
 import { useMemo, useState } from 'react';
+import { FIXED_STORE_COST_CENTERS, type StoreCostCenterRef } from '../../../shared/storeFinanceCostCenters';
 import { auth } from '../../utils/firebase';
 
 export type StorePayableStatus = 'open' | 'paid' | 'cancelled';
@@ -27,6 +29,8 @@ export type StorePayable = {
   dueDate: string;
   recurrence: StorePayableRecurrence;
   costNature: StorePayableCostNature;
+  costCenter?: StoreCostCenterRef;
+  customCategory?: StoreCostCenterRef;
   billingDocumentType: StorePayableBillingDocumentType;
   billingDocumentReference: string;
   billingDigitableLine: string;
@@ -56,12 +60,15 @@ export type StorePayableSummary = {
 
 type MutationPayload = {
   payable?: StorePayable;
+  taxonomy?: FinanceTaxonomy;
+  id?: string;
   error?: string;
 };
 
 type Props = {
   storeId: string;
   payables: StorePayable[];
+  taxonomy?: FinanceTaxonomy;
   summary?: StorePayableSummary;
   onReload: () => Promise<void> | void;
 };
@@ -148,7 +155,9 @@ async function mutateStoreFinance(
 ): Promise<MutationPayload> {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
+  if(user.uid!==storeId)throw Error('Sessão ou loja alterada.');
   const token = await user.getIdToken();
+  if(auth.currentUser!==user)throw Error('Sessão alterada.');
   const response = await fetch('/api/store-finance', {
     method: 'POST',
     headers: {
@@ -162,6 +171,7 @@ async function mutateStoreFinance(
     throw new Error('O Financeiro respondeu em um formato inesperado.');
   }
   const payload = await response.json() as MutationPayload;
+  if(auth.currentUser!==user)throw Error('Sessão alterada.');
   if (!response.ok) throw new Error(payload.error || 'Não foi possível atualizar a conta.');
   return payload;
 }
@@ -169,13 +179,21 @@ async function mutateStoreFinance(
 export default function StorePayablesWorkspace({
   storeId,
   payables,
+  taxonomy: taxonomyProp,
   summary,
   onReload,
 }: Props) {
   const [description, setDescription] = useState('');
+  const [costCenterId,setCostCenterId]=useState('');
   const [amount, setAmount] = useState('');
   const [dueDate, setDueDate] = useState('');
-  const [category, setCategory] = useState<ManualStorePayableCategory>('supplier');
+  const [category, setCategory] = useState<string>('supplier');
+  const [taxonomyOverride,setTaxonomyOverride]=useState<{base:FinanceTaxonomy|undefined;value:FinanceTaxonomy}|null>(null);
+  const taxonomy=(taxonomyOverride?.base===taxonomyProp?taxonomyOverride?.value:undefined)??taxonomyProp??emptyFinanceTaxonomy();
+  const [manager,setManager]=useState<FinanceTaxonomyKind|null>(null);
+  const [editing,setEditing]=useState('');
+  const [customName,setCustomName]=useState('');
+  const [taxonomyBusy,setTaxonomyBusy]=useState(false);
   const [counterparty, setCounterparty] = useState('');
   const [recurrence, setRecurrence] = useState<StorePayableRecurrence>('none');
   const [costNature, setCostNature] = useState<StorePayableCostNature>('unspecified');
@@ -191,10 +209,11 @@ export default function StorePayablesWorkspace({
   const today = useMemo(() => new Date().toISOString().slice(0, 10), []);
 
   const createPayable = async () => {
+    if(saving||taxonomyBusy)return;
     const amountMinor = amountToMinor(amount);
-    if (!description.trim() || !dueDate || amountMinor === null) {
+    if (!description.trim() || !dueDate || amountMinor === null || !costCenterId) {
       setFeedbackError(true);
-      setFeedback('Informe descrição, valor válido e vencimento.');
+      setFeedback('Informe descrição, valor válido, vencimento e centro de custo.');
       return;
     }
 
@@ -207,10 +226,12 @@ export default function StorePayablesWorkspace({
         description: description.trim(),
         amountMinor,
         dueDate,
-        category,
+        category:category.startsWith('cat_custom_')?'other':category,
+        ...(category.startsWith('cat_custom_')?{customCategoryId:category}:{}),
         counterparty: counterparty.trim(),
         recurrence,
         costNature,
+        costCenterId,
         billingDocumentType,
         billingDocumentReference: billingDocumentType === 'none'
           ? ''
@@ -223,6 +244,7 @@ export default function StorePayablesWorkspace({
           : '',
       });
       setDescription('');
+      setCostCenterId('');
       setAmount('');
       setDueDate('');
       setCounterparty('');
@@ -241,6 +263,28 @@ export default function StorePayablesWorkspace({
       setSaving(false);
     }
   };
+
+  const toggleManager=(kind:FinanceTaxonomyKind)=>{setManager(old=>old===kind?null:kind);setEditing('');setCustomName('');};
+  const changeTaxonomy=async(operation:'create'|'rename'|'remove',id?:string)=>{
+    if(!manager||taxonomyBusy||saving)return;
+    setTaxonomyBusy(true);setFeedback('');setFeedbackError(false);
+    try{
+      const result=await mutateStoreFinance(storeId,{action:'mutate_taxonomy',kind:manager,operation,id,name:customName});
+      if(!result.taxonomy)throw Error('Cadastro não confirmado.');
+      setTaxonomyOverride({base:taxonomyProp,value:result.taxonomy});
+      if(operation==='create'&&result.id){if(manager==='centers')setCostCenterId(result.id);else setCategory(result.id);}
+      if(operation==='remove'){if(costCenterId===id)setCostCenterId('');if(category===id)setCategory('supplier');}
+      setEditing('');setCustomName('');setFeedback('Cadastro atualizado; histórico preservado.');
+    }catch(error){setFeedbackError(true);setFeedback(error instanceof Error?error.message:'Não foi possível atualizar o cadastro.');}
+    finally{setTaxonomyBusy(false);}
+  };
+  const managerPanel=manager&&<section className="mt-2 space-y-2 rounded-xl border border-slate-700 p-3 text-sm" aria-label={manager==='centers'?'Centros personalizados':'Categorias personalizadas'}>
+    <p className="text-xs text-slate-400">Opções nativas são protegidas. Edite ou exclua somente as personalizadas; lançamentos anteriores mantêm o nome registrado.</p>
+    <div className="flex flex-wrap gap-2"><input aria-label="Nome personalizado" value={customName} onChange={e=>setCustomName(e.target.value)} maxLength={80} className="min-w-0 flex-1 rounded-lg border border-slate-700 bg-slate-900 p-2 text-sm" placeholder="Novo nome"/>
+      <button type="button" disabled={taxonomyBusy||saving||!customName.trim()} onClick={()=>void changeTaxonomy(editing?'rename':'create',editing||undefined)} className="rounded-lg border border-slate-700 px-3">{editing?'Salvar':'Adicionar'}</button>
+      {editing&&<button type="button" onClick={()=>{setEditing('');setCustomName('');}}>Cancelar</button>}</div>
+    {taxonomy[manager].map(item=><div key={item.id} className="flex flex-wrap items-center gap-2"><span className="min-w-0 flex-1 break-words">{item.name}</span><button type="button" disabled={taxonomyBusy||saving} onClick={()=>{setEditing(item.id);setCustomName(item.name);}}>Editar</button><button type="button" disabled={taxonomyBusy||saving} onClick={()=>{if(window.confirm('Excluir esta opção personalizada? Os lançamentos anteriores serão preservados.'))void changeTaxonomy('remove',item.id);}}>Excluir</button></div>)}
+  </section>;
 
   const changePayable = async (
     payableId: string,
@@ -345,11 +389,20 @@ export default function StorePayablesWorkspace({
             />
           </label>
 
-          <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
-            Categoria
-            <select
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-2"><label htmlFor="payable-cost-center" className="text-sm text-slate-400">Centro de custo</label><button type="button" aria-label="Gerenciar centros de custo personalizados" disabled={taxonomyBusy||saving} onClick={()=>toggleManager('centers')} className="min-h-9 min-w-9 rounded-lg border border-slate-700 text-lg">+</button></div>
+            <select id="payable-cost-center" required value={costCenterId} onChange={e=>setCostCenterId(e.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-900 px-3 text-xs text-white">
+              <option value="">Selecione o centro de custo</option>
+              {FIXED_STORE_COST_CENTERS.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+              {taxonomy.centers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+            {manager==='centers'&&managerPanel}
+          </div>
+          <div className="min-w-0">
+            <div className="flex items-center justify-between gap-2"><label htmlFor="payable-category" className="text-sm text-slate-400">Categoria</label><button type="button" aria-label="Gerenciar categorias personalizadas" disabled={taxonomyBusy||saving} onClick={()=>toggleManager('categories')} className="min-h-9 min-w-9 rounded-lg border border-slate-700 text-lg">+</button></div>
+            <select id="payable-category"
               value={category}
-              onChange={event => setCategory(event.target.value as ManualStorePayableCategory)}
+              onChange={event => setCategory(event.target.value)}
               className="mt-1 min-h-10 w-full min-w-0 rounded-xl border border-slate-700 bg-slate-900 px-3 text-[10px] font-medium normal-case text-white outline-none focus:border-amber-400"
             >
               <option value="supplier">Fornecedor</option>
@@ -359,8 +412,10 @@ export default function StorePayablesWorkspace({
               <option value="tax">Impostos e taxas</option>
               <option value="service">Serviços contratados</option>
               <option value="other">Outros</option>
+              {taxonomy.categories.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-          </label>
+            {manager==='categories'&&managerPanel}
+          </div>
 
           <label className="min-w-0 text-[8px] font-black uppercase text-slate-500">
             Natureza do custo
@@ -458,7 +513,7 @@ export default function StorePayablesWorkspace({
 
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving||taxonomyBusy}
           className="mt-4 min-h-10 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 text-[9px] font-black uppercase text-amber-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {saving ? 'Registrando…' : 'Registrar conta'}
@@ -529,8 +584,9 @@ export default function StorePayablesWorkspace({
                         )}
                       </div>
                       <p className="mt-2 text-[8px] text-slate-500">
-                        {categoryLabel(payable.category)} · vence em {dateOnlyLabel(payable.dueDate)}
+                        {payable.customCategory?.name ?? categoryLabel(payable.category)} · vence em {dateOnlyLabel(payable.dueDate)}
                       </p>
+                      <p className="mt-1 break-words text-xs text-slate-400">Centro de custo: {payable.costCenter?.name ?? 'Sem classificação'}</p>
                       {payable.payrollPeriod && (
                         <p className="mt-1 text-[8px] text-violet-300/70">Competência: {payable.payrollPeriod}</p>
                       )}
