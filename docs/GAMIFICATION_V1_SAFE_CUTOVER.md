@@ -180,3 +180,22 @@ zero-history e demais estados econômicos preexistentes. Não criar nova migraç
 de jornada, não alterar saldos reais. O CI de 86a63a0 passou 4/4; revisão do
 gate econômico posterior ainda pendente. Inventário externo e aprovação
 comercial continuam obrigatórios. Nenhuma alteração em produção/PR #1274.
+
+
+## Decisão definitiva — corte da campanha de boas-vindas (24/11/2026)
+O proprietário confirmou que contas criadas antes do início oficial da campanha
+não recebem 100 Pitangas retroativamente. Sem compensação, reabertura de
+elegibilidade ou concessão por login posterior. A data efetiva comercial ainda
+deve ser fixada na ativação autorizada; a data de fixture não é data comercial.
+Cadastro anterior à campanha continua podendo participar da Jornada Pitangueira
+a partir de zero, sem bônus ou migração histórica. Preservar o teste existente
+de old registration ineligible; não criar frente de recuperação de bônus.
+CI dos commits efb4174 (pausa no marco econômico) e 169dd50 (início automático):
+4/4 workflows aprovados em cada revisão. Teste ampliado 0adbd53 reutiliza a
+conversão canônica para a conta sem boas-vindas: recusa com saldo 1, sem alterar
+extrato, e fronteira sintética de 1.000 Pitangas (999 de fixture exclusivamente
+descartável + 1 do marco emulado), duas requisições idênticas concorrentes,
+um débito de 1.000, um XP, saldo zero e histórico da jornada intacto.
+Não é uma nova fonte de recompensa. CI dessa ampliação e da autoridade
+sem boas-vindas pendente. Próximo portão: confirmar os testes e concluir
+auditoria de custo e cobertura de escritores, sem aumentar escopo.
