@@ -197,5 +197,18 @@ test('procurement and payable bridge cancel obsolete reads but preserve confirme
   assert.match(procurement,/if\(next\.storeId!==storeId\)throw new Error/);
   assert.match(procurement,/await work\(\);\s*if\(!isCurrent\(\)\)return;\s*setNotice\(successMessage\)/);
   assert.match(payables,/if\(!isCurrent\(\)\)return;\s*setFeedback\(result\.status/);
-  assert.match(payables,/setPurchases\(\[\]\);\s*setSuppliers\(\[\]\);\s*setPayables\(\[\]\);/);
+  assert.match(payables,/setPayables\(\[\]\);\s*setFinanceReady\(false\);/);
+});
+
+test('purchase and payable panels share one procurement overview without a second procurement GET',()=>{
+  const stock=readFileSync('src/components/store/StockDirectRuntime.tsx','utf8');
+  const procurement=readFileSync('src/components/store/StoreProcurementWorkspace.tsx','utf8');
+  const payables=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  assert.match(stock,/renderPurchaseFinance=\{\(overview, procurementLoading, refreshProcurement\)/);
+  assert.match(procurement,/renderPurchaseFinance\?\.\(overview,loading\|\|busy,load\)/);
+  assert.match(payables,/const \{purchases,suppliers\}=overview/);
+  assert.doesNotMatch(payables,/\/api\/store-procurement\?storeId=/);
+  assert.match(payables,/\/api\/store-finance\?storeId=/);
+  assert.match(payables,/Promise\.all\(\[refreshProcurement\(\),load\(\)\]\)/);
+  assert.match(payables,/procurementLoading\|\|!financeReady\) return;/);
 });
