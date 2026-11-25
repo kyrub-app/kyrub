@@ -9,6 +9,8 @@ test('verified emulator session screens once and keeps the private record minima
   assert.ok(ageScreeningEmulatorsReady(process.env));
   const app = express();
   app.use('/age', createAgeScreeningRouter());
+  const {createStoreFinanceRouter}=await import('../server/payments/storeFinanceRouter.js');
+  app.use('/finance',express.json(),createStoreFinanceRouter());
   const {createIngressLegalPreviewRouter}=await import('../server/governance/ingressLegalPreviewRouter.js');
   app.use('/legal',createIngressLegalPreviewRouter());
   const server = app.listen(0, '127.0.0.1');
@@ -47,6 +49,23 @@ test('verified emulator session screens once and keeps the private record minima
     const authHeader='Bearer '+token;
     await assert.rejects(requireKyrubSessionMfa(authHeader,'financial',300),/second_factor_required/);
     await requireKyrubSessionMfa(authHeader,'ordinary',300);
+    const financialUrl='http://127.0.0.1:'+address.port+'/finance';
+    const ownerStore=adminDb.doc('users/'+user.uid+'/stores/'+user.uid);
+    const readFinance=(storeId:string)=>fetch(financialUrl+'?storeId='+encodeURIComponent(storeId)+'&section=payables',{headers:{Authorization:authHeader}});
+    const writeFinance=()=>fetch(financialUrl,{method:'POST',headers:{Authorization:authHeader,'Content-Type':'application/json'},body:JSON.stringify({storeId:user.uid,action:'mark_payable_paid',payableId:'synthetic-payable'})});
+    await ownerStore.set({id:user.uid,ownerId:user.uid,name:'Loja sintética'});
+    process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED='true';
+    try{
+      assert.equal((await readFinance('another-store')).status,403);
+      const blocked=await readFinance(user.uid);
+      assert.equal(blocked.status,403);
+      assert.equal((await blocked.json()).code,'second_factor_required');
+      const mutation=await writeFinance();
+      assert.equal(mutation.status,403);
+      assert.equal((await mutation.json()).code,'second_factor_required');
+      assert.equal((await adminDb.collection('stores/'+user.uid+'/financePayables').get()).size,0);
+    }finally{delete process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED;await ownerStore.delete();}
+
     // Isolated administrative write boundary: the role alone does not satisfy MFA.
     const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
     const adminRoleRef=adminDb.doc('kyrub_admin/control_plane/admins/'+user.uid);

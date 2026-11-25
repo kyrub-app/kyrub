@@ -87,6 +87,10 @@ const normalizeProviderIso = (value: unknown): string => {
 };
 
 const requireOwner = async (authorization: string, storeId: string): Promise<string> => {
+  if(process.env.KYRUB_FINANCIAL_MFA_PREVIEW_ENABLED==='true'){
+    const {requireFinancialMfaPreviewOwner}=await import('../identity/financialMfaPreview.js');
+    return requireFinancialMfaPreviewOwner(authorization,storeId);
+  }
   const token = bearerToken(authorization);
   if (!token) throw new Error('AUTH_REQUIRED');
   const identity = await verifyFirebaseIdToken(token);
@@ -436,6 +440,9 @@ const backfillMercadoPagoReconciliations = async (input: {
 
 const mapError = (error: unknown): { status: number; message: string; code: string } => {
   const code = error instanceof Error ? error.message : String(error);
+  if(code==='second_factor_required'||code==='reauthentication_required')return {status:403,message:'Confirme sua autenticação em dois fatores para acessar o financeiro.',code};
+  if(code==='authentication_required'||String((error as {code?:string})?.code??'').startsWith('auth/'))return {status:401,message:'Faça login novamente.',code:'AUTH_REQUIRED'};
+  if(code==='FINANCIAL_MFA_PREVIEW_UNAVAILABLE')return {status:503,message:'Homologação financeira indisponível.',code};
   if (code === 'AUTH_REQUIRED') {
     return { status: 401, message: 'Faça login novamente.', code };
   }
