@@ -1,5 +1,5 @@
 import type { Auth } from 'firebase-admin/auth';
-import type { Firestore, Transaction } from 'firebase-admin/firestore';
+import { FieldPath, type Firestore, type Transaction, type DocumentData, type Query } from 'firebase-admin/firestore';
 import { kyrubKCoinBalance, type KyrubRewardLedgerEntry } from '../../shared/gamification.js';
 import { calculatePitangueiraJourney } from '../../shared/pitangueiraJourney.js';
 import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
@@ -426,4 +426,107 @@ export async function closeIsolatedGamificationSuspicionCase(
   tx.delete(activeRef);
   return {caseId:input.caseId,status:'closed' as const,replayed:false};
  });
+}
+
+
+const suspicionOutcomes=['resolved','inconclusive','referred_for_review'] as const;
+const validIso=(value:unknown):value is string=>typeof value==='string'&&Number.isFinite(Date.parse(value));
+function projectSuspicionCase(id:string,data:DocumentData){
+ if(data.schemaVersion!==1||!uid(id)||data.caseId!==id||
+    !['personal','community'].includes(data.kind)||typeof data.postId!=='string'||
+    !/^[A-Za-z0-9_-]{1,500}$/.test(data.postId)||
+    typeof data.postKey!=='string'||! /^[a-f0-9]{64}$/.test(data.postKey)||
+    !uid(data.openedBy)||!validIso(data.openedAt)||
+    data.classification!=='technical-indicator-not-fraud-verdict'||
+    !['open','closed'].includes(data.status))
+   throw Error('SUSPICION_CASE_STATE_INVALID');
+ if(data.status==='closed'&&(!suspicionOutcomes.includes(data.outcome)||!validIso(data.closedAt)||
+    Date.parse(data.closedAt)<Date.parse(data.openedAt)))throw Error('SUSPICION_CASE_STATE_INVALID');
+ if(data.status==='open'&&(data.outcome!==undefined||data.closedAt!==undefined))
+   throw Error('SUSPICION_CASE_STATE_INVALID');
+ return {caseId:id,kind:data.kind as 'personal'|'community',postId:data.postId as string,
+  postKey:data.postKey as string,openedBy:data.openedBy as string,openedAt:data.openedAt as string,
+  status:data.status as 'open'|'closed',
+  outcome:data.status==='closed'?data.outcome as typeof suspicionOutcomes[number]:null,
+  closedAt:data.status==='closed'?data.closedAt as string:null,
+  classification:'technical-indicator-not-fraud-verdict' as const};
+}
+const findingCodes=['INVALID_COUNTER','ORPHAN_RECEIPTS','COUNTER_BELOW_OBSERVED',
+ 'COUNTER_RECEIPT_MISMATCH','INVALID_RECEIPT','SELF_SEED_RECEIPT'];
+function projectSuspicionEvidence(data:DocumentData|undefined,postKey:string){
+ const count=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>=0;
+ if(!data||data.postKey!==postKey||!['complete','partial'].includes(data.coverage)||
+    !(data.projectedSeeds===null||count(data.projectedSeeds))||
+    !count(data.observedReceipts)||data.observedReceipts>501||
+    (data.coverage==='partial')!==(data.observedReceipts===501)||
+    !count(data.invalidReceipts)||data.invalidReceipts>data.observedReceipts||
+    !count(data.selfReceipts)||data.selfReceipts>data.observedReceipts||
+    !count(data.legacyWithoutQuotaDay)||data.legacyWithoutQuotaDay>data.observedReceipts||
+    !Array.isArray(data.findings)||data.findings.some((v:unknown)=>typeof v!=='string'||!findingCodes.includes(v))||
+    new Set(data.findings).size!==data.findings.length||
+    data.requiresTechnicalReview!==(data.findings.length>0))throw Error('SUSPICION_CASE_EVIDENCE_INVALID');
+ return {postKey,coverage:data.coverage as 'complete'|'partial',projectedSeeds:data.projectedSeeds as number|null,
+   observedReceipts:data.observedReceipts,invalidReceipts:data.invalidReceipts,selfReceipts:data.selfReceipts,
+   legacyWithoutQuotaDay:data.legacyWithoutQuotaDay,findings:[...data.findings] as string[],
+   requiresTechnicalReview:data.requiresTechnicalReview as boolean};
+}
+
+/** Authenticated bounded listing. Stable document-ID order (not chronology).
+ * Each page is a separate snapshot; concurrent changes may affect later pages.
+ * No global counts, raw documents, automatic classification or mutations. */
+export async function listIsolatedGamificationSuspicionCases(
+ db:Firestore,auth:Auth,authorization:string,
+ input:{status:'all'|'open'|'closed';limit:number;afterCaseId?:string},
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!input||!['all','open','closed'].includes(input.status)||!Number.isSafeInteger(input.limit)||
+    input.limit<1||input.limit>20||(input.afterCaseId!==undefined&&!uid(input.afterCaseId)))
+   throw Error('SUSPICION_CASE_LIST_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  let query:Query=db.collection(suspicionRoot+'/cases');
+  if(input.status!=='all')query=query.where('status','==',input.status);
+  query=query.orderBy(FieldPath.documentId());
+  if(input.afterCaseId!==undefined)query=query.startAfter(input.afterCaseId);
+  const rows=await tx.get(query.limit(input.limit+1));
+  const cases=rows.docs.slice(0,input.limit).map(doc=>projectSuspicionCase(doc.id,doc.data()));
+  return {scope:'isolated-suspicion-cases' as const,status:input.status,cases,
+    nextAfterCaseId:rows.size>input.limit?cases[cases.length-1].caseId:null,
+    ordering:'case-id-ascending' as const,consistentAcrossPages:false};
+ },{readOnly:true});
+}
+
+/** Detail reads preserved opening/closing evidence, not a fresh fraud verdict. */
+export async function readIsolatedGamificationSuspicionCase(
+ db:Firestore,auth:Auth,authorization:string,caseId:string,
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!uid(caseId))throw Error('SUSPICION_CASE_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  const [record,closure]=await Promise.all([tx.get(db.doc(suspicionRoot+'/cases/'+caseId)),
+    tx.get(db.doc(suspicionRoot+'/closures/'+caseId))]);
+  if(!record.exists)throw Error('SUSPICION_CASE_UNAVAILABLE');
+  const data=record.data()!;
+  const summary=projectSuspicionCase(caseId,data);
+  const openingEvidence=projectSuspicionEvidence(data.openingEvidence,summary.postKey);
+  if(!openingEvidence.requiresTechnicalReview)throw Error('SUSPICION_CASE_EVIDENCE_INVALID');
+  let closing=null;
+  if(summary.status==='closed'){
+   const end=closure.data();
+   if(!end||end.schemaVersion!==1||end.caseId!==caseId||end.postKey!==summary.postKey||
+      end.outcome!==summary.outcome||end.closedAt!==summary.closedAt||!uid(end.closedBy))
+      throw Error('SUSPICION_CASE_STATE_INVALID');
+   const evidence=projectSuspicionEvidence(end.closingEvidence,summary.postKey);
+   if(summary.outcome==='resolved'&&(evidence.coverage!=='complete'||evidence.requiresTechnicalReview))
+      throw Error('SUSPICION_CASE_EVIDENCE_INVALID');
+   closing={closedBy:end.closedBy as string,evidence};
+  }else{
+   const active=await tx.get(db.doc(suspicionRoot+'/active/'+summary.postKey));
+   if(closure.exists||active.get('schemaVersion')!==1||active.get('caseId')!==caseId||
+      active.get('postKey')!==summary.postKey)throw Error('SUSPICION_CASE_STATE_INVALID');
+  }
+  return {scope:'isolated-suspicion-case-history' as const,...summary,openingEvidence,closing,
+    automaticSanction:false};
+ },{readOnly:true});
 }
