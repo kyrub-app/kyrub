@@ -241,3 +241,40 @@ e evidências com data, projeto e fonte. Projeto kyrub-tags e PR #1274 fora
 do escopo. A autoridade econômica comercial ainda exige implementação
 e aceite separados: o piloto atual permanece exclusivo de emuladores.
 Não ampliar as otimizações até a evidência de consumo e cobertura.
+
+
+## Evidência CI e triagem de dependências
+Revisão fb638f0: Application build, Store security rules e Chromium aprovados.
+Job 138921387895, workflow Welcome 45529616596: 75/75 contratos, 10/10
+Firestore Semeadura e 26/26 outros testes emulador. Logs registram
+personal 40 -> 31, community 60 -> 33 e community 60 -> 51: contagem lógica
+SDK confirmada em emulador, não fatura. Job Auth 138921388038: 18/19,
+incluindo inscrição automática e conta sem bônus com conversão aprovadas.
+Falha no teste antigo de cadastro não-Google que fabricava evento concorrente
+com o onCreate real. Commit b24de6e corrige a fixture para replay de evidência
+real e exige rejeição de ID conflitante; não flexibiliza o serviço.
+CI da correção pendente. Manifesto estático de chamadas atualizado em
+5a44651, sem atestar escritores implantados.
+
+Inventário de dependências badd8d9, workflow 45530117843, root job
+138923037467 e functions job 138923037674: ambos relatórios concluídos.
+- Root completo: 1 baixa, 7 moderadas, 2 altas, 0 críticas.
+- Root npm audit --omit=dev: 1 baixa, 6 moderadas, 0 altas/críticas.
+- Functions completo e produção: zero apontamentos nessa consulta.
+As duas altas são uma cadeia de desenvolvimento: @vercel/routing-utils
+6.6.1 usa path-to-regexp 6.1.0 (GHSA-9wv6-86v2-598j) e alias
+path-to-regexp-updated 6.3.0. Não concluir que devDependency é necessariamente
+ausente do artefato implantado sem inspecionar o bundle.
+Outros apontamentos: minimatch/GHSA-g3hv-75wg-m249 e @vercel/queue,
+glob/GHSA-3g3m-2fjr-6pw4 e rimraf/google-gax, qs/GHSA-6pq8-jhm2-2vcw,
+fast-xml-parser/GHSA-474x-hrwr-fgx4, Vite dev/GHSA-8g5g-mxqh-grgj.
+Contagens incluem dependências afetadas transitivamente, não dez
+explorações independentes. A auditoria não demonstra alcançabilidade.
+Commit 5db1614 adiciona candidato descartável de override estritamente
+aninhado @vercel/routing-utils -> path-to-regexp 6.3.0, gera diff com npm,
+instala e testa rotas/TypeScript, reaudita e publica proposta como artefato.
+Não altera package.json/package-lock.json do repositório, não executa
+audit fix --force e não faz deploy. Aguardar relatório para decidir adoção;
+revisar diff e compatibilidade antes de aplicar. Demais apontamentos
+moderados/baixos requerem análise individual, não downgrade automático.
+Sem liberação comercial ou alteração no Firebase principal/tags.
