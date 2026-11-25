@@ -1090,7 +1090,7 @@ test('isolated zero-start path enrolls verified author once and never silently a
 test('non-Google author starts at zero without welcome bonus and earns a single milestone Pitanga',async()=>{
  const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
  const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
- const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {readPitangaAccount,convertPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
  const {createHash}=await import('node:crypto');
  const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
  const user=await auth.createUser({email:'no-welcome-author@example.invalid',password:'fixture-only-password'});
@@ -1112,6 +1112,12 @@ test('non-Google author starts at zero without welcome bonus and earns a single 
  const credit=root.collection('rewardLedger').doc('earn_semeadura_1');
  const receipt=(v:string)=>stats.collection('receipts').doc(v);
  const quota=(v:string)=>db.doc('users/'+v+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+ const conversionFlag=process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED;
+ const fixtureCredit=root.collection('rewardLedger').doc('fixture_conversion_boundary');
+ const conversionId='no-welcome-conversion';
+ const conversionReceipt=root.collection('pitangaXpConversions').doc(conversionId);
+ const conversionDebit=root.collection('rewardLedger').doc('conversion_'+conversionId);
+ const conversionXp=root.collection('xpLedger').doc('conversion_'+conversionId);
  const prior=Object.fromEntries(['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT'].map(k=>[k,process.env[k]]));
  const seed=(v:string)=>seedReleaseControlledPost(db,{authenticatedUserId:v,kind:'personal',postId},auth);
  try{
@@ -1141,7 +1147,35 @@ test('non-Google author starts at zero without welcome bonus and earns a single 
   assert.equal((await credit.get()).get('deltaKCoins'),1);
   assert.equal((await root.collection('rewardLedger').doc('earn_first_login_welcome_v1').get()).exists,false);
   assert.equal((await cursor.get()).get('creditedPitangas'),1);
+  process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED='true';
+  await assert.rejects(convertPitangaAccount(db,uid,{requestId:conversionId,requestedXp:1}));
+  assert.deepEqual(await readPitangaAccount(db,uid),account);
+  assert.equal((await conversionReceipt.get()).exists,false);
+  assert.equal((await conversionDebit.get()).exists,false);
+  assert.equal((await conversionXp.get()).exists,false);
+  // Disposable synthetic balance boundary only, not a product reward.
+  // Reuse the canonical conversion, never introduce a second debit writer.
+  const occurredAt=new Date(Date.now()-60000).toISOString();
+  await db.runTransaction(async tx=>{
+   tx.create(fixtureCredit,{id:fixtureCredit.id,userId:uid,economy:'k_coin',type:'earn',
+    deltaKCoins:999,sourceType:'admin_adjustment',sourceId:'fixture_conversion_boundary',
+    correlationId:'fixture_conversion_boundary',idempotencyKey:'fixture_conversion_boundary',occurredAt});
+   tx.update(balance(uid),{availableKCoins:1000});
+  });
+  const conversions=await Promise.all([convertPitangaAccount(db,uid,{requestId:conversionId,requestedXp:1}),
+   convertPitangaAccount(db,uid,{requestId:conversionId,requestedXp:1})]);
+  assert.equal(conversions.filter(r=>!r.replay).length,1);
+  assert.equal(conversions.filter(r=>r.replay).length,1);
+  const converted=await readPitangaAccount(db,uid);
+  assert.equal(converted.pitangas,0);assert.equal(converted.xp,1);
+  assert.equal((await conversionDebit.get()).get('deltaKCoins'),-1000);
+  assert.equal((await conversionXp.get()).get('deltaXp'),1);
+  assert.equal((await cursor.get()).get('acceptedSeeds'),1000);
+  assert.equal((await cursor.get()).get('creditedPitangas'),1);
  }finally{
+  if(conversionFlag===undefined)delete process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED;
+  else process.env.KYRUB_PITANGA_XP_CONVERSION_ENABLED=conversionFlag;
+  await Promise.all([fixtureCredit.delete(),conversionReceipt.delete(),conversionDebit.delete(),conversionXp.delete()]);
   await Promise.all([control.delete(),post.delete(),stats.delete(),cursor.delete(),progress.delete(),bootstrap.delete(),credit.delete(),balance(uid).delete(),receipt(actor).delete(),receipt('no-welcome-final').delete(),quota(actor).delete(),quota('no-welcome-final').delete()]);
   for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
  }
