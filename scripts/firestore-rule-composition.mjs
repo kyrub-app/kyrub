@@ -30,11 +30,11 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     // de identidade analisados e aprovados no Control Plane.
     match /vagas/{vagaId} {
       allow read: if isSignedIn();
-      allow create: if isAdmin()
-        || (
+      allow create: if canWriteRendaWithAge()
+        && (isAdmin() || (
           hasRole(['owner', 'manager', 'staff'])
           && hasApprovedIdentityProfile('requester')
-        );
+        ));
       allow update, delete: if isAdmin()
         || hasRole(['owner', 'manager', 'staff']);
     }
@@ -42,7 +42,7 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
     // --- Candidaturas (Prestar o serviço de Freela) ---
     match /candidaturas/{candiId} {
       allow read: if isSignedIn();
-      allow create: if isSignedIn()
+      allow create: if canWriteRendaWithAge()
         && incoming().userId == request.auth.uid
         && hasApprovedIdentityProfile('freelancer');
       allow update: if isAdmin()
