@@ -714,7 +714,7 @@ test('accepted seeds enqueue isolated refresh atomically; repeated drains do not
 
 
 test('authenticated suspicion inspection requires active admin and reports evidence without sanctions',async()=>{
- const {readIsolatedGamificationSuspicionEvidence}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {readIsolatedGamificationSuspicionEvidence,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase}=await import('../server/gamification/semeaduraAdminSupervision.js');
  const {seedVerifiedPost}=await import('../server/gamification/semeaduraService.js');
  const {createHash}=await import('node:crypto');
  const admin=await googleSignIn('suspicion-inspector-admin');
@@ -743,6 +743,11 @@ test('authenticated suspicion inspection requires active admin and reports evide
   const good=await read();
   assert.deepEqual(good.findings,[]);
   assert.equal(good.classification,'technical-indicator-not-fraud-verdict');
+  const bearer='Bearer '+admin.idToken;
+  const open=(caseId:string)=>openIsolatedGamificationSuspicionCase(db,auth,bearer,{...input,caseId});
+  const close=(caseId:string,outcome:'resolved'|'inconclusive'|'referred_for_review')=>closeIsolatedGamificationSuspicionCase(db,auth,bearer,{caseId,outcome});
+  const root=db.doc('systemControl/semeaduraSuspicionPilot');
+  await assert.rejects(open('no-evidence-case'),/SUSPICION_CASE_NO_INDICATORS/);
   await stats.update({acceptedSeeds:2});
   const bad=await read();
   assert.deepEqual(bad.findings,['COUNTER_RECEIPT_MISMATCH']);
@@ -751,7 +756,30 @@ test('authenticated suspicion inspection requires active admin and reports evide
   assert.equal((await hold.get()).exists,false);
   assert.equal((await balance(author.localId).get()).get('availableKCoins'),100);
   assert.equal((await stats.get()).get('acceptedSeeds'),2);
+  const concurrent=await Promise.allSettled([open('suspicion-case-a'),open('suspicion-case-b')]);
+  assert.equal(concurrent.filter(r=>r.status==='fulfilled').length,1);
+  const cases=await root.collection('cases').get();
+  assert.equal(cases.size,1);
+  const caseId=cases.docs[0].id;
+  assert.equal((await open(caseId)).replayed,true);
+  assert.equal((await root.collection('active').get()).size,1);
+  assert.deepEqual(cases.docs[0].get('openingEvidence').findings,['COUNTER_RECEIPT_MISMATCH']);
+  await assert.rejects(close(caseId,'resolved'),/SUSPICION_CASE_NOT_RESOLVED/);
+  await stats.update({acceptedSeeds:1});
+  assert.deepEqual(await close(caseId,'resolved'),{caseId,status:'closed',replayed:false});
+  assert.equal((await close(caseId,'resolved')).replayed,true);
+  await assert.rejects(close(caseId,'inconclusive'),/SUSPICION_CASE_CLOSE_CONFLICT/);
+  assert.equal((await open(caseId)).status,'closed');
+  assert.equal((await root.collection('active').get()).size,0);
+  await stats.update({acceptedSeeds:2});
+  const newId='suspicion-case-new';
+  assert.equal((await open(newId)).status,'open');
+  await close(newId,'referred_for_review');
+  assert.equal((await root.collection('closures').get()).size,2);
+  assert.equal((await hold.get()).exists,false);
+  assert.equal((await balance(author.localId).get()).get('availableKCoins'),100);
   await profile.update({status:'suspended'});
+  await assert.rejects(open('suspended-case'),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
   await assert.rejects(read(),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
  }finally{
   await stats.set({kind:'personal',postId,authorId:author.localId,communityId:'',acceptedSeeds:1,closed:false});
