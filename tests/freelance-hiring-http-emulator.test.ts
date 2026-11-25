@@ -172,6 +172,25 @@ test('isolated authenticated hiring journey preserves private messages and atomi
   await assert.rejects(updateDoc(cancelRef,{'cancellation.state':'confirmed',status:'cancelled'}));
   await assert.rejects(getDocFromServer(doc(outsider.db,'candidaturas',cancelId)));
   assert.ok(!JSON.stringify(await inbox(owner.token)).includes(privateReason));
+  const openCase=(token:string,requestId:string)=>call(token,'/api/notifications/freelance-support/open',{applicationId:cancelId,requestId});
+  const queue='/api/notifications/freelance-support/admin';
+  assert.equal((await openCase(outsider.token,'cancel-1')).status,403);
+  assert.equal((await openCase(worker.token,'nonexistent')).status,409);
+  assert.equal((await adminDb.collection('freelance_support_cases_private').get()).size,0);
+  const supportCase=await ok(await openCase(worker.token,'cancel-1'));
+  assert.equal(supportCase.created,true);
+  assert.deepEqual(await ok(await openCase(owner.token,'cancel-1')),{caseId:supportCase.caseId,created:false});
+  const savedCase=await adminDb.doc('freelance_support_cases_private/'+supportCase.caseId).get();
+  assert.equal(savedCase.get('applicationId'),cancelId);
+  assert.equal(savedCase.get('status'),'open');
+  assert.ok(!JSON.stringify(savedCase.data()).includes(privateReason));
+  await assert.rejects(getDocFromServer(doc(worker.db,'freelance_support_cases_private',supportCase.caseId)));
+  await assert.rejects(setDoc(doc(outsider.db,'freelance_support_cases_private','forged'),{status:'open'}));
+  assert.equal((await call(worker.token,queue)).status,403);
+  await adminDb.doc('kyrub_admin/control_plane/admins/'+owner.uid).set({uid:owner.uid,status:'active',role:'super_admin'});
+  // Active role by itself must never bypass MFA.
+  assert.equal((await call(owner.token,queue)).status,403);
+  assert.equal((await fetch(base+queue)).status,401);
   await ok(await cancel(owner.token,'decline','decline-1','cancel-1'));
   assert.equal((await getDocFromServer(cancelRef)).get('status'),'accepted');
   await ok(await cancel(owner.token,'request','cancel-2','cancel-2','Novo pedido'));
