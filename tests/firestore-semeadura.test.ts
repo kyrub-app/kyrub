@@ -185,3 +185,39 @@ test('100th daily seed is atomic across personal and community posts; replay and
  assert.equal((await db.doc('users/fresh-voter/semeaduraDailyUsage/'+day).get()).get('count'),1);
  assert.equal((await semear('personal','quota-extra','fresh-voter')).status,'already_seeded');
 });
+
+
+test('cutover preserves a pre-quota legacy receipt and community history without retroactive rewards',async()=>{
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const postId='legacy-cutover-post';
+ await community(postId);
+ await db.doc('community_members/rock__second-voter').set({communityId:'rock',userId:'second-voter',status:'active'});
+ const key=createHash('sha256').update('community\0'+postId).digest('hex');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const receipt=stats.collection('receipts').doc('voter');
+ const author=db.doc('users/member-author/semeaduraProgress/summary');
+ const collective=db.doc('communities/rock/semeaduraProgress/summary');
+ const oldTime=new Date(Date.now()-172800000).toISOString();
+ const oldReceipt={kind:'community',postId,communityId:'rock',authorId:'member-author',actorId:'voter',occurredAt:oldTime};
+ const oldCollective={communityId:'rock',acceptedSeeds:1,pitangueiras:0,bosques:0,createdAt:oldTime,updatedAt:oldTime};
+ await Promise.all([
+  stats.set({kind:'community',postId,communityId:'rock',authorId:'member-author',acceptedSeeds:1,closed:false,createdAt:oldTime,updatedAt:oldTime}),
+  receipt.set(oldReceipt),
+  author.set({authorId:'member-author',acceptedSeeds:1,pitangueiras:0,createdAt:oldTime,updatedAt:oldTime}),
+  collective.set(oldCollective),
+ ]);
+ const day=semeaduraDay(new Date());
+ const legacyQuota=db.doc('users/voter/semeaduraDailyUsage/'+day);
+ assert.equal((await readVerifiedPostSemeadura(db,{kind:'community',postId,authenticatedUserId:'voter'})).seeded,true);
+ assert.equal((await semear('community',postId,'voter')).status,'already_seeded');
+ assert.equal((await legacyQuota.get()).exists,false);
+ assert.deepEqual((await receipt.get()).data(),oldReceipt);
+ assert.equal((await semear('community',postId,'second-voter')).count,2);
+ assert.equal((await author.get()).get('acceptedSeeds'),2);
+ assert.deepEqual((await collective.get()).data(),oldCollective);
+ assert.equal((await stats.collection('receipts').doc('second-voter').get()).get('quotaDay'),day);
+ assert.equal((await db.doc('users/second-voter/semeaduraDailyUsage/'+day).get()).get('count'),1);
+ assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
+ assert.equal((await db.collection('users/member-author/xpLedger').get()).size,0);
+ assert.equal((await db.doc('users/member-author/pitangaBalance/balance').get()).exists,false);
+});
