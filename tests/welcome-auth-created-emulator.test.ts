@@ -956,3 +956,79 @@ test('isolated release control denies new writes by default, pauses atomically a
   if(oldGate===undefined)delete process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;else process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT=oldGate;
  }
 });
+
+
+test('release pause at the economic milestone preserves the entire transaction and resumes exactly once',async()=>{
+ const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
+ const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
+ const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
+ const {createHash}=await import('node:crypto');
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const signed=await googleSignIn('release-milestone-author');
+ const uid=signed.localId;
+ await waitForAward(uid);
+ const postId='release-milestone-post', actor='release-milestone-voter';
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const root=db.collection('users').doc(uid);
+ const control=db.doc(SEMEADURA_RELEASE_CONTROL_PATH);
+ const post=db.doc('social_posts/'+postId);
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const receipt=stats.collection('receipts').doc(actor);
+ const progress=root.collection('semeaduraProgress').doc('summary');
+ const enrollment=root.collection('semeaduraEconomicPilot').doc('activation');
+ const credit=root.collection('rewardLedger').doc('earn_semeadura_1');
+ const quota=db.doc('users/'+actor+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+ const oldPilot=process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+ const oldGate=process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;
+ const seed=()=>seedReleaseControlledPost(db,{authenticatedUserId:actor,kind:'personal',postId});
+ const before=await readPitangaAccount(db,uid);
+ const now=new Date().toISOString();
+ try{
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT='true';
+  // Synthetic boundary only; no historical migration and no 999 real receipts.
+  await Promise.all([
+   post.set({postId,authorId:uid,visibility:'public',publicationType:'feed'}),
+   stats.set({kind:'personal',postId,authorId:uid,communityId:'',acceptedSeeds:999,closed:false,createdAt:now,updatedAt:now}),
+   progress.set({authorId:uid,acceptedSeeds:999,pitangueiras:0,createdAt:now,updatedAt:now}),
+   enrollment.set({schemaVersion:1,authorId:uid,epoch,acceptedSeeds:999,creditedPitangas:0}),
+   control.set({schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'paused',revision:1,opensAt:now}),
+  ]);
+  const unchanged=async()=>{
+   assert.equal((await stats.get()).get('acceptedSeeds'),999);
+   assert.equal((await progress.get()).get('acceptedSeeds'),999);
+   assert.equal((await enrollment.get()).get('acceptedSeeds'),999);
+   assert.equal((await enrollment.get()).get('creditedPitangas'),0);
+   assert.equal((await receipt.get()).exists,false);
+   assert.equal((await credit.get()).exists,false);
+   assert.equal((await quota.get()).exists,false);
+   assert.deepEqual(await readPitangaAccount(db,uid),before);
+  };
+  await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  await unchanged();
+  await control.update({status:'open',revision:2});
+  delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;
+  await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  await unchanged();
+  process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT='true';
+  const results=await Promise.all([seed(),seed()]);
+  assert.equal(results.filter(r=>r.status==='accepted').length,1);
+  assert.equal(results.filter(r=>r.status==='already_seeded').length,1);
+  assert.equal((await stats.get()).get('acceptedSeeds'),1000);
+  assert.equal((await progress.get()).get('acceptedSeeds'),1000);
+  assert.equal((await enrollment.get()).get('creditedPitangas'),1);
+  assert.equal((await credit.get()).get('deltaKCoins'),1);
+  assert.equal((await quota.get()).get('count'),1);
+  const after=await readPitangaAccount(db,uid);
+  assert.equal(after.pitangas,100+1);
+  assert.equal(after.xp,0);
+  await control.update({status:'paused',revision:3});
+  assert.equal((await seed()).status,'already_seeded');
+  assert.deepEqual(await readPitangaAccount(db,uid),after);
+  assert.equal((await quota.get()).get('count'),1);
+ }finally{
+  await Promise.all([control.delete(),post.delete(),stats.delete(),progress.delete(),enrollment.delete(),receipt.delete(),quota.delete(),credit.delete(),balance(uid).update({availableKCoins:100,updatedAt:now})]);
+  if(oldPilot===undefined)delete process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT;else process.env.KYRUB_SEMEADURA_ECONOMIC_PILOT=oldPilot;
+  if(oldGate===undefined)delete process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT;else process.env.KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT=oldGate;
+ }
+});
