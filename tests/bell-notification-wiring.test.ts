@@ -107,7 +107,7 @@ test('clicking the bell opens the already authorized note or person conversation
 
 test('notification counting uses aggregation and hidden polling is bounded without delaying permitted browser alerts',()=>{
   assert.match(notificationService,/\.count\(\)\.get\(\)/);
-  assert.match(bell,/document\.hidden&&!browserAlerts\?60000:15000/);
+  assert.match(bell,/notificationPollInterval\(document\.hidden,browserAlerts\)/);
   assert.match(bell,/visibilitychange/);
   assert.match(bell,/generation!==refreshGeneration\.current/);
   const readAll=bell.slice(bell.indexOf('const readAll = async'),bell.indexOf('if (!user || !host'));

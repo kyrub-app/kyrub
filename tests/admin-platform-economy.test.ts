@@ -424,3 +424,17 @@ test('infrastructure diagnostic never reads remote ERP and returns only explicit
   assert.match(workspace,/MAU real indisponível/);
   assert.doesNotMatch(workspace,/fixturePaidMinor\s*\//);
 });
+
+
+test('Control Plane configured efficiency is tied to runtime polling, never presented as measured usage or savings',async()=>{
+ const {notificationPollInterval,projectNotificationPollingPolicy}=await import('../shared/platformEfficiencyPolicy');
+ assert.equal(notificationPollInterval(false,false),15000);
+ assert.equal(notificationPollInterval(false,true),15000);
+ assert.equal(notificationPollInterval(true,true),15000);
+ assert.equal(notificationPollInterval(true,false),60000);
+ assert.deepEqual(projectNotificationPollingPolicy(),{foregroundPerHour:240,hiddenWithoutAlertsPerHour:60,basis:'configured_interval'});
+ const ui=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+ assert.match(ui,/projectNotificationPollingPolicy\(\)/);
+ assert.match(ui,/Não são medições de uso, faturas ou economia financeira comprovada/);
+ assert.match(ui,/Não medidos/);
+});

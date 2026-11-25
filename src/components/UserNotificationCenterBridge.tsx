@@ -16,6 +16,7 @@ import {
   type UserCommunicationPreferences,
 } from '../../shared/userCommunicationPreferences';
 import type { UserNotification } from '../../shared/userNotifications';
+import {notificationPollInterval,NOTIFICATION_FOREGROUND_POLL_MS} from '../../shared/platformEfficiencyPolicy';
 import {
   USER_NOTIFICATION_ORIGIN_TABS, filterUserNotificationsByOrigin, userNotificationOrigin,
   type UserNotificationOrigin,
@@ -292,11 +293,11 @@ export function UserNotificationCenterBridge() {
       // Keep the foreground cadence and browser-alert delivery. Reduce hidden
       // polling only when browser notifications cannot be delivered.
       const browserAlerts=typeof Notification!=='undefined'&&Notification.permission==='granted';
-      const interval=document.hidden&&!browserAlerts?60000:15000;
+      const interval=notificationPollInterval(document.hidden,browserAlerts);
       if(Date.now()-lastPoll.current>=interval)void refresh(true);
     };
-    const resume=()=>{if(!document.hidden&&Date.now()-lastPoll.current>=15000)void refresh(true);};
-    const timer=window.setInterval(tick,15000);
+    const resume=()=>{if(!document.hidden&&Date.now()-lastPoll.current>=NOTIFICATION_FOREGROUND_POLL_MS)void refresh(true);};
+    const timer=window.setInterval(tick,NOTIFICATION_FOREGROUND_POLL_MS);
     document.addEventListener('visibilitychange',resume);
     window.addEventListener('focus',resume);
     return ()=>{window.clearInterval(timer);document.removeEventListener('visibilitychange',resume);window.removeEventListener('focus',resume);};

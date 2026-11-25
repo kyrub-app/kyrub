@@ -44,7 +44,8 @@ test('public storefront uses visual logo, swipeable footer and inline section co
     const hero=dom.window.document.getElementById('public-storefront-hero')!;
     assert.equal(hero.dataset.kyrubPublicStorefrontHero,'full-banner');
     assert.equal(hero.querySelectorAll('#storefront-banner').length,1);
-    assert.equal(hero.querySelectorAll('#storefront-banner img').length,2);
+    assert.equal(hero.querySelectorAll('#storefront-banner img').length,1);
+    assert.match(hero.querySelector('#storefront-banner img')?.getAttribute('src')??'',/hero1\.jpg/);
     assert.match(hero.textContent??'',/kyrub.com\/@kyrub-oficial/);
     assert.ok(hero.querySelector('img[alt="Logo de Kyrub Oficial"]')===null);
     assert.equal(hero.querySelectorAll('nav[aria-label="Atalhos da loja"] button').length,6);
@@ -70,6 +71,7 @@ test('public storefront uses visual logo, swipeable footer and inline section co
     await act(async()=>next!.click());
     assert.match(dom.window.document.querySelector('img[aria-hidden="false"]')?.getAttribute('src')??'',/hero2\.jpg/);
     assert.equal(next!.getAttribute('aria-current'),'true');
+    assert.equal(hero.querySelectorAll('#storefront-banner img').length,2);
   }finally{
     await act(async()=>root.unmount());
     for(const [key,descriptor]of saved){
