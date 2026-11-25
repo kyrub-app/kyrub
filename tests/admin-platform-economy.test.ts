@@ -343,3 +343,30 @@ test('control plane keeps ecosystem economics and sustainability, not a duplicat
   assert.match(erp,/<StoreFinanceRuntime/);
   assert.match(subscriptions,/activeSubscriberCount/);
 });
+
+test('FinOps technology cost is a subset of own operating cost, independently covered',()=>{
+  const period:FinopsPeriod={month:'2026-11',timezone:'America/Sao_Paulo',basis:'cash',currency:'BRL'};
+  const coverage=FINOPS_CATEGORIES.map(category=>({period,category,status:'complete' as const,evidenceRef:'fixture-coverage-'+category}));
+  const fact=(category:FinopsFact['category'],amountMinor:number):FinopsFact=>({period,category,amountMinor,factId:'fixture-'+category,sourceRef:'erp-fixture-'+category,quality:'confirmed',originalCurrency:'BRL'});
+  const facts=[fact('firebase_gcp',90000),fact('vercel',30000),fact('operations',160000),fact('tag_costs',80000),fact('payment_fees',40000)];
+  const users={period,uniqueAuthenticatedUsers:10000,status:'complete' as const,evidenceRef:'mau-fixture'};
+  const full=projectPlatformFinops(period,facts,coverage,users);
+  assert.equal(full.costs.confirmedMinor,400000);
+  assert.equal(full.technologyCosts.confirmedMinor,120000);
+  assert.equal(full.costPerActiveUserMinor,40);
+  assert.equal(full.technologyCostPerActiveUserMinor,12);
+  const onlyTechnology=coverage.filter(x=>['firebase_gcp','vercel','other_infrastructure'].includes(x.category));
+  const partial=projectPlatformFinops(period,facts,onlyTechnology,users);
+  assert.equal(partial.costs.status,'partial');
+  assert.equal(partial.costPerActiveUserMinor,null);
+  assert.equal(partial.technologyCostPerActiveUserMinor,12);
+  const missingTechnology=projectPlatformFinops(period,facts,coverage.filter(x=>x.category!=='other_infrastructure'),users);
+  assert.equal(missingTechnology.technologyCostPerActiveUserMinor,null);
+  assert.equal(missingTechnology.costPerActiveUserMinor,null);
+  assert.equal(projectPlatformFinops(period,facts,coverage,{...users,status:'partial'}).technologyCostPerActiveUserMinor,null);
+  assert.equal(projectPlatformFinops(period,facts,coverage,{...users,uniqueAuthenticatedUsers:0}).technologyCostPerActiveUserMinor,null);
+  const withEstimate=projectPlatformFinops(period,[...facts,{...fact('other_infrastructure',5000),quality:'estimated'}],coverage,users);
+  assert.equal(withEstimate.technologyCosts.estimatedMinor,5000);
+  assert.equal(withEstimate.technologyCostPerActiveUserMinor,null);
+  assert.throws(()=>projectPlatformFinops(period,[...facts,{...facts[0],category:'operations'}],coverage,users),/DUPLICATE_FACT/);
+});

@@ -2,6 +2,11 @@
 // persistence, billing API, or financial authority is established here.
 export const OWN_REVENUE_CATEGORIES = ['plans', 'ads', 'tags', 'platform_fees', 'other_own_revenue'] as const;
 export const OWN_COST_CATEGORIES = ['firebase_gcp', 'vercel', 'other_infrastructure', 'providers', 'operations', 'tag_costs', 'payment_fees', 'platform_incentives', 'taxes', 'other_own_cost'] as const;
+// Technology is a subset of all own operating costs, not an additional cost.
+// 'providers' means other contracted providers (non-technology); technology
+// services such as hosting, domains, email/SMS infrastructure and maps belong
+// in other_infrastructure when attributable to technology operation.
+export const TECHNOLOGY_COST_CATEGORIES = ['firebase_gcp', 'vercel', 'other_infrastructure'] as const;
 export const FINOPS_CATEGORIES = [...OWN_REVENUE_CATEGORIES, ...OWN_COST_CATEGORIES] as const;
 export type FinopsCategory = typeof FINOPS_CATEGORIES[number];
 export type FinopsPeriod = { month: string; timezone: 'America/Sao_Paulo'; basis: 'cash' | 'accrual'; currency: 'BRL' };
@@ -117,6 +122,7 @@ export function projectPlatformFinops(
   })) as Record<FinopsCategory, Measure>;
   const revenue = combine(OWN_REVENUE_CATEGORIES.map(c => categories[c]));
   const costs = combine(OWN_COST_CATEGORIES.map(c => categories[c]));
+  const technologyCosts = combine(TECHNOLOGY_COST_CATEGORIES.map(c => categories[c]));
   let mau: number | null = null;
   if (activeUsers) {
     if (!samePeriod(period, activeUsers.period) || !nonEmpty(activeUsers.evidenceRef) ||
@@ -127,14 +133,16 @@ export function projectPlatformFinops(
   }
   const fullRevenue = revenue.status === 'complete' ? revenue.confirmedMinor : null;
   const fullCosts = costs.status === 'complete' ? costs.confirmedMinor : null;
+  const fullTechnologyCosts = technologyCosts.status === 'complete' ? technologyCosts.confirmedMinor : null;
   const resultMinor = fullRevenue !== null && fullCosts !== null ? add(fullRevenue, -fullCosts) : null;
   return {
-    period: {...period}, categories, revenue, costs,
+    period: {...period}, categories, revenue, costs, technologyCosts,
     // Cash basis is net operating cash flow, not accounting profit.
     resultMinor,
     marginBps: resultMinor !== null && fullRevenue !== null ? safeRoundedRatio(resultMinor, fullRevenue, 10000) : null,
     mau,
     costPerActiveUserMinor: fullCosts !== null && mau !== null ? safeRoundedRatio(fullCosts, mau) : null,
+    technologyCostPerActiveUserMinor: fullTechnologyCosts !== null && mau !== null ? safeRoundedRatio(fullTechnologyCosts, mau) : null,
     revenuePerActiveUserMinor: fullRevenue !== null && mau !== null ? safeRoundedRatio(fullRevenue, mau) : null,
     evidence: {
       coverage: coverage.map(x => ({...x, period: {...x.period}})),

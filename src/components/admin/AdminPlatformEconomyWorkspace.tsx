@@ -132,8 +132,10 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
 
         <div className="mt-4 grid gap-3 sm:grid-cols-2" aria-label="Cobertura dos indicadores de sustentabilidade da plataforma">
           {[
-            ['Custos de operação da plataforma', 'Despesas efetivas devem ser registradas no Financeiro do ERP da Loja Oficial. Consulta classificada e conciliada ainda não integrada.'],
-            ['Custo por usuário ativo', 'Indisponível até conciliar custos da plataforma e MAU no mesmo período e escopo.'],
+            ['Custos de operação da plataforma', 'Total dos custos próprios da empresa, incluindo tecnologia, administração, comercial e demais despesas apuradas. Fonte: ERP da Loja Oficial.'],
+            ['Custo tecnológico', 'Parte dos custos próprios atribuída à infraestrutura e aos serviços tecnológicos. Não somar novamente ao custo total.'],
+            ['Custo por usuário ativo', 'Custo total próprio dividido pelo MAU. Indisponível até conciliar o mesmo período, regime e escopo.'],
+            ['Custo tecnológico por usuário ativo', 'Custo tecnológico dividido pelo MAU. Indisponível até conciliar os dados do mesmo período.'],
           ].map(([label, detail]) => <article key={label} className="rounded-xl border border-slate-800 bg-slate-950/55 p-3">
             <h3 className="text-xs font-bold text-white">{label}</h3>
             <p className="mt-2 text-sm font-medium text-slate-300">Não consolidado</p>
