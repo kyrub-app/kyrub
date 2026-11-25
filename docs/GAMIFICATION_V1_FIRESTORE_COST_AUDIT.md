@@ -318,3 +318,27 @@ minimatch. Não aceitar automaticamente: preservar contratos da integração.
 Caso remanesça, analisar atualização específica compatível e uso real
 de padrões glob, sem alterar o contrato da fila por conveniência.
 Não habilitar infraestrutura nem estender o escopo comercial por este CI.
+
+
+## Remediação compatível aplicada
+Revisões e45ae62 e 840816c: 5/5 workflows aprovados (incluindo inventário).
+Workflow 45530797880, job 138925297772, artefato 14984382036:
+prebuild, bundle, normalização ESM e lint aprovados com candidato.
+Diff inspecionado: apenas qs 6.16.0 -> 6.16.2 e vite 6.4.4 -> 6.4.6
+(versão, URL, integridade); package.json permanece idêntico.
+Commit 8aae377 aplica exatamente o blob homologado do lockfile
+088dc3e6adc62183600bc00bbe648f6f4b9c330a. CI do novo head pendente.
+Auditoria completa: 10 -> 8 -> 6 apontamentos (5 moderados, 1 baixo);
+produção: 7 -> 6, zero altas/críticas em ambos os escopos do candidato.
+Restantes: @vercel/queue, minimatch, glob, rimraf, google-gax e fast-xml-parser.
+Não forçar versões principais para zerar contador. Foi verificado que
+mercadoLivreOrderQueueService.ts e marketplacePaymentExpiryQueueService.ts
+usam send do @vercel/queue com tópico canônico compartilhado fixo.
+Isto não prova ausência de exposição a minimatch em outras rotas internas
+do SDK. Downgrade sugerido pela auditoria comprometeria compatibilidade
+não verificada; preservado. Remediação dos remanescentes requer proposta
+específica de versões suportadas e testes de fila/SDK, sem aceitar risco
+definitivamente nem alegar ausência de vulnerabilidades.
+Prosseguir com autoridade econômica comercial em branch/piloto fechado;
+não ativar flags, não alterar Firebase real. Inventário externo e
+homologação integral continuam bloqueios da liberação.
