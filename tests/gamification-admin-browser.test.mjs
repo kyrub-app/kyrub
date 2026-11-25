@@ -72,6 +72,20 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   server=local.listen(0,'127.0.0.1');
   if(!server.listening)await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
   const origin='http://127.0.0.1:'+server.address().port;
+  const command={operation:'open',caseId:'http-denied-case',kind:'personal',postId,confirmed:true};
+  const write=(token,body,requestOrigin=origin)=>fetch(origin+'/api/admin/gamification-pilot',{
+   method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json',origin:requestOrigin},body:JSON.stringify(body),
+  });
+  const ordinarySession=await signed(ordinaryEmail);
+  assert.equal((await write(ordinarySession.idToken,command)).status,403);
+  assert.equal((await write(session.idToken,{...command,confirmed:false})).status,400);
+  assert.equal((await write(session.idToken,{...command,actorId:admin.uid})).status,400);
+  assert.equal((await write(session.idToken,command,'https://outside.invalid')).status,403);
+  delete process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT;
+  try{assert.equal((await write(session.idToken,command)).status,405);}
+  finally{process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT='true';}
+  assert.equal((await db.doc('systemControl/semeaduraSuspicionPilot/cases/http-denied-case').get()).exists,false);
+
   browser=await chromium.launch({headless:true});
   const context=await browser.newContext({viewport:{width:390,height:844}});
   const external=[];
