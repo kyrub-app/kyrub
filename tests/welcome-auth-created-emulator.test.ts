@@ -1203,3 +1203,67 @@ test('non-Google author starts at zero without welcome bonus and earns a single 
   for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
  }
 });
+
+
+test('administrative pause and resume require authorized reviewer, immutable audit and current revision',async()=>{
+ const {readIsolatedGamificationRelease,changeIsolatedGamificationRelease}=await import('../server/gamification/semeaduraAdminSupervision.js');
+ const {seedEconomicallyAdmittedPost}=await import('../server/gamification/semeaduraService.js');
+ const admin=await googleSignIn('release-admin-authority'),ordinary=await googleSignIn('release-admin-ordinary');
+ await Promise.all([waitForAward(admin.localId),waitForAward(ordinary.localId)]);
+ const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.localId);
+ const reviewer=db.doc('systemControl/semeaduraEconomicReview/reviewers/'+admin.localId);
+ const control=db.doc('systemControl/semeaduraReleasePilot');
+ const keys=['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT','KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT'];
+ const prior=Object.fromEntries(keys.map(k=>[k,process.env[k]]));
+ const authz='Bearer '+admin.idToken;
+ const pause={eventId:'admin-pause',expectedRevision:1,status:'paused' as const,reason:'Interrupção operacional de homologação'};
+ const resume={eventId:'admin-resume',expectedRevision:2,status:'open' as const,reason:'Retomada operacional de homologação'};
+ const refs=[pause.eventId,resume.eventId,'admin-competing-pause'].map(id=>control.collection('events').doc(id));
+ const opensAt=new Date(Date.now()-60000).toISOString();
+ const postId='admin-controlled-release-post';
+ const post=db.doc('social_posts/'+postId);
+ const {createHash}=await import('node:crypto');
+ const key=createHash('sha256').update('personal\0'+postId).digest('hex');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const actor=admin.localId,author=ordinary.localId;
+ const progress=db.doc('users/'+author+'/semeaduraProgress/summary');
+ const cursor=db.doc('users/'+author+'/semeaduraEconomicPilot/activation');
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const quota=db.doc('users/'+actor+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+ const seed=()=>seedEconomicallyAdmittedPost(db,{authenticatedUserId:actor,kind:'personal',postId},auth);
+ const change=(cmd:typeof pause|typeof resume)=>changeIsolatedGamificationRelease(db,auth,authz,cmd);
+ try{
+  for(const k of keys)process.env[k]='true';
+  await profile.set({uid:admin.localId,role:'super_admin',status:'active'});
+  await reviewer.set({schemaVersion:1,reviewerId:admin.localId,active:true,fixtureOnly:true});
+  await control.set({schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'open',revision:1,opensAt});
+  await post.set({postId,authorId:author,visibility:'public',publicationType:'feed'});
+  await assert.rejects(changeIsolatedGamificationRelease(db,auth,'Bearer '+ordinary.idToken,pause),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  delete process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT;
+  await assert.rejects(change(pause),/GAMIFICATION_SUPERVISION_DISABLED/);
+  process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT='true';
+  const results=await Promise.allSettled([change(pause),change({...pause,eventId:'admin-competing-pause'})]);
+  assert.equal(results.filter(r=>r.status==='fulfilled').length,1);
+  assert.equal(results.filter(r=>r.status==='rejected').length,1);
+  const winner=(await control.get()).get('lastEventId');
+  const original=winner===pause.eventId?pause:{...pause,eventId:winner};
+  assert.equal((await change(original)).replayed,true);
+  await assert.rejects(change({...original,reason:'Motivo divergente não autorizado'}),/RELEASE_CONTROL_EVENT_CONFLICT/);
+  await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  for(const ref of [stats,progress,cursor,quota])assert.equal((await ref.get()).exists,false);
+  delete process.env.KYRUB_SEMEADURA_ZERO_START_PILOT;
+  await assert.rejects(change(resume),/RELEASE_CONTROL_RESUME_BLOCKED/);
+  process.env.KYRUB_SEMEADURA_ZERO_START_PILOT='true';
+  assert.equal((await change(resume)).revision,3);
+  assert.equal((await change(original)).status,'open','Replay reports current state, not old pause');
+  assert.equal((await seed()).status,'accepted');
+  const view=await readIsolatedGamificationRelease(db,auth,authz);
+  assert.deepEqual(view,{environment:'isolated-emulator',configured:true,status:'open',revision:3,opensAt});
+  await reviewer.update({active:false});
+  await assert.rejects(change(original),/GAMIFICATION_SUPERVISION_FORBIDDEN/);
+  assert.equal((await balance(author).get()).get('availableKCoins'),100);
+ }finally{
+  await Promise.all([profile.delete(),reviewer.delete(),control.delete(),...refs.map(ref=>ref.delete()),post.delete(),stats.collection('receipts').doc(actor).delete(),stats.delete(),progress.delete(),cursor.delete(),quota.delete()]);
+  for(const [k,v] of Object.entries(prior)){if(v===undefined)delete process.env[k];else process.env[k]=v;}
+ }
+});
