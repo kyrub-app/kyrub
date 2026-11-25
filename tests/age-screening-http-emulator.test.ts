@@ -95,7 +95,12 @@ test('verified emulator session screens once and keeps the private record minima
     }
 
     // Isolated administrative write boundary: the role alone does not satisfy MFA.
-    const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
+    const {handlePromotionalBatch,isPermanentStockEnvironment}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
+    assert.equal(isPermanentStockEnvironment('kyrub-b8d0e',{VERCEL_ENV:'production'}),true);
+    assert.equal(isPermanentStockEnvironment('kyrub-b8d0e',{VERCEL_ENV:'preview'}),false);
+    assert.equal(isPermanentStockEnvironment('demo-kyrub-onboarding',{VERCEL_ENV:'production'}),false);
+    assert.equal(isPermanentStockEnvironment('kyrub-b8d0e',{VERCEL_ENV:'production',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088'}),false);
+    assert.equal(isPermanentStockEnvironment('kyrub-b8d0e',{VERCEL_ENV:'production',FIREBASE_AUTH_EMULATOR_HOST:'127.0.0.1:9099'}),false);
     const adminRoleRef=adminDb.doc('kyrub_admin/control_plane/admins/'+user.uid);
     const batchNonce='a'.repeat(32);
     const batchRequest={action:'issue',count:1,requestId:batchNonce};
