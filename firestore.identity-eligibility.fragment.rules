@@ -30,9 +30,7 @@
         || (
           get(control).data.schemaVersion == 1
           && get(control).data.mode == 'verified_adult_only'
-          && exists(age)
-          && get(age).data.uid == userId
-          && get(age).data.status == 'verified_adult'
+          && verifiedAdultRecordFor(age, userId)
         )
       );
     }
@@ -53,9 +51,7 @@
         || (
           get(control).data.schemaVersion == 1
           && get(control).data.mode == 'verified_adult_only'
-          && exists(age)
-          && get(age).data.uid == userId
-          && get(age).data.status == 'verified_adult'
+          && verifiedAdultRecordFor(age, userId)
         )
       );
     }
@@ -80,4 +76,10 @@
           && get(age).data.status == 'verified_adult'
         )
       );
+    }
+
+    // Missing/malformed private evidence fails closed. Read the document once.
+    function verifiedAdultRecordFor(agePath, uid) {
+      let record = get(agePath).data;
+      return record.uid == uid && record.status == 'verified_adult';
     }
