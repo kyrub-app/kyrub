@@ -607,16 +607,20 @@ export const subscribeToPublicProducts = (
     return () => undefined;
   }
 
-  return onSnapshot(
+  let stopped=false;
+  const unsubscribe=onSnapshot(
     doc(db, 'tenants', storeId),
     snapshot => {
+      if(stopped)return;
       onProducts(parsePublicProducts(snapshot.data()?.publicProducts));
     },
     error => {
+      if(stopped)return;
       onProducts([]);
       onError?.(error);
     }
   );
+  return () => {stopped=true;unsubscribe();};
 };
 
 export const subscribeToPreferredPublicProducts = (
@@ -648,7 +652,9 @@ export const subscribeToPreferredPublicProducts = (
   let unsubscribeCanonical: Unsubscribe = () => undefined;
   let unsubscribeStore: Unsubscribe = () => undefined;
 
+  let stopped=false;
   const publish = (): void => {
+    if(stopped)return;
     // After cutover the legacy array is no longer authoritative. New canonical
     // products intentionally diverge from it and must not trigger a fallback.
     // Until the mapped store status is known, do not publish legacy data:
@@ -697,7 +703,7 @@ export const subscribeToPreferredPublicProducts = (
             where('publicationStatus', '==', 'published')
           ),
       snapshot => {
-        if (generation !== canonicalSubscriptionGeneration) return;
+        if (stopped || generation !== canonicalSubscriptionGeneration) return;
         for(const change of snapshot.docChanges()){
           if(change.type==='removed')parsedById.delete(change.doc.id);
           else parsedById.set(change.doc.id,parseCanonicalPublicProduct(change.doc,normalizedStoreId,options.includeUnpublished===true));
@@ -710,7 +716,7 @@ export const subscribeToPreferredPublicProducts = (
         publish();
       },
       error => {
-        if (generation !== canonicalSubscriptionGeneration) return;
+        if (stopped || generation !== canonicalSubscriptionGeneration) return;
         canonicalProducts = [];
         canonicalState = 'unavailable';
         publish();
@@ -722,6 +728,7 @@ export const subscribeToPreferredPublicProducts = (
   const unsubscribeTenant = onSnapshot(
     doc(db, 'tenants', normalizedStoreId),
     snapshot => {
+      if(stopped)return;
       const previousStoreId = canonicalStoreId;
       const previousEnabled = canonicalEnabled;
       const data = snapshot.data();
@@ -737,7 +744,7 @@ export const subscribeToPreferredPublicProducts = (
         storeStatusResolved = !canonicalStoreId;
         unsubscribeStore = canonicalStoreId
           ? onSnapshot(doc(db, 'stores', canonicalStoreId), storeSnapshot => {
-              if (storeGeneration !== storeSubscriptionGeneration) return;
+              if (stopped || storeGeneration !== storeSubscriptionGeneration) return;
               const cutover = storeSnapshot.data()?.migrationStatus === 'canonical';
               const changed = canonicalCutover !== cutover || !storeStatusResolved;
               canonicalCutover = cutover;
@@ -752,7 +759,7 @@ export const subscribeToPreferredPublicProducts = (
                 publish();
               }
             }, error => {
-              if (storeGeneration !== storeSubscriptionGeneration) return;
+              if (stopped || storeGeneration !== storeSubscriptionGeneration) return;
               // Unknown store status is not evidence that legacy reads are safe.
               storeStatusResolved = false;
               publish();
@@ -771,18 +778,26 @@ export const subscribeToPreferredPublicProducts = (
       }
     },
     error => {
+      if(stopped)return;
       // A tenant listener failure must not re-enable legacy reads after
       // cutover or expose a stale legacy catalog.
       legacyProducts = [];
       if (!canonicalCutover) {
         canonicalEnabled = false;
+        ++storeSubscriptionGeneration;
+        unsubscribeStore();
+        unsubscribeStore=()=>undefined;
+        storeStatusResolved=false;
+        restartCanonicalSubscription();
+      } else {
+        publish();
       }
-      publish();
       onError?.(error);
     }
   );
 
   return () => {
+    stopped=true;
     ++canonicalSubscriptionGeneration;
     ++storeSubscriptionGeneration;
     unsubscribeTenant();
