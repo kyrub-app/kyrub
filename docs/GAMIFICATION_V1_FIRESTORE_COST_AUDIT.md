@@ -147,3 +147,29 @@ isolamento e correspondência das respostas. Novo CI pendente; revisão
 6c3f755 tem 3 workflows aprovados e Store security rules em andamento
 na consulta. Ainda não há medição em navegador/emulador do transporte
 agrupado ou dados de consumo reais. Sem deploy, faturamento ou PR #1274.
+
+
+## Otimização 3 — extrato pessoal e resumo administrativo
+Pitangas e Semeadura do Control Plane já utilizam o mesmo snapshot derivado:
+duas leituras de autorização e uma do resumo, sem varredura global. A troca
+entre essas duas visões preserva o componente e a consulta, com atualização
+manual explícita e data/limitações de cobertura visíveis. A troca de sessão
+ou área de investigação remonta o painel. Chromium instrumenta o número
+de requisições do snapshot: 1 na abertura, 0 adicionais na troca de área,
+1 adicional no refresh. Não há cache persistente nem mudança de autoridade.
+Extrato pessoal: compartilha consultas simultâneas do mesmo objeto Auth,
+não conserva respostas concluídas, invalida na conversão e atualização
+explícita; sessão alterada remonta o estado e descarta respostas antigas.
+Renderiza 20 lançamentos por vez, mostrar mais não faz nova consulta.
+Teste UI instrumenta uma consulta para dois painéis simultâneos, mantém
+idempotência da conversão e verifica expansão local.
+Importante: a reconciliação integral de rewardLedger e xpLedger ainda
+ocorre no servidor. Limitar renderização NÃO reduz documentos lidos nem
+tamanho da resposta inicial. Não substituir saldo reconciliado por projeção
+não verificada; paginação real com total confiável requer autoridade de
+projeções transacionais de TODOS os escritores de Pitanga/XP e verificação
+de regras/versões. Não desenvolver projeções paralelas por suposição.
+Próximo portão: medir transporte agrupado no emulador e concluir inventário
+externo dos escritores, região e consumo antes de decidir otimizações
+adicionais. CI 2604f0a em execução na consulta; CI desta revisão pendente.
+Nenhuma alteração no Firebase real, faturamento, deployment ou PR #1274.
