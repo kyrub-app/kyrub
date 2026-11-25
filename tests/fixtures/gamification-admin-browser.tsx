@@ -1,4 +1,5 @@
 import {useEffect,useState} from 'react';
+import '../../src/index.css';
 import {createRoot} from 'react-dom/client';
 import {initializeApp} from 'firebase/app';
 import {connectAuthEmulator,getAuth,inMemoryPersistence,setPersistence,signInWithEmailAndPassword,signOut,onAuthStateChanged,type User} from 'firebase/auth';
