@@ -1080,6 +1080,16 @@ test('wall publication receipt is atomic, author-only, and prevents resurrection
   await assertFails(getDoc(doc(anonymous, receiptPath, postId)));
   await assertFails(setDoc(post, postData()));
   await assertFails(setDoc(receipt, receiptData()));
+  const malformed = writeBatch(owner);
+  malformed.set(post,postData());
+  malformed.set(receipt,{...receiptData(),communityId:'different_community'});
+  malformed.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+  await assertFails(malformed.commit());
+  await environment.withSecurityRulesDisabled(async ctx=>{
+    for(const path of ['community_posts',receiptPath,'community_square_posts']){
+      if((await getDoc(doc(ctx.firestore(),path,postId))).exists())throw Error('partial invalid atomic write');
+    }
+  });
   const publish = () => runTransaction(owner, async tx => {
     const previous = await tx.get(receipt);
     if (previous.exists()) return 'replay';
@@ -1088,8 +1098,10 @@ test('wall publication receipt is atomic, author-only, and prevents resurrection
     tx.set(pointer, {postId, communityId, createdAt: serverTimestamp()});
     return 'created';
   });
+  // Isolate authorization of the first atomic write from concurrent retries.
+  if (await assertSucceeds(publish()) !== 'created') throw Error('first atomic commit must succeed');
   const results = await Promise.all([publish(), publish()]);
-  if (results.filter(x => x === 'created').length !== 1 || results.filter(x => x === 'replay').length !== 1) throw Error('expected one commit and one replay');
+  if (results.some(x => x !== 'replay')) throw Error('expected two read-only replays after commit');
   const first = await assertSucceeds(getDoc(receipt));
   if (!first.exists()) throw Error('missing atomic receipt');
   await assertSucceeds(getDoc(post));
@@ -1106,4 +1118,27 @@ test('wall publication receipt is atomic, author-only, and prevents resurrection
     if ((await getDoc(doc(ctx.firestore(), 'community_posts', postId))).exists()) throw Error('post resurrected');
     if ((await getDoc(doc(ctx.firestore(), 'community_square_posts', postId))).exists()) throw Error('pointer resurrected');
   });
+});
+
+test('wall receipt concurrent first publication never commits more than one original',async()=>{
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const communityId='wall_receipt_concurrent';
+  const postId='wall_abcdef12-1234-1234-1234-123456789abc';
+  await createCommunity(owner,communityId,'public');
+  const receipt=doc(owner,'community_wall_publish_receipts',postId);
+  const source=doc(owner,'community_posts',postId);
+  const pointer=doc(owner,'community_square_posts',postId);
+  const publish=()=>runTransaction(owner,async tx=>{
+    const previous=await tx.get(receipt);
+    if(previous.exists())return 'replay';
+    tx.set(source,{postId,communityId,authorId:OWNER,authorName:'Criador',authorAvatar:'',content:'Publicação concorrente',mediaUrls:[],allowComments:true,pinnedCommentId:'',createdAtIso:'2026-11-25T00:00:00.000Z',updatedAtIso:'2026-11-25T00:00:00.000Z',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+    tx.set(receipt,{postId,communityId,authorId:OWNER,requestHash:'a'.repeat(64),createdAt:serverTimestamp()});
+    tx.set(pointer,{postId,communityId,createdAt:serverTimestamp()});
+    return 'created';
+  });
+  const result=await Promise.allSettled([publish(),publish()]);
+  if(result.filter(x=>x.status==='fulfilled'&&x.value==='created').length!==1)throw Error('expected exactly one initial commit');
+  for(const item of result)if(item.status==='rejected'&&!['permission-denied','aborted'].includes(item.reason?.code))throw item.reason;
+  if(await publish()!=='replay')throw Error('retry must be idempotent');
+  for(const item of [source,receipt,pointer])if(!(await assertSucceeds(getDoc(item))).exists())throw Error('atomic publication missing a document');
 });

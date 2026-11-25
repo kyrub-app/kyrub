@@ -526,11 +526,32 @@
     }
 
     function hasNewWallPublishReceipt(postId) {
+      let receipt = getAfter(wallPublishReceiptPath(postId));
       return !exists(wallPublishReceiptPath(postId))
-        && existsAfter(wallPublishReceiptPath(postId))
-        && getAfter(wallPublishReceiptPath(postId)).data.authorId == request.auth.uid
-        && getAfter(wallPublishReceiptPath(postId)).data.communityId == incoming().communityId
-        && getAfter(wallPublishReceiptPath(postId)).data.postId == postId;
+        && receipt != null
+        && receipt.data.authorId == request.auth.uid
+        && receipt.data.communityId == incoming().communityId
+        && receipt.data.postId == postId;
+    }
+
+    function hasNewWallReceiptSource(postId) {
+      let sourcePath = /databases/$(database)/documents/community_posts/$(postId);
+      let source = getAfter(sourcePath);
+      return !exists(sourcePath)
+        && source != null
+        && source.data.authorId == request.auth.uid
+        && source.data.communityId == incoming().communityId
+        && source.data.createdAt == request.time;
+    }
+
+    function hasValidSquareSource(postId) {
+      let source = getAfter(/databases/$(database)/documents/community_posts/$(postId));
+      let community = get(communityDocumentPath(incoming().communityId));
+      return source != null && community != null
+        && source.data.authorId == request.auth.uid
+        && source.data.communityId == incoming().communityId
+        && source.data.createdAt == incoming().createdAt
+        && community.data.visibility == 'public';
     }
 
     match /community_wall_publish_receipts/{postId} {
@@ -548,11 +569,7 @@
         && incoming().requestHash is string
         && incoming().requestHash.matches('[a-f0-9]{64}')
         && incoming().createdAt == request.time
-        && !exists(/databases/$(database)/documents/community_posts/$(postId))
-        && existsAfter(/databases/$(database)/documents/community_posts/$(postId))
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == incoming().communityId
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.createdAt == request.time;
+        && hasNewWallReceiptSource(postId);
       allow update, delete: if false;
     }
 
@@ -624,12 +641,7 @@
         && incoming().communityId.size() > 0
         && incoming().communityId.size() <= 128
         && incoming().createdAt is timestamp
-        && existsAfter(/databases/$(database)/documents/community_posts/$(postId))
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.authorId == request.auth.uid
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.communityId == incoming().communityId
-        && getAfter(/databases/$(database)/documents/community_posts/$(postId)).data.createdAt == incoming().createdAt
-        && exists(/databases/$(database)/documents/communities/$(incoming().communityId))
-        && get(/databases/$(database)/documents/communities/$(incoming().communityId)).data.visibility == 'public';
+        && hasValidSquareSource(postId);
 
       allow update: if false;
       allow delete: if isSignedIn()
