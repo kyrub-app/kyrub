@@ -115,16 +115,23 @@ export default function AdminKyrubTagPromotionalBatches({user}:{user:User}){
  }
  if(productionPanel&&ready&&!readiness?.permanentStockEnabled)return <a className="inline-flex min-h-11 items-center rounded-xl bg-[#F47825] px-4 py-2 font-bold text-[#121A17]" href="https://kyrub-git-feat-kyrub-tag-promoti-ebbdb4-kyrubapp-6434s-projects.vercel.app/?kyrub_admin_preview=1#admin-kyrub-tag-promotional">Abrir gravador de teste</a>;
  if(!ready)return <p role="status">{notice||'Abrindo o gravador…'}</p>;
- if(productionPanel&&readiness?.permanentStockEnabled)return <section className="space-y-4 text-sm">
-  <h5 className="font-bold text-base">Emitir lote</h5>
-  <p>Adesivos com endereço definitivo. A ativação pública continua bloqueada.</p>
-  <label className="block">Quantidade por lote (1–10)<input type="number" min={1} max={10} value={count} disabled={busy} onChange={e=>{setCount(Number(e.target.value));setConfirm(false);requestId.current=null;}} className="block min-h-11 w-28 rounded-xl border border-slate-600 bg-slate-900 p-3"/></label>
-  <label className="flex gap-2"><input type="checkbox" checked={confirm} disabled={busy} onChange={e=>setConfirm(e.target.checked)}/>Confirmo a emissão de adesivos vazios.</label>
-  <button type="button" className={btn} disabled={busy||!confirm||!Number.isInteger(count)||count<1||count>10} onClick={()=>void issue()}>{busy?'Emitindo…':'Emitir lote definitivo'}</button>
-  {notice&&<p role="status">{notice}</p>}
-  {batches.length>0&&<AdminKyrubTagNfcWizard key={user.uid} user={user} readiness={readiness} batches={batches.filter(b=>b.urlMode==='permanent')} onBatch={batch=>setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)])}/>}
-  <p>{batches.length} lote(s) · {batches.reduce((n,b)=>n+b.units.filter(u=>u.physicalStatus==='readback_confirmed').length,0)} adesivo(s) conferido(s). Limite atual: 100 lotes.</p>
- </section>;
+ if(productionPanel&&readiness?.permanentStockEnabled){
+  const official=batches.filter(b=>b.urlMode==='permanent');
+  const validated=official.flatMap(batch=>batch.units.filter(unit=>unit.physicalStatus==='readback_confirmed').map(unit=>({batchId:batch.id,unit})));
+  return <section className="space-y-4 text-sm">
+   <AdminKyrubTagNfcWizard key={user.uid} user={user} readiness={readiness} batches={official} onBatch={batch=>setBatches(current=>[batch,...current.filter(v=>v.id!==batch.id)])}/>
+   <details className="rounded-xl border border-[#34443B] p-3">
+    <summary className="cursor-pointer font-semibold">Histórico de tags validadas ({validated.length})</summary>
+    <p className="mt-2 text-slate-300">Unidades com URL gravada, relida e registrada no servidor. Ativação pública ainda bloqueada.</p>
+    {validated.length===0?<p className="mt-2 text-slate-400">Nenhum adesivo conferido.</p>:<div className="mt-3 space-y-2">{validated.map(({batchId,unit})=><div key={unit.id} className="rounded-lg border border-[#34443B] p-3">
+     <p className="font-semibold text-emerald-300">Validada · {unit.id.slice(-8)}</p>
+     <p className="text-xs text-slate-400">Lote {batchId.slice(-8)}</p>
+     <p className="break-all text-xs">{unit.url}</p>
+    </div>)}</div>}
+   </details>
+   <p className="text-xs text-slate-400">{official.length} lote(s) · Limite atual: 100 lotes.</p>
+  </section>;
+ }
  return <section className="space-y-4 text-sm text-slate-200">
   <AdminKyrubTagNfcWizard user={user} readiness={readiness} batches={batches}
    onBatch={batch=>{
