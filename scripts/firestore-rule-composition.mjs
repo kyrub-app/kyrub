@@ -43,6 +43,9 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       );
     }
 
+    match /freelance_support_cases_private/{caseId} {
+      allow read, write: if false;
+    }
     match /vagas/{vagaId} {
       function vacancyLockPolicy() {
         let control = /databases/$(database)/documents/renda_age_release_private/current;
