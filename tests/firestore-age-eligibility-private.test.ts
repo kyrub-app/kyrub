@@ -47,3 +47,20 @@ test('age status is not readable or writable directly by any client', async () =
     assert.equal(snap.data()?.status, 'declared_underage');
   });
 });
+
+test('restricted personal preview is not accessible directly through Firestore clients', async () => {
+  const collectionId='restricted_personal_preview';
+  const ownerId='age_test_owner';
+  const recordId=ownerId+'_notes';
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),collectionId,recordId),{uid:ownerId,kind:'notes',items:[{id:'example',text:'private test',done:false}]});
+  });
+  for(const context of [environment.unauthenticatedContext(),environment.authenticatedContext(ownerId),environment.authenticatedContext('age_test_other'),environment.authenticatedContext('age_test_admin',{role:'admin'})]){
+    const db=context.firestore(),ref=doc(db,collectionId,recordId);
+    await assertFails(getDoc(ref));
+    await assertFails(getDocs(collection(db,collectionId)));
+    await assertFails(updateDoc(ref,{items:[]}));
+    await assertFails(deleteDoc(ref));
+    await assertFails(setDoc(doc(db,collectionId,'forged_notes'),{uid:ownerId,kind:'notes',items:[]}));
+  }
+});
