@@ -31,6 +31,8 @@ import {
   respondToCommunityGroupInvite,
 } from '../utils/userNotifications';
 import { UserCommunicationPreferencesModal } from './UserCommunicationPreferencesModal';
+import {FreelaNegotiationPreview} from './modals/FreelaNegotiationPreview';
+import {freelanceCloudPreviewEnabled,readHiringApplication,type HiringApplication} from '../utils/freelanceHiringCloud';
 
 const formatTime = (value: string): string => {
   if (!value || !Number.isFinite(Date.parse(value))) return '';
@@ -46,6 +48,12 @@ const openNotificationTarget = (
   notification: UserNotification,
   user: User
 ): boolean => {
+  if (notification.target.kind === 'freelance') {
+    const applicationId=notification.target.hiringApplicationId;
+    if(!freelanceCloudPreviewEnabled()||notification.recipientUserId!==user.uid||auth.currentUser?.uid!==user.uid||!applicationId||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))return false;
+    window.dispatchEvent(new CustomEvent('kyrub:open-freelance-negotiation',{detail:{applicationId}}));
+    return true;
+  }
   if (notification.target.kind === 'community_post') {
     const communityId = notification.target.communityId;
     const postId = notification.target.postId;
@@ -126,6 +134,7 @@ export function UserNotificationCenterBridge() {
   const [user, setUser] = useState<User | null>(auth.currentUser);
   const [host, setHost] = useState<HTMLElement | null>(null);
   const [open, setOpen] = useState(false);
+  const [hiringTarget,setHiringTarget]=useState<{actor:string;application:HiringApplication}|null>(null);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [preferences, setPreferences] = useState<UserCommunicationPreferences | null>(null);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
@@ -140,6 +149,21 @@ export function UserNotificationCenterBridge() {
   const preferencesRef = useRef<UserCommunicationPreferences | null>(null);
 
   useEffect(() => onAuthStateChanged(auth, setUser), []);
+  useEffect(()=>{
+    setHiringTarget(null);
+    if(!user||!freelanceCloudPreviewEnabled())return;
+    let active=true;let generation=0;
+    const openHiring=(event:Event)=>{
+      const id=(event as CustomEvent).detail?.applicationId;
+      if(typeof id!=='string')return;
+      const request=++generation;
+      void readHiringApplication(id).then(application=>{
+        if(active&&request===generation&&auth.currentUser?.uid===user.uid)setHiringTarget({actor:user.uid,application});
+      }).catch(()=>{if(active&&request===generation&&auth.currentUser?.uid===user.uid){setOpen(true);setErrorMessage('Não foi possível abrir a negociação.');}});
+    };
+    window.addEventListener('kyrub:open-freelance-negotiation',openHiring);
+    return ()=>{active=false;window.removeEventListener('kyrub:open-freelance-negotiation',openHiring);};
+  },[user]);
 
   useEffect(() => {
     preferencesRef.current = preferences;
@@ -527,6 +551,13 @@ export function UserNotificationCenterBridge() {
     <>
       {trigger}
       {panel}
+      {hiringTarget&&hiringTarget.actor===user.uid&&auth.currentUser?.uid===user.uid&&createPortal(
+        <div className="fixed inset-0 z-[220] bg-slate-950/80 p-3 flex items-center justify-center" role="dialog" aria-label="Negociação do Freela">
+          <section className="w-full max-w-lg max-h-[85dvh] overflow-y-auto rounded-2xl bg-slate-900 text-slate-100 p-4 space-y-3">
+            <button type="button" onClick={()=>setHiringTarget(null)} className="rounded-xl border border-slate-600 p-2">Fechar negociação</button>
+            <FreelaNegotiationPreview key={hiringTarget.actor+':'+hiringTarget.application.id} actor={hiringTarget.actor} application={hiringTarget.application}/>
+          </section>
+        </div>,document.body)}
       <UserCommunicationPreferencesModal
         open={preferencesOpen}
         preferences={effectivePreferences}
