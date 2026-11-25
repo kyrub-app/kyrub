@@ -58,6 +58,7 @@ export const writeOperationalOrderRefundState = async (
     const legacy = legacySnapshot.data() as Record<string, unknown>;
     // A refund of an older attempt must not revoke a newer payment authorization.
     if (legacy.releaseMode === 'pay_before_fulfillment' && legacy.paymentId !== paymentId) return;
+    if(legacy.refundPaymentId===paymentId&&legacy.refundStatus==='refunded'&&input.status!=='refunded')return;
     const now = new Date().toISOString();
     const existingReason = clean(legacy.refundReason);
     const existingRequestedAt = clean(legacy.refundRequestedAt);
