@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import type { Firestore } from 'firebase-admin/firestore';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
+import { assertSemeaduraReleaseOpenInTransaction } from './semeaduraReleaseControl.js';
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
 import { markIsolatedGamificationAuthorDirty } from './semeaduraAdminSupervision.js';
 import { SEEDS_PER_BOSQUE, calculatePitangueiraJourney, planPostSemeadura, type SemeaduraPostKind } from '../../shared/pitangueiraJourney.js';
@@ -17,9 +18,11 @@ const safePostId = (value: string): boolean => /^[A-Za-z0-9_-]{1,500}$/.test(val
  * explicitly enrolled local emulator pilot may settle a verified milestone.
  * No XP or production economic settlement is authorized here.
  */
-export const seedVerifiedPost = async (
+type SeedInput={ authenticatedUserId: string; kind: SemeaduraPostKind; postId: string };
+const seedPostTransaction = async (
   db: Firestore,
-  input: { authenticatedUserId: string; kind: SemeaduraPostKind; postId: string },
+  input: SeedInput,
+  releaseControlled: boolean,
 ): Promise<{
   status: 'accepted' | 'already_seeded' | 'closed';
   count: number;
@@ -126,6 +129,7 @@ export const seedVerifiedPost = async (
     // Use the server clock within each transaction attempt. Day-specific
     // keys avoid carrying unused allowance or resetting lifetime receipts.
     const now = new Date();
+    if(releaseControlled)await assertSemeaduraReleaseOpenInTransaction(db,tx,now);
     const occurredAt = now.toISOString();
     const day = semeaduraDay(now);
     const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
@@ -163,6 +167,11 @@ export const seedVerifiedPost = async (
     return { status: 'accepted' as const, count: plan.count, closed: plan.nowClosed, authorId };
   });
 };
+
+/** Internal foundation retained for trusted test fixtures. Public transport
+ * must use the release-controlled entry, never this unguarded adapter. */
+export const seedVerifiedPost=(db:Firestore,input:SeedInput)=>seedPostTransaction(db,input,false);
+export const seedReleaseControlledPost=(db:Firestore,input:SeedInput)=>seedPostTransaction(db,input,true);
 
 /**
  * Authenticated, read-only view of a post's seed progress and the caller's
