@@ -6,6 +6,7 @@ import type { AgeStatus } from '../../shared/ageEligibility';
 import {IngressLegalPreview} from './IngressLegalPreview';
 import {PrivatePersonalPreview} from './PrivatePersonalPreview';
 import {KyrubTotpChallenge} from './KyrubTotpChallenge';
+import {KyrubTotpEnrollment} from './KyrubTotpEnrollment';
 import {isKyrubMfaChallenge,resolveKyrubTotpChallenge} from '../utils/kyrubTotpAccess';
 const totpPreview=import.meta.env.DEV&&import.meta.env.VITE_KYRUB_ONBOARDING_EMULATOR==='true'&&import.meta.env.VITE_KYRUB_TOTP_PREVIEW==='true';
 
@@ -114,6 +115,7 @@ export function OnboardingEmulatorEntry() {
             <label className="flex items-start gap-2 text-sm"><input type="checkbox" checked={declaredAdult} onChange={e=>setDeclaredAdult(e.target.checked)} disabled={busy}/>Declaro ter 18 anos ou mais.</label>
             <button className={button} type="submit" disabled={busy||!birthDate}>Enviar triagem</button>
           </form>}
+          {status==='verified_adult'&&totpPreview&&<KyrubTotpEnrollment key={user.uid} auth={auth} user={user}/>}
           {status==='verified_adult'&&import.meta.env.DEV&&import.meta.env.VITE_KYRUB_LEGAL_RECEIPT_PREVIEW==='true'&&<IngressLegalPreview key={user.uid} user={user}/>}
           {(status==='inconclusive'||status==='verified_adult')&&import.meta.env.DEV&&import.meta.env.VITE_KYRUB_PERSONAL_PREVIEW==='true'&&<PrivatePersonalPreview key={user.uid} user={user}/>}
           <p className="text-xs text-slate-400">A triagem não comprova maioridade nem libera o acesso às funcionalidades do Kyrub.</p>

@@ -99,3 +99,15 @@ test('TOTP client adapter accepts six digit codes and provider-selected TOTP fac
  assert.doesNotMatch(source,/localStorage\.|sessionStorage\.|console\./);
  assert.match(source,/resolver\.resolveSignIn\(assertion\)/);
 });
+
+test('isolated TOTP enrollment reauthenticates first and does not bypass the second factor',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const entry=readFileSync('src/components/OnboardingEmulatorEntry.tsx','utf8');
+ const enrollment=readFileSync('src/components/KyrubTotpEnrollment.tsx','utf8');
+ assert.match(entry,/status==='verified_adult'&&totpPreview&&<KyrubTotpEnrollment/);
+ assert.match(entry,/VITE_KYRUB_ONBOARDING_EMULATOR==='true'&&import.meta.env.VITE_KYRUB_TOTP_PREVIEW==='true'/);
+ assert.ok(enrollment.indexOf('await reauthenticateWithCredential')<enrollment.indexOf('await beginKyrubTotpEnrollment'));
+ assert.match(enrollment,/await finishKyrubTotpEnrollment/);
+ assert.match(enrollment,/setSecret\(null\)/);
+ assert.doesNotMatch(enrollment,/localStorage|sessionStorage|console\.|unenroll\(/);
+});
