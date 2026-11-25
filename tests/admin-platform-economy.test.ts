@@ -438,3 +438,19 @@ test('Control Plane configured efficiency is tied to runtime polling, never pres
  assert.match(ui,/Não são medições de uso, faturas ou economia financeira comprovada/);
  assert.match(ui,/Não medidos/);
 });
+
+test('Control Plane describes scoped efficiency without turning configuration into financial evidence',()=>{
+  const ui=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+  const purchases=readFileSync('src/components/store/StorePurchasePayableBridge.tsx','utf8');
+  const margins=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const history=readFileSync('server/payments/storeFinanceHistoryRouter.ts','utf8');
+  assert.match(ui,/2 → 1 consultas de compras; consulta financeira separada/);
+  assert.match(ui,/2 → 1 apurações de pedidos; cálculo por produto preservado/);
+  assert.doesNotMatch(purchases,/\/api\/store-procurement\?storeId=/);
+  assert.match(margins,/&includeProducts=true/);
+  assert.match(history,/activeCaptureRecoveries\.delete\(storeId\)/);
+  assert.match(ui,/não o total de leituras faturáveis/);
+  assert.match(ui,/Sem cobertura completa ou com zero usuários ativos, o indicador permanece indisponível/);
+  assert.match(ui,/Registros de teste e estimativas não substituem evidências reais/);
+  assert.doesNotMatch(ui,/fixturePaidMinor\s*\//);
+});
