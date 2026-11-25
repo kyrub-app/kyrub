@@ -1,7 +1,7 @@
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminAuth, adminDb, getFirebaseAdminProjectId } from '../firebaseAdmin.js';
 import { authorizeSemeaduraMutation, parseSemeaduraRequest } from './semeaduraRequestAuthority.js';
-import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedReleaseControlledPost } from './semeaduraService.js';
+import { SemeaduraDailyLimitError, readPersonalSemeaduraJourney, readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedEconomicallyAdmittedPost } from './semeaduraService.js';
 
 type RequestLike = {
   method?: string;
@@ -72,7 +72,7 @@ export async function handleSemeadura(request: RequestLike, response: ResponseLi
     const target = { authenticatedUserId: actor, kind: body.kind, postId: body.postId };
     const result = body.action === 'status'
       ? await readVerifiedPostSemeadura(adminDb, target)
-      : await seedReleaseControlledPost(adminDb, target, adminAuth);
+      : await seedEconomicallyAdmittedPost(adminDb, target, adminAuth);
     response.status(200).json(result);
   } catch (error) {
     const code = error instanceof Error ? error.message : 'UNEXPECTED';
