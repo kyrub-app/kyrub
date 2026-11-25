@@ -1180,3 +1180,40 @@ test('receipt publication preserves private and moderated visibility and public 
     }else await assertFails(setDoc(pointer,distribution));
   }
 });
+
+
+test('staged community age gate protects wall, square and comments without replacing membership checks', async () => {
+  const owner=environment.authenticatedContext(OWNER).firestore();
+  const member=environment.authenticatedContext(MEMBER).firestore();
+  const outsider=environment.authenticatedContext(OUTSIDER).firestore();
+  const id='age_gate_community',postId='age_gate_post';
+  await createCommunity(owner,id,'public');
+  await joinPublic(member,id,MEMBER);
+  const writeAge=async(uid:string,status:string)=>{
+    await environment.withSecurityRulesDisabled(async context=>{
+      await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid,status});
+    });
+  };
+  await environment.withSecurityRulesDisabled(async context=>{
+    await setDoc(doc(context.firestore(),'social_age_release_private','current'),{schemaVersion:1,mode:'verified_adult_only'});
+  });
+  const post=(authorId:string)=>({postId,communityId:id,authorId,authorName:'Membro',authorAvatar:'',
+    content:'Mural de teste',mediaUrls:[],createdAtIso:'2026-11-25T12:00:00Z',createdAt:serverTimestamp(),
+    updatedAtIso:'2026-11-25T12:00:00Z',updatedAt:serverTimestamp()});
+  await assertFails(setDoc(doc(member,'community_posts',postId),post(MEMBER)));
+  await writeAge(MEMBER,'verified_adult');
+  await writeAge(OUTSIDER,'verified_adult');
+  await assertFails(setDoc(doc(outsider,'community_posts',postId),post(OUTSIDER)));
+  await assertSucceeds(setDoc(doc(member,'community_posts',postId),post(MEMBER)));
+  const commentId='age_gate_comment';
+  const comment=()=>({commentId,communityId:id,postId,authorId:MEMBER,authorName:'Membro',authorAvatar:'',
+    text:'Comentario de teste',createdAtIso:'2026-11-25T12:00:00Z',createdAt:serverTimestamp()});
+  await writeAge(MEMBER,'inconclusive');
+  await assertFails(setDoc(doc(member,'community_post_comments',commentId),comment()));
+  await assertFails(setDoc(doc(member,'community_square_posts',postId),{postId,communityId:id,createdAt:serverTimestamp()}));
+  await writeAge(MEMBER,'verified_adult');
+  await assertSucceeds(setDoc(doc(member,'community_post_comments',commentId),comment()));
+  await writeAge(MEMBER,'suspended');
+  await assertSucceeds(deleteDoc(doc(member,'community_post_comments',commentId)));
+  await assertSucceeds(deleteDoc(doc(member,'community_posts',postId)));
+});
