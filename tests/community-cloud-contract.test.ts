@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { optimizeCommunityWallImage, readWallJpegSize, type WallJpegCodec } from '../src/utils/communityWallImageOptimization';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
 const read = (path: string) => readFileSync(path, 'utf8');
@@ -917,4 +918,68 @@ test('340px community catalog keeps Conhecer and Participar labels complete', ()
   // Membership/fallback actions are also allowed to wrap, not clip.
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 px-2 text-center text-xs font-black uppercase leading-tight whitespace-normal break-words/);
   assert.match(member, /min-h-11 min-w-0 w-full items-center justify-center rounded-xl border border-white\/15 bg-slate-900\/90 px-2 text-center/);
+});
+
+const wallJpegFixture = (width = 4000, height = 3000, size = 1024 * 1024) => {
+  const bytes = new Uint8Array(size);
+  // Synthetic SOF header; codec is mocked, not a real encoded photo.
+  bytes.set([0xff, 0xd8, 0xff, 0xc0, 0, 11, 8, height >> 8, height & 255, width >> 8, width & 255, 1, 1, 0x11, 0]);
+  return new Blob([bytes], { type: 'image/jpeg' });
+};
+
+test('wall JPEG optimizer preserves oriented aspect and closes bitmap, returning smaller JPEG', async () => {
+  const source = wallJpegFixture();
+  let closed = 0;
+  let target: {width: number; height: number} | undefined;
+  const output = new Blob([new Uint8Array(200 * 1024)], { type: 'image/jpeg' });
+  const codec: WallJpegCodec = {
+    async decode() { return { width: 3000, height: 4000, close() { closed++; } }; },
+    async encode(_image, size) { target = size; return output; },
+  };
+  assert.deepEqual(readWallJpegSize(new Uint8Array(await source.arrayBuffer())), {width: 4000, height: 3000});
+  assert.equal(await optimizeCommunityWallImage(source, codec), output);
+  assert.deepEqual(target, {width: 1350, height: 1800});
+  assert.equal(closed, 1);
+});
+
+test('wall optimizer skips small files, non-JPEG, malformed and oversized pixel dimensions before decode', async () => {
+  let calls = 0;
+  const codec: WallJpegCodec = {
+    async decode() { calls++; throw Error('unexpected decode'); },
+    async encode() { return null; },
+  };
+  const bytes = new Uint8Array(1024 * 1024);
+  for (const file of [
+    wallJpegFixture(100, 100, 1000),
+    wallJpegFixture(9000, 9000),
+    new Blob([bytes], {type: 'image/jpeg'}),
+    new Blob([bytes], {type: 'image/png'}),
+    new Blob([bytes], {type: 'image/webp'}),
+    new Blob([bytes], {type: 'video/mp4'}),
+  ]) assert.equal(await optimizeCommunityWallImage(file, codec), file);
+  assert.equal(calls, 0);
+});
+
+test('wall optimizer falls back without increasing bytes and releases bitmap on encoder failure', async () => {
+  const source = wallJpegFixture();
+  let closed = 0;
+  const outputs = [null, new Blob([], {type: 'image/jpeg'}), new Blob([new Uint8Array(source.size)], {type: 'image/jpeg'}), new Blob([new Uint8Array(100)], {type: 'image/png'})];
+  for (const output of outputs) {
+    assert.equal(await optimizeCommunityWallImage(source, {
+      async decode() { return {width: 800, height: 600, close() { closed++; }}; },
+      async encode(_image, size) { assert.deepEqual(size, {width: 800, height: 600}); return output; },
+    }), source);
+  }
+  assert.equal(await optimizeCommunityWallImage(source, {
+    async decode() { return {width: 800, height: 600, close() { closed++; }}; },
+    async encode() { throw Error('codec unavailable'); },
+  }), source);
+  assert.equal(closed, outputs.length + 1);
+});
+
+test('wall upload keeps original validation and uploads optimized blob with same scoped metadata', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  assert.match(cloud, /await optimizeCommunityWallImage\(file\)/);
+  assert.match(cloud, /uploadBytes\(destination, uploadFile, \{/);
+  assert.match(cloud, /customMetadata: \{ communityId, ownerId: user.uid, purpose: 'community-wall' \}/);
 });
