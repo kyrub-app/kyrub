@@ -1,9 +1,32 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
+import { observeMediaProximity } from '../utils/mediaProximity';
 import { motion, AnimatePresence } from 'motion/react';
 import { ChevronLeft, ChevronRight, Play, Eye } from 'lucide-react';
 
 interface MediaCarouselProps {
   mediaUrls: string[];
+}
+
+// Only the active slide mounts a video. The browser can load metadata when
+// near the viewport, but nothing is prefetched for unvisited slides.
+function DeferredCarouselVideo({ url }: { url: string }) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (!videoRef.current) return;
+    return observeMediaProximity(videoRef.current, () => setReady(true));
+  }, [url]);
+  return (
+    <video
+      ref={videoRef}
+      src={ready ? url : undefined}
+      preload={ready ? 'metadata' : 'none'}
+      className="w-full h-full object-cover"
+      controls
+      playsInline
+      muted
+    />
+  );
 }
 
 export function MediaCarousel({ mediaUrls }: MediaCarouselProps) {
@@ -46,13 +69,7 @@ export function MediaCarousel({ mediaUrls }: MediaCarouselProps) {
           >
             {isVideo(mediaUrls[currentIndex]) ? (
               <div className="relative w-full h-full">
-                <video
-                  src={mediaUrls[currentIndex]}
-                  className="w-full h-full object-cover"
-                  controls
-                  playsInline
-                  muted
-                />
+                <DeferredCarouselVideo key={mediaUrls[currentIndex]} url={mediaUrls[currentIndex]} />
                 <span className="absolute top-2 left-2 bg-black/60 backdrop-blur-md text-[8px] font-mono text-orange-400 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
                   ▶ Vídeo BaaS
                 </span>
@@ -62,6 +79,8 @@ export function MediaCarousel({ mediaUrls }: MediaCarouselProps) {
                 src={mediaUrls[currentIndex]}
                 alt={`Media slide ${currentIndex + 1}`}
                 className="w-full h-full object-cover"
+                loading="lazy"
+                decoding="async"
                 referrerPolicy="no-referrer"
               />
             )}
