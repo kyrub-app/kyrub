@@ -3,7 +3,14 @@ import {parseHiringTerms,termsFromVacancy,type FreelanceHiringTerms} from '../..
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
 export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed'; termsLocked?:boolean; hasAccepted?:boolean; retirementPending?:boolean };
-export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'offer_withdrawn'|'completion_requested'|'completed'; terms?:FreelanceHiringTerms };
+export type HiringCancellation={requestId:string;requestedBy:string;reason:string;state:'requested'|'confirmed'|'declined'|'retracted'};
+const parseCancellation=(value:unknown):HiringCancellation|undefined=>{
+ if(!value||typeof value!=='object')return undefined;
+ const x=value as Record<string,unknown>;
+ if(typeof x.requestId!=='string'||typeof x.requestedBy!=='string'||typeof x.reason!=='string'||!['requested','confirmed','declined','retracted'].includes(String(x.state)))return undefined;
+ return {requestId:x.requestId,requestedBy:x.requestedBy,reason:x.reason,state:x.state as HiringCancellation['state']};
+};
+export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'offer_withdrawn'|'completion_requested'|'completed'|'cancelled'; terms?:FreelanceHiringTerms; cancellation?:HiringCancellation };
 
 export function freelanceCloudPreviewEnabled():boolean{
  return import.meta.env.DEV===true && import.meta.env.VITE_KYRUB_FIREBASE_EMULATOR_E2E==='true'
@@ -92,8 +99,8 @@ export async function listHiringApplications(asRequester:boolean):Promise<Hiring
  checkSession(actor);
  return snapshot.docs.flatMap(d=>{
    const x=d.data();
-   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed'].includes(x.status))return [];
-   return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined}];
+   if(typeof x.vagaId!=='string'||typeof x.ownerId!=='string'||typeof x.userId!=='string'||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed','cancelled'].includes(x.status))return [];
+   return [{id:d.id,vagaId:x.vagaId,ownerId:x.ownerId,userId:x.userId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined,cancellation:parseCancellation(x.cancellation)}];
  });
 }
 export async function decideHiringApplication(id:string,status:'accepted'|'rejected'|'withdrawn',expectedTerms?:FreelanceHiringTerms):Promise<void>{
@@ -195,8 +202,8 @@ export async function readHiringApplication(applicationId:string):Promise<Hiring
  const snapshot=await getDocFromServer(doc(db,'candidaturas',applicationId));
  checkSession(actor);
  const x=snapshot.data();
- if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
- return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined};
+ if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','offer_withdrawn','completion_requested','completed','cancelled'].includes(x.status))throw Error('Negociação indisponível.');
+ return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined,cancellation:parseCancellation(x.cancellation)};
 }
 
 
@@ -233,4 +240,25 @@ export async function retireHiringVacancy(id:string):Promise<{complete:boolean}>
   if(result.complete)return {complete:true};
  }
  return {complete:false};
+}
+
+
+export async function submitHiringCancellation(applicationId:string,action:'request'|'confirm'|'decline'|'retract',requestId?:string,reason?:string):Promise<void>{
+ const actor=uid();
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW!=='true'||!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))throw Error('Cancelamento indisponível.');
+ const key=JSON.stringify([actor,applicationId,'cancellation',action,requestId??null,reason?.trim()??null]);
+ const operationId=pendingHiringOperations.get(key)??crypto.randomUUID();
+ pendingHiringOperations.set(key,operationId);
+ const user=auth.currentUser;
+ if(!user||user.uid!==actor)throw Error('Sessão alterada.');
+ const token=await user.getIdToken();checkSession(actor);
+ const response=await fetch('/api/notifications/freelance-applications/cancellation',{method:'POST',cache:'no-store',headers:{'content-type':'application/json',authorization:'Bearer '+token},body:JSON.stringify({applicationId,operationId,action,requestId:action==='request'?operationId:requestId,reason})});
+ checkSession(actor);
+ if(!response.ok){
+  if([400,403,409].includes(response.status))pendingHiringOperations.delete(key);
+  throw Error('Cancelamento não confirmado.');
+ }
+ const result=await response.json();
+ if(result.applicationId!==applicationId||result.operationId!==operationId||typeof result.created!=='boolean')throw Error('Recibo inválido.');
+ pendingHiringOperations.delete(key);
 }
