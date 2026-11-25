@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import {adminAuth} from '../firebaseAdmin.js';
-import {freelanceNotificationPreviewEnabled,sendNotifiedHiringMessage,performNotifiedHiringAction,retireHiringVacancy} from './freelanceNotificationService.js';
+import {freelanceNotificationPreviewEnabled,sendNotifiedHiringMessage,performNotifiedHiringAction,retireHiringVacancy,performHiringCancellation} from './freelanceNotificationService.js';
 import { issueCommunityGroupInvitation } from './communityGroupInvitationIssueService.js';
 import { issueCommunityPostForwardNotification } from './communityPostForwardNotificationService.js';
 import { sendNotifiedSocialMessage } from './socialChatNotificationService.js';
@@ -107,6 +107,18 @@ export const createUserNotificationRouter = (): Router => {
     try{
       response.status(200).json(await retireHiringVacancy({actorId:identity.uid,vacancyId:clean(request.body?.vacancyId)}));
     }catch(error){const code=error instanceof Error?error.message:'';response.status(code==='FREELANCE_INVALID'?400:code==='FREELANCE_FORBIDDEN'?403:code==='FREELANCE_CONFLICT'?409:503).json({error:'Não foi possível confirmar a retirada.'});}
+  });
+
+  router.post('/freelance-applications/cancellation',async(request,response)=>{
+    if(!freelanceNotificationPreviewEnabled()){response.status(503).json({error:'Homologação de Freelas indisponível.'});return;}
+    const token=bearerToken(request.get('authorization')??'');
+    if(!token){response.status(401).json({error:'Faça login novamente.'});return;}
+    let identity;
+    try{identity=await adminAuth.verifyIdToken(token,true);}catch{response.status(401).json({error:'Faça login novamente.'});return;}
+    try{
+      const result=await performHiringCancellation({actorId:identity.uid,applicationId:clean(request.body?.applicationId),operationId:clean(request.body?.operationId),action:request.body?.action,requestId:request.body?.requestId,reason:request.body?.reason});
+      response.status(200).json(result);
+    }catch(error){const code=error instanceof Error?error.message:'';response.status(code==='FREELANCE_INVALID'?400:code==='FREELANCE_FORBIDDEN'?403:code==='FREELANCE_CONFLICT'?409:503).json({error:'Não foi possível confirmar o cancelamento.'});}
   });
 
   router.post('/freelance-applications/action', async (request,response)=>{
