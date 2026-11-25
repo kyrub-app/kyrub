@@ -5,6 +5,11 @@ on:
       - 'tests/first-store-publication-auth-emulator-http.test.ts'
       - 'server/gamification/firstStorePublicationHandler.ts'
       - 'server.ts'
+      - 'server/identity/ageScreeningRouter.ts'
+      - 'server/identity/ageEligibilityService.ts'
+      - 'shared/ageEligibility.ts'
+      - 'tests/age-screening-http-emulator.test.ts'
+      - 'tests/age-screening-isolation.test.ts'
       - '.github/workflows/first-store-publication-auth-emulator-http.yml'
   workflow_dispatch:
 permissions:
@@ -38,3 +43,13 @@ jobs:
         run: npm run firestore:compose
       - name: Real HTTP authentication against isolated Firebase emulators
         run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project kyrub-security-test --only auth,firestore "node --test --import tsx tests/first-store-publication-auth-emulator-http.test.ts"
+
+      - name: Verify age screening against isolated Auth and Firestore
+        env:
+          FIREBASE_PROJECT_ID: demo-kyrub-onboarding
+          GCLOUD_PROJECT: demo-kyrub-onboarding
+          GOOGLE_CLOUD_PROJECT: demo-kyrub-onboarding
+          KYRUB_AGE_SCREENING_EMULATOR: 'true'
+          KYRUB_FIRST_STORE_PUBLICATION_E2E_LOCAL: 'false'
+          KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED: 'false'
+        run: npx --yes firebase-tools emulators:exec --config firebase.security.json --project demo-kyrub-onboarding --only auth,firestore "node --test --import tsx tests/age-screening-http-emulator.test.ts"
