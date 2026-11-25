@@ -1049,7 +1049,7 @@ test('release pause at the economic milestone preserves the entire transaction a
 
 
 test('isolated zero-start path enrolls verified author once and never silently accepts a visual-only seed',async()=>{
- const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
+ const {seedEconomicallyAdmittedPost}=await import('../server/gamification/semeaduraService.js');
  const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
  const {readPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
  const {createHash}=await import('node:crypto');
@@ -1067,13 +1067,22 @@ test('isolated zero-start path enrolls verified author once and never silently a
  const stats=db.doc('semeadura_post_stats/'+key);
  const receipt=stats.collection('receipts').doc(actor);
  const quota=db.doc('users/'+actor+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
- const prior=Object.fromEntries(['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT'].map(k=>[k,process.env[k]]));
- const seed=()=>seedReleaseControlledPost(db,{authenticatedUserId:actor,kind:'personal',postId});
+ const prior=Object.fromEntries(['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT'].map(k=>[k,process.env[k]]));
+ const seed=()=>seedEconomicallyAdmittedPost(db,{authenticatedUserId:actor,kind:'personal',postId},auth);
  const before=await readPitangaAccount(db,uid);
  try{
   for(const k of Object.keys(prior))process.env[k]='true';
   await control.set({schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'open',revision:1,opensAt:new Date(Date.now()-60000).toISOString()});
   await post.set({postId,authorId:uid,visibility:'public',publicationType:'feed'});
+  // The HTTP mutation adapter cannot accept a visual-only seed, even with
+  // the release document open and a valid author balance.
+  for(const flag of ['KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT']){
+   delete process.env[flag];
+   await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+   for(const ref of [receipt,stats,cursor,progress,quota])assert.equal((await ref.get()).exists,false);
+   assert.deepEqual(await readPitangaAccount(db,uid),before);
+   process.env[flag]='true';
+  }
   // Unexpected existing progress is a blocker, not an instruction to migrate.
   await progress.set({authorId:uid,acceptedSeeds:1,pitangueiras:0});
   await assert.rejects(seed(),/SEMEADURA_ECONOMIC_ZERO_START_REQUIRED/);
@@ -1102,7 +1111,7 @@ test('isolated zero-start path enrolls verified author once and never silently a
 
 
 test('non-Google author starts at zero without welcome bonus and earns a single milestone Pitanga',async()=>{
- const {seedReleaseControlledPost}=await import('../server/gamification/semeaduraService.js');
+ const {seedEconomicallyAdmittedPost}=await import('../server/gamification/semeaduraService.js');
  const {SEMEADURA_RELEASE_CONTROL_PATH}=await import('../server/gamification/semeaduraReleaseControl.js');
  const {readPitangaAccount,convertPitangaAccount}=await import('../server/gamification/pitangaAccountService.js');
  const {createHash}=await import('node:crypto');
@@ -1133,7 +1142,7 @@ test('non-Google author starts at zero without welcome bonus and earns a single 
  const conversionDebit=root.collection('rewardLedger').doc('conversion_'+conversionId);
  const conversionXp=root.collection('xpLedger').doc('conversion_'+conversionId);
  const prior=Object.fromEntries(['KYRUB_SEMEADURA_ECONOMIC_PILOT','KYRUB_SEMEADURA_RELEASE_CONTROL_PILOT','KYRUB_SEMEADURA_ZERO_START_PILOT','KYRUB_SEMEADURA_NO_WELCOME_PILOT'].map(k=>[k,process.env[k]]));
- const seed=(v:string)=>seedReleaseControlledPost(db,{authenticatedUserId:v,kind:'personal',postId},auth);
+ const seed=(v:string)=>seedEconomicallyAdmittedPost(db,{authenticatedUserId:v,kind:'personal',postId},auth);
  try{
   for(const k of Object.keys(prior))process.env[k]='true';
   await control.set({schemaVersion:1,projectId,epoch,mode:'isolated-pilot',status:'open',revision:1,opensAt:new Date(Date.now()-60000).toISOString()});
