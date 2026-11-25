@@ -47,6 +47,25 @@ test('verified emulator session screens once and keeps the private record minima
     const authHeader='Bearer '+token;
     await assert.rejects(requireKyrubSessionMfa(authHeader,'financial',300),/second_factor_required/);
     await requireKyrubSessionMfa(authHeader,'ordinary',300);
+    // Isolated administrative write boundary: the role alone does not satisfy MFA.
+    const {handlePromotionalBatch}=await import('../server/admin/kyrubTagPromotionalBatchService.js');
+    const adminRoleRef=adminDb.doc('kyrub_admin/control_plane/admins/'+user.uid);
+    const batchNonce='a'.repeat(32);
+    const batchRequest={action:'issue',count:1,requestId:batchNonce};
+    process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED='true';
+    try{
+      assert.equal((await handlePromotionalBatch(authHeader,'POST',batchRequest)).status,403);
+      await adminRoleRef.set({uid:user.uid,role:'super_admin',status:'active'});
+      assert.equal((await handlePromotionalBatch(authHeader,'GET',undefined)).status,200);
+      const denied=await handlePromotionalBatch(authHeader,'POST',batchRequest);
+      assert.deepEqual(denied,{status:403,body:{error:'second_factor_required'}});
+      assert.equal((await adminDb.doc('kyrub_tag_promotional_batches/'+batchNonce).get()).exists,false);
+      assert.equal((await handlePromotionalBatch(authHeader,'POST',{action:'confirm-readback',batchId:batchNonce,tagId:'b'.repeat(32),readUrl:'https://test.vercel.app/tag/'+'b'.repeat(32)})).status,403);
+    }finally{
+      delete process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED;
+      await adminRoleRef.delete();
+    }
+
     await assert.rejects(privatePersonalWorkspace(authHeader,'notes'),/PERSONAL_UNAVAILABLE/);
     process.env.KYRUB_PERSONAL_PREVIEW_ENABLED='true';
     try{

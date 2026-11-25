@@ -2,6 +2,7 @@ import {randomBytes} from 'node:crypto';
 import {FieldValue} from 'firebase-admin/firestore';
 import {adminDb} from '../firebaseAdmin.js';
 import {authorizePilot} from './kyrubTagPilotService.js';
+import {requireKyrubSessionMfa} from '../identity/kyrubMfaAuthorization.js';
 import {tagUrl} from '../../shared/kyrubTagContract.js';
 import {EMPTY_PROMOTIONAL_PRESENTATION} from '../../shared/kyrubTagPromotional.js';
 import {assertTagPilotWriteIsolated,currentTagPilotIsolation,tagPilotClientMatchesServer,stableTagPilotHost} from '../identity/kyrubTagPilotIsolation.js';
@@ -148,6 +149,14 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(method!=='GET'&&method!=='POST')return {status:405,body:{error:'METHOD_NOT_ALLOWED'}};
   const uid=await authorizePilot(authorization);
   if(method==='GET')return {status:200,body:await listPromotionalBatches(uid)};
+  // Staged administrative MFA: only for explicitly isolated pilot operations.
+  // The authoritative role is still checked within each mutation transaction.
+  if(process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED==='true'){
+   assertTagPilotWriteIsolated();
+   const role=await adminRole(uid).get();assertRole(uid,role.data());
+   const session=await requireKyrubSessionMfa(authorization,'administrative',300);
+   if(session.uid!==uid)throw Error('FORBIDDEN');
+  }
   if(!body||typeof body!=='object'||Array.isArray(body))throw Error('TAG_BATCH_INVALID');
   const b=body as Record<string,unknown>;
   if(b.action==='confirm-readback'&&Object.keys(b).length===4){
@@ -162,6 +171,8 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(message==='AUTH_REQUIRED'||/^auth\/(argument-error|invalid-id-token|id-token-expired|id-token-revoked|user-disabled|user-not-found|invalid-credential)$/.test(code))
    return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='FORBIDDEN')return {status:403,body:{error:'FORBIDDEN'}};
+  if(message==='second_factor_required'||message==='reauthentication_required')return {status:403,body:{error:message}};
+  if(message==='authentication_required')return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='TAG_BATCH_INVALID')return {status:400,body:{error:message}};
   if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH'].includes(message))return {status:409,body:{error:message}};
   return {status:503,body:{error:'TAG_BATCH_UNAVAILABLE'}};
