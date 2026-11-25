@@ -23,6 +23,9 @@ function CocarXpIcon() {
 export function SemeaduraJourneyPanel({
   viewerId, xp,
 }: { viewerId: string; xp?: number | null }) {
+  return <ScopedSemeaduraJourneyPanel key={viewerId} viewerId={viewerId} xp={xp}/>;
+}
+function ScopedSemeaduraJourneyPanel({viewerId,xp}:{viewerId:string;xp?:number|null}) {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState('');
 
@@ -36,6 +39,7 @@ export function SemeaduraJourneyPanel({
         'journey',
         undefined,
         controller.signal,
+        viewerId,
       );
       const raw = result.journey;
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -110,7 +114,7 @@ export function SemeaduraJourneyPanel({
         </p>
       )}
       <p className="mt-2 text-[11px] text-amber-200">
-          🍒 {journey.pitangasEquivalent.toLocaleString('pt-BR')} Pitangas equivalentes
+          🍒 {total===null?'…':journey.pitangasEquivalent.toLocaleString('pt-BR')} Pitangas equivalentes
           pelo progresso. Consulte o extrato para conferir os créditos efetivamente registrados.
       </p>
       {error && <p role="status" className="mt-2 text-xs text-amber-300">{error}</p>}
