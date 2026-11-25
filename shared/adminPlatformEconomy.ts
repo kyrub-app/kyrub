@@ -69,7 +69,14 @@ export interface AdminMonthlyActivityDiagnostic {
   realMau: null;
 }
 
+export interface AdminInfrastructureDiagnostic {
+  month:string;timeZone:'America/Sao_Paulo';basis:'cash';
+  scope:'emulator_only';status:'fixture_partial'|'unavailable';
+  registeredPaidMinor:number|null;matchedCount:number|null;
+  actualInfrastructureCostMinor:null;realMau:null;
+}
 export interface AdminPlatformEconomySnapshot {
+  infrastructureDiagnostic?:AdminInfrastructureDiagnostic;
   monthlyActivity?: AdminMonthlyActivityDiagnostic;
   schemaVersion: typeof ADMIN_PLATFORM_ECONOMY_SCHEMA_VERSION;
   generatedAt: string;

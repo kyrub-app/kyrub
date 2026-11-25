@@ -1,3 +1,5 @@
+import { loadInfrastructureDiagnostic } from '../server/admin/infrastructureDiagnostic';
+import { presentInfrastructureDiagnostic } from '../src/utils/adminInfrastructurePresentation';
 import { projectPlatformInfrastructure } from '../shared/platformFinops';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
@@ -383,7 +385,7 @@ test('restricted infrastructure projection excludes all company finance metrics 
   assert.equal(projectPlatformInfrastructure(period,[],[],users).infrastructureCostPerActiveUserMinor,null);
 });
 
-test('official infrastructure fixture reader cannot be invoked through an HTTP route or mutate ERP',()=>{
+test('official infrastructure fixture reader is reachable only through gated diagnostic and cannot mutate ERP',()=>{
   const reader=readFileSync('server/admin/officialInfrastructureFixtureReader.ts','utf8');
   const router=readFileSync('server/admin/platformEconomyRouter.ts','utf8');
   assert.match(reader,/await authorizePlatformEconomy\(authorization/);
@@ -395,5 +397,30 @@ test('official infrastructure fixture reader cannot be invoked through an HTTP r
   assert.match(reader,/raw.costCenter\?\.id!==INFRASTRUCTURE_COST_CENTER_ID/);
   assert.match(reader,/readOfficialRegisteredInfrastructureFixture/);
   assert.doesNotMatch(reader,/\btx\.(set|create|update|delete)\(|recoverAllMissingCanonicalPaidCaptures/);
-  assert.doesNotMatch(router,/readOfficialInfrastructureFixture/);
+  assert.doesNotMatch(router,/readOfficialInfrastructureFixture|readOfficialRegisteredInfrastructureFixture/);
+  assert.match(router,/const admin = await authorizePlatformEconomy\(authorization\);[\s\S]*?loadInfrastructureDiagnostic\(authorization,monthlyActivity.month\);[\s\S]*?await recordPlatformEconomyAudit\(admin\)/);
+});
+
+test('infrastructure diagnostic never reads remote ERP and returns only explicit fixture fields',async()=>{
+  const month='2026-11';
+  const env={KYRUB_FINOPS_INFRASTRUCTURE_EMULATOR_ENABLED:'true',FIRESTORE_EMULATOR_HOST:'127.0.0.1:8088',FIREBASE_PROJECT_ID:'kyrub-security-test'};
+  let calls=0;
+  const fixture={month,timeZone:'America/Sao_Paulo' as const,basis:'cash' as const,scope:'emulator_only' as const,status:'fixture_partial' as const,registeredPaidMinor:120000,matchedCount:1,actualInfrastructureCostMinor:null,realMau:null};
+  const deps={env,currentProject:()=> 'kyrub-security-test',read:async(auth:string,m:string)=>{assert.equal(auth,'Bearer fixture');assert.equal(m,month);calls++;return {...fixture,privateRef:'not exposed'};}};
+  for(const change of [{env:{}},{env:{...env,NODE_ENV:'production'}},{env:{...env,VERCEL_ENV:'production'}},{env:{...env,FIRESTORE_EMULATOR_HOST:'remote:8088'}},{env:{...env,FIREBASE_SERVICE_ACCOUNT_JSON:'present'}},{currentProject:()=> 'kyrub-b8d0e'}]){
+    assert.equal((await loadInfrastructureDiagnostic('Bearer fixture',month,{...deps,...change})).registeredPaidMinor,null);
+  }
+  assert.equal(calls,0);
+  assert.deepEqual(await loadInfrastructureDiagnostic('Bearer fixture',month,deps),fixture);
+  assert.equal(calls,1);
+  assert.equal((await loadInfrastructureDiagnostic('Bearer fixture',month,{...deps,read:async()=>{throw Error('offline');}})).status,'unavailable');
+  assert.deepEqual(presentInfrastructureDiagnostic(fixture,month),{month,fixturePaidMinor:120000,fixtureCount:1});
+  for(const bad of [null,{...fixture,actualInfrastructureCostMinor:120000},{...fixture,realMau:1},{...fixture,scope:'production'},{...fixture,registeredPaidMinor:0},{...fixture,matchedCount:501},{...fixture,month:'2026-10'}]){
+    assert.equal(presentInfrastructureDiagnostic(bad,month).fixturePaidMinor,null);
+  }
+  const workspace=readFileSync('src/components/admin/AdminPlatformEconomyWorkspace.tsx','utf8');
+  assert.match(workspace,/Infraestrutura — registros de teste no emulador/);
+  assert.match(workspace,/Não consolidado/);
+  assert.match(workspace,/MAU real indisponível/);
+  assert.doesNotMatch(workspace,/fixturePaidMinor\s*\//);
 });

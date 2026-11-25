@@ -21,6 +21,7 @@ import {
 } from '../../utils/adminControlPlane';
 import { loadAdminPlatformEconomy } from '../../utils/adminPlatformEconomy';
 import { presentMonthlyActivity } from '../../utils/adminMonthlyActivityPresentation';
+import { presentInfrastructureDiagnostic } from '../../utils/adminInfrastructurePresentation';
 import { AdminPaidWaitingFundingResponsibilityCard } from './AdminPaidWaitingFundingResponsibilityCard';
 
 const money = (minor: number): string =>
@@ -94,6 +95,7 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
 
   if (!authorized) return null;
   const monthlyActivity = presentMonthlyActivity(snapshot?.monthlyActivity);
+  const infrastructure = presentInfrastructureDiagnostic(snapshot?.infrastructureDiagnostic,snapshot?.monthlyActivity?.month);
 
   return (
     <section className="text-slate-100">
@@ -140,6 +142,11 @@ export default function AdminPlatformEconomyWorkspace({ user, profile }: { user:
             <p className="mt-1 text-xs text-slate-400">{detail}</p>
           </article>)}
         </div>
+        {infrastructure.fixturePaidMinor !== null && <article className="mt-3 rounded-xl border border-amber-500/25 bg-amber-500/5 p-3" aria-label="Despesas de infraestrutura de teste">
+          <h3 className="text-xs font-bold text-amber-300">Infraestrutura — registros de teste no emulador</h3>
+          <p className="mt-2 text-sm text-slate-200">{money(infrastructure.fixturePaidMinor)} · {infrastructure.month}</p>
+          <p className="mt-1 text-xs text-slate-400">{infrastructure.fixtureCount} conta(s) marcada(s) como paga(s) na Loja Oficial de teste. Apuração parcial por baixa registrada; não representa custo real, cobertura completa ou conciliação bancária.</p>
+        </article>}
         <p className="mt-3 text-xs text-slate-400">Gestão empresarial e lançamentos financeiros: ERP da Loja Oficial Kyrub. Este painel acompanha o custo de funcionamento do aplicativo, sem cadastro financeiro paralelo.</p>
         <article className="mt-3 rounded-xl border border-slate-800 bg-slate-950/55 p-3" aria-label="Usuários ativos mensais">
           <h3 className="text-xs font-bold text-white">Usuários ativos mensais (MAU)</h3>
