@@ -1,5 +1,6 @@
 import { FieldValue, type DocumentData } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import {
   applyInventoryConsumptionLines,
   calculateCompositionAvailableStock,
@@ -179,9 +180,11 @@ export type InventoryQuantityReconciliationAction =
 
 export const adjustConsumedOrderInventoryQuantities = async (
   tenantId: string,
-  orderId: string
+  orderId: string,
+  humanUid?:string
 ): Promise<InventoryQuantityReconciliationAction> =>
   adminDb.runTransaction(async transaction => {
+    if(humanUid)await requireHumanOrderOperation(transaction,tenantId,humanUid,'orders.transfer');
     const orderReference = adminDb.doc(orderPath(tenantId, orderId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
@@ -309,14 +312,16 @@ export const adjustConsumedOrderInventoryQuantities = async (
 
 export const reconcileOrderInventoryAfterMutation = async (
   tenantId: string,
-  orderId: string
+  orderId: string,
+  humanUid?:string
 ) => {
   const adjustment = await adjustConsumedOrderInventoryQuantities(
     tenantId,
-    orderId
+    orderId,
+    humanUid
   );
   if (adjustment !== 'not-consumed') {
     return { orderId, inventoryAction: adjustment };
   }
-  return reconcilePersistedOrderInventory(tenantId, orderId);
+  return reconcilePersistedOrderInventory(tenantId, orderId,humanUid);
 };
