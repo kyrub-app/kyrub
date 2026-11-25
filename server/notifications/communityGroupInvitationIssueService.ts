@@ -1,3 +1,4 @@
+import {requireSocialAgeInTransaction} from '../identity/socialAgeAuthorization.js';
 import { adminDb } from '../firebaseAdmin.js';
 import { buildUserNotification, userNotificationPath } from '../../shared/userNotifications.js';
 
@@ -38,6 +39,7 @@ export async function issueCommunityGroupInvitation(input: {
       if (inviteSnap.data()?.status === 'pending') return { status: 'pending' as const, created: false };
       throw new Error('COMMUNITY_GROUP_INVITATION_NOT_PENDING');
     }
+    await requireSocialAgeInTransaction(transaction,[inviterUserId,inviteeUserId],'tribes','COMMUNITY_GROUP_INVITATION_FORBIDDEN');
     const now = new Date().toISOString();
     const notification = buildUserNotification({
       recipientUserId: inviteeUserId,
