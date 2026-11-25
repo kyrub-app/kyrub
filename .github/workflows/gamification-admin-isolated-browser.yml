@@ -6,6 +6,9 @@ on:
       - 'server/gamification/semeadura*.ts'
       - 'src/components/admin/AdminGamification*.tsx'
       - 'src/utils/gamificationAdminPilotClient.ts'
+      - 'src/utils/firebase.ts'
+      - 'src/components/admin/AdminControlPlane*.tsx'
+      - 'tests/fixtures/gamification-control-plane-browser.tsx'
       - 'tests/gamification-admin-browser.test.mjs'
       - 'tests/fixtures/gamification-admin-browser.tsx'
       - '.github/workflows/gamification-admin-isolated-browser.yml'
@@ -28,6 +31,11 @@ jobs:
       KYRUB_GAMIFICATION_ADMIN_HTTP_PILOT: 'true'
       KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT: 'true'
       KYRUB_GAMIFICATION_ADMIN_REFERRAL_WRITE_PILOT: 'true'
+      VITE_KYRUB_GAMIFICATION_ADMIN_EMULATOR: 'true'
+      VITE_GAMIFICATION_SUPERVISION_PROTOTYPE: 'true'
+      VITE_GAMIFICATION_SUPERVISION_HTTP_PILOT: 'true'
+      VITE_GAMIFICATION_SUPERVISION_CASE_WRITE_PILOT: 'true'
+      VITE_GAMIFICATION_SUPERVISION_REFERRAL_WRITE_PILOT: 'true'
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
