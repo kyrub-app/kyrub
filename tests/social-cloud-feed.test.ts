@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { observeMediaProximity } from '../src/utils/mediaProximity';
 import type { SocialPost } from '../src/types';
 import { selectPublicSquarePosts } from '../src/utils/publicSquareFeed';
 
@@ -107,4 +108,64 @@ test('Praça shows public publications only; private posts and connected Status 
   assert.match(kyrubSource, /selectPublicSquarePosts\(socialFeed\.posts, squareNow\)/);
   assert.match(kyrubSource, /setInterval\(\(\) => setSquareNow\(Date\.now\(\)\), 60_000\)/);
   assert.match(kyrubSource, /posts=\{squarePosts\}/);
+});
+
+test('media proximity defers source until the target enters the margin and disconnects after activation', () => {
+  const target = {} as Element;
+  const other = {} as Element;
+  let callback: IntersectionObserverCallback | undefined;
+  let observed: Element | undefined;
+  let disconnected = 0, activated = 0;
+  let options: IntersectionObserverInit | undefined;
+  const fake = class {
+    constructor(cb: IntersectionObserverCallback, opts: IntersectionObserverInit) {
+      callback = cb;
+      options = opts;
+    }
+    observe(element: Element) { observed = element; }
+    disconnect() { disconnected++; }
+  } as unknown as typeof IntersectionObserver;
+  const stop = observeMediaProximity(target, () => activated++, fake);
+  const emit = (element: Element, isIntersecting: boolean) =>
+    callback?.([{target: element, isIntersecting} as IntersectionObserverEntry], {} as IntersectionObserver);
+  assert.equal(observed, target);
+  assert.equal(options?.rootMargin, '200px 0px');
+  assert.equal(activated, 0);
+  emit(target, false);
+  emit(other, true);
+  assert.equal(activated, 0);
+  emit(target, true);
+  emit(target, true);
+  assert.equal(activated, 1);
+  assert.equal(disconnected, 1);
+  stop();
+});
+
+test('media proximity cancels stale callbacks and falls back if the browser observer fails', () => {
+  let callback: IntersectionObserverCallback | undefined;
+  let activated = 0;
+  const target = {} as Element;
+  const fake = class {
+    constructor(cb: IntersectionObserverCallback) { callback = cb; }
+    observe() {}
+    disconnect() {}
+  } as unknown as typeof IntersectionObserver;
+  const stop = observeMediaProximity(target, () => activated++, fake);
+  stop();
+  callback?.([{target, isIntersecting: true} as IntersectionObserverEntry], {} as IntersectionObserver);
+  assert.equal(activated, 0);
+  const unsupported = class { constructor() { throw Error('unavailable'); } } as unknown as typeof IntersectionObserver;
+  observeMediaProximity(target, () => activated++, unsupported);
+  assert.equal(activated, 1);
+});
+
+test('social carousel keeps one current media slide, lazy image and proximity-gated video without autoplay', () => {
+  const carousel = readFileSync('src/components/MediaCarousel.tsx', 'utf8');
+  assert.match(carousel, /loading="lazy"/);
+  assert.match(carousel, /decoding="async"/);
+  assert.match(carousel, /src=\{ready \? url : undefined\}/);
+  assert.match(carousel, /preload=\{ready \? 'metadata' : 'none'\}/);
+  assert.match(carousel, /<DeferredCarouselVideo key=\{mediaUrls\[currentIndex\]\}/);
+  assert.match(carousel, /controls\s+playsInline\s+muted/);
+  assert.doesNotMatch(carousel, /autoPlay/);
 });
