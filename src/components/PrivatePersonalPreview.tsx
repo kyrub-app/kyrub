@@ -57,7 +57,7 @@ export function PrivatePersonalPreview({user}:{user:User}){
    <ul aria-label={kind==='notes'?'Lista de notas':'Lista de tarefas'} className="space-y-2">
     {items.map(item=><li key={item.id} className="rounded-lg border border-slate-700 p-2">
      <p className="whitespace-pre-wrap break-words">{item.text}</p>
-     {kind==='tasks'&&<label><input type="checkbox" checked={item.done} disabled={busy} onChange={e=>void mutate({action:'update',id:item.id,text:item.text,done:e.target.checked})}/> Concluída</label>}
+     {kind==='tasks'&&<button type="button" aria-label="Concluída" aria-pressed={item.done} className="flex min-h-10 items-center gap-2 text-sm" disabled={busy} onClick={()=>void mutate({action:'update',id:item.id,text:item.text,done:!item.done})}><span aria-hidden="true" className="inline-flex h-5 w-5 items-center justify-center rounded border border-slate-500">{item.done?'✓':''}</span> Concluída</button>}
      <div className="flex gap-3"><button type="button" disabled={busy} onClick={()=>{setEditing(item.id);setDraft(item.text);}}>Editar</button><button type="button" disabled={busy} onClick={()=>void mutate({action:'delete',id:item.id})}>Excluir</button></div>
     </li>)}
    </ul>

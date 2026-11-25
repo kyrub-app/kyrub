@@ -115,22 +115,25 @@ try {
   await page.getByLabel('Tarefa',{exact:true}).fill('Tarefa privada teste');
   await page.getByRole('button',{name:'Adicionar tarefa'}).click();
   await page.getByText('Tarefa privada teste',{exact:true}).waitFor();
-  // The controlled checkbox intentionally remains unchanged until the server
-  // confirms the mutation; Playwright.check() expects an immediate change.
-  const completionResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/onboarding/personal/tasks'&&r.request().method()==='POST');
-  await page.getByLabel('Concluída',{exact:true}).click();
+  // Verify the explicit desired state sent to the server and its persisted result.
+  const completionResponse=page.waitForResponse(r=>new URL(r.url()).pathname==='/api/onboarding/personal/tasks'&&r.request().method()==='POST'&&r.request().postDataJSON()?.action==='update');
+  const taskToggle=page.getByRole('button',{name:'Concluída',exact:true});
+  assert.equal(await taskToggle.getAttribute('aria-pressed'),'false');
+  await taskToggle.click();
   const completion=await completionResponse;
+  assert.equal(completion.request().postDataJSON().done,true);
   assert.equal(completion.status(),200);
   const completed=await completion.json();
   assert.equal(completed.items.find(item=>item.text==='Tarefa privada teste')?.done,true);
-  await page.waitForFunction(()=>document.querySelector('input[type=checkbox]')?.checked===true&&!document.querySelector('input[type=checkbox]')?.disabled);
+  await page.getByRole('button',{name:'Concluída',exact:true,pressed:true}).waitFor();
+  assert.equal((await adminDb.doc('restricted_personal_preview/'+personal.uid+'_tasks').get()).get('items')[0].done,true);
   await page.reload();
   await page.getByText('Nota privada editada',{exact:true}).waitFor();
   await page.getByRole('button',{name:'Excluir',exact:true}).click();
   await page.getByText('Nota privada editada',{exact:true}).waitFor({state:'detached'});
   await page.getByRole('button',{name:'Tarefas privadas'}).click();
   await page.getByText('Tarefa privada teste',{exact:true}).waitFor();
-  assert.equal(await page.getByLabel('Concluída',{exact:true}).isChecked(),true);
+  await page.getByRole('button',{name:'Concluída',exact:true,pressed:true}).waitFor();
   assert.equal((await adminDb.doc('users/'+personal.uid).get()).exists,false);
   await adminDb.doc('age_eligibility_private/'+personal.uid).update({status:'suspended'});
   await page.getByRole('button',{name:'Excluir',exact:true}).click();
