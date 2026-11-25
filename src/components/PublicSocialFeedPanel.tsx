@@ -143,6 +143,8 @@ function Avatar({
       <img
         src={src}
         alt={name}
+        loading="lazy"
+        decoding="async"
         className={className}
         referrerPolicy="no-referrer"
       />

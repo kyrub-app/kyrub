@@ -207,7 +207,7 @@ export function CommunityPostCard({
     <article ref={cardRef} data-community-post-id={post.id} className="rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <header className="flex items-center gap-3">
         {authorAvatar
-          ? <img src={authorAvatar} alt="" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
+          ? <img src={authorAvatar} alt="" loading="lazy" decoding="async" className="h-10 w-10 shrink-0 rounded-full object-cover" referrerPolicy="no-referrer" />
           : <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-800 text-white"><UserRound className="h-5 w-5" /></span>}
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-sm text-white">{authorName}</strong>

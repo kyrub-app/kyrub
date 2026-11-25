@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   CalendarDays, ChevronLeft, ChevronRight, Info,
   Images, MessageSquareText, Share2,
@@ -38,19 +38,48 @@ export function PublicStorefrontHero({
   store, selectedSection, actionsDisabled, onSelectSection, onChat, onShare,
 }: PublicStorefrontHeroProps) {
   const images = useMemo(() => storeBannerImages(store), [store.banner, store.bannerImages]);
-  const [imageIndex, setImageIndex] = useState(0);
+  const [index, setImageIndex] = useState(0);
+  const imageIndex=images.length?index%images.length:0;
+  const signature=JSON.stringify([store.id,images]);
+  const [visited,setVisited]=useState<{signature:string;urls:string[]}>({signature,urls:[]});
   const [touchStartX, setTouchStartX] = useState<number | null>(null);
-  useEffect(() => { setImageIndex(0); }, [store.id]);
+  const heroRef=useRef<HTMLElement>(null);
+  const [inView,setInView]=useState(false);
+  const [pageVisible,setPageVisible]=useState(true);
+  const [reducedMotion,setReducedMotion]=useState(false);
+  useEffect(() => { setImageIndex(0); }, [signature]);
+  const selected=images[imageIndex];
+  useEffect(()=>{
+    if(!selected)return;
+    setVisited(current=>current.signature===signature&&current.urls.includes(selected)?current:{signature,urls:[...(current.signature===signature?current.urls:[]),selected]});
+  },[signature,selected]);
+  useEffect(()=>{
+    const node=heroRef.current;
+    if(!node)return;
+    if(typeof IntersectionObserver==='undefined'){setInView(true);return;}
+    const observer=new IntersectionObserver(entries=>setInView(entries.some(entry=>entry.isIntersecting)),{threshold:0.1});
+    observer.observe(node);
+    return()=>observer.disconnect();
+  },[]);
+  useEffect(()=>{
+    const visibility=()=>setPageVisible(!document.hidden);
+    const preference=window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const motion=()=>setReducedMotion(Boolean(preference?.matches));
+    visibility();motion();
+    document.addEventListener('visibilitychange',visibility);
+    preference?.addEventListener?.('change',motion);
+    return()=>{document.removeEventListener('visibilitychange',visibility);preference?.removeEventListener?.('change',motion);};
+  },[]);
   useEffect(() => {
-    if (images.length <= 1) return;
+    if (images.length <= 1 || !inView || !pageVisible || reducedMotion) return;
     const timer = window.setInterval(
       () => setImageIndex(index => (index + 1) % images.length), 5200
     );
     return () => window.clearInterval(timer);
-  }, [images.length]);
+  }, [signature,images.length,inView,pageVisible,reducedMotion]);
 
-  const previous = () => setImageIndex(index => (index + images.length - 1) % images.length);
-  const next = () => setImageIndex(index => (index + 1) % images.length);
+  const previous = () => {if(images.length)setImageIndex(index => (index + images.length - 1) % images.length);};
+  const next = () => {if(images.length)setImageIndex(index => (index + 1) % images.length);};
   const endTouch = (clientX: number) => {
     if (touchStartX !== null && images.length > 1) {
       const delta = clientX - touchStartX;
@@ -60,7 +89,7 @@ export function PublicStorefrontHero({
   };
 
   return (
-    <section id="public-storefront-hero"
+    <section ref={heroRef} id="public-storefront-hero"
       data-kyrub-public-storefront-hero="full-banner"
       className="relative isolate h-[390px] min-h-[330px] overflow-hidden rounded-3xl border border-slate-700/70 bg-slate-950 shadow-2xl sm:h-[460px]">
       <div id="storefront-banner" className="absolute inset-0"
@@ -69,13 +98,13 @@ export function PublicStorefrontHero({
         onTouchStart={event => setTouchStartX(event.touches[0]?.clientX ?? null)}
         onTouchEnd={event => endTouch(event.changedTouches[0]?.clientX ?? 0)}
         onTouchCancel={() => setTouchStartX(null)}>
-        {images.length ? images.map((image,index) => (
-          <img key={image} src={image}
+        {images.length ? images.map((image,index) => (index===imageIndex||(visited.signature===signature&&visited.urls.includes(image)))?(
+          <img key={image} src={image} decoding="async"
             alt={index === imageIndex ? `Destaque ${index + 1} de ${store.name}` : ''}
             aria-hidden={index !== imageIndex}
             referrerPolicy="no-referrer"
-            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 ${index === imageIndex ? 'opacity-100' : 'opacity-0'}`}/>
-        )) : (
+            className={`absolute inset-0 h-full w-full object-cover transition-opacity duration-700 motion-reduce:transition-none ${index === imageIndex ? 'opacity-100' : 'opacity-0'}`}/>
+        ):null) : (
           <div className="absolute inset-0"
             style={{background:`radial-gradient(circle at top right, ${store.primaryColor || '#f97316'}, transparent 60%), linear-gradient(145deg, #020617, #0d1714)`}}/>
         )}

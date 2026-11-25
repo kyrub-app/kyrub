@@ -90,7 +90,7 @@ export function PublicStorefrontQuickPanel({
               aria-label={`Ampliar foto ${index+1} de ${gallery.length}`}
               className="group relative h-32 overflow-hidden rounded-xl border border-slate-700 bg-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-orange-400 sm:h-44">
               <img src={url} alt={`Foto ${index+1} de ${store.name}`}
-                loading="lazy" referrerPolicy="no-referrer"
+                loading="lazy" decoding="async" referrerPolicy="no-referrer"
                 className="h-full w-full object-cover transition group-hover:scale-105"/>
               <span className="absolute bottom-1 right-1 rounded-full bg-slate-950/75 px-2 py-1 text-[10px] text-white">{index+1}/{gallery.length}</span>
             </button>)}
