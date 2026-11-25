@@ -17,6 +17,18 @@ test('promotional Tag: concurrent claim, private save, publication, revocation a
   assert.equal(getFirebaseAdminProjectId(),'demo-kyrub-onboarding');
   const suffix=Date.now();
   const users=await Promise.all(['a','b'].map(k=>adminAuth.createUser({email:'tag-'+k+'-'+suffix+'@example.invalid',emailVerified:true})));
+  const held=await service.provisionPromotionalKyrubTag();
+  const heldRef=adminDb.doc('kyrub_official_tags/'+held.id);
+  await heldRef.update({manufacturingState:'held',urlMode:'permanent'});
+  const {prepareTagMinimalIdentity:prepareHeld}=await import('../server/identity/kyrubTagMinimalIdentityService.js');
+  assert.equal((await service.resolveKyrubTag(held.id))?.activation,'setup');
+  for(const user of users){
+   await assert.rejects(prepareHeld(user.uid,held.id),/TAG_FORBIDDEN/);
+   await assert.rejects(service.claimPromotionalKyrubTag(user.uid,held.id,user.email),/TAG_FORBIDDEN/);
+   assert.equal((await adminDb.doc('kyrub_tag_minimal_identities/'+user.uid).get()).exists,false);
+  }
+  assert.equal((await heldRef.get()).get('ownerId'),null);
+  await heldRef.delete();
   const {id}=await service.provisionPromotionalKyrubTag();
   assert.equal((await service.resolveKyrubTag(id))?.status,'unclaimed');
   const results=await Promise.allSettled(users.map(u=>service.claimPromotionalKyrubTag(u.uid,id,u.email)));
