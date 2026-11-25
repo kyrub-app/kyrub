@@ -1090,3 +1090,30 @@ test('orphan inventory fails closed with incomplete evidence and protects live, 
   assert.equal(classifyCommunityMediaInventory([{...objects[3], generation:''}], evidence)[0].status, 'unknown');
   assert.equal(classifyCommunityMediaInventory([{...objects[3], bucket:'other'}], evidence)[0].status, 'unknown');
 });
+
+test('orphan review is disabled by malformed completeness evidence and inconsistent inventory', () => {
+  const bucket = 'demo-kyrub.example', now = 2_000_000_000_000;
+  const make = (index:number):MediaObject => ({
+    bucket, name:'community-post-media/community/owner/image-12345678-1234-1234-1234-123456789ab'+index+'.jpg',
+    generation:'123', sizeBytes:100, createdAtMs:now-30*86400000,
+  });
+  const [live, unused, bad] = [make(1),make(2),make(3)];
+  const evidence:InventoryEvidence={bucket,observedAtMs:now,objectsComplete:true,referencesComplete:true,writersQuiesced:true,references:[live],pending:[]};
+  assert.deepEqual(classifyCommunityMediaInventory([live,unused],evidence).map(x=>x.status),['referenced','review_candidate']);
+  const invalidEvidence = [
+    {...evidence,objectsComplete:'true' as unknown as boolean},
+    {...evidence,references:[live,{bucket,name:'invalid'}]},
+    {...evidence,pending:[{...bad,bucket:'other'}]},
+    {...evidence,pending:undefined as unknown as InventoryEvidence['pending']},
+  ];
+  for(const input of invalidEvidence)assert.deepEqual(classifyCommunityMediaInventory([live,unused],input).map(x=>x.status),['referenced','unknown']);
+  for(const inventory of [[live,unused,{...bad,generation:'0'}],[live,unused,{...bad,createdAtMs:now+1}],[live,unused,bad,bad]]) {
+    const result=classifyCommunityMediaInventory(inventory,evidence);
+    assert.equal(result[0].status,'referenced');
+    assert.equal(result[1].status,'unknown');
+    assert.ok(result.every(x=>x.status!=='review_candidate'));
+  }
+  const huge=[{...unused,sizeBytes:Number.MAX_SAFE_INTEGER},{...bad,sizeBytes:1}];
+  assert.deepEqual(summarizeCommunityMediaInventory(classifyCommunityMediaInventory(huge,evidence)).review_candidate,{count:2,bytes:null});
+  assert.equal(summarizeCommunityMediaInventory(classifyCommunityMediaInventory([{...bad,sizeBytes:-1}],evidence)).unknown.bytes,null);
+});
