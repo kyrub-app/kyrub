@@ -1,3 +1,4 @@
+import { parseStoreFinanceSection } from '../../shared/storeFinanceSections.js';
 import { emptyFinanceTaxonomy, normalizeFinanceTaxonomy, mutateFinanceTaxonomy, resolveCustomFinanceRef } from '../../shared/storeFinanceTaxonomy.js';
 import { randomUUID } from 'node:crypto';
 import { selectStoreCostCenter } from '../../shared/storeFinanceCostCenters.js';
@@ -49,6 +50,7 @@ const mapError = (error: unknown): { status: number; message: string; code: stri
   if (code === 'STORE_REPRESENTATION_FORBIDDEN') {
     return { status: 403, message: 'Você não pode consultar o financeiro desta loja.', code };
   }
+  if(code==='STORE_FINANCE_SECTION_INVALID')return {status:400,message:'Área financeira inválida.',code};
   if (code === 'STORE_FINANCE_STORE_REQUIRED') {
     return { status: 400, message: 'Loja não identificada.', code };
   }
@@ -404,7 +406,30 @@ export const createStoreFinanceRouter = (): Router => {
       if (!storeId) throw new Error('STORE_FINANCE_STORE_REQUIRED');
       const ownerId = await requireOwner(request.get('authorization') ?? '', storeId);
 
+      const section=parseStoreFinanceSection(request.query.section);
+      // The old unscoped contract remains available. Scoped sections do not
+      // recover or read unrelated financial collections.
+      if(section==='payables'){
+        const [payables,taxonomySnapshot]=await Promise.all([listStorePayables(storeId),financeTaxonomyRef(storeId).get()]);
+        response.status(200).json({storeId,section,payableSummary:payables.summary,payables:payables.items,taxonomy:decodeFinanceTaxonomy(taxonomySnapshot.data())});
+        return;
+      }
+      if(section==='receivables'){
+        const receivables=await listStoreReceivables(storeId);
+        response.status(200).json({storeId,section,receivableSummary:receivables.summary,receivables:receivables.items});
+        return;
+      }
+      if(section==='cash'){
+        const cash=await listStoreCashFinanceProjection({financeStoreId:storeId,ownerId});
+        response.status(200).json({storeId,section,cash});
+        return;
+      }
       const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);
+      if(section==='overview'||section==='movements'){
+        const entries=await listStoreEconomicLedgerEntries({storeId,limit:100});
+        response.status(200).json({storeId,section,summary:deriveStoreEconomicLedgerSummary(entries),entries,recoveredCount});
+        return;
+      }
       const [entries, receivables, payables, cash, taxonomySnapshot] = await Promise.all([
         listStoreEconomicLedgerEntries({ storeId, limit: 100 }),
         listStoreReceivables(storeId),

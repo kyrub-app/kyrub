@@ -206,3 +206,16 @@ test('finance runtime discards old store and session responses and refreshes tax
   assert.match(ui,/taxonomyOverride\?\.base===taxonomyProp/);
   assert.match(ui,/if\(auth.currentUser!==user\)throw Error/);
 });
+
+test('finance navigation mounts only selected modules and scoped reads preserve legacy contract',()=>{
+  const navigation=readFileSync('src/components/StoreFinanceCompositeRuntime.tsx','utf8');
+  const runtime=readFileSync('src/components/StoreFinanceRuntime.tsx','utf8');
+  const router=readFileSync('server/payments/storeFinanceRouter.ts','utf8');
+  for(const id of ['overview','payables','receivables','cash','results','reconciliation','history','reports'])assert.ok(navigation.includes("active==='"+id+"'"));
+  assert.match(navigation,/historyTab==='history'\?<StoreFinanceHistoryWorkspace/);
+  assert.match(runtime,/section==='payables'\)\&\&<StorePayablesWorkspace/);
+  assert.match(runtime,/payload.section!==section/);
+  assert.match(router,/await requireOwner\(request.get\('authorization'\) \?\? '', storeId\);[\s\S]*?parseStoreFinanceSection\(request.query.section\)/);
+  const scoped=router.slice(router.indexOf("if(section==='payables')"),router.indexOf("const recoveredCount = await recoverMissingCanonicalPaidCaptures(storeId);",router.indexOf("if(section==='payables')")));
+  assert.doesNotMatch(scoped,/recoverMissingCanonicalPaidCaptures|listStoreEconomicLedgerEntries/);
+});

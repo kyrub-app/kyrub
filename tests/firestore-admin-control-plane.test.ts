@@ -385,6 +385,14 @@ test('signed fixture authentication, activity receiver and monthly aggregate int
       for(const operation of ['rename','remove'])assert.equal((await post(owner,{...mutation,operation,id:'cc_infrastructure'})).status,400);
       const account={storeId:owner,action:'create_payable',description:'Fixture expense',amountMinor:12000,dueDate:'2026-11-30',category:'other',recurrence:'none',costCenterId:custom,customCategoryId:customCategory};
       assert.equal((await post(other,{...account,storeId:other})).status,400);
+      const getSection=async(actor:string,section:string)=>{const res=await fetch(url+'?storeId='+owner+'&section='+encodeURIComponent(section),{headers:{authorization:'Bearer '+token(actor)}});return {status:res.status,body:await res.json()};};
+      assert.equal((await getSection(other,'payables')).status,403);
+      assert.equal((await getSection(owner,'unknown')).status,400);
+      const scoped=await getSection(owner,'payables');
+      assert.equal(scoped.status,200);
+      assert.deepEqual(Object.keys(scoped.body).sort(),['payableSummary','payables','section','storeId','taxonomy'].sort());
+      assert.equal(scoped.body.section,'payables');
+      assert.equal(scoped.body.taxonomy.centers.length,1);
       const created=await post(owner,account);
       assert.equal(created.status,201);
       assert.equal(created.body.payable.costCenter.name,winningName);
