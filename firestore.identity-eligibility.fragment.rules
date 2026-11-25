@@ -40,3 +40,25 @@
     function canWriteSocialWithAge() {
       return isSignedIn() && canParticipateInSocialWithAge(request.auth.uid);
     }
+
+    // Separate staged control for commercial eligibility.
+    match /erp_age_release_private/{documentId} {
+      allow read, write: if false;
+    }
+    function canParticipateInErpWithAge(userId) {
+      let control = /databases/$(database)/documents/erp_age_release_private/current;
+      let age = /databases/$(database)/documents/age_eligibility_private/$(userId);
+      return isSignedIn() && (
+        !exists(control)
+        || (
+          get(control).data.schemaVersion == 1
+          && get(control).data.mode == 'verified_adult_only'
+          && exists(age)
+          && get(age).data.uid == userId
+          && get(age).data.status == 'verified_adult'
+        )
+      );
+    }
+    function canWriteErpWithAge() {
+      return isSignedIn() && canParticipateInErpWithAge(request.auth.uid);
+    }
