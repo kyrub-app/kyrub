@@ -279,3 +279,19 @@ describe('store economic ledger', () => {
     assert.match(productService, /existing\.sourceFingerprint !== sourceFingerprint/);
   });
 });
+
+test('finance margins and history fence obsolete requests and preserve manual reconciliation precedence',()=>{
+  const margins=readFileSync('src/components/store/StoreResultsMarginsWorkspace.tsx','utf8');
+  const history=readFileSync('src/components/store/StoreFinanceHistoryWorkspace.tsx','utf8');
+  assert.equal((margins.match(/await user\.getIdToken\(\)/g)??[]).length,1);
+  assert.match(margins,/payload\.storeId!==storeId\|\|signal\.aborted\|\|auth\.currentUser!==user/);
+  assert.match(margins,/request\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser===user/);
+  assert.match(margins,/if\(!current\(\)\)return;\s*setOrders\(null\);\s*setProducts\(null\)/);
+  assert.match(history,/if\(append&&\(!cursor\|\|pageRequest\.current\)\)return/);
+  assert.match(history,/pageRequest\.current===controller&&!controller\.signal\.aborted&&auth\.currentUser===user/);
+  assert.match(history,/new Map\(\[\.\.\.previous,\.\.\.nextItems\]\.map\(item=>\[item\.id,item\]\)\)/);
+  assert.match(history,/reconciliationRequestedRef\.current\.has\(item\.paymentId\)/);
+  assert.match(history,/reconciliationReads\.current\.get\(paymentId\)\?\.abort\(\)/);
+  assert.match(history,/if\(!context\|\|!user\|\|manualPending\.current\)return/);
+  assert.match(history,/payload\.reconciliation\.paymentId!==input\.paymentId/);
+});
