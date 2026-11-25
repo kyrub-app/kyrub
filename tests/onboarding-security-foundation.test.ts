@@ -111,3 +111,24 @@ test('isolated TOTP enrollment reauthenticates first and does not bypass the sec
  assert.match(enrollment,/setSecret\(null\)/);
  assert.doesNotMatch(enrollment,/localStorage|sessionStorage|console\.|unenroll\(/);
 });
+
+test('stored age eligibility denies mismatched identity, unknown capability and all non-adult restricted requests',async()=>{
+ const {evaluateStoredCapabilityAgeAccess}=await import('../shared/ageEligibility.js');
+ type Input=Parameters<typeof evaluateStoredCapabilityAgeAccess>[0];
+ const capabilities:Input['capability'][]=['account_ingress','tag_publication','social_publication','social_comment','sowing','connections','messages','communities','tribes','store_erp','freelance','delivery','financial_operations','rewards','private_notes','private_tasks','appropriate_courses','private_tag_management'];
+ const personal=new Set(['private_notes','private_tasks','appropriate_courses','private_tag_management']);
+ for(const capability of capabilities){
+  for(const status of ['pending','declared_adult','declared_underage','verified_adult','verified_underage','inconclusive','suspended','unexpected',undefined]){
+   const input={actorUid:'owner',record:{uid:'owner',status},capability};
+   assert.equal(evaluateStoredCapabilityAgeAccess(input),false);
+   assert.equal(evaluateStoredCapabilityAgeAccess({...input,policy:'blocked'}),false);
+   assert.equal(evaluateStoredCapabilityAgeAccess({...input,policy:'verified_adult_only'}),status==='verified_adult');
+   assert.equal(evaluateStoredCapabilityAgeAccess({...input,policy:'reviewed_personal_only'}),personal.has(capability)&&(status==='verified_adult'||status==='inconclusive'));
+  }
+  for(const record of [undefined,{}, {uid:'other',status:'verified_adult'}]){
+   assert.equal(evaluateStoredCapabilityAgeAccess({actorUid:'owner',record,capability,policy:'verified_adult_only'}),false);
+  }
+ }
+ assert.equal(evaluateStoredCapabilityAgeAccess({actorUid:'',record:{uid:'',status:'verified_adult'},capability:'account_ingress',policy:'verified_adult_only'}),false);
+ assert.equal(evaluateStoredCapabilityAgeAccess({actorUid:'owner',record:{uid:'owner',status:'verified_adult'},capability:'unknown' as Input['capability'],policy:'verified_adult_only'}),false);
+});
