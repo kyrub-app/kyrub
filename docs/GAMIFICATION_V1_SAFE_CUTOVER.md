@@ -152,3 +152,31 @@ migração da Jornada Pitangueira. Não limitar elegibilidade comercial ao bônu
 por acidente. A entrada e a configuração seguem proibidas em produção,
 nenhum cadastro real inscrito. Novo blob do serviço exige revisão do
 inventário estático. Sem modificações de dados, flags, cobrança ou PR #1274.
+
+
+## G3.4 — Contas sem bônus de boas-vindas (piloto isolado)
+O direito à jornada não depende de ganhar as 100 Pitangas. Para iniciar do zero
+sem saldo anterior, exige-se identidade do autor obtida via Auth confiável,
+cadastro anterior ao corte da campanha ou evidência original de onCreate
+não-Google, ausência de recibo welcome e ledger vazio. Não inferir
+inelegibilidade apenas pela lista atual de provedores; cadastro Google elegível
+com evento/recibo pendente deve aguardar a autoridade de boas-vindas. O corte
+da campanha precisa permanecer fixado para a futura ativação.
+O piloto reutiliza o bootstrap canônico já existente com checkpoint de zero
+entradas e saldo zero, sem crédito, reconstrução de histórico ou migração da
+Jornada Pitangueira. A coleção técnica de recibo de bootstrap mantém o nome
+legado pitangaMigration; sua reutilização evita inventar outra autoridade de
+saldo e preserva a compatibilidade estrutural com a conversão canônica.
+No marco de 1.000, a autoridade zero-history revalida o recibo, digest vazio,
+epoch/fence e concilia saldo/ledger antes do crédito. Flag experimental
+KYRUB_SEMEADURA_NO_WELCOME_PILOT exclusiva de emuladores; prova de registro
+não-Google é escrita apenas pelo gatilho confiável no piloto.
+Teste 5516656 usa cadastro por senha via Auth Emulator, aguarda evidência
+de onCreate, verifica ausência de bônus, rejeição sem evidência, inscrição
+concorrente com saldo zero e marco sintético de 999 para 1.000 com crédito
+único de uma Pitanga, XP zero. CI pendente; ainda falta validar especificamente
+cadastro anterior ao corte, corrida com welcome pendente, conversão de conta
+zero-history e demais estados econômicos preexistentes. Não criar nova migração
+de jornada, não alterar saldos reais. O CI de 86a63a0 passou 4/4; revisão do
+gate econômico posterior ainda pendente. Inventário externo e aprovação
+comercial continuam obrigatórios. Nenhuma alteração em produção/PR #1274.
