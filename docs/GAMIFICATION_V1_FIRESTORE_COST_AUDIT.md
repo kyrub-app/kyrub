@@ -1,0 +1,94 @@
+# Auditoria de custo operacional — Gamificação V1
+Data: 24/11/2026. Código inspecionado: e773914bfa688cbae9a2b237c9ac564bd1774b93.
+Escopo: estimativa estática de operações, não medição de consumo ou fatura.
+Nenhuma consulta de uso real do Firebase autorizada/disponível nesta sessão.
+Projeto principal kyrub-b8d0e; região, edição, plano e consumo atuais a confirmar.
+Não habilitar Blaze, TTL, backups pagos, jobs ou faturamento.
+
+## Cotas e referência
+Firestore Standard: 50.000 leituras, 20.000 gravações, 20.000 exclusões por dia,
+1 GiB armazenado, 10 GiB/mês de saída. Uma base gratuita por projeto. Cotas
+reiniciam próximo à meia-noite do Pacífico, não à meia-noite de Brasília.
+Fontes consultadas em 24/11/2026:
+https://firebase.google.com/docs/firestore/quotas
+https://firebase.google.com/docs/firestore/pricing
+https://cloud.google.com/firestore/pricing
+https://firebase.google.com/docs/firestore/best-practices
+Tabela exibida na página de preços para Iowa: USD 0,03/100 mil leituras,
+USD 0,09/100 mil gravações. Apenas referência de simulação, não preço
+confirmado da região do Kyrub. Valores acima da cota, sem descontos contratados.
+
+## Inventário de operações (uma tentativa, sem retries)
+- Status por publicação pessoal: 4 gets (post, contador, recibo, quota).
+  Comunitária: 6 (adiciona comunidade e vínculo). Cada consulta repete quota.
+- Nova semente pessoal em autor já inscrito no modo econômico controlado:
+  12 gets lógicos (post/contador/recibo/progresso=4, gate/fence=2, quota=1,
+  cursor/fence=2, holds=3), 5 writes (recibo, contador, quota, progresso,
+  cursor). Comunitária: 14 gets, 5 writes. +1 write se fila incremental ligada.
+  Fence lido duas vezes; custo faturável exato precisa medição.
+- Replay antes do gate: 4/6 gets, zero writes.
+- Cada hold existente acrescenta leitura de evento de auditoria.
+- Marco econômico: adicional de leitura de recibo de boas-vindas, autoridade
+  de saldo, entrada específica e coleção integral rewardLedger. +2 writes
+  (saldo e lançamento), além das cinco usuais. Inscrição inicial também lê
+  ledger e autoridade; bootstrap saldo zero adiciona dois writes.
+  Consultas vazias podem custar uma leitura. Não tratar ledger integral como
+  custo constante. Extrato pitangaAccount também lê integralmente rewardLedger e xpLedger.
+- Journey: 1 get por consulta; observadores/eventos podem multiplicá-las.
+- Painel administrativo: snapshot incremental tem custo fixo de consulta
+  mais autorização; refresh lê até 201 registros por conta, mais projeções,
+  contribuição anterior e fila. Indícios: até 501 recibos por inspeção.
+  Não executar varreduras recorrentes ou fila automática na V1.
+- Frontend SemearButton consulta ao entrar na área visível, refresh após
+  semear, eventos de sincronização e checagem de mudança de dia quando esgotado.
+  A mesma publicação pode ser montada em telas diferentes. Não há rate limit
+  de consultas equivalente à quota de sementes; quota de 100 protege aceites,
+  não volume de solicitações.
+
+## Modelo ilustrativo para orçamento
+Hipóteses: 40 consultas de status iniciais/pessoa/dia, 10 sementes aceitas,
+uma nova consulta por aceite, metade pessoal/metade comunitária,
+autores já inscritos, sem fila, marcos, inscrição, retries ou demais módulos.
+Leituras/dia = usuários * (40*5 + 10*(13+5)) = 380*usuários.
+Gravações/dia = 50*usuários.
+| Usuários ativos/dia | Leituras/dia | Gravações/dia | USD/mês ilustrativo excedente* |
+|---:|---:|---:|---:|
+| 100 | 38.000 | 5.000 | 0 |
+| 500 | 190.000 | 25.000 | 1,395 |
+| 1.000 | 380.000 | 50.000 | 3,78 |
+| 10.000 | 3.800.000 | 500.000 | 46,71 |
+* 30 dias uniformes, cota integral atribuída hipoteticamente à gamificação,
+taxas Iowa acima, sem armazenamento, índices cobrados, tráfego, Vercel,
+Auth, Functions, impostos ou demais módulos. Não é previsão de fatura.
+Limite teórico ~131 usuários nesse cenário se nenhuma outra leitura ocorrer;
+não é limite de cadastros nem recomendação de capacidade.
+100 sementes aceitas/dia com uma leitura status antes e outra depois:
+aprox. 2.000–2.600 gets e 500 writes por usuário no caso simples.
+As cotas são compartilhadas com ERP e app; plano sem cobrança pode bloquear
+operações quando esgotadas, não converter excedente automaticamente em custo.
+
+## Prioridades mínimas de otimização antes da ativação
+1. Deduplicar consultas simultâneas de status por sessão/publicação; não cachear
+   permissões de escrita; invalidar na troca de conta, após aceite e na virada
+   da quota. Não substituir o recibo canônico por cache.
+2. Agrupar status de publicações visíveis em lotes pequenos, compartilhando
+   leitura de quota e de comunidade/vínculo por lote. Firestore cobra documentos
+   lidos, não apenas chamadas HTTP; não prometer economia sem contar documentos.
+3. Reduzir consultas redundantes pós-aceite mediante retorno autoritativo da
+   mesma transação, sem inferir crédito ou liberar semeadura duplicada.
+4. Manter inspeções administrativas por demanda e paginadas; não varrer ledger
+   global nem recibos em cada interação. Medir contenção do contador da
+   publicação, progresso do autor, quota e cursor. Não remover fences/holds
+   ou recibos para economizar. Revisar crescimento de extrato e ledger antes
+   de impor limites que poderiam bloquear recompensas legítimas.
+5. Solicitar relatório somente leitura do Console: região/edição/plano,
+   leituras/gravações/exclusões por dia nos últimos 7 e 30 dias,
+   armazenamento/índices e tráfego; picos, consumo de outros módulos,
+   limites e margem restante. Não expor segredos, nem executar carga real.
+6. Validar contagem com teste instrumentado no emulador; emulador não reproduz
+   faturamento. Definir orçamento operacional somente com decisão do proprietário.
+   Alertas de orçamento não são teto rígido de gastos.
+
+Sem alteração funcional nesta auditoria. Próximo passo: otimização focada
+de consultas de status e validação de regressão. Sem ativação comercial,
+migração histórica, mudanças de flags, faturamento ou PR #1274.
