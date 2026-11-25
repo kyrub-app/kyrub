@@ -2,7 +2,7 @@ import {FreelaNegotiationPreview} from './FreelaNegotiationPreview';
 import {useCallback,useEffect,useState} from 'react';
 import {onAuthStateChanged} from 'firebase/auth';
 import {auth} from '../../utils/firebase';
-import {applyToHiringVacancy,decideHiringApplication,listHiringApplications,listHiringVacancies,publishHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
+import {applyToHiringVacancy,decideHiringApplication,editHiringVacancy,listHiringApplications,listHiringVacancies,publishHiringVacancy,transitionHiringCompletion,type HiringApplication,type HiringVacancy} from '../../utils/freelanceHiringCloud';
 
 export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';onClose:()=>void}){
  const employer=mode==='employer';
@@ -12,7 +12,8 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[payment,setPayment]=useState('');
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const [openNegotiation,setOpenNegotiation]=useState('');
- useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setTitle('');setDescription('');setPayment('');}),[]);
+ const [editingId,setEditingId]=useState('');
+ useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setEditingId('');setTitle('');setDescription('');setPayment('');}),[]);
  const refresh=useCallback(async()=>{
    if(!actor)return;
    const [v,a]=await Promise.all([listHiringVacancies(employer),listHiringApplications(employer)]);
@@ -36,15 +37,17 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
    <section className="bg-slate-900 border border-slate-800 w-full max-w-lg p-5 rounded-3xl space-y-4 max-h-[85vh] overflow-y-auto text-sm text-slate-100">
     <header className="flex justify-between gap-3"><h3 className="text-base font-bold">Freelas — homologação local</h3><button type="button" onClick={onClose}>Fechar</button></header>
     <p>Vagas e candidaturas registradas no emulador isolado. Não há intermediação de pagamento.</p>
-    {employer&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void perform(async()=>{await publishHiringVacancy({title,description,payment:Number(payment)});if(auth.currentUser?.uid===actor){setTitle('');setDescription('');setPayment('');}return 'Vaga registrada no servidor de testes.';});}}>
+    {employer&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void perform(async()=>{const input={title,description,payment:Number(payment)};if(editingId)await editHiringVacancy(editingId,input);else await publishHiringVacancy(input);if(auth.currentUser?.uid===actor){setEditingId('');setTitle('');setDescription('');setPayment('');}return editingId?'Oferta atualizada.':'Vaga registrada no servidor de testes.';});}}>
       <label className="block">Título<input className="block w-full bg-slate-950 rounded-lg p-2" required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)}/></label>
       <label className="block">Descrição<textarea className="block w-full bg-slate-950 rounded-lg p-2" required maxLength={2000} value={description} onChange={e=>setDescription(e.target.value)}/></label>
       <label className="block">Valor combinado (R$)<input className="block w-full bg-slate-950 rounded-lg p-2" type="number" required min="0.01" step="0.01" value={payment} onChange={e=>setPayment(e.target.value)}/></label>
-      <button disabled={busy||!actor} className="bg-teal-500 text-slate-950 rounded-lg p-2 font-bold">Publicar vaga de teste</button>
+      <button disabled={busy||!actor} className="bg-teal-500 text-slate-950 rounded-lg p-2 font-bold">{editingId?'Salvar edição':'Publicar vaga de teste'}</button>
+      {editingId&&<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setEditingId('');setTitle('');setDescription('');setPayment('');}}>Cancelar edição</button>}
     </form>}
     <h4 className="font-bold">{employer?'Minhas vagas':'Vagas disponíveis'}</h4>
     {vacancies.filter(v=>employer||v.ownerId!==actor).map(v=><article key={v.id} className="border border-slate-700 rounded-xl p-3 space-y-2">
       <strong>{v.title}</strong><p>{v.description}</p><p>R$ {v.payment.toFixed(2)} · {v.employer}</p>
+      {employer&&v.status==='open'&&(v.termsLocked===false&&v.hasAccepted===false?<button type="button" disabled={busy} className="border border-slate-600 rounded-lg p-2" onClick={()=>{setEditingId(v.id);setTitle(v.title);setDescription(v.description);setPayment(String(v.payment));}}>Editar oferta</button>:<p className="text-xs text-slate-300">Condições bloqueadas para edição.</p>)}
       {!employer&&<button disabled={busy||applications.some(a=>a.vagaId===v.id)} className="bg-teal-500 text-slate-950 rounded-lg p-2" onClick={()=>void perform(async()=>await applyToHiringVacancy(v.id,v)==='created'?'Candidatura registrada.':'Candidatura já registrada.')}>Candidatar-se</button>}
     </article>)}
     <h4 className="font-bold">{employer?'Candidaturas recebidas':'Minhas candidaturas'}</h4>
