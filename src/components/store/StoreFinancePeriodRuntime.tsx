@@ -1,3 +1,4 @@
+import { financeMonthAt, type FinancePeriodTimeZone } from '../../../shared/storeFinanceCalendar';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { StoreCostCenterPeriodReport } from '../../../shared/storeFinanceCostCenterPeriod';
 import { auth } from '../../utils/firebase';
@@ -14,6 +15,7 @@ type StorePayableCategory =
 
 type PeriodReport = {
   period: string;
+  timeZone:FinancePeriodTimeZone;
   currency: 'BRL';
   capturedMinor: number;
   refundedMinor: number;
@@ -41,26 +43,27 @@ const previousMonth = (period: string): string => { const [year, month] = period
 const monthLabel = (period: string): string => { const [year, month] = period.split('-').map(Number); return new Intl.DateTimeFormat('pt-BR', { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(new Date(Date.UTC(year, month - 1, 1))); };
 const payableCategoryLabel = (category: StorePayableCategory): string => ({ supplier: 'Fornecedor', inventory: 'Estoque / insumos', rent: 'Aluguel', utilities: 'Água, luz e básicos', tax: 'Impostos e taxas', service: 'Serviços', payroll: 'Folha / remuneração', other: 'Outros' }[category]);
 
-async function fetchPeriod(storeId: string, period: string, signal:AbortSignal): Promise<PeriodPayload> {
+async function fetchPeriod(storeId: string, period: string, timeZone:FinancePeriodTimeZone, signal:AbortSignal): Promise<PeriodPayload> {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
-  const params = new URLSearchParams({ transport: 'store-promotions', surface: 'finance-history', mode: 'period', storeId, period });
+  const params = new URLSearchParams({ transport: 'store-promotions', surface: 'finance-history', mode: 'period', storeId, period, timeZone });
   if(signal.aborted||auth.currentUser!==user) throw Error('Sessão alterada.');
   const response = await fetch(`/api/health?${params.toString()}`, { headers: { Authorization: `Bearer ${token}` }, signal });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
   if (!contentType.includes('application/json')) throw new Error('A visão por período respondeu em um formato inesperado.');
   const payload = await response.json() as PeriodPayload;
   if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar a visão por período.');
-  if (!payload.report?.complete || payload.storeId!==storeId || payload.report.period!==period || auth.currentUser!==user) throw new Error('A apuração do período não foi concluída para esta loja e sessão.');
+  if (!payload.report?.complete || payload.storeId!==storeId || payload.report.period!==period || payload.report.timeZone!==timeZone || auth.currentUser!==user) throw new Error('A apuração do período não foi concluída para esta loja e sessão.');
   return payload;
 }
 
 export default function StoreFinancePeriodRuntime({ storeId }: { storeId: string }) {
-  const currentMonth = useMemo(() => new Date().toISOString().slice(0, 7), []);
+  const [timeZone,setTimeZone]=useState<FinancePeriodTimeZone>('UTC');
+  const currentMonth = useMemo(() => financeMonthAt(new Date(),timeZone), [timeZone]);
   const [period, setPeriod] = useState(currentMonth);
   const [reportState,setReportState]=useState<{storeId:string;report:PeriodReport;user:typeof auth.currentUser}|null>(null);
-  const report = reportState?.storeId===storeId && reportState.user===auth.currentUser && reportState.report.period===period ? reportState.report : null;
+  const report = reportState?.storeId===storeId && reportState.user===auth.currentUser && reportState.report.period===period && reportState.report.timeZone===timeZone ? reportState.report : null;
   const request=useRef<AbortController|null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -71,15 +74,21 @@ export default function StoreFinancePeriodRuntime({ storeId }: { storeId: string
     const user=auth.currentUser;
     const current=()=>request.current===controller&&!controller.signal.aborted&&auth.currentUser===user;
     setLoading(true); setError('');setReportState(null);setRecoveredCount(0);
-    try { const payload = await fetchPeriod(storeId, period, controller.signal); if(current()&&payload.report){setReportState({storeId,report:payload.report,user});setRecoveredCount(payload.recoveredCount ?? 0);} }
+    try { const payload = await fetchPeriod(storeId, period, timeZone, controller.signal); if(current()&&payload.report){setReportState({storeId,report:payload.report,user});setRecoveredCount(payload.recoveredCount ?? 0);} }
     catch (caught) { if(current()){setReportState(null);setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a visão por período.');} }
     finally { if(current())setLoading(false); }
-  }, [storeId, period]);
+  }, [storeId, period, timeZone]);
   useEffect(() => { void load(); return ()=>{request.current?.abort();request.current=null;}; }, [load]);
 
   return (
     <section className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-indigo-500/20 bg-slate-900 p-5 text-white" data-kyrub-finance-period-view="complete-paged-scan">
       <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:items-start sm:justify-between"><div className="min-w-0"><span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-indigo-300">Visão por período</span><h4 className="mt-1 text-xs font-black uppercase">Fluxo financeiro e resultado observado</h4><p className="mt-2 max-w-3xl text-[9px] leading-relaxed text-slate-400">A competência é apurada no servidor percorrendo todos os lotes do período. Ela não depende mais dos primeiros 100 lançamentos do Financeiro. Nenhum valor ausente é estimado.</p></div><div className="flex shrink-0 flex-wrap items-center gap-2"><button type="button" onClick={() => setPeriod(previousMonth(currentMonth))} className="min-h-9 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400">Mês anterior</button><button type="button" onClick={() => setPeriod(currentMonth)} className="min-h-9 rounded-xl border border-indigo-500/25 bg-indigo-500/10 px-3 text-[8px] font-black uppercase text-indigo-100">Mês atual</button><input type="month" value={period} onChange={event => setPeriod(event.target.value || currentMonth)} className="min-h-9 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[9px] text-slate-200 outline-none focus:border-indigo-400" /></div></div>
+      <label className="mt-4 flex flex-wrap items-center gap-2 text-xs text-slate-400">Calendário da apuração
+        <select value={timeZone} onChange={e=>{const zone=e.target.value==='America/Sao_Paulo'?'America/Sao_Paulo':'UTC';setTimeZone(zone);}} className="rounded-xl border border-slate-700 bg-slate-950 p-2 text-xs text-white">
+          <option value="UTC">UTC (relatório histórico)</option>
+          <option value="America/Sao_Paulo">Horário de São Paulo</option>
+        </select>
+      </label>
       <div className="mt-4 rounded-2xl border border-slate-800 bg-slate-950 p-3 text-[9px] text-slate-400">Competência selecionada: <strong className="capitalize text-white">{monthLabel(period)}</strong></div>
       {recoveredCount > 0 && <p className="mt-3 rounded-xl border border-cyan-500/20 bg-cyan-500/10 p-3 text-[9px] text-cyan-100">{recoveredCount} pagamento(s) histórico(s) pago(s) foram reconciliados antes da apuração, usando IDs determinísticos para não duplicar receita.</p>}
       {loading ? <p className="mt-4 rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">Apurando todos os lotes da competência…</p> : error ? <div className="mt-4 rounded-2xl border border-rose-500/20 bg-rose-500/10 p-4 text-[9px] text-rose-200">{error}<button type="button" onClick={() => void load()} className="ml-3 rounded-lg border border-rose-400/30 px-3 py-1.5 text-[8px] font-black uppercase">Tentar novamente</button></div> : report ? <>
@@ -88,7 +97,7 @@ export default function StoreFinancePeriodRuntime({ storeId }: { storeId: string
           <article className="min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4"><h5 className="text-[10px] font-black uppercase text-slate-200">Compromissos e repasses</h5><div className="mt-3 grid gap-2 sm:grid-cols-2"><div className="rounded-xl border border-slate-800 bg-slate-900 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Contas em aberto com vencimento no mês</span><strong className="mt-1 block text-sm text-amber-200">{money(report.openDueMinor)}</strong><span className="text-[7px] text-slate-600">{report.openDueCount} conta(s)</span></div><div className="rounded-xl border border-slate-800 bg-slate-900 p-3"><span className="text-[8px] font-black uppercase text-slate-600">Repasses gerados no mês</span><strong className="mt-1 block text-sm text-cyan-200">{money(report.receivablesCreatedMinor)}</strong></div><div className="rounded-xl border border-slate-800 bg-slate-900 p-3 sm:col-span-2"><span className="text-[8px] font-black uppercase text-slate-600">Repasses efetivamente liquidados no mês</span><strong className="mt-1 block text-sm text-emerald-200">{money(report.receivablesSettledMinor)}</strong></div></div>{report.categories.length > 0 && <div className="mt-3 space-y-1.5 border-t border-slate-800 pt-3"><span className="text-[8px] font-black uppercase text-slate-600">Contas pagas por categoria</span>{report.categories.map(item => <div key={item.category} className="flex justify-between gap-3 text-[8px]"><span className="text-slate-500">{payableCategoryLabel(item.category)}</span><b>{money(item.amountMinor)}</b></div>)}</div>}</article></div>
         <article className="mt-4 min-w-0 rounded-2xl border border-slate-800 bg-slate-950 p-4" aria-label="Despesas por centro de custo">
           <h5 className="text-sm font-bold text-slate-200">Despesas por centro de custo</h5>
-          <p className="mt-1 text-xs text-slate-400">Mesmas contas do relatório: pagas pela data de baixa e em aberto pelo vencimento. Recorte mensal atual em UTC. Não representa todas as despesas da empresa.</p>
+          <p className="mt-1 text-xs text-slate-400">Mesmas contas do relatório: pagas pela data de baixa e em aberto pelo vencimento. Recorte mensal: {report.timeZone==='UTC'?'UTC':'São Paulo'}. Não representa todas as despesas da empresa.</p>
           {!report.costCenterReport || report.costCenterReport.status==='unavailable' ? <p className="mt-3 text-xs text-amber-200">Distribuição indisponível ou não conciliada.</p> : <>
             {report.costCenterReport.status==='partial'&&<p className="mt-3 text-xs text-amber-200">Apuração parcial: {report.costCenterReport.invalidPayableCount} registro(s) inválido(s) na varredura de contas.</p>}
             {report.costCenterReport.rows.length===0?<p className="mt-3 text-xs text-slate-400">Nenhuma conta válida no recorte.</p>:<div className="mt-3 space-y-2">

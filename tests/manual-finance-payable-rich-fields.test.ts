@@ -1,3 +1,4 @@
+import { financeMonthRange, financeMonthAt, parseFinancePeriodTimeZone } from '../shared/storeFinanceCalendar.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
@@ -160,4 +161,19 @@ test('cost center report shares the existing payable scan and monthly predicates
   assert.match(router,/costCenterReport:costCenters\.finish/);
   assert.match(ui,/Despesas por centro de custo/);
   assert.match(ui,/reportState\.user===auth\.currentUser/);
+});
+
+test('finance calendars preserve legacy UTC and align Sao Paulo with local month boundaries',()=>{
+  assert.deepEqual(financeMonthRange('2026-11'),{period:'2026-11',timeZone:'UTC',startIso:'2026-11-01T00:00:00.000Z',endExclusiveIso:'2026-12-01T00:00:00.000Z'});
+  const sp=financeMonthRange('2026-11','America/Sao_Paulo');
+  assert.equal(sp.startIso,'2026-11-01T03:00:00.000Z');
+  assert.equal(sp.endExclusiveIso,'2026-12-01T03:00:00.000Z');
+  assert.equal(financeMonthAt(new Date('2026-12-01T02:59:59.999Z'),'America/Sao_Paulo'),'2026-11');
+  assert.equal(financeMonthAt(new Date(sp.endExclusiveIso),'America/Sao_Paulo'),'2026-12');
+  assert.equal(financeMonthRange('2018-12','America/Sao_Paulo').startIso,'2018-12-01T02:00:00.000Z');
+  assert.equal(financeMonthRange('2026-12','America/Sao_Paulo').endExclusiveIso,'2027-01-01T03:00:00.000Z');
+  assert.throws(()=>parseFinancePeriodTimeZone('GMT-3'),/PERIOD_INVALID/);
+  assert.throws(()=>parseFinancePeriodTimeZone(['UTC']),/PERIOD_INVALID/);
+  assert.throws(()=>financeMonthRange('2026-13'),/PERIOD_INVALID/);
+  assert.equal(createStoreCostCenterPeriodAccumulator('America/Sao_Paulo').finish({paidMinor:0,paidCount:0,openDueMinor:0,openDueCount:0}).timeZone,'America/Sao_Paulo');
 });

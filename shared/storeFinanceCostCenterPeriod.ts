@@ -1,3 +1,4 @@
+import type { FinancePeriodTimeZone } from './storeFinanceCalendar.js';
 import type { StoreCostCenterRef } from './storeFinanceCostCenters.js';
 
 export interface StoreCostCenterPeriodRow {
@@ -9,7 +10,7 @@ export interface StoreCostCenterPeriodRow {
   openDueCount: number;
 }
 export interface StoreCostCenterPeriodReport {
-  timeZone: 'UTC';
+  timeZone: FinancePeriodTimeZone;
   status: 'observed' | 'partial' | 'unavailable';
   invalidPayableCount: number;
   rows: StoreCostCenterPeriodRow[];
@@ -23,7 +24,7 @@ const add = (a:number,b:number):number => {
 
 // Consumes the SAME normalized payable rows and period predicates as the
 // existing finance report. No DB, no additional scan, no inferred expenses.
-export function createStoreCostCenterPeriodAccumulator() {
+export function createStoreCostCenterPeriodAccumulator(timeZone:FinancePeriodTimeZone='UTC') {
   const rows=new Map<string|null,StoreCostCenterPeriodRow>();
   let invalidPayableCount=0;
   let inconsistent=false;
@@ -53,8 +54,8 @@ export function createStoreCostCenterPeriodAccumulator() {
         if(total.paidMinor!==expected.paidMinor||total.paidCount!==expected.paidCount||
           total.openDueMinor!==expected.openDueMinor||total.openDueCount!==expected.openDueCount)
           throw Error('COST_CENTER_UNRECONCILED');
-        return {timeZone:'UTC',status:invalidPayableCount?'partial':'observed',invalidPayableCount,rows:result};
-      } catch {return {timeZone:'UTC',status:'unavailable',invalidPayableCount,rows:[]};}
+        return {timeZone,status:invalidPayableCount?'partial':'observed',invalidPayableCount,rows:result};
+      } catch {return {timeZone,status:'unavailable',invalidPayableCount,rows:[]};}
     },
   };
 }

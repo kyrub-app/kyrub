@@ -1,3 +1,4 @@
+import { financeMonthRange, parseFinancePeriodTimeZone, type FinanceMonthRange, type FinancePeriodTimeZone } from '../../shared/storeFinanceCalendar.js';
 import { createStoreCostCenterPeriodAccumulator } from '../../shared/storeFinanceCostCenterPeriod.js';
 import { Router } from 'express';
 import { FieldPath } from 'firebase-admin/firestore';
@@ -80,32 +81,15 @@ const requireOwner = async (authorization: string, storeId: string): Promise<str
   return identity.uid;
 };
 
-type PeriodRange = {
-  period: string;
-  startIso: string;
-  endExclusiveIso: string;
-};
+type PeriodRange = FinanceMonthRange;
 
-const parsePeriod = (value: unknown, required = false): PeriodRange | null => {
+const parsePeriod = (value: unknown, required = false, zone:FinancePeriodTimeZone='UTC'): PeriodRange | null => {
   const period = clean(value);
   if (!period) {
     if (required) throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
     return null;
   }
-  const match = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(period);
-  if (!match) throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  if (!Number.isInteger(year) || year < 2000 || year > 9999) {
-    throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
-  }
-  const start = new Date(Date.UTC(year, month - 1, 1));
-  const end = new Date(Date.UTC(year, month, 1));
-  return {
-    period,
-    startIso: start.toISOString(),
-    endExclusiveIso: end.toISOString(),
-  };
+  return financeMonthRange(period,zone);
 };
 
 const isLedgerKind = (value: unknown): value is StoreEconomicLedgerKind =>
@@ -337,7 +321,7 @@ const aggregateLedgerPeriod = async (storeId: string, period: PeriodRange) => {
 const aggregatePayablesPeriod = async (storeId: string, period: PeriodRange) => {
   let lastDocumentId = '', paidPayablesMinor = 0, openDueMinor = 0, paidPayableCount = 0, openDueCount = 0;
   const categoryTotals = new Map<StoreFinancePayableCategory, number>();
-  const costCenters = createStoreCostCenterPeriodAccumulator();
+  const costCenters = createStoreCostCenterPeriodAccumulator(period.timeZone);
   while (true) {
     let query = adminDb.collection(`stores/${storeId}/financePayables`).orderBy(FieldPath.documentId()).limit(PERIOD_SCAN_BATCH);
     if (lastDocumentId) query = query.startAfter(lastDocumentId);
@@ -391,7 +375,7 @@ const aggregateReceivablesPeriod = async (storeId: string, period: PeriodRange) 
 
 const buildPeriodView = async (storeId: string, period: PeriodRange) => {
   const [ledger, payables, receivables] = await Promise.all([aggregateLedgerPeriod(storeId, period), aggregatePayablesPeriod(storeId, period), aggregateReceivablesPeriod(storeId, period)]);
-  return { period: period.period, currency: 'BRL' as const, ...ledger, ...payables, receivablesCreatedMinor: receivables.createdMinor, receivablesSettledMinor: receivables.settledMinor, observedResultMinor: ledger.providerObservedNetMinor - payables.paidPayablesMinor, complete: true };
+  return { period: period.period, timeZone:period.timeZone, startIso:period.startIso,endExclusiveIso:period.endExclusiveIso, currency: 'BRL' as const, ...ledger, ...payables, receivablesCreatedMinor: receivables.createdMinor, receivablesSettledMinor: receivables.settledMinor, observedResultMinor: ledger.providerObservedNetMinor - payables.paidPayablesMinor, complete: true };
 };
 
 export const createStoreFinanceHistoryRouter = (): Router => {
@@ -403,14 +387,18 @@ export const createStoreFinanceHistoryRouter = (): Router => {
       await requireOwner(request.get('authorization') ?? '', storeId);
       const mode = clean(request.query.mode) || 'history';
       if (mode !== 'history' && mode !== 'period') throw new Error('STORE_FINANCE_HISTORY_FILTER_INVALID');
+      // Validate the explicit calendar before the existing recovery side effect.
+      const zone=parseFinancePeriodTimeZone(request.query.timeZone);
+      if(mode!=='period'&&zone!=='UTC')throw Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
+      const periodRange=mode==='period'?parsePeriod(request.query.period,true,zone):parsePeriod(request.query.period);
       const recoveredCount = await recoverAllMissingCanonicalPaidCaptures(storeId);
       if (mode === 'period') {
-        const period = parsePeriod(request.query.period, true);
+        const period = periodRange;
         if (!period) throw new Error('STORE_FINANCE_HISTORY_PERIOD_INVALID');
         response.status(200).json({ storeId, recoveredCount, report: await buildPeriodView(storeId, period) });
         return;
       }
-      const period = parsePeriod(request.query.period);
+      const period = periodRange;
       const kind = parseLedgerKindFilter(request.query.kind);
       const paymentMethod = parsePaymentMethodFilter(request.query.paymentMethod);
       const cursor = decodeCursor(request.query.cursor);
