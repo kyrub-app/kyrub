@@ -11,7 +11,7 @@ import { chromium } from 'playwright';
 import { createHash } from 'node:crypto';
 import { createIsolatedGamificationAdminRouter } from '../server/gamification/semeaduraAdminPilotRouter.ts';
 import { refreshIsolatedGamificationIncrementalAccount,openIsolatedGamificationSuspicionCase,closeIsolatedGamificationSuspicionCase } from '../server/gamification/semeaduraAdminSupervision.ts';
-import { seedVerifiedPost } from '../server/gamification/semeaduraService.ts';
+import { seedVerifiedPost,seedEconomicallyAdmittedPost } from '../server/gamification/semeaduraService.ts';
 import { semeaduraEconomicPilotEnabled } from '../server/gamification/semeaduraEconomicPilot.ts';
 
 const projectId='demo-kyrub-welcome';
@@ -81,12 +81,31 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
    method:'POST',headers:{authorization:'Bearer '+token,'content-type':'application/json',origin:requestOrigin},body:JSON.stringify(body),
   });
   const ordinarySession=await signed(ordinaryEmail);
+  const releaseRef=db.doc('systemControl/semeaduraReleasePilot');
+  const opensAt=new Date(Date.now()-60000).toISOString();
+  await releaseRef.set({schemaVersion:1,projectId,epoch:'welcome-emulator-only',mode:'isolated-pilot',status:'open',revision:1,opensAt});
+  const releaseCommand={operation:'release_change',eventId:'http-release-denied',expectedRevision:1,status:'paused',reason:'Teste de autoridade isolada',confirmed:true};
+  const readRelease=token=>fetch(origin+'/api/admin/gamification-pilot?operation=release',{headers:{authorization:'Bearer '+token}});
+  assert.equal((await readRelease(ordinarySession.idToken)).status,403);
+  assert.equal((await write(ordinarySession.idToken,releaseCommand)).status,403);
+  assert.equal((await write(session.idToken,{...releaseCommand,confirmed:false})).status,400);
+  assert.equal((await write(session.idToken,{...releaseCommand,actorId:admin.uid})).status,400);
+  assert.equal((await write(session.idToken,releaseCommand,'https://outside.invalid')).status,403);
+  delete process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT;
+  try{assert.equal((await write(session.idToken,releaseCommand)).status,404);}
+  finally{process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT='true';}
+  assert.equal((await releaseRef.get()).get('revision'),1);
+  assert.equal((await releaseRef.collection('events').doc(releaseCommand.eventId).get()).exists,false);
+
   assert.equal((await write(ordinarySession.idToken,command)).status,403);
   assert.equal((await write(session.idToken,{...command,confirmed:false})).status,400);
   assert.equal((await write(session.idToken,{...command,actorId:admin.uid})).status,400);
   assert.equal((await write(session.idToken,command,'https://outside.invalid')).status,403);
   delete process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT;
-  try{assert.equal((await write(session.idToken,command)).status,405);}
+  try{assert.equal((await write(session.idToken,command)).status,404);
+    delete process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT;
+    try{assert.equal((await write(session.idToken,command)).status,405);}
+    finally{process.env.KYRUB_GAMIFICATION_ADMIN_RELEASE_WRITE_PILOT='true';}}
   finally{process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT='true';}
   assert.equal((await db.doc('systemControl/semeaduraSuspicionPilot/cases/http-denied-case').get()).exists,false);
 
@@ -185,6 +204,69 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await page.getByRole('button',{name:'browser-referral · Decisão registrada'}).click();
   await page.getByText('Decisão: Sem intervenção').waitFor();
   await page.screenshot({path:'gamification-admin-isolated-control-plane.png',fullPage:true});
+
+  // Dedicated author and synthetic milestone boundary: no claim that 999
+  // historical receipts exist. Actual accepted seed and credit use the
+  // strict public settlement adapter, while the admin changes use HTTP.
+  const milestoneClaims={sub:'browser-release-milestone',email:'browser-release-milestone@example.invalid',email_verified:true};
+  const milestoneCredential=Buffer.from('{"alg":"none"}').toString('base64url')+'.'+Buffer.from(JSON.stringify(milestoneClaims)).toString('base64url')+'.';
+  const milestoneLogin=await fetch(base+'/accounts:signInWithIdp?key=fake-emulator-key',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({requestUri:'http://localhost',postBody:new URLSearchParams({id_token:milestoneCredential,providerId:'google.com'}).toString(),returnSecureToken:true})});
+  assert.equal(milestoneLogin.status,200);
+  const {localId:milestoneAuthor}=await milestoneLogin.json();
+  const milestoneRoot=db.collection('users').doc(milestoneAuthor);
+  const milestoneBalance=milestoneRoot.collection('pitangaBalance').doc('balance');
+  const milestoneDeadline=Date.now()+60000;
+  while(!(await milestoneBalance.get()).exists&&Date.now()<milestoneDeadline)await delay(100);
+  assert.equal((await milestoneBalance.get()).get('availableKCoins'),100);
+  const milestonePostId='browser-release-milestone-post';
+  const milestoneKey=createHash('sha256').update('personal\0'+milestonePostId).digest('hex');
+  const milestoneStats=db.doc('semeadura_post_stats/'+milestoneKey);
+  const milestoneProgress=milestoneRoot.collection('semeaduraProgress').doc('summary');
+  const milestoneCursor=milestoneRoot.collection('semeaduraEconomicPilot').doc('activation');
+  const milestoneReceipt=milestoneStats.collection('receipts').doc(admin.uid);
+  const milestoneLedger=milestoneRoot.collection('rewardLedger');
+  const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.ts');
+  const quota=db.doc('users/'+admin.uid+'/semeaduraDailyUsage/'+semeaduraDay(new Date()));
+  await db.doc('social_posts/'+milestonePostId).set({postId:milestonePostId,authorId:milestoneAuthor,visibility:'public',publicationType:'feed'});
+  await milestoneProgress.set({authorId:milestoneAuthor,acceptedSeeds:999,pitangueiras:0});
+  await milestoneCursor.set({schemaVersion:1,authorId:milestoneAuthor,epoch:'welcome-emulator-only',acceptedSeeds:999,creditedPitangas:0,currencyAuthority:'welcome'});
+  const seed=()=>seedEconomicallyAdmittedPost(db,{authenticatedUserId:admin.uid,kind:'personal',postId:milestonePostId},auth);
+  await page.getByRole('button',{name:'Semeadura',exact:true}).click();
+  const releasePanel=page.getByRole('region',{name:'Controle de semeadura'});
+  await releasePanel.getByText('Estado registrado: Aberto · revisão 1').waitFor();
+  assert.equal(await releasePanel.getByRole('button',{name:'Confirmar pausa'}).isDisabled(),true);
+  await releasePanel.getByLabel('Motivo da decisão').fill('Interrupção operacional de homologação');
+  assert.equal(await releasePanel.getByRole('button',{name:'Confirmar pausa'}).isDisabled(),true);
+  await releasePanel.getByLabel('Confirmo a alteração no ambiente de homologação.').check();
+  await releasePanel.getByRole('button',{name:'Confirmar pausa'}).click();
+  await releasePanel.getByText('Estado registrado: Pausado · revisão 2').waitFor();
+  await page.screenshot({path:'gamification-admin-isolated-release-paused.png',fullPage:true});
+  await assert.rejects(seed(),/SEMEADURA_RELEASE_UNAVAILABLE/);
+  assert.equal((await milestoneBalance.get()).get('availableKCoins'),100);
+  assert.equal((await milestoneProgress.get()).get('acceptedSeeds'),999);
+  assert.equal((await milestoneCursor.get()).get('acceptedSeeds'),999);
+  assert.equal((await milestoneLedger.get()).size,1);
+  for(const ref of [milestoneStats,milestoneReceipt,quota])assert.equal((await ref.get()).exists,false);
+  await releasePanel.getByLabel('Motivo da decisão').fill('Retomada operacional de homologação');
+  await releasePanel.getByLabel('Confirmo a alteração no ambiente de homologação.').check();
+  await releasePanel.getByRole('button',{name:'Confirmar retomada'}).click();
+  await releasePanel.getByText('Estado registrado: Aberto · revisão 3').waitFor();
+  const outcomes=await Promise.all([seed(),seed()]);
+  assert.equal(outcomes.filter(r=>r.status==='accepted').length,1);
+  assert.equal(outcomes.filter(r=>r.status==='already_seeded').length,1);
+  assert.equal((await milestoneBalance.get()).get('availableKCoins'),101);
+  assert.equal((await milestoneProgress.get()).get('acceptedSeeds'),1000);
+  assert.equal((await milestoneCursor.get()).get('creditedPitangas'),1);
+  assert.equal((await quota.get()).get('count'),1);
+  assert.equal((await milestoneLedger.get()).size,2);
+  assert.equal((await milestoneLedger.doc('earn_semeadura_1').get()).get('deltaKCoins'),1);
+  assert.equal((await milestoneRoot.collection('xpLedger').get()).size,0);
+  const events=await releaseRef.collection('events').get();
+  assert.equal(events.size,2);
+  assert.deepEqual(events.docs.map(d=>d.get('revision')).sort(),[2,3]);
+  assert.ok(events.docs.every(d=>d.get('reviewerId')===admin.uid&&d.get('opensAt')===opensAt));
+  assert.equal((await releaseRef.get()).get('opensAt'),opensAt);
+  await page.screenshot({path:'gamification-admin-isolated-release-resumed.png',fullPage:true});
   const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.uid);
   await profile.update({status:'suspended'});
   await page.getByRole('heading',{name:'Acesso administrativo suspenso'}).waitFor();
