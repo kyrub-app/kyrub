@@ -208,7 +208,9 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
     match /artifacts/{tenantId} {
       allow read: if isSignedIn()
         && request.auth.uid == tenantId;
-      allow create, update, delete: if isSignedIn()
+      // Unclassified legacy writers require the staged ERP and financial gates.
+      // Never activate the rollout before inventorying nonfinancial clients.
+      allow create, update, delete: if canWriteFinancialWithMfa()
         && request.auth.uid == tenantId;
 
       // Direct browser creation remains only for the legacy dine-in flow.
@@ -220,11 +222,11 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
             request.auth.uid == tenantId
             || existing().buyerId == request.auth.uid
           );
-        allow create: if isSignedIn()
+        allow create: if canWriteErpWithAge()
           && storeSecClientOrderReleaseIsValid()
           && (!incoming().keys().hasAny(['source']) || incoming().source != 'customer' || incoming().fulfillmentType == 'dine_in')
           && (
-            request.auth.uid == tenantId
+            (request.auth.uid == tenantId && canWriteFinancialWithMfa())
             || (
               incoming().buyerId == request.auth.uid
               && incoming().storeId == tenantId
@@ -237,7 +239,10 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
         allow update: if isSignedIn()
           && !incoming().diff(existing()).affectedKeys().hasAny(['releaseMode', 'operationalRelease', 'paymentIntentId', 'paymentId'])
           && (
-            (request.auth.uid == tenantId && storeSecOrderReleaseUnchanged())
+            (request.auth.uid == tenantId && storeSecOrderReleaseUnchanged()
+              && canWriteErpWithAge()
+              && (incoming().diff(existing()).affectedKeys().hasOnly(['status','updatedAt','customerNote','tableCode'])
+                || canWriteFinancialWithMfa()))
             || (
               existing().buyerId == request.auth.uid
               && incoming().buyerId == existing().buyerId
@@ -256,9 +261,13 @@ const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
       }
 
       match /{artifactCollection}/{artifactDocument} {
-        allow read, create, update, delete: if isSignedIn() && request.auth.uid == tenantId;
+        allow read: if isSignedIn() && request.auth.uid == tenantId;
+        allow create, update, delete: if canWriteFinancialWithMfa() && request.auth.uid == tenantId;
         match /{nestedCollection}/{nestedDocument}/{rest=**} {
-          allow read, create, update, delete: if isSignedIn()
+          allow read: if isSignedIn()
+            && request.auth.uid == tenantId
+            && !(artifactCollection == 'public' && artifactDocument == 'data' && nestedCollection == 'customerOrders');
+          allow create, update, delete: if canWriteFinancialWithMfa()
             && request.auth.uid == tenantId
             && !(artifactCollection == 'public' && artifactDocument == 'data' && nestedCollection == 'customerOrders');
         }
