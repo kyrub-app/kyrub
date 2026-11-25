@@ -278,7 +278,9 @@ test('community author controls comments and one pinned comment in both mural an
   const rules = read('firestore.communities.fragment.rules');
   assert.match(composer, /const \[wallAllowComments, setWallAllowComments\] = useState\(true\)/);
   assert.match(composer, /aria-label="Permitir comentários nesta publicação"/);
-  assert.match(composer, /allowComments: wallAllowComments/);
+  assert.match(composer, /const \[content, requestedSquare, allowComments\] = pending/);
+  assert.match(composer, /shareWallToSquare, wallAllowComments\] as \[string, boolean, boolean\]/);
+  assert.match(composer, /allowComments, attempt: \{ postId: draft\.postId, owner \}/);
   assert.match(api, /allowComments: input\.allowComments !== false/);
   assert.match(api, /pinnedCommentId: ''/);
   assert.match(api, /allowComments: data\.allowComments !== false/);
