@@ -14,3 +14,25 @@
       return hasApprovedIdentityProfile('bicycle_courier')
         || hasApprovedIdentityProfile('motorized_courier');
     }
+
+    // Staged server-controlled rollout. An absent control retains legacy
+    // compatibility; an existing invalid control denies protected writes.
+    // Never deploy/enable before migration, legal approval and cost review.
+    match /social_age_release_private/{documentId} {
+      allow read, write: if false;
+    }
+
+    function canWriteSocialWithAge() {
+      let control = /databases/$(database)/documents/social_age_release_private/current;
+      let age = /databases/$(database)/documents/age_eligibility_private/$(request.auth.uid);
+      return isSignedIn() && (
+        !exists(control)
+        || (
+          get(control).data.schemaVersion == 1
+          && get(control).data.mode == 'verified_adult_only'
+          && exists(age)
+          && get(age).data.uid == request.auth.uid
+          && get(age).data.status == 'verified_adult'
+        )
+      );
+    }
