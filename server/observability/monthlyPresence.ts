@@ -59,6 +59,19 @@ export async function confirmMonthlyPresence(
 }
 
 // Explicit injection: never initialize Admin SDK or select a project here.
-export function firestoreMonthlyPresenceStore(db: Pick<Firestore, 'doc'>): MonthlyPresenceStore {
-  return {create: async (path, marker) => { await db.doc(path).create(marker); }};
+export function firestoreMonthlyPresenceStore(db: Pick<Firestore, 'doc' | 'runTransaction'>): MonthlyPresenceStore {
+  return {create: async (path, marker) => {
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(marker.month) ||
+        !new RegExp('^kyrub_finops_mau_months/' + marker.month + '/markers/[a-f0-9]{64}
+).test(path))
+      throw Error('MAU_INVALID_MARKER_PATH');
+    const fence = db.doc('kyrub_finops_mau_months/' + marker.month);
+    const target = db.doc(path);
+    await db.runTransaction(async tx => {
+      const state = await tx.get(fence);
+      // Any existing month control document is fail-closed. No reopening.
+      if (state.exists) throw Error('MAU_MONTH_SEALED');
+      tx.create(target, marker);
+    });
+  }};
 }
