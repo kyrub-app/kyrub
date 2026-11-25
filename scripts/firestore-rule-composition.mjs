@@ -113,6 +113,46 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       // Preserve the deterministic receipt and bilateral history.
       // Any lawful erasure is a separate authorized server process.
       allow delete: if false;
+
+      // Reuse the private DM contract (sender, receiver, text, server time),
+      // but authorize by hiring receipt rather than a personal connection.
+      match /messages/{messageId} {
+        function hiringReceipt() {
+          return get(/databases/$(database)/documents/candidaturas/$(candiId)).data;
+        }
+        function canReadHiringMessages() {
+          let receipt = hiringReceipt();
+          return isSignedIn() && (
+            receipt.userId == request.auth.uid || receipt.ownerId == request.auth.uid
+          );
+        }
+        function canSendHiringMessage() {
+          let receipt = hiringReceipt();
+          return isSignedIn()
+            && canWriteRendaWithAge()
+            && receipt.status in ['pending', 'accepted', 'completion_requested']
+            && (
+              (receipt.userId == request.auth.uid
+                && incoming().receiverId == receipt.ownerId
+                && hasApprovedIdentityProfile('freelancer'))
+              || (receipt.ownerId == request.auth.uid
+                && incoming().receiverId == receipt.userId
+                && hasRendaRequesterAuthority())
+            );
+        }
+        allow get: if canReadHiringMessages() && isValidId(messageId);
+        allow list: if canReadHiringMessages() && request.query.limit <= 100;
+        allow create: if canSendHiringMessage()
+          && isValidId(messageId)
+          && incoming().keys().hasOnly(['senderId','receiverId','text','createdAt'])
+          && incoming().senderId == request.auth.uid
+          && isValidId(incoming().receiverId)
+          && incoming().text is string
+          && incoming().text.size() >= 1
+          && incoming().text.size() <= 4000
+          && incoming().createdAt == request.time;
+        allow update, delete: if false;
+      }
     }`;
 
 const SECURE_ARTIFACT_RULES = `${ARTIFACT_SECTION_HEADER}
