@@ -636,6 +636,13 @@ export async function readIsolatedGamificationEconomicReferral(
   const [source,record,event]=await Promise.all([readReferralSource(db,tx,caseId),
    tx.get(db.doc(referralRoot+'/referrals/'+caseId)),
    tx.get(db.doc(referralRoot+'/referralDecisions/'+caseId))]);
+  if(!record.exists){
+   if(event.exists)throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+   return {scope:'isolated-economic-referral' as const,caseId,postKey:source.source.postKey,
+    sourceClosedAt:source.source.closedAt,referredBy:source.referredBy,acceptedBy:null,acceptedAt:null,
+    status:'awaiting_acceptance' as const,openingEvidence:source.initial,closingEvidence:source.final,decision:null,
+    economicMutationApplied:false,fraudVerdict:false};
+  }
   const data=validateReferral(record.data(),caseId,source);
   let decision=null;
   if(data.status==='decided'){
@@ -652,5 +659,46 @@ export async function readIsolatedGamificationEconomicReferral(
    acceptedAt:data.acceptedAt as string,status:data.status as 'pending'|'decided',
    openingEvidence:source.initial,closingEvidence:source.final,decision,
    economicMutationApplied:false,fraudVerdict:false};
+ },{readOnly:true});
+}
+
+
+/** List technical referrals, including those not yet accepted. Bounded
+ * by source-case IDs; status reflects the same read-only snapshot.
+ * No global count or promise of consistency across separate pages. */
+export async function listIsolatedGamificationEconomicReferrals(
+ db:Firestore,auth:Auth,authorization:string,input:{limit:number;afterCaseId?:string},
+){
+ const reviewerId=await authenticateIsolatedSupervisor(db,auth,authorization);
+ if(!input||!Number.isSafeInteger(input.limit)||input.limit<1||input.limit>10||
+    (input.afterCaseId!==undefined&&!uid(input.afterCaseId)))
+   throw Error('ECONOMIC_REFERRAL_INPUT_INVALID');
+ return db.runTransaction(async tx=>{
+  await requireIsolatedSupervisor(db,tx,reviewerId);
+  let query:Query=db.collection(suspicionRoot+'/cases').where('outcome','==','referred_for_review').orderBy(FieldPath.documentId());
+  if(input.afterCaseId!==undefined)query=query.startAfter(input.afterCaseId);
+  const page=await tx.get(query.limit(input.limit+1));
+  const rows=await Promise.all(page.docs.slice(0,input.limit).map(async doc=>{
+   const caseId=doc.id;
+   const [source,record,event]=await Promise.all([readReferralSource(db,tx,caseId),
+    tx.get(db.doc(referralRoot+'/referrals/'+caseId)),tx.get(db.doc(referralRoot+'/referralDecisions/'+caseId))]);
+   if(!record.exists){
+    if(event.exists)throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+    return {caseId,status:'awaiting_acceptance' as const,sourceClosedAt:source.source.closedAt,decision:null};
+   }
+   const data=validateReferral(record.data(),caseId,source);
+   if(data.status==='decided'){
+    const end=event.data();
+    if(!end||end.schemaVersion!==1||end.caseId!==caseId||end.postKey!==data.postKey||
+       end.decision!==data.decision||end.decidedAt!==data.decidedAt||!uid(end.decidedBy)||
+       typeof end.reason!=='string'||end.reason.trim().length<10||end.reason.length>500)
+      throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+   }else if(event.exists)throw Error('ECONOMIC_REFERRAL_STATE_INVALID');
+   return {caseId,status:data.status as 'pending'|'decided',sourceClosedAt:source.source.closedAt,
+    decision:data.status==='decided'?data.decision as ReviewDisposition:null};
+  }));
+  return {scope:'isolated-economic-referrals' as const,rows,
+   nextAfterCaseId:page.size>input.limit?rows[rows.length-1].caseId:null,
+   consistentAcrossPages:false};
  },{readOnly:true});
 }
