@@ -144,10 +144,27 @@ export async function sendHiringMessage(applicationId:string,text:string,request
  await runTransaction(db,async tx=>{
    checkSession(actor);
    const current=await tx.get(receipt);
-   if(!current.exists()||!['pending','accepted','completion_requested'].includes(current.get('status')))throw Error('Negociação encerrada.');
+   if(!current.exists())throw Error('Negociação indisponível.');
+   const previous=await tx.get(messageRef);
    const receiverId=current.get('ownerId')===actor?current.get('userId'):current.get('userId')===actor?current.get('ownerId'):null;
    if(typeof receiverId!=='string'||!validId(receiverId)||receiverId===actor)throw Error('Negociação indisponível.');
+   if(previous.exists()){
+    if(previous.get('senderId')!==actor||previous.get('receiverId')!==receiverId||previous.get('text')!==message)throw Error('Recibo inconsistente.');
+    return;
+   }
+   if(!['pending','accepted','completion_requested'].includes(current.get('status')))throw Error('Negociação encerrada.');
    tx.set(messageRef,{senderId:actor,receiverId,text:message,createdAt:serverTimestamp()});
  });
  checkSession(actor);
+}
+
+
+export async function readHiringApplication(applicationId:string):Promise<HiringApplication>{
+ const actor=uid();
+ if(!/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(applicationId))throw Error('Candidatura inválida.');
+ const snapshot=await getDocFromServer(doc(db,'candidaturas',applicationId));
+ checkSession(actor);
+ const x=snapshot.data();
+ if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
+ return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status']};
 }
