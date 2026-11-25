@@ -69,11 +69,13 @@
       allow list: if false;
 
       allow create: if isPrivateInventoryOwner()
+        && canWriteErpWithAge()
         && hasValidPrivateInventoryShape(incoming())
         && incoming().createdAt == request.time
         && incoming().updatedAt == request.time;
 
       allow update: if isPrivateInventoryOwner()
+        && canWriteErpWithAge()
         && existing().ownerId == userId
         && hasValidPrivateInventoryFields(incoming())
         && incoming().ownerId == existing().ownerId
