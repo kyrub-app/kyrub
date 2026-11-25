@@ -167,3 +167,19 @@ describe('stock management navigation', () => {
     assert.match(vercel, /surface=procurement&path=:path\*/);
   });
 });
+
+
+test('stock workspace resets drafts by store and fences outdated stock reads', () => {
+  const router=readFileSync('src/components/RetailerPanelRuntimeRouter.tsx','utf8');
+  assert.match(router,/<LazyStockRuntime key=\{retailerProps\.activeRetailerId\} storeId=\{retailerProps\.activeRetailerId\}/);
+  const replenishment=readFileSync('src/components/store/StorePurchaseWorkspace.tsx','utf8');
+  assert.equal((replenishment.match(/if\(stopped\|\|auth\.currentUser\?\.uid!==user\.uid\)return;/g)??[]).length,2);
+  assert.match(replenishment,/return \(\) => \{stopped=true;unsubscribe\(\);\};/);
+  assert.match(replenishment,/setCatalog\(\[\]\);\s*console\.warn/);
+  const timeline=readFileSync('src/components/store/StoreInventoryMovementTimeline.tsx','utf8');
+  assert.match(timeline,/pendingRead\.current\?\.abort\(\)/);
+  assert.match(timeline,/signal: controller\.signal/);
+  assert.match(timeline,/pendingRead\.current===controller&&auth\.currentUser\?\.uid===user\.uid/);
+  assert.match(timeline,/if\(!isCurrent\(\)\)return;\s*setMovements\(Array\.isArray/);
+  assert.match(timeline,/return \(\)=>\{pendingRead\.current\?\.abort\(\);pendingRead\.current=null;\};/);
+});
