@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   AlertTriangle,
   CheckCircle2,
@@ -26,7 +26,7 @@ type PurchaseView = StorePurchase & {
   receivedReceiptCount: number;
 };
 
-type ProcurementOverview = {
+export type ProcurementOverview = {
   storeId: string;
   suppliers: StoreSupplier[];
   purchases: PurchaseView[];
@@ -38,6 +38,7 @@ interface StoreProcurementWorkspaceProps {
   section: ProcurementSection;
   replenishmentDraft?: PurchaseListEntry[];
   onReplenishmentDraftConsumed?: () => void;
+  renderPurchaseFinance?: (overview: ProcurementOverview, loading: boolean, refresh: () => Promise<void>) => ReactNode;
 }
 
 const statusLabel: Record<StorePurchase['status'], string> = {
@@ -342,6 +343,7 @@ export function StoreProcurementWorkspace({
   section,
   replenishmentDraft = [],
   onReplenishmentDraftConsumed,
+  renderPurchaseFinance,
 }: StoreProcurementWorkspaceProps) {
   const [overview, setOverview] = useState<ProcurementOverview>(() => emptyOverview(storeId));
   const [loading, setLoading] = useState(true);
@@ -405,7 +407,8 @@ export function StoreProcurementWorkspace({
     }
   };
 
-  return <section className="space-y-4" data-kyrub-procurement-section={section}>
+  return <>
+  <section className="space-y-4" data-kyrub-procurement-section={section}>
     <header className="flex flex-wrap items-center justify-between gap-3 rounded-3xl border border-slate-800 bg-slate-900 p-4">
       <div>
         <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Compras e recebimentos</span>
@@ -461,5 +464,7 @@ export function StoreProcurementWorkspace({
         )}
       />
     )}
-  </section>;
+  </section>
+  {section==='purchases'&&renderPurchaseFinance?.(overview,loading||busy,load)}
+  </>;
 }
