@@ -173,11 +173,14 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(method!=='GET'&&method!=='POST')return {status:405,body:{error:'METHOD_NOT_ALLOWED'}};
   const uid=await authorizePilot(authorization);
   if(method==='GET')return {status:200,body:await listPromotionalBatches(uid)};
-  // Staged administrative MFA: only for explicitly isolated pilot operations.
-  // The authoritative role is still checked within each mutation transaction.
-  if(permanentEnvironment()||process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED==='true'){
-   if(!permanentEnvironment())assertTagPilotWriteIsolated();
-   if(permanentEnvironment()&&!permanentMode())throw Error('TAG_BATCH_DISABLED');
+  // Production NFC manufacturing uses the verified, revocation-checked
+  // administrative session above and the active Super Admin role checked
+  // inside each mutation transaction. No extra MFA challenge for this writer.
+  // Keep the isolated MFA experiment separate from production stock.
+  if(permanentEnvironment()){
+   if(!permanentMode())throw Error('TAG_BATCH_DISABLED');
+  }else if(process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED==='true'){
+   assertTagPilotWriteIsolated();
    const role=await adminRole(uid).get();assertRole(uid,role.data());
    const session=await requireKyrubSessionMfa(authorization,'administrative',300);
    if(session.uid!==uid)throw Error('FORBIDDEN');
