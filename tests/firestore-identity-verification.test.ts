@@ -19,6 +19,10 @@ import {
   Timestamp,
   updateDoc,
   where,
+  writeBatch,
+  orderBy,
+  documentId,
+  startAfter,
 } from 'firebase/firestore';
 
 const PROJECT_ID = 'kyrub-security-test';
@@ -319,6 +323,22 @@ test('hiring negotiations are private, append-only and survive completion', asyn
     await assertFails(updateDoc(ref(db),{text:'alterada'}));
     await assertFails(deleteDoc(ref(db)));
   }
+  // Seed a historical page with identical timestamps to verify stable tie-breaking.
+  await environment.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    const batch=writeBatch(db);
+    for(let i=0;i<103;i++){
+      batch.set(ref(db,'history-'+String(i).padStart(3,'0')),{senderId:workerId,receiverId:ownerId,text:'Registro histórico '+i,createdAt:Timestamp.fromMillis(1700000000000)});
+    }
+    await batch.commit();
+  });
+  const ordered=query(collection(worker,'candidaturas',applicationId,'messages'),orderBy('createdAt','desc'),orderBy(documentId(),'desc'));
+  await assertFails(getDocs(query(ordered,limit(101))));
+  const first=await assertSucceeds(getDocs(query(ordered,limit(51))));
+  const second=await assertSucceeds(getDocs(query(ordered,startAfter(first.docs[49]),limit(51))));
+  const third=await assertSucceeds(getDocs(query(ordered,startAfter(second.docs[49]),limit(51))));
+  const ids=[...first.docs.slice(0,50),...second.docs.slice(0,50),...third.docs].map(d=>d.id);
+  if(ids.length!==105||new Set(ids).size!==105||third.docs.length!==5)throw Error('Incomplete or duplicated negotiation history.');
   const transition=(db:any,status:string)=>updateDoc(doc(db,'candidaturas',applicationId),{status,updatedAt:serverTimestamp()});
   await assertSucceeds(transition(owner,'accepted'));
   await assertSucceeds(transition(worker,'completion_requested'));
