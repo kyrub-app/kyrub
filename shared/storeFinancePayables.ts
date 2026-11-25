@@ -1,3 +1,4 @@
+import { normalizeCostCenterRef, type StoreCostCenterRef } from './storeFinanceCostCenters.js';
 export const STORE_FINANCE_PAYABLE_SCHEMA_VERSION = 1 as const;
 export const STORE_FINANCE_PAYABLE_CURRENCY = 'BRL' as const;
 
@@ -32,6 +33,7 @@ export interface StoreFinancePayable {
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   costNature: StoreFinancePayableCostNature;
+  costCenter?: StoreCostCenterRef;
   billingDocumentType: StoreFinancePayableBillingDocumentType;
   billingDocumentReference: string;
   billingDigitableLine: string;
@@ -236,6 +238,7 @@ export const normalizeStoreFinancePayable = (value: unknown): StoreFinancePayabl
     dueDate,
     recurrence: source.recurrence,
     costNature,
+    ...(source.costCenter === undefined ? {} : {costCenter:normalizeCostCenterRef(source.costCenter)}),
     billingDocumentType,
     billingDocumentReference,
     billingDigitableLine,
@@ -265,6 +268,7 @@ export const buildManualStoreFinancePayable = (input: {
   dueDate: string;
   recurrence: StoreFinancePayableRecurrence;
   costNature?: StoreFinancePayableCostNature;
+  costCenter?: StoreCostCenterRef;
   billingDocumentType?: StoreFinancePayableBillingDocumentType;
   billingDocumentReference?: string;
   billingDigitableLine?: string;
@@ -289,6 +293,7 @@ export const buildManualStoreFinancePayable = (input: {
     dueDate: input.dueDate,
     recurrence: input.recurrence,
     costNature: input.costNature ?? 'unspecified',
+    ...(input.costCenter === undefined ? {} : {costCenter:input.costCenter}),
     billingDocumentType: input.billingDocumentType ?? 'none',
     billingDocumentReference: input.billingDocumentReference ?? '',
     billingDigitableLine: input.billingDigitableLine ?? '',
