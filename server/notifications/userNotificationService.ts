@@ -34,6 +34,7 @@ const CATEGORIES = new Set<UserNotificationCategory>([
   'marketing',
   'community_group_invite',
   'user_forward',
+  'freelance',
   'system',
 ]);
 const TARGET_KINDS = new Set<UserNotificationTargetKind>([
@@ -44,6 +45,7 @@ const TARGET_KINDS = new Set<UserNotificationTargetKind>([
   'order',
   'community_group_invite',
   'community_post',
+  'freelance',
   'none',
 ]);
 
@@ -70,6 +72,7 @@ const parseNotification = (
     typeof target.storeId !== 'string' ||
     typeof target.customerId !== 'string' ||
     typeof target.orderId !== 'string' ||
+    (target.kind === 'freelance' && !/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(clean(target.hiringApplicationId))) ||
     (target.kind === 'social_chat' && !clean(target.connectionId)) ||
     (target.kind === 'note_invitation' && !clean(target.noteInvitationId)) ||
     (target.kind === 'community_group_invite' &&
