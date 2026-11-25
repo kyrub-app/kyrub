@@ -2,7 +2,9 @@ import {
   collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query,
   setDoc, Timestamp, where, type Unsubscribe,
 } from 'firebase/firestore';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { auth, db } from './firebase';
+import { createSessionFeedRegistry } from './sessionFeedRegistry';
 import type { CloudCommunityPost } from './communityCloud';
 import { createDetailSubscriptionRegistry } from './squareDetailSubscriptionRegistry';
 
@@ -67,7 +69,7 @@ export const removeCommunityPostFromSquare = async (post: CloudCommunityPost): P
 /** The community itself remains the authority for whether a pointer is public.
  * In particular, switching the community to private immediately hides content.
  * Capped listeners and a per-community cap prevent a single group from filling the Praça. */
-export const subscribeCommunitySquareFeed = (
+const startCommunitySquareFeed = (
   onChange: (items: CommunitySquareEntry[]) => void,
   onError: (error: Error) => void,
 ): Unsubscribe => {
@@ -256,6 +258,26 @@ export const subscribeCommunitySquareFeed = (
     communityDetails.close();
   };
 };
+
+// This registry is used only for the community feed, not the consumer's
+// separate membership, saved items, connections or personal social data.
+const sharedSquareFeed = createSessionFeedRegistry<CommunitySquareEntry[], User>(
+  () => auth.currentUser,
+  (viewer, change, error) => {
+    if (auth.currentUser !== viewer) { change([]); return () => {}; }
+    const stopFeed = startCommunitySquareFeed(change, error);
+    const stopAuth = onAuthStateChanged(auth, () => sharedSquareFeed.invalidate());
+    return () => { stopAuth(); stopFeed(); };
+  },
+  () => [],
+  items => items.filter(item => withinCommunitySquareWindow(Date.parse(item.distributedAt), Date.now()))
+    .map(item => ({ ...item, post: { ...item.post, mediaUrls: [...item.post.mediaUrls] } })),
+);
+
+export const subscribeCommunitySquareFeed = (
+  onChange: (items: CommunitySquareEntry[]) => void,
+  onError: (error: Error) => void,
+): Unsubscribe => sharedSquareFeed.subscribe(onChange, onError);
 
 export const subscribeCommunitySquareIds = (
   communityId: string,
