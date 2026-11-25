@@ -14,7 +14,10 @@ const enabled=()=>process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED==='true';
 const batchIdValid=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{32}$/.test(value);
 const unitId=()=>randomBytes(16).toString('hex');
 const permanentEnabled=()=>process.env.KYRUB_TAG_PERMANENT_STOCK_ENABLED==='true';
-const permanentEnvironment=()=>getFirebaseAdminProjectId()==='kyrub-b8d0e'&&process.env.VERCEL_ENV==='production'&&!process.env.FIRESTORE_EMULATOR_HOST&&!process.env.FIREBASE_AUTH_EMULATOR_HOST;
+export function isPermanentStockEnvironment(projectId:string,env:NodeJS.ProcessEnv):boolean{
+ return projectId==='kyrub-b8d0e'&&env.VERCEL_ENV==='production'&&!env.FIRESTORE_EMULATOR_HOST&&!env.FIREBASE_AUTH_EMULATOR_HOST;
+}
+const permanentEnvironment=()=>isPermanentStockEnvironment(getFirebaseAdminProjectId(),process.env);
 const permanentMode=()=>permanentEnvironment()&&permanentEnabled();
 const expectedReadbackHost=()=>currentTagPilotIsolation()==='emulator'?process.env.VERCEL_URL?.trim().toLowerCase()||null:stableTagPilotHost();
 const projectBatch=(id:string,data:FirebaseFirestore.DocumentData)=>{
@@ -82,6 +85,12 @@ export async function issuePromotionalBatch(uid:string,count:unknown,requestId:u
    if(original.count!==count)throw Error('TAG_BATCH_CONFLICT');
    if((original.urlMode==='permanent')!==permanent)throw Error('TAG_BATCH_CONFLICT');
    return {batch:original,replay:true};
+  }
+  if(permanent){
+   // Bound inventory until cursor pagination is available; a transaction
+   // reads the same collection query before new batches are created.
+   const stock=await tx.get(batchDocs().where('urlMode','==','permanent').limit(100));
+   if(stock.size>=100)throw Error('TAG_BATCH_LIMIT');
   }
   const stamp=FieldValue.serverTimestamp();
   tx.create(ref,{mode:'promotional',model:'adesivo',tagIds:ids,count,urlMode:permanent?'permanent':'pilot',createdBy:uid,createdAt:stamp});
@@ -190,7 +199,7 @@ export async function handlePromotionalBatch(authorization:string,method:string,
   if(message==='second_factor_required'||message==='reauthentication_required')return {status:403,body:{error:message}};
   if(message==='authentication_required')return {status:401,body:{error:'AUTH_REQUIRED'}};
   if(message==='TAG_BATCH_INVALID')return {status:400,body:{error:message}};
-  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH'].includes(message))return {status:409,body:{error:message}};
+  if(['TAG_BATCH_DISABLED','TAG_BATCH_CONFLICT','TAG_PILOT_PROJECT_UNSAFE','TAG_READBACK_MISMATCH','TAG_BATCH_LIMIT'].includes(message))return {status:409,body:{error:message}};
   return {status:503,body:{error:'TAG_BATCH_UNAVAILABLE'}};
  }
 }
