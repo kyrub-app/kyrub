@@ -1,7 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import { Briefcase } from 'lucide-react';
-import { db } from '../../utils/firebase';
-import { deleteDoc, doc } from 'firebase/firestore';
 import { FreelanceJob } from '../../types';
 
 interface FreelaManagerModalProps {
@@ -81,7 +79,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
       setFreelaRequirements('');
       setFreelaPayment('');
       setFreelaModalTab('publicados');
-      triggerToast('Oportunidade de freela atualizada com sucesso!', 'success');
+      triggerToast('Rascunho local atualizado. Nenhuma vaga publicada.', 'success');
     } else {
       const newFreela: FreelanceJob = {
         id: `fre-${Date.now()}`,
@@ -89,7 +87,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
         employer: profileName || 'Você',
         description: `${freelaDesc} (Requisitos: ${freelaRequirements})`,
         payment: paymentNum,
-        distance: parseFloat((Math.random() * 3 + 0.5).toFixed(1)),
+        distance: 0,
         status: 'open'
       };
       setFreelanceJobs([newFreela, ...freelanceJobs]);
@@ -98,45 +96,22 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
       setFreelaRequirements('');
       setFreelaPayment('');
       setFreelaModalTab('publicados');
-      triggerToast('Oportunidade de freela publicada com sucesso!', 'success');
+      triggerToast('Rascunho salvo neste aparelho. Nenhuma vaga publicada.', 'success');
     }
   };
 
-  // Handler for deleting a freela
-  const handleDeleteFreelanceJob = async (id: string) => {
+  // Local prototype only. Do not claim a cloud mutation or real hiring.
+  const handleDeleteFreelanceJob = (id: string) => {
     setFreelanceJobs(prev => prev.filter(job => job.id !== id));
-    try {
-      await deleteDoc(doc(db, 'freelance_jobs', id));
-      triggerToast('Freela excluído com sucesso da nuvem!', 'success');
-    } catch (e) {
-      console.error('Error deleting freelance job:', e);
-      triggerToast('Removido localmente.', 'info');
-    }
+    triggerToast('Rascunho removido deste aparelho.', 'info');
   };
 
-  // Worker apply to a job
-  const handleApplyFreelance = (gigId: string) => {
-    setFreelanceJobs(prev =>
-      prev.map(g => {
-        if (g.id !== gigId) return g;
-        triggerToast(`Sua candidatura para "${g.title}" foi enviada para ${g.employer}!`, 'success');
-        return { ...g, status: 'applied' };
-      })
-    );
+  const handleApplyFreelance = (_gigId: string) => {
+    triggerToast('Candidaturas reais ainda estão em homologação. Nenhuma candidatura foi enviada.', 'info');
   };
 
-  // Completion records operational status only. Payment requires a real settlement source.
-  const handleCompleteGig = (gigId: string) => {
-    setFreelanceJobs(prev =>
-      prev.map(g => {
-        if (g.id !== gigId) return g;
-        triggerToast(
-          `Trabalho concluído. O valor de R$ ${g.payment.toFixed(2)} permanece pendente de liquidação real.`,
-          'success'
-        );
-        return { ...g, status: 'done' };
-      })
-    );
+  const handleCompleteGig = (_gigId: string) => {
+    triggerToast('A conclusão de trabalhos reais ainda está em homologação. Nenhuma liquidação foi realizada.', 'info');
   };
 
   return (
@@ -157,6 +132,10 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
             ✕
           </button>
         </div>
+
+        <p role="status" className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-3 text-xs text-amber-200">
+          Freelas em homologação. Os registros deste painel são locais; não representam vagas publicadas, candidaturas enviadas ou contratações confirmadas.
+        </p>
 
         {mode === 'employer' ? (
           /* ==============================================================
@@ -181,7 +160,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
                   freelaModalTab === 'publicados' ? 'border-teal-400 text-teal-400' : 'border-transparent text-slate-500 hover:text-slate-400'
                 }`}
               >
-                Publicados
+                Rascunhos
               </button>
               <button
                 type="button"
@@ -280,7 +259,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
                     type="submit"
                     className="flex-1 bg-teal-500 hover:bg-teal-400 text-slate-950 font-bold py-2.5 rounded-xl text-xs transition-all uppercase tracking-wider cursor-pointer"
                   >
-                    {editingFreelaId ? 'Atualizar Freela' : 'Publicar Freela'}
+                    {editingFreelaId ? 'Atualizar rascunho' : 'Salvar rascunho'}
                   </button>
                 </div>
               </form>
@@ -440,7 +419,7 @@ export const FreelaManagerModal: React.FC<FreelaManagerModalProps> = ({
                         </div>
                         <div className="text-right shrink-0">
                           <span className="text-sm font-black text-teal-400 font-mono block">R$ {job.payment.toFixed(2)}</span>
-                          <span className="text-[9px] text-slate-500 font-mono">{job.distance} KM</span>
+                          <span className="text-[9px] text-slate-500 font-mono">Distância não verificada</span>
                         </div>
                       </div>
 
