@@ -66,6 +66,36 @@ test('verified emulator session screens once and keeps the private record minima
       await adminDb.doc('age_eligibility_private/'+user.uid).update({status:'suspended'});
       await assert.rejects(privatePersonalWorkspace(authHeader,'tasks'),/PERSONAL_FORBIDDEN/);
     }finally{delete process.env.KYRUB_PERSONAL_PREVIEW_ENABLED;}
+    // Synthetic legal publications exercise transaction semantics, not legal approval.
+    const {recordIngressLegalReceipt}=await import('../server/governance/ingressLegalReceiptService.js');
+    const {createHash}=await import('node:crypto');
+    const content='Documento sintético para homologação';
+    const hash=createHash('sha256').update(content).digest('hex');
+    const decision={terms:{id:'terms-test',version:'1',hash,accepted:true},privacy:{id:'privacy-test',version:'1',hash,acknowledged:true}};
+    await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_RECEIPT_UNAVAILABLE/);
+    process.env.KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED='true';
+    try{
+      await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);
+      for(const [id,type] of [['terms-test','terms'],['privacy-test','privacy']]){
+        await adminDb.doc('governanceDocuments/'+id).set({id,type,version:'1',hash,content,status:'published',ownerUserId:'test-legal',createdAt:'2026-01-01T00:00:00Z',approvedAt:'2026-01-02T00:00:00Z',publishedAt:'2026-01-03T00:00:00Z'});
+      }
+      await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,uid:'other'}),/LEGAL_DECISION_INVALID/);
+      await assert.rejects(recordIngressLegalReceipt(authHeader,{...decision,privacy:{...decision.privacy,acknowledged:false}}),/LEGAL_DECISION_INVALID/);
+      const receipts=await Promise.all([recordIngressLegalReceipt(authHeader,decision),recordIngressLegalReceipt(authHeader,decision)]);
+      assert.equal(receipts[0].receiptId,receipts[1].receiptId);
+      assert.equal(receipts.filter(r=>!r.replay).length,1);
+      const record=await adminDb.doc('ingress_legal_receipts_private/'+receipts[0].receiptId).get();
+      assert.equal(record.get('uid'),user.uid);
+      assert.equal(record.get('terms.accepted'),true);
+      assert.equal(record.get('privacy.acknowledged'),true);
+      assert.ok(record.get('recordedAt'));
+      await adminDb.doc('governanceDocuments/terms-test').update({version:'2'});
+      await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_VERSION_CHANGED/);
+      await adminDb.doc('governanceDocuments/terms-test').update({content:'modified'});
+      await assert.rejects(recordIngressLegalReceipt(authHeader,decision),/LEGAL_DOCUMENTS_UNAVAILABLE/);
+      assert.equal((await adminDb.collection('ingress_legal_receipts_private').get()).size,1);
+      assert.equal((await adminDb.doc('users/'+user.uid).get()).exists,false);
+    }finally{delete process.env.KYRUB_LEGAL_RECEIPT_PREVIEW_ENABLED;}
     await adminAuth.updateUser(user.uid,{disabled:true});
     assert.equal((await read(token)).status,401);
   } finally { server.closeAllConnections(); await new Promise<void>(resolve=>server.close(()=>resolve())); }
