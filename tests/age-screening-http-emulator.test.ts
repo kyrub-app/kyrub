@@ -100,6 +100,17 @@ test('verified emulator session screens once and keeps the private record minima
       const unit=(issued.body as {batch:{units:{id:string;physicalStatus:string}[]}}).batch.units[0];
       assert.equal(unit.physicalStatus,'not_verified');
       const report=(host:string)=>({action:'confirm-readback',batchId:readbackNonce,tagId:unit.id,readUrl:'https://'+host+'/tag/'+unit.id});
+      // Disabling issuance must also disable direct readback mutations, even
+      // when a previously issued unit and a valid authenticated role exist.
+      delete process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED;
+      assert.deepEqual(await handlePromotionalBatch(authHeader,'POST',report('nfc-first-test.vercel.app')),{status:409,body:{error:'TAG_BATCH_DISABLED'}});
+      assert.deepEqual(await handlePromotionalBatch(authHeader,'POST',{action:'issue',count:1,requestId:readbackNonce}),{status:409,body:{error:'TAG_BATCH_DISABLED'}});
+      const disabledInventory=await handlePromotionalBatch(authHeader,'GET',undefined);
+      assert.equal(disabledInventory.status,200);
+      assert.equal((disabledInventory.body as {readiness:{canIssue:boolean}}).readiness.canIssue,false);
+      assert.equal((await adminDb.doc('kyrub_tag_promotional_batches/'+readbackNonce).get()).data()?.readbackReports,undefined);
+      assert.equal((await adminDb.doc('kyrub_admin/control_plane/audit_logs/tag_readback_'+unit.id).get()).exists,false);
+      process.env.KYRUB_TAG_PROMO_ISSUANCE_ENABLED='true';
       const first=await handlePromotionalBatch(authHeader,'POST',report('nfc-first-test.vercel.app'));
       assert.equal(first.status,200);
       assert.equal((first.body as {batch:{units:{physicalStatus:string}[]};replay:boolean}).batch.units[0].physicalStatus,'readback_confirmed');
