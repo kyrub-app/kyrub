@@ -255,7 +255,23 @@ test('freelance vacancy and application ownership cannot be forged or used acros
   await assertFails(updateDoc(application(worker),{ownerId:otherId}));
   await assertFails(updateDoc(application(worker),{vagaId:'missing'}));
   await assertFails(deleteDoc(application(other)));
-  await assertSucceeds(updateDoc(application(owner),{status:'accepted'}));
-  await assertSucceeds(deleteDoc(application(worker)));
+  const transition=(db:any,status:string)=>updateDoc(application(db),{status,updatedAt:serverTimestamp()});
+  await assertFails(transition(owner,'completed'));
+  await assertFails(transition(worker,'completion_requested'));
+  await assertSucceeds(transition(owner,'accepted'));
+  await assertFails(deleteDoc(application(worker)));
+  await assertFails(transition(owner,'completion_requested'));
+  await assertFails(transition(worker,'completed'));
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertFails(transition(worker,'completed'));
+  await assertFails(transition(other,'completed'));
+  await assertSucceeds(transition(owner,'accepted')); // request returned for review
+  await assertSucceeds(transition(worker,'completion_requested'));
+  await assertFails(updateDoc(application(owner),{status:'completed',paymentStatus:'paid',updatedAt:serverTimestamp()}));
+  await assertSucceeds(transition(owner,'completed'));
+  await assertFails(transition(owner,'accepted'));
+  await assertFails(deleteDoc(application(worker)));
   await assertSucceeds(deleteDoc(vacancy(owner)));
+  await assertSucceeds(getDoc(application(owner)));
+  await assertSucceeds(getDoc(application(worker)));
 });
