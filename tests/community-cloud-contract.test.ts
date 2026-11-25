@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { selectWallDraft, resolveWallUploads } from '../src/utils/communityWallUploadRetry';
 import { optimizeCommunityWallImage, readWallJpegSize, type WallJpegCodec } from '../src/utils/communityWallImageOptimization';
 import { appendUniqueById } from '../src/hooks/useInfiniteCursor';
 
@@ -196,8 +197,8 @@ test('community wall editor has a single About-tab Edit, media picker and readab
   assert.match(ui, /accept="video\/mp4,video\/webm"/);
   assert.match(ui, /capture="environment"/);
   assert.match(ui, /Até 4 anexos/);
-  assert.match(ui, /uploadCommunityPostMedia\(communityId, item\.file\)/);
-  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare: selectedCommunity\.visibility === 'public' && shareWallToSquare, allowComments: wallAllowComments \}\)/);
+  assert.match(ui, /uploadCommunityPostMedia\(communityId, file, attempt\)/);
+  assert.match(ui, /createCommunityPost\(\{ communityId, content, mediaUrls, shareToSquare, allowComments: wallAllowComments \}\)/);
   assert.match(ui, /<CommunityPostCard/);
   assert.match(card, /<MediaCarousel mediaUrls=\{post\.mediaUrls\} \/>/);
   assert.match(ui, /text-sm text-white outline-none/);
@@ -982,4 +983,57 @@ test('wall upload keeps original validation and uploads optimized blob with same
   assert.match(cloud, /await optimizeCommunityWallImage\(file\)/);
   assert.match(cloud, /uploadBytes\(destination, uploadFile, \{/);
   assert.match(cloud, /customMetadata: \{ communityId, ownerId: user.uid, purpose: 'community-wall' \}/);
+});
+
+test('wall draft retains attachment IDs on partial failure, but never across commit or changed scope', async () => {
+  const owner = {}, files = [{}, {}, {}];
+  let id = 0;
+  const newId = () => String(++id);
+  const draft = selectWallDraft(null, owner, 'community', 'text', files, newId);
+  const stored = new Map<string, string>();
+  const writes: string[] = [];
+  let fail = true;
+  const upload = async (_: object, attempt: {id:string; started:boolean}) => {
+    if (stored.has(attempt.id)) return stored.get(attempt.id)!;
+    attempt.started = true;
+    const url = 'url-' + attempt.id;
+    stored.set(attempt.id, url);
+    writes.push(attempt.id);
+    if (fail && attempt.id === '2') throw Error('response lost after upload');
+    return url;
+  };
+  await assert.rejects(resolveWallUploads(draft, () => {}, upload), /response lost/);
+  fail = false;
+  const retry = selectWallDraft(draft, owner, 'community', 'text', files, newId);
+  assert.equal(retry, draft);
+  assert.deepEqual(await resolveWallUploads(retry, () => {}, upload), ['url-1','url-2','url-3']);
+  assert.deepEqual(writes, ['1','2','3']);
+  assert.notEqual(selectWallDraft(draft, {}, 'community', 'text', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'other', 'text', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'community', 'edited', files, newId), draft);
+  assert.notEqual(selectWallDraft(draft, owner, 'community', 'text', [...files].reverse(), newId), draft);
+  draft.commitStarted = true;
+  const fresh = selectWallDraft(draft, owner, 'community', 'text', files, newId);
+  assert.notEqual(fresh, draft);
+  assert.notEqual(fresh.uploads[0].id, draft.uploads[0].id);
+  await assert.rejects(resolveWallUploads(draft, () => {}, upload), /encaminhada/);
+});
+
+test('wall retry aborts when the draft scope changes mid-upload', async () => {
+  const draft = selectWallDraft(null, {}, 'community', 'text', [1,2], () => 'id');
+  let current = true, calls = 0;
+  await assert.rejects(resolveWallUploads(draft, () => {
+    if (!current) throw Error('scope changed');
+  }, async () => { calls++; current = false; return 'url'; }), /scope changed/);
+  assert.equal(calls, 1);
+});
+
+test('wall retry consults scoped metadata and only object-not-found permits a new upload', () => {
+  const cloud = read('src/utils/communityCloud.ts');
+  const ui = read('src/components/ProfileCommunitiesCloudBridge.tsx');
+  assert.match(cloud, /getMetadata\(destination\)/);
+  assert.match(cloud, /storage\/object-not-found/);
+  assert.match(cloud, /metadata\.customMetadata\?\.ownerId !== user\.uid/);
+  assert.match(ui, /draft\.commitStarted = true;\s*await createCommunityPost/);
+  assert.match(ui, /wallSubmitLock\.current = true/);
 });

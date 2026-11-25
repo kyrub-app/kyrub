@@ -21,11 +21,13 @@ import {
 import {
   deleteObject,
   getDownloadURL,
+  getMetadata,
   ref,
   uploadBytes,
 } from 'firebase/storage';
 import { auth, db, liteDb, storage } from './firebase';
 import { optimizeCommunityWallImage } from './communityWallImageOptimization';
+import type { WallUploadAttempt } from './communityWallUploadRetry';
 
 export type CommunityVisibility = 'public' | 'moderated' | 'private';
 export type CommunityMembershipStatus = 'active' | 'pending';
@@ -853,7 +855,8 @@ export const rejectCommunityMember = async (
  * Never store temporary blob/data URLs in a Firestore post. */
 export const uploadCommunityPostMedia = async (
   communityId: string,
-  file: File
+  file: File,
+  attempt?: WallUploadAttempt,
 ): Promise<string> => {
   const { user } = currentIdentity();
   if (!/^[A-Za-z0-9_-]{1,128}$/.test(communityId)) {
@@ -875,16 +878,47 @@ export const uploadCommunityPostMedia = async (
   if (!extension || file.size === 0 || file.size > maxSize * 1024 * 1024) {
     throw new Error('Use imagem JPG/PNG/WebP de até 8 MB ou vídeo MP4/WebM de até 20 MB.');
   }
-  const uploadFile = await optimizeCommunityWallImage(file);
-  if (auth.currentUser?.uid !== user.uid) throw new Error('Faça login novamente antes de enviar o anexo.');
+  const assertSession = () => {
+    if (auth.currentUser !== user) throw new Error('Faça login novamente antes de enviar o anexo.');
+  };
   const kind = file.type.startsWith('video/') ? 'video' : 'image';
-  const path = `community-post-media/${communityId}/${user.uid}/${kind}-${crypto.randomUUID()}.${extension}`;
+  const attachmentId = attempt?.id ?? crypto.randomUUID();
+  if (!/^[a-f0-9-]{36}$/i.test(attachmentId)) throw new Error('Identificador de anexo inválido.');
+  const path = `community-post-media/${communityId}/${user.uid}/${kind}-${attachmentId}.${extension}`;
   const destination = ref(storage, path);
+  assertSession();
+  // Only retry the exact same selected attachment. Storage rules prohibit
+  // overwriting community media. Never treat denied access as missing.
+  if (attempt?.started) {
+    const metadata = await getMetadata(destination).catch((error: unknown) => {
+      if ((error as { code?: string } | null)?.code === 'storage/object-not-found') return null;
+      throw error;
+    });
+    assertSession();
+    if (metadata) {
+      if (metadata.contentType !== file.type || metadata.size <= 0 ||
+          metadata.size > maxSize * 1024 * 1024 ||
+          metadata.customMetadata?.ownerId !== user.uid ||
+          metadata.customMetadata?.communityId !== communityId ||
+          metadata.customMetadata?.purpose !== 'community-wall') {
+        throw new Error('O anexo enviado não corresponde à tentativa atual.');
+      }
+      const url = await getDownloadURL(destination);
+      assertSession();
+      return url;
+    }
+  }
+  const uploadFile = await optimizeCommunityWallImage(file);
+  assertSession();
+  if (attempt) attempt.started = true;
   await uploadBytes(destination, uploadFile, {
     contentType: file.type,
     customMetadata: { communityId, ownerId: user.uid, purpose: 'community-wall' },
   });
-  return getDownloadURL(destination);
+  assertSession();
+  const url = await getDownloadURL(destination);
+  assertSession();
+  return url;
 };
 
 export const createCommunityPost = async (input: {
