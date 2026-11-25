@@ -46,6 +46,7 @@
         && operationalMirroredOrderActorIsValid()
         && operationalOrderStatusIsValid(incoming().status)
         && operationalPaymentStatusIsValid(incoming().paymentStatus)
+        && (incoming().paymentStatus == 'unpaid' || canWriteFinancialWithMfa())
         && incoming().legacyCreatedAt is string
         && incoming().legacyUpdatedAt is string
         && incoming().createdAt == request.time
