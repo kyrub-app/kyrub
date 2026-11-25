@@ -514,7 +514,14 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(hub, /withinCommunitySquareWindow\(Date\.parse\(post\.createdAt/);
   assert.match(cloudUI, /OPEN_COMMUNITY_FROM_SQUARE_EVENT/);
   assert.match(rules, /match \/community_square_posts\/\{postId\}/);
-  assert.match(rules, /getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)\.data\.createdAt == incoming\(\)\.createdAt/);
+  const squareRule = rules.slice(rules.indexOf('match /community_square_posts/{postId}'), rules.indexOf('match /community_square_forwards/{forwardId}'));
+  const squareSource = rules.slice(rules.indexOf('function hasValidSquareSource(postId)'), rules.indexOf('match /community_wall_publish_receipts/{postId}'));
+  assert.match(squareRule, /hasValidSquareSource\(postId\)/);
+  assert.match(squareSource, /let source = getAfter\(\/databases\/\$\(database\)\/documents\/community_posts\/\$\(postId\)\)/);
+  assert.match(squareSource, /source\.data\.createdAt == incoming\(\)\.createdAt/);
+  assert.match(squareSource, /source\.data\.authorId == request\.auth\.uid/);
+  assert.match(squareSource, /source\.data\.communityId == incoming\(\)\.communityId/);
+  assert.match(squareSource, /community\.data\.visibility == 'public'/);
   assert.match(rules, /\.data\.visibility == 'public'/);
   assert.match(rules, /allow update: if false/);
   assert.match(cleanup, /adminDb\.collection\('community_square_posts'\)\.doc\(postId\)\.delete\(\)/);
