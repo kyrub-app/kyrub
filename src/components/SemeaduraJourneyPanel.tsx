@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { auth } from '../utils/firebase';
+import { subscribeRewardRefresh } from '../utils/rewardRefresh';
 import { calculatePitangueiraJourney, SEEDS_PER_BROTO, SEEDS_PER_MUDA, SEEDS_PER_PITANGUEIRA, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
 import { requestSemeadura, SEMEADURA_UI_ENABLED } from './SemearButton';
 
@@ -33,8 +35,12 @@ function ScopedSemeaduraJourneyPanel({viewerId,xp}:{viewerId:string;xp?:number|n
     const controller = new AbortController();
     setTotal(null);
     setError('');
-    if (!SEMEADURA_UI_ENABLED || !viewerId) return () => controller.abort();
+    const session=auth.currentUser;
+    if (!SEMEADURA_UI_ENABLED || !viewerId || !session || session.uid!==viewerId) return () => controller.abort();
+    const current=()=>!controller.signal.aborted&&auth.currentUser===session;
+    let revision=0;
     const read = async () => {
+      const attempt=++revision;
       const result = await requestSemeadura(
         'journey',
         undefined,
@@ -52,16 +58,18 @@ function ScopedSemeaduraJourneyPanel({viewerId,xp}:{viewerId:string;xp?:number|n
           journey.pitangueiras !== Math.floor(Number(journey.totalSeeds) / 1000)) {
         throw new Error('SEMEADURA_JOURNEY_INVALID');
       }
-      if (!controller.signal.aborted) setTotal(Number(journey.totalSeeds));
+      if(current()&&attempt===revision){setTotal(previous=>Math.max(previous??0,Number(journey.totalSeeds)));setError('');}
     };
     void read().catch(() => {
-      if (!controller.signal.aborted) setError('A jornada está indisponível neste momento.');
+      if(current())setError('A jornada está indisponível neste momento.');
     });
-    const onUpdate = () => { void read().catch(() => undefined); };
-    window.addEventListener('kyrub-semeadura-updated', onUpdate);
+    // Outgoing seeds belong to other authors; they do not change this journey.
+    const unsubscribe=subscribeRewardRefresh(session,current,reason=>{
+      if(reason==='return')void read().catch(()=>{if(current())setError('Não foi possível atualizar a jornada.');});
+    });
     return () => {
       controller.abort();
-      window.removeEventListener('kyrub-semeadura-updated', onUpdate);
+      unsubscribe();
     };
   }, [viewerId]);
 
