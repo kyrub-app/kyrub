@@ -350,6 +350,21 @@ test('commercial candidate: actual Free provisioning and first publication join 
   try{
     globalState.__officialPix={db,auth:async()=>({uid:'seller',email:'seller@example.invalid',emailVerified:true}),request:async()=>{throw Error('PSP_NOT_ALLOWED_IN_TEST');}};
     fixture=await loadOfficialPlanPixFixture();
+    const ageControl=db.doc('erp_age_release_private/current');
+    const ageRecord=db.doc('age_eligibility_private/seller');
+    await ageControl.set({schemaVersion:1,mode:'verified_adult_only'});
+    try{
+      await assert.rejects(fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller'),/FREE_STORE_AGE_REQUIRED/);
+      for(const status of ['pending','declared_adult','declared_underage','verified_underage','inconclusive','suspended']){
+        await ageRecord.set({uid:'seller',status});
+        await assert.rejects(fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller'),/FREE_STORE_AGE_REQUIRED/);
+      }
+      await ageRecord.set({uid:'different-user',status:'verified_adult'});
+      await assert.rejects(fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller'),/FREE_STORE_AGE_REQUIRED/);
+      assert.equal((await db.doc('users/seller/stores/seller').get()).exists,false);
+      assert.equal((await db.collection('stores').where('ownerId','==','seller').get()).size,0);
+      assert.equal((await db.doc('users/seller/verifiedStoreEvents/first_store_created').get()).exists,false);
+      await ageRecord.set({uid:'seller',status:'verified_adult'});
     const initial=await fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller');
     const retry=await fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller');
     assert.equal(initial.created,true);
@@ -357,6 +372,12 @@ test('commercial candidate: actual Free provisioning and first publication join 
     assert.equal(retry.created,false);
     assert.equal(retry.canonicalStoreId,initial.canonicalStoreId);
     canonicalStoreId=initial.canonicalStoreId;
+      await ageRecord.update({status:'suspended'});
+      await assert.rejects(fixture.ensureFreePlanForStoreCreation('Bearer isolated-seller'),/FREE_STORE_AGE_REQUIRED/);
+      assert.equal((await db.doc('stores/'+canonicalStoreId).get()).get('plan'),'free');
+    }finally{
+      await Promise.all([ageControl.delete(),ageRecord.delete()]);
+    }
   }finally{
     fixture?.restoreFixture();
     globalState.__officialPix=originalFixture;
