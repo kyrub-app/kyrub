@@ -318,3 +318,16 @@ test('official NFC lot starts from one button and history contains only confirme
  assert.match(wizard,/void writeTarget\(target\)/);
  assert.match(wizard,/Concluir lote/);
 });
+
+
+test('official NFC manufacturing uses verified Super Admin session without an extra MFA challenge',async()=>{
+ const {readFileSync}=await import('node:fs');
+ const service=readFileSync('server/admin/kyrubTagPromotionalBatchService.ts','utf8');
+ const handler=service.slice(service.indexOf('export async function handlePromotionalBatch'));
+ assert.match(handler,/const uid=await authorizePilot\(authorization\)/);
+ assert.match(handler,/if\(permanentEnvironment\(\)\)\{\s*if\(!permanentMode\(\)\)throw Error\('TAG_BATCH_DISABLED'\);\s*\}else if\(process.env.KYRUB_TAG_ADMIN_MFA_PREVIEW_ENABLED==='true'\)/);
+ assert.match(service,/assertRole\(uid,role.data\(\)\)/);
+ const auth=readFileSync('server/admin/kyrubTagPilotService.ts','utf8');
+ assert.match(auth,/adminAuth.verifyIdToken\(token,true\)/);
+ assert.match(auth,/decoded.email_verified!==true/);
+});
