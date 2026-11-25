@@ -1,3 +1,4 @@
+import { evaluateStoredCapabilityAgeAccess } from '../../shared/ageEligibility.js';
 import type { WelcomeAuth } from './signedSessionWelcomeService.js';
 import { createHash } from 'node:crypto';
 import { SEMEADURA_STATUS_BATCH_LIMIT, type SemeaduraStatusTarget } from './semeaduraRequestAuthority.js';
@@ -142,6 +143,17 @@ const seedPostTransaction = async (
     if(requireEconomicAdmission&&(!authorAuth||authorAuth.app.options.projectId!=='demo-kyrub-welcome'||
       process.env.KYRUB_SEMEADURA_ZERO_START_PILOT!=='true'||!noWelcomePilotEnabled(db)))
       throw Error('SEMEADURA_RELEASE_UNAVAILABLE');
+    // Staged only in the economic emulator pilot. Both decisions use private
+    // server records in the same transaction as quota, receipts and rewards.
+    if(requireEconomicAdmission&&process.env.KYRUB_SEMEADURA_AGE_PREVIEW_ENABLED==='true'){
+      const [actorAge,authorAge]=await Promise.all([
+        tx.get(db.doc('age_eligibility_private/'+actor)),
+        tx.get(db.doc('age_eligibility_private/'+authorId)),
+      ]);
+      if(!evaluateStoredCapabilityAgeAccess({actorUid:actor,record:actorAge.data(),capability:'sowing',policy:'verified_adult_only'})||
+         !evaluateStoredCapabilityAgeAccess({actorUid:authorId,record:authorAge.data(),capability:'rewards',policy:'verified_adult_only'}))
+        throw Error('SEMEADURA_AGE_REQUIRED');
+    }
     const occurredAt = now.toISOString();
     const day = semeaduraDay(now);
     const quotaRef = db.doc(`users/${actor}/semeaduraDailyUsage/${day}`);
