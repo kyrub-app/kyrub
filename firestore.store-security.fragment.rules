@@ -169,7 +169,7 @@
           || resource.data.ownerId == request.auth.uid
         );
 
-      allow create: if isSignedIn()
+      allow create: if canWriteErpWithAge()
         && incoming().id == storeId
         && incoming().ownerId == request.auth.uid
         // Trusted creation/publication evidence belongs exclusively to the server.
@@ -198,7 +198,8 @@
 
         allow list: if storeSecOwnerOrManager(storeId);
 
-        allow create: if isSignedIn()
+        allow create: if canWriteErpWithAge()
+          && canParticipateInErpWithAge(userId)
           && incoming().storeId == storeId
           && incoming().userId == userId
           && storeSecValidRole(incoming().role)
@@ -222,6 +223,7 @@
               && (
                 (
                   incoming().status == 'active'
+                  && canWriteErpWithAge()
                   && incoming().acceptedAt == request.time
                   && incoming().diff(existing()).affectedKeys().hasOnly([
                     'status',
@@ -243,6 +245,7 @@
             || (
               storeSecActorCanManageRole(storeId, existing().role)
               && storeSecActorCanManageRole(storeId, incoming().role)
+              && (incoming().status in ['suspended', 'removed'] || (canWriteErpWithAge() && canParticipateInErpWithAge(userId)))
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'role',
                 'status',
