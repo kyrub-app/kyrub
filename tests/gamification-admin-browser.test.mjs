@@ -99,6 +99,8 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
    return route.continue();
   });
   page=await context.newPage();
+  let snapshotRequests=0;
+  page.on('request',request=>{const url=new URL(request.url());if(url.pathname==='/api/admin/gamification-pilot'&&url.searchParams.get('operation')==='snapshot')snapshotRequests++;});
   const login=async email=>{
    await page.getByLabel('Email de teste').fill(email);
    await page.getByLabel('Senha de teste').fill(password);
@@ -108,9 +110,16 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await login(adminEmail);
   await page.getByText('Cobertura global não verificada.',{exact:false}).waitFor();
   assert.equal(await page.locator('dt').filter({hasText:'Saldo conciliado'}).locator('..').locator('dd').textContent(),'100');
+  const beforeSwitch=snapshotRequests;
+  assert.equal(beforeSwitch,1);
   await page.getByRole('button',{name:'Semeadura',exact:true}).click();
   await page.getByText('Bosques pessoais',{exact:true}).waitFor();
   assert.equal(await page.locator('dt').filter({hasText:'Sementes'}).locator('..').locator('dd').textContent(),'1');
+  assert.equal(snapshotRequests,beforeSwitch);
+  const refreshed=page.waitForResponse(response=>new URL(response.url()).searchParams.get('operation')==='snapshot'&&response.ok());
+  await page.getByRole('button',{name:'Atualizar consulta'}).click();
+  await refreshed;
+  assert.equal(snapshotRequests,beforeSwitch+1);
   await page.getByRole('button',{name:'Suspeitas de fraude',exact:true}).click();
   await page.getByRole('button',{name:/browser-case/}).waitFor();
   await page.getByLabel('Situação').selectOption('open');
