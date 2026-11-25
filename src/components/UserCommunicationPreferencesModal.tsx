@@ -80,6 +80,12 @@ const CATEGORY_ITEMS: Array<{
     icon: MessageSquareText,
   },
   {
+    key: 'freelance',
+    label: 'Freelas',
+    description: 'Alertas de negociação sem exibir o conteúdo das mensagens.',
+    icon: BellRing,
+  },
+  {
     key: 'system',
     label: 'Sistema',
     description: 'Avisos técnicos e de segurança compatíveis com este canal.',
