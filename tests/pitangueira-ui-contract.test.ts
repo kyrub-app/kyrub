@@ -183,3 +183,24 @@ test('accepted controlled seed returns committed allowance and does not trigger 
  assert.match(button,/detail\?\.source===source\.current/);
  assert.match(button,/sharedReads\.invalidate\(session,key\)/);
 });
+
+
+test('status batcher groups distinct requests and rejects missing or cross-session results',async()=>{
+ const {createSemeaduraStatusBatcher}=await import('../src/utils/semeaduraStatusBatcher.js');
+ const batch=createSemeaduraStatusBatcher(),session={},other={};
+ const signal=new AbortController().signal;
+ const calls:Array<Array<{kind:string;postId:string}>>=[];
+ const load=async(targets:Array<{kind:string;postId:string}>)=>{
+  calls.push(targets);
+  return {results:targets.map(t=>({...t,status:{count:Number(t.postId.slice(1))}}))};
+ };
+ const all=await Promise.all(Array.from({length:11},(_,i)=>batch(session,{kind:'personal',postId:'p'+i},signal,load)));
+ assert.deepEqual(all.map(x=>x.count),Array.from({length:11},(_,i)=>i));
+ assert.deepEqual(calls.map(x=>x.length),[10,1]);
+ calls.length=0;
+ await Promise.all([batch(session,{kind:'personal',postId:'p1'},signal,load),
+  batch(other,{kind:'personal',postId:'p2'},signal,load)]);
+ assert.deepEqual(calls.map(x=>x.length),[1,1]);
+ await assert.rejects(batch(session,{kind:'personal',postId:'p3'},signal,async()=>({results:[{kind:'personal',postId:'wrong',status:{count:7}}]})),/SEMEADURA_BATCH_INVALID/);
+ await assert.rejects(batch(session,{kind:'personal',postId:'p4'},signal,async()=>({results:[{kind:'personal',postId:'p4',status:null}]})),/SEMEADURA_STATUS_UNAVAILABLE/);
+});
