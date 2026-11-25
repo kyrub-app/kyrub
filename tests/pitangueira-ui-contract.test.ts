@@ -138,3 +138,48 @@ test('public seed and private journey requests remain bound to the initiating ac
  assert.match(journey,/controller\.signal,\s*viewerId,/);
  assert.match(journey,/total===null\?'…':journey\.pitangasEquivalent/);
 });
+
+
+test('concurrent read coalescing isolates session, aborts subscribers independently and retains no completed cache',async()=>{
+ const {createSemeaduraReadCoalescer}=await import('../src/utils/semeaduraReadCoalescer.js');
+ const pool=createSemeaduraReadCoalescer<number>();
+ const session={},other={};
+ let calls=0;
+ const pending:Array<(value:number)=>void>=[];
+ const load=(_signal:AbortSignal)=>{calls++;return new Promise<number>(resolve=>pending.push(resolve));};
+ const a=new AbortController();
+ const first=pool.read(session,'post',load,a.signal);
+ const second=pool.read(session,'post',load);
+ const third=pool.read(other,'post',load);
+ await Promise.resolve();
+ assert.equal(calls,2);
+ const rejected=assert.rejects(first,/SEMEADURA_READ_ABORTED/);
+ a.abort();await rejected;
+ pending[0](1);pending[1](2);
+ assert.equal(await second,1);assert.equal(await third,2);
+ const fresh=pool.read(session,'post',load);
+ await Promise.resolve();
+ assert.equal(calls,3);
+ pool.invalidate(session,'post');
+ const newer=pool.read(session,'post',load);
+ await Promise.resolve();
+ assert.equal(calls,4);
+ pending[2](3);pending[3](4);
+ assert.equal(await fresh,3);assert.equal(await newer,4);
+ const cancel=new AbortController();
+ let underlying:AbortSignal|undefined;
+ const last=pool.read(session,'post',signal=>{underlying=signal;return new Promise<number>(()=>{});},cancel.signal);
+ await Promise.resolve();
+ const stopped=assert.rejects(last,/SEMEADURA_READ_ABORTED/);
+ cancel.abort();await stopped;
+ assert.equal(underlying?.aborted,true);
+});
+
+test('accepted controlled seed returns committed allowance and does not trigger own redundant read',()=>{
+ const button=read('src/components/SemearButton.tsx');
+ const service=read('server/gamification/semeaduraService.ts');
+ assert.match(service,/releaseControlled\?\{dailyDay:day,dailyRemaining:SEMEADURA_DAILY_LIMIT-used-1\}/);
+ assert.match(button,/normalizeSemeadura\(\{\.\.\.result,seeded:true,canSemear:false\}\)/);
+ assert.match(button,/detail\?\.source===source\.current/);
+ assert.match(button,/sharedReads\.invalidate\(session,key\)/);
+});
