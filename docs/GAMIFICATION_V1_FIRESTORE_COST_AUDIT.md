@@ -278,3 +278,21 @@ audit fix --force e não faz deploy. Aguardar relatório para decidir adoção;
 revisar diff e compatibilidade antes de aplicar. Demais apontamentos
 moderados/baixos requerem análise individual, não downgrade automático.
 Sem liberação comercial ou alteração no Firebase principal/tags.
+
+
+## Correção pontual de segurança aprovada em candidato
+Workflow 45530293473, job 138923621533, artefato 14984232170:
+80/80 testes de rotas, lint TypeScript aprovado; auditoria completa do
+candidato com 0 altas, 0 críticas, 7 moderadas e 1 baixa. A correção
+é override aninhado @vercel/routing-utils -> path-to-regexp 6.3.0,
+sem downgrade do pacote pai. Revisão do diff gerado pelo npm: além da
+versão/resolved/integrity do pacote afetado, ajustes de flags dev/devOptional
+e ordenação do lockfile; não houve outras mudanças de versão no diff.
+Commit atômico 9389713 aplica os dois blobs exatos do candidato
+(package.json 2ec258c60499b52ac2d486a4e2824e6b1c5848ee,
+package-lock.json b89f3422e769f12a421298773edb70492c81f94e),
+com CI adaptado para aceitar o override já aprovado e rejeitar conflito.
+Nova execução integral pendente. Ainda não é correção implantada.
+Não confundir ausência de apontamentos altos no npm audit com prova
+de segurança completa. Permanecem as ocorrências moderadas/baixa e
+a verificação do artefato implantado, sem expansão do escopo.
