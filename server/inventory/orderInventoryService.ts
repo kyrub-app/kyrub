@@ -5,6 +5,9 @@ import {
   type Transaction,
 } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
+import {assertNewOnDemandDeliveryAllowed} from '../../shared/commercialV1Scope.js';
+import type {StorePermission} from '../../src/utils/storeSecurity.js';
 import { loadPrepaidPaymentConfirmation, resolvePrepaidOrderMirrorStoreId, assertPrepaidStoreMirrorIdentity } from '../payments/marketplaceOrderPaymentSettlementService.js';
 import { resolveOrderReleaseDecision } from '../../shared/orderReleasePolicy.js';
 import { writeStoreMarkedReadyEvidenceInTransaction } from '../delivery/deliveryStoreReadyOperationalEventService.js';
@@ -461,7 +464,8 @@ export const transitionOrderStatusWithInventory = async (
   tenantId: string,
   orderId: string,
   nextStatus: InventoryOrderStatus,
-  decision: OrderStatusDecisionInput = {}
+  decision: OrderStatusDecisionInput = {},
+  human?:{uid:string;permission:StorePermission}
 ): Promise<OrderInventoryTransitionResult> => {
   const normalizedTenantId = clean(tenantId);
   const normalizedOrderId = clean(orderId);
@@ -471,6 +475,7 @@ export const transitionOrderStatusWithInventory = async (
   if (!isOrderStatus(nextStatus)) throw new Error('Status do pedido inválido.');
 
   return adminDb.runTransaction(async transaction => {
+    if(human)await requireHumanOrderOperation(transaction,normalizedTenantId,human.uid,human.permission);
     const orderReference = adminDb.doc(orderPath(normalizedTenantId, normalizedOrderId));
     const tenantReference = adminDb.doc(`tenants/${normalizedTenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(normalizedTenantId, normalizedOrderId));
@@ -493,6 +498,7 @@ export const transitionOrderStatusWithInventory = async (
     const isDeliveryOrder = clean(rawOrder.fulfillmentType) === 'delivery';
     const requestedProvider = decision.deliveryProvider;
     const persistedProvider = clean(rawOrder.deliveryProvider);
+    if(requestedProvider==='kyrub'&&!(persistedProvider==='kyrub'&&order.status==='accepted'))assertNewOnDemandDeliveryAllowed();
     if (requestedProvider && (nextStatus !== 'accepted' || !isDeliveryOrder)) {
       throw new Error('A escolha de entregador só é permitida ao aceitar um pedido de entrega.');
     }
@@ -614,7 +620,7 @@ export const transitionOrderStatusWithInventory = async (
         transaction,
         tenantId: normalizedTenantId,
         orderId: normalizedOrderId,
-        actorUid: normalizedTenantId,
+        actorUid: human?.uid??normalizedTenantId,
         order: {
           ...(orderSnapshot.data() ?? {}),
           status: 'ready',
@@ -808,9 +814,11 @@ export const updateIntegratedOrderStatusWithInventory = async (
 
 export const reconcilePersistedOrderInventory = async (
   tenantId: string,
-  orderId: string
+  orderId: string,
+  humanUid?:string
 ): Promise<OrderInventoryTransitionResult> =>
   adminDb.runTransaction(async transaction => {
+    if(humanUid)await requireHumanOrderOperation(transaction,tenantId,humanUid,'orders.transfer');
     const orderReference = adminDb.doc(orderPath(tenantId, orderId));
     const tenantReference = adminDb.doc(`tenants/${tenantId}`);
     const ledgerReference = adminDb.doc(ledgerPath(tenantId, orderId));
