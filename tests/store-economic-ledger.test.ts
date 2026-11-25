@@ -313,3 +313,20 @@ test('combined profitability reuses the authorized order calculation without a s
   assert.match(client,/result\.orders\?\.storeId!==storeId\|\|result\.products\?\.storeId!==storeId/);
   assert.match(transport,/params\.append\(key, value\)/);
 });
+
+test('period and history recovery share only in-flight work and do not overwrite canonical entries',()=>{
+  const source=readFileSync('server/payments/storeFinanceHistoryRouter.ts','utf8');
+  const recovery=source.slice(source.indexOf('const recoverAllMissingCanonicalPaidCaptures'),source.indexOf('type HistoryItem ='));
+  assert.match(recovery,/adminDb\.runTransaction\(async transaction =>/);
+  assert.match(recovery,/await transaction\.getAll\(\.\.\.refs\)/);
+  assert.match(recovery,/if \(existing\[index\]\?\.exists\) return;\s*transaction\.create/);
+  assert.doesNotMatch(recovery,/\bbatch\.set\(|\btransaction\.set\(/);
+  assert.match(recovery,/activeCaptureRecoveries\.get\(storeId\)/);
+  assert.match(recovery,/if \(existing\) return existing/);
+  assert.match(recovery,/\.finally\(\(\) => \{\s*if \(activeCaptureRecoveries\.get\(storeId\) === pending\) activeCaptureRecoveries\.delete\(storeId\)/);
+  const route=source.slice(source.indexOf("router.get('/',"));
+  assert.equal((route.match(/await recoverCanonicalPaidCaptures\(storeId\)/g)??[]).length,2);
+  assert.ok(route.indexOf('await requireOwner')<route.indexOf('await recoverCanonicalPaidCaptures'));
+  assert.ok(route.indexOf('decodeCursor(request.query.cursor)')<route.lastIndexOf('await recoverCanonicalPaidCaptures'));
+  assert.match(source,/complete: true/);
+});
