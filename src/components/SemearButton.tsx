@@ -24,18 +24,29 @@ export async function requestSemeadura(
   action: 'status' | 'semear' | 'journey',
   target?: { kind: SemeaduraPostKind; postId: string },
   signal?: AbortSignal,
+  expectedUid?: string,
 ): Promise<Record<string, unknown>> {
-  const token = await auth.currentUser?.getIdToken();
+  const session=auth.currentUser;
+  const requireCurrent=()=>{
+    if(!session||auth.currentUser!==session||signal?.aborted||(expectedUid!==undefined&&session.uid!==expectedUid))throw Error('SEMEADURA_SESSION_CHANGED');
+  };
+  requireCurrent();
+  const token = await session!.getIdToken();
+  requireCurrent();
   if (!token) throw new Error('Faça login para semear.');
   const response = await fetch('/api/action-execute?transport=semeadura', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json' },
     body: JSON.stringify({ action, ...(target ?? {}) }),
     cache: 'no-store',
+    credentials: 'omit',
+    redirect: 'error',
     signal,
   });
+  requireCurrent();
   if(response.status===429){
     const failure=await response.json().catch(()=>null);
+    requireCurrent();
     if(failure?.error==='SEMEADURA_DAILY_LIMIT_REACHED'&&failure.dailyRemaining===0&&
         typeof failure.dailyDay==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(failure.dailyDay))
       throw new SemeaduraQuotaReached(failure.dailyDay);
@@ -46,7 +57,9 @@ export async function requestSemeadura(
       ? 'Esta publicação não aceita semeaduras agora.'
       : 'Semeadura indisponível. Tente novamente.',
   );
-  return response.json() as Promise<Record<string, unknown>>;
+  const result=await response.json() as Record<string, unknown>;
+  requireCurrent();
+  return result;
 }
 
 const normalizeSemeadura = (raw: Record<string, unknown>): SemeaduraStatus => {
@@ -121,7 +134,7 @@ function ScopedSemearButton({
 
   const refresh = useCallback(async (signal?: AbortSignal) => {
     if (!viewerId || auth.currentUser?.uid !== viewerId) return;
-    const next = normalizeSemeadura(await requestSemeadura('status', { kind, postId }, signal));
+    const next = normalizeSemeadura(await requestSemeadura('status', { kind, postId }, signal, viewerId));
     if (!signal?.aborted && auth.currentUser?.uid === viewerId) {
       const allowance=observeAllowance(next);
       setState(previous=>{
@@ -181,18 +194,19 @@ function ScopedSemearButton({
 
   const semear = async () => {
     if (!state?.canSemear || state.seeded || inFlight.current || !viewerId || auth.currentUser?.uid!==viewerId) return;
+    const session=auth.currentUser;
     inFlight.current = true;
     setBusy(true);
     setError('');
     try {
-      const result = await requestSemeadura('semear', { kind, postId });
+      const result = await requestSemeadura('semear', { kind, postId }, undefined, viewerId);
       if (result.status !== 'accepted' && result.status !== 'already_seeded' &&
           result.status !== 'closed') {
         throw new Error('Resultado de semeadura desconhecido.');
       }
       // The authenticated server has confirmed an irreversible receipt.
       // Lock immediately, even if the follow-up read fails or is stale.
-      if(auth.currentUser?.uid!==viewerId)return;
+      if(auth.currentUser!==session||auth.currentUser?.uid!==viewerId)return;
       if(result.status==='accepted'||result.status==='already_seeded'){
         setState(previous=>previous?{...previous,seeded:true,canSemear:false}:previous);
       }else{
@@ -205,12 +219,14 @@ function ScopedSemearButton({
       } catch {
         // An accepted write is not a failure when the follow-up status read
         // times out. The immutable receipt prevents duplicate seed credits.
-        setError('Semente recebida; o progresso ainda não foi atualizado.');
+        if(auth.currentUser===session)setError('Semente recebida; o progresso ainda não foi atualizado.');
       }
+      if(auth.currentUser!==session)return;
       window.dispatchEvent(new CustomEvent('kyrub-semeadura-updated', {
         detail: { kind, postId },
       }));
     } catch (failure) {
+      if(auth.currentUser!==session)return;
       if(failure instanceof SemeaduraQuotaReached&&auth.currentUser?.uid===viewerId){
         const allowance=observeAllowance({dailyDay:failure.dailyDay,dailyRemaining:0});
         if(allowance.dailyRemaining===0)setState(previous=>previous?{...previous,...allowance,canSemear:false}:previous);
