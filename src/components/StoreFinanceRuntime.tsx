@@ -1,3 +1,4 @@
+import type { StoreCostCenter } from '../../shared/storeFinanceCostCenters';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { auth } from '../utils/firebase';
 import HistoricalFiscalSaleWorkspace from './store/HistoricalFiscalSaleWorkspace';
@@ -87,6 +88,7 @@ type StoreFinancePayload = {
   receivables?: StoreReceivable[];
   payableSummary?: StorePayableSummary;
   payables?: StorePayable[];
+  costCenters?: StoreCostCenter[];
   cash?: StoreCashFinanceProjection;
   error?: string;
 };
@@ -276,8 +278,10 @@ export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
       <StoreCashFinanceWorkspace projection={cash} />
 
       <StorePayablesWorkspace
+        key={storeId}
         storeId={storeId}
-        payables={payables}
+        costCenters={payload?.storeId === storeId ? payload.costCenters : undefined}
+        payables={payload?.storeId === storeId ? payables : []}
         summary={payableSummary}
         onReload={() => load(true)}
       />

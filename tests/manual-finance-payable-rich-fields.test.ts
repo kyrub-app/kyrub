@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createStoreCostCenter, archiveStoreCostCenter, selectStoreCostCenter, normalizeCostCenters } from '../shared/storeFinanceCostCenters.js';
 import {
   STORE_FINANCE_PAYABLE_CURRENCY,
   STORE_FINANCE_PAYABLE_SCHEMA_VERSION,
@@ -104,4 +105,28 @@ test('Financeiro manual UI and router forward the enriched payable fields', () =
   assert.match(uiSource, /Linha digitável/);
   assert.match(uiSource, /Código de barras/);
   assert.match(uiSource, /Compra vinculada/);
+});
+
+test('store cost center registry preserves independent classification and archived history',()=>{
+  const centers=createStoreCostCenter([],'cc_a',' Infraestrutura ');
+  assert.deepEqual(centers,[{id:'cc_a',name:'Infraestrutura',archived:false}]);
+  assert.throws(()=>createStoreCostCenter(centers,'cc_b','infraestrutura'),/COST_CENTER_INVALID/);
+  assert.throws(()=>selectStoreCostCenter(centers,'cc_foreign'),/COST_CENTER_INVALID/);
+  const center=selectStoreCostCenter(centers,'cc_a');
+  const payable=buildManualStoreFinancePayable({id:'p',storeId:'s',amountMinor:1200,description:'Fatura',category:'service',dueDate:'2026-11-30',recurrence:'monthly',costNature:'variable',costCenter:center,createdByUserId:'owner',now});
+  assert.deepEqual(payable.costCenter,center);
+  assert.equal(payable.costNature,'variable');
+  const archived=archiveStoreCostCenter(centers,'cc_a');
+  assert.throws(()=>selectStoreCostCenter(archived,'cc_a'),/COST_CENTER_INVALID/);
+  assert.deepEqual(normalizeStoreFinancePayable({...payable,status:'paid',paidAt:now}).costCenter,center);
+  assert.equal(normalizeStoreFinancePayable({...payable,costCenter:undefined}).costCenter,undefined);
+  assert.throws(()=>normalizeCostCenters(Array.from({length:101},(_,i)=>({id:'cc_'+i,name:'Center '+i,archived:false}))),/COST_CENTER_INVALID/);
+});
+test('cost centers are bound to owner-authorized finance route and selected atomically',()=>{
+  const router=readFileSync('server/payments/storeFinanceRouter.ts','utf8');
+  const ui=readFileSync('src/components/store/StorePayablesWorkspace.tsx','utf8');
+  assert.match(router,/requireOwner\(request.get\('authorization'\) \?\? '', storeId\);[\s\S]*?action === 'create_cost_center'/);
+  assert.match(router,/selectStoreCostCenter\(decodeCostCenters\(\(await tx.get\(costCentersRef\(storeId\)\)\).data\(\)\),body.costCenterId\)/);
+  assert.match(router,/tx.create\(adminDb.doc\(storeFinancePayablePath\(storeId, next.id\)\),next\)/);
+  assert.match(ui,/Centro de custo/);
 });
