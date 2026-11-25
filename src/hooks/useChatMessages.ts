@@ -1,13 +1,11 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   Timestamp,
-  addDoc,
   collection,
   limitToLast,
   onSnapshot,
   orderBy,
   query,
-  serverTimestamp
 } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
 
@@ -54,6 +52,7 @@ export function useChatMessages({
   const [isLoading, setIsLoading] = useState(false);
   const [isSending, setIsSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const pendingSendRef = useRef<{ key: string; messageId: string } | null>(null);
 
   useEffect(() => {
     setMessages([]);
@@ -144,20 +143,30 @@ export function useChatMessages({
     setError(null);
 
     try {
-      await addDoc(
-        collection(
-          db,
-          'social_chats',
-          connectionId,
-          'messages'
-        ),
-        {
-          senderId: currentUser.uid,
-          receiverId,
-          text: normalizedText,
-          createdAt: serverTimestamp()
-        }
-      );
+      // Send and recipient notification are committed atomically on the server.
+      // Preserve the idempotency key after ambiguous network failures so
+      // tapping Enviar again cannot duplicate the DM or its bell alert.
+      const operationKey = [currentUser.uid, connectionId, receiverId, normalizedText].join('|');
+      const messageId = pendingSendRef.current?.key === operationKey
+        ? pendingSendRef.current.messageId
+        : 'dm_' + (globalThis.crypto?.randomUUID?.().replace(/-/g, '') ??
+          Date.now().toString(36) + Math.random().toString(36).slice(2));
+      pendingSendRef.current = { key: operationKey, messageId };
+      const token = await currentUser.getIdToken();
+      const response = await fetch('/api/notifications/social-messages/send', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${token}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ connectionId, receiverId, messageId, text: normalizedText }),
+        cache: 'no-store',
+      });
+      if (!response.ok) {
+        const body = await response.json().catch(() => ({})) as { error?: string };
+        throw new Error(body.error || 'Não foi possível entregar a mensagem.');
+      }
+      pendingSendRef.current = null;
     } catch (sendError) {
       setError(getErrorMessage(sendError));
       throw sendError;

@@ -11,6 +11,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { auth, db } from '../utils/firebase';
+import { issueNoteInvitationReceivedNotification } from '../utils/userNotifications';
 
 interface CollaboratorRecord {
   uid: string;
@@ -110,6 +111,19 @@ export function NoteInvitationOutboxBridge() {
     let expectedInvitations = new Map<string, ExpectedInvitation>();
     let ownerInvitations = new Map<string, InvitationRecord>();
     const pendingCreateIds = new Set<string>();
+    const inFlightNotificationIds = new Set<string>();
+    const deliveredNotificationIds = new Set<string>();
+    const notifyInvitation = (invitationId: string) => {
+      if (cancelled || inFlightNotificationIds.has(invitationId) ||
+          deliveredNotificationIds.has(invitationId)) return;
+      inFlightNotificationIds.add(invitationId);
+      void issueNoteInvitationReceivedNotification(invitationId)
+        .then(() => { deliveredNotificationIds.add(invitationId); })
+        .catch(error => {
+          console.warn('Convite salvo, mas notificação do destinatário não confirmada.', error);
+        })
+        .finally(() => inFlightNotificationIds.delete(invitationId));
+    };
     const pendingUpdateIds = new Set<string>();
 
     const reconcileRevokedInvitations = () => {
@@ -171,6 +185,10 @@ export function NoteInvitationOutboxBridge() {
             status: 'pending',
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
+          }).then(() => {
+            // The Firestore invitation must be committed before the server
+            // can verify and notify the recipient.
+            notifyInvitation(expected.id);
           }).catch(error => {
             pendingCreateIds.delete(expected.id);
             console.warn(
@@ -179,6 +197,12 @@ export function NoteInvitationOutboxBridge() {
             );
           });
           continue;
+        }
+
+        if (existing.status === 'pending') {
+          // Also reconcile historic pending invitations which predate bell
+          // notifications. The server de-duplicates by invitation ID.
+          notifyInvitation(expected.id);
         }
 
         if (
@@ -226,6 +250,8 @@ export function NoteInvitationOutboxBridge() {
       ownerInvitations = new Map<string, InvitationRecord>();
       pendingCreateIds.clear();
       pendingUpdateIds.clear();
+      inFlightNotificationIds.clear();
+      deliveredNotificationIds.clear();
 
       if (!user) return;
 

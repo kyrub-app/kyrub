@@ -521,6 +521,10 @@ export function ProfileSocialHubNative() {
   } | null>(null);
   const [removeContactTarget, setRemoveContactTarget] = useState<Friend | null>(null);
   const [chatTarget, setChatTarget] = useState<Friend | null>(null);
+  const [pendingChatNotification, setPendingChatNotification] = useState<{
+    friendId: string;
+    connectionId: string;
+  } | null>(null);
   const [chatMessageText, setChatMessageText] = useState('');
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -583,6 +587,38 @@ export function ProfileSocialHubNative() {
     window.addEventListener('kyrub:open-connections', openConnections);
     return () => window.removeEventListener('kyrub:open-connections', openConnections);
   }, []);
+
+  useEffect(() => {
+    const openSocialChatFromNotification = (event: Event) => {
+      const detail = (event as CustomEvent<{ friendId?: string; connectionId?: string }>).detail;
+      if (!user || !detail || !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.friendId ?? '') ||
+          !/^[a-zA-Z0-9_-]{1,128}$/.test(detail.connectionId ?? '')) return;
+      // Never trust a notification target to grant a connection: the existing
+      // accepted-friends directory is the only client navigation authority.
+      setPendingChatNotification({
+        friendId: detail.friendId!,
+        connectionId: detail.connectionId!,
+      });
+      setActiveTab('connected');
+      setConnectionSection('connected');
+      setOpen(true);
+    };
+    window.addEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+    return () => window.removeEventListener('kyrub:open-social-chat', openSocialChatFromNotification);
+  }, [user]);
+
+  useEffect(() => {
+    if (!open || !pendingChatNotification) return;
+    const friend = directory.friends.find(item =>
+      item.id === pendingChatNotification.friendId &&
+      item.connectionId === pendingChatNotification.connectionId &&
+      item.connectionStatus === 'accepted'
+    );
+    if (!friend) return;
+    setChatMessageText('');
+    setChatTarget(friend);
+    setPendingChatNotification(null);
+  }, [open, pendingChatNotification, directory.friends]);
 
   useEffect(() => {
     // Legacy links use the exact same editor as the Central Pessoal.
