@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { createActivitySessionQueue } from '../src/observability/activitySessionQueue';
 import { authorityForKyrubActivitySource } from '../shared/kyrubActivityEvents';
 import { resolveKyrubiaTrustedReadRuntime } from '../src/ai/trustedReadRuntime';
 import {
@@ -297,4 +298,58 @@ test('trusted read wiring refreshes official truth and clears session authority 
   assert.match(browser, /recordUserActivityEvent/);
   assert.match(observer, /clearAuthoritativeActivityRuntimeEvents/);
   assert.match(objective, /resolveKyrubiaTrustedReadRuntime/);
+});
+
+test('remote activity queue never sends an event belonging to another account', () => {
+  const a = {uid:'a'}, b = {uid:'b'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(80);
+  assert.equal(queue.enqueue(a, {id:'old', actorUid:'a'}), true);
+  assert.equal(queue.enqueue(b, {id:'old', actorUid:'a'}), false);
+  assert.equal(queue.size(), 0);
+  assert.equal(queue.begin(b, 20), null);
+  assert.equal(queue.enqueue(b, {id:'new', actorUid:'b'}), true);
+  const batch = queue.begin(b, 20)!;
+  assert.deepEqual(batch.events, [{id:'new', actorUid:'b'}]);
+  assert.equal(queue.finish(b, batch, true), true);
+  assert.equal(queue.size(), 0);
+});
+
+test('logout and fresh login invalidate pending requests and stale acknowledgements', () => {
+  const a = {uid:'a'}, fresh = {uid:'a'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(80);
+  queue.enqueue(a, {id:'same', actorUid:'a'});
+  const old = queue.begin(a, 20)!;
+  queue.synchronize(null);
+  assert.equal(old.controller.signal.aborted, true);
+  queue.enqueue(fresh, {id:'same', actorUid:'a'});
+  const next = queue.begin(fresh, 20)!;
+  assert.equal(queue.isCurrent(fresh, old), false);
+  assert.equal(queue.finish(fresh, old, true), false);
+  assert.equal(queue.isCurrent(fresh, next), true);
+  assert.equal(queue.size(), 1);
+  queue.finish(fresh, next, true);
+  assert.equal(queue.size(), 0);
+});
+
+test('remote activity queue retries within one session only and caps pending events', () => {
+  const a = {uid:'a'};
+  const queue = createActivitySessionQueue<typeof a, {id:string; actorUid:string}>(2);
+  for (const id of ['1','2','3']) queue.enqueue(a,{id,actorUid:'a'});
+  const batch = queue.begin(a, 1)!;
+  assert.equal(batch.events[0].id, '2');
+  assert.equal(queue.begin(a, 1), null);
+  assert.equal(queue.enqueue(a,{id:'2',actorUid:'a'}), false);
+  assert.equal(queue.finish(a,batch,false), true);
+  const retry = queue.begin(a,2)!;
+  assert.deepEqual(retry.events.map(x=>x.id),['2','3']);
+  queue.finish(a,retry,true);
+  assert.equal(queue.size(),0);
+});
+
+test('activity transport is session guarded before sending and abortable on auth change', () => {
+  const remote = readFileSync(new URL('../src/observability/kyrubActivityRemote.ts', import.meta.url), 'utf8');
+  const observer = readFileSync(new URL('../src/observability/KyrubActivityObserverBridge.tsx', import.meta.url), 'utf8');
+  assert.match(remote, /if \(!queue\.isCurrent\(auth\.currentUser, batch\)\) return;/);
+  assert.match(remote, /signal: batch\.controller\.signal/);
+  assert.match(observer, /synchronizeActivityRemoteSession\(\)/);
 });
