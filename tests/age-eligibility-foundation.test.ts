@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { screenAge, evaluateAgeAccess, type AgeStatus } from '../shared/ageEligibility.js';
+import { screenAge, evaluateAgeAccess, evaluateCapabilityAgeAccess, type AgeStatus, type AgeCapability } from '../shared/ageEligibility.js';
 
 const screen = (birthDate: string, today = '2026-11-25', declaredAdult = true) =>
   screenAge({ birthDate, today, declaredAdult });
@@ -48,4 +48,21 @@ test('appropriate public pages and support remain accessible; onboarding require
   }
   assert.equal(evaluateAgeAccess({ scope: 'onboarding', status: 'pending', authenticated: false }), false);
   assert.equal(evaluateAgeAccess({ scope: 'onboarding', status: 'pending', authenticated: true }), true);
+});
+
+test('inconclusive accounts receive only reviewed personal capabilities', () => {
+  const allowed: AgeCapability[] = ['private_notes','private_tasks','appropriate_courses','private_tag_management'];
+  const denied: AgeCapability[] = ['tag_publication','social_publication','social_comment','sowing','connections','messages','communities','tribes','store_erp','freelance','delivery','financial_operations','rewards'];
+  for (const capability of [...allowed, ...denied]) {
+    const input = { capability, status: 'inconclusive' as const, authenticated: true };
+    assert.equal(evaluateCapabilityAgeAccess(input), false);
+    assert.equal(evaluateCapabilityAgeAccess({ ...input, policy: 'reviewed_personal_only' }), allowed.includes(capability));
+    assert.equal(evaluateCapabilityAgeAccess({ ...input, policy: 'verified_adult_only' }), false);
+    assert.equal(evaluateCapabilityAgeAccess({ ...input, status: 'verified_adult', policy: 'verified_adult_only' }), true);
+    for (const status of ['pending','declared_adult','declared_underage','verified_underage','suspended'] as const) {
+      assert.equal(evaluateCapabilityAgeAccess({ ...input, status, policy: 'reviewed_personal_only' }), false);
+    }
+    assert.equal(evaluateCapabilityAgeAccess({ ...input, authenticated: false, policy: 'reviewed_personal_only' }), false);
+  }
+  assert.equal(evaluateCapabilityAgeAccess({ capability: 'unknown' as AgeCapability, status: 'verified_adult', authenticated: true, policy: 'verified_adult_only' }), false);
 });
