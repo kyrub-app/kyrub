@@ -2,6 +2,7 @@
       allow get, list: if cashLedgerRoleAllowed(storeId);
 
       allow create: if cashLedgerRoleAllowed(storeId)
+        && canWriteFinancialWithMfa()
         && exists(cashLedgerSessionPath(storeId, sessionId))
         && get(cashLedgerSessionPath(storeId, sessionId)).data.status == 'open'
         && cashLedgerMovementFieldsAreValid(storeId, sessionId, movementId);
