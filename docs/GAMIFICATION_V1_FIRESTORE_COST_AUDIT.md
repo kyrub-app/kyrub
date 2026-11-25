@@ -120,3 +120,30 @@ distintos para esgotar a quota. A economia adicional de eliminar duplicação
 de consultas concorrentes depende da navegação e não foi somada.
 Agrupamento de publicações distintas, medição instrumentada, inventário
 externo e orçamento efetivo continuam pendentes. Nenhuma mudança em produção.
+
+
+## Otimização 2 — lotes de status
+Ação read-only status_batch no transporte existente, com 1–10 alvos distintos,
+campos estritos, UID derivado da autenticação e validação independente de cada
+post. Reutiliza a mesma lógica de status individual. Uma leitura de quota
+por lote e uma leitura de comunidade + vínculo por comunidade distinta,
+sem cache entre requisições. Resultado indisponível por alvo é null, sem
+metadados privados. A interface agrega pedidos da mesma sessão por até 12ms,
+com máximo de 10; preserva a coalescência anterior e valida correspondência
+entre alvos e respostas. Cancelamentos anteriores ao envio excluem o alvo;
+requisição coletiva já enviada pode concluir, mas respostas canceladas ou
+de outra sessão não devem chegar à interface. Não existe cache persistente.
+Nenhuma alteração na transação de semeadura, quota, crédito ou holds.
+Contagem lógica prevista por 10 posts válidos:
+- pessoais: 40 -> 31 leituras (22,5% de redução);
+- comunitários da mesma comunidade: 60 -> 33 (45%);
+- comunitários de 10 comunidades distintas: 60 -> 51 (15%).
+Não se trata de redução proporcional da fatura total. Lotes incompletos,
+ritmo de scroll, retries e outros módulos afetam o resultado.
+Teste FakeDb instrumenta 60 versus 33, compara resposta com consultas
+individuais e verifica ausência de escritas, comunidade privada, limite,
+duplicatas e injeção de UID. Teste de cliente verifica divisão 10+1,
+isolamento e correspondência das respostas. Novo CI pendente; revisão
+6c3f755 tem 3 workflows aprovados e Store security rules em andamento
+na consulta. Ainda não há medição em navegador/emulador do transporte
+agrupado ou dados de consumo reais. Sem deploy, faturamento ou PR #1274.
