@@ -390,8 +390,9 @@ test('protected official ERP fixture reads only referenced paid accounts without
   const app=initializeApp({projectId:PROJECT_ID},'finops-official-infrastructure-fixture');
   try {
     const db=getFirestore(app);
-    const storeId='store_admin_a', owner='owner_a';
-    await db.doc('kyrub_admin/official_store').set({schemaVersion:1,kind:'official_cairobi_store',canonicalStoreId:storeId,legacyStoreId:owner,ownerUserId:owner,designatedBy:'super_admin_a'});
+    const canonicalStoreId='store_admin_a', owner='owner_a',storeId=owner;
+    await db.doc('kyrub_admin/official_store').set({schemaVersion:1,kind:'official_cairobi_store',canonicalStoreId,legacyStoreId:owner,ownerUserId:owner,designatedBy:'super_admin_a'});
+    await db.doc('users/'+owner+'/stores/'+owner).set({id:owner,ownerId:owner,canonicalStoreId,name:'Fixture Official Store'});
     const make=(id:string,amountMinor:number,paidAt:string,ref:string)=>({...buildManualStoreFinancePayable({
       id,storeId,amountMinor,description:'Fixture invoice',category:'service',dueDate:'2026-11-30',recurrence:'monthly',
       costCenter:{id:ref==='fixture-marketing'?'cc_commercial':'cc_infrastructure',name:ref==='fixture-marketing'?'Comercial':'Infraestrutura'},
@@ -402,6 +403,9 @@ test('protected official ERP fixture reads only referenced paid accounts without
       make('payable_c',200000,'2026-11-20T03:00:00.000Z','fixture-marketing')];
     for(const row of rows)await db.doc('stores/'+storeId+'/financePayables/'+row.id).set(row);
     await db.doc('stores/other_store/financePayables/payable_foreign').set({...rows[0],id:'payable_foreign',storeId:'other_store'});
+    await db.doc('stores/'+canonicalStoreId+'/financePayables/payable_canonical_only').set({...rows[0],id:'payable_canonical_only',storeId:canonicalStoreId,amountMinor:999999});
+    await db.doc('stores/'+storeId+'/financePayables/payable_custom').set({...rows[0],id:'payable_custom',costCenter:{id:'cc_custom_fixture',name:'Infraestrutura adicional'},amountMinor:999999});
+    await db.doc('stores/'+storeId+'/financePayables/payable_open').set({...rows[0],id:'payable_open',status:'open',paidAt:'',amountMinor:999999});
     const deps={db,projectId:PROJECT_ID,verify:async(token:string)=>({uid:token,emailVerified:true})};
     const reference:InfrastructureFixtureReference={payableId:'payable_a',category:'vercel',billingDocumentReference:'fixture-invoice-a',reconciliationRef:'fixture-review-a'};
     const read=(refs:InfrastructureFixtureReference[],actor='finance_a')=>readOfficialInfrastructureFixture('Bearer '+actor,'2026-11',refs,deps);
@@ -424,6 +428,9 @@ test('protected official ERP fixture reads only referenced paid accounts without
     const after=await db.doc('stores/'+storeId+'/financePayables/payable_a').get();
     assert.deepEqual(after.data(),before.data());
     assert.equal(after.updateTime?.isEqual(before.updateTime!),true);
+    await db.doc('users/'+owner+'/stores/'+owner).update({canonicalStoreId:'other_store'});
+    assert.equal((await readOfficialRegisteredInfrastructureFixture('Bearer finance_a','2026-11',deps)).status,'unavailable');
+    await db.doc('users/'+owner+'/stores/'+owner).update({canonicalStoreId});
     await db.doc('kyrub_admin/official_store').update({ownerUserId:'other_owner',legacyStoreId:'other_owner'});
     assert.equal((await read([reference])).status,'unavailable');
   }finally{await deleteApp(app);}
