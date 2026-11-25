@@ -2,7 +2,7 @@ import { auth, db } from './firebase';
 import {parseHiringTerms,termsFromVacancy,type FreelanceHiringTerms} from '../../shared/freelanceHiringTerms';
 import { collection, doc, getDocFromServer, getDocsFromServer, query, where, limit, orderBy, documentId, startAfter, type QueryDocumentSnapshot, type DocumentData, serverTimestamp, setDoc, updateDoc, runTransaction } from 'firebase/firestore';
 
-export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed' };
+export type HiringVacancy = { id:string; ownerId:string; title:string; description:string; payment:number; employer:string; status:'open'|'closed'; termsLocked?:boolean; hasAccepted?:boolean };
 export type HiringApplication = { id:string; vagaId:string; ownerId:string; userId:string; status:'pending'|'accepted'|'rejected'|'withdrawn'|'completion_requested'|'completed'; terms?:FreelanceHiringTerms };
 
 export function freelanceCloudPreviewEnabled():boolean{
@@ -44,7 +44,7 @@ async function notifiedHiringAction(applicationId:string,action:NotifiedHiringAc
 
 const parseVacancy=(id:string,data:Record<string,unknown>):HiringVacancy|null=>{
  if(!validId(id)||typeof data.ownerId!=='string'||!validId(data.ownerId)||typeof data.title!=='string'||typeof data.description!=='string'||typeof data.employer!=='string'||typeof data.payment!=='number'||!Number.isFinite(data.payment)||data.payment<=0||(data.status!=='open'&&data.status!=='closed'))return null;
- return {id,ownerId:data.ownerId,title:data.title,description:data.description,employer:data.employer,payment:data.payment,status:data.status};
+ return {id,ownerId:data.ownerId,title:data.title,description:data.description,employer:data.employer,payment:data.payment,status:data.status,termsLocked:data.termsLocked===false?false:true,hasAccepted:data.hasAccepted===false?false:true};
 };
 export async function listHiringVacancies(ownOnly=false):Promise<HiringVacancy[]>{
  const actor=uid();
@@ -58,7 +58,7 @@ export async function publishHiringVacancy(input:{title:string;description:strin
  if(!title||title.length>120||!description||description.length>2000||!Number.isFinite(payment)||payment<=0||payment>1000000||Math.round(payment*100)/100!==payment)throw Error('Revise os dados da vaga.');
  const employer=(auth.currentUser?.displayName||'Contratante Kyrub').trim().slice(0,160)||'Contratante Kyrub';
  const ref=doc(collection(db,'vagas'));
- await setDoc(ref,{ownerId:actor,title,description,payment,employer,status:'open',createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+ await setDoc(ref,{ownerId:actor,title,description,payment,employer,status:'open',createdAt:serverTimestamp(),updatedAt:serverTimestamp(),...(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW==='true'?{termsLocked:false,hasAccepted:false}:{})});
  checkSession(actor);
  return ref.id;
 }
@@ -197,4 +197,20 @@ export async function readHiringApplication(applicationId:string):Promise<Hiring
  const x=snapshot.data();
  if(!x||typeof x.ownerId!=='string'||typeof x.userId!=='string'||typeof x.vagaId!=='string'||applicationId!==x.vagaId+'__'+x.userId||![x.ownerId,x.userId].includes(actor)||!['pending','accepted','rejected','withdrawn','completion_requested','completed'].includes(x.status))throw Error('Negociação indisponível.');
  return {id:applicationId,ownerId:x.ownerId,userId:x.userId,vagaId:x.vagaId,status:x.status as HiringApplication['status'],terms:parseHiringTerms(x.terms)??undefined};
+}
+
+
+export async function editHiringVacancy(id:string,input:{title:string;description:string;payment:number}):Promise<void>{
+ const actor=uid();
+ if(import.meta.env.VITE_KYRUB_FREELANCE_NOTIFICATION_PREVIEW!=='true'||!/^[A-Za-z0-9]{20}$/.test(id))throw Error('Edição indisponível.');
+ const title=input.title.trim(),description=input.description.trim(),payment=input.payment;
+ if(!termsFromVacancy({title,description,payment}))throw Error('Revise os dados da vaga.');
+ const ref=doc(db,'vagas',id);
+ await runTransaction(db,async tx=>{
+  checkSession(actor);
+  const current=await tx.get(ref);
+  if(!current.exists()||current.get('ownerId')!==actor||current.get('status')!=='open'||current.get('termsLocked')!==false||current.get('hasAccepted')!==false)throw Error('A oferta não pode mais ser editada.');
+  tx.update(ref,{title,description,payment,updatedAt:serverTimestamp()});
+ });
+ checkSession(actor);
 }
