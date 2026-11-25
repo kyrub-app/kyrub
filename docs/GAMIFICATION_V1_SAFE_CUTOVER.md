@@ -282,3 +282,30 @@ econômico via autoridade administrativa. O status exibido é o estado
 registrado, não uma atestação de disponibilidade de todos os serviços.
 A data comercial, implantação, cobertura de escritores e abertura inicial
 continuam dependentes de auditoria externa e autorização própria.
+
+
+## G3.8 — Aceite Chromium do controle administrativo
+Revisões d5613f0 (sincronização) e 2d4f350 (autoridade administrativa):
+5/5 workflows aprovados em ambas. Na segunda, Auth/Firestore integração
+138931563717 e contratos isolados 138931563286 aprovados; o job específico
+pitanga-release-gate permaneceu skipped. Não equivale a autorização comercial.
+Commit 2af597d habilita os controles apenas no workflow Chromium descartável.
+Commit 391ef9b amplia a homologação do Control Plane real:
+- HTTP nega leitura/comando a conta comum; confirmação falsa, campos extras
+  e origem externa recusados; flag administrativa desligada bloqueia comando.
+  Flags de casos e de release não autorizam umas às outras.
+- Interface real exige motivo e confirmação antes de pausar e retomar.
+  A pausa deve impedir a milésima semente sem modificar ledger, saldo 100,
+  progresso/cursor 999, recibo ou quota. Após retomada, duas chamadas
+  concorrentes à autoridade econômica estrita devem aceitar uma e reproduzir
+  outra, gerar exatamente uma Pitanga, saldo 101, quota 1, XP zero.
+- Auditoria registra dois eventos, revisões 2/3, revisor autenticado e
+  data de abertura invariável. Capturas de tela de pausa e retomada.
+A fronteira 999 é sintética; não se fabricam 999 recibos, nem se declara
+reconciliação histórica. A semeadura usa o serviço estrito diretamente
+com identidade fixture; somente as decisões administrativas passam pelo
+HTTP acionado pelo Chromium. Não é E2E do transporte público de semeadura.
+CI da ampliação ainda pendente. Nenhuma consulta ou escrita no Firebase
+principal, nenhum deploy/merge/alteração de cobrança. Próximo: confirmar
+aceite do navegador; fechar evidências e concentrar esforço na configuração
+comercial e inventário externo, sem novos módulos especulativos.
