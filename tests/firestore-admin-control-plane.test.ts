@@ -1,5 +1,9 @@
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
+import assert from 'node:assert/strict';
+import { initializeApp, deleteApp } from 'firebase-admin/app';
+import { getFirestore } from 'firebase-admin/firestore';
+import { confirmMonthlyPresence, firestoreMonthlyPresenceStore, monthlyPresencePath } from '../server/observability/monthlyPresence';
 import {
   assertFails,
   assertSucceeds,
@@ -229,4 +233,34 @@ test('operations can aggregate canonical stores while finance cannot enumerate t
 
   const finance = environment.authenticatedContext('finance_a').firestore();
   await assertFails(getDocs(collection(finance, 'stores')));
+});
+
+test('monthly presence atomic create and browser isolation in the Firestore emulator', async () => {
+  // Fail closed: no Admin SDK connection to a remote project is permitted here.
+  assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8088');
+  const app = initializeApp({projectId:PROJECT_ID}, 'finops-monthly-presence-fixture');
+  try {
+    const database = getFirestore(app);
+    const secret = new Uint8Array(32).fill(42);
+    const input = {authenticatedUid:'fixture-a',projectId:PROJECT_ID,qualifiedActivity:true,receivedAt:new Date('2026-11-25T12:00:00Z')};
+    const store = firestoreMonthlyPresenceStore(database);
+    const outcomes = await Promise.all(Array.from({length:8},()=>confirmMonthlyPresence(input,secret,store)));
+    assert.equal(outcomes.filter(x=>x.status==='created').length,1);
+    assert.equal(outcomes.filter(x=>x.status==='already_counted').length,7);
+    const path = monthlyPresencePath(input,secret);
+    const marker = await database.doc(path).get();
+    assert.deepEqual(marker.data(),{schemaVersion:1,month:'2026-11'});
+    const count = await database.collection('kyrub_finops_mau_months/2026-11/markers').count().get();
+    assert.equal(count.data().count,1);
+    for (const actor of ['regular_a','finance_a','super_admin_a']) {
+      const browser = environment.authenticatedContext(actor).firestore();
+      await assertFails(getDoc(doc(browser,path)));
+      await assertFails(getDocs(collection(browser,'kyrub_finops_mau_months/2026-11/markers')));
+      await assertFails(setDoc(doc(browser,path),{schemaVersion:1,month:'2026-11'}));
+      await assertFails(deleteDoc(doc(browser,path)));
+    }
+    await assertFails(getDoc(doc(environment.unauthenticatedContext().firestore(),path)));
+  } finally {
+    await deleteApp(app);
+  }
 });
