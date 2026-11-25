@@ -1,3 +1,4 @@
+import type { StoreFinanceSection } from '../../shared/storeFinanceSections';
 import type { FinanceTaxonomy } from '../../shared/storeFinanceTaxonomy';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { onAuthStateChanged, type User } from 'firebase/auth';
@@ -82,6 +83,7 @@ type StoreReceivableSummary = {
 
 type StoreFinancePayload = {
   storeId?: string;
+  section?: StoreFinanceSection|'all';
   summary?: StoreFinanceSummary;
   entries?: StoreFinanceEntry[];
   recoveredCount?: number;
@@ -142,11 +144,11 @@ const providerFeeMinor = (entry: StoreFinanceEntry): number | null => {
   return fees.reduce((total, fee) => total + fee.amountMinor, 0);
 };
 
-async function loadStoreFinance(storeId: string,user:User,signal:AbortSignal): Promise<StoreFinancePayload> {
+async function loadStoreFinance(storeId: string,user:User,signal:AbortSignal,section?:StoreFinanceSection): Promise<StoreFinancePayload> {
   if (auth.currentUser!==user||user.uid!==storeId||signal.aborted) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
   if(auth.currentUser!==user||signal.aborted)throw Error('Sessão alterada.');
-  const response = await fetch(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`, {
+  const response = await fetch(`/api/store-finance?storeId=${encodeURIComponent(storeId)}${section?'&section='+encodeURIComponent(section):''}`, {
     headers: { Authorization: `Bearer ${token}` },cache:'no-store',signal,
   });
   const contentType = response.headers.get('content-type')?.toLowerCase() ?? '';
@@ -155,18 +157,18 @@ async function loadStoreFinance(storeId: string,user:User,signal:AbortSignal): P
   }
   const payload = await response.json() as StoreFinancePayload;
   if (!response.ok) throw new Error(payload.error || 'Não foi possível carregar o Financeiro.');
-  if(payload.storeId!==storeId||auth.currentUser!==user||signal.aborted)throw Error('Sessão ou loja alterada.');
+  if(payload.storeId!==storeId||auth.currentUser!==user||signal.aborted||(section&&payload.section!==section))throw Error('Sessão ou loja alterada.');
   return payload;
 }
 
-export function StoreFinanceRuntime({ storeId }: { storeId: string }) {
+export function StoreFinanceRuntime({ storeId,section }: { storeId: string;section?:StoreFinanceSection }) {
   const [session,setSession]=useState(()=>({user:auth.currentUser,epoch:0}));
   useEffect(()=>onAuthStateChanged(auth,user=>setSession(previous=>previous.user===user?previous:{user,epoch:previous.epoch+1})),[]);
   if(!session.user||session.user!==auth.currentUser||session.user.uid!==storeId)return null;
-  return <StoreFinanceSession key={storeId+':'+session.epoch} storeId={storeId} user={session.user}/>;
+  return <StoreFinanceSession key={storeId+':'+session.epoch} storeId={storeId} user={session.user} section={section}/>;
 }
 
-function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
+function StoreFinanceSession({storeId,user,section}:{storeId:string;user:User;section?:StoreFinanceSection}) {
   const [payload, setPayload] = useState<StoreFinancePayload | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -181,14 +183,14 @@ function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
     if (!silent) setLoading(true);
     setError('');
     try {
-      const next=await loadStoreFinance(storeId,user,controller.signal);
+      const next=await loadStoreFinance(storeId,user,controller.signal,section);
       if(current())setPayload(next);
     } catch (caught) {
       if(current()){setPayload(null);setError(caught instanceof Error ? caught.message : 'Não foi possível carregar o Financeiro.');}
     } finally {
       if(current()){setLoading(false);request.current=null;}
     }
-  }, [storeId,user]);
+  }, [storeId,user,section]);
 
   useEffect(() => { void load();return()=>{request.current?.abort();request.current=null;}; }, [load]);
 
@@ -224,12 +226,13 @@ function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
 
   return (
     <section className="max-w-full space-y-4 overflow-x-hidden text-white" data-kyrub-store-finance-runtime="canonical-ledger">
+      {(!section||section==='overview'||section==='movements')&&<>
       <div className="max-w-full overflow-hidden rounded-3xl border border-emerald-500/25 bg-slate-900 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="min-w-0">
             <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-emerald-300">Financeiro Interno</span>
             <h3 className="mt-1 text-base font-black">Movimentações da loja</h3>
-            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Valores vindos dos pagamentos canônicos do Kyrub. Nenhum lançamento de demonstração é exibido aqui.</p>
+            <p className="mt-1 text-[10px] leading-relaxed text-slate-400">Resumo dos últimos 100 lançamentos de pagamentos registrados. Para consultar um mês completo, abra Relatórios.</p>
           </div>
           <button type="button" onClick={() => void load(true)} className="min-h-10 rounded-xl border border-slate-700 bg-slate-950 px-4 text-[9px] font-black uppercase text-slate-300">Atualizar</button>
         </div>
@@ -247,7 +250,8 @@ function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
         <article className="min-w-0 overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 p-4"><span className="text-[8px] font-black uppercase text-slate-500">Saldo após reversões</span><strong className="mt-2 block text-lg">{money(summary?.economicNetMinor ?? 0)}</strong><span className="mt-1 block text-[8px] text-slate-500">Não representa o líquido do PSP quando a taxa ainda não foi informada.</span></article>
       </div>
 
-      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5" data-kyrub-store-receivables="canonical">
+      </>}
+      {(!section||section==='receivables')&&<div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-cyan-500/20 bg-slate-900 p-5" data-kyrub-store-receivables="canonical">
         <div className="min-w-0">
           <span className="font-mono text-[9px] font-black uppercase tracking-[0.16em] text-cyan-300">Repasses a receber</span>
           <h4 className="mt-1 text-xs font-black uppercase">Obrigações econômicas da loja</h4>
@@ -288,20 +292,20 @@ function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
             ))}
           </div>
         )}
-      </div>
+      </div>}
 
-      <StoreCashFinanceWorkspace projection={cash} />
+      {(!section||section==='cash')&&<StoreCashFinanceWorkspace projection={cash} />}
 
-      <StorePayablesWorkspace
+      {(!section||section==='payables')&&<StorePayablesWorkspace
         key={storeId}
         storeId={storeId}
         payables={payload?.storeId === storeId ? payables : []}
         taxonomy={payload?.storeId === storeId ? payload.taxonomy : undefined}
         summary={payableSummary}
         onReload={() => load(true)}
-      />
+      />}
 
-      <div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
+      {(!section||section==='movements')&&<div className="min-w-0 max-w-full overflow-hidden rounded-3xl border border-slate-800 bg-slate-900 p-5">
         <div className="mb-4 flex items-center justify-between gap-3"><div className="min-w-0"><h4 className="text-xs font-black uppercase">Movimentações</h4><p className="mt-1 text-[9px] text-slate-500">{summary?.entryCount ?? entries.length} lançamento(s)</p></div></div>
         {entries.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-slate-700 p-5 text-center text-[10px] text-slate-400">Ainda não há pagamento confirmado registrado para esta loja.</p>
@@ -367,7 +371,7 @@ function StoreFinanceSession({storeId,user}:{storeId:string;user:User}) {
             })}
           </div>
         )}
-      </div>
+      </div>}
     </section>
   );
 }
