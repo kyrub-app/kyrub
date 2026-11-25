@@ -173,7 +173,7 @@ test('staged Renda age gate requires civil identity AND verified adulthood for d
   const vacancy=doc(requester,'vagas','age-vacancy');
   const application=doc(freelancer,'candidaturas','age-application');
   const vacancyPayload={ownerId:requesterId,title:'Vaga de homologacao'};
-  const applicationPayload={userId:freelancerId,vagaId:'age-vacancy',ownerId:requesterId};
+  const applicationPayload={userId:freelancerId,vagaId:'age-vacancy',ownerId:requesterId,status:'pending'};
   const age=async(uid:string,status:string,recordUid=uid)=>{
     await environment.withSecurityRulesDisabled(async context=>{
       await setDoc(doc(context.firestore(),'age_eligibility_private',uid),{uid:recordUid,status});
@@ -237,7 +237,9 @@ test('freelance vacancy and application ownership cannot be forged or used acros
   const payload={ownerId,userId:workerId,vagaId:'owned-vacancy',status:'pending'};
   await assertFails(setDoc(application(worker),{...payload,ownerId:otherId}));
   await assertFails(setDoc(application(worker),{...payload,vagaId:'missing'}));
+  await assertFails(setDoc(application(worker),{...payload,status:'accepted'}));
   await assertSucceeds(setDoc(application(worker),payload));
+  await assertFails(updateDoc(application(worker),{status:'accepted'}));
   await assertFails(getDoc(application(other)));
   await assertSucceeds(getDoc(application(owner)));
   await assertSucceeds(getDoc(application(worker)));
