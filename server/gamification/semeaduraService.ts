@@ -1,6 +1,7 @@
 import type { WelcomeAuth } from './signedSessionWelcomeService.js';
 import { createHash } from 'node:crypto';
-import type { Firestore } from 'firebase-admin/firestore';
+import { SEMEADURA_STATUS_BATCH_LIMIT, type SemeaduraStatusTarget } from './semeaduraRequestAuthority.js';
+import type { Firestore, DocumentSnapshot } from 'firebase-admin/firestore';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, readSemeaduraDailyCount } from '../../shared/semeaduraDailyLimit.js';
 import { assertSemeaduraReleaseOpenInTransaction } from './semeaduraReleaseControl.js';
 import { settleAcceptedSeedInTransaction } from './semeaduraEconomicPilot.js';
@@ -183,9 +184,11 @@ export const seedReleaseControlledPost=(db:Firestore,input:SeedInput,authorAuth?
  * Authenticated, read-only view of a post's seed progress and the caller's
  * receipt. This never uses legacy client-managed like counts.
  */
-export const readVerifiedPostSemeadura = async (
+const readPostStatus = async (
   db: Firestore,
   input: { authenticatedUserId: string; kind: SemeaduraPostKind; postId: string },
+  readShared:(path:string)=>Promise<DocumentSnapshot>,
+  dailyDay:string,
 ): Promise<{
   count: number; closed: boolean; seeded: boolean; canSemear: boolean;
   authorId: string; pitangueiras: number; bosqueCompleted: boolean;
@@ -199,10 +202,9 @@ export const readVerifiedPostSemeadura = async (
   const postRef = db.doc(`${kind === 'community' ? 'community_posts' : 'social_posts'}/${postId}`);
   const statsRef = db.collection('semeadura_post_stats').doc(key);
   const receiptRef = statsRef.collection('receipts').doc(actor);
-  const dailyDay=semeaduraDay(new Date());
   const [post, stats, receipt, quota] = await Promise.all([
     postRef.get(), statsRef.get(), receiptRef.get(),
-    db.doc(`users/${actor}/semeaduraDailyUsage/${dailyDay}`).get(),
+    readShared(`users/${actor}/semeaduraDailyUsage/${dailyDay}`),
   ]);
   if (!post.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
   const postData = post.data();
@@ -218,8 +220,8 @@ export const readVerifiedPostSemeadura = async (
     const communityId = postData?.communityId;
     if (!safeUid(communityId)) throw new Error('SEMEADURA_POST_INVALID');
     const [community, membership] = await Promise.all([
-      db.doc(`communities/${communityId}`).get(),
-      db.doc(`community_members/${communityId}__${actor}`).get(),
+      readShared(`communities/${communityId}`),
+      readShared(`community_members/${communityId}__${actor}`),
     ]);
     if (!community.exists) throw new Error('SEMEADURA_POST_UNAVAILABLE');
     const isOwner = community.data()?.ownerId === actor;
@@ -258,6 +260,30 @@ export const readVerifiedPostSemeadura = async (
     bosqueCompleted: count === SEEDS_PER_BOSQUE,
   };
 };
+
+export const readVerifiedPostSemeadura=(db:Firestore,input:{authenticatedUserId:string;kind:SemeaduraPostKind;postId:string})=>
+ readPostStatus(db,input,path=>db.doc(path).get(),semeaduraDay(new Date()));
+
+/** Share only quota and membership lookups within this authenticated request.
+ * Each target independently validates its canonical visibility and receipt.
+ * Errors expose no private post metadata, and never trigger writes. */
+export async function readVerifiedPostSemeaduraBatch(db:Firestore,actor:string,targets:SemeaduraStatusTarget[]){
+ if(!safeUid(actor)||!Array.isArray(targets)||targets.length<1||targets.length>SEMEADURA_STATUS_BATCH_LIMIT||
+  targets.some(t=>!t||!safePostId(t.postId)||(t.kind!=='personal'&&t.kind!=='community'))||
+  new Set(targets.map(t=>JSON.stringify([t.kind,t.postId]))).size!==targets.length)
+  throw Error('SEMEADURA_INVALID_INPUT');
+ const reads=new Map<string,Promise<DocumentSnapshot>>();
+ const shared=(path:string)=>{
+  let pending=reads.get(path);
+  if(!pending){pending=db.doc(path).get();reads.set(path,pending);}
+  return pending;
+ };
+ const day=semeaduraDay(new Date());
+ return {results:await Promise.all(targets.map(async target=>{
+  try{return {...target,status:await readPostStatus(db,{...target,authenticatedUserId:actor},shared,day)};}
+  catch{return {...target,status:null};}
+ }))};
+}
 
 /**
  * The personal view is scoped to the verified logged-in UID.
