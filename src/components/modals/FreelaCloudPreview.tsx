@@ -12,7 +12,7 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const [title,setTitle]=useState(''),[description,setDescription]=useState(''),[payment,setPayment]=useState('');
  const [busy,setBusy]=useState(false),[notice,setNotice]=useState('');
  const [openNegotiation,setOpenNegotiation]=useState('');
- useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');}),[]);
+ useEffect(()=>onAuthStateChanged(auth,user=>{setActor(user?.uid||'');setVacancies([]);setApplications([]);setNotice('');setOpenNegotiation('');setTitle('');setDescription('');setPayment('');}),[]);
  const refresh=useCallback(async()=>{
    if(!actor)return;
    const [v,a]=await Promise.all([listHiringVacancies(employer),listHiringApplications(employer)]);
@@ -22,7 +22,13 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
  const perform=async(action:()=>Promise<string>)=>{
    if(busy||!actor)return;
    setBusy(true);setNotice('');
-   try{const result=await action();if(auth.currentUser?.uid===actor){setNotice(result);await refresh();}}
+   try{
+     const result=await action();
+     if(auth.currentUser?.uid===actor){
+       setNotice(result);
+       try{await refresh();}catch{if(auth.currentUser?.uid===actor)setNotice(result+' Não foi possível atualizar a consulta.');}
+     }
+   }
    catch{if(auth.currentUser?.uid===actor)setNotice('Operação não confirmada. Confira sua elegibilidade, identidade e conexão.');}
    finally{setBusy(false);}
  };
@@ -30,7 +36,7 @@ export function FreelaCloudPreview({mode,onClose}:{mode:'employer'|'employee';on
    <section className="bg-slate-900 border border-slate-800 w-full max-w-lg p-5 rounded-3xl space-y-4 max-h-[85vh] overflow-y-auto text-sm text-slate-100">
     <header className="flex justify-between gap-3"><h3 className="text-base font-bold">Freelas — homologação local</h3><button type="button" onClick={onClose}>Fechar</button></header>
     <p>Vagas e candidaturas registradas no emulador isolado. Não há intermediação de pagamento.</p>
-    {employer&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void perform(async()=>{await publishHiringVacancy({title,description,payment:Number(payment)});setTitle('');setDescription('');setPayment('');return 'Vaga registrada no servidor de testes.';});}}>
+    {employer&&<form className="space-y-2" onSubmit={e=>{e.preventDefault();void perform(async()=>{await publishHiringVacancy({title,description,payment:Number(payment)});if(auth.currentUser?.uid===actor){setTitle('');setDescription('');setPayment('');}return 'Vaga registrada no servidor de testes.';});}}>
       <label className="block">Título<input className="block w-full bg-slate-950 rounded-lg p-2" required maxLength={120} value={title} onChange={e=>setTitle(e.target.value)}/></label>
       <label className="block">Descrição<textarea className="block w-full bg-slate-950 rounded-lg p-2" required maxLength={2000} value={description} onChange={e=>setDescription(e.target.value)}/></label>
       <label className="block">Valor combinado (R$)<input className="block w-full bg-slate-950 rounded-lg p-2" type="number" required min="0.01" step="0.01" value={payment} onChange={e=>setPayment(e.target.value)}/></label>
