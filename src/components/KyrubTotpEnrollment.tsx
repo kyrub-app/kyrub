@@ -43,7 +43,7 @@ export function KyrubTotpEnrollment({auth,user}:{auth:Auth;user:User}){
  if(enrolled)return <section aria-label="Autenticador" className="space-y-2 rounded-xl border border-slate-700 p-3"><h2 className="text-base font-semibold">Autenticação em dois fatores</h2><p className="text-sm">Há um segundo fator cadastrado. Isso não comprova uma sessão autenticada com dois fatores.</p>{notice&&<p role="status" className="text-sm">{notice}</p>}</section>;
  return <section aria-label="Cadastrar autenticador" className="space-y-3 rounded-xl border border-slate-700 p-3">
   <h2 className="text-base font-semibold">Cadastrar autenticador</h2>
-  <p className="text-xs text-slate-400">Homologação isolada. Não use sua conta real. A recuperação de acesso ainda não está liberada.</p>
+  <p className="text-xs text-slate-400">Homologação isolada. Use apenas uma conta descartável de teste. A recuperação de acesso ainda não está liberada.</p>
   {!supportsPassword?<p className="text-sm">Esta prévia exige uma conta de teste com senha.</p>:!secret?<form className="space-y-2" onSubmit={e=>{e.preventDefault();void start();}}>
    <label className="block text-sm">Confirme sua senha<input className={field} type="password" autoComplete="current-password" value={password} disabled={busy} onChange={e=>setPassword(e.target.value)}/></label>
    <button className={button} type="submit" disabled={busy||!password}>Preparar autenticador</button>

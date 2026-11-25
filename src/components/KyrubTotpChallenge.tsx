@@ -28,6 +28,11 @@ export function KyrubTotpChallenge({auth,resolver,onComplete,onCancel}:{
   <label className="block text-sm">Código do autenticador<input className="block w-full rounded-xl border border-slate-700 bg-slate-900 p-3" inputMode="numeric" autoComplete="one-time-code" maxLength={6} value={code} disabled={busy} onChange={e=>setCode(e.target.value.replace(/[^0-9]/g,'').slice(0,6))}/></label>
   <button className="min-h-11 rounded-xl bg-[#F27429] px-3 text-sm font-semibold text-[#121A17] disabled:opacity-50" type="submit" disabled={busy||!factor||!/^\d{6}$/.test(code)}>Confirmar código</button>
   <button className="min-h-11 rounded-xl border border-slate-700 px-3 text-sm" type="button" disabled={busy} onClick={()=>{setCode('');onCancel();}}>Cancelar acesso</button>
+  <details className="rounded-xl border border-slate-700 p-3 text-sm">
+   <summary className="cursor-pointer font-medium">Perdi acesso ao autenticador</summary>
+   <p className="mt-2">Use outro autenticador já cadastrado, se houver. A recuperação de senha não substitui a confirmação em dois fatores.</p>
+   <p className="mt-2">Se nenhum autenticador estiver disponível, cancele o acesso. A recuperação assistida ainda não foi liberada nesta homologação. Não envie senhas, chaves ou códigos a terceiros.</p>
+  </details>
   {notice&&<p role="alert" className="text-sm">{notice}</p>}
  </form>;
 }
