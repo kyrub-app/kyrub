@@ -5,7 +5,8 @@ import { semeaduraEconomicPilotEnabled } from './semeaduraEconomicPilot.js';
 import {
  listIsolatedGamificationSuspicionCases, readIsolatedGamificationSuspicionCase,
  readIsolatedGamificationIncrementalSnapshot, openIsolatedGamificationSuspicionCase,
- closeIsolatedGamificationSuspicionCase,
+ closeIsolatedGamificationSuspicionCase, listIsolatedGamificationEconomicReferrals,
+ readIsolatedGamificationEconomicReferral, acceptIsolatedGamificationEconomicReferral, decideIsolatedGamificationEconomicReferral,
 } from './semeaduraAdminSupervision.js';
 
 const safeId=(v:unknown):v is string=>typeof v==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(v);
@@ -57,6 +58,14 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
     res.json(await listIsolatedGamificationSuspicionCases(db,auth,authHeader,
       {status:q.status,limit:Number(q.limit),afterCaseId:q.afterCaseId as string|undefined}));return;
    }
+   if(q.operation==='referrals'&&allowed(['operation','limit','afterCaseId'])&&
+      typeof q.limit==='string'&&/^(?:[1-9]|10)$/.test(q.limit)&&
+      (q.afterCaseId===undefined||safeId(q.afterCaseId))){
+    res.json(await listIsolatedGamificationEconomicReferrals(db,auth,authHeader,{limit:Number(q.limit),afterCaseId:q.afterCaseId as string|undefined}));return;
+   }
+   if(q.operation==='referral'&&allowed(['operation','caseId'])&&safeId(q.caseId)){
+    res.json(await readIsolatedGamificationEconomicReferral(db,auth,authHeader,q.caseId));return;
+   }
    if(q.operation==='case'&&allowed(['operation','caseId'])&&safeId(q.caseId)){
     res.json(await readIsolatedGamificationSuspicionCase(db,auth,authHeader,q.caseId));return;
    }
@@ -79,6 +88,20 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
   const allowed=(keys:string[])=>Object.keys(body).every(k=>keys.includes(k));
   const authorization=typeof req.headers.authorization==='string'?req.headers.authorization:'';
   try{
+   if(body.operation==='accept_referral'||body.operation==='decide_referral'){
+    if(process.env.KYRUB_GAMIFICATION_ADMIN_REFERRAL_WRITE_PILOT!=='true'){
+     res.status(404).json({code:'NOT_AVAILABLE'});return;
+    }
+    if(body.operation==='accept_referral'&&allowed(['operation','caseId','confirmed'])){
+     res.json(await acceptIsolatedGamificationEconomicReferral(db,auth,authorization,body.caseId));return;
+    }
+    if(body.operation==='decide_referral'&&allowed(['operation','caseId','decision','reason','confirmed'])&&
+       ['no_action','insufficient_evidence','requires_separate_corrective_review'].includes(body.decision)&&
+       typeof body.reason==='string'&&body.reason.trim().length>=10&&body.reason.length<=500){
+     res.json(await decideIsolatedGamificationEconomicReferral(db,auth,authorization,{caseId:body.caseId,decision:body.decision,reason:body.reason}));return;
+    }
+    res.status(400).json({code:'INPUT_INVALID'});return;
+   }
    if(body.operation==='open'&&allowed(['operation','caseId','kind','postId','confirmed'])&&
       (body.kind==='personal'||body.kind==='community')&&typeof body.postId==='string'&&
       /^[A-Za-z0-9_-]{1,500}$/.test(body.postId)){
@@ -96,7 +119,7 @@ export function createIsolatedGamificationAdminRouter(db:Firestore,auth:Auth){
    if(message==='GAMIFICATION_SUPERVISION_AUTH_REQUIRED'){res.status(401).json({code:'AUTH_REQUIRED'});return;}
    if(message==='GAMIFICATION_SUPERVISION_FORBIDDEN'){res.status(403).json({code:'FORBIDDEN'});return;}
    if(message==='GAMIFICATION_SUPERVISION_DISABLED'||message==='SUSPICION_CASE_UNAVAILABLE'){res.status(404).json({code:'NOT_AVAILABLE'});return;}
-   if(['SUSPICION_CASE_NO_INDICATORS','SUSPICION_CASE_NOT_RESOLVED','SUSPICION_CASE_ALREADY_OPEN','SUSPICION_CASE_ID_CONFLICT','SUSPICION_CASE_CLOSE_CONFLICT'].includes(message)){
+   if(['SUSPICION_CASE_NO_INDICATORS','SUSPICION_CASE_NOT_RESOLVED','SUSPICION_CASE_ALREADY_OPEN','SUSPICION_CASE_ID_CONFLICT','SUSPICION_CASE_CLOSE_CONFLICT','ECONOMIC_REFERRAL_DECISION_CONFLICT','ECONOMIC_REFERRAL_SOURCE_INVALID'].includes(message)){
     res.status(409).json({code:message});return;
    }
    res.status(503).json({code:'SUPERVISION_UNAVAILABLE'});
