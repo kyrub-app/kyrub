@@ -1,7 +1,7 @@
 // Local-only client for the separately mounted HTTP test harness.
 export type SuspicionStatus='all'|'open'|'closed';
 export type PilotSession={uid:string;getIdToken:()=>Promise<string>};
-export type PilotQuery={operation:'snapshot'}|{operation:'cases';status:SuspicionStatus;limit:number;afterCaseId?:string}|{operation:'case';caseId:string};
+export type PilotQuery={operation:'snapshot'}|{operation:'cases';status:SuspicionStatus;limit:number;afterCaseId?:string}|{operation:'case';caseId:string}|{operation:'referrals';limit:number;afterCaseId?:string}|{operation:'referral';caseId:string};
 export async function requestGamificationPilot(
  query:PilotQuery,session:PilotSession,isCurrent:()=>boolean,signal:AbortSignal,
 ):Promise<unknown>{
@@ -22,7 +22,8 @@ export async function requestGamificationPilot(
 
 
 export type PilotCaseCommand={operation:'open';caseId:string;kind:'personal'|'community';postId:string;confirmed:true}|
- {operation:'close';caseId:string;outcome:'resolved'|'inconclusive'|'referred_for_review';confirmed:true};
+ {operation:'close';caseId:string;outcome:'resolved'|'inconclusive'|'referred_for_review';confirmed:true}|
+ {operation:'accept_referral';caseId:string;confirmed:true}|{operation:'decide_referral';caseId:string;decision:'no_action'|'insufficient_evidence'|'requires_separate_corrective_review';reason:string;confirmed:true};
 export async function submitGamificationPilotCase(command:PilotCaseCommand,session:PilotSession,isCurrent:()=>boolean,signal:AbortSignal):Promise<unknown>{
  if(!isCurrent()||signal.aborted)throw Error('SESSION_CHANGED');
  const token=await session.getIdToken();
@@ -39,6 +40,6 @@ export async function submitGamificationPilotCase(command:PilotCaseCommand,sessi
   if(response.status===409&&typeof data.code==='string')throw Error(data.code);
   throw Error('SUPERVISION_UNAVAILABLE');
  }
- if(data?.caseId!==command.caseId||!['open','closed'].includes(data.status))throw Error('INVALID_PILOT_RESPONSE');
+ if(data?.caseId!==command.caseId||!(command.operation==='accept_referral'||command.operation==='decide_referral'?['pending','decided']:['open','closed']).includes(data.status))throw Error('INVALID_PILOT_RESPONSE');
  return data;
 }
