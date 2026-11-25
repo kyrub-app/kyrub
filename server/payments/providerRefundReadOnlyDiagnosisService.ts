@@ -1,4 +1,5 @@
 import { adminDb } from '../firebaseAdmin.js';
+import {observeResidualRefund,type ResidualRefundObservation} from '../../shared/residualRefundReadOnly.js';
 import { mercadoPagoStoreRequest } from '../integrations/mercadoPagoStoreOauthService.js';
 import { resolveMercadoPagoAccessToken } from '../integrations/providerCredentialResolver.js';
 import { loadMercadoPagoPaymentProviderBinding } from './paymentProviderBindingService.js';
@@ -22,6 +23,7 @@ export interface ProviderRefundReadOnlyDiagnosis {
   partialAttempt: { count: number; statusCounts: Record<string, number> };
   blockers: string[];
   assessment: FailedPartialRefundAssessment;
+  residual:ResidualRefundObservation;
   notice: string;
 }
 
@@ -153,6 +155,17 @@ export const diagnoseMercadoPagoRefundReadOnly = async (input: {
     partialAttempt: {count: partialSnapshots.size, statusCounts},
     blockers,
   });
+  // Cross-root histories are deliberately not treated as complete until
+  // the legacy/canonical mapping and both sets of attempts are reconciled.
+  const tenant=await adminDb.doc('tenants/'+input.storeId).get();
+  const canonical=tenant.get('canonicalStoreId');
+  const residual=observeResidualRefund({
+    paymentId:payment.id,providerPaymentId:payment.providerPaymentId,storeId:input.storeId,orderId:input.orderId,
+    originalAmountMinor:providerAmount,storedAmountMinor:storedMinor,reportedRefundedMinor:refundedAmountReportedMinor,
+    currency:providerPayment.currency_id,paymentStatus,providerListing:refundList,
+    localAttempts:partialSnapshots.docs.map(doc=>doc.data()),
+    historyComplete:partialSnapshots.size<=50&&payment.storeId===input.storeId&&(!canonical||canonical===input.storeId),
+  });
   return {
     source:'mercado_pago_read_only',
     paymentStatus,
@@ -163,7 +176,7 @@ export const diagnoseMercadoPagoRefundReadOnly = async (input: {
     refunds:parsed.summary,
     partialAttempt:{count:partialSnapshots.size,statusCounts},
     blockers,
-    assessment,
+    assessment,residual,
     notice:'Consulta GET ao Mercado Pago e leitura do Firestore. Nenhum reembolso foi solicitado e nenhum registro foi conciliado ou alterado. A pendência permanece aberta.',
   };
 };

@@ -47,6 +47,7 @@ export const parseProviderRefundListing = (
   let approvedRefundCount = 0;
   let uncertainRefundCount = 0;
   const statuses: Record<string, number> = {};
+  const seenRefundIds=new Set<string>();
   const refunds = listing.map(raw => {
     if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
       throw new Error('PROVIDER_REFUND_READ_INVALID_ITEM');
@@ -56,6 +57,9 @@ export const parseProviderRefundListing = (
     if (linkedPaymentId !== expectedPaymentId || !identifier(item.id)) {
       throw new Error('PROVIDER_REFUND_READ_PAYMENT_MISMATCH');
     }
+    const refundId=identifier(item.id);
+    if(seenRefundIds.has(refundId))throw Error('PROVIDER_REFUND_READ_DUPLICATE_ID');
+    seenRefundIds.add(refundId);
     const amountMinor = amountToMinor(item.amount);
     const status = typeof item.status === 'string' && /^[a-z_]{1,40}$/.test(item.status)
       ? item.status.toLowerCase() : 'unknown';
