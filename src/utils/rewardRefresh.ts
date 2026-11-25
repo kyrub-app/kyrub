@@ -5,7 +5,10 @@
 export type RewardRefreshReason='conversion'|'publication'|'return';
 type LocalReason=Exclude<RewardRefreshReason,'return'>;
 const eventName='kyrub-reward-refresh';
+const generations=new WeakMap<object,number>();
+export const rewardRefreshGeneration=(session:object)=>generations.get(session)??0;
 export function notifyRewardRefresh(session:object,reason:LocalReason){
+ generations.set(session,rewardRefreshGeneration(session)+1);
  if(typeof window!=='undefined')window.dispatchEvent(new window.CustomEvent(eventName,{detail:{session,reason}}));
 }
 export function subscribeRewardRefresh(session:object,isCurrent:()=>boolean,onRefresh:(reason:RewardRefreshReason)=>void){
