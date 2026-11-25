@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeDollarSign, FileText, RefreshCw } from 'lucide-react';
 import { auth } from '../../utils/firebase';
 import type {
@@ -80,6 +80,7 @@ const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   const user = auth.currentUser;
   if (!user) throw new Error('Faça login novamente.');
   const token = await user.getIdToken();
+  if(auth.currentUser?.uid!==user.uid||init?.signal?.aborted)throw new Error('Consulta encerrada.');
   const response = await fetch(url, {
     ...init,
     headers: {
@@ -114,25 +115,48 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
 
+  const pendingRead=useRef<AbortController|null>(null);
+  const scope=useRef<object|null>(null);
   const load = useCallback(async (): Promise<void> => {
+    const context=scope.current;
+    if(!context)return;
+    const uid=auth.currentUser?.uid;
+    pendingRead.current?.abort();
+    const controller=new AbortController();
+    pendingRead.current=controller;
+    const isCurrent=()=>scope.current===context&&pendingRead.current===controller&&!controller.signal.aborted&&auth.currentUser?.uid===uid;
     setLoading(true);
     setError('');
     try {
       const [procurement, finance] = await Promise.all([
-        requestJson<ProcurementPayload>(`/api/store-procurement?storeId=${encodeURIComponent(storeId)}`),
-        requestJson<FinancePayload>(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`),
+        requestJson<ProcurementPayload>(`/api/store-procurement?storeId=${encodeURIComponent(storeId)}`,{signal:controller.signal}),
+        requestJson<FinancePayload>(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`,{signal:controller.signal}),
       ]);
+      if(!isCurrent())return;
       setPurchases(Array.isArray(procurement.purchases) ? procurement.purchases : []);
       setSuppliers(Array.isArray(procurement.suppliers) ? procurement.suppliers : []);
       setPayables(Array.isArray(finance.payables) ? finance.payables : []);
     } catch (caught) {
+      if(!isCurrent())return;
+      setPurchases([]);
+      setSuppliers([]);
+      setPayables([]);
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a ligação financeira.');
     } finally {
-      setLoading(false);
+      if(isCurrent())setLoading(false);
     }
   }, [storeId]);
 
-  useEffect(() => { void load(); }, [load]);
+  useEffect(() => {
+    scope.current={};
+    setPurchases([]);
+    setSuppliers([]);
+    setPayables([]);
+    setPurchaseId('');
+    setSaving(false);
+    void load();
+    return ()=>{scope.current=null;pendingRead.current?.abort();pendingRead.current=null;};
+  }, [load]);
 
   const committedPurchases = useMemo(
     () => purchases.filter(purchase =>
@@ -199,7 +223,10 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
   }, [purchaseId, nextPayableKey, payableSummary.differenceMinor]);
 
   const createPayable = async (): Promise<void> => {
-    if (!selectedPurchase) return;
+    const context=scope.current;
+    const uid=auth.currentUser?.uid;
+    if (!selectedPurchase||!context||!uid||loading||saving) return;
+    const isCurrent=()=>scope.current===context&&auth.currentUser?.uid===uid;
     const amountMinor = amountToMinor(amount);
     if (amountMinor === null || !dueDate) {
       setError('Informe valor e vencimento válidos antes de registrar a obrigação.');
@@ -224,14 +251,15 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
           billingBarcode: billingDocumentType === 'boleto' ? billingBarcode : '',
         }),
       });
+      if(!isCurrent())return;
       setFeedback(result.status === 'existing'
         ? `${nextPayableLabel} já estava vinculada; nenhuma duplicação foi criada.`
         : `${nextPayableLabel} registrada no Financeiro → Contas a pagar.`);
       await load();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : 'Não foi possível registrar a obrigação.');
+      if(isCurrent())setError(caught instanceof Error ? caught.message : 'Não foi possível registrar a obrigação.');
     } finally {
-      setSaving(false);
+      if(isCurrent())setSaving(false);
     }
   };
 
@@ -248,7 +276,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
             Uma compra pode ter várias obrigações com vencimentos próprios. Nada é parcelado automaticamente: cada obrigação é registrada explicitamente e continua independente do recebimento físico.
           </p>
         </div>
-        <button type="button" disabled={loading} onClick={() => void load()} className="flex min-h-9 items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-50">
+        <button type="button" disabled={loading||saving} onClick={() => void load()} className="flex min-h-9 items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-50">
           <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
         </button>
       </header>
