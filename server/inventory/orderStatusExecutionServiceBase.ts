@@ -2,6 +2,7 @@ import { createHash, randomInt, timingSafeEqual } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { verifyFirebaseIdToken } from '../ai/consultantAuth.js';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import { finalizePickupHandoffWithEconomicEligibility } from '../payments/economicObligationEligibilityService.js';
 import {
   transitionOrderStatusWithInventory,
@@ -307,6 +308,8 @@ export const mapOrderStatusExecutionError = (
   if (code === 'AUTH_REQUIRED' || /id-token|expired|revoked|sessão inválida|sessão expirou/i.test(message)) {
     return { status: 401, body: { error: 'Faça login novamente.', code: 'AUTH_REQUIRED' } };
   }
+  if(['STORE_ACCESS_DENIED','STORE_ERP_AGE_REQUIRED'].includes(message))return {status:403,body:{error:'Operação não autorizada para esta conta.',code:message}};
+  if(message==='DELIVERY_V1_STANDBY')return {status:409,body:{error:'Entregas sob demanda em standby.',code:message}};
   if (code === 'PICKUP_CODE_LOCKED') {
     return { status: 423, body: { error: message, code } };
   }
@@ -383,6 +386,8 @@ export const executeAuthorizedOrderStatusTransition = async (
     if (!token) throw new Error('AUTH_REQUIRED');
     const identity = await verifyFirebaseIdToken(token);
     const input = parseInput(body);
+    const permission=input.status==='cancelled'||input.status==='rejected'?'orders.cancel':input.status==='preparing'||input.status==='ready'?'production.update':'orders.transfer';
+    await adminDb.runTransaction(tx=>requireHumanOrderOperation(tx,identity.uid,identity.uid,permission));
 
     const snapshot = await orderReference(identity.uid, input.orderId).get();
     const data = snapshot.data() as Record<string, unknown> | undefined;
@@ -414,7 +419,7 @@ export const executeAuthorizedOrderStatusTransition = async (
         reason: input.decision.reason,
         alternative: input.decision.alternative,
         deliveryProvider: input.decision.deliveryProvider,
-      }
+      },{uid:identity.uid,permission}
     );
 
     if (input.status === 'ready') {
