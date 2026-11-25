@@ -1,6 +1,6 @@
 import express, { type ErrorRequestHandler } from 'express';
 import { consumeGlobalChallengeIngress, GlobalChallengeRateLimitError } from './globalChallengeAdminRateLimit.js';
-import { executeGlobalChallengeAdmin, mapGlobalChallengeAdminError, queryGlobalChallengeAdmin } from './globalChallengeAdminService.js';
+import { executeGlobalChallengeAdmin, executeOfficialCommunityLink, executeOfficialChallengeDisclosure, mapGlobalChallengeAdminError, queryGlobalChallengeAdmin } from './globalChallengeAdminService.js';
 
 type RequestLike = { method?: string; headers: Record<string, string | string[] | undefined>; query?: Record<string, unknown>; body?: unknown; rawBody?: Buffer };
 type ResponseLike = { setHeader(name: string, value: string): unknown; status(code: number): ResponseLike; json(body: unknown): unknown };
@@ -45,6 +45,17 @@ export default async function handler(request: RequestLike, response: ResponseLi
       response.status(413).json({ code: 'PAYLOAD_TOO_LARGE' }); return;
     }
     const operation = request.query?.operation ?? 'create';
+    if(operation==='disclose-official-challenge'){
+      if(Object.keys(request.query??{}).some(key=>key!=='operation'&&key!=='transport')){response.status(400).json({code:'CHALLENGE_INPUT_INVALID'});return;}
+      response.status(200).json(await executeOfficialChallengeDisclosure(typeof authorization==='string'?authorization:'',request.body));return;
+    }
+    if(operation==='link-official-community'){
+      if(Object.keys(request.query??{}).some(key=>key!=='operation'&&key!=='transport')){
+        response.status(400).json({code:'CHALLENGE_INPUT_INVALID'});return;
+      }
+      response.status(200).json(await executeOfficialCommunityLink(typeof authorization==='string'?authorization:'',request.body));
+      return;
+    }
     const challenge = await executeGlobalChallengeAdmin(typeof authorization === 'string' ? authorization : '',
       typeof operation === 'string' ? operation : '', request.body);
     response.status(operation === 'create' ? 201 : 200).json({ challenge });

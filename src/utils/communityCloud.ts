@@ -1,3 +1,4 @@
+import { institutionalChallengeId } from '../../shared/globalChallengeAdmin';
 import type { User } from 'firebase/auth';
 import { doc as liteDoc, getDoc as getLiteDoc, collection as liteCollection, query as liteQuery, where as liteWhere, getDocs as getLiteDocs, documentId as liteDocumentId, orderBy as liteOrderBy, limit as liteLimit, startAfter as liteStartAfter } from 'firebase/firestore/lite';
 import {
@@ -75,6 +76,7 @@ export interface CloudCommunityPost {
   mediaUrls: string[];
   /** Missing in older posts means comments are allowed. */
   allowComments?: boolean;
+  institutionalChallengeId?: string;
   pinnedCommentId?: string;
   createdAt: string;
   updatedAt: string;
@@ -241,6 +243,7 @@ const mapPost = (
     content: readString(data.content),
     mediaUrls: readStringList(data.mediaUrls),
     allowComments: data.allowComments !== false,
+    institutionalChallengeId: institutionalChallengeId(data),
     pinnedCommentId: readString(data.pinnedCommentId),
     createdAt,
     updatedAt:

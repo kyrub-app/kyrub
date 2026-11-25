@@ -1,4 +1,5 @@
 import { createAgeScreeningRouter } from './server/identity/ageScreeningRouter.js';
+import { personalCenterEmulatorsReady, createPersonalCenterEmulatorRouter } from './server/gamification/personalCenterEmulatorRouter.js';
 import { createGlobalChallengeAdminRouter } from './server/gamification/globalChallengeAdminHandler.js';
 import express from "express";
 import path from "path";
@@ -276,6 +277,8 @@ app.use(
   createStoreCustomerChatRouter()
 );
 
+if (personalCenterEmulatorsReady(process.env)) app.use('/api', createPersonalCenterEmulatorRouter());
+
 app.use(
   "/api/notifications",
   integrationRateLimiter,
@@ -349,6 +352,33 @@ if (process.env.NODE_ENV !== 'production' &&
     process.env.GOOGLE_CLOUD_PROJECT === 'kyrub-security-test' &&
     process.env.FIREBASE_PROJECT_ID === 'kyrub-security-test' &&
     process.env.KYRUB_FIRST_STORE_PUBLICATION_SERVER_ENABLED === 'true') {
+  // Local browser acceptance: real catalogue projection, emulator-issued ID
+  // token only, no production authentication fallback or mutation.
+  if (!process.env.VERCEL && !process.env.FIREBASE_SERVICE_ACCOUNT_JSON &&
+      !process.env.GOOGLE_APPLICATION_CREDENTIALS) {
+    app.get('/api/action-execute', async (request, response) => {
+      response.setHeader('cache-control', 'no-store');
+      if (request.query.transport !== 'global-challenge-catalog' || Object.keys(request.query).length !== 1) {
+        response.status(404).json({ code: 'UNKNOWN_TRANSPORT' }); return;
+      }
+      const token = /^Bearer\s+(\S+)$/i.exec(request.headers.authorization ?? '')?.[1];
+      if (!token) { response.status(401).json({ code: 'AUTH_REQUIRED' }); return; }
+      const { adminAuth, adminDb } = await import('./server/firebaseAdmin.js');
+      if ((adminDb as typeof adminDb & {projectId?: string}).projectId !== 'kyrub-security-test') {
+        response.status(503).json({ code: 'QA_PROJECT_MISMATCH' }); return;
+      }
+      let uid: string;
+      try {
+        const identity = await adminAuth.verifyIdToken(token);
+        if (identity.aud !== 'kyrub-security-test' || !identity.uid) throw Error('QA_AUTH_INVALID');
+        uid = identity.uid;
+      } catch { response.status(401).json({ code: 'AUTH_INVALID' }); return; }
+      try {
+        const { readUserPlatformChallengeCatalog } = await import('./server/gamification/userPlatformChallengeCatalogService.js');
+        response.status(200).json(await readUserPlatformChallengeCatalog(adminDb, uid));
+      } catch { response.status(503).json({ code: 'CHALLENGE_CATALOG_UNAVAILABLE' }); }
+    });
+  }
   app.post('/api/action-execute', async (request, response) => {
     if (request.query.transport !== 'first-store-publication') {
       response.status(404).json({ error: 'UNKNOWN_TRANSPORT' });

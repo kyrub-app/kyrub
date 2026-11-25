@@ -1,3 +1,4 @@
+import { institutionalChallengeId } from '../../shared/globalChallengeAdmin';
 import {
   collection, deleteDoc, doc, getDoc, limit, onSnapshot, orderBy, query,
   setDoc, Timestamp, where, type Unsubscribe,
@@ -126,6 +127,7 @@ const startCommunitySquareFeed = (
               authorName: read(source.authorName) || 'Kairubido', authorAvatar: read(source.authorAvatar),
               content: read(source.content),
               mediaUrls: Array.isArray(source.mediaUrls) ? source.mediaUrls.filter((x): x is string => typeof x === 'string') : [],
+              institutionalChallengeId: institutionalChallengeId(source),
               allowComments: source.allowComments !== false,
               pinnedCommentId: read(source.pinnedCommentId),
               createdAt: read(source.createdAtIso), updatedAt: read(source.updatedAtIso),

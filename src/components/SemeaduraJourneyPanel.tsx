@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import { auth } from '../utils/firebase';
+import { subscribeRewardRefresh } from '../utils/rewardRefresh';
 import { calculatePitangueiraJourney, SEEDS_PER_BROTO, SEEDS_PER_MUDA, SEEDS_PER_PITANGUEIRA, SEEDS_PER_BOSQUE } from '../../shared/pitangueiraJourney';
 import { requestSemeadura, SEMEADURA_UI_ENABLED } from './SemearButton';
 
@@ -17,12 +19,15 @@ function CocarXpIcon() {
 }
 
 /**
- * Informational only: rewards are NOT credited by this panel. This one panel
- * works for the private author's trajectory and a community's public history.
+ * Informational only: rewards are NOT credited by this panel.
+ * Only the private author's trajectory is displayed.
  */
 export function SemeaduraJourneyPanel({
-  viewerId, communityId, xp,
-}: { viewerId: string; communityId?: string; xp?: number | null }) {
+  viewerId, xp,
+}: { viewerId: string; xp?: number | null }) {
+  return <ScopedSemeaduraJourneyPanel key={viewerId} viewerId={viewerId} xp={xp}/>;
+}
+function ScopedSemeaduraJourneyPanel({viewerId,xp}:{viewerId:string;xp?:number|null}) {
   const [total, setTotal] = useState<number | null>(null);
   const [error, setError] = useState('');
 
@@ -30,12 +35,17 @@ export function SemeaduraJourneyPanel({
     const controller = new AbortController();
     setTotal(null);
     setError('');
-    if (!SEMEADURA_UI_ENABLED || !viewerId) return () => controller.abort();
+    const session=auth.currentUser;
+    if (!SEMEADURA_UI_ENABLED || !viewerId || !session || session.uid!==viewerId) return () => controller.abort();
+    const current=()=>!controller.signal.aborted&&auth.currentUser===session;
+    let revision=0;
     const read = async () => {
+      const attempt=++revision;
       const result = await requestSemeadura(
-        communityId ? 'community-journey' : 'journey',
-        communityId ? { communityId } : undefined,
+        'journey',
+        undefined,
         controller.signal,
+        viewerId,
       );
       const raw = result.journey;
       if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
@@ -48,34 +58,34 @@ export function SemeaduraJourneyPanel({
           journey.pitangueiras !== Math.floor(Number(journey.totalSeeds) / 1000)) {
         throw new Error('SEMEADURA_JOURNEY_INVALID');
       }
-      if (!controller.signal.aborted) setTotal(Number(journey.totalSeeds));
+      if(current()&&attempt===revision){setTotal(previous=>Math.max(previous??0,Number(journey.totalSeeds)));setError('');}
     };
     void read().catch(() => {
-      if (!controller.signal.aborted) setError('A jornada está indisponível neste momento.');
+      if(current())setError('A jornada está indisponível neste momento.');
     });
-    const onUpdate = () => { void read().catch(() => undefined); };
-    window.addEventListener('kyrub-semeadura-updated', onUpdate);
+    // Outgoing seeds belong to other authors; they do not change this journey.
+    const unsubscribe=subscribeRewardRefresh(session,current,reason=>{
+      if(reason==='return')void read().catch(()=>{if(current())setError('Não foi possível atualizar a jornada.');});
+    });
     return () => {
       controller.abort();
-      window.removeEventListener('kyrub-semeadura-updated', onUpdate);
+      unsubscribe();
     };
-  }, [viewerId, communityId]);
+  }, [viewerId]);
 
   if (!SEMEADURA_UI_ENABLED) return null;
   const journey = calculatePitangueiraJourney(total ?? 0);
   const remainingToBosque = SEEDS_PER_BOSQUE - journey.totalSeeds % SEEDS_PER_BOSQUE;
-  const showCanonicalXp = !communityId && xp !== undefined;
+  const showCanonicalXp = xp !== undefined;
   return (
-    <section aria-label={communityId ? 'Jornada coletiva da Pitangueira' : 'Minha Jornada da Pitangueira'}
+    <section aria-label="Minha Jornada da Pitangueira"
       className="rounded-2xl border border-emerald-800/30 bg-emerald-950/10 p-3 text-slate-200">
       <div className="flex items-center justify-between gap-2">
         <h3 className="text-sm font-black text-emerald-200">🌳 Jornada da Pitangueira</h3>
         <span className="text-xs font-bold text-emerald-300">🌲 {total === null ? '…' : journey.bosques.toLocaleString('pt-BR')} bosques</span>
       </div>
       <p className="mt-1 text-xs text-slate-400">
-        {communityId
-          ? 'Crescimento coletivo de todas as publicações desta comunidade.'
-          : 'Suas semeaduras recebidas em publicações pessoais e comunitárias.'}
+        Suas semeaduras recebidas em publicações pessoais e comunitárias.
       </p>
       <div className={`mt-3 grid grid-cols-3 gap-2 text-center ${showCanonicalXp ? "sm:grid-cols-3" : "sm:grid-cols-5"}`} aria-label="Etapas da Jornada da Pitangueira">
         {([
@@ -111,17 +121,10 @@ export function SemeaduraJourneyPanel({
           {remainingToBosque.toLocaleString('pt-BR')} sementes até o próximo bosque.
         </p>
       )}
-      {!communityId && (
-        <p className="mt-2 text-[11px] text-amber-200">
-          🍒 {journey.pitangasEquivalent.toLocaleString('pt-BR')} Pitangas equivalentes
-          pelo progresso, ainda não creditadas. O saldo disponível fica no extrato.
-        </p>
-      )}
-      {communityId && (
-        <p className="mt-2 text-[11px] text-slate-400">
-          Esta jornada é visual. As recompensas pertencem aos autores, não à comunidade.
-        </p>
-      )}
+      <p className="mt-2 text-[11px] text-amber-200">
+          🍒 {total===null?'…':journey.pitangasEquivalent.toLocaleString('pt-BR')} Pitangas equivalentes
+          pelo progresso. Consulte o extrato para conferir os créditos efetivamente registrados.
+      </p>
       {error && <p role="status" className="mt-2 text-xs text-amber-300">{error}</p>}
     </section>
   );

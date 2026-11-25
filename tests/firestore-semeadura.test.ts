@@ -5,10 +5,10 @@ import { after, before, beforeEach, test } from 'node:test';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
 import { getFirestore, type Firestore } from 'firebase-admin/firestore';
 import { initializeTestEnvironment, assertFails, type RulesTestEnvironment } from '@firebase/rules-unit-testing';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
+import { doc, getDoc, setDoc, deleteDoc } from 'firebase/firestore';
 import {
-  readCommunitySemeaduraJourney, readPersonalSemeaduraJourney,
-  readVerifiedPostSemeadura, seedVerifiedPost,
+  readPersonalSemeaduraJourney,
+  readVerifiedPostSemeadura, readVerifiedPostSemeaduraBatch, seedVerifiedPost,
 } from '../server/gamification/semeaduraService';
 
 const projectId = 'kyrub-security-test';
@@ -79,7 +79,7 @@ test('one author can accumulate concurrent seeds from personal and community pos
   ]);
   assert.deepEqual(results.map(result => result.status), ['accepted', 'accepted']);
   assert.equal((await readPersonalSemeaduraJourney(db, 'author')).totalSeeds, 2);
-  assert.equal((await readCommunitySemeaduraJourney(db, 'voter', 'rock')).totalSeeds, 1);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
   assert.equal((await db.collection('users/author/rewardLedger').get()).size, 0);
   assert.equal((await db.collection('users/author/xpLedger').get()).size, 0);
 });
@@ -112,11 +112,172 @@ test('the two concurrent final seeds yield exactly ONE winner, then close the po
   assert.equal((await db.collection('semeadura_post_stats/'+key+'/receipts').get()).size,1);
 });
 
-test('community seeds count toward the AUTHOR, not the owner, and toward a visual community bosque', async () => {
+test('community seeds count toward the AUTHOR only, not owner or community', async () => {
   await community('rock-post');
   assert.equal((await semear('community','rock-post','voter')).status,'accepted');
   assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
   assert.equal((await readPersonalSemeaduraJourney(db,'community-owner')).totalSeeds,0);
-  assert.equal((await readCommunitySemeaduraJourney(db,'voter','rock')).totalSeeds,1);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
   await assert.rejects(semear('community','rock-post','outsider'), /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
+});
+
+test('seed receipts are irrevocable even by their actor; old community progress stays untouched',async()=>{
+ await community('permanent-post');
+ const old=db.doc('communities/rock/semeaduraProgress/summary');
+ const historical={communityId:'rock',acceptedSeeds:77,bosques:0};
+ await old.set(historical);
+ const key=createHash('sha256').update('community\0permanent-post').digest('hex');
+ const receiptPath='semeadura_post_stats/'+key+'/receipts/voter';
+ await semear('community','permanent-post','voter');
+ const actor=environment.authenticatedContext('voter').firestore();
+ await assertFails(deleteDoc(doc(actor,receiptPath)));
+ await assertFails(setDoc(doc(actor,receiptPath),{actorId:'voter'}));
+ await assertFails(setDoc(doc(actor,'communities/rock/semeaduraProgress/summary'),{acceptedSeeds:100000}));
+ assert.equal((await semear('community','permanent-post','voter')).status,'already_seeded');
+ assert.equal((await db.doc(receiptPath).get()).exists,true);
+ assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
+ assert.deepEqual((await old.get()).data(),historical);
+});
+
+test('economic review controls cannot be created, inspected, cleared or removed by clients',async()=>{
+ const path='systemControl/semeaduraEconomicReview/holds/author_author';
+ const hold={schemaVersion:1,scope:'author',target:'author',status:'held',caseId:'test-case',reviewedBy:'fixture',updatedAt:new Date().toISOString()};
+ await db.doc(path).set(hold);
+ for(const uid of ['author','voter','attacker']){
+  const client=environment.authenticatedContext(uid).firestore();
+  await assertFails(getDoc(doc(client,path)));
+  await assertFails(setDoc(doc(client,path),{status:'cleared'},{merge:true}));
+  await assertFails(deleteDoc(doc(client,path)));
+  await assertFails(setDoc(doc(client,'systemControl/semeaduraEconomicReview/holds/actor_'+uid),{status:'held'}));
+ }
+ assert.deepEqual((await db.doc(path).get()).data(),hold);
+});
+
+test('100th daily seed is atomic across personal and community posts; replay and next day do not reset receipts',async()=>{
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const day=semeaduraDay(new Date());
+ const quota=db.doc('users/voter/semeaduraDailyUsage/'+day);
+ await Promise.all([personal('quota-personal'),community('quota-community'),personal('quota-extra')]);
+ // Boundary fixture only: previous 99 accepted sends in this test day.
+ await quota.set({schemaVersion:1,actorId:'voter',day,count:99});
+ const settled=await Promise.allSettled([semear('personal','quota-personal','voter'),semear('community','quota-community','voter')]);
+ assert.equal(settled.filter(r=>r.status==='fulfilled').length,1);
+ const rejected=settled.find(r=>r.status==='rejected');
+ assert.match(String(rejected?.reason),/SEMEADURA_DAILY_LIMIT_REACHED/);
+ assert.equal((await quota.get()).get('count'),100);
+ const winner=settled[0].status==='fulfilled'?{kind:'personal' as const,postId:'quota-personal'}:{kind:'community' as const,postId:'quota-community'};
+ assert.equal((await semear(winner.kind,winner.postId,'voter')).status,'already_seeded');
+ const unavailable=await readVerifiedPostSemeadura(db,{kind:'personal',postId:'quota-extra',authenticatedUserId:'voter'});
+ assert.equal(unavailable.canSemear,false);assert.equal(unavailable.dailyRemaining,0);assert.equal(unavailable.count,0);
+ await assert.rejects(semear('personal','quota-extra','voter'),/SEMEADURA_DAILY_LIMIT_REACHED/);
+ assert.equal((await quota.get()).get('count'),100);
+ assert.equal((await semear('personal','quota-extra','another-voter')).status,'accepted');
+ const total=(await readPersonalSemeaduraJourney(db,'author')).totalSeeds+(await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds;
+ assert.equal(total,2);
+ const client=environment.authenticatedContext('voter').firestore();
+ await assertFails(getDoc(doc(client,quota.path)));
+ await assertFails(setDoc(doc(client,quota.path),{count:1},{merge:true}));
+ await assertFails(deleteDoc(doc(client,quota.path)));
+ // An unrelated previous-day document does not consume today's allowance.
+ const yesterday=semeaduraDay(new Date(Date.now()-86400000));
+ await db.doc('users/fresh-voter/semeaduraDailyUsage/'+yesterday).set({schemaVersion:1,actorId:'fresh-voter',day:yesterday,count:100});
+ assert.equal((await semear('personal','quota-extra','fresh-voter')).status,'accepted');
+ assert.equal((await db.doc('users/fresh-voter/semeaduraDailyUsage/'+day).get()).get('count'),1);
+ assert.equal((await semear('personal','quota-extra','fresh-voter')).status,'already_seeded');
+});
+
+
+test('cutover preserves a pre-quota legacy receipt and community history without retroactive rewards',async()=>{
+ const {semeaduraDay}=await import('../shared/semeaduraDailyLimit.js');
+ const postId='legacy-cutover-post';
+ await community(postId);
+ await db.doc('community_members/rock__second-voter').set({communityId:'rock',userId:'second-voter',status:'active'});
+ const key=createHash('sha256').update('community\0'+postId).digest('hex');
+ const stats=db.doc('semeadura_post_stats/'+key);
+ const receipt=stats.collection('receipts').doc('voter');
+ const author=db.doc('users/member-author/semeaduraProgress/summary');
+ const collective=db.doc('communities/rock/semeaduraProgress/summary');
+ const oldTime=new Date(Date.now()-172800000).toISOString();
+ const oldReceipt={kind:'community',postId,communityId:'rock',authorId:'member-author',actorId:'voter',occurredAt:oldTime};
+ const oldCollective={communityId:'rock',acceptedSeeds:1,pitangueiras:0,bosques:0,createdAt:oldTime,updatedAt:oldTime};
+ await Promise.all([
+  stats.set({kind:'community',postId,communityId:'rock',authorId:'member-author',acceptedSeeds:1,closed:false,createdAt:oldTime,updatedAt:oldTime}),
+  receipt.set(oldReceipt),
+  author.set({authorId:'member-author',acceptedSeeds:1,pitangueiras:0,createdAt:oldTime,updatedAt:oldTime}),
+  collective.set(oldCollective),
+ ]);
+ const day=semeaduraDay(new Date());
+ const legacyQuota=db.doc('users/voter/semeaduraDailyUsage/'+day);
+ assert.equal((await readVerifiedPostSemeadura(db,{kind:'community',postId,authenticatedUserId:'voter'})).seeded,true);
+ assert.equal((await semear('community',postId,'voter')).status,'already_seeded');
+ assert.equal((await legacyQuota.get()).exists,false);
+ assert.deepEqual((await receipt.get()).data(),oldReceipt);
+ assert.equal((await semear('community',postId,'second-voter')).count,2);
+ assert.equal((await author.get()).get('acceptedSeeds'),2);
+ assert.deepEqual((await collective.get()).data(),oldCollective);
+ assert.equal((await stats.collection('receipts').doc('second-voter').get()).get('quotaDay'),day);
+ assert.equal((await db.doc('users/second-voter/semeaduraDailyUsage/'+day).get()).get('count'),1);
+ assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
+ assert.equal((await db.collection('users/member-author/xpLedger').get()).size,0);
+ assert.equal((await db.doc('users/member-author/pitangaBalance/balance').get()).exists,false);
+});
+
+
+test('instrumented emulator status batches preserve results and reduce document get calls',async()=>{
+ // Delegate every read to the real Admin SDK and disposable Firestore emulator.
+ // Expose no writer or transaction in the counting adapter: these paths are read-only.
+ // Counts are logical SDK get calls, not a Cloud Billing measurement.
+ const reads:string[]=[];
+ const ref=(path:string):unknown=>({
+  get:async()=>{reads.push(path);return db.doc(path).get();},
+  collection:(name:string)=>({doc:(id:string)=>ref(path+'/'+name+'/'+id)}),
+ });
+ const countingDb={doc:ref,collection:(path:string)=>({doc:(id:string)=>ref(path+'/'+id)})} as unknown as Firestore;
+ const actor='voter';
+ const compare=async(targets:Array<{kind:'personal'|'community';postId:string}>,singleCount:number,batchCount:number)=>{
+  reads.length=0;
+  const individual=await Promise.all(targets.map(target=>readVerifiedPostSemeadura(countingDb,{...target,authenticatedUserId:actor})));
+  assert.equal(reads.length,singleCount);
+  reads.length=0;
+  const batch=await readVerifiedPostSemeaduraBatch(countingDb,actor,targets);
+  assert.deepEqual(batch.results.map(row=>row.status),individual);
+  assert.equal(reads.length,batchCount);
+  assert.equal(new Set(reads).size,batchCount);
+  assert.equal(reads.filter(path=>path.startsWith('users/'+actor+'/semeaduraDailyUsage/')).length,1);
+  console.info('[semeadura-read-budget]',targets[0].kind,singleCount,'->',batchCount);
+  return batch;
+ };
+ const personals=Array.from({length:10},(_,i)=>({kind:'personal' as const,postId:'budget-personal-'+i}));
+ const same=Array.from({length:10},(_,i)=>({kind:'community' as const,postId:'budget-same-'+i}));
+ const distinct=Array.from({length:10},(_,i)=>({kind:'community' as const,postId:'budget-distinct-'+i}));
+ await Promise.all(personals.map(t=>personal(t.postId)));
+ await community(same[0].postId);
+ await Promise.all(same.slice(1).map(t=>db.doc('community_posts/'+t.postId).set({postId:t.postId,authorId:'member-author',communityId:'rock'})));
+ await Promise.all(distinct.map(async(t,i)=>{
+  const group='budget-group-'+i;
+  await Promise.all([
+   db.doc('community_posts/'+t.postId).set({postId:t.postId,authorId:'member-author',communityId:group}),
+   db.doc('communities/'+group).set({communityId:group,ownerId:'community-owner',visibility:'public'}),
+   db.doc('community_members/'+group+'__'+actor).set({communityId:group,userId:actor,status:'active'}),
+  ]);
+ }));
+ await semear('personal',personals[0].postId,actor);
+ await semear('community',same[0].postId,actor);
+ const before=await readPersonalSemeaduraJourney(db,'member-author');
+ const personalResult=await compare(personals,40,31);
+ assert.equal(personalResult.results[0].status?.seeded,true);
+ assert.equal(personalResult.results[1].status?.dailyRemaining,98);
+ const sameResult=await compare(same,60,33);
+ assert.equal(sameResult.results[0].status?.seeded,true);
+ await compare(distinct,60,51);
+ await db.doc('communities/rock').update({visibility:'private'});
+ const forbidden=await readVerifiedPostSemeaduraBatch(countingDb,'outsider',[same[0],personals[1]]);
+ assert.equal(forbidden.results[0].status,null);
+ assert.equal(forbidden.results[1].status?.canSemear,true);
+ await db.doc('community_members/rock__voter').update({status:'inactive'});
+ const revoked=await readVerifiedPostSemeaduraBatch(countingDb,actor,same);
+ assert.ok(revoked.results.every(row=>row.status===null));
+ assert.deepEqual(await readPersonalSemeaduraJourney(db,'member-author'),before);
+ assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
+ assert.equal((await db.collection('users/author/rewardLedger').get()).size,0);
 });
