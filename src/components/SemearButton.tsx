@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { createSemeaduraReadCoalescer } from '../utils/semeaduraReadCoalescer';
 import { auth } from '../utils/firebase';
 import { SEMEADURA_DAILY_LIMIT, semeaduraDay, mergeSemeaduraDailyAllowance, type SemeaduraDailyAllowance } from '../../shared/semeaduraDailyLimit';
 import { calculatePitangueiraJourney, SEEDS_PER_BOSQUE, type SemeaduraPostKind } from '../../shared/pitangueiraJourney';
@@ -20,7 +21,27 @@ type SemeaduraStatus = {
 class SemeaduraQuotaReached extends Error {
   constructor(readonly dailyDay:string){super('SEMEADURA_DAILY_LIMIT_REACHED');}
 }
+const sharedReads=createSemeaduraReadCoalescer<Record<string, unknown>>();
 export async function requestSemeadura(
+  action: 'status' | 'semear' | 'journey',
+  target?: {kind:SemeaduraPostKind;postId:string},signal?:AbortSignal,expectedUid?:string,
+):Promise<Record<string,unknown>> {
+  const session=auth.currentUser;
+  if(!session||signal?.aborted||(expectedUid!==undefined&&session.uid!==expectedUid))throw Error('SEMEADURA_SESSION_CHANGED');
+  const key=JSON.stringify([action==='journey'?'journey':'status',target?.kind,target?.postId,semeaduraDay(new Date())]);
+  if(action==='semear'){
+    sharedReads.invalidate(session,key);
+    try{return await requestSemeaduraTransport(action,target,signal,session.uid);}
+    finally{sharedReads.invalidate(session,key);}
+  }
+  const result=await sharedReads.read(session,key,sharedSignal=>{
+    if(auth.currentUser!==session)throw Error('SEMEADURA_SESSION_CHANGED');
+    return requestSemeaduraTransport(action,target,sharedSignal,session.uid);
+  },signal);
+  if(auth.currentUser!==session||signal?.aborted)throw Error('SEMEADURA_SESSION_CHANGED');
+  return result;
+}
+async function requestSemeaduraTransport(
   action: 'status' | 'semear' | 'journey',
   target?: { kind: SemeaduraPostKind; postId: string },
   signal?: AbortSignal,
@@ -108,6 +129,7 @@ function ScopedSemearButton({
   const [visible, setVisible] = useState(false);
   const holderRef = useRef<HTMLDivElement | null>(null);
   const inFlight = useRef(false);
+  const source=useRef({});
   const allowanceRef=useRef<SemeaduraDailyAllowance|null>(null);
   const observeAllowance=useCallback((next:SemeaduraDailyAllowance)=>{
     const current=mergeSemeaduraDailyAllowance(allowanceRef.current,next);
@@ -159,7 +181,8 @@ function ScopedSemearButton({
       });
     }
     const sync = (event: Event) => {
-      const detail = (event as CustomEvent<{ kind?: string; postId?: string }>).detail;
+      const detail = (event as CustomEvent<{ kind?: string; postId?: string; source?:object; viewerId?:string }>).detail;
+      if(detail?.source===source.current||detail?.viewerId!==viewerId)return;
       if (detail?.kind === kind && detail.postId === postId && viewerId && visible) {
         void refresh(controller.signal).catch(() => undefined);
       }
@@ -215,7 +238,13 @@ function ScopedSemearButton({
       // Query the authoritative status after the write. Never infer account
       // awards or allow an optimistic increment on a potentially failed write.
       try {
-        await refresh();
+        if(result.status==='accepted'&&typeof result.dailyDay==='string'&&typeof result.dailyRemaining==='number'){
+          const confirmed=normalizeSemeadura({...result,seeded:true,canSemear:false});
+          const allowance=observeAllowance(confirmed);
+          setState(previous=>({...confirmed,...allowance,count:Math.max(previous?.count??0,confirmed.count),
+            closed:Boolean(previous?.closed||confirmed.closed),seeded:true,canSemear:false}));
+          if(allowance.dailyRemaining===0)window.dispatchEvent(new CustomEvent('kyrub-semeadura-quota-exhausted',{detail:{viewerId,day:allowance.dailyDay}}));
+        }else await refresh();
       } catch {
         // An accepted write is not a failure when the follow-up status read
         // times out. The immutable receipt prevents duplicate seed credits.
@@ -223,7 +252,7 @@ function ScopedSemearButton({
       }
       if(auth.currentUser!==session)return;
       window.dispatchEvent(new CustomEvent('kyrub-semeadura-updated', {
-        detail: { kind, postId },
+        detail: { kind, postId, viewerId, source:source.current },
       }));
     } catch (failure) {
       if(auth.currentUser!==session)return;
