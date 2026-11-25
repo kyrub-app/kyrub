@@ -24,12 +24,16 @@
       return get(storeSecMemberPath(storeId, request.auth.uid)).data;
     }
 
+    function storeSecBoundActiveMember(storeId, member) {
+      return member.status == 'active'
+        && member.storeId == storeId
+        && member.userId == request.auth.uid
+        && member.role != 'owner';
+    }
+
     function storeSecActiveMember(storeId) {
       return storeSecMemberExists(storeId)
-        && storeSecMemberData(storeId).status == 'active'
-        && storeSecMemberData(storeId).storeId == storeId
-        && storeSecMemberData(storeId).userId == request.auth.uid
-        && storeSecMemberData(storeId).role != 'owner';
+        && storeSecBoundActiveMember(storeId, storeSecMemberData(storeId));
     }
 
     function storeSecOwner(storeId) {

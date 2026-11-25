@@ -15,7 +15,9 @@
     }
 
     function canonicalProductFieldsAreValid(storeId, productId) {
-      return incoming().keys().hasAll([
+      let product = incoming();
+      let keys = product.keys();
+      return keys.hasAll([
           'id',
           'storeId',
           'supplierId',
@@ -41,7 +43,7 @@
           'createdAt',
           'updatedAt'
         ])
-        && incoming().keys().hasOnly([
+        && keys.hasOnly([
           'id',
           'storeId',
           'supplierId',
@@ -78,83 +80,83 @@
           'actionExecutionId'
         ])
         && (
-          !incoming().keys().hasAny(['isComplimentary'])
-          || incoming().isComplimentary is bool
+          !keys.hasAny(['isComplimentary'])
+          || product.isComplimentary is bool
         )
         && (
-          !incoming().keys().hasAny(['storePointsPerUnit'])
+          !keys.hasAny(['storePointsPerUnit'])
           || (
-            incoming().storePointsPerUnit is number
-            && incoming().storePointsPerUnit >= 0
+            product.storePointsPerUnit is number
+            && product.storePointsPerUnit >= 0
           )
         )
         && (
-          !incoming().keys().hasAny(['kyrubiaActionExecutionId'])
-          || incoming().kyrubiaActionExecutionId is string
+          !keys.hasAny(['kyrubiaActionExecutionId'])
+          || product.kyrubiaActionExecutionId is string
         )
         && (
-          !incoming().keys().hasAny(['actionOrigin'])
-          || incoming().actionOrigin is string
+          !keys.hasAny(['actionOrigin'])
+          || product.actionOrigin is string
         )
         && (
-          !incoming().keys().hasAny(['actionExecutionId'])
-          || incoming().actionExecutionId is string
+          !keys.hasAny(['actionExecutionId'])
+          || product.actionExecutionId is string
         )
         && (
-          !incoming().keys().hasAny(['categoryCollections'])
-          || incoming().categoryCollections is list
+          !keys.hasAny(['categoryCollections'])
+          || product.categoryCollections is list
         )
         && (
-          !incoming().keys().hasAny(['optionGroups'])
-          || incoming().optionGroups is list
+          !keys.hasAny(['optionGroups'])
+          || product.optionGroups is list
         )
         && (
-          !incoming().keys().hasAny(['quickNotes'])
-          || incoming().quickNotes is list
+          !keys.hasAny(['quickNotes'])
+          || product.quickNotes is list
         )
         && (
-          !incoming().keys().hasAny(['saleModality'])
-          || incoming().saleModality is map
+          !keys.hasAny(['saleModality'])
+          || product.saleModality is map
         )
         && (
-          !incoming().keys().hasAny(['contractDiscounts'])
+          !keys.hasAny(['contractDiscounts'])
           || (
-            incoming().contractDiscounts is list
-            && incoming().keys().hasAny(['saleModality'])
-            && incoming().saleModality.mode == 'subscription'
+            product.contractDiscounts is list
+            && keys.hasAny(['saleModality'])
+            && product.saleModality.mode == 'subscription'
           )
         )
-        && incoming().id == productId
-        && incoming().storeId == storeId
-        && incoming().supplierId == storeId
-        && incoming().name is string
-        && incoming().name.size() > 0
-        && incoming().description is string
-        && incoming().price is number
-        && incoming().price >= 0
-        && incoming().image is string
-        && incoming().stock is int
-        && incoming().stock >= 0
-        && incoming().category is string
-        && incoming().category.size() > 0
-        && incoming().isService is bool
-        && (incoming().isService == false || incoming().stock == 0)
-        && canonicalProductPublicationStatusIsValid(incoming().publicationStatus)
-        && incoming().createdByUserId is string
-        && storeSecValidRole(incoming().createdByRole)
-        && incoming().updatedByUserId is string
-        && storeSecValidRole(incoming().updatedByRole)
-        && incoming().legacyStoreId is string
-        && incoming().legacyProductId is string
-        && incoming().legacySupplierId is string
-        && incoming().legacyUpdatedAt is string
-        && incoming().migratedFromPath is string
+        && product.id == productId
+        && product.storeId == storeId
+        && product.supplierId == storeId
+        && product.name is string
+        && product.name.size() > 0
+        && product.description is string
+        && product.price is number
+        && product.price >= 0
+        && product.image is string
+        && product.stock is int
+        && product.stock >= 0
+        && product.category is string
+        && product.category.size() > 0
+        && product.isService is bool
+        && (product.isService == false || product.stock == 0)
+        && canonicalProductPublicationStatusIsValid(product.publicationStatus)
+        && product.createdByUserId is string
+        && storeSecValidRole(product.createdByRole)
+        && product.updatedByUserId is string
+        && storeSecValidRole(product.updatedByRole)
+        && product.legacyStoreId is string
+        && product.legacyProductId is string
+        && product.legacySupplierId is string
+        && product.legacyUpdatedAt is string
+        && product.migratedFromPath is string
         && (
-          incoming().archivedAt is string
-          || incoming().archivedAt is timestamp
+          product.archivedAt is string
+          || product.archivedAt is timestamp
         )
-        && incoming().migration is map
-        && incoming().migration.keys().size() == 3;
+        && product.migration is map
+        && product.migration.keys().size() == 3;
     }
 
     function canonicalProductMigrationCreateIsValid(storeId, productId) {
