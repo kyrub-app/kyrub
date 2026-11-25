@@ -92,3 +92,31 @@ operações quando esgotadas, não converter excedente automaticamente em custo.
 Sem alteração funcional nesta auditoria. Próximo passo: otimização focada
 de consultas de status e validação de regressão. Sem ativação comercial,
 migração histórica, mudanças de flags, faturamento ou PR #1274.
+
+
+## Otimização 1 — consultas redundantes
+CI da revisão 952b8bb: 4/4 workflows aprovados. A entrada controlada retorna
+a quota restante e dia já obtidos da transação de aceite, sem leitura adicional.
+O componente consome a resposta confirmada, mantém bloqueio irrevogável,
+não faz nova consulta própria se a resposta for válida, e não reage ao seu
+próprio evento. Réplicas de cards podem consultar novamente; consultas
+simultâneas por objeto de sessão/ação/publicação/dia são compartilhadas,
+com cancelamento individual e invalidação ao iniciar/terminar mutação.
+Nenhum cache de resposta concluída, nenhuma autorização baseada em cache,
+nenhuma mudança em recibos, fences, holds ou limites. Respostas anteriores
+sem quota conservam caminho de consulta. Testes de coalescência, isolamento,
+cancelamento e contratos adicionados; novo CI pendente.
+
+Estimativa mantendo o modelo anterior: cada aceite evita uma consulta própria
+de 4–6 documentos (média 5). Com 100 mil aceites/dia, até 500 mil leituras/dia
+a menos nesse caminho, antes de retries, outras réplicas e demais módulos.
+No cenário ilustrativo 2 milhões de leituras e 500 mil gravações/dia:
+1,5 milhão de leituras/dia, mesmas gravações; USD 26,01/mês versus 30,51,
+redução USD 4,50/mês pelas taxas hipotéticas de Iowa. Não medido em produção.
+Os 40 status iniciais e 100 aceites do cenário anterior são variáveis
+independentes de carga, não uma jornada de interface em que 40 posts distintos
+possibilitam 100 sementes. Um usuário precisa encontrar 100 posts elegíveis
+distintos para esgotar a quota. A economia adicional de eliminar duplicação
+de consultas concorrentes depende da navegação e não foi somada.
+Agrupamento de publicações distintas, medição instrumentada, inventário
+externo e orçamento efetivo continuam pendentes. Nenhuma mudança em produção.
