@@ -81,7 +81,7 @@ jobs:
           const p=JSON.parse(readFileSync('package.json','utf8'));
           if(p.devDependencies?.['@vercel/routing-utils']!=='6.6.1')throw Error('ROUTING_VERSION_CHANGED');
           p.overrides??={};
-          if(p.overrides['@vercel/routing-utils'])throw Error('ROUTING_OVERRIDE_ALREADY_EXISTS');
+          if(p.overrides['@vercel/routing-utils']&&JSON.stringify(p.overrides['@vercel/routing-utils'])!==JSON.stringify({'path-to-regexp':'6.3.0'}))throw Error('ROUTING_OVERRIDE_CONFLICT');
           p.overrides['@vercel/routing-utils']={'path-to-regexp':'6.3.0'};
           writeFileSync('package.json',JSON.stringify(p,null,2)+'\n');
           JS
