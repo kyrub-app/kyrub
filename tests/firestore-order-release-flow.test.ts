@@ -122,6 +122,30 @@ const mappedStore=async()=>{
   await db.doc('tenants/seller').set({canonicalStoreId:'canonical',publicationStatus:'published',publicProducts:[{id:'product',name:'Produto',price:20}]});
   await db.doc('stores/canonical/members/seller').set({userId:'seller',role:'owner',status:'active'});
 };
+test('staged marketplace checkout rejects missing, mismatched and suspended age evidence before writes',async()=>{
+  const control=db.doc('erp_age_release_private/current');
+  const age=db.doc('age_eligibility_private/buyer');
+  await control.set({schemaVersion:1,mode:'verified_adult_only'});
+  const checkout=()=>service.createMarketplacePaymentIntent('Bearer synthetic',checkoutBody);
+  const originalPayments=(await db.collection('stores/seller/payments').get()).size;
+  const originalIntents=(await db.collection('stores/seller/paymentIntents').get()).size;
+  await assert.rejects(checkout(),/STORE_ERP_AGE_REQUIRED/);
+  for(const evidence of [{uid:'other',status:'verified_adult'},{uid:'buyer',status:'declared_adult'},{uid:'buyer',status:'suspended'}]){
+    await age.set(evidence);
+    await assert.rejects(checkout(),/STORE_ERP_AGE_REQUIRED/);
+  }
+  assert.equal((await db.collection('stores/seller/payments').get()).size,originalPayments);
+  assert.equal((await db.collection('stores/seller/paymentIntents').get()).size,originalIntents);
+  await age.set({uid:'buyer',status:'verified_adult'});
+  await control.update({schemaVersion:2});
+  await assert.rejects(checkout(),/STORE_ERP_AGE_REQUIRED/);
+  await control.update({schemaVersion:1});
+  await mappedStore();
+  const result=await checkout();
+  assert.equal(result.status,201);
+  await age.update({status:'suspended'});
+  await assert.rejects(service.createMarketplacePaymentIntent('Bearer synthetic',{storeId:'seller',resumeOrderId:result.body.orderId}),/STORE_ERP_AGE_REQUIRED/);
+});
 test('official checkout creates both pending projections; retry repairs mirror and preserves approval through KDS',async()=>{
   await mappedStore();
   const checkout=()=>service.createMarketplacePaymentIntent('Bearer isolated-test',checkoutBody);
