@@ -188,7 +188,7 @@ export default function AdminKyrubTagNfcWizard({user,readiness,batches,onBatch}:
  const allVerified=batches.reduce((n,b)=>n+b.units.filter(x=>x.physicalStatus==='readback_confirmed').length,0);
  return <section className="space-y-4 rounded-xl border border-[#34443B] bg-[#18231E] p-4">
   <div>
-   <h5 className="text-base font-bold">Gravação sequencial · Um adesivo por vez</h5>
+   <h5 className="text-base font-bold">Gravar adesivos</h5>
    <p className="mt-1 text-slate-300">{permanent?'Grave os adesivos definitivos já registrados no lote. Separe um por vez.':'Separe um adesivo vazio para o teste.'}</p>
   </div>
   {!canPilot&&<p role="status" className="rounded-lg border border-amber-400/30 p-3 text-amber-100">
