@@ -96,7 +96,7 @@ const SECURE_FREELANCE_RULES = `${FREELANCE_SECTION_HEADER}
       }
       function directHiringApplicationsAllowed() {
         let control = /databases/$(database)/documents/renda_age_release_private/current;
-        return !exists(control) || get(control).data.get('applicationAuthority','client') == 'client';
+        return !exists(control) || (get(control).data.get('applicationAuthority','client') == 'client' && get(control).data.get('vacancyPolicy','legacy') == 'legacy');
       }
       // The applicant may check their own deterministic receipt before creation.
       allow get: if isSignedIn() && resource == null
