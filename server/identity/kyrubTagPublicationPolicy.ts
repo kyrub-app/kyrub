@@ -1,3 +1,4 @@
+import {evaluateStoredCapabilityAgeAccess} from '../../shared/ageEligibility.js';
 import { createHash } from 'node:crypto';
 import { TAG_PUBLICATION_TERMS_VERSION, TAG_PUBLICATION_TERMS_TEXT, TAG_PUBLICATION_ACKNOWLEDGEMENT } from '../../shared/kyrubTagPublicationTerms.js';
 import { normalizePromotionalPresentation } from '../../shared/kyrubTagPromotional.js';
@@ -5,7 +6,7 @@ const hash = (text:string) => createHash('sha256').update(text,'utf8').digest('h
 export const tagTermsHash = hash(TAG_PUBLICATION_TERMS_TEXT+'\n'+TAG_PUBLICATION_ACKNOWLEDGEMENT);
 const presentationHash = (value:unknown) => hash(JSON.stringify(normalizePromotionalPresentation(value)));
 export function tagPublicationAllowed(actor:string, age:Record<string,unknown>|undefined, enabled:boolean):boolean {
- return enabled === true && age?.uid === actor && age?.status === 'verified_adult';
+ return enabled === true && evaluateStoredCapabilityAgeAccess({actorUid:actor,record:age,capability:'tag_publication',policy:'verified_adult_only'});
 }
 export function createTagPublicationReceipt(actor:string,id:string,presentation:unknown,acceptance:unknown,age:Record<string,unknown>|undefined,enabled:boolean,now:string){
  if(!tagPublicationAllowed(actor,age,enabled))throw Error('TAG_PUBLICATION_AGE_REQUIRED');
