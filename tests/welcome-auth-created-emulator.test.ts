@@ -194,7 +194,21 @@ test('failed authentication and non-Google creation never grant credit', async (
   });
   assert.equal(failed.status, 400);
   const user = await auth.createUser({ uid: 'password-only', email: 'password-only@example.invalid', password: 'fake-password-1234' });
-  assert.deepEqual(await handleWelcomeAuthCreated(db, auth, user, { eventId: 'non-google-auth-event', projectId }), { skipped: true });
+  // Real Auth onCreate now records non-Google provenance in this pilot.
+  // Replay that exact event rather than manufacturing a competing event ID.
+  const registration=db.doc(`users/${user.uid}/authEvents/semeadura_non_google_registration_v1`);
+  const deadline=Date.now()+60000;
+  while(!(await registration.get()).exists&&Date.now()<deadline)await delay(100);
+  const evidence=(await registration.get()).data();
+  assert.equal(evidence?.source,'trusted_auth_on_create_non_google');
+  assert.deepEqual(await handleWelcomeAuthCreated(db,auth,{...user,metadata:{creationTime:evidence!.createdAt}},{
+   eventId:evidence!.sourceEventId,projectId,
+  }),{skipped:true});
+  await assert.rejects(handleWelcomeAuthCreated(db,auth,{...user,metadata:{creationTime:evidence!.createdAt}},{
+   eventId:'conflicting-non-google-event',projectId,
+  }),/SEMEADURA_NO_WELCOME_REGISTRATION_CONFLICT/);
+  assert.deepEqual((await registration.get()).data(),evidence);
+  assert.equal((await db.doc(`users/${user.uid}/authEvents/first_login_v1`).get()).exists,false);
   assert.equal((await balance(user.uid).get()).exists, false);
   assert.equal((await ledger(user.uid).get()).size, 0);
 });
