@@ -475,7 +475,7 @@ test('Praça shares canonical public community posts for 24h without duplicating
   assert.match(cloud, /batch\.set\(doc\(db, 'community_square_posts', reference\.id\)/);
   assert.match(cloud, /await batch\.commit\(\)/);
   assert.match(cloudUI, /Exibir também na Praça por 24 horas/);
-  assert.match(cloudUI, /shareToSquare: selectedCommunity.visibility === 'public' && shareWallToSquare/);
+  assert.match(cloudUI, /selectedCommunity\.visibility === 'public' && shareWallToSquare/);
   assert.match(cloudUI, /selectedCommunity.visibility === 'moderated'/);
   assert.match(cloudUI, /selectedCommunity.visibility === 'private'/);
   assert.match(cloudUI, /subscribeCommunitySquareIds/);
