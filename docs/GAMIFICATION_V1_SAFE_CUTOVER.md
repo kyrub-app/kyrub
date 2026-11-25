@@ -78,3 +78,25 @@ Qualquer ativação econômica precisa de autorização própria. Migração his
 
 Este roteiro não pressupõe que algum serviço esteja ativo ou ausente, não prova
 estado atual de flags e não autoriza deploy, merge, billing ou alteração de dados.
+
+
+## G3.1 — Interrupção transacional (contrato experimental)
+A entrada pública de novas sementes agora delega a seedReleaseControlledPost.
+O gate lê systemControl/semeaduraReleasePilot e o fence na mesma transação,
+antes de quota, recibo, projeções e liquidação. Exige flag experimental,
+projeto/epoch de emulador, versão de esquema, status open, instante de início,
+revisão válida e fence verificado. Ausência, pausa, projeto incorreto ou data
+futura recusam novas sementes sem movimentar estado. Leituras e replay de
+recibos existentes continuam possíveis se o transporte estiver ligado.
+A pausa não desfaz transações já confirmadas. A prova de isolamento depende
+de todos os escritores respeitarem a mesma fronteira; a entrada de fundação
+seedVerifiedPost permanece para testes confiáveis, não deve ser usada por
+transporte público. O auditor deverá revisar o novo blob de semeaduraService.ts.
+Testes do gate ausente/desligado, pausa, preservação de recibo, retomada e quota
+foram adicionados no Auth/Firestore Emulator, CI pendente. O teste usa conta
+não inscrita (sem liquidação econômica); não comprova pausa de crédito no marco
+de 1.000 nem operação real. O gate deliberadamente não admite produção;
+flag experimental não é configuração comercial. Nenhuma escrita real,
+nenhuma API administrativa de ativação, alteração de IAM, regras ou cobrança.
+Próximo aceite: confirmar CI e estender teste ao marco econômico antes de
+considerar desenho da autoridade de lançamento definitiva.
