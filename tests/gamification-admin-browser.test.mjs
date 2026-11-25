@@ -25,7 +25,7 @@ assert.equal(process.env.KYRUB_GAMIFICATION_ADMIN_CASE_WRITE_PILOT,'true');
 assert.equal(process.env.NODE_ENV,'test');
 assert.ok(!process.env.VERCEL&&!process.env.FIREBASE_SERVICE_ACCOUNT_JSON&&!process.env.GOOGLE_APPLICATION_CREDENTIALS);
 
-test('Chromium reads isolated gamification indicators and case history; ordinary account denied', {timeout:180000},async()=>{
+test('Chromium reads isolated gamification indicators and case history; ordinary account denied', {timeout:240000},async()=>{
  const app=initializeApp({projectId},'gamification-admin-browser');
  const auth=getAuth(app),db=getFirestore(app);
  let vite,server,browser,page;
@@ -68,6 +68,10 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   local.use('/api/admin/gamification-pilot',createIsolatedGamificationAdminRouter(db,auth));
   vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
   local.get('/',async(_req,res)=>{res.type('html').send(await vite.transformIndexHtml('/','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/gamification-admin-browser.tsx"></script></body></html>'));});
+  local.get('/admin',async(_req,res)=>{res.type('html').send(await vite.transformIndexHtml('/admin','<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/gamification-control-plane-browser.tsx"></script></body></html>'));});
+  // Other Control Plane transports are not part of this acceptance test.
+  // Return unavailable rather than forwarding, stubbing success or writing.
+  local.use('/api',(_req,res)=>res.status(503).json({code:'FIXTURE_NOT_AVAILABLE'}));
   local.use(vite.middlewares);
   server=local.listen(0,'127.0.0.1');
   if(!server.listening)await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
@@ -162,6 +166,27 @@ test('Chromium reads isolated gamification indicators and case history; ordinary
   await login(ordinaryEmail);
   await page.getByText('Consulta indisponível. Nenhum valor inferido.').waitFor();
   assert.equal(await page.getByText('Evidência inicial:',{exact:false}).count(),0);
+  // Exercise the real Control Plane root and Firestore profile subscription.
+  await page.goto(origin+'/admin');
+  await login(adminEmail);
+  await page.locator('#admin-global-challenges > summary').click();
+  await page.getByText('Cobertura global não verificada.',{exact:false}).waitFor();
+  assert.equal(await page.locator('dt').filter({hasText:'Saldo conciliado'}).locator('..').locator('dd').textContent(),'100');
+  await page.getByRole('button',{name:'Revisões econômicas',exact:true}).click();
+  await page.getByRole('button',{name:'browser-referral · Decisão registrada'}).click();
+  await page.getByText('Decisão: Sem intervenção').waitFor();
+  await page.screenshot({path:'gamification-admin-isolated-control-plane.png',fullPage:true});
+  const profile=db.doc('kyrub_admin/control_plane/admins/'+admin.uid);
+  await profile.update({status:'suspended'});
+  await page.getByRole('heading',{name:'Acesso administrativo suspenso'}).waitFor();
+  assert.equal(await page.locator('#admin-global-challenges').count(),0);
+  await page.getByRole('button',{name:'Sair',exact:true}).click();
+  await page.getByRole('button',{name:'Entrar com Google'}).waitFor();
+  await login(ordinaryEmail);
+  await page.getByRole('heading',{name:'Conta sem autorização administrativa'}).waitFor();
+  assert.equal(await page.locator('#admin-global-challenges').count(),0);
+  assert.equal(await page.getByText('Decisão: Sem intervenção').count(),0);
+  await profile.update({status:'active'});
   assert.deepEqual(external,[]);
   assert.equal((await balance.get()).get('availableKCoins'),100);
  }catch(error){
