@@ -110,3 +110,44 @@ test('a fabricated or revoked invite cannot trigger an alert for an unrelated us
   await assert.rejects(issueNoteInvitationNotification({ownerId, invitationId}), /NOTE_INVITATION_NOTIFICATION_FORBIDDEN/);
   assert.equal((await listUserNotifications({recipientUserId: recipientId})).notifications.length, 0);
 });
+
+
+test('Freela negotiation message and private bell receipt are atomic and idempotent',async()=>{
+  const {sendNotifiedHiringMessage}=await import('../server/notifications/freelanceNotificationService.js');
+  const workerId='notif_freela_worker',ownerId='notif_freela_owner';
+  const vagaId='Notification00000001',applicationId=vagaId+'__'+workerId;
+  const control=adminDb.doc('renda_age_release_private/current');
+  const receipt=adminDb.doc('candidaturas/'+applicationId);
+  const oldFlag=process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW;
+  const oldAuth=process.env.FIREBASE_AUTH_EMULATOR_HOST;
+  const oldControl=await control.get();
+  process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW='true';
+  // Only Firestore is exercised by this service test; token verification is a
+  // separate HTTP boundary. The local Auth address cannot route to production.
+  process.env.FIREBASE_AUTH_EMULATOR_HOST='127.0.0.1:9099';
+  try{
+   await control.set({schemaVersion:1,mode:'verified_adult_only',messageAuthority:'server'});
+   await receipt.set({vagaId,ownerId,userId:workerId,status:'pending'});
+   await adminDb.doc('age_eligibility_private/'+workerId).set({uid:workerId,status:'verified_adult'});
+   await adminDb.doc('identity_verifications/'+workerId).set({uid:workerId,status:'approved',approvedProfiles:['freelancer']});
+   const input={actorId:workerId,actorRole:undefined,applicationId,messageId:'freela-message-1',text:'Condições privadas'};
+   const results=await Promise.all([sendNotifiedHiringMessage(input),sendNotifiedHiringMessage(input)]);
+   assert.deepEqual(new Set(results.map(r=>r.created)),new Set([true,false]));
+   const inbox=await listUserNotifications({recipientUserId:ownerId});
+   assert.equal(inbox.notifications.length,1);
+   assert.equal(inbox.notifications[0].target.hiringApplicationId,applicationId);
+   assert.equal(inbox.notifications[0].category,'freelance');
+   assert.ok(!JSON.stringify(inbox).includes(input.text));
+   assert.equal((await listUserNotifications({recipientUserId:workerId})).unreadCount,0);
+   await assert.rejects(sendNotifiedHiringMessage({...input,text:'sobrescrita'}),/FREELANCE_CONFLICT/);
+   await assert.rejects(sendNotifiedHiringMessage({...input,actorId:'other',messageId:'forged'}),/FREELANCE_FORBIDDEN/);
+   await adminDb.doc('age_eligibility_private/'+workerId).update({status:'suspended'});
+   await assert.rejects(sendNotifiedHiringMessage({...input,messageId:'blocked'}),/FREELANCE_FORBIDDEN/);
+   assert.equal((await receipt.collection('messages').get()).size,1);
+   assert.equal((await listUserNotifications({recipientUserId:ownerId})).unreadCount,1);
+  }finally{
+   if(oldFlag===undefined)delete process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW;else process.env.KYRUB_FREELANCE_NOTIFICATION_PREVIEW=oldFlag;
+   if(oldAuth===undefined)delete process.env.FIREBASE_AUTH_EMULATOR_HOST;else process.env.FIREBASE_AUTH_EMULATOR_HOST=oldAuth;
+   if(oldControl.exists)await control.set(oldControl.data()!);else await control.delete();
+  }
+});
