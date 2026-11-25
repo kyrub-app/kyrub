@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { FieldValue, type DocumentData, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '../firebaseAdmin.js';
+import {requireHumanOrderOperation} from '../identity/erpOperationAuthorization.js';
 import {
   parseInventoryCatalogRecords,
   parseInventoryCompositionRecords,
@@ -280,7 +281,8 @@ const validExpiry = (value: unknown): string => {
 
 export const reserveMarketplaceOrderInventoryOnAcceptance = async (
   tenantId: string,
-  orderId: string
+  orderId: string,
+  humanUid?:string
 ): Promise<MarketplaceInventoryReservationAction> => {
   const normalizedTenantId = tenantId.trim();
   const normalizedOrderId = orderId.trim();
@@ -289,6 +291,7 @@ export const reserveMarketplaceOrderInventoryOnAcceptance = async (
   }
 
   return adminDb.runTransaction(async transaction => {
+    if(humanUid)await requireHumanOrderOperation(transaction,normalizedTenantId,humanUid,'orders.transfer');
     const orderRef = orderReference(normalizedTenantId, normalizedOrderId);
     const tenantRef = adminDb.doc(`tenants/${normalizedTenantId}`);
     const reservationRef = reservationReference(normalizedTenantId, normalizedOrderId);
