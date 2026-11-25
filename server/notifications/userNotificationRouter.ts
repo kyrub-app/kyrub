@@ -105,7 +105,7 @@ export const createUserNotificationRouter = (): Router => {
     let identity;
     try{identity=await adminAuth.verifyIdToken(token,true);}catch{response.status(401).json({error:'Faça login novamente.'});return;}
     try{
-      const result=await performNotifiedHiringAction({actorId:identity.uid,actorRole:identity.role,applicationId:clean(request.body?.applicationId),operationId:clean(request.body?.operationId),action:request.body?.action});
+      const result=await performNotifiedHiringAction({actorId:identity.uid,actorRole:identity.role,applicationId:clean(request.body?.applicationId),operationId:clean(request.body?.operationId),action:request.body?.action,expectedTerms:request.body?.expectedTerms});
       response.status(200).json(result);
     }catch(error){const code=error instanceof Error?error.message:'';response.status(code==='FREELANCE_INVALID'?400:code==='FREELANCE_FORBIDDEN'?403:code==='FREELANCE_CONFLICT'?409:503).json({error:'Não foi possível confirmar a operação.'});}
   });
