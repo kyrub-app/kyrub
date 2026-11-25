@@ -3,6 +3,10 @@ import { kyrubKCoinBalance, type KyrubRewardLedgerEntry } from '../../shared/gam
 import { SEEDS_PER_PITANGUEIRA } from '../../shared/pitangueiraJourney.js';
 import { verifyCleanBaselineSpendingEligibilityInTransaction } from './cleanBaselineSpendingEligibility.js';
 
+import type { WelcomeAuth } from './signedSessionWelcomeService.js';
+import { emptyCurrencyCheckpoint, noWelcomePilotEnabled, readIsolatedZeroCurrencyBalance, requireIsolatedNoWelcomeEligibility } from './semeaduraNoWelcomeAuthority.js';
+import { bootstrapVerifiedPitangaBalanceInTransaction } from './pitangaMigrationVerifiedBootstrap.js';
+
 const project='demo-kyrub-welcome',epoch='welcome-emulator-only';
 
 /** No production or preview enablement. No enrollment endpoint. A disposable
@@ -21,7 +25,7 @@ export function semeaduraEconomicPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv
  * cursor is maintained in lockstep with accepted receipts; no catch-up
  * credits from old visual counters. Only the author's account is credited. */
 export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transaction,input:{
- authorId:string;actorId:string;previousSeeds:number;occurredAt:string;postKey:string;zeroStartRequired?:boolean;
+ authorId:string;actorId:string;previousSeeds:number;occurredAt:string;postKey:string;zeroStartRequired?:boolean;authorAuth?:WelcomeAuth;
 }):Promise<void>{
  if(!semeaduraEconomicPilotEnabled(db)){
   if(input.zeroStartRequired)throw Error('SEMEADURA_ECONOMIC_RELEASE_UNAVAILABLE');
@@ -80,22 +84,41 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
  if(!enrollment.exists){
   const balanceRef=root.collection('pitangaBalance').doc('balance');
   const receiptRef=root.collection('authEvents').doc('first_login_v1');
-  const firstLogin=await tx.get(receiptRef);
-  const {availablePitangas}=await verifyCleanBaselineSpendingEligibilityInTransaction(tx,{
-   userId:authorId,firebaseCreatedAt:firstLogin.get('firebaseCreatedAt'),receiptRef,balanceRef,
-   welcomeAwardRef:root.collection('rewardLedger').doc('earn_first_login_welcome_v1'),
-  });
-  const ledger=await tx.get(root.collection('rewardLedger'));
+  const [firstLogin,projection,ledger]=await Promise.all([
+   tx.get(receiptRef),tx.get(balanceRef),tx.get(root.collection('rewardLedger')),
+  ]);
   const entries=ledger.docs.map(doc=>{
    const data=doc.data() as KyrubRewardLedgerEntry&{economy?:string};
    if(data.id!==doc.id||data.userId!==authorId||data.economy!=='k_coin'||data.sourceType==='semeadura')
     throw Error('SEMEADURA_ECONOMIC_ZERO_START_REQUIRED');
    return data;
   });
-  if(kyrubKCoinBalance(entries)!==availablePitangas)throw Error('SEMEADURA_ECONOMIC_BALANCE_CONFLICT');
-  tx.create(enrollmentRef,{schemaVersion:1,authorId,epoch,acceptedSeeds:1,creditedPitangas:0,createdAt:occurredAt,updatedAt:occurredAt});
+  let authority='welcome';
+  if(!projection.exists&&noWelcomePilotEnabled(db)){
+   if(entries.length!==0||firstLogin.exists)throw Error('SEMEADURA_NO_WELCOME_BASELINE_INVALID');
+   await requireIsolatedNoWelcomeEligibility(db,tx,input.authorAuth,authorId);
+   const checkpoint=emptyCurrencyCheckpoint(authorId);
+   await bootstrapVerifiedPitangaBalanceInTransaction(tx,{checkpoint,fenceEpoch:epoch,
+    ledgerRef:root.collection('rewardLedger'),balanceRef,receiptRef:root.collection('pitangaMigration').doc('receipt'),
+    fenceRef:db.doc('systemControl/pitangaLegacyWriterFence'),legacyWritersFenced:true,manifestChunkRefs:[]});
+   authority='zero-history';
+  }else{
+   let availablePitangas:number;
+   if(projection.get('migrationEpoch')===epoch&&noWelcomePilotEnabled(db)){
+    availablePitangas=await readIsolatedZeroCurrencyBalance(db,tx,authorId);
+    authority='zero-history';
+   }else{
+    ({availablePitangas}=await verifyCleanBaselineSpendingEligibilityInTransaction(tx,{
+     userId:authorId,firebaseCreatedAt:firstLogin.get('firebaseCreatedAt'),receiptRef,balanceRef,
+     welcomeAwardRef:root.collection('rewardLedger').doc('earn_first_login_welcome_v1'),
+    }));
+   }
+   if(kyrubKCoinBalance(entries)!==availablePitangas)throw Error('SEMEADURA_ECONOMIC_BALANCE_CONFLICT');
+  }
+  tx.create(enrollmentRef,{schemaVersion:1,authorId,epoch,acceptedSeeds:1,creditedPitangas:0,currencyAuthority:authority,createdAt:occurredAt,updatedAt:occurredAt});
   return;
  }
+ if(state.currencyAuthority==='zero-history'&&!noWelcomePilotEnabled(db))throw Error('SEMEADURA_NO_WELCOME_UNVERIFIED');
  const nextSeeds=previousSeeds+1;
  const nextCredits=Math.floor(nextSeeds/SEEDS_PER_PITANGUEIRA);
  if(nextCredits===state.creditedPitangas){
@@ -105,10 +128,12 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
  const balanceRef=root.collection('pitangaBalance').doc('balance');
  const firstLoginReceiptRef=root.collection('authEvents').doc('first_login_v1');
  const firstLogin=await tx.get(firstLoginReceiptRef);
- const {availablePitangas}=await verifyCleanBaselineSpendingEligibilityInTransaction(tx,{
-  userId:authorId,firebaseCreatedAt:firstLogin.get('firebaseCreatedAt'),receiptRef:firstLoginReceiptRef,
-  balanceRef,welcomeAwardRef:root.collection('rewardLedger').doc('earn_first_login_welcome_v1')
- });
+ const availablePitangas=state.currencyAuthority==='zero-history'
+  ?await readIsolatedZeroCurrencyBalance(db,tx,authorId)
+  :(await verifyCleanBaselineSpendingEligibilityInTransaction(tx,{
+   userId:authorId,firebaseCreatedAt:firstLogin.get('firebaseCreatedAt'),receiptRef:firstLoginReceiptRef,
+   balanceRef,welcomeAwardRef:root.collection('rewardLedger').doc('earn_first_login_welcome_v1')
+  })).availablePitangas;
  const id='earn_semeadura_'+nextCredits;
  const entryRef=root.collection('rewardLedger').doc(id);
  const [entry,ledger]=await Promise.all([tx.get(entryRef),tx.get(root.collection('rewardLedger'))]);
