@@ -101,6 +101,7 @@ export async function confirmPromotionalTagReadback(
  uid:string,batchId:unknown,tagId:unknown,readUrl:unknown
 ){
  assertTagPilotWriteIsolated();
+ if(!enabled())throw Error('TAG_BATCH_DISABLED');
  if(!batchIdValid(batchId)||!batchIdValid(tagId)||
     typeof readUrl!=='string'||readUrl.length>512)throw Error('TAG_BATCH_INVALID');
  const isolation=currentTagPilotIsolation();
