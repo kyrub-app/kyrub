@@ -1,0 +1,63 @@
+{
+  "schemaVersion": 1,
+  "reviewedCommit": "1622955612474562f6e4e002bf66909d2ee7d1ad",
+  "scope": "Static call-site observations only. No deployment or external coverage, no authorization or proof of complete call graph.",
+  "entries": [
+    {
+      "path": "server/gamification/cleanBaselineVerifiedSpend.ts",
+      "blobSha": "1d8fb238c0046025c74e3a8f45e750003989fe88",
+      "primitive": "applyPitangaSpendInTransaction",
+      "line": 28,
+      "classification": "clean-baseline-wrapper",
+      "observation": "Canonical fence and first-login evidence passed to primitive."
+    },
+    {
+      "path": "server/gamification/cleanBaselineVerifiedVoucherIssuance.ts",
+      "blobSha": "0ceac66012502d261b9791458f4dc071fef16723",
+      "primitive": "issuePitangaVoucherInTransaction",
+      "line": 28,
+      "classification": "clean-baseline-wrapper",
+      "observation": "Canonical fence and first-login evidence passed to voucher primitive."
+    },
+    {
+      "path": "server/gamification/cleanBaselineVerifiedXpConversion.ts",
+      "blobSha": "25dcb41b53d8d0b6bf2d30181919bf8259796419",
+      "primitive": "applyPitangaXpConversionInTransaction",
+      "line": 29,
+      "classification": "clean-baseline-wrapper",
+      "observation": "Canonical fence and first-login evidence passed to XP conversion primitive."
+    },
+    {
+      "path": "server/gamification/firstStoreChallengeAwardTransaction.ts",
+      "blobSha": "09c475ca0a3877979400f3016c2c10a13658d0a7",
+      "primitive": "applyPitangaEarnInTransaction",
+      "line": 66,
+      "classification": "legacy-conditional-earn",
+      "observation": "Conditional Pitanga branch passes canonical fence; first-store reward contract separately requires zero Pitangas."
+    },
+    {
+      "path": "server/gamification/pitangaVerifiedVoucherIssuance.ts",
+      "blobSha": "8a686d987f453533aaa6940d1710da1ceeaeee33",
+      "primitive": "issuePitangaVoucherInTransaction",
+      "line": 53,
+      "classification": "migration-wrapper",
+      "observation": "Checks fenced epoch and migration receipt; passes migrated evidence."
+    },
+    {
+      "path": "server/gamification/pitangaVerifiedXpConversion.ts",
+      "blobSha": "9a12e00f141bddfd667d48a4dbb6c0c8bb52cfb2",
+      "primitive": "applyPitangaXpConversionInTransaction",
+      "line": 56,
+      "classification": "migration-wrapper",
+      "observation": "Checks fenced epoch and migration receipt; passes migrated evidence."
+    },
+    {
+      "path": "server/gamification/semeaduraService.ts",
+      "blobSha": "1d1d2500bdf245149afcdd1e122e86e993385073",
+      "primitive": "settleAcceptedSeedInTransaction",
+      "line": 135,
+      "classification": "emulator-only-seed-settlement",
+      "observation": "Call precedes accepted receipt/quota writes; callee enforces emulator-only enrollment and fence."
+    }
+  ]
+}
