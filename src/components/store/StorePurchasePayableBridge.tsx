@@ -1,10 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BadgeDollarSign, FileText, RefreshCw } from 'lucide-react';
 import { auth } from '../../utils/firebase';
-import type {
-  StorePurchase,
-  StoreSupplier,
-} from '../../../shared/storePurchases';
+import type { ProcurementOverview } from './StoreProcurementWorkspace';
 import {
   nextStorePurchasePayableKey,
   storePurchasePayableKeyLabel,
@@ -14,16 +11,7 @@ import {
 type CostNature = 'unspecified' | 'fixed' | 'variable';
 type BillingDocumentType = 'none' | 'boleto' | 'invoice' | 'other';
 
-type PurchaseView = StorePurchase & {
-  receivingState: 'not_started' | 'partially_received' | 'received';
-  receivedReceiptCount: number;
-};
-
-type ProcurementPayload = {
-  purchases?: PurchaseView[];
-  suppliers?: StoreSupplier[];
-  error?: string;
-};
+type PurchaseView = ProcurementOverview['purchases'][number];
 
 type LinkedPayable = {
   id: string;
@@ -98,9 +86,8 @@ const requestJson = async <T,>(url: string, init?: RequestInit): Promise<T> => {
   return payload;
 };
 
-export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
-  const [purchases, setPurchases] = useState<PurchaseView[]>([]);
-  const [suppliers, setSuppliers] = useState<StoreSupplier[]>([]);
+export function StorePurchasePayableBridge({ storeId, overview, procurementLoading, refreshProcurement }: { storeId: string; overview: ProcurementOverview; procurementLoading: boolean; refreshProcurement: () => Promise<void> }) {
+  const {purchases,suppliers}=overview;
   const [payables, setPayables] = useState<LinkedPayable[]>([]);
   const [purchaseId, setPurchaseId] = useState('');
   const [amount, setAmount] = useState('');
@@ -111,6 +98,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
   const [billingDigitableLine, setBillingDigitableLine] = useState('');
   const [billingBarcode, setBillingBarcode] = useState('');
   const [loading, setLoading] = useState(true);
+  const [financeReady,setFinanceReady]=useState(false);
   const [saving, setSaving] = useState(false);
   const [feedback, setFeedback] = useState('');
   const [error, setError] = useState('');
@@ -126,21 +114,18 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
     pendingRead.current=controller;
     const isCurrent=()=>scope.current===context&&pendingRead.current===controller&&!controller.signal.aborted&&auth.currentUser?.uid===uid;
     setLoading(true);
+    setFinanceReady(false);
     setError('');
     try {
-      const [procurement, finance] = await Promise.all([
-        requestJson<ProcurementPayload>(`/api/store-procurement?storeId=${encodeURIComponent(storeId)}`,{signal:controller.signal}),
-        requestJson<FinancePayload>(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`,{signal:controller.signal}),
-      ]);
+      const finance=await requestJson<FinancePayload>(`/api/store-finance?storeId=${encodeURIComponent(storeId)}`,{signal:controller.signal});
       if(!isCurrent())return;
-      setPurchases(Array.isArray(procurement.purchases) ? procurement.purchases : []);
-      setSuppliers(Array.isArray(procurement.suppliers) ? procurement.suppliers : []);
-      setPayables(Array.isArray(finance.payables) ? finance.payables : []);
+      if(!Array.isArray(finance.payables))throw new Error('Resposta financeira inválida.');
+      setPayables(finance.payables);
+      setFinanceReady(true);
     } catch (caught) {
       if(!isCurrent())return;
-      setPurchases([]);
-      setSuppliers([]);
       setPayables([]);
+      setFinanceReady(false);
       setError(caught instanceof Error ? caught.message : 'Não foi possível carregar a ligação financeira.');
     } finally {
       if(isCurrent())setLoading(false);
@@ -149,9 +134,8 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
 
   useEffect(() => {
     scope.current={};
-    setPurchases([]);
-    setSuppliers([]);
     setPayables([]);
+    setFinanceReady(false);
     setPurchaseId('');
     setSaving(false);
     void load();
@@ -203,8 +187,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
       setAmount('');
       setDueDate('');
       setFeedback('');
-      setError('');
-      return;
+        return;
     }
     const suggested = payableSummary.differenceMinor !== null && payableSummary.differenceMinor > 0
       ? payableSummary.differenceMinor
@@ -219,13 +202,12 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
     setBillingDigitableLine('');
     setBillingBarcode('');
     setFeedback('');
-    setError('');
   }, [purchaseId, nextPayableKey, payableSummary.differenceMinor]);
 
   const createPayable = async (): Promise<void> => {
     const context=scope.current;
     const uid=auth.currentUser?.uid;
-    if (!selectedPurchase||!context||!uid||loading||saving) return;
+    if (!selectedPurchase||!context||!uid||loading||saving||procurementLoading||!financeReady) return;
     const isCurrent=()=>scope.current===context&&auth.currentUser?.uid===uid;
     const amountMinor = amountToMinor(amount);
     if (amountMinor === null || !dueDate) {
@@ -276,8 +258,8 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
             Uma compra pode ter várias obrigações com vencimentos próprios. Nada é parcelado automaticamente: cada obrigação é registrada explicitamente e continua independente do recebimento físico.
           </p>
         </div>
-        <button type="button" disabled={loading||saving} onClick={() => void load()} className="flex min-h-9 items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-50">
-          <RefreshCw className={`h-3.5 w-3.5 ${loading ? 'animate-spin' : ''}`} /> Atualizar
+        <button type="button" disabled={loading||saving||procurementLoading} onClick={() => void Promise.all([refreshProcurement(),load()])} className="flex min-h-9 items-center gap-2 rounded-xl border border-slate-700 bg-slate-950 px-3 text-[8px] font-black uppercase text-slate-400 disabled:opacity-50">
+          <RefreshCw className={`h-3.5 w-3.5 ${loading||procurementLoading ? 'animate-spin' : ''}`} /> Atualizar
         </button>
       </header>
 
@@ -286,7 +268,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
 
       <label className="block text-[8px] font-black uppercase text-slate-500">
         Compra realizada
-        <select value={purchaseId} onChange={event => setPurchaseId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white">
+        <select value={purchaseId} disabled={loading||procurementLoading||!financeReady||saving} onChange={event => setPurchaseId(event.target.value)} className="mt-1 min-h-10 w-full rounded-xl border border-slate-700 bg-slate-950 px-3 text-xs font-medium normal-case text-white">
           <option value="">Selecione uma compra</option>
           {committedPurchases.map(purchase => {
             const supplier = supplierById.get(purchase.supplierId);
@@ -295,7 +277,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
         </select>
       </label>
 
-      {selectedPurchase && (
+      {selectedPurchase && financeReady && !procurementLoading && (
         <div className="space-y-4">
           <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
             <article className="rounded-2xl border border-slate-800 bg-slate-950/60 p-3">
@@ -424,7 +406,7 @@ export function StorePurchasePayableBridge({ storeId }: { storeId: string }) {
         </div>
       )}
 
-      {!loading && committedPurchases.length === 0 && (
+      {!loading && !procurementLoading && financeReady && committedPurchases.length === 0 && (
         <p className="rounded-2xl border border-dashed border-slate-700 p-4 text-center text-[9px] text-slate-500">
           Nenhuma compra marcada como realizada está disponível para vínculo financeiro.
         </p>
