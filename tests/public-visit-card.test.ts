@@ -57,6 +57,8 @@ test('promotional NFC stock is explicitly opt-in and cannot weaken protected or 
   {...open,activationHash:'secret-hash'},
   {...open,reservedEmailHash:'reserved'},
   {...open,blocked:true},
+  {...open,manufacturingState:'held'},
+  {...open,manufacturingState:'invalid'},
   {...open,distribution:undefined}
  ])assert.equal(isOpenPromotionalTag(altered),false);
  assert.deepEqual(normalizePromotionalPresentation(EMPTY_PROMOTIONAL_PRESENTATION),EMPTY_PROMOTIONAL_PRESENTATION);
@@ -140,6 +142,9 @@ test('promotional inventory is separate from pilot, NFC writes are non-overwriti
  assert.match(batches,/physicalStatus:'not_verified'/);
  assert.doesNotMatch(batches,/e-mail da destinatária/i);
  assert.match(batchService,/KYRUB_TAG_PROMO_ISSUANCE_ENABLED/);
+ assert.match(batchService,/KYRUB_TAG_PERMANENT_STOCK_ENABLED/);
+ assert.match(batchService,/manufacturingState:'held'/);
+ assert.match(batchService,/requireKyrubSessionMfa/);
  assert.match(batchService,/actorRole:'super_admin'/);
  assert.match(batchService,/tagIds:ids/);
  assert.match(batchService,/tx\.create\(auditCollection\(\)\.doc/);
