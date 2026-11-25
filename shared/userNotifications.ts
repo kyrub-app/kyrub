@@ -11,6 +11,7 @@ export type UserNotificationCategory =
   | 'marketing'
   | 'community_group_invite'
   | 'user_forward'
+  | 'freelance'
   | 'system';
 
 export type UserNotificationTargetKind =
@@ -21,6 +22,7 @@ export type UserNotificationTargetKind =
   | 'order'
   | 'community_group_invite'
   | 'community_post'
+  | 'freelance'
   | 'none';
 
 export interface UserNotificationTarget {
@@ -35,6 +37,7 @@ export interface UserNotificationTarget {
   postId?: string;
   connectionId?: string;
   noteInvitationId?: string;
+  hiringApplicationId?: string;
 }
 
 export interface UserNotification {
@@ -139,11 +142,15 @@ export const buildUserNotification = (input: {
     targetKind !== 'order' &&
     targetKind !== 'community_group_invite' &&
     targetKind !== 'community_post' &&
+    targetKind !== 'freelance' &&
     targetKind !== 'none'
   ) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
 
+  if (targetKind === 'freelance' && !/^[A-Za-z0-9]{20}__[A-Za-z0-9_-]{1,128}$/.test(clean(input.target?.hiringApplicationId))) {
+    throw new Error('USER_NOTIFICATION_TARGET_INVALID');
+  }
   if (targetKind === 'social_chat' && !validPathId(clean(input.target?.connectionId))) {
     throw new Error('USER_NOTIFICATION_TARGET_INVALID');
   }
@@ -174,6 +181,7 @@ export const buildUserNotification = (input: {
       storeId: clean(input.target?.storeId),
       customerId: clean(input.target?.customerId),
       orderId: clean(input.target?.orderId),
+      ...(targetKind === 'freelance' ? { hiringApplicationId: clean(input.target?.hiringApplicationId) } : {}),
       ...(targetKind === 'social_chat' ? { connectionId: clean(input.target?.connectionId) } : {}),
       ...(targetKind === 'note_invitation' ? { noteInvitationId: clean(input.target?.noteInvitationId) } : {}),
       ...(targetKind === 'storefront' && /^[a-zA-Z0-9-]{1,128}$/.test(clean(input.target?.storeSlug))
