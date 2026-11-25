@@ -41,7 +41,7 @@ export async function settleAcceptedSeedInTransaction(db:Firestore,tx:Transactio
  const enrollment=await tx.get(enrollmentRef);
  if(!enrollment.exists&&!input.zeroStartRequired)return; // Legacy visual-only fixture.
  if(!enrollment.exists&&previousSeeds!==0)throw Error('SEMEADURA_ECONOMIC_ZERO_START_REQUIRED');
- const state=enrollment.exists?enrollment.data():{schemaVersion:1,authorId,epoch,acceptedSeeds:0,creditedPitangas:0};
+ const state=enrollment.exists?enrollment.data():{schemaVersion:1,authorId,epoch,acceptedSeeds:0,creditedPitangas:0,currencyAuthority:'welcome'};
  if(state?.authorId!==authorId||state?.schemaVersion!==1||state?.epoch!==epoch||
  state?.acceptedSeeds!==previousSeeds||state?.creditedPitangas!==Math.floor(previousSeeds/SEEDS_PER_PITANGUEIRA))
  throw Error('SEMEADURA_ECONOMIC_CURSOR_CONFLICT');
