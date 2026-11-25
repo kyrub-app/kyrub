@@ -135,6 +135,23 @@ test('isolated authenticated hiring journey preserves private messages and atomi
    assert.equal((await getDocFromServer(racing)).get('termsLocked'),true);
    await assert.rejects(updateDoc(racing,{payment:200,updatedAt:serverTimestamp()}));
   }
+  const retire=(token:string,vacancyId:string)=>call(token,'/api/notifications/freelance-vacancies/retire',{vacancyId});
+  assert.equal((await retire(owner.token,vacancy.id)).status,409);
+  const removable=doc(collection(owner.db,'vagas'));
+  await setDoc(removable,{ownerId:owner.uid,title:terms.title,description:terms.description,payment:100,employer:'Contratante de teste',status:'open',termsLocked:false,hasAccepted:false,createdAt:serverTimestamp(),updatedAt:serverTimestamp()});
+  const removedId=removable.id+'__'+worker.uid;
+  await ok(await call(worker.token,'/api/notifications/freelance-applications/action',{applicationId:removedId,operationId:'remove-apply',action:'apply',expectedTerms:terms}));
+  await ok(await call(worker.token,'/api/notifications/freelance-messages/send',{applicationId:removedId,messageId:'before-retire',text:'Histórico preservado'}));
+  assert.equal((await retire(outsider.token,removable.id)).status,403);
+  assert.deepEqual(await ok(await retire(owner.token,removable.id)),{vacancyId:removable.id,complete:true,processed:1});
+  assert.deepEqual(await ok(await retire(owner.token,removable.id)),{vacancyId:removable.id,complete:true,processed:0});
+  assert.equal((await getDocFromServer(removable)).get('status'),'closed');
+  assert.equal((await getDocFromServer(doc(worker.db,'candidaturas',removedId))).get('status'),'offer_withdrawn');
+  assert.equal((await getDocFromServer(doc(worker.db,'candidaturas',removedId,'messages','before-retire'))).get('text'),'Histórico preservado');
+  assert.equal((await inbox(worker.token)).notifications.filter((n:{eventType:string;target:{hiringApplicationId?:string}})=>n.eventType==='offer_withdrawn'&&n.target.hiringApplicationId===removedId).length,1);
+  assert.equal((await call(owner.token,'/api/notifications/freelance-applications/action',{applicationId:removedId,operationId:'late-accept',action:'accept',expectedTerms:terms})).status,409);
+  assert.equal((await call(worker.token,'/api/notifications/freelance-messages/send',{applicationId:removedId,messageId:'late-send',text:'Indisponível'})).status,403);
+  assert.equal((await call(outsider.token,'/api/notifications/freelance-applications/action',{applicationId:removable.id+'__'+outsider.uid,operationId:'late-apply',action:'apply',expectedTerms:terms})).status,409);
   await adminAuth.updateUser(worker.uid,{disabled:true});
   assert.equal((await call(worker.token,'/api/notifications')).status,401);
   assert.equal((await action(worker.token,'apply','apply-1')).status,401);
