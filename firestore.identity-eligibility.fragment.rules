@@ -22,17 +22,21 @@
       allow read, write: if false;
     }
 
-    function canWriteSocialWithAge() {
+    function canParticipateInSocialWithAge(userId) {
       let control = /databases/$(database)/documents/social_age_release_private/current;
-      let age = /databases/$(database)/documents/age_eligibility_private/$(request.auth.uid);
+      let age = /databases/$(database)/documents/age_eligibility_private/$(userId);
       return isSignedIn() && (
         !exists(control)
         || (
           get(control).data.schemaVersion == 1
           && get(control).data.mode == 'verified_adult_only'
           && exists(age)
-          && get(age).data.uid == request.auth.uid
+          && get(age).data.uid == userId
           && get(age).data.status == 'verified_adult'
         )
       );
+    }
+
+    function canWriteSocialWithAge() {
+      return isSignedIn() && canParticipateInSocialWithAge(request.auth.uid);
     }
