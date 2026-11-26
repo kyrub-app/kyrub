@@ -1500,3 +1500,34 @@ test('social directory HTTP pilot authenticates, paginates and hydrates only exp
   if(priorNodeEnv===undefined)delete process.env.NODE_ENV;else process.env.NODE_ENV=priorNodeEnv;
  }
 });
+
+test('note collaborator lookup trusts verified Auth identity and refuses reserved or spoofed accounts',async()=>{
+ const {searchVisibleNoteCollaborators}=await import('../server/identity/socialDiscoveryDirectoryService.js');
+ const actor=await googleSignIn('note-search-actor'),target=await googleSignIn('note-search-target'),spoof=await googleSignIn('note-search-spoof');
+ await Promise.all([actor,target,spoof].map(person=>waitForAward(person.localId)));
+ const targetRef=db.doc('users/'+target.localId),spoofRef=db.doc('users/'+spoof.localId);
+ const term='note-search-target@example.invalid';
+ const read=(value:string)=>searchVisibleNoteCollaborators(db,auth,actor.localId,value);
+ try{
+  await targetRef.set({uid:target.localId,name:'Colaborador homologado',email:'outdated@example.invalid',isProfileVisible:true,photoUrl:'',cpf:'fixture'},{merge:true});
+  await spoofRef.set({uid:spoof.localId,name:'Conta imitadora',email:term,isProfileVisible:true,photoUrl:''},{merge:true});
+  const expected=[{id:target.localId,name:'Colaborador homologado',photoUrl:'',isProfileVisible:true}];
+  assert.deepEqual(await read(term),expected);
+  assert.deepEqual(await read('Colaborador homologado'),expected);
+  assert.deepEqual(await read('outdated@example.invalid'),[]);
+  await targetRef.update({isProfileVisible:false});
+  assert.deepEqual(await read(term),[]);
+  assert.deepEqual(await read('Colaborador homologado'),[]);
+  await targetRef.update({isProfileVisible:true});
+  await auth.updateUser(target.localId,{disabled:true});
+  assert.deepEqual(await read(term),[]);
+  assert.deepEqual(await read('Colaborador homologado'),[]);
+  await auth.updateUser(target.localId,{disabled:false,emailVerified:false});
+  assert.deepEqual(await read(term),[]);
+  assert.deepEqual(await read('Colaborador homologado'),[]);
+  await assert.rejects(read('a@b'),/DIRECTORY_INPUT_INVALID/);
+ }finally{
+  await auth.updateUser(target.localId,{disabled:false,emailVerified:true});
+  await Promise.all([targetRef.update({isProfileVisible:false,email:term}),spoofRef.update({isProfileVisible:false,email:'note-search-spoof@example.invalid'})]);
+ }
+});
