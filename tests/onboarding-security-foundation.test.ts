@@ -146,7 +146,7 @@ test('profile award is isolated and cannot reach real Firebase even with the pil
   assert.equal(profileCompletionPilotEnabled(db,{...env,...override}),false);
  const remote={projectId:'kyrub-b8d0e'} as unknown as typeof db;
  assert.equal(profileCompletionPilotEnabled(remote,env),false);
- await assert.rejects(grantIsolatedProfileCompletion(remote,'u1',async()=>{throw Error('MUST_NOT_READ');}),/PROFILE_COMPLETION_RELEASE_UNAVAILABLE/);
+ await assert.rejects(grantIsolatedProfileCompletion(remote,'u1'),/PROFILE_COMPLETION_RELEASE_UNAVAILABLE/);
 });
 
 test('profile award atomically credits once, validates saved evidence and refuses corrupt receipts in isolated zero-history fixture',async()=>{
@@ -183,14 +183,35 @@ test('profile award atomically credits once, validates saved evidence and refuse
     create:(r:any,data:Record<string,unknown>)=>staged.push(()=>{assert.equal(records.has(r.path),false);records.set(r.path,data);writes++;})});
    staged.forEach(write=>write());return result;
   }} as unknown as Parameters<typeof grantIsolatedProfileCompletion>[0];
-  const evidence=async()=>({displayName:'Apelido',handle:'apelido',handleOwnerUid:uid,bio:'Apresentação'});
-  await assert.rejects(grantIsolatedProfileCompletion(db,uid,async()=>({...await evidence(),handleOwnerUid:'other'})),/NOT_ELIGIBLE/);
+  const profile=root+'/public_profile/main',reverse='public_social_address_targets/profile:'+uid,forward='public_social_addresses/profile:apelido';
+  const identity={kind:'profile',identifier:'apelido',targetId:uid};
+  records.set(root,{name:'Apelido',isProfileVisible:false,email:'apelido@example.test'});
+  records.set(profile,{userId:uid,name:'Apelido',bio:'Apresentação'});
+  const grant=()=>grantIsolatedProfileCompletion(db,uid);
+  // A matching email and saved profile do not prove ownership.
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(reverse,identity);
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(forward,{...identity,targetId:'other'});
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(forward,identity);
+  records.set(profile,{userId:'other',name:'Apelido',bio:'Apresentação'});
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(profile,{userId:uid,name:'Apelido',bio:' '});
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(profile,{userId:uid,name:'Outro',bio:'Apresentação'});
+  await assert.rejects(grant(),/NOT_ELIGIBLE/);
+  records.set(profile,{userId:uid,name:'Apelido',bio:'Apresentação'});
+  records.set('age_eligibility_private/'+uid,{uid,status:'declared_adult'});
+  await assert.rejects(grant(),/AGE_REQUIRED/);
+  records.set('age_eligibility_private/'+uid,{uid,status:'verified_adult'});
   assert.equal(writes,0);
-  assert.deepEqual(await grantIsolatedProfileCompletion(db,uid,evidence),{replay:false,pitangas:100,xp:0,balance:100});
+  assert.deepEqual(await grant(),{replay:false,pitangas:100,xp:0,balance:100});
   assert.equal(writes,3);assert.equal(records.get(award)?.deltaKCoins,100);assert.equal(records.get(receipt)?.xp,0);
-  assert.deepEqual(await grantIsolatedProfileCompletion(db,uid,async()=>{throw Error('REPLAY_MUST_NOT_READ_PROFILE');}),{replay:true,pitangas:100,xp:0,balance:100});
+  records.delete(profile);
+  assert.deepEqual(await grant(),{replay:true,pitangas:100,xp:0,balance:100});
   assert.equal(writes,3);assert.equal([...records.keys()].some(p=>p.includes('/xpLedger/')||p.includes('first_login_v1')),false);
   records.delete(receipt);
-  await assert.rejects(grantIsolatedProfileCompletion(db,uid,evidence),/RECEIPT_CONFLICT/);assert.equal(writes,3);
+  await assert.rejects(grant(),/RECEIPT_CONFLICT/);assert.equal(writes,3);
  }finally{for(const k of keys){if(before[k]===undefined)delete process.env[k];else process.env[k]=before[k];}}
 });
