@@ -24,7 +24,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
  const auth=getAuth(app),db=getFirestore(app);
  const email='social-browser-actor@example.invalid',password='fixture-social-password-2026';
  let vite,server,browser,page;
- const diagnostics=[],requests=[];
+ const diagnostics=[],requests=[],privateAvatarRequests=[];
  try{
   const actor=await auth.createUser({email,password,emailVerified:true,displayName:'Titular fixture'});
   const privateId='social-browser-private';
@@ -37,7 +37,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   batch.set(db.doc('users/'+privateId),{uid:privateId,name:'Nome reservado atual',isProfileVisible:false,email:'private@example.invalid',photoUrl:''});
   const connectionId=[actor.uid,privateId].sort().join('_');
   const connection=db.doc('connections/'+connectionId);
-  batch.set(connection,{senderId:actor.uid,receiverId:privateId,participantIds:[actor.uid,privateId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato reservado histórico',senderRole:'Cliente',receiverRole:'Cliente',senderAvatar:'',receiverAvatar:'',senderBio:'',receiverBio:'',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
+  batch.set(connection,{senderId:actor.uid,receiverId:privateId,participantIds:[actor.uid,privateId].sort(),status:'accepted',senderName:'Titular fixture',receiverName:'Contato reservado histórico',senderRole:'Cliente',receiverRole:'Cliente',senderAvatar:'',receiverAvatar:'https://example.invalid/reserved-contact-avatar',senderBio:'',receiverBio:'Biografia histórica reservada fixture',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   await batch.commit();
   const local=express();local.use(express.json({limit:'8kb'}));local.use('/api',createSocialDirectoryEmulatorRouter(db,auth));
   vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
@@ -50,6 +50,7 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   await context.route('**/*',route=>new URL(route.request().url()).hostname==='127.0.0.1'?route.continue():route.abort());
   page=await context.newPage();
   page.on('pageerror',error=>diagnostics.push(error.message));
+  page.on('request',request=>{if(request.url().includes('reserved-contact-avatar'))privateAvatarRequests.push(request.url());});
   page.on('response',response=>{if(new URL(response.url()).pathname==='/api/social-directory-pilot/page'&&response.ok())requests.push(response.request().postDataJSON());});
   await page.goto('http://127.0.0.1:'+server.address().port);
   await page.getByLabel('Email de teste').fill(email);
@@ -80,7 +81,12 @@ test('Chromium: native suggestions paginate public accounts and preserve private
   assert.equal(await page.getByRole('heading',{name:'Contato público 00',exact:true,includeHidden:true}).count(),0);
   await page.getByRole('button',{name:'Fechar novos contatos'}).click();
   await page.getByText('Contato reservado histórico',{exact:true}).waitFor();
+  assert.equal(await page.getByText('Biografia histórica reservada fixture',{exact:true}).count(),0);
+  assert.equal(await page.locator('img[src*="reserved-contact-avatar"]').count(),0);
+  assert.equal(privateAvatarRequests.length,0);
   assert.equal((await connection.get()).get('status'),'accepted');
+  // Hiding presentation must not mutate the saved historical connection.
+  assert.equal((await connection.get()).get('receiverBio'),'Biografia histórica reservada fixture');
   await page.evaluate(()=>document.dispatchEvent(new Event('visibilitychange')));
   await page.waitForFunction(()=>document.querySelector('[data-testid="visible-author-avatar"]')?.textContent==='sem-foto');
   assert.equal(await page.getByTestId('visible-author').textContent(),'Autor histórico público');
