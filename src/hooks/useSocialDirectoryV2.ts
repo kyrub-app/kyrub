@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState, type SetStateAction } from 'react';
+import { onAuthStateChanged, type User } from 'firebase/auth';
 import { db, auth } from '../utils/firebase';
 import {
   collection,
@@ -54,20 +55,37 @@ interface UseSocialDirectoryOptions {
   triggerToast: (msg: string, type: 'success' | 'error' | 'info' | 'warning') => void;
 }
 
+// Bind all transient directory data to the exact Auth session, not just a
+// boolean login state. Stale subscription callbacks cannot repopulate it.
+const EMPTY_DIRECTORY:never[]=[];
+function useSessionDirectoryState<T>(session:User|null){
+  const [state,setState]=useState<{session:User|null;items:T[]}>(()=>({session,items:[]}));
+  const setItems=useCallback((update:SetStateAction<T[]>)=>{
+    if(!session||auth.currentUser!==session)return;
+    setState(previous=>{
+      if(auth.currentUser!==session)return previous;
+      const items=previous.session===session?previous.items:EMPTY_DIRECTORY;
+      return {session,items:typeof update==='function'?update(items):update};
+    });
+  },[session]);
+  return [session&&auth.currentUser===session&&state.session===session?state.items:EMPTY_DIRECTORY,setItems] as const;
+}
+
 export function useSocialDirectoryV2({
   profileName,
   profilePhotoUrl,
-  profileAddress,
   accountTypeLojista,
   accountTypeEntregador,
   isLoggedIn,
   triggerToast
 }: UseSocialDirectoryOptions) {
   // Social states
-  const [friends, setFriends] = useState<Friend[]>([]);
-  const [dbUsers, setDbUsers] = useState<any[]>([]);
-  const [connectionRequests, setConnectionRequests] = useState<any[]>([]);
-  const [connections, setConnections] = useState<ConnectionDocument[]>([]);
+  const [session,setSession]=useState(()=>auth.currentUser);
+  useEffect(()=>onAuthStateChanged(auth,setSession),[]);
+  const [friends,setFriends]=useSessionDirectoryState<Friend>(session);
+  const [dbUsers,setDbUsers]=useSessionDirectoryState<any>(session);
+  const [connectionRequests,setConnectionRequests]=useSessionDirectoryState<any>(session);
+  const [connections,setConnections]=useSessionDirectoryState<ConnectionDocument>(session);
 
   const [favoriteStoreIds, setFavoriteStoreIds] = useState<string[]>(() => {
     const saved = localStorage.getItem(STORAGE_KEYS.FAVORITE_STORES);
@@ -82,9 +100,9 @@ export function useSocialDirectoryV2({
   }, [favoriteStoreIds]);
 
   useEffect(() => {
-    const currentUser = auth.currentUser;
+    const currentUser = session;
 
-    if (!isLoggedIn || !currentUser) {
+    if (!isLoggedIn || !currentUser || auth.currentUser!==currentUser) {
       setConnections([]);
       return;
     }
@@ -94,26 +112,30 @@ export function useSocialDirectoryV2({
       where('participantIds', 'array-contains', currentUser.uid)
     );
 
-    return onSnapshot(
+    let active=true;
+    const stop=onSnapshot(
       connectionsQuery,
       snapshot => {
+        if(!active||auth.currentUser!==currentUser)return;
         setConnections(
           snapshot.docs.map(snapshotDoc => ({
-            id: snapshotDoc.id,
-            ...(snapshotDoc.data() as Omit<ConnectionDocument, 'id'>)
-          }))
+            ...(snapshotDoc.data() as Omit<ConnectionDocument, 'id'>),
+            id: snapshotDoc.id
+          })).filter(item=>item.senderId===currentUser.uid||item.receiverId===currentUser.uid)
         );
       },
       error => {
+        if(!active||auth.currentUser!==currentUser)return;
         console.error('Falha ao escutar conexões:', error);
         setConnections([]);
       }
     );
-  }, [isLoggedIn]);
+    return ()=>{active=false;stop();};
+  }, [isLoggedIn,session,setConnections]);
   useEffect(() => {
-    const currentUid = auth.currentUser?.uid;
+    const currentUid = session?.uid;
 
-    if (!isLoggedIn || !currentUid) {
+    if (!isLoggedIn || !currentUid || auth.currentUser!==session) {
       setFriends([]);
       setConnectionRequests([]);
       return;
@@ -224,13 +246,13 @@ export function useSocialDirectoryV2({
       });
 
     setConnectionRequests(incomingRequests);
-  }, [connections, dbUsers, isLoggedIn]);
+  }, [connections, dbUsers, isLoggedIn,session,setFriends,setConnectionRequests]);
 
   // Connect / Disconnect Friends
   const handleToggleFriend = async (friendId: string) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) {
+    if (!currentUser || currentUser!==session) {
       triggerToast('Faça login para conectar com outros usuários!', 'error');
       return;
     }
@@ -264,7 +286,7 @@ export function useSocialDirectoryV2({
 
       const targetUser = dbUsers.find(user => user.id === friendId);
 
-      if (!targetUser) {
+      if (!targetUser || targetUser.isProfileVisible!==true) {
         triggerToast('Não foi possível localizar este usuário.', 'error');
         return;
       }
@@ -286,7 +308,7 @@ export function useSocialDirectoryV2({
           'Usuário do Kyrub',
         senderRole,
         senderAvatar: profilePhotoUrl || currentUser.photoURL || '',
-        senderBio: profileAddress || '',
+        senderBio: '', // Never copy a legacy address or other ambiguous private field.
         receiverName:
           targetUser.name ||
           'Usuário do Kyrub',
@@ -308,7 +330,8 @@ export function useSocialDirectoryV2({
 
   // Get Suggested Friends
   const getSuggestions = () => {
-    const currentUid = auth.currentUser?.uid;
+    if(!session||auth.currentUser!==session)return [];
+    const currentUid = session.uid;
 
     return dbUsers
       .filter(
@@ -382,7 +405,7 @@ export function useSocialDirectoryV2({
   const handleAcceptRequest = async (request: any) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) return;
+    if (!currentUser || currentUser!==session) return;
 
     const connectionId =
       request.connectionId ||
@@ -415,7 +438,7 @@ export function useSocialDirectoryV2({
   ) => {
     const currentUser = auth.currentUser;
 
-    if (!currentUser) return;
+    if (!currentUser || currentUser!==session) return;
 
     const connectionId = getConnectionId(
       currentUser.uid,
