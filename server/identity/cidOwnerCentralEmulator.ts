@@ -11,6 +11,7 @@ import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} 
 import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
 import {buildTrustedCidSosProfile,projectPublicCidSos,prepareCidSosConfig,readPrivateCidSosConfig,type TrustedTag,type CidSosConfig,type ChannelGrant} from './cidSosPrivateConfig.js';
 import {observeCidVoluntaryLocation,projectOwnerAssistedLocation,type CidLocationObservation} from './cidAssistedLocation.js';
+import type {CidEditorView} from '../../shared/cidSosConfigEditor.js';
 import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
 const APP='cid-owner-central-local-emulator';
 const TTL=30*60000;
@@ -109,6 +110,17 @@ export function createCidOwnerCentralEmulator(tagId:string){
     const capability=projectPublicCidSos(c.tag,config??null,grants??[],now);
     const people=config?[config.owner,...config.contacts].map((p,i)=>({name:p.name,role:i===0?'owner':'contact',channels:p.channels.map(ch=>({channel:ch.channel,verified:!!(i===0?profile?.owner:profile?.contacts.find(x=>x.id===p.id))?.channels.some(x=>x.channel===ch.channel&&x.address===ch.address)}))})):[];
     return {tagId,occurrences:entries.map(o=>({id:o.id,reason:o.reason,createdAt:o.createdAt,status:o.status,...(o.resolution?{resolution:o.resolution}:{})})),hasOlderOccurrences:list.size>50,notices:entries.map(o=>({occurrenceId:o.id,createdAt:o.resolvedAt??o.createdAt,kind:o.status==='open'?'alert':'resolution'})),sos:{enabled:config?.enabled===true,...capability,people},location:projectOwnerAssistedLocation(c.tag,c.ownerId,observations,now)};
+   });
+  },
+  async readEditor(credential:Credential,now:number):Promise<CidEditorView>{
+   check(now);return db.runTransaction(async tx=>{
+    check(now);const c=await authorize(tx,credential,now),[s,g]=await Promise.all([tx.get(configRef),tx.get(grantRef)]);
+    const config=readPrivateCidSosConfig(c.tag,c.ownerId,(s.get('config') as CidSosConfig|undefined)??null);
+    const grants=(g.get('grants')??[]) as ChannelGrant[];
+    if(!Array.isArray(grants))return deny();
+    if(!config)return {draft:{expectedRevision:0,enabled:false,owner:{id:c.ownerId,name:c.tag.displayName,channels:[]},contacts:[]},verified:[]};
+    const profile=buildTrustedCidSosProfile(c.tag,config,grants,now);
+    return {draft:{expectedRevision:config.revision,enabled:config.enabled,owner:config.owner,contacts:config.contacts},verified:[profile.owner,...profile.contacts].flatMap(p=>p.channels.map(ch=>({participantId:p.id,channel:ch.channel,address:ch.address})))};
    });
   },
   async readConfig(credential:Credential,now:number){
