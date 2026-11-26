@@ -21,6 +21,15 @@ for(const path of paths){
  }
  if(hits.length)candidates.push({path,hits});
 }
+// Keep source excerpts in the short-lived audit artifact, but emit paths
+// and line numbers only to CI logs so the review can be performed without
+// downloading an archive. No runtime user records or credentials are read.
+const clientCandidates=candidates.filter(candidate=>candidate.path.startsWith('src/'));
+console.error('[user-directory-audit] scanned='+paths.length+' candidates='+candidates.length+' clientCandidates='+clientCandidates.length);
+for(const candidate of clientCandidates){
+ const locations=candidate.hits.map(hit=>hit.line+':'+(hit.accessHint==='database-operation-nearby'?'db':'indirect')).join(',');
+ console.error('[user-directory-audit] '+candidate.path+' '+locations);
+}
 console.log(JSON.stringify({schemaVersion:1,commit:execFileSync('git',['rev-parse','HEAD'],{encoding:'utf8'}).trim(),
  scannedFiles:paths.length,candidateFiles:candidates.length,candidates,
  limitations:['Includes false positives and subcollections; review ownership and use of returned fields.',
