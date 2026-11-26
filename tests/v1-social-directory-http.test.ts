@@ -1,0 +1,53 @@
+import assert from 'node:assert/strict';
+import {once} from 'node:events';
+import {test} from 'node:test';
+import express from 'express';
+import {initializeApp,deleteApp} from 'firebase-admin/app';
+import {getAuth} from 'firebase-admin/auth';
+import {getFirestore} from 'firebase-admin/firestore';
+import {createSocialDirectoryEmulatorRouter,socialDirectoryPilotEnabled} from '../server/identity/socialDirectoryEmulatorRouter';
+test('isolated directory transport authenticates the viewer and minimizes every response',async()=>{
+ assert.equal(process.env.FIRESTORE_EMULATOR_HOST,'127.0.0.1:8088');
+ assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST,'127.0.0.1:9099');
+ assert.equal(process.env.GCLOUD_PROJECT,'demo-kyrub-welcome');
+ const app=initializeApp({projectId:'demo-kyrub-welcome'},'directory-http-test');
+ const db=getFirestore(app),auth=getAuth(app);
+ assert.ok(socialDirectoryPilotEnabled(db));
+ const web=express();
+ web.use('/api',express.json({limit:'8kb'}),createSocialDirectoryEmulatorRouter(db,auth));
+ const server=web.listen(0,'127.0.0.1');
+ await once(server,'listening');
+ try{
+  const address=server.address();assert.ok(address&&typeof address==='object');
+  const viewer=await auth.createUser({email:'viewer@example.invalid',password:'SyntheticPassword1',emailVerified:true});
+  const visible=await auth.createUser({email:'visible@example.invalid',emailVerified:true});
+  const hidden=await auth.createUser({email:'hidden@example.invalid',emailVerified:true});
+  await db.doc('users/'+visible.uid).set({uid:visible.uid,name:'Visível',isProfileVisible:true,email:'private@example.invalid',cpf:'synthetic'});
+  await db.doc('users/'+hidden.uid).set({uid:hidden.uid,name:'Reservado',isProfileVisible:false,email:'hidden@example.invalid'});
+  const login=await fetch('http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=emulator',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:viewer.email,password:'SyntheticPassword1',returnSecureToken:true})});
+  assert.equal(login.status,200);
+  const token=(await login.json()).idToken as string;
+  const post=(op:string,body:unknown,bearer?:string)=>fetch('http://127.0.0.1:'+address.port+'/api/social-directory-pilot/'+op,{method:'POST',headers:{'Content-Type':'application/json',...(bearer?{Authorization:'Bearer '+bearer}:{})},body:JSON.stringify(body)});
+  assert.equal((await post('page',{})).status,401);
+  assert.equal((await post('page',{uid:hidden.uid},token)).status,400);
+  const response=await post('page',{},token);
+  assert.equal(response.status,200);
+  assert.equal(response.headers.get('cache-control'),'private, no-store');
+  const page=await response.json();
+  assert.deepEqual(page.entries.map((entry:{id:string})=>entry.id),[visible.uid]);
+  assert.deepEqual(Object.keys(page.entries[0]).sort(),['id','isProfileVisible','name','photoUrl']);
+  const authors=await post('authors',{authorIds:[visible.uid,hidden.uid]},token);
+  assert.deepEqual((await authors.json()).entries,[{id:visible.uid,name:'Visível',avatar:''}]);
+  const search=await post('collaborators',{term:'visible@example.invalid'},token);
+  assert.equal((await search.json()).entries[0].id,visible.uid);
+  const spoofed=await post('collaborators',{term:'private@example.invalid'},token);
+  assert.deepEqual((await spoofed.json()).entries,[]);
+  const reserved=await post('collaborators',{term:'hidden@example.invalid'},token);
+  assert.deepEqual((await reserved.json()).entries,[]);
+  await db.doc('users/'+visible.uid).update({isProfileVisible:false});
+  assert.deepEqual((await (await post('authors',{authorIds:[visible.uid]},token)).json()).entries,[]);
+ }finally{
+  server.closeAllConnections();await new Promise<void>(resolve=>server.close(()=>resolve()));
+  await db.terminate();await deleteApp(app);
+ }
+});
