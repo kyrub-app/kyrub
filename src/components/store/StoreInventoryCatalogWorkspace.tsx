@@ -55,6 +55,7 @@ export function StoreInventoryCatalogWorkspace({
   const [catalog, setCatalog] = useState<InventoryCatalogItem[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [editingId, setEditingId] = useState('');
+  const [editingBaseline, setEditingBaseline] = useState<InventoryCatalogItem | null>(null);
   const [draft, setDraft] = useState<InventoryDraft>(emptyDraft);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -91,12 +92,14 @@ export function StoreInventoryCatalogWorkspace({
 
   const resetDraft = (): void => {
     setEditingId('');
+    setEditingBaseline(null);
     setDraft(emptyDraft());
     setError('');
   };
 
   const beginEdit = (item: InventoryCatalogItem): void => {
     setEditingId(item.id);
+    setEditingBaseline(item);
     setDraft({
       name: item.name,
       unit: item.unit,
@@ -137,9 +140,11 @@ export function StoreInventoryCatalogWorkspace({
       return;
     }
 
-    const existing = editingId
-      ? catalog.find(item => item.id === editingId) ?? null
-      : null;
+    const existing = editingBaseline;
+    if (editingId && (!existing || existing.id !== editingId)) {
+      setError('Reabra o item antes de salvar.');
+      return;
+    }
     const now = new Date().toISOString();
     const nextItem: InventoryCatalogItem = {
       id: existing?.id ?? createInventoryCatalogItemId(),
@@ -151,15 +156,14 @@ export function StoreInventoryCatalogWorkspace({
       supplier: draft.supplier.trim(),
       updatedAt: now,
     };
-    const nextCatalog = existing
-      ? catalog.map(item => item.id === existing.id ? nextItem : item)
-      : [...catalog, nextItem];
 
     setSaving(true);
     setError('');
     setMessage('');
     try {
-      await persistStoreInventoryCatalog(user, nextCatalog);
+      await persistStoreInventoryCatalog(user, existing
+        ? { kind: 'edit', expected: existing, metadata: { name, minimumQuantity, purchaseCost, supplier: draft.supplier.trim(), updatedAt: now } }
+        : { kind: 'create', item: nextItem });
       setMessage(existing ? 'Item de estoque atualizado.' : 'Item de estoque criado.');
       resetDraft();
     } catch (saveError) {
@@ -188,10 +192,7 @@ export function StoreInventoryCatalogWorkspace({
     setError('');
     setMessage('');
     try {
-      await persistStoreInventoryCatalog(
-        user,
-        catalog.filter(candidate => candidate.id !== item.id)
-      );
+      await persistStoreInventoryCatalog(user, { kind: 'remove', expected: item });
       if (editingId === item.id) resetDraft();
       setMessage('Item removido do estoque.');
     } catch (removeError) {
