@@ -281,3 +281,26 @@ test('instrumented emulator status batches preserve results and reduce document 
  assert.equal((await db.collection('users/member-author/rewardLedger').get()).size,0);
  assert.equal((await db.collection('users/author/rewardLedger').get()).size,0);
 });
+
+test('personal identifier indices and profile challenge rewards reject direct client mutation',async()=>{
+ const uid='profile-owner',challenge='profile_identity_completed',identifier='perfil-reservado';
+ const forward='public_social_addresses/profile:'+identifier,reverse='public_social_address_targets/profile:'+uid;
+ const receipt='users/'+uid+'/challengeRewards/'+challenge,award='users/'+uid+'/rewardLedger/earn_'+challenge;
+ const record={kind:'profile',identifier,targetId:uid};
+ await Promise.all([db.doc(forward).set(record),db.doc(reverse).set(record)]);
+ for(const actor of [uid,'outsider']){
+  const client=environment.authenticatedContext(actor).firestore();
+  for(const path of [forward,reverse]){
+   await assertFails(getDoc(doc(client,path)));
+   await assertFails(setDoc(doc(client,path),{...record,targetId:actor}));
+   await assertFails(deleteDoc(doc(client,path)));
+  }
+  await assertFails(setDoc(doc(client,receipt),{userId:uid,challengeId:challenge,pitangas:100,xp:0}));
+  await assertFails(setDoc(doc(client,award),{userId:uid,deltaKCoins:100}));
+  await assertFails(setDoc(doc(client,'users/'+uid+'/pitangaBalance/balance'),{userId:uid,availableKCoins:100}));
+ }
+ assert.deepEqual((await db.doc(forward).get()).data(),record);
+ assert.deepEqual((await db.doc(reverse).get()).data(),record);
+ assert.equal((await db.doc(receipt).get()).exists,false);
+ assert.equal((await db.doc(award).get()).exists,false);
+});
