@@ -148,12 +148,13 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
 
  const promotional=data?.status==='unclaimed'&&(data.activation==='email'||data.activation==='setup');
  return <main className="min-h-screen bg-[#121A17] p-4 text-[#F5F5F3]"><div className="mx-auto max-w-md space-y-4 py-6">
-  <header className="flex items-center justify-between gap-2">
+  {!promotional&&!(data?.status==='active'&&data.presentation)&&<header className="flex items-center justify-between gap-2">
    <a href="/" className="font-black text-[#F47825]">KYRUB TAG</a>
    <a href="/" className="text-sm text-slate-300 underline">Kairub-se!</a>
-  </header>
+  </header>}
   {!authReady?<p role="status">Restaurando sessão…</p>:data?.status==='active'&&data.presentation?
    <section className="space-y-4 rounded-2xl border border-[#34443B] p-4">
+    <header className="flex flex-wrap items-center justify-between gap-2"><a href="/" className="font-black text-[#F47825]">KYRUB TAG</a><a href="/" className="inline-flex min-h-11 items-center rounded-xl border border-[#F47825] px-3 text-sm font-bold text-[#F47825]">Kairub-se!</a></header>
     {data.presentation.hasCover&&<div className="flex h-28 items-center justify-center overflow-hidden rounded-xl bg-[#24332C]"><img className="h-full w-full object-cover" alt="Foto de capa do cartão digital" src={publicPromotionalTagImageUrl(identifier,'cover')} referrerPolicy="no-referrer"/></div>}
     <div className="flex items-center gap-3">
      {data.presentation.hasAvatar?<img className="h-16 w-16 shrink-0 rounded-full object-cover" alt="Foto de perfil do titular" src={publicPromotionalTagImageUrl(identifier,'avatar')} referrerPolicy="no-referrer"/>:<img src="/kyrub-logo.svg" alt="" className="h-16 w-16 shrink-0 object-contain"/>}
