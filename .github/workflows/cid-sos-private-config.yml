@@ -1,0 +1,26 @@
+name: CID SOS isolated private configuration
+on:
+  pull_request:
+    paths:
+      - 'server/identity/cidSosPrivateConfig.ts'
+      - 'server/identity/cidSosOccurrenceStore.ts'
+      - 'server/identity/cidSosAlertPolicy.ts'
+      - 'shared/cidSosRequest.ts'
+      - 'tests/cid-sos-private-config.test.ts'
+      - '.github/workflows/cid-sos-private-config.yml'
+permissions:
+  contents: read
+jobs:
+  private-config:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: node --import tsx --test tests/cid-sos-private-config.test.ts
