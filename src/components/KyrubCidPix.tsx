@@ -32,16 +32,33 @@ export function KyrubCidPixFields({value,onChange,disabled}:{value:CidPixDraft;o
 export function KyrubCidPixPublic({pix}:{pix:CidPixConfig}){
  const [notice,setNotice]=useState('');
  const [showQr,setShowQr]=useState(false);
- let code:string;try{code=buildCidPixPayload(pix);}catch{return null;}
+ const [manual,setManual]=useState<'key'|'code'|null>(null);
+ let key:string;try{key=normalizeCidPix(pix).key;}catch{return null;}
+ let code:string|null=null;try{code=buildCidPixPayload(pix);}catch{/* A valid key remains usable independently of BR Code. */}
  let matrix:ReturnType<typeof cidPixQrMatrix>|null=null;
- if(showQr){try{matrix=cidPixQrMatrix(code);}catch{/* Keep Pix Copia e Cola available. */}}
- return <section className="space-y-2 rounded-xl border border-[#34443B] p-3">
-  <h2 className="font-bold text-[#F47825]">Receber via Pix</h2>
-  <p className="text-sm text-slate-300">Pagamento direto. Escolha o valor no aplicativo do seu banco e confira o beneficiário antes de confirmar.</p>
-  <button type="button" aria-expanded={showQr} className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>setShowQr(v=>!v)}><QrCode aria-hidden="true" className="h-5 w-5"/>{showQr?'Ocultar QR Code Pix':'Exibir QR Code Pix'}</button>
-  {showQr&&(matrix?<svg role="img" aria-label="QR Code Pix para pagamento" viewBox={'0 0 '+matrix.size+' '+matrix.size} className="mx-auto h-auto w-full max-w-[300px] bg-white" shapeRendering="crispEdges"><rect width={matrix.size} height={matrix.size} fill="#fff"/><path d={matrix.path} fill="#000"/></svg>:<p role="status" className="text-sm">QR indisponível. Use o Pix Copia e Cola.</p>)}
-  <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>{if(!navigator.clipboard){setNotice('Abra a opção abaixo e copie o código.');return;}void navigator.clipboard.writeText(code).then(()=>setNotice('Pix copiado. Abra seu banco.')).catch(()=>setNotice('Abra a opção abaixo e copie o código.'));}}><Copy aria-hidden="true" className="h-5 w-5"/>Copiar Pix</button>
-  <details><summary className="text-sm underline">Exibir Pix Copia e Cola</summary><textarea aria-label="Código Pix Copia e Cola" readOnly value={code} className={field+' text-xs'} rows={4}/></details>
+ if(showQr&&code){try{matrix=cidPixQrMatrix(code);}catch{/* Keep direct copying available. */}}
+ async function copy(value:string,kind:'key'|'code'){
+  setNotice('');setManual(null);
+  try{
+   if(!navigator.clipboard)throw Error('CLIPBOARD_UNAVAILABLE');
+   await navigator.clipboard.writeText(value);
+   setNotice(kind==='key'?'Chave Pix copiada. Cole no aplicativo de pagamento de sua preferência.':'Pix Copia e Cola copiado. Abra seu aplicativo de pagamento.');
+  }catch{
+   setManual(kind);
+   setNotice('Selecione e copie o conteúdo exibido abaixo.');
+  }
+ }
+ const secondary='flex min-h-11 items-center justify-center gap-2 rounded-xl border border-[#34443B] p-2 text-sm font-semibold';
+ return <section className="space-y-3 rounded-xl border border-[#34443B] p-3">
+  <h2 className="font-bold text-[#F47825]">Pix</h2>
+  <p className="text-sm text-slate-300">Pagamento direto ao recebedor. Escolha o valor no seu aplicativo de pagamento e confira o beneficiário antes de confirmar.</p>
+  <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl bg-[#F47825] p-3 text-sm font-bold text-[#121A17]" onClick={()=>void copy(key,'key')}><Copy aria-hidden="true" className="h-5 w-5"/>Copiar chave Pix</button>
+  {code&&<div className="grid grid-cols-2 gap-2">
+   <button type="button" aria-expanded={showQr} className={secondary} onClick={()=>setShowQr(v=>!v)}><QrCode aria-hidden="true" className="h-5 w-5 shrink-0"/>{showQr?'Ocultar QR Code':'Exibir QR Code'}</button>
+   <button type="button" className={secondary} onClick={()=>void copy(code,'code')}><Copy aria-hidden="true" className="h-5 w-5 shrink-0"/>Pix Copia e Cola</button>
+  </div>}
+  {showQr&&(matrix?<svg role="img" aria-label="QR Code Pix para pagamento" viewBox={'0 0 '+matrix.size+' '+matrix.size} className="mx-auto h-auto w-full max-w-[300px] bg-white" shapeRendering="crispEdges"><rect width={matrix.size} height={matrix.size} fill="#fff"/><path d={matrix.path} fill="#000"/></svg>:<p role="status" className="text-sm">QR indisponível. Use a chave Pix ou o Pix Copia e Cola.</p>)}
+  {manual&&<textarea aria-label={manual==='key'?'Chave Pix para cópia manual':'Código Pix Copia e Cola'} readOnly value={manual==='key'?key:code??''} className={field+' text-xs'} rows={manual==='key'?2:4} onFocus={e=>e.currentTarget.select()}/>}
   {notice&&<p role="status" className="text-xs">{notice}</p>}
  </section>;
 }
