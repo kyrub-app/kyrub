@@ -40,9 +40,7 @@ const normalizeDirectoryUser = (
       ? data.name.trim()
       : typeof data.displayName === 'string' && data.displayName.trim()
         ? data.displayName.trim()
-        : typeof data.email === 'string' && data.email.includes('@')
-          ? data.email.split('@')[0]
-          : 'Usuário Kyrub',
+        : 'Usuário Kyrub',
   email: typeof data.email === 'string' ? data.email : '',
   role:
     typeof data.role === 'string' && data.role.trim()
@@ -102,7 +100,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
             .flatMap(snapshotDocument => {
               const data = snapshotDocument.data() as Record<string, unknown>;
 
-              if (data.isProfileVisible === false) return [];
+              if (data.isProfileVisible !== true) return [];
 
               const directoryUser = normalizeDirectoryUser(
                 snapshotDocument.id,
@@ -146,7 +144,7 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
       const searchableName = user.name.toLocaleLowerCase('pt-BR');
       const searchableEmail = user.email.toLocaleLowerCase('pt-BR');
       return (
-        searchableEmail.includes(normalizedSearch) ||
+        (normalizedSearch.includes('@') && searchableEmail === normalizedSearch) ||
         searchableName.includes(normalizedSearch)
       );
     });
@@ -186,13 +184,13 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
               htmlFor="note-collaborator-search"
               className="mb-1.5 block text-[10px] font-mono uppercase text-slate-400"
             >
-              Digite o e-mail ou nome do usuário
+              Digite o nome ou o e-mail completo do usuário
             </label>
             <div className="relative">
               <input
                 id="note-collaborator-search"
                 type="search"
-                placeholder="Nome ou e-mail cadastrado no Kyrub"
+                placeholder="Nome ou e-mail completo"
                 value={userSearchEmail}
                 onChange={event => setUserSearchEmail(event.target.value)}
                 className="w-full rounded-xl border border-slate-800 bg-slate-950 py-2.5 pl-9 pr-4 text-xs text-white focus:border-teal-500 focus:outline-none"
@@ -261,9 +259,6 @@ export const UserSearchModal: React.FC<UserSearchModalProps> = ({
                           <h4 className="truncate text-xs font-bold text-white">
                             {user.name}
                           </h4>
-                          <p className="truncate text-[10px] text-slate-400">
-                            {user.email || 'E-mail não informado'}
-                          </p>
                           <span className="rounded border border-slate-800 bg-slate-900 px-1.5 py-0.5 text-[8px] font-mono font-semibold uppercase text-slate-500">
                             {user.role}
                           </span>
