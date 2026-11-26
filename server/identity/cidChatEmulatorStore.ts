@@ -3,7 +3,7 @@
 // No public route, production adminDb, or real notification provider.
 import {getApps,initializeApp} from 'firebase-admin/app';
 import {getFirestore,type Transaction,type DocumentReference} from 'firebase-admin/firestore';
-import {createHash,timingSafeEqual} from 'node:crypto';
+import {createHash,randomBytes,timingSafeEqual} from 'node:crypto';
 import {assertCidSosEmulator,CID_EMULATOR_PROJECT} from './cidSosEmulatorStore.js';
 import {isTagId} from '../../shared/kyrubTagContract.js';
 import {createCidOccurrenceChat,issueCidChatInvite,redeemCidChatInvite,openCidChatSession,authorizeCidChatSession,prepareCidChatMessage,closeCidChat,projectCidChat,type CidChat,type ChatInvite,type ChatSession,type ChatMessage} from './cidOccurrenceChatAccess.js';
@@ -12,6 +12,12 @@ import {tagAuthenticationOptions,verifyTagAuthentication,type StoredTagPasskey} 
 import {assertSamePasskeyCredential} from './kyrubTagPasskeyState.js';
 import type {AuthenticationResponseJSON} from '@simplewebauthn/server';
 import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
+import {buildTrustedCidSosProfile,type TrustedTag,type CidSosConfig,type ChannelGrant} from './cidSosPrivateConfig.js';
+type ContactRoute={participantId:string;channel:'email'|'whatsapp'|'sms';address:string};
+type ContactChallenge={id:string;inviteId:string;chatId:string;tagId:string;route:ContactRoute;digest:string;expiresAt:number;attempts:number;usedAt?:number};
+const CONTACT_TTL=5*60*1000;
+const randomToken=()=>randomBytes(32).toString('base64url');
+const matches=(secret:unknown,hash:unknown)=>secretId(secret)&&typeof hash==='string'&&/^[a-f0-9]{64}$/.test(hash)&&timingSafeEqual(Buffer.from(digest(secret),'hex'),Buffer.from(hash,'hex'));
 
 const APP='cid-chat-local-emulator';
 export const CID_CHAT_EMULATOR_ORIGIN='https://kyrub-cid-emulator.vercel.app';
@@ -32,7 +38,20 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
  const occurrence=tag.collection('occurrences').doc(occurrenceId);
  const root=occurrence.collection('chat').doc('state');
  const proofs=root.collection('fixtureProofs'),invites=root.collection('invites'),sessions=root.collection('sessions'),messages=root.collection('messages');
- const ownerChallenges=root.collection('ownerChallenges');
+ const ownerChallenges=root.collection('ownerChallenges'),contactChallenges=root.collection('contactChallenges'),contactQuotas=root.collection('contactQuotas');
+ async function currentContactRoute(tx:Transaction,chat:CidChat,participantId:string,channel:ContactRoute['channel'],now:number){
+  const [o,t,c,g]=await Promise.all([tx.get(occurrence),tx.get(tag),tx.get(tag.collection('private').doc('config')),tx.get(tag.collection('private').doc('grants'))]);
+  const data=o.data() as CidSosOccurrence|undefined, trusted=t.get('tag') as TrustedTag|undefined,config=c.get('config') as CidSosConfig|undefined,grants=g.get('grants') as ChannelGrant[]|undefined;
+  if(!data||data.id!==chat.id||data.tagId!==tagId||data.ownerId!==chat.ownerId||!trusted||trusted.tagId!==tagId||trusted.ownerId!==chat.ownerId||!config||!Array.isArray(grants)||!chat.members.some(m=>m.id===participantId&&m.role==='contact'))return deny();
+  const profile=buildTrustedCidSosProfile(trusted,config,grants,now);
+  const candidate=profile.contacts.find(p=>p.id===participantId)?.channels.find(r=>r.channel===channel);
+  if(!candidate||!data.recipients.some(r=>r.role==='contact'&&r.participantId===participantId&&r.channel===channel&&r.address===candidate.address))return deny();
+  return {participantId,channel,address:candidate.address};
+ }
+ const sameRoute=(a:ContactRoute,b:ContactRoute)=>a.participantId===b.participantId&&a.channel===b.channel&&a.address===b.address;
+ function assertInvite(invite:ChatInvite|undefined,credential:Credential,chat:CidChat,now:number){
+  if(!invite||invite.id!==credential.id||invite.chatId!==chat.id||invite.usedAt!==undefined||invite.revokedAt!==undefined||chat.closedAt!==undefined||now<invite.createdAt||now>=invite.expiresAt||!matches(credential.secret,invite.digest))return deny();return invite;
+ }
  const liveTag=db.collection('kyrub_official_tags').doc(tagId),liveCredential=db.collection('kyrub_tag_passkey_credentials').doc(tagId);
  const quota=db.collection('cid_sos_emulator_owner_quotas').doc(tagId);
  async function ownerCredential(tx:Transaction,chat:CidChat){
@@ -57,7 +76,7 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   const s=await tx.get(root),chat=s.data() as CidChat|undefined;
   if(!chat||chat.id!==occurrenceId||chat.tagId!==tagId)return deny();return chat;
  }
- async function readSession(tx:Transaction,credential:Credential){
+ async function readSession(tx:Transaction,credential:Credential,now:number){
   if(!credential||!secretId(credential.id)||!secretId(credential.secret))return deny();
   const reference=sessions.doc(credential.id),s=await tx.get(reference),session=s.data() as ChatSession|undefined;
   if(!session||session.id!==credential.id||session.chatId!==occurrenceId)return deny();
@@ -66,6 +85,8 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
    const chat=await readChat(tx),current=await ownerCredential(tx,chat);
    if(session.memberId!==chat.ownerId||current.stored.id!==ownerKey)return deny();
   }
+  const route=s.get('contactRoute') as ContactRoute|undefined;
+  if(route){const chat=await readChat(tx);if(session.memberId!==route.participantId||!sameRoute(route,await currentContactRoute(tx,chat,route.participantId,route.channel,now)))return deny();}
   return {reference,session};
  }
  function consume(tx:Transaction,reference:DocumentReference,now:number){tx.update(reference,{usedAt:now});}
@@ -161,10 +182,64 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
     return {id:result.session.record.id,secret:result.session.secret};
    });
   },
+  // Internal worker only. The returned envelope is for the authorized delivery adapter,
+  // never an HTTP response. No real provider is called and no clear secret is persisted.
+  async prepareContactInvitationForDelivery(participantId:string,channel:ContactRoute['channel'],now:number){
+   checkNow(now);return db.runTransaction(async tx=>{
+    checkNow(now);
+    const chat=await readChat(tx),route=await currentContactRoute(tx,chat,participantId,channel,now);
+    const issued=issueCidChatInvite(chat,participantId,now);
+    tx.create(invites.doc(issued.record.id),{...issued.record,contactRoute:route});
+    return {simulation:true as const,route,invitation:{id:issued.record.id,secret:issued.secret}};
+   });
+  },
+  // Requesting a second confirmation cannot change the delivery destination.
+  // Only the internal simulated delivery envelope contains the confirmation secret.
+  async prepareContactConfirmationForDelivery(credential:Credential,now:number){
+   checkNow(now);if(!credential||!secretId(credential.id))return deny();
+   return db.runTransaction(async tx=>{
+    checkNow(now);
+    const [chat,s]=await Promise.all([readChat(tx),tx.get(invites.doc(credential.id))]);
+    const invite=assertInvite(s.data() as ChatInvite|undefined,credential,chat,now);
+    const bound=s.get('contactRoute') as ContactRoute|undefined;
+    if(!bound||bound.participantId!==invite.memberId)return deny();
+    const route=await currentContactRoute(tx,chat,bound.participantId,bound.channel,now);
+    if(!sameRoute(bound,route))return deny();
+    const quotaRef=contactQuotas.doc(invite.memberId),q=await tx.get(quotaRef);
+    const bucket=Math.floor(now/600000),count=q.get('bucket')===bucket?q.get('count'):0;
+    if(!Number.isSafeInteger(count)||count<0||count>=3)return deny();
+    const secret=randomToken(),id=randomToken();
+    const record:ContactChallenge={id,inviteId:invite.id,chatId:chat.id,tagId,route,digest:digest(secret),expiresAt:Math.min(invite.expiresAt,now+CONTACT_TTL),attempts:0};
+    tx.set(quotaRef,{bucket,count:count+1});
+    tx.create(contactChallenges.doc(id),record);
+    return {simulation:true as const,publicResult:{challengeId:id},deliveryEnvelope:{route,secret}};
+   });
+  },
+  async confirmContact(invitation:Credential,challengeId:string,confirmationSecret:unknown,now:number){
+   checkNow(now);if(!invitation||!secretId(invitation.id)||!secretId(challengeId))return deny();
+   const result=await db.runTransaction(async tx=>{
+    checkNow(now);
+    const inviteRef=invites.doc(invitation.id),challengeRef=contactChallenges.doc(challengeId);
+    const [chat,i,c]=await Promise.all([readChat(tx),tx.get(inviteRef),tx.get(challengeRef)]);
+    const invite=assertInvite(i.data() as ChatInvite|undefined,invitation,chat,now),challenge=c.data() as ContactChallenge|undefined;
+    const bound=i.get('contactRoute') as ContactRoute|undefined;
+    if(!bound||!challenge||challenge.id!==challengeId||challenge.inviteId!==invite.id||challenge.chatId!==chat.id||challenge.tagId!==tagId||challenge.usedAt!==undefined||!Number.isSafeInteger(challenge.expiresAt)||now>=challenge.expiresAt||!Number.isSafeInteger(challenge.attempts)||challenge.attempts<0||challenge.attempts>=3||!sameRoute(bound,challenge.route)||bound.participantId!==invite.memberId)return deny();
+    const route=await currentContactRoute(tx,chat,bound.participantId,bound.channel,now);
+    if(!sameRoute(bound,route))return deny();
+    if(!matches(confirmationSecret,challenge.digest)){
+     tx.update(challengeRef,{attempts:challenge.attempts+1});return null;
+    }
+    const redeemed=redeemCidChatInvite(chat,invite,invitation.secret,route.participantId,now);
+    tx.update(inviteRef,{usedAt:now});tx.update(challengeRef,{usedAt:now,attempts:challenge.attempts+1});
+    tx.create(sessions.doc(redeemed.session.record.id),{...redeemed.session.record,contactRoute:route});
+    return {id:redeemed.session.record.id,secret:redeemed.session.secret};
+   });
+   if(!result)return deny();return result;
+  },
   async send(credential:Credential,input:unknown,now:number){
    checkNow(now);return db.runTransaction(async tx=>{
     checkNow(now);
-    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential)]);
+    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential,now)]);
     const message=prepareCidChatMessage(chat,s.session,credential.secret,input,now);
     const reference=ref(messages,message.id),previous=await tx.get(reference);
     if(previous.exists){
@@ -179,7 +254,7 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   async read(credential:Credential,now:number){
    checkNow(now);return db.runTransaction(async tx=>{
     checkNow(now);
-    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential)]);
+    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential,now)]);
     const view=projectCidChat(chat,s.session,credential.secret,now);
     const [o,snapshot]=await Promise.all([tx.get(occurrence),tx.get(messages.orderBy('createdAt','desc').limit(101))]);
     const data=o.data() as CidSosOccurrence|undefined;
@@ -198,7 +273,7 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   async close(credential:Credential,now:number){
    checkNow(now);return db.runTransaction(async tx=>{
     checkNow(now);
-    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential)]);
+    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential,now)]);
     const closed=closeCidChat(chat,s.session,credential.secret,now);
     tx.update(root,{closedAt:closed.closedAt});return {closed:true as const};
    });
@@ -206,7 +281,7 @@ export function createCidChatEmulatorStore(tagId:string,occurrenceId:string){
   async revokeOwnSession(credential:Credential,now:number){
    checkNow(now);return db.runTransaction(async tx=>{
     checkNow(now);
-    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential)]);
+    const [chat,s]=await Promise.all([readChat(tx),readSession(tx,credential,now)]);
     authorizeCidChatSession(chat,s.session,credential.secret,now,'read');
     tx.update(s.reference,{revokedAt:now});return {revoked:true as const};
    });
