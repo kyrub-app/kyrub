@@ -80,6 +80,20 @@ export default async function handler(
   response.setHeader('X-Kyrub-Route', 'health-multiplexer');
   response.setHeader('X-Kyrub-Decision', transport || 'health');
 
+  if (transport === 'private-identity-directory') {
+    response.setHeader('Cache-Control', 'private, no-store, max-age=0');
+    if (process.env.KYRUB_PRIVATE_DIRECTORY_RELEASE_ENABLED !== 'true') {
+      response.status(404).json({error:'DIRECTORY_DISABLED'});return;
+    }
+    try {
+      const {handlePrivateDirectoryRequest}=await import('../server/identity/privateDirectoryServerlessTransport.js');
+      await handlePrivateDirectoryRequest(request,response);
+    } catch {
+      response.status(503).json({error:'DIRECTORY_UNAVAILABLE'});
+    }
+    return;
+  }
+
   if (transport === 'public-legal-document') {
     response.setHeader('Cache-Control', 'no-store, max-age=0');
     if ((request.method ?? 'GET').toUpperCase() !== 'GET') {
