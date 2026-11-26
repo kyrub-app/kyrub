@@ -35,6 +35,11 @@ test('Chromium: authorized owner invites private account and recipient accepts c
    return {uid,email};
   };
   const owner=await create('owner'),target=await create('target');
+  // The editable Firestore email is not identity authority. Deliberately
+  // give the wrong account the intended recipient's Auth email.
+  const decoy=await create('decoy');
+  await db.doc('users/'+target.uid).update({email:'stale-target@example.invalid'});
+  await db.doc('users/'+decoy.uid).update({email:target.email});
   await db.doc('erp_age_release_private/current').set({schemaVersion:1,mode:'verified_adult_only'});
   await db.doc('stores/'+storeId).set({id:storeId,ownerId:owner.uid,name:'Loja de homologação',legacyTenantId:owner.uid,publicationStatus:'paused',plan:'free',migrationStatus:'registry_only',createdAt:FieldValue.serverTimestamp(),updatedAt:FieldValue.serverTimestamp()});
   const member=db.doc('stores/'+storeId+'/members/'+target.uid);
@@ -80,6 +85,7 @@ test('Chromium: authorized owner invites private account and recipient accepts c
   assert.equal((await inviteResponse).status(),201);
   await page.getByText('Conta Kyrub foi convidado como Vendedor.',{exact:true}).waitFor();
   const invited=(await member.get()).data();
+  assert.equal((await db.doc('stores/'+storeId+'/members/'+decoy.uid).get()).exists,false);
   assert.equal(invited.status,'invited');assert.equal(invited.role,'seller');assert.equal(invited.email,'');assert.equal(invited.invitedBy,owner.uid);
   await page.screenshot({path:'gamification-admin-isolated-staff-owner.png',fullPage:true});
   await context.close();
