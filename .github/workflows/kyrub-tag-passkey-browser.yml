@@ -10,6 +10,7 @@ on:
       - 'api/health.ts'
       - 'tests/kyrub-tag-passkey-browser.test.mjs'
       - 'tests/fixtures/kyrub-tag-passkey-browser.tsx'
+      - 'tests/fixtures/kyrub-tag-passkey-firebase.ts'
       - '.github/workflows/kyrub-tag-passkey-browser.yml'
 permissions:
   contents: read

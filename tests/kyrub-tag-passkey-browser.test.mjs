@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {test} from 'node:test';
 import {randomBytes} from 'node:crypto';
+import {resolve,dirname} from 'node:path';
 import express from 'express';
 import {createServer as createViteServer} from 'vite';
 import tailwindcss from '@tailwindcss/vite';
@@ -30,12 +31,23 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
    if(!['public-kyrub-tag','kyrub-tag-passkey'].includes(req.query.transport))return res.sendStatus(404);
    Promise.resolve(health(req,res)).catch(next);
   });
-  vite=await createViteServer({configFile:false,plugins:[tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
+  const firebasePath=resolve('src/utils/firebase');
+  const fixturePath=resolve('tests/fixtures/kyrub-tag-passkey-firebase.ts');
+  // Resolve every relative import of the shared Firebase client to a test-only
+  // emulator module. Do not modify the production localhost safety guard.
+  const fixtureFirebase={name:'passkey-fixture-firebase',enforce:'pre',resolveId(source,importer){
+   if(importer&&source.startsWith('.')&&resolve(dirname(importer),source).replace(/\.ts$/,'')===firebasePath)return fixturePath;
+   return null;
+  }};
+  vite=await createViteServer({configFile:false,plugins:[fixtureFirebase,tailwindcss()],appType:'custom',server:{middlewareMode:true,hmr:false},esbuild:{jsx:'automatic'}});
   app.get('/tag/:id',async(req,res)=>res.type('html').send(await vite.transformIndexHtml(req.path,'<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body><div id="root"></div><script type="module" src="/tests/fixtures/kyrub-tag-passkey-browser.tsx"></script></body></html>')));
   app.use('/api',(_req,res)=>res.sendStatus(404));app.use(vite.middlewares);
   server=app.listen(0,'127.0.0.1');
   if(!server.listening)await new Promise((resolve,reject)=>{server.once('listening',resolve);server.once('error',reject);});
   const local='http://127.0.0.1:'+server.address().port;
+  const initial=await fetch(local+'/api/health?transport=public-kyrub-tag&id='+tagId);
+  assert.equal(initial.status,200);
+  const initialData=await initial.json();assert.equal(initialData.status,'unclaimed');assert.equal(initialData.passkeyOrigin,origin);
   browser=await chromium.launch({headless:true});
   async function device(){
    const ctx=await browser.newContext({viewport:{width:390,height:844}});
@@ -53,6 +65,7 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
     external.push(url.origin+url.pathname);return route.abort();
    });
    const page=await ctx.newPage();page.on('pageerror',e=>errors.push(e.message));
+   page.on('response',r=>{if(r.status()>=400&&new URL(r.url()).origin===origin)console.info('Browser resource status:',r.status(),new URL(r.url()).pathname);});
    page.on('dialog',d=>void d.accept());
    const cdp=await ctx.newCDPSession(page);await cdp.send('WebAuthn.enable');
    await cdp.send('WebAuthn.addVirtualAuthenticator',{options:{protocol:'ctap2',transport:'internal',hasResidentKey:true,hasUserVerification:true,isUserVerified:true,automaticPresenceSimulation:true}});
@@ -60,7 +73,9 @@ test('Chromium: real tag card and virtual WebAuthn authenticator in isolated Fir
    return {ctx,page,cdp};
   }
   const owner=await device(),page=owner.page;
-  await page.getByRole('heading',{name:'Kyrub',exact:true}).waitFor();
+  try{await page.getByRole('heading',{name:'Kyrub',exact:true}).waitFor();}catch(e){
+   console.info('Initial page diagnostic:',JSON.stringify({errors:errors.map(x=>x.slice(0,240)),body:(await page.locator('body').innerText()).slice(0,300),externalCount:external.length}));throw e;
+  }
   assert.equal(await page.getByRole('link',{name:'Kairub-se!',exact:true}).first().getAttribute('href'),'/');
   await page.getByRole('button',{name:'Editar',exact:true}).click();
   await page.getByLabel('Nome (opcional)').fill('Pessoa de homologação');
