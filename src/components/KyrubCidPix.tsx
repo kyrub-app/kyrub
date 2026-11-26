@@ -33,7 +33,7 @@ export function KyrubCidPixPublic({pix}:{pix:CidPixConfig}){
  return <section className="space-y-2 rounded-xl border border-[#34443B] p-3">
   <h2 className="font-bold text-[#F47825]">Receber via Pix</h2>
   <p className="text-sm text-slate-300">Pagamento direto. Escolha o valor no aplicativo do seu banco e confira o beneficiário antes de confirmar.</p>
-  <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>void navigator.clipboard?.writeText(code).then(()=>setNotice('Pix copiado. Abra seu banco.')).catch(()=>setNotice('Selecione e copie o código abaixo.'))}><Copy aria-hidden="true" className="h-5 w-5"/>Copiar Pix</button>
+  <button type="button" className="flex min-h-11 w-full items-center justify-center gap-2 rounded-xl border border-[#34443B] p-3 text-sm font-semibold" onClick={()=>{if(!navigator.clipboard){setNotice('Abra a opção abaixo e copie o código.');return;}void navigator.clipboard.writeText(code).then(()=>setNotice('Pix copiado. Abra seu banco.')).catch(()=>setNotice('Abra a opção abaixo e copie o código.'));}}><Copy aria-hidden="true" className="h-5 w-5"/>Copiar Pix</button>
   <details><summary className="text-sm underline">Exibir Pix Copia e Cola</summary><textarea aria-label="Código Pix Copia e Cola" readOnly value={code} className={field+' text-xs'} rows={4}/></details>
   {notice&&<p role="status" className="text-xs">{notice}</p>}
  </section>;
