@@ -5,6 +5,7 @@ import {OfficialKyrubTagPanel} from './OfficialKyrubTagPanel';
 import {PromotionalKyrubTagEditor} from './PromotionalKyrubTagEditor';
 import {TagEmailLinkIdentity} from './TagEmailLinkIdentity';
 import {KyrubCardDemonstration} from './KyrubCardDemonstration';
+import {KyrubCidPixPublic} from './KyrubCidPix';
 import {KyrubTagPasskeyActions} from './KyrubTagPasskeyActions';
 import {clearCardDraft,loadCardDraft,cardDraftUrls,type CardDraft} from '../utils/cardDemonstrationDraft';
 import {EMPTY_PROMOTIONAL_PRESENTATION,type PromotionalTagPresentation,type PublicPromotionalTagPresentation} from '../../shared/kyrubTagPromotional';
@@ -163,6 +164,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
     {data.presentation.occupation&&<p className="text-[#F47825]">{data.presentation.occupation}</p>}
     {data.presentation.about&&<p className="whitespace-pre-wrap break-words text-slate-200">{data.presentation.about}</p>}
     {data.links.map(link=>{const dest=parsePublicDestinationUrl(link.url);if(!dest||dest.kind==='card')return null;return <a key={link.url} href={buildPublicDestinationPath(dest.kind,dest.identifier)??'/'} className="block rounded-xl border border-[#34443B] p-3 text-sm"><span className="block text-xs text-[#F47825]">{dest.kind==='profile'?'Perfil':dest.kind==='store'?'Loja':'Comunidade'}</span>{link.name}</a>;})}
+    {data.presentation.pix&&<KyrubCidPixPublic pix={data.presentation.pix}/>}
     <button type="button" className="min-h-12 w-full rounded-xl border border-rose-400/70 p-3 font-semibold text-rose-200" onClick={()=>setShowSos(s=>!s)}>SOS · Informações de emergência</button>
     {showSos&&<div className="space-y-2 rounded-xl border border-rose-600/50 p-3">
      <h2 className="font-semibold">Emergência no Brasil</h2>
@@ -179,7 +181,7 @@ export function PublicKyrubTagPage({identifier}:{identifier:string}){
       </div>)}
      </div>}
     </div>}
-    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
+    {data.passkeyManaged?<KyrubTagPasskeyActions tagId={identifier} mode="active" origin={data.passkeyOrigin} initial={{name:data.presentation.name,occupation:data.presentation.occupation,about:data.presentation.about,...(data.presentation.pix?{pix:data.presentation.pix}:{})}} links={data.links}/>:<button type="button" className="flex items-center gap-2 text-sm text-[#F47825]" onClick={()=>setShowEdit(v=>!v)}>✎ Editar minha Tag</button>}
    </section>:
    data?.status==='blocked'&&data.passkeyManaged?<section className="space-y-3"><p role="status">Este cartão está bloqueado. As informações do titular não estão públicas.</p><KyrubTagPasskeyActions tagId={identifier} mode="blocked" origin={data.passkeyOrigin}/></section>:
    promotional?
