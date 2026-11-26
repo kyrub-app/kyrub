@@ -59,3 +59,14 @@ test('Kairub-se opens the normal Renda landing without mandatory login or automa
  // The pre-existing reserved-unit flow remains independent.
  assert.match(page,/const loginPath='\/\?tagActivation='\+encodeURIComponent\(identifier\)/);
 });
+
+test('card panel puts branding beside its single primary invitation and displays canonical destination examples',()=>{
+ const demo=readFileSync('src/components/KyrubCardDemonstration.tsx','utf8');
+ const page=readFileSync('src/components/PublicKyrubTagPage.tsx','utf8');
+ assert.match(demo,/<header[^>]*>.*KYRUB TAG.*Kairub-se!.*<\/header>/);
+ assert.match(page,/!promotional&&.*<header/);
+ for(const path of ['src/components/KyrubCardDemonstration.tsx','src/components/PromotionalKyrubTagEditor.tsx','src/components/KyrubTagPasskeyActions.tsx']){
+  const source=readFileSync(path,'utf8');
+  for(const example of ['kyrub.com/kairubido/seu-perfil','kyrub.com/@sua-loja','kyrub.com/comunidade/sua-comunidade'])assert.ok(source.includes(example));
+ }
+});
