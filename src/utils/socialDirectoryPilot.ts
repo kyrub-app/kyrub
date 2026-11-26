@@ -1,19 +1,21 @@
 import type {User} from 'firebase/auth';
 import {auth} from './firebase';
+import {privateDirectoryProductionEnabled,privateDirectoryRequest} from './privateDirectoryClientTransport';
 
 const validId=(id:unknown):id is string=>typeof id==='string'&&/^[A-Za-z0-9_-]{1,128}$/.test(id);
 export function socialDirectoryPilotEnabled(){
- return import.meta.env?.DEV===true&&import.meta.env?.VITE_KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&
+ return privateDirectoryProductionEnabled('social')||(import.meta.env?.DEV===true&&import.meta.env?.VITE_KYRUB_SOCIAL_DIRECTORY_PILOT==='true'&&
  typeof window!=='undefined'&&window.location.hostname==='127.0.0.1'&&window.location.protocol==='http:'&&
- auth.app.options.projectId==='demo-kyrub-welcome';
+ auth.app.options.projectId==='demo-kyrub-welcome');
 }
 async function request(user:User,operation:'page'|'authors'|'collaborators',body:unknown,signal?:AbortSignal){
  if(!socialDirectoryPilotEnabled()||auth.currentUser!==user)throw Error('DIRECTORY_UNAVAILABLE');
  const token=await user.getIdToken();
  if(auth.currentUser!==user||signal?.aborted)throw Error('DIRECTORY_SESSION_CHANGED');
- const response=await fetch('/api/social-directory-pilot/'+operation,{
+ const request=privateDirectoryRequest('social',operation,body,'/api/social-directory-pilot/'+operation);
+ const response=await fetch(request.url,{
   method:'POST',cache:'no-store',credentials:'omit',redirect:'error',signal,
-  headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(body)
+  headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:request.body
  });
  if(!response.ok||auth.currentUser!==user)throw Error('DIRECTORY_UNAVAILABLE');
  const payload=await response.json();
