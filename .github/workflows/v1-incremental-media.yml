@@ -1,0 +1,30 @@
+name: Incremental V1 media release
+on:
+  push:
+    branches: [release/v1-incremental-media-01]
+  pull_request:
+    branches: [release/kyrub-tag-permanent-stock]
+    paths:
+      - 'src/components/MediaCarousel.tsx'
+      - 'src/components/PublicStorefrontHero.tsx'
+      - 'src/utils/mediaProximity.ts'
+      - 'tests/public-storefront-hero.test.ts'
+      - '.github/workflows/v1-incremental-media.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/public-storefront-hero.test.ts tests/public-visit-card.test.ts
+      - run: npm run build --ignore-scripts
