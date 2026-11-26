@@ -1406,3 +1406,50 @@ test('canonical private identifier reservation has exactly one owner under compe
   assert.equal(await resolveSocialAddressInDatabase(db,'profile',identifier),null);
  }finally{await Promise.all([...accounts,...mappings].map(r=>r.delete()));}
 });
+
+test('staff directory HTTP pilot authenticates actor, protects reserved target and limits enumeration',async()=>{
+ const {createStaffDirectoryEmulatorRouter}=await import('../server/identity/storeStaffDirectoryEmulatorRouter.js');
+ const express=(await import('express')).default;
+ const owner=await googleSignIn('staff-http-owner'),target=await googleSignIn('staff-http-target');
+ const outsider=await googleSignIn('staff-http-outsider');
+ await Promise.all([owner,target,outsider].map(person=>waitForAward(person.localId)));
+ const storeId='staff-http-isolated-store',store=db.doc('stores/'+storeId);
+ const targetRef=db.doc('users/'+target.localId),member=store.collection('members').doc(target.localId);
+ const prior=process.env.KYRUB_STAFF_DIRECTORY_PILOT;
+ const http=express();http.use(express.json({limit:'8kb'}));http.use('/api',createStaffDirectoryEmulatorRouter(db,auth));
+ const listener=http.listen(0,'127.0.0.1');
+ await new Promise<void>((resolve,reject)=>{listener.once('listening',resolve);listener.once('error',reject);});
+ const address=listener.address();assert.ok(address&&typeof address!=='string');
+ const baseUrl='http://127.0.0.1:'+address.port+'/api/staff-directory-pilot/';
+ const body={storeId,term:'staff-http-target@example.invalid',role:'seller'};
+ const post=(operation:string,input:unknown=body,token=owner.idToken)=>fetch(baseUrl+operation,{method:'POST',
+  headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(input)});
+ try{
+  await store.set({id:storeId,ownerId:owner.localId,name:'Loja isolada'});
+  await targetRef.set({uid:target.localId,email:body.term,name:'Nome reservado',isProfileVisible:false},{merge:true});
+  delete process.env.KYRUB_STAFF_DIRECTORY_PILOT;
+  assert.equal((await post('search')).status,404);
+  process.env.KYRUB_STAFF_DIRECTORY_PILOT='true';
+  assert.equal((await fetch(baseUrl+'search')).status,405);
+  assert.equal((await post('search',body,'invalid')).status,401);
+  assert.equal((await post('search',{...body,actorUid:owner.localId})).status,400);
+  assert.equal((await post('search',body,outsider.idToken)).status,403);
+  const search=await post('search');assert.equal(search.status,200);
+  assert.equal(search.headers.get('cache-control'),'private, no-store');
+  assert.deepEqual(await search.json(),{entries:[{uid:target.localId,name:'Conta Kyrub',photoUrl:''}]});
+  const inviteBody={...body,targetUid:target.localId};
+  const invited=await post('invite',inviteBody);assert.equal(invited.status,201);
+  assert.deepEqual(await invited.json(),{status:'invited',userId:target.localId});
+  assert.equal((await post('invite',inviteBody)).status,409);
+  const record=(await member.get()).data()!;
+  assert.equal(record.status,'invited');assert.equal(record.email,'');assert.equal(record.invitedBy,owner.localId);
+  for(let i=0;i<8;i++)assert.equal((await post('search')).status,200);
+  const limited=await post('search');assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
+  await auth.updateUser(outsider.localId,{disabled:true});
+  assert.equal((await post('search',body,outsider.idToken)).status,401);
+ }finally{
+  await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
+  await Promise.all([member.delete(),store.delete(),auth.updateUser(outsider.localId,{disabled:false})]);
+  if(prior===undefined)delete process.env.KYRUB_STAFF_DIRECTORY_PILOT;else process.env.KYRUB_STAFF_DIRECTORY_PILOT=prior;
+ }
+});
