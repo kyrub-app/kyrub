@@ -17,6 +17,8 @@ import {
   collection,
   doc,
   onSnapshot,
+  query,
+  where,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -154,35 +156,39 @@ export function ProfileConnectedCardsPolishBridge() {
       stopGroups = null;
 
       if (!user) {
+        setMenuTarget(null);
+        setGroupTarget(null);
+        setReportTarget(null);
+        setProfileTarget(null);
+        setStatusTarget(null);
         setUsers([]);
         setGroups([]);
         return;
       }
 
+      setUsers([]);
+      setGroups([]);
+      setMenuTarget(null);
+      setGroupTarget(null);
+      setReportTarget(null);
+      setProfileTarget(null);
+      setStatusTarget(null);
+      // Existing participant-scoped connection records are enough to locate
+      // historical cards. Do not enumerate or read private account roots.
       stopUsers = onSnapshot(
-        collection(db, 'users'),
+        query(collection(db,'connections'),where('participantIds','array-contains',user.uid)),
         snapshot => {
-          setUsers(
-            snapshot.docs.map(item => {
-              const data = item.data() as Record<string, unknown>;
-              return {
-                id: item.id,
-                name:
-                  readString(data.name) ||
-                  readString(data.displayName) ||
-                  readString(data.email).split('@')[0] ||
-                  'Usuário Kyrub',
-                avatar:
-                  readString(data.photoUrl) ||
-                  readString(data.avatar) ||
-                  readString(data.photoURL),
-                bio: readString(data.bio),
-                role: readString(data.role),
-              };
-            })
-          );
+          if(auth.currentUser!==user)return;
+          setUsers(snapshot.docs.flatMap(item=>{
+            const data=item.data();
+            if(data.status!=='accepted'||(data.senderId!==user.uid&&data.receiverId!==user.uid))return [];
+            const sent=data.senderId===user.uid;
+            const id=readString(sent?data.receiverId:data.senderId);
+            if(!id)return [];
+            return [{id,name:readString(sent?data.receiverName:data.senderName)||'Kairubido',avatar:'',bio:'',role:'Kairubido'}];
+          }));
         },
-        () => setUsers([])
+        ()=>{if(auth.currentUser===user)setUsers([]);}
       );
 
       stopGroups = onSnapshot(
@@ -212,6 +218,11 @@ export function ProfileConnectedCardsPolishBridge() {
     };
   }, []);
 
+  const uniqueContact = (name:string) => {
+    const matches=users.filter(user=>normalize(user.name)===normalize(name));
+    return matches.length===1?matches[0]:undefined;
+  };
+
   const resolveTarget = (card: HTMLElement): CardTarget | null => {
     const menuButton = card.querySelector<HTMLButtonElement>(
       'button[data-profile-connected-menu="true"]'
@@ -219,12 +230,10 @@ export function ProfileConnectedCardsPolishBridge() {
     if (!menuButton) return null;
 
     const name = menuButton.dataset.profileConnectedName ?? '';
-    const profile = users.find(user => normalize(user.name) === normalize(name));
+    const profile = uniqueContact(name);
     const friendId = profile?.id ?? '';
     const status =
-      (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
-      latestStatusByAuthor.byName.get(normalize(name)) ??
-      null;
+      (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ?? null;
 
     return {
       card,
@@ -265,12 +274,10 @@ export function ProfileConnectedCardsPolishBridge() {
           button.dataset.profileConnectedName ||
           button.getAttribute('aria-label')?.replace(/^Remover\s+/, '').trim() ||
           '';
-        const profile = users.find(user => normalize(user.name) === normalize(name));
+        const profile = uniqueContact(name);
         const friendId = profile?.id ?? '';
         const status =
-          (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ??
-          latestStatusByAuthor.byName.get(normalize(name)) ??
-          null;
+          (friendId ? latestStatusByAuthor.byId.get(friendId) : undefined) ?? null;
         const content = card.children.item(1) as HTMLElement | null;
         const media = card.firstElementChild as HTMLElement | null;
         const footer = card.lastElementChild as HTMLElement | null;

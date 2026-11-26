@@ -95,7 +95,8 @@ import { getDistance, formatWhatsApp, formatCpf, formatCnpj } from './utils/help
 
 // Firebase & Sync engine integration imports
 import { db, auth } from './utils/firebase';
-import { listenCollection, resolveConflictLWW } from './utils/syncEngine';
+import { resolveConflictLWW } from './utils/syncEngine';
+import { subscribeSocialDiscoveryDirectory } from './utils/socialDiscoveryDirectory';
 import { getPrimaryUserStoreDocumentPath } from './utils/storePaths';
 import {
   buildUserStoreCreateData,
@@ -1076,18 +1077,12 @@ export default function App() {
     };
   }, []);
 
-  // Keep only the authorized signed-in user directory listener.
+  // Discovery is opt-in; connection history retains its own snapshots.
   useEffect(() => {
-    if (!isLoggedIn) return;
-
-    const unsubscribeUsers = listenCollection('users', docs => {
-      setDbUsers(docs);
-    });
-
-    return () => {
-      unsubscribeUsers();
-    };
-  }, [isLoggedIn]);
+    setDbUsers([]);
+    if (!isLoggedIn || !authenticatedUserId || auth.currentUser?.uid!==authenticatedUserId) return;
+    return subscribeSocialDiscoveryDirectory(setDbUsers);
+  }, [isLoggedIn, authenticatedUserId, setDbUsers]);
 
   useEffect(() => {
     const checkAlarms = setInterval(() => {

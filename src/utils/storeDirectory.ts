@@ -1,3 +1,4 @@
+import {staffDirectoryPilotEnabled} from './storeStaffDirectoryPilot';
 import {
   collection,
   collectionGroup,
@@ -259,6 +260,7 @@ export const createCanonicalStoreFromLegacy = async (
 export const searchExistingKyrubUsers = async (
   term: string
 ): Promise<KyrubDirectoryUser[]> => {
+  if(staffDirectoryPilotEnabled())throw Error('Use o diretório profissional protegido.');
   const normalized = term.trim();
   if (!normalized) return [];
 
@@ -282,6 +284,7 @@ export const inviteExistingKyrubUser = async (
   actor: Pick<User, 'uid'>,
   input: InviteStoreMemberInput
 ): Promise<void> => {
+  if(staffDirectoryPilotEnabled())throw Error('Use o convite profissional protegido.');
   if (actor.uid === input.targetUser.uid) {
     throw new Error('O proprietário não precisa convidar a própria conta.');
   }

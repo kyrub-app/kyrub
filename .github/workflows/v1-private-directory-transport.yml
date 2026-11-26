@@ -1,0 +1,24 @@
+name: V1 private directory release boundary
+on:
+  pull_request:
+    paths:
+      - 'server/identity/privateDirectoryServerlessTransport.ts'
+      - 'tests/v1-private-directory-transport.test.ts'
+      - '.github/workflows/v1-private-directory-transport.yml'
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: node --test --import tsx tests/v1-private-directory-transport.test.ts

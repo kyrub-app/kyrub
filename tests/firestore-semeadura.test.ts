@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
+import { semeaduraDay } from '../shared/semeaduraDailyLimit';
 import { readFileSync } from 'node:fs';
 import { after, before, beforeEach, test } from 'node:test';
 import { deleteApp, initializeApp, type App } from 'firebase-admin/app';
@@ -55,6 +56,9 @@ test('Firestore rules forbid clients to read or forge authoritative seed counter
   await assertFails(getDoc(doc(client, 'semeadura_post_stats/forged')));
   await assertFails(setDoc(doc(client, 'users/author/semeaduraProgress/summary'), { acceptedSeeds: 100_000 }));
   await assertFails(getDoc(doc(client, 'users/author/semeaduraProgress/summary')));
+  const quotaPath = 'users/attacker/semeaduraDailyUsage/' + semeaduraDay(new Date());
+  await assertFails(setDoc(doc(client, quotaPath), { actorId: 'attacker', count: 1 }));
+  await assertFails(getDoc(doc(client, quotaPath)));
 });
 
 test('real Firestore transactions record one seed per actor, count only author progress, and never pay', async () => {
@@ -79,7 +83,8 @@ test('one author can accumulate concurrent seeds from personal and community pos
   ]);
   assert.deepEqual(results.map(result => result.status), ['accepted', 'accepted']);
   assert.equal((await readPersonalSemeaduraJourney(db, 'author')).totalSeeds, 2);
-  assert.equal((await readCommunitySemeaduraJourney(db, 'voter', 'rock')).totalSeeds, 1);
+  assert.equal((await readCommunitySemeaduraJourney(db, 'voter', 'rock')).totalSeeds, 0);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists, false);
   assert.equal((await db.collection('users/author/rewardLedger').get()).size, 0);
   assert.equal((await db.collection('users/author/xpLedger').get()).size, 0);
 });
@@ -112,11 +117,36 @@ test('the two concurrent final seeds yield exactly ONE winner, then close the po
   assert.equal((await db.collection('semeadura_post_stats/'+key+'/receipts').get()).size,1);
 });
 
-test('community seeds count toward the AUTHOR, not the owner, and toward a visual community bosque', async () => {
+test('community seeds count only toward the AUTHOR, not the owner or community', async () => {
   await community('rock-post');
   assert.equal((await semear('community','rock-post','voter')).status,'accepted');
   assert.equal((await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
   assert.equal((await readPersonalSemeaduraJourney(db,'community-owner')).totalSeeds,0);
-  assert.equal((await readCommunitySemeaduraJourney(db,'voter','rock')).totalSeeds,1);
+  assert.equal((await readCommunitySemeaduraJourney(db,'voter','rock')).totalSeeds,0);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
   await assert.rejects(semear('community','rock-post','outsider'), /SEMEADURA_COMMUNITY_ACCESS_DENIED/);
+});
+
+test('concurrent final daily seeds across personal and community posts accept exactly one', async () => {
+  await Promise.all([personal('quota-personal'), community('quota-community')]);
+  const actor = 'voter';
+  const day = semeaduraDay(new Date());
+  const quota = db.doc('users/' + actor + '/semeaduraDailyUsage/' + day);
+  await quota.set({actorId:actor, day, schemaVersion:1, count:99, updatedAt:new Date().toISOString()});
+  const attempts = [
+    {kind:'personal' as const, postId:'quota-personal'},
+    {kind:'community' as const, postId:'quota-community'},
+  ];
+  const results = await Promise.allSettled(attempts.map(a => semear(a.kind, a.postId, actor)));
+  assert.equal(results.filter(x=>x.status==='fulfilled' && x.value.status==='accepted').length,1);
+  const rejected = results.filter(x=>x.status==='rejected');
+  assert.equal(rejected.length,1);
+  assert.match(String(rejected[0].reason),/SEMEADURA_DAILY_LIMIT_REACHED/);
+  assert.equal((await quota.get()).get('count'),100);
+  assert.equal((await readPersonalSemeaduraJourney(db,'author')).totalSeeds +
+    (await readPersonalSemeaduraJourney(db,'member-author')).totalSeeds,1);
+  const winner = attempts[results.findIndex(x=>x.status==='fulfilled')];
+  assert.equal((await semear(winner.kind,winner.postId,actor)).status,'already_seeded');
+  assert.equal((await quota.get()).get('count'),100);
+  assert.equal((await db.doc('communities/rock/semeaduraProgress/summary').get()).exists,false);
 });
