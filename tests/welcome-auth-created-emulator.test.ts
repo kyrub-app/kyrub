@@ -1411,10 +1411,11 @@ test('staff directory HTTP pilot authenticates actor, protects reserved target a
  const {createStaffDirectoryEmulatorRouter}=await import('../server/identity/storeStaffDirectoryEmulatorRouter.js');
  const express=(await import('express')).default;
  const owner=await googleSignIn('staff-http-owner'),target=await googleSignIn('staff-http-target');
- const outsider=await googleSignIn('staff-http-outsider');
- await Promise.all([owner,target,outsider].map(person=>waitForAward(person.localId)));
+ const outsider=await googleSignIn('staff-http-outsider'),spoof=await googleSignIn('staff-http-spoof');
+ await Promise.all([owner,target,outsider,spoof].map(person=>waitForAward(person.localId)));
  const storeId='staff-http-isolated-store',store=db.doc('stores/'+storeId);
  const targetRef=db.doc('users/'+target.localId),member=store.collection('members').doc(target.localId);
+ const spoofRef=db.doc('users/'+spoof.localId),spoofMember=store.collection('members').doc(spoof.localId);
  const prior=process.env.KYRUB_STAFF_DIRECTORY_PILOT;
  const http=express();http.use(express.json({limit:'8kb'}));http.use('/api',createStaffDirectoryEmulatorRouter(db,auth));
  const listener=http.listen(0,'127.0.0.1');
@@ -1426,7 +1427,8 @@ test('staff directory HTTP pilot authenticates actor, protects reserved target a
   headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(input)});
  try{
   await store.set({id:storeId,ownerId:owner.localId,name:'Loja isolada'});
-  await targetRef.set({uid:target.localId,email:body.term,name:'Nome reservado',isProfileVisible:false},{merge:true});
+  await targetRef.set({uid:target.localId,email:'outdated-staff@example.invalid',name:'Nome reservado',isProfileVisible:false},{merge:true});
+  await spoofRef.set({uid:spoof.localId,email:body.term,name:'Conta imitadora',isProfileVisible:true},{merge:true});
   delete process.env.KYRUB_STAFF_DIRECTORY_PILOT;
   assert.equal((await post('search')).status,404);
   process.env.KYRUB_STAFF_DIRECTORY_PILOT='true';
@@ -1437,19 +1439,25 @@ test('staff directory HTTP pilot authenticates actor, protects reserved target a
   const search=await post('search');assert.equal(search.status,200);
   assert.equal(search.headers.get('cache-control'),'private, no-store');
   assert.deepEqual(await search.json(),{entries:[{uid:target.localId,name:'Conta Kyrub',photoUrl:''}]});
+  assert.equal((await post('invite',{...body,targetUid:spoof.localId})).status,403);
+  assert.equal((await spoofMember.get()).exists,false);
+  await auth.updateUser(target.localId,{emailVerified:false});
+  assert.deepEqual(await (await post('search')).json(),{entries:[]});
+  assert.equal((await post('invite',{...body,targetUid:target.localId})).status,403);
+  await auth.updateUser(target.localId,{emailVerified:true});
   const inviteBody={...body,targetUid:target.localId};
   const invited=await post('invite',inviteBody);assert.equal(invited.status,201);
   assert.deepEqual(await invited.json(),{status:'invited',userId:target.localId});
   assert.equal((await post('invite',inviteBody)).status,409);
   const record=(await member.get()).data()!;
   assert.equal(record.status,'invited');assert.equal(record.email,'');assert.equal(record.invitedBy,owner.localId);
-  for(let i=0;i<8;i++)assert.equal((await post('search')).status,200);
+  for(let i=0;i<5;i++)assert.equal((await post('search')).status,200);
   const limited=await post('search');assert.equal(limited.status,429);assert.ok(limited.headers.get('retry-after'));
   await auth.updateUser(outsider.localId,{disabled:true});
   assert.equal((await post('search',body,outsider.idToken)).status,401);
  }finally{
   await new Promise<void>((resolve,reject)=>listener.close(error=>error?reject(error):resolve()));
-  await Promise.all([member.delete(),store.delete(),auth.updateUser(outsider.localId,{disabled:false})]);
+  await Promise.all([member.delete(),spoofMember.delete(),store.delete(),auth.updateUser(outsider.localId,{disabled:false}),auth.updateUser(target.localId,{emailVerified:true}),targetRef.update({email:body.term}),spoofRef.update({email:'staff-http-spoof@example.invalid',isProfileVisible:false})]);
   if(prior===undefined)delete process.env.KYRUB_STAFF_DIRECTORY_PILOT;else process.env.KYRUB_STAFF_DIRECTORY_PILOT=prior;
  }
 });
