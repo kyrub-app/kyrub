@@ -2,7 +2,7 @@ import express from 'express';
 import type {Auth} from 'firebase-admin/auth';
 import type {Firestore} from 'firebase-admin/firestore';
 import {isDocumentId} from './publicSocialAddressPolicy.js';
-import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities} from './socialDiscoveryDirectoryService.js';
+import {readVisibleSocialDirectoryPage,readVisibleAuthorIdentities,searchVisibleNoteCollaborators} from './socialDiscoveryDirectoryService.js';
 
 const PROJECT='demo-kyrub-welcome';
 export function socialDirectoryPilotEnabled(db:Firestore,env:NodeJS.ProcessEnv=process.env){
@@ -24,7 +24,7 @@ export function createSocialDirectoryEmulatorRouter(db:Firestore,auth:Auth){
    !/^127\.0\.0\.1(:\d+)?$/.test(req.get('host')||'')){res.sendStatus(404);return;}
   if(req.method!=='POST'){res.set('Allow','POST').sendStatus(405);return;}
   const op=req.params.operation;
-  if(op!=='page'&&op!=='authors'){res.sendStatus(404);return;}
+  if(op!=='page'&&op!=='authors'&&op!=='collaborators'){res.sendStatus(404);return;}
   const token=/^Bearer (\S+)$/i.exec(req.get('authorization')||'')?.[1];
   if(!token||token.length>8192){res.sendStatus(401);return;}
   let uid:string;
@@ -44,11 +44,13 @@ export function createSocialDirectoryEmulatorRouter(db:Firestore,auth:Auth){
   const body=req.body;
   if(Object.keys(req.query).length||!body||typeof body!=='object'||Array.isArray(body)||
    (op==='page'?(Object.keys(body).some(k=>k!=='after')||('after' in body&&!isDocumentId(body.after))):
-   (Object.keys(body).length!==1||!Array.isArray(body.authorIds)))){
+   op==='authors'?(Object.keys(body).length!==1||!Array.isArray(body.authorIds)):
+   (Object.keys(body).length!==1||typeof body.term!=='string'))){
    res.status(400).json({error:'DIRECTORY_INPUT_INVALID'});return;
   }
   try{
    if(op==='page'){res.json(await readVisibleSocialDirectoryPage(db,uid,body.after));return;}
+   if(op==='collaborators'){res.json({entries:await searchVisibleNoteCollaborators(db,auth,uid,body.term)});return;}
    res.json({entries:await readVisibleAuthorIdentities(db,uid,body.authorIds)});
   }catch(error){
    if(error instanceof Error&&error.message==='DIRECTORY_INPUT_INVALID'){res.status(400).json({error:error.message});return;}
