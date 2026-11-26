@@ -2,6 +2,7 @@
 // The adapter must load a complete authorized snapshot atomically and audit each export.
 import {createHash,randomUUID} from 'node:crypto';
 import {authorizeCidChatSession,type CidChat,type ChatSession,type ChatMessage} from './cidOccurrenceChatAccess.js';
+import {CID_SOS_RESOLUTION_LABELS,normalizeCidSosResolution} from '../../shared/cidSosResolution.js';
 import type {CidSosOccurrence} from './cidSosAlertPolicy.js';
 const deny=():never=>{throw Error('CID_REPORT_FORBIDDEN');};
 const time=(v:unknown):v is number=>typeof v==='number'&&Number.isSafeInteger(v)&&v>0;
@@ -25,7 +26,9 @@ function snapshot(chat:CidChat,session:ChatSession,secret:unknown,occurrence:Cid
  }).sort((a,b)=>a.createdAt-b.createdAt||(a.id<b.id?-1:a.id>b.id?1:0));
  const location=occurrence.location;
  if(location&&(location.consent!==true||!Number.isFinite(location.latitude)||Math.abs(location.latitude)>90||!Number.isFinite(location.longitude)||Math.abs(location.longitude)>180||!Number.isFinite(location.accuracy)||location.accuracy<0||location.accuracy>10000000))return deny();
- return {schema:'cid-occurrence-report-v1' as const,occurrenceId:occurrence.id,tagId:occurrence.tagId,reason:occurrence.reason,openedAt:occurrence.createdAt,closedAt:chat.closedAt??null,participantCount:chat.members.length,location:location?{latitude:location.latitude,longitude:location.longitude,accuracy:location.accuracy,source:'voluntary-participant' as const,registeredAt:occurrence.createdAt}:null,messages,notice:CID_REPORT_NOTICE};
+ const resolution=occurrence.resolution?normalizeCidSosResolution(occurrence.resolution):null;
+ if(resolution&&(occurrence.status!=='resolved'||!time(occurrence.resolvedAt)||occurrence.resolvedAt!==chat.closedAt))return deny();
+ return {schema:'cid-occurrence-report-v1' as const,occurrenceId:occurrence.id,tagId:occurrence.tagId,reason:occurrence.reason,openedAt:occurrence.createdAt,closedAt:chat.closedAt??null,participantCount:chat.members.length,resolution,location:location?{latitude:location.latitude,longitude:location.longitude,accuracy:location.accuracy,source:'voluntary-participant' as const,registeredAt:occurrence.createdAt}:null,messages,notice:CID_REPORT_NOTICE};
 }
 export function prepareCidOccurrenceReport(chat:CidChat,session:ChatSession,secret:unknown,occurrence:CidSosOccurrence,history:readonly ChatMessage[],now:number){
  const content={...snapshot(chat,session,secret,occurrence,history,now),reportId:randomUUID(),issuedAt:now};
@@ -38,5 +41,5 @@ export function prepareCidOccurrenceReport(chat:CidChat,session:ChatSession,secr
 export function formatCidConversationText(report:ReturnType<typeof prepareCidOccurrenceReport>){
  const r=report.content;
  const iso=(n:number)=>new Date(n).toISOString();
- return ['KYRUB — Relatório de ocorrência','Identificador: '+r.reportId,'Ocorrência: '+r.occurrenceId,'Tag: '+r.tagId,'Emissão (UTC): '+iso(r.issuedAt),'Motivo: '+r.reason,r.notice,'',...r.messages.map(m=>iso(m.createdAt)+' — '+m.author+': '+m.body),'','SHA-256 do registro estruturado: '+report.checksum].join('\n');
+ return ['KYRUB — Relatório de ocorrência','Identificador: '+r.reportId,'Ocorrência: '+r.occurrenceId,'Tag: '+r.tagId,'Emissão (UTC): '+iso(r.issuedAt),'Motivo: '+r.reason,'Encerramento: '+(r.closedAt?iso(r.closedAt):'Em aberto'),'Resolução: '+(r.resolution?CID_SOS_RESOLUTION_LABELS[r.resolution]:'Não informada'),...(r.location?['Localização voluntária: '+r.location.latitude+', '+r.location.longitude+'; precisão declarada: '+r.location.accuracy+' m; registro UTC: '+iso(r.location.registeredAt)]:[]),r.notice,'',...r.messages.map(m=>iso(m.createdAt)+' — '+m.author+': '+m.body),'','SHA-256 do registro estruturado: '+report.checksum].join('\n');
 }
