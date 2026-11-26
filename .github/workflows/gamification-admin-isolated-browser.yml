@@ -41,7 +41,7 @@ permissions:
 jobs:
   isolated-chromium:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 35
     env:
       NODE_ENV: test
       GCLOUD_PROJECT: demo-kyrub-welcome
@@ -123,6 +123,37 @@ jobs:
           --config firebase.welcome.json --project demo-kyrub-welcome
           --only auth,firestore,functions
           "node --test --import tsx tests/admin-directory-browser.test.mjs"
+      - name: Verify existing journeys with private account root rules (isolated candidate only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GCLOUD_PROJECT" = demo-kyrub-welcome
+          test "$GOOGLE_CLOUD_PROJECT" = demo-kyrub-welcome
+          test "$NODE_ENV" = test
+          test -z "${VERCEL:-}${FIREBASE_SERVICE_ACCOUNT_JSON:-}${GOOGLE_APPLICATION_CREDENTIALS:-}"
+          trap 'rm -f .firebase-owner-only-ci.json .firebase/firestore.owner-only-ci.rules' EXIT
+          node --input-type=module <<'NODE'
+          import assert from 'node:assert/strict';
+          import {readFileSync,writeFileSync} from 'node:fs';
+          const baseline=readFileSync('.firebase/firestore.combined.rules','utf8');
+          const pattern=/match \/users\/\{userId\}\s*\{\s*allow read: if isSignedIn\(\);/g;
+          assert.equal([...baseline.matchAll(pattern)].length,1,'root rule must match exactly once');
+          const candidate=baseline.replace(pattern, `match /users/{userId} {
+                allow get: if isSignedIn() && request.auth.uid == userId;
+                allow list: if false;`);
+          const config=JSON.parse(readFileSync('firebase.welcome.json','utf8'));
+          config.firestore.rules='.firebase/firestore.owner-only-ci.rules';
+          writeFileSync('.firebase/firestore.owner-only-ci.rules',candidate);
+          writeFileSync('.firebase-owner-only-ci.json',JSON.stringify(config));
+          NODE
+          for fixture in profile-completion staff-directory social-directory admin-directory; do
+            echo "::group::Private account root: ${fixture}"
+            npx --yes firebase-tools emulators:exec \
+              --config .firebase-owner-only-ci.json --project demo-kyrub-welcome \
+              --only auth,firestore,functions \
+              "node --test --import tsx tests/${fixture}-browser.test.mjs"
+            echo "::endgroup::"
+          done
       - uses: actions/upload-artifact@v4
         if: always()
         with:
